@@ -39,14 +39,15 @@
       - 2025-08-18: Enhanced landing page with: saved scan/dataset summary (counts and by extension), Graph Schema Summary placeholder, Workbook Viewer (XLSX) placeholder, and Chat UI placeholder; updated index route to compute lightweight summaries.
       - 2025-08-18: Added minimal telemetry/logging for scan: API and UI scan now record path, recursive flag, files scanned, duration seconds, and timestamps; surfaced on Home page under "Last Scan Telemetry"; tests remain green.
       - 2025-08-18: Switched filesystem enumeration to prefer NCDU when available (with Python fallback); updated docs accordingly.
+      - 2025-08-18: Implemented rule-based interpreter selection: PatternMatcher glob support and RuleEngine precedence integrated into InterpreterRegistry; registered default rule for *.py → python_code; all tests green.
     - Status by Task:
       - [task:core-architecture/mvp/graph-inmemory]: Done (MVP in-memory adapter in scidk/core/graph.py).
       - [task:core-architecture/mvp/filesystem-scan]: Done (scan + dataset node + checksum idempotency).
       - [task:core-architecture/mvp/rest-ui]: Done (routes + templates + nav scaffold).
-      - [task:interpreters/mvp/registry-and-executor]: In-progress (basic registry by extension + POST /api/interpret done; pattern rules + secure executor hardening pending).
+      - [task:interpreters/mvp/registry-and-executor]: In-progress (rule-based selection integrated; secure executor hardening and additional runtimes pending).
 
 - Next Up (prioritized):
-  1) Extend InterpreterRegistry with pattern rules and precedence; integrate simple PatternMatcher/RuleEngine into selection flow.
+  1) [Done this cycle] Extend InterpreterRegistry with pattern rules and precedence; integrate simple PatternMatcher/RuleEngine into selection flow.
   2) [Done this cycle] Minimal telemetry/logging for scan duration and counts; surfaced on UI Home as "Last Scan Telemetry".
   3) Implement XLSX Workbook Viewer page: read .xlsx via openpyxl, render sheet tabs and table preview; link from dataset detail when extension==.xlsx.
   4) Add Chat backend stub: POST /api/chat that echoes or routes to a future LLM; store conversation in-memory per session.

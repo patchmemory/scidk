@@ -6,6 +6,7 @@ from .core.graph import InMemoryGraph
 from .core.filesystem import FilesystemManager
 from .core.registry import InterpreterRegistry
 from .interpreters.python_code import PythonCodeInterpreter
+from .core.pattern_matcher import Rule
 
 
 def create_app():
@@ -16,7 +17,10 @@ def create_app():
     registry = InterpreterRegistry()
 
     # Register a minimal interpreter (Python code)
-    registry.register_extension(".py", PythonCodeInterpreter())
+    py_interp = PythonCodeInterpreter()
+    registry.register_extension(".py", py_interp)
+    # Register a simple rule to prefer python_code for *.py files
+    registry.register_rule(Rule(id="rule.py.default", interpreter_id=py_interp.id, pattern="*.py", priority=10, conditions={"ext": ".py"}))
 
     fs = FilesystemManager(graph=graph, registry=registry)
 

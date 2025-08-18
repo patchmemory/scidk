@@ -55,3 +55,4 @@ Based on Interpreter Registry & Pattern Rules in dev/vision/interpreters.md and 
 - 2025-08-18: Created task spec.
 - 2025-08-18: Implemented minimal InterpreterRegistry (extension mapping) and PythonCodeInterpreter; executor and pattern rules pending.
 - 2025-08-18: Added stubs for SecureInterpreterExecutor and PatternMatcher/RuleEngine. Extended InterpreterRegistry with get_by_id and select_for_dataset. Added POST /api/interpret endpoint (dataset_id, optional interpreter_id) wiring to registry and graph.
+- 2025-08-18: Implemented rule-based selection: PatternMatcher glob support, Rule model with interpreter_id and priority, RuleEngine precedence; integrated into InterpreterRegistry.select_for_dataset with extension fallback. Registered default *.py rule in app; tests pass.
