@@ -25,6 +25,26 @@
   - [story:setup-e2e] MVP end-to-end spike
     - Scope: [task:core-architecture/mvp/graph-inmemory], [task:core-architecture/mvp/filesystem-scan], [task:interpreters/mvp/registry-and-executor], [task:core-architecture/mvp/rest-ui]
     - Success: User sees interpreted imports for a Python file in UI.
+    - Timeline: 2025-08-19 → 2025-08-23
+    - Updates:
+      - 2025-08-18: Scaffolded Flask app factory with UI routes (/ , /datasets, /datasets/<id>) and API (/api/scan, /api/datasets, /api/datasets/<id>). Basic templates created (index.html, datasets.html, dataset_detail.html).
+      - 2025-08-18: Implemented InMemoryGraph with dataset upsert and interpretation caching. Implemented FilesystemManager.scan_directory and dataset creation with checksum.
+      - 2025-08-18: Added PythonCodeInterpreter and wired via simple extension-based InterpreterRegistry (.py → python_code). UI shows interpretation keys and dataset detail renders interpretation JSON.
+      - 2025-08-18: Added POST /api/interpret with dataset_id and optional interpreter_id; extended InterpreterRegistry with get_by_id and select_for_dataset. Added stubs for SecureInterpreterExecutor and PatternMatcher/RuleEngine to host future logic.
+    - Status by Task:
+      - [task:core-architecture/mvp/graph-inmemory]: Done (MVP in-memory adapter in scidk/core/graph.py).
+      - [task:core-architecture/mvp/filesystem-scan]: Done (scan + dataset node + checksum idempotency).
+      - [task:core-architecture/mvp/rest-ui]: Done (routes + templates minimal).
+      - [task:interpreters/mvp/registry-and-executor]: In-progress (basic registry by extension done; pattern rules + secure executor stub pending).
+
+- Next Up (prioritized):
+  1) Extend InterpreterRegistry with pattern rules and precedence; add SecureExecutor stub with timeouts.
+  2) Add POST /api/interpret to run a specific interpreter for a dataset id (optional for this cycle if time permits).
+  3) Add minimal telemetry/logging for scan duration and counts.
+
+- Retro Notes:
+  - What went well: GUI-first approach clarified integration points; end-to-end flow verified quickly.
+  - What to improve: Add lightweight tests for checksum idempotency and interpreter error handling next cycle.
 
 ## Agent Prompts Cheat Sheet
 Use these prompts to accelerate dev cycles.

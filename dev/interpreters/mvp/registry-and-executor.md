@@ -4,7 +4,7 @@
 - ID: task:interpreters/mvp/registry-and-executor
 - Vision: vision:interpreters
 - Phase: phase:interpreters/mvp
-- Status: planned
+- Status: in-progress
 - Priority: P0
 - Owner: agent
 - Created: 2025-08-18
@@ -53,3 +53,5 @@ Based on Interpreter Registry & Pattern Rules in dev/vision/interpreters.md and 
 
 ## Progress Log
 - 2025-08-18: Created task spec.
+- 2025-08-18: Implemented minimal InterpreterRegistry (extension mapping) and PythonCodeInterpreter; executor and pattern rules pending.
+- 2025-08-18: Added stubs for SecureInterpreterExecutor and PatternMatcher/RuleEngine. Extended InterpreterRegistry with get_by_id and select_for_dataset. Added POST /api/interpret endpoint (dataset_id, optional interpreter_id) wiring to registry and graph.
