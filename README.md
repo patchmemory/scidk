@@ -8,7 +8,7 @@ This is a minimal runnable MVP to satisfy the current cycle's GUI acceptance: a 
 ```
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -r requirements.txt
 ```
 
 2) Initialize environment variables (recommended):
@@ -60,12 +60,8 @@ python -m scidk.app
 ## Testing
 We use pytest for unit and API tests.
 
-Run the test suite:
+Pytest is included in requirements.txt; after installing dependencies, run:
 ```
-# optional: install dev extras to get pytest
-pip install -e .[dev]
-
-# run tests
 pytest
 ```
 
