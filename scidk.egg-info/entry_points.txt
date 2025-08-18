@@ -1,0 +1,2 @@
+[console_scripts]
+scidk-serve = scidk.app:main
