@@ -4,7 +4,7 @@
 - ID: task:core-architecture/mvp/filesystem-scan
 - Vision: vision:core-architecture
 - Phase: phase:core-architecture/mvp
-- Status: planned
+- Status: done
 - Priority: P0
 - Owner: agent
 - Created: 2025-08-18
@@ -61,3 +61,5 @@ Aligns with dev/vision/core_architecture.md FilesystemManager section.
 
 ## Progress Log
 - 2025-08-18: Created task spec.
+- 2025-08-18: Implemented FilesystemManager with create_dataset_node and scan_directory; wired to InMemoryGraph; exposed POST /api/scan and UI scan form.
+- 2025-08-18: Validated DoD manually by scanning repo and viewing datasets in UI.

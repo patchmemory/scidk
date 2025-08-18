@@ -18,12 +18,12 @@
 - Minimal UI: list datasets, dataset detail.
 
 ## Work Breakdown (Tasks)
-- [task:core-architecture/mvp/app-factory] Flask App Factory — P0, Status planned, Owner agent, ETA 2025-08-21
-- [task:core-architecture/mvp/graph-inmemory] In-Memory Graph Adapter — P0, Status planned, Owner agent, ETA 2025-08-22
-- [task:core-architecture/mvp/filesystem-scan] Filesystem Scan + Dataset Node — P0, Status planned, Owner agent, ETA 2025-08-23
-- [task:core-architecture/mvp/registry-pattern] Interpreter Registry + PatternMatcher — P0, Status planned, Owner agent, ETA 2025-08-25
-- [task:core-architecture/mvp/interpreters-core] PythonCode + TIFF Bash — P0, Status planned, Owner agent, ETA 2025-08-27
-- [task:core-architecture/mvp/rest-ui] REST Endpoints + Minimal UI — P0, Status planned, Owner agent, ETA 2025-08-29
+- [task:core-architecture/mvp/app-factory] Flask App Factory — P0, Status done, Owner agent, ETA 2025-08-21
+- [task:core-architecture/mvp/graph-inmemory] In-Memory Graph Adapter — P0, Status done, Owner agent, ETA 2025-08-22
+- [task:core-architecture/mvp/filesystem-scan] Filesystem Scan + Dataset Node — P0, Status done, Owner agent, ETA 2025-08-23
+- [task:core-architecture/mvp/registry-pattern] Interpreter Registry + PatternMatcher — P0, Status in-progress, Owner agent, ETA 2025-08-25
+- [task:core-architecture/mvp/interpreters-core] PythonCode + TIFF Bash — P0, Status in-progress, Owner agent, ETA 2025-08-27
+- [task:core-architecture/mvp/rest-ui] REST Endpoints + Minimal UI — P0, Status done, Owner agent, ETA 2025-08-29
 
 ## Milestones (Dates)
 - M1: Graph + Scan roundtrip (2025-08-23)
