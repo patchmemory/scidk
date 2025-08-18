@@ -37,8 +37,22 @@ def create_app():
         path = data.get('path') or os.getcwd()
         recursive = bool(data.get('recursive', True))
         try:
+            import time
+            started = time.time()
             count = fs.scan_directory(Path(path), recursive=recursive)
-            return jsonify({"status": "ok", "scanned": count}), 200
+            ended = time.time()
+            duration = ended - started
+            # Save telemetry on app
+            telem = app.extensions['scidk'].setdefault('telemetry', {})
+            telem['last_scan'] = {
+                'path': str(path),
+                'recursive': bool(recursive),
+                'scanned': int(count),
+                'started': started,
+                'ended': ended,
+                'duration_sec': duration,
+            }
+            return jsonify({"status": "ok", "scanned": count, "duration_sec": duration, "path": str(path), "recursive": bool(recursive)}), 200
         except Exception as e:
             return jsonify({"status": "error", "error": str(e)}), 400
 
@@ -115,7 +129,8 @@ def create_app():
             'relations': {},  # Placeholder for future relationships
             'interpretation_types': sorted(list(interp_types)),
         }
-        return render_template('index.html', datasets=datasets, by_ext=by_ext, schema_summary=schema_summary)
+        telemetry = app.extensions['scidk'].get('telemetry', {})
+        return render_template('index.html', datasets=datasets, by_ext=by_ext, schema_summary=schema_summary, telemetry=telemetry)
 
     @ui.get('/datasets')
     def datasets():
@@ -147,7 +162,20 @@ def create_app():
     def ui_scan():
         path = request.form.get('path') or os.getcwd()
         recursive = request.form.get('recursive') == 'on'
-        fs.scan_directory(Path(path), recursive=recursive)
+        import time
+        started = time.time()
+        count = fs.scan_directory(Path(path), recursive=recursive)
+        ended = time.time()
+        duration = ended - started
+        telem = app.extensions['scidk'].setdefault('telemetry', {})
+        telem['last_scan'] = {
+            'path': str(path),
+            'recursive': bool(recursive),
+            'scanned': int(count),
+            'started': started,
+            'ended': ended,
+            'duration_sec': duration,
+        }
         return redirect(url_for('ui.datasets'))
 
     app.register_blueprint(ui)

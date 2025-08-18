@@ -27,6 +27,22 @@
       {% endfor %}
     </ul>
   </details>
+
+  <details open>
+    <summary class="small">Last Scan Telemetry</summary>
+    {% if telemetry and telemetry.last_scan %}
+      <ul>
+        <li>Path: <code>{{ telemetry.last_scan.path }}</code></li>
+        <li>Recursive: {{ telemetry.last_scan.recursive }}</li>
+        <li>Files scanned: {{ telemetry.last_scan.scanned }}</li>
+        <li>Duration (sec): {{ '%.4f'|format(telemetry.last_scan.duration_sec) }}</li>
+        <li>Started: {{ telemetry.last_scan.started }}</li>
+        <li>Ended: {{ telemetry.last_scan.ended }}</li>
+      </ul>
+    {% else %}
+      <p class="small">No scan run yet in this session.</p>
+    {% endif %}
+  </details>
 </section>
 
 <section>
