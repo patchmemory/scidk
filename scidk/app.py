@@ -101,7 +101,21 @@ def create_app():
     @ui.get('/')
     def index():
         datasets = app.extensions['scidk']['graph'].list_datasets()
-        return render_template('index.html', datasets=datasets)
+        # Build lightweight summaries for the landing page
+        by_ext = {}
+        interp_types = set()
+        for d in datasets:
+            by_ext[d.get('extension') or ''] = by_ext.get(d.get('extension') or '', 0) + 1
+            for k in (d.get('interpretations') or {}).keys():
+                interp_types.add(k)
+        schema_summary = {
+            'nodes': {
+                'Dataset': len(datasets),
+            },
+            'relations': {},  # Placeholder for future relationships
+            'interpretation_types': sorted(list(interp_types)),
+        }
+        return render_template('index.html', datasets=datasets, by_ext=by_ext, schema_summary=schema_summary)
 
     @ui.get('/datasets')
     def datasets():

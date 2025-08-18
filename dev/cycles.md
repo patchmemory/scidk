@@ -36,6 +36,7 @@
       - 2025-08-18: Added pytest test suite (unit + API), configured pyproject for pytest, and documented testing workflow in README.
       - 2025-08-18: Added requirements.txt and requirements-dev.txt; updated README to include installation via requirements and confirm pytest install path.
       - 2025-08-18: Removed requirements-dev.txt; unified requirements so dev == release (pytest included) and updated README accordingly.
+      - 2025-08-18: Enhanced landing page with: saved scan/dataset summary (counts and by extension), Graph Schema Summary placeholder, Workbook Viewer (XLSX) placeholder, and Chat UI placeholder; updated index route to compute lightweight summaries.
     - Status by Task:
       - [task:core-architecture/mvp/graph-inmemory]: Done (MVP in-memory adapter in scidk/core/graph.py).
       - [task:core-architecture/mvp/filesystem-scan]: Done (scan + dataset node + checksum idempotency).
@@ -45,7 +46,10 @@
 - Next Up (prioritized):
   1) Extend InterpreterRegistry with pattern rules and precedence; integrate simple PatternMatcher/RuleEngine into selection flow.
   2) Add minimal telemetry/logging for scan duration and counts; surface on UI.
-  3) Flesh out Plugins/Extensions/Settings pages (content + active nav states) and wire to real data where applicable.
+  3) Implement XLSX Workbook Viewer page: read .xlsx via openpyxl, render sheet tabs and table preview; link from dataset detail when extension==.xlsx.
+  4) Add Chat backend stub: POST /api/chat that echoes or routes to a future LLM; store conversation in-memory per session.
+  5) Graph Schema Summary improvements: compute simple relationship stubs and show counts; prepare for Neo4j adapter.
+  6) Flesh out Plugins/Extensions/Settings pages (content + active nav states) and wire to real data where applicable.
 
 - Retro Notes:
   - What went well: GUI-first approach clarified integration points; end-to-end flow verified quickly.

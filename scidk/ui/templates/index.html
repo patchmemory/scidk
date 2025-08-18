@@ -11,6 +11,34 @@
 </section>
 
 <section>
+  <h2>Summary</h2>
+  <p class="small">Saved filesystem scans summary (derived from current datasets).</p>
+  <ul>
+    <li>Total datasets: {{ datasets|length }}</li>
+    <li>Unique extensions: {{ by_ext|length }}</li>
+  </ul>
+  <details>
+    <summary class="small">By extension</summary>
+    <ul>
+      {% for ext, count in by_ext.items() %}
+        <li><code>{{ ext or '(none)' }}</code>: {{ count }}</li>
+      {% else %}
+        <li class="small">No data.</li>
+      {% endfor %}
+    </ul>
+  </details>
+</section>
+
+<section>
+  <h2>Graph Schema Summary</h2>
+  <p class="small">MVP placeholder. Shows inferred node counts and interpretation types.</p>
+  <ul>
+    <li>Nodes: Dataset = {{ schema_summary.nodes.Dataset }}</li>
+    <li>Interpretation types: {{ schema_summary.interpretation_types }}</li>
+  </ul>
+</section>
+
+<section>
   <h2>Datasets (latest)</h2>
   <table>
     <thead>
@@ -34,5 +62,22 @@
     {% endfor %}
     </tbody>
   </table>
+</section>
+
+<section>
+  <h2>Workbook Viewer (XLSX)</h2>
+  <p class="small">Placeholder: select a .xlsx dataset to preview sheets as tabs in a future iteration.</p>
+  <p class="small">Tip: After scanning, go to Files and open an .xlsx dataset. A dedicated viewer will be added.</p>
+</section>
+
+<section>
+  <h2>Chat</h2>
+  <p class="small">Placeholder for a chat assistant. UI only; backend not wired yet.</p>
+  <form onsubmit="event.preventDefault(); alert('Chat backend coming soon');">
+    <textarea style="width:100%; height: 5rem" placeholder="Ask something about your datasets..."></textarea>
+    <div class="actions">
+      <button type="submit">Send</button>
+    </div>
+  </form>
 </section>
 {% endblock %}
