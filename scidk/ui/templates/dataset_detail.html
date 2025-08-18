@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Dataset</title>
+  <style>
+    body { font-family: sans-serif; margin: 2rem; }
+    pre { background: #f7f7f7; padding: 1rem; overflow-x: auto; }
+    .small { color: #666; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+<p><a href="/datasets">← Back to Datasets</a></p>
+{% if not dataset %}
+  <h1>Not Found</h1>
+{% else %}
+  <h1>{{ dataset.filename }}</h1>
+  <p class="small">{{ dataset.path }}</p>
+  <ul>
+    <li>Extension: {{ dataset.extension }}</li>
+    <li>Size: {{ dataset.size_bytes }}</li>
+    <li>Checksum: <code>{{ dataset.checksum }}</code></li>
+    <li>Mime: {{ dataset.mime_type }}</li>
+  </ul>
+  <h2>Interpretations</h2>
+  {% if dataset.interpretations %}
+    {% for key, val in dataset.interpretations.items() %}
+      <h3>{{ key }}</h3>
+      <pre>{{ val.data | tojson(indent=2) }}</pre>
+    {% endfor %}
+  {% else %}
+    <p class="small">No interpretations.</p>
+  {% endif %}
+{% endif %}
+</body>
+</html>

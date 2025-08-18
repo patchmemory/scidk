@@ -1,0 +1,28 @@
+services:
+  neo4j:
+    image: neo4j:5.20.0
+    container_name: scidk-neo4j
+    restart: unless-stopped
+    environment:
+      - NEO4J_AUTH=${NEO4J_AUTH:-neo4j/neo4j}
+      - NEO4J_server_memory_heap_initial__size=${NEO4J_HEAP_INIT:-1G}
+      - NEO4J_server_memory_heap_max__size=${NEO4J_HEAP_MAX:-2G}
+      - NEO4J_dbms_security_auth__enabled=true
+      - NEO4JLABS_PLUGINS=["apoc","n10s"]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.* , n10s.*
+      - NEO4J_apoc_export_file_enabled=true
+      - NEO4J_apoc_import_file_enabled=true
+      - NEO4J_apoc_import_file_use__neo4j__config=true
+    ports:
+      - "7474:7474"   # HTTP
+      - "7687:7687"   # Bolt
+    volumes:
+      - ./data/neo4j/data:/data
+      - ./data/neo4j/logs:/logs
+      - ./data/neo4j/plugins:/plugins
+    healthcheck:
+      test: ["CMD-SHELL", "PASS=$${NEO4J_AUTH#neo4j/}; cypher-shell -u neo4j -p \"$${PASS}\" -a bolt://localhost:7687 \"RETURN 1;\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s

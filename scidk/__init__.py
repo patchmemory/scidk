@@ -1,0 +1,1 @@
+# SciDK package initializer

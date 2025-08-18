@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scidk"
+version = "0.0.1"
+description = "SciDK - Science Data Kit (MVP)"
+authors = [{name = "SciDK Team"}]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "Flask>=3.0",
+]
+
+[project.scripts]
+scidk-serve = "scidk.app:main"
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+include = ["scidk*"]
+exclude = ["dev*", "data*", "singularity*", "scripts*", "*.dist-info*", "*.egg-info*"]
