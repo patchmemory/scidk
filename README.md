@@ -39,6 +39,8 @@ python -m scidk.app
 
 5) Use the "Scan Files" form to scan a directory (e.g., this repository root). Python files will be interpreted to show imports, functions, and classes.
 
+Note: The scanner prefers NCDU for fast filesystem enumeration when available. Install NCDU via your OS package manager (e.g., `brew install ncdu` on macOS or `sudo apt-get install ncdu` on Debian/Ubuntu). If NCDU is not installed, the app falls back to Python traversal.
+
 ## Troubleshooting
 - Editable install error (Multiple top-level packages discovered): We ship setuptools config to include only the scidk package. If you previously had this error, pull latest and try again: `pip install -e .`.
 - Shell errors when initializing env: Use the script matching your shell (`init_env.sh` for bash/zsh, `init_env.fish` for fish). Avoid running `sh scripts/init_env.sh`; instead, source it.

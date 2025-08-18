@@ -19,7 +19,7 @@ Aligns with dev/vision/core_architecture.md FilesystemManager section.
 
 ## Requirements
 - Functional:
-  - scan_directory(path, recursive) using Path.rglob.
+  - scan_directory(path, recursive) using NCDU as the preferred scanner (export mode), with a safe Python fallback when NCDU is unavailable.
   - create_dataset_node with universal metadata (path, size, checksum, mime, timestamps).
   - upsert into Graph, idempotent by checksum.
 - Non-functional:
@@ -32,8 +32,9 @@ Aligns with dev/vision/core_architecture.md FilesystemManager section.
 ## Implementation Plan
 - Steps:
   1. Implement FilesystemManager with create_dataset_node and scan_directory.
-  2. Wire to Graph.upsert_dataset().
-  3. POST /api/scan triggers scan.
+  2. Prefer NCDU runner to enumerate files; fall back to Python traversal if NCDU is not present or parsing yields no results.
+  3. Wire to Graph.upsert_dataset().
+  4. POST /api/scan triggers scan.
 - Code Touchpoints:
   - scidk/core/filesystem.py
   - scidk/core/graph.py
@@ -51,6 +52,7 @@ Aligns with dev/vision/core_architecture.md FilesystemManager section.
 ## Telemetry & Docs
 - Metrics: log per 1000 files; duration metrics.
 - Docs: update README and dev/core-architecture/mvp.md with results.
+- Notes: NCDU preferred; install via your package manager (e.g., macOS: `brew install ncdu`, Ubuntu/Debian: `sudo apt-get install ncdu`). Falls back to Python traversal if NCDU is not found.
 
 ## Dependencies
 - Blocked by: [task:core-architecture/mvp/graph-inmemory]

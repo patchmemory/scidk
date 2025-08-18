@@ -2,8 +2,10 @@ from pathlib import Path
 import hashlib
 import mimetypes
 import os
+import shutil
+import subprocess
 import time
-from typing import Dict
+from typing import Dict, Iterable, List
 
 from .graph import InMemoryGraph
 from .registry import InterpreterRegistry
@@ -14,32 +16,104 @@ class FilesystemManager:
         self.graph = graph
         self.registry = registry
 
+    def _list_files_with_ncdu(self, path: Path, recursive: bool = True) -> List[Path]:
+        """Attempt to use ncdu to enumerate files under path.
+        Returns a list of file Paths. If ncdu is unavailable or parsing fails, returns an empty list.
+        Note: ncdu's export format is not a stable public API; we heuristically extract absolute paths
+        from stdout. This is best-effort and falls back to Python traversal when empty.
+        """
+        ncdu = shutil.which('ncdu')
+        if not ncdu:
+            return []
+        try:
+            # -q quiet, -o - output to stdout, -x stay on one filesystem
+            # We do not use interactive TUI (ncurses) because -o implies export without UI.
+            # Some ncdu versions may write a binary-like export. We'll scan stdout for path tokens.
+            proc = subprocess.run(
+                [ncdu, '-q', '-o', '-', '-x', str(path)],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            blob = proc.stdout or b''
+            if not blob:
+                return []
+            root_bytes = os.fsencode(str(path.resolve()))
+            # Collect candidate strings separated by common delimiters
+            candidates: List[bytes] = []
+            for sep in (b'\x00', b'\n', b'\r', b'\t'):
+                candidates.extend(blob.split(sep))
+            found: List[Path] = []
+            seen = set()
+            for c in candidates:
+                if not c:
+                    continue
+                # Heuristic: look for substrings that start with the root path
+                idx = c.find(root_bytes)
+                if idx == -1:
+                    continue
+                # Trim to the end of token (strip control chars)
+                token = c[idx:]
+                # Clean potential trailing non-printables
+                token = token.strip(b'\x00\r\n\t\x01\x02\x03\x04\x05\x06\x07\x08\x0b\x0c\x0e\x0f')
+                try:
+                    s = os.fsdecode(token)
+                except Exception:
+                    continue
+                # Filter to within root and existing files
+                try:
+                    p = Path(s)
+                except Exception:
+                    continue
+                if p.exists() and p.is_file():
+                    # For non-recursive mode, later we'll filter by parent
+                    if s not in seen:
+                        seen.add(s)
+                        found.append(p)
+            # If non-recursive requested, keep only immediate children files
+            if not recursive:
+                found = [p for p in found if p.parent.resolve() == path.resolve()]
+            return found
+        except Exception:
+            return []
+
+    def _iter_files_python(self, path: Path, recursive: bool = True) -> Iterable[Path]:
+        files = path.rglob('*') if recursive else path.glob('*')
+        for p in files:
+            if p.is_file():
+                yield p
+
     def scan_directory(self, path: Path, recursive: bool = True) -> int:
         if not path.exists():
             raise FileNotFoundError(f"Path does not exist: {path}")
-        files = path.rglob('*') if recursive else path.glob('*')
+        # Prefer ncdu if available
+        ncdu_files = self._list_files_with_ncdu(path, recursive=recursive)
+        paths_iter: Iterable[Path]
+        if ncdu_files:
+            paths_iter = ncdu_files
+        else:
+            paths_iter = self._iter_files_python(path, recursive=recursive)
         count = 0
-        for p in files:
-            if p.is_file():
-                ds = self.create_dataset_node(p)
-                self.graph.upsert_dataset(ds)
-                # Try interpretations
-                interpreters = self.registry.get_by_extension(ds['extension'])
-                for interp in interpreters:
-                    try:
-                        result = interp.interpret(p)
-                        self.graph.add_interpretation(ds['checksum'], interp.id, {
-                            'status': result.get('status', 'success'),
-                            'data': result.get('data', result),
-                            'interpreter_version': getattr(interp, 'version', '0.0.1'),
-                        })
-                    except Exception as e:
-                        self.graph.add_interpretation(ds['checksum'], interp.id, {
-                            'status': 'error',
-                            'data': {'error': str(e)},
-                            'interpreter_version': getattr(interp, 'version', '0.0.1'),
-                        })
-                count += 1
+        for p in paths_iter:
+            ds = self.create_dataset_node(p)
+            self.graph.upsert_dataset(ds)
+            # Try interpretations
+            interpreters = self.registry.get_by_extension(ds['extension'])
+            for interp in interpreters:
+                try:
+                    result = interp.interpret(p)
+                    self.graph.add_interpretation(ds['checksum'], interp.id, {
+                        'status': result.get('status', 'success'),
+                        'data': result.get('data', result),
+                        'interpreter_version': getattr(interp, 'version', '0.0.1'),
+                    })
+                except Exception as e:
+                    self.graph.add_interpretation(ds['checksum'], interp.id, {
+                        'status': 'error',
+                        'data': {'error': str(e)},
+                        'interpreter_version': getattr(interp, 'version', '0.0.1'),
+                    })
+            count += 1
         return count
 
     def create_dataset_node(self, file_path: Path) -> Dict:
