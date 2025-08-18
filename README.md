@@ -57,6 +57,22 @@ python -m scidk.app
 - GET /api/datasets
 - GET /api/datasets/<id>
 
+## Testing
+We use pytest for unit and API tests.
+
+Run the test suite:
+```
+# optional: install dev extras to get pytest
+pip install -e .[dev]
+
+# run tests
+pytest
+```
+
+Conventions:
+- Tests live in tests/ and rely on pytest fixtures in tests/conftest.py (e.g., Flask app and client).
+- Add tests alongside new features in future cycles; see dev/cycles.md for cycle protocol.
+
 ## Notes
 - This MVP uses an in-memory graph; data resets on restart.
 - Neo4j deployment docs reside in dev/deployment.md, but Neo4j is not yet wired in the MVP code.
