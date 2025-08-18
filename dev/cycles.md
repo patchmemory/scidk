@@ -42,6 +42,9 @@
       - 2025-08-18: Implemented rule-based interpreter selection: PatternMatcher glob support and RuleEngine precedence integrated into InterpreterRegistry; registered default rule for *.py → python_code; all tests green.
       - 2025-08-18: Implemented XLSX Workbook Viewer using openpyxl with route /workbook/<dataset_id>, a new workbook.html template rendering sheet list and a 20x20 preview; added link from dataset detail for .xlsx/.xlsm.
       - 2025-08-18: Added Chat backend stub: POST /api/chat echoing messages and storing in-memory history on app; to be wired to UI in a future iteration.
+      - 2025-08-18: Implemented rule-based selection: PatternMatcher glob support and RuleEngine precedence integrated into InterpreterRegistry; registered default rule for *.py → python_code; all tests green.
+      - 2025-08-18: Graph Schema Summary improvements: added InMemoryGraph.schema_summary() with INTERPRETED_AS relation counts; index page now renders relations.
+      - 2025-08-18: Extensions/Plugins/Settings pages now show real data: registry mappings, rules, interpreter counts, env info.
     - Status by Task:
       - [task:core-architecture/mvp/graph-inmemory]: Done (MVP in-memory adapter in scidk/core/graph.py).
       - [task:core-architecture/mvp/filesystem-scan]: Done (scan + dataset node + checksum idempotency).
@@ -53,8 +56,8 @@
   2) [Done this cycle] Minimal telemetry/logging for scan duration and counts; surfaced on UI Home as "Last Scan Telemetry".
   3) [Done this cycle] Implement XLSX Workbook Viewer page: read .xlsx via openpyxl, render sheet list and 20x20 preview; link from dataset detail when extension==.xlsx/.xlsm.
   4) [Done this cycle] Add Chat backend stub: POST /api/chat that echoes or routes to a future LLM; store conversation in-memory per app session.
-  5) Graph Schema Summary improvements: compute simple relationship stubs and show counts; prepare for Neo4j adapter.
-  6) Flesh out Plugins/Extensions/Settings pages (content + active nav states) and wire to real data where applicable.
+  5) [Done this cycle] Graph Schema Summary improvements: compute simple relationship stubs and show counts; prepare for Neo4j adapter.
+  6) [Done this cycle] Flesh out Plugins/Extensions/Settings pages (content + active nav states) and wire to real data where applicable.
 
 - Retro Notes:
   - What went well: GUI-first approach clarified integration points; end-to-end flow verified quickly.

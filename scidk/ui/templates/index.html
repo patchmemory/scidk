@@ -47,9 +47,18 @@
 
 <section>
   <h2>Graph Schema Summary</h2>
-  <p class="small">MVP placeholder. Shows inferred node counts and interpretation types.</p>
+  <p class="small">MVP placeholder. Shows inferred node counts, relation counts, and interpretation types.</p>
   <ul>
     <li>Nodes: Dataset = {{ schema_summary.nodes.Dataset }}</li>
+    <li>Relations:
+      <ul>
+        {% for rel, cnt in schema_summary.relations.items() %}
+          <li>{{ rel }} = {{ cnt }}</li>
+        {% else %}
+          <li class="small">None</li>
+        {% endfor %}
+      </ul>
+    </li>
     <li>Interpretation types: {{ schema_summary.interpretation_types }}</li>
   </ul>
 </section>

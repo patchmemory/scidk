@@ -57,3 +57,28 @@ class InMemoryGraph:
         if not checksum:
             return None
         return self.datasets.get(checksum)
+
+    def schema_summary(self) -> Dict:
+        """Compute a lightweight schema summary for UI display.
+        Nodes: Dataset count.
+        Relations (in-memory approximation):
+          - INTERPRETED_AS: number of interpretation entries across datasets.
+        Interpretation types: unique interpreter ids present.
+        """
+        datasets = list(self.datasets.values())
+        interp_types = set()
+        interpreted_edges = 0
+        for d in datasets:
+            interps = d.get('interpretations') or {}
+            interpreted_edges += len(interps)
+            for k in interps.keys():
+                interp_types.add(k)
+        return {
+            'nodes': {
+                'Dataset': len(datasets),
+            },
+            'relations': {
+                'INTERPRETED_AS': interpreted_edges,
+            },
+            'interpretation_types': sorted(list(interp_types)),
+        }

@@ -141,13 +141,7 @@ def create_app():
             by_ext[d.get('extension') or ''] = by_ext.get(d.get('extension') or '', 0) + 1
             for k in (d.get('interpretations') or {}).keys():
                 interp_types.add(k)
-        schema_summary = {
-            'nodes': {
-                'Dataset': len(datasets),
-            },
-            'relations': {},  # Placeholder for future relationships
-            'interpretation_types': sorted(list(interp_types)),
-        }
+        schema_summary = app.extensions['scidk']['graph'].schema_summary()
         telemetry = app.extensions['scidk'].get('telemetry', {})
         return render_template('index.html', datasets=datasets, by_ext=by_ext, schema_summary=schema_summary, telemetry=telemetry)
 
@@ -193,17 +187,33 @@ def create_app():
 
     @ui.get('/plugins')
     def plugins():
-        return render_template('plugins.html')
+        # Placeholder: no dynamic plugins yet. Show counts from registry for context.
+        reg = app.extensions['scidk']['registry']
+        ext_count = len(reg.by_extension)
+        interp_count = len(reg.by_id)
+        return render_template('plugins.html', ext_count=ext_count, interp_count=interp_count)
 
     @ui.get('/extensions')
     def extensions():
-        # In future, we can list registry mappings here
-        return render_template('extensions.html')
+        # List registry mappings and selection rules
+        reg = app.extensions['scidk']['registry']
+        mappings = {ext: [getattr(i, 'id', 'unknown') for i in interps] for ext, interps in reg.by_extension.items()}
+        rules = list(reg.rules.rules)
+        return render_template('extensions.html', mappings=mappings, rules=rules)
 
     @ui.get('/settings')
     def settings():
-        # Placeholder for settings
-        return render_template('settings.html')
+        # Basic settings from environment and current in-memory sizes
+        datasets = app.extensions['scidk']['graph'].list_datasets()
+        reg = app.extensions['scidk']['registry']
+        info = {
+            'host': os.environ.get('SCIDK_HOST', '127.0.0.1'),
+            'port': os.environ.get('SCIDK_PORT', '5000'),
+            'debug': os.environ.get('SCIDK_DEBUG', '1'),
+            'dataset_count': len(datasets),
+            'interpreter_count': len(reg.by_id),
+        }
+        return render_template('settings.html', info=info)
 
     @ui.post('/scan')
     def ui_scan():

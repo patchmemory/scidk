@@ -2,8 +2,21 @@
 {% block title %}SciDK - Extensions{% endblock %}
 {% block content %}
 <h1>Extensions</h1>
-<p class="small">Extensions available to the system (e.g., interpreter mappings) will be listed here.</p>
+<p class="small">Interpreter registry mappings and selection rules.</p>
+<h2>Mappings (extension -> interpreters)</h2>
 <ul>
-  <li class="small">MVP: Placeholder page.</li>
+  {% for ext, ids in (mappings or {}).items() %}
+    <li><code>{{ ext }}</code> → {{ ids }}</li>
+  {% else %}
+    <li class="small">No mappings.</li>
+  {% endfor %}
+</ul>
+<h2>Rules</h2>
+<ul>
+  {% for r in (rules or []) %}
+    <li><code>{{ r.id }}</code> → interpreter_id={{ r.interpreter_id }}, pattern={{ r.pattern }}, priority={{ r.priority }}</li>
+  {% else %}
+    <li class="small">No rules.</li>
+  {% endfor %}
 </ul>
 {% endblock %}

@@ -2,8 +2,12 @@
 {% block title %}SciDK - Settings{% endblock %}
 {% block content %}
 <h1>Settings</h1>
-<p class="small">Basic application settings will appear here.</p>
+<p class="small">Basic runtime information and counts.</p>
 <ul>
-  <li class="small">MVP: Placeholder page.</li>
+  <li>Host: {{ info.host }}</li>
+  <li>Port: {{ info.port }}</li>
+  <li>Debug: {{ info.debug }}</li>
+  <li>Datasets: {{ info.dataset_count }}</li>
+  <li>Interpreters: {{ info.interpreter_count }}</li>
 </ul>
 {% endblock %}
