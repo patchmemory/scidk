@@ -115,6 +115,20 @@ def create_app():
             return render_template('dataset_detail.html', dataset=None), 404
         return render_template('dataset_detail.html', dataset=item)
 
+    @ui.get('/plugins')
+    def plugins():
+        return render_template('plugins.html')
+
+    @ui.get('/extensions')
+    def extensions():
+        # In future, we can list registry mappings here
+        return render_template('extensions.html')
+
+    @ui.get('/settings')
+    def settings():
+        # Placeholder for settings
+        return render_template('settings.html')
+
     @ui.post('/scan')
     def ui_scan():
         path = request.form.get('path') or os.getcwd()

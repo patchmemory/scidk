@@ -31,16 +31,18 @@
       - 2025-08-18: Implemented InMemoryGraph with dataset upsert and interpretation caching. Implemented FilesystemManager.scan_directory and dataset creation with checksum.
       - 2025-08-18: Added PythonCodeInterpreter and wired via simple extension-based InterpreterRegistry (.py → python_code). UI shows interpretation keys and dataset detail renders interpretation JSON.
       - 2025-08-18: Added POST /api/interpret with dataset_id and optional interpreter_id; extended InterpreterRegistry with get_by_id and select_for_dataset. Added stubs for SecureInterpreterExecutor and PatternMatcher/RuleEngine to host future logic.
+      - 2025-08-18: Added a shared base layout with top navigation (Home, Files, Plugins, Extensions, Settings). Implemented UI routes (/plugins, /extensions, /settings) with placeholder pages; refactored templates to extend base.
     - Status by Task:
       - [task:core-architecture/mvp/graph-inmemory]: Done (MVP in-memory adapter in scidk/core/graph.py).
       - [task:core-architecture/mvp/filesystem-scan]: Done (scan + dataset node + checksum idempotency).
-      - [task:core-architecture/mvp/rest-ui]: Done (routes + templates minimal).
+      - [task:core-architecture/mvp/rest-ui]: Done (routes + templates + nav scaffold).
       - [task:interpreters/mvp/registry-and-executor]: In-progress (basic registry by extension done; pattern rules + secure executor stub pending).
 
 - Next Up (prioritized):
   1) Extend InterpreterRegistry with pattern rules and precedence; add SecureExecutor stub with timeouts.
   2) Add POST /api/interpret to run a specific interpreter for a dataset id (optional for this cycle if time permits).
   3) Add minimal telemetry/logging for scan duration and counts.
+  4) Flesh out Plugins/Extensions/Settings pages (content + active nav states) and wire to real data where applicable.
 
 - Retro Notes:
   - What went well: GUI-first approach clarified integration points; end-to-end flow verified quickly.

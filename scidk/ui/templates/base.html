@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>{% block title %}SciDK{% endblock %}</title>
+  <style>
+    :root { --fg:#222; --muted:#666; --bg:#fff; --accent:#0a6; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif; margin: 0; color: var(--fg); background: var(--bg); }
+    header { display:flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; border-bottom: 1px solid #eee; position: sticky; top:0; background: var(--bg); }
+    header h1 { margin: 0; font-size: 1.1rem; font-weight: 600; }
+    nav a { color: var(--fg); text-decoration: none; padding: 0.25rem 0.5rem; border-radius: 4px; }
+    nav a + a { margin-left: 0.25rem; }
+    nav a:hover { background: #f3f3f3; }
+    main { padding: 1rem; max-width: 1100px; margin: 0 auto; }
+    table { border-collapse: collapse; width: 100%; }
+    td, th { border: 1px solid #eee; padding: 8px; text-align: left; }
+    th { background: #f9f9f9; }
+    .small { color: var(--muted); font-size: 0.9em; }
+    .actions { display: flex; gap: .5rem; align-items: center; }
+    form.inline { display: inline-block; }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+<header>
+  <h1><a href="/" style="text-decoration:none;color:inherit">SciDK</a></h1>
+  <nav>
+    <a href="/">Home</a>
+    <a href="/datasets">Files</a>
+    <a href="/plugins">Plugins</a>
+    <a href="/extensions">Extensions</a>
+    <a href="/settings">Settings</a>
+  </nav>
+</header>
+<main>
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>
