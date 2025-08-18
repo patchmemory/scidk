@@ -111,6 +111,21 @@ def create_app():
                 results.append({'interpreter_id': interp.id, 'status': 'error', 'error': str(e)})
         return jsonify({"status": "ok", "results": results}), 200
 
+    @api.post('/chat')
+    def api_chat():
+        data = request.get_json(force=True, silent=True) or {}
+        message = (data.get('message') or '').strip()
+        if not message:
+            return jsonify({"status": "error", "error": "message required"}), 400
+        store = app.extensions['scidk'].setdefault('chat', {"history": []})
+        # Simple echo bot with count
+        reply = f"Echo: {message}"
+        entry_user = {"role": "user", "content": message}
+        entry_assistant = {"role": "assistant", "content": reply}
+        store['history'].append(entry_user)
+        store['history'].append(entry_assistant)
+        return jsonify({"status": "ok", "reply": reply, "history": store['history']}), 200
+
     app.register_blueprint(api)
 
     # UI routes
@@ -147,6 +162,34 @@ def create_app():
         if not item:
             return render_template('dataset_detail.html', dataset=None), 404
         return render_template('dataset_detail.html', dataset=item)
+
+    @ui.get('/workbook/<dataset_id>')
+    def workbook_view(dataset_id):
+        # Simple XLSX viewer: list sheets and preview first rows
+        item = app.extensions['scidk']['graph'].get_dataset(dataset_id)
+        if not item:
+            return render_template('workbook.html', dataset=None, error="Dataset not found"), 404
+        from pathlib import Path as _P
+        file_path = _P(item['path'])
+        if (item.get('extension') or '').lower() not in ['.xlsx', '.xlsm']:
+            return render_template('workbook.html', dataset=item, error="Not an Excel workbook (.xlsx/.xlsm)"), 400
+        try:
+            from openpyxl import load_workbook
+            wb = load_workbook(filename=str(file_path), read_only=True, data_only=True)
+            sheetnames = wb.sheetnames
+            previews = []
+            max_rows = 20
+            max_cols = 20
+            for name in sheetnames:
+                ws = wb[name]
+                rows = []
+                for r_idx, row in enumerate(ws.iter_rows(min_row=1, max_row=max_rows, max_col=max_cols, values_only=True), start=1):
+                    rows.append(list(row))
+                previews.append({'name': name, 'rows': rows})
+            wb.close()
+            return render_template('workbook.html', dataset=item, sheetnames=sheetnames, previews=previews, error=None)
+        except Exception as e:
+            return render_template('workbook.html', dataset=item, sheetnames=[], previews=[], error=str(e)), 500
 
     @ui.get('/plugins')
     def plugins():

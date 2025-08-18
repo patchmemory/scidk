@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}SciDK - Workbook Viewer{% endblock %}
+{% block content %}
+<p><a href="/datasets">← Back to Files</a></p>
+{% if not dataset %}
+  <h1>Workbook</h1>
+  <p class="error">Dataset not found.</p>
+{% else %}
+  <h1>Workbook: {{ dataset.filename }}</h1>
+  <p class="small">{{ dataset.path }}</p>
+  {% if error %}
+    <p class="error">Error: {{ error }}</p>
+  {% else %}
+    <h2>Sheets</h2>
+    {% if sheetnames %}
+      <ul>
+        {% for s in sheetnames %}
+          <li>{{ s }}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="small">No sheets found.</p>
+    {% endif %}
+    {% if previews %}
+      <h2>Preview</h2>
+      {% for sh in previews %}
+        <h3>{{ sh.name }}</h3>
+        <div style="overflow:auto; max-width:100%;">
+          <table border="1" cellspacing="0" cellpadding="4">
+            <tbody>
+              {% for row in sh.rows %}
+                <tr>
+                  {% for cell in row %}
+                    <td>{{ cell }}</td>
+                  {% endfor %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endif %}
+{% endif %}
+{% endblock %}

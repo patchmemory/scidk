@@ -40,6 +40,8 @@
       - 2025-08-18: Added minimal telemetry/logging for scan: API and UI scan now record path, recursive flag, files scanned, duration seconds, and timestamps; surfaced on Home page under "Last Scan Telemetry"; tests remain green.
       - 2025-08-18: Switched filesystem enumeration to prefer NCDU when available (with Python fallback); updated docs accordingly.
       - 2025-08-18: Implemented rule-based interpreter selection: PatternMatcher glob support and RuleEngine precedence integrated into InterpreterRegistry; registered default rule for *.py → python_code; all tests green.
+      - 2025-08-18: Implemented XLSX Workbook Viewer using openpyxl with route /workbook/<dataset_id>, a new workbook.html template rendering sheet list and a 20x20 preview; added link from dataset detail for .xlsx/.xlsm.
+      - 2025-08-18: Added Chat backend stub: POST /api/chat echoing messages and storing in-memory history on app; to be wired to UI in a future iteration.
     - Status by Task:
       - [task:core-architecture/mvp/graph-inmemory]: Done (MVP in-memory adapter in scidk/core/graph.py).
       - [task:core-architecture/mvp/filesystem-scan]: Done (scan + dataset node + checksum idempotency).
@@ -49,8 +51,8 @@
 - Next Up (prioritized):
   1) [Done this cycle] Extend InterpreterRegistry with pattern rules and precedence; integrate simple PatternMatcher/RuleEngine into selection flow.
   2) [Done this cycle] Minimal telemetry/logging for scan duration and counts; surfaced on UI Home as "Last Scan Telemetry".
-  3) Implement XLSX Workbook Viewer page: read .xlsx via openpyxl, render sheet tabs and table preview; link from dataset detail when extension==.xlsx.
-  4) Add Chat backend stub: POST /api/chat that echoes or routes to a future LLM; store conversation in-memory per session.
+  3) [Done this cycle] Implement XLSX Workbook Viewer page: read .xlsx via openpyxl, render sheet list and 20x20 preview; link from dataset detail when extension==.xlsx/.xlsm.
+  4) [Done this cycle] Add Chat backend stub: POST /api/chat that echoes or routes to a future LLM; store conversation in-memory per app session.
   5) Graph Schema Summary improvements: compute simple relationship stubs and show counts; prepare for Neo4j adapter.
   6) Flesh out Plugins/Extensions/Settings pages (content + active nav states) and wire to real data where applicable.
 
