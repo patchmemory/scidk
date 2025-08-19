@@ -4,11 +4,11 @@
 - ID: task:interpreters/mvp/json-yaml
 - Vision: vision:interpreters
 - Phase: phase:interpreters/mvp
-- Status: planned
+- Status: done
 - Priority: P2
 - Owner: agent
 - Created: 2025-08-18
-- ETA: 2025-09-05
+- ETA: 2025-08-18
 - Labels: [interpreter, json, yaml]
 
 ## Goal
@@ -36,3 +36,7 @@ Add simple interpreters for JSON (.json) and YAML (.yml/.yaml) to extract top-le
 ## DoD
 - Sample JSON and YAML files yield summaries visible in UI.
 - Malformed files return a safe error state without crashing.
+
+## Progress Log
+- 2025-08-18: Implemented JsonInterpreter and YamlInterpreter; registered .json, .yml, .yaml in registry. UI renders summaries on dataset detail.
+- 2025-08-18: Error handling: oversized files and parse errors return structured error states; no crashes observed.

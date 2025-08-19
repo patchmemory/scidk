@@ -82,6 +82,7 @@
   - Docs: dev/ui/mvp/files-scan-ui-and-home-directories.md; dev/core-architecture/mvp/directories-registry-and-api.md
 - GUI Acceptance: Verified manually — Home shows Scanned Directories; Files hosts the scan form; /api/directories returns expected JSON.
 - Tests: Covered indirectly via existing scan APIs; targeted unit tests can be added in follow-up if needed.
+- Added Test: tests/test_directories_api.py validates that scanned directories are returned by GET /api/directories.
 
 ### Iteration Plan (mvp-iter-2025-08-18-2259)
 1) E2E Objective
