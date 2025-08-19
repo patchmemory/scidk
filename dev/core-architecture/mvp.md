@@ -4,7 +4,7 @@
 - ID: phase:core-architecture/mvp
 - Vision: vision:core-architecture
 - Status: in-progress
-- Target Start/End: 2025-08-19 → 2025-09-15
+- Target Start/End: 2025-08-18 → 2025-09-15
 - Goals:
   - Scan a directory, create Dataset nodes, run interpreters, cache results, serve via REST + basic UI.
 - Non-Goals:

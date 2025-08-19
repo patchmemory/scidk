@@ -17,7 +17,7 @@
   - Timeline: <dates>
   - Updates: diary of progress
 
-## Current Cycle (2025-08-19 → 2025-08-23)
+## Current Cycle (2025-08-18 → 2025-08-23)
 - Goals: End-to-end scan → dataset → interpret(.py) → list in UI.
 - GUI Acceptance: 
   - A simple web UI starts locally and shows datasets and at least one interpretation field.
