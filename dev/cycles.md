@@ -344,3 +344,9 @@ Use these prompts to accelerate dev cycles.
 - task:interpreters/mvp/ipynb-interpreter — RICE 3.5
 - task:interpreters/mvp/json-yaml — RICE 2.8
 - task:plugins/mvp/loader (+ pubmed stub) — RICE 2.4
+
+
+
+---
+
+Note: See also dev/cycle-review-2025-08-18.md for a consolidated review and next-cycle plan derived from this document.

@@ -38,3 +38,30 @@ def test_api_search_by_filename_and_interpreter(client, tmp_path: Path):
     assert r3.status_code == 200
     results3 = r3.get_json()
     assert any(r.get('filename') == 'beta_data.csv' for r in results3)
+
+
+def test_api_search_empty_query_returns_empty_list(client):
+    r = client.get('/api/search?q=')
+    assert r.status_code == 200
+    assert r.get_json() == []
+
+
+def test_api_search_case_insensitive(client, tmp_path: Path):
+    # Create a mixed-case filename
+    f = tmp_path / 'GammaFile.JSON'
+    f.write_text('{"a": 1}', encoding='utf-8')
+    # And a csv
+    c = tmp_path / 'delta.CSV'
+    c.write_text('h1,h2\n1,2\n', encoding='utf-8')
+    resp = client.post('/api/scan', json={'path': str(tmp_path), 'recursive': False})
+    assert resp.status_code == 200
+    # lowercase search should match
+    r1 = client.get('/api/search?q=gammafile')
+    assert r1.status_code == 200
+    names1 = [x.get('filename') for x in r1.get_json()]
+    assert any(name == 'GammaFile.JSON' for name in names1)
+    # interpreter id in different case should match
+    r2 = client.get('/api/search?q=CSV')
+    assert r2.status_code == 200
+    names2 = [x.get('filename') for x in r2.get_json()]
+    assert any(name == 'delta.CSV' for name in names2)
