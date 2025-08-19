@@ -37,6 +37,41 @@
 
 ## Current Cycle (2025-08-18 → 2025-08-23)
 
+### Iteration Plan (mvp-iter-2025-08-18-2306)
+1) E2E Objective
+   - Improve the file scanning setup so that when a directory is scanned it is saved and recallable as a "directory" entry. The Home page lists a summary of scanned root directories; the Files page hosts the directory load (scan) action and the files list. 
+2) Capacity
+   - 8h
+3) GUI Acceptance
+   - Home shows a "Scanned Directories" list with path, file count, and recursive flag; persists for the app session.
+   - Files page contains the Scan form for loading directories; Home has no scan form.
+   - API GET /api/directories returns a JSON list of scanned directory entries.
+4) Candidates (Ready Queue excerpt with RICE)
+   - task:core-architecture/mvp/search-index — RICE 4.0
+   - task:ui/mvp/home-search-ui — RICE 3.6
+   - task:core-architecture/mvp/neo4j-adapter-prep — RICE 3.2
+   - task:core-architecture/mvp/tests-hardening — RICE 1.5
+   - task:ops/mvp/error-toasts — RICE 1.2
+5) Dependencies
+   - None (UI updates and ephemeral storage in app memory)
+6) Risks & Cut Lines
+   - Cut order: Remove directories list grouping details → keep only last_scan card if constrained.
+
+### Planning Protocol Outputs (mvp-iter-2025-08-18-2306)
+- Selected Tasks Table
+  - id: task:ui/mvp/home-search-ui; ETA: 2025-08-18; RICE: 3.6; dependencies: none; test approach: Flask test client to validate GET /api/directories and page rendering moves
+  - id: task:core-architecture/mvp/tests-hardening; ETA: 2025-08-18; RICE: 1.5; dependencies: none; test approach: new test for /api/directories after scan
+- Dependency Table
+  - None
+- Demo Checklist
+  1) Start app (python -m scidk.app)
+  2) Go to Files page (/datasets): see Scan form; scan a temp folder
+  3) Go to Home (/): see Scanned Directories list showing the scanned path and counts
+  4) Call /api/directories and verify JSON includes the scanned path
+- Decision & Risk Log
+  - 2025-08-18: Decided to store directories in an in-memory app registry keyed by path to stay within MVP scope; persistence to disk is out of scope for this iteration.
+- Tag to create: mvp-iter-2025-08-18-2306
+
 ### Iteration Plan (mvp-iter-2025-08-18-2259)
 1) E2E Objective
    - Add more Interpreters and refactor "Extensions" to "Interpreters" for the page name and links; ensure legacy links still work.

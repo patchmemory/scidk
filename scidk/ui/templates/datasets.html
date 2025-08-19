@@ -2,6 +2,26 @@
 {% block title %}SciDK - Files{% endblock %}
 {% block content %}
 <h1>Files</h1>
+<section>
+  <h2>Load Directory</h2>
+  <form action="/scan" method="post">
+    <label>Path: <input type="text" name="path" placeholder="/path/to/scan" style="width: 24rem"/></label>
+    <label><input type="checkbox" name="recursive" checked/> Recursive</label>
+    <button type="submit">Scan</button>
+  </form>
+  {% if directories %}
+    <details>
+      <summary class="small">Previously scanned (this session)</summary>
+      <ul>
+        {% for d in directories %}
+          <li><code>{{ d.path }}</code> — files: {{ d.scanned }}, recursive: {{ d.recursive }}</li>
+        {% endfor %}
+      </ul>
+    </details>
+  {% endif %}
+</section>
+
+<section>
 <table>
   <thead>
   <tr>
@@ -24,4 +44,5 @@
   {% endfor %}
   </tbody>
 </table>
+</section>
 {% endblock %}

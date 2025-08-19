@@ -70,6 +70,14 @@ def create_app():
                 'ended': ended,
                 'duration_sec': duration,
             }
+            # Track scanned directories (in-session registry)
+            dirs = app.extensions['scidk'].setdefault('directories', {})
+            dirs[str(path)] = {
+                'path': str(path),
+                'recursive': bool(recursive),
+                'scanned': int(count),
+                'last_scanned': ended,
+            }
             return jsonify({"status": "ok", "scanned": count, "duration_sec": duration, "path": str(path), "recursive": bool(recursive)}), 200
         except Exception as e:
             return jsonify({"status": "error", "error": str(e)}), 400
@@ -172,6 +180,14 @@ def create_app():
         results.sort(key=score)
         return jsonify(results), 200
 
+    @api.get('/directories')
+    def api_directories():
+        dirs = app.extensions['scidk'].get('directories', {})
+        # Return stable order: most recently scanned first
+        values = list(dirs.values())
+        values.sort(key=lambda d: d.get('last_scanned') or 0, reverse=True)
+        return jsonify(values), 200
+
     app.register_blueprint(api)
 
     # UI routes
@@ -189,7 +205,9 @@ def create_app():
                 interp_types.add(k)
         schema_summary = app.extensions['scidk']['graph'].schema_summary()
         telemetry = app.extensions['scidk'].get('telemetry', {})
-        return render_template('index.html', datasets=datasets, by_ext=by_ext, schema_summary=schema_summary, telemetry=telemetry)
+        directories = list(app.extensions['scidk'].get('directories', {}).values())
+        directories.sort(key=lambda d: d.get('last_scanned') or 0, reverse=True)
+        return render_template('index.html', datasets=datasets, by_ext=by_ext, schema_summary=schema_summary, telemetry=telemetry, directories=directories)
 
     @ui.get('/chat')
     def chat():
@@ -203,7 +221,9 @@ def create_app():
     @ui.get('/datasets')
     def datasets():
         datasets = app.extensions['scidk']['graph'].list_datasets()
-        return render_template('datasets.html', datasets=datasets)
+        directories = list(app.extensions['scidk'].get('directories', {}).values())
+        directories.sort(key=lambda d: d.get('last_scanned') or 0, reverse=True)
+        return render_template('datasets.html', datasets=datasets, directories=directories)
 
     @ui.get('/datasets/<dataset_id>')
     def dataset_detail(dataset_id):
@@ -292,6 +312,14 @@ def create_app():
             'started': started,
             'ended': ended,
             'duration_sec': duration,
+        }
+        # Track scanned directories here as well
+        dirs = app.extensions['scidk'].setdefault('directories', {})
+        dirs[str(path)] = {
+            'path': str(path),
+            'recursive': bool(recursive),
+            'scanned': int(count),
+            'last_scanned': ended,
         }
         return redirect(url_for('ui.datasets'))
 
