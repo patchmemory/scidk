@@ -72,6 +72,17 @@
   - 2025-08-18: Decided to store directories in an in-memory app registry keyed by path to stay within MVP scope; persistence to disk is out of scope for this iteration.
 - Tag to create: mvp-iter-2025-08-18-2306
 
+### Execution Updates (mvp-iter-2025-08-18-2306)
+- Implemented per plan:
+  - UI: Moved Scan form to Files page (/datasets); Home page now shows Scanned Directories list.
+  - API: Added GET /api/directories returning session-scanned directories (most recent first).
+  - Session storage: In-memory app.extensions['scidk']['directories'] updated on both API and UI scan flows.
+- Artifacts updated:
+  - Code: scidk/app.py, scidk/ui/templates/index.html, scidk/ui/templates/datasets.html
+  - Docs: dev/ui/mvp/files-scan-ui-and-home-directories.md; dev/core-architecture/mvp/directories-registry-and-api.md
+- GUI Acceptance: Verified manually — Home shows Scanned Directories; Files hosts the scan form; /api/directories returns expected JSON.
+- Tests: Covered indirectly via existing scan APIs; targeted unit tests can be added in follow-up if needed.
+
 ### Iteration Plan (mvp-iter-2025-08-18-2259)
 1) E2E Objective
    - Add more Interpreters and refactor "Extensions" to "Interpreters" for the page name and links; ensure legacy links still work.
