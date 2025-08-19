@@ -3,7 +3,7 @@
 ## Phase Summary
 - ID: phase:core-architecture/mvp
 - Vision: vision:core-architecture
-- Status: planned
+- Status: in-progress
 - Target Start/End: 2025-08-19 → 2025-09-15
 - Goals:
   - Scan a directory, create Dataset nodes, run interpreters, cache results, serve via REST + basic UI.
@@ -14,7 +14,7 @@
 - Flask app factory; REST endpoints (/api/scan, /api/datasets, /api/interpreters, /api/chat).
 - In-memory Knowledge Graph with versioned interpretations.
 - FilesystemManager with PatternMatcher + Registry wiring.
-- PythonCodeInterpreter and Bash TIFF interpreter via executor stub.
+- PythonCodeInterpreter via executor stub; TIFF Bash interpreter deferred to Alpha.
 - Minimal UI: list datasets, dataset detail.
 
 ## Work Breakdown (Tasks)
@@ -31,7 +31,7 @@
 - M3: UI shows interpreted data (2025-08-29)
 
 ## Acceptance for Phase Completion
-- Can scan a dir with mixed data; GET /api/datasets returns items; interpretations appear for .py and .tiff.
+- Can scan a dir with mixed data; GET /api/datasets returns items; interpretations appear for .py files; additional formats deferred.
 
 ## Phase Risks
 - Large scans causing memory pressure → batch processing and back-pressure.

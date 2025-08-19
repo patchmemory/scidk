@@ -53,12 +53,11 @@
       - [task:interpreters/mvp/registry-and-executor]: Done (registry + rules + MVP executor with timeouts; further hardening and additional runtimes deferred).
 
 - Next Up (prioritized):
-  1) [Done this cycle] Extend InterpreterRegistry with pattern rules and precedence; integrate simple PatternMatcher/RuleEngine into selection flow.
-  2) [Done this cycle] Minimal telemetry/logging for scan duration and counts; surfaced on UI Home as "Last Scan Telemetry".
-  3) [Done this cycle] Implement XLSX Workbook Viewer page: read .xlsx via openpyxl, render sheet list and 20x20 preview; link from dataset detail when extension==.xlsx/.xlsm.
-  4) [Done this cycle] Add Chat backend stub: POST /api/chat that echoes or routes to a future LLM; store conversation in-memory per app session.
-  5) [Done this cycle] Graph Schema Summary improvements: compute simple relationship stubs and show counts; prepare for Neo4j adapter.
-  6) [Done this cycle] Flesh out Plugins/Extensions/Settings pages (content + active nav states) and wire to real data where applicable.
+  1) [task:core-architecture/mvp/tests-hardening] Add tests: checksum idempotency (no duplicate datasets across rescans) and interpreter error handling (timeout and syntax error paths). Status: in-progress
+  2) Add basic Chat UI on Home page: simple input + conversation history using /api/chat. Status: planned
+  3) Improve dataset_detail rendering: human-friendly interpretation sections and error states. Status: planned
+  4) Prepare for Neo4j adapter: define Graph interface boundary and document migration steps in dev/deployment.md. Status: planned
+  5) Add CSV interpreter stub (list headers, row count) and map to .csv via registry. Status: planned
 
 - Retro Notes:
   - What went well: GUI-first approach clarified integration points; end-to-end flow verified quickly.
