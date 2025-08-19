@@ -290,6 +290,7 @@ Use these prompts to accelerate dev cycles.
 
 - Decision & Risk Log
   - 2025-08-18: Adopted RICE + Ready Queue selection protocol for weekly planning.
+  - 2025-08-19: Ingested new vision docs; added tasks for NCDU/GDU Filesystem Scanner and RO-Crate MVP to Ready Queue; aligned Filesystem Scan design to prefer NCDU with GDU/Python fallback.
 
 - Pre-Work Completed (as of 2025-08-18)
   - task:core-architecture/mvp/neo4j-adapter-prep — Completed documentation of the migration plan and adapter boundary. See dev/deployment.md ("Migration Plan: InMemoryGraph → Neo4jAdapter") and dev/core-architecture/mvp/neo4j-adapter-prep.md (Status: done).
@@ -344,6 +345,8 @@ Use these prompts to accelerate dev cycles.
 - task:interpreters/mvp/ipynb-interpreter — RICE 3.5
 - task:interpreters/mvp/json-yaml — RICE 2.8
 - task:plugins/mvp/loader (+ pubmed stub) — RICE 2.4
+- task:core-architecture/mvp/filesystem-scanner-gdu-ncdu — RICE 3.9 (Vision: dev/vision/ncdu_filesystem_scanner.md; ncdu-first)
+- task:core-architecture/mvp/research-objects-ro-crate — RICE 3.4 (Vision: dev/vision/research_objects.md)
 
 
 
@@ -388,3 +391,82 @@ Note: See also dev/cycle-review-2025-08-18.md for a consolidated review and next
 - Decision & Risk Log
   - 2025-08-18: Decided to parse ipynb as JSON only (no execution) to stay safe and within capacity; cut advanced parsing if time-constrained.
 - Tag to create: mvp-iter-2025-08-19-0010
+
+### Planning Protocol (mvp-iter-2025-08-19-gdu-ncdu)
+1) E2E Objective and GUI Acceptance
+   - Objective: Integrate NCDU/GDU-backed filesystem scanning so that scans use external tools when available, with a GUI-first demo proving the behavior end-to-end.
+   - GUI Acceptance: From the Files page, running a scan on a folder completes and Home shows a "Scanned Directories" list. When ncdu is installed, the scan path and file counts reflect ncdu output (with a small ncdu badge in the telemetry note); if ncdu is not found, gdu is used; if neither is found, the Python fallback runs. The API /api/scan and /api/directories remain stable.
+2) Capacity
+   - 8h
+3) Selected Tasks Table with DoR (owner, ETA, RICE, dependencies, test approach)
+   - id: task:core-architecture/mvp/filesystem-scanner-gdu-ncdu; owner: agent; ETA: 2025-08-19; RICE: 3.9; dependencies: ncdu or gdu binary presence (with Python fallback); test approach: unit tests for tool detection and JSON parser; integration test scanning a tmp dir when tools absent; mock subprocess for ncdu/gdu JSON paths.
+   - id: task:core-architecture/mvp/tests-hardening; owner: agent; ETA: 2025-08-19; RICE: 1.5; dependencies: none; test approach: extend pytest to verify /api/scan completes and directories registry is updated; add negative path when tools error to ensure fallback engages.
+4) Dependency Table
+   - filesystem-scanner-gdu-ncdu → external: ncdu (preferred) or gdu; fallback: Python traversal (available)
+5) Demo Checklist
+   1) Start app (python -m scidk.app)
+   2) On Files page (/datasets), run a scan on a small folder.
+   3) If ncdu is installed, verify Home shows Scanned Directories with ncdu badge in telemetry; otherwise gdu badge if gdu is installed; otherwise generic badge (Python) appears.
+   4) Call GET /api/directories to confirm the scanned path appears and includes source indicator (ncdu/gdu/python).
+6) Risks & Cut Lines
+   - Risks: External tool absence or JSON format drift; long scans on very large trees; permissions errors.
+   - Cut lines: If badges are not ready, drop badges and keep only scan source text; if external tools fail, ship with Python fallback only and document install steps.
+7) Decision & Risk Log entry
+   - 2025-08-19: Decided to prefer ncdu for reliability with gdu as secondary and Python as fallback; GUI will surface which source ran to improve transparency and supportability.
+8) Tag to create
+   - mvp-iter-2025-08-19-gdu-ncdu
+
+### Demo Prep (mvp-iter-2025-08-19-gdu-ncdu)
+- Test Data Setup
+  - Create a temporary directory with tiny files: sample.py, data.csv, sample.json. ✓
+  - Script: scripts/demo-mvp-iter-2025-08-19-gdu-ncdu.sh (creates /tmp/scidk_demo_XXXX). ✓
+- Single Demo Script (shell + URLs)
+  - Run: ./scripts/demo-mvp-iter-2025-08-19-gdu-ncdu.sh ✓
+  - Outputs: app URLs, API checkpoints, scan_id-specific URL, and detected fallback path (ncdu → gdu → python). ✓
+- Fallback Paths
+  - Preferred: ncdu; if not present, gdu; else python traversal. The app surfaces the chosen source via badges and API fields. ✓
+- GUI Acceptance Verification (numbered steps with expected results)
+  1) Start the app (script auto-starts if needed) — Expected: GET /api/datasets responds 200 []. ✓
+  2) Prepare demo data (script auto-creates files) — Expected: three files present in the temp directory. ✓
+  3) Trigger scan via POST /api/scan {path: <temp>, recursive: false} — Expected: 200, payload includes scan_id, scanned >= 3. ✓
+  4) Home (/) — Expected: "Recent Scans" shows the scanned path with a small badge indicating source (ncdu|gdu|python); "Scanned Directories" includes the path with counts and the same badge. ✓
+  5) Files (/datasets?scan_id=<id>) — Expected: page filters to newly added datasets from this scan; top helper line shows scan id/path; directories list shows source badge. ✓
+  6) Telemetry (Home) — Expected: "Last Scan Telemetry" lists path, counts, duration, and Source badge. ✓
+  7) API GET /api/directories — Expected: JSON array includes entry { path, scanned >= 3, recursive: false, source: <ncdu|gdu|python> }. ✓
+  8) API GET /api/scans — Expected: latest item summary includes { id, path, file_count, by_ext, source }. ✓
+  9) Optional: API GET /api/search?q=python_code — Expected: includes sample.py with matched_on containing interpreter_id. ✓
+- URLs for the Demo
+  - /, /datasets, /datasets?scan_id=<scan_id>, /api/scan, /api/directories, /api/scans, /api/search?q=python_code ✓
+- Screenshots/GIFs List
+  - Home: Recent Scans with source badge; Scanned Directories with badge; Last Scan Telemetry with Source badge.
+  - Files: Scan form visible; Previously scanned directories with badge; filtered datasets view using scan_id.
+  - API: /api/directories and /api/scans responses highlighting "source" field.
+
+### Retro (mvp-iter-2025-08-19-gdu-ncdu)
+- What Worked
+  - Minimal integration: ncdu→gdu→python selection with a single source flag; transparent UI badges. ✓
+  - Tests with subprocess/which mocks ensured deterministic coverage. ✓
+  - API/UI consistency: source surfaced across scans, directories, telemetry. ✓
+- What Slowed Us
+  - Handling variability in external tool outputs; chose heuristic token extraction to avoid strict coupling. ✓
+  - Clarifying scope for UI badges vs. text-only fallback. ✓
+- Scope Adjustments
+  - Deferred strict JSON schema parsing for ncdu/gdu to a later cycle; kept heuristic parsing + Python fallback. ✓
+- Carry-overs
+  - None critical; potential enhancement: richer scan details (sizes, dirs/files split) when external tools present. ✓
+- Next Cycle Candidates (Updated RICE)
+  - task:core-architecture/mvp/search-index — RICE 4.1 (slight ↑ due to growing dataset list)
+  - task:core-architecture/mvp/neo4j-adapter-prep — RICE 3.3 (docs refinements + flag plan cross-check)
+  - task:interpreters/mvp/ipynb-interpreter — RICE 3.5 (valuable for research repos)
+  - task:ops/mvp/error-toasts — RICE 1.4 (improves demo robustness)
+  - task:core-architecture/mvp/filesystem-scanner-hardening — RICE 2.6 (structured JSON parsing + metrics)
+
+### Proposed Next Cycle (2025-08-26 → 2025-08-30)
+- E2E Objective
+  - A user can search datasets by filename or interpreter id in the UI; maintain a documented, switchable graph boundary for future Neo4j. (GUI-first)
+- Top 5 Tasks
+  1) task:core-architecture/mvp/search-index — Implement simple in-memory index; expose /api/search with stable fields. Owner: agent; RICE: 4.1.
+  2) task:ui/mvp/home-search-ui — Add search box + results list on Home; link to dataset detail. Owner: agent; RICE: 3.6.
+  3) task:core-architecture/mvp/neo4j-adapter-prep — Finalize adapter boundary docs + feature flags. Owner: agent; RICE: 3.3.
+  4) task:interpreters/mvp/ipynb-interpreter — Add notebook summary (kernel, cell counts) with safe size limits. Owner: agent; RICE: 3.5.
+  5) task:ops/mvp/error-toasts — Minimal client-side error toasts/log clarity for API calls. Owner: agent; RICE: 1.4.

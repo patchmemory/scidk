@@ -15,6 +15,7 @@ class FilesystemManager:
     def __init__(self, graph: InMemoryGraph, registry: InterpreterRegistry):
         self.graph = graph
         self.registry = registry
+        self.last_scan_source = 'python'  # one of: ncdu, gdu, python
 
     def _list_files_with_ncdu(self, path: Path, recursive: bool = True) -> List[Path]:
         """Attempt to use ncdu to enumerate files under path.
@@ -77,6 +78,57 @@ class FilesystemManager:
         except Exception:
             return []
 
+    def _list_files_with_gdu(self, path: Path, recursive: bool = True) -> List[Path]:
+        """Attempt to use gdu to enumerate files under path via JSON output.
+        Returns a list of file Paths. If gdu is unavailable or parsing fails, returns an empty list.
+        We avoid strict schema by scanning stdout for absolute path tokens.
+        """
+        gdu = shutil.which('gdu')
+        if not gdu:
+            return []
+        try:
+            # Common flags: --json --no-progress
+            proc = subprocess.run(
+                [gdu, '--json', '--no-progress', str(path)],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            blob = proc.stdout or b''
+            if not blob:
+                return []
+            root_bytes = os.fsencode(str(path.resolve()))
+            candidates: List[bytes] = []
+            for sep in (b'\x00', b'\n', b'\r', b'\t', b'"', b"'"):
+                candidates.extend(blob.split(sep))
+            found: List[Path] = []
+            seen = set()
+            for c in candidates:
+                if not c:
+                    continue
+                idx = c.find(root_bytes)
+                if idx == -1:
+                    continue
+                token = c[idx:]
+                token = token.strip(b'\x00\r\n\t\x01\x02\x03\x04\x05\x06\x07\x08\x0b\x0c\x0e\x0f')
+                try:
+                    s = os.fsdecode(token)
+                except Exception:
+                    continue
+                try:
+                    p = Path(s)
+                except Exception:
+                    continue
+                if p.exists() and p.is_file():
+                    if not recursive and p.parent.resolve() != path.resolve():
+                        continue
+                    if s not in seen:
+                        seen.add(s)
+                        found.append(p)
+            return found
+        except Exception:
+            return []
+
     def _iter_files_python(self, path: Path, recursive: bool = True) -> Iterable[Path]:
         files = path.rglob('*') if recursive else path.glob('*')
         for p in files:
@@ -86,13 +138,20 @@ class FilesystemManager:
     def scan_directory(self, path: Path, recursive: bool = True) -> int:
         if not path.exists():
             raise FileNotFoundError(f"Path does not exist: {path}")
-        # Prefer ncdu if available
-        ncdu_files = self._list_files_with_ncdu(path, recursive=recursive)
+        # Prefer ncdu; then gdu; fall back to Python
         paths_iter: Iterable[Path]
+        ncdu_files = self._list_files_with_ncdu(path, recursive=recursive)
         if ncdu_files:
+            self.last_scan_source = 'ncdu'
             paths_iter = ncdu_files
         else:
-            paths_iter = self._iter_files_python(path, recursive=recursive)
+            gdu_files = self._list_files_with_gdu(path, recursive=recursive)
+            if gdu_files:
+                self.last_scan_source = 'gdu'
+                paths_iter = gdu_files
+            else:
+                self.last_scan_source = 'python'
+                paths_iter = self._iter_files_python(path, recursive=recursive)
         count = 0
         for p in paths_iter:
             ds = self.create_dataset_node(p)

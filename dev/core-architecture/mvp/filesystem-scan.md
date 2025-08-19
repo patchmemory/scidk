@@ -16,17 +16,19 @@ Create basic Dataset nodes for all files and insert into Graph.
 
 ## Context
 Aligns with dev/vision/core_architecture.md FilesystemManager section.
+Vision Alignment: See dev/vision/ncdu_filesystem_scanner.md for the standards-based scanner direction (prefer ncdu, fallback to gdu/Python).
 
 ## Requirements
 - Functional:
-  - scan_directory(path, recursive) using NCDU as the preferred scanner (export mode), with a safe Python fallback when NCDU is unavailable.
+  - scan_directory(path, recursive) preferring NCDU when available (export/JSON mode), falling back to GDU JSON mode, then to a safe Python traversal if neither tool is available.
   - create_dataset_node with universal metadata (path, size, checksum, mime, timestamps).
   - upsert into Graph, idempotent by checksum.
 - Non-functional:
-  - Scans 10k files/min on SSD baseline; memory safe.
+  - Scans 10k files/min on SSD baseline; memory safe. When external tools are present, use their progress/reporting JSON to avoid custom traversal.
 
 ## Interfaces
 - API: POST /api/scan { path, recursive }
+- API: GET /api/directories returns entries including 'source' field indicating scan source ('ncdu' | 'gdu' | 'python')
 - Data: Node Dataset {path, filename, extension, size_bytes, created, modified, mime_type, checksum, lifecycle_state}
 
 ## Implementation Plan
@@ -52,7 +54,7 @@ Aligns with dev/vision/core_architecture.md FilesystemManager section.
 ## Telemetry & Docs
 - Metrics: log per 1000 files; duration metrics.
 - Docs: update README and dev/core-architecture/mvp.md with results.
-- Notes: NCDU preferred; install via your package manager (e.g., macOS: `brew install ncdu`, Ubuntu/Debian: `sudo apt-get install ncdu`). Falls back to Python traversal if NCDU is not found.
+- Notes: NCDU preferred; install via your package manager (e.g., macOS: `brew install ncdu`, Ubuntu/Debian: `sudo apt-get install ncdu`). Will use GDU if NCDU not present (`brew install gdu`, `sudo apt-get install gdu`), and falls back to Python traversal if neither is found.
 
 ## Dependencies
 - Blocked by: [task:core-architecture/mvp/graph-inmemory]

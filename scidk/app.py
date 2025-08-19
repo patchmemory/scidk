@@ -93,6 +93,7 @@ def create_app():
                 'file_count': int(count),
                 'checksums': new_checksums,
                 'by_ext': by_ext,
+                'source': getattr(fs, 'last_scan_source', 'python'),
                 'errors': [],
             }
             scans = app.extensions['scidk'].setdefault('scans', {})
@@ -106,11 +107,12 @@ def create_app():
                 'started': started,
                 'ended': ended,
                 'duration_sec': duration,
+                'source': getattr(fs, 'last_scan_source', 'python'),
             }
             # Track scanned directories (in-session registry)
             dirs = app.extensions['scidk'].setdefault('directories', {})
-            drec = dirs.setdefault(str(path), {'path': str(path), 'recursive': bool(recursive), 'scanned': 0, 'last_scanned': 0, 'scan_ids': []})
-            drec.update({'recursive': bool(recursive), 'scanned': int(count), 'last_scanned': ended})
+            drec = dirs.setdefault(str(path), {'path': str(path), 'recursive': bool(recursive), 'scanned': 0, 'last_scanned': 0, 'scan_ids': [], 'source': getattr(fs, 'last_scan_source', 'python')})
+            drec.update({'recursive': bool(recursive), 'scanned': int(count), 'last_scanned': ended, 'source': getattr(fs, 'last_scan_source', 'python')})
             drec.setdefault('scan_ids', []).append(scan_id)
             return jsonify({"status": "ok", "scan_id": scan_id, "scanned": count, "duration_sec": duration, "path": str(path), "recursive": bool(recursive)}), 200
         except Exception as e:
@@ -237,6 +239,7 @@ def create_app():
                 'duration_sec': s.get('duration_sec'),
                 'file_count': s.get('file_count'),
                 'by_ext': s.get('by_ext', {}),
+                'source': s.get('source'),
                 'checksum_count': len(s.get('checksums') or []),
             }
             for s in scans
@@ -403,6 +406,7 @@ def create_app():
             'file_count': int(count),
             'checksums': new_checksums,
             'by_ext': by_ext,
+            'source': getattr(fs, 'last_scan_source', 'python'),
             'errors': [],
         }
         scans = app.extensions['scidk'].setdefault('scans', {})

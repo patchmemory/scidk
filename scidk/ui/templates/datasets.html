@@ -27,7 +27,7 @@
       <summary class="small">Previously scanned directories (this session)</summary>
       <ul>
         {% for d in directories %}
-          <li><code>{{ d.path }}</code> — files: {{ d.scanned }}, recursive: {{ d.recursive }}</li>
+          <li><code>{{ d.path }}</code> — files: {{ d.scanned }}, recursive: {{ d.recursive }}{% if d.source %} — <span class="badge">{{ d.source }}</span>{% endif %}</li>
         {% endfor %}
       </ul>
     </details>

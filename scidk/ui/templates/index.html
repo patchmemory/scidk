@@ -9,7 +9,7 @@
       {% for s in scans %}
         <li>
           <a href="/datasets?scan_id={{ s.id }}">{{ s.path }}</a>
-          <span class="small">— files: {{ s.file_count }}, recursive: {{ s.recursive }}, time: {{ '%.0f'|format((s.ended or s.started) or 0) }}</span>
+          <span class="small">— files: {{ s.file_count }}, recursive: {{ s.recursive }}, time: {{ '%.0f'|format((s.ended or s.started) or 0) }}{% if s.source %} — <span class="badge">{{ s.source }}</span>{% endif %}</span>
         </li>
       {% endfor %}
     </ul>
@@ -21,7 +21,7 @@
       <summary class="small">Scanned Directories (aggregate)</summary>
       <ul>
         {% for d in directories %}
-          <li><code>{{ d.path }}</code> — files: {{ d.scanned }}, recursive: {{ d.recursive }}</li>
+          <li><code>{{ d.path }}</code> — files: {{ d.scanned }}, recursive: {{ d.recursive }}{% if d.source %} — <span class="badge">{{ d.source }}</span>{% endif %}</li>
         {% endfor %}
       </ul>
     </details>
@@ -56,6 +56,7 @@
         <li>Duration (sec): {{ '%.4f'|format(telemetry.last_scan.duration_sec) }}</li>
         <li>Started: {{ telemetry.last_scan.started }}</li>
         <li>Ended: {{ telemetry.last_scan.ended }}</li>
+        {% if telemetry.last_scan.source %}<li>Source: <span class="badge">{{ telemetry.last_scan.source }}</span></li>{% endif %}
       </ul>
     {% else %}
       <p class="small">No scan run yet in this session.</p>
