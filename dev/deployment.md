@@ -102,6 +102,36 @@ Future: When the SciDK Flask app is added, it should read these from environment
 - Restrict exposed ports to trusted networks.
 - For TLS, use bolt+s and configure certificates per Neo4j docs.
 
+## Migration Plan: InMemoryGraph → Neo4jAdapter (Preview)
+We will migrate the app’s in-memory graph to a Neo4j-backed adapter after MVP quality hardening. The plan prioritizes a clean interface boundary and a reversible rollout.
+
+1) Define Graph Interface Boundary (MVP surface)
+- Methods: upsert_dataset, get_datasets, get_dataset_by_id, add_interpretation, get_interpretations_for_dataset, schema_summary (optional).
+- Provide a GraphAdapter protocol/class and keep InMemoryGraph as one implementation.
+
+2) Introduce Neo4jGraphAdapter (skeleton)
+- Implement the same interface; internally use Neo4j drivers and small, indexed schema:
+  - Node labels: Dataset, Interpretation
+  - Relationships: (Dataset)-[:INTERPRETED_AS]->(Interpretation)
+  - Indexes: Dataset(checksum), Interpretation(dataset_id)
+- Keep adapter behind a feature flag.
+
+3) Configuration and Feature Flag
+- New env: GRAPH_BACKEND=inmemory|neo4j (default: inmemory)
+- Reuse Neo4j envs: NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, NEO4J_DB
+- App bootstraps selected adapter via the flag; fallback to inmemory on errors.
+
+4) Rollout Steps
+- Start with dual-mode test harness; run unit/integration tests against both adapters where practical.
+- Ship with default inmemory; document how to enable Neo4j mode.
+- Gather performance/operational notes; update this doc with production guidance.
+
+5) Risks & Mitigations
+- Risk: Data model drift between adapters → Mitigation: single canonical interface and acceptance tests that run in both modes.
+- Risk: Operational complexity → Mitigation: docker-compose defaults, strong defaults and health checks.
+
+See also: dev/core-architecture/mvp/neo4j-adapter-prep.md
+
 ## Setting/Changing the Neo4j Password
 You have three common options:
 

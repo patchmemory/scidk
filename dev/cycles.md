@@ -86,3 +86,40 @@ Use these prompts to accelerate dev cycles.
 
 ## Backlog Grooming
 - Add new tasks from discoveries; ensure each has Goal, DoD, Owner.
+
+---
+
+## Next Cycle (2025-08-26 → 2025-08-30)
+- Theme: Quality hardening, UX polish, and groundwork for Neo4j.
+- Goals:
+  - Raise baseline quality via tests for idempotency and interpreter error paths.
+  - Deliver visible UX improvements: Chat UI (hooked to stub), clearer dataset detail.
+  - Expand interpreter coverage with CSV insights (headers, row counts).
+  - Define Graph interface boundary and migration steps toward Neo4j adapter.
+- GUI Acceptance:
+  - Home page includes a basic Chat UI wired to /api/chat, showing conversation history.
+  - Dataset detail page renders human-friendly interpretation sections with error states.
+- Stories:
+  - [story:quality-and-ux] Quality + UX slice
+    - Scope: [task:core-architecture/mvp/tests-hardening], [task:ui/mvp/chat-ui], [task:ui/mvp/dataset-detail-ux]
+    - Success: Tests pass reliably; Chat UI works; dataset detail is readable and shows errors gracefully.
+    - Timeline: 2025-08-26 → 2025-08-30
+    - Updates:
+      - 2025-08-18: Drafted tasks for Chat UI and Dataset Detail UX, linked to cycles; aligned scope with MVP.
+  - [story:csv-expansion] CSV Interpreter MVP
+    - Scope: [task:interpreters/mvp/csv-interpreter]
+    - Success: For .csv datasets, interpreter extracts delimiter, headers (first row), and row count; visible in UI.
+    - Timeline: 2025-08-26 → 2025-08-30
+    - Updates:
+      - 2025-08-18: Drafted CSV interpreter task; planned registry mapping *.csv → csv interpreter.
+  - [story:neo4j-prep] Graph Interface & Migration
+    - Scope: [task:core-architecture/mvp/neo4j-adapter-prep]
+    - Success: Documented Graph interface boundary, adapter shim outline, and migration steps in dev/deployment.md; no runtime switch yet.
+    - Timeline: 2025-08-26 → 2025-08-28
+    - Updates:
+      - 2025-08-18: Drafted migration prep task; identified API surface in scidk/core/graph.py.
+- Risks:
+  - Scope creep on UI polish; keep to MVP increments.
+  - CSV parsing variability; constrain to utf-8 and simple delimiter detection for MVP.
+- Exit Criteria:
+  - New tests added and passing; Chat UI and dataset detail improvements visible; CSV interpreter integrated; migration doc updated.
