@@ -4,11 +4,11 @@
 - ID: task:core-architecture/mvp/search-index
 - Vision: vision:core-architecture
 - Phase: phase:core-architecture/mvp
-- Status: planned
+- Status: done
 - Priority: P2
 - Owner: agent
 - Created: 2025-08-18
-- ETA: 2025-09-06
+- ETA: 2025-08-18
 - Labels: [search, indexing]
 
 ## Goal

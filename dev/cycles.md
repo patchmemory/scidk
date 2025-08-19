@@ -1,13 +1,31 @@
 # SciDK Delivery Cycles & Stories
 
 ## Cycle Protocol
-- Cadence: Weekly sprints (Mon–Fri).
-- Ceremony:
-  1) Plan: Select tasks (P0/P1) to in-progress. Update owners/ETAs.
-  2) Execute: Coding agent works tasks; update Progress Log in each task file.
-  3) Review: PR/CI green + DoD validated; move to review/done.
-  4) Learn: Retrospective notes; update risks and templates.
-- Principle: GUI-first. Each cycle must end with a runnable GUI demonstrating current capabilities (even if minimal).
+- Cadence: Weekly sprints (Mon–Fri). GUI-first: each cycle ends with a runnable GUI demonstrating the e2e objective.
+- Selection Rules
+  - Maintain a short Ready Queue (8–12 items) with RICE scores; select only from Ready Queue unless a production risk forces a swap.
+  - Cap at 5 tasks per cycle; all selected tasks must meet Definition of Ready (DoR).
+  - One e2e objective per cycle; GUI Acceptance must demonstrate it.
+- Definition of Ready (DoR)
+  - Clear user outcome and GUI Acceptance written.
+  - Dependencies listed and either done or timeboxed with fallbacks.
+  - Test approach stated (unit/integration/skip conditions).
+  - Owner + time estimate; acceptance data source (which page/API demonstrates it).
+- Definition of Done (DoD)
+  - Tests added/passing; docs/README updated; visible demo path; telemetry if relevant.
+  - PR merged, CI green, and a screenshot/GIF or demo steps attached.
+- Planning Protocol (15–20 minutes)
+  1) State the e2e objective and GUI Acceptance.
+  2) Pick from Ready Queue by highest RICE on the path to the e2e objective.
+  3) Map a single dependency table; drop anything blocked.
+  4) Select max 5 tasks that complete the e2e within capacity.
+  5) Write the Demo Checklist steps.
+- Execution
+  - Daily: update Progress/Decision Log; if a task threatens GUI acceptance, invoke cut lines immediately and swap in a smaller alternative from Ready Queue.
+- Automation (lightweight)
+  - PR template includes DoR/DoD checklist and “Demo Steps.”
+  - CI runs pytest and a smoke script that hits key endpoints.
+  - Weekly demo tag: `mvp-week-YYYY-MM-DD`.
 
 ## Story Structure
 - story:<id>
@@ -18,6 +36,79 @@
   - Updates: diary of progress
 
 ## Current Cycle (2025-08-18 → 2025-08-23)
+
+### Iteration Plan (mvp-iter-2025-08-18-2259)
+1) E2E Objective
+   - Add more Interpreters and refactor "Extensions" to "Interpreters" for the page name and links; ensure legacy links still work.
+2) Capacity
+   - 8h
+3) GUI Acceptance
+   - Top navigation shows "Interpreters" linking to /interpreters; visiting /extensions redirects to /interpreters. 
+   - Interpreters page lists registry mappings and rules, including new .json and .yml/.yaml entries.
+   - Scanning a directory with .json and .yaml files results in interpretations visible on the dataset detail page (summary data present).
+4) Candidates (Ready Queue excerpt with RICE)
+   - task:interpreters/mvp/ipynb-interpreter — RICE 3.5
+   - task:interpreters/mvp/json-yaml — RICE 2.8
+   - task:core-architecture/mvp/tests-hardening — RICE 1.5
+   - task:core-architecture/mvp/search-index — RICE 4.0 (out of scope this iteration)
+   - task:ui/mvp/home-search-ui — RICE 3.6 (out of scope this iteration)
+   - task:core-architecture/mvp/neo4j-adapter-prep — RICE 3.2 (out of scope this iteration)
+   - task:ops/mvp/error-toasts — RICE 1.2 (cut if time-constrained)
+5) Dependencies
+   - None critical; json-yaml has no external deps beyond PyYAML (optional; handled gracefully).
+6) Risks & Cut Lines
+   - Cut order: ipynb-interpreter → tests-hardening follow-ups → any non-essential UI polish.
+
+### Planning Protocol Outputs (mvp-iter-2025-08-18-2259)
+- Selected Tasks Table
+  - id: task:interpreters/mvp/json-yaml; ETA: 2025-08-18; RICE: 2.8; dependencies: none; test approach: unit tests with tiny JSON/YAML fixtures and error paths; manual GUI check on dataset detail
+  - id: task:ui/mvp/rename-extensions-to-interpreters; ETA: 2025-08-18; RICE: 3.0; dependencies: none; test approach: smoke via Flask test client (GET /interpreters and redirect from /extensions)
+  - id: task:core-architecture/mvp/tests-hardening; ETA: 2025-08-18; RICE: 1.5; dependencies: none; test approach: run existing tests; add small additions only if needed
+- Dependency Table
+  - No hard dependencies; YAML interpreter optionally depends on PyYAML. If missing, interpreter returns a safe error state and UI remains stable.
+- Demo Checklist
+  1) Start app (python -m scidk.app)
+  2) Visit /interpreters — see mappings for .py, .csv, .json, .yml/.yaml and rules listed
+  3) Visit /extensions — confirm redirect to /interpreters
+  4) Prepare a folder with sample.json and sample.yaml; POST /api/scan with path
+  5) Open Datasets; pick the JSON/YAML items; confirm interpretation summary appears in dataset detail (top-level keys/preview)
+- Decision & Risk Log
+  - 2025-08-18: Decided to implement JSON and YAML interpreters first due to lower complexity and high user value for config/data files; defer ipynb to next iteration if time-constrained.
+  - 2025-08-18: Implemented legacy redirect from /extensions to /interpreters to avoid broken bookmarks.
+- Tag to create: mvp-iter-2025-08-18-2259
+
+### Iteration Plan (mvp-iter-2025-08-18)
+1) E2E Objective
+   - [objective]: A fresh user can search datasets by filename or interpreter id from the Home page and click through to details.
+2) Capacity
+   - 8h
+3) GUI Acceptance
+   - Home page shows a Search input; submitting a term displays matching datasets by filename or interpreter id.
+   - API GET /api/search?q=term returns a JSON list with dataset id, filename/path, extension, and matched_on fields.
+4) Candidates (Ready Queue excerpt with RICE)
+   - task:core-architecture/mvp/search-index — RICE 4.0
+   - task:ui/mvp/home-search-ui — RICE 3.6
+   - task:core-architecture/mvp/neo4j-adapter-prep — RICE 3.2
+   - task:core-architecture/mvp/tests-hardening — RICE 1.5
+   - task:ops/mvp/error-toasts — RICE 1.2
+5) Dependencies
+   - home-search-ui depends on search-index
+6) Risks & Cut Lines
+   - Cut order: ops/mvp/error-toasts → tests-hardening follow-ups → non-essential search snippets/highlighting.
+
+### Planning Protocol Outputs
+- Selected Tasks Table
+  - id: task:core-architecture/mvp/search-index; ETA: 2025-08-18; RICE: 4.0; dependencies: none; test approach: API route unit/integration via pytest (GET /api/search and flow after POST /api/scan)
+  - id: task:ui/mvp/home-search-ui; ETA: 2025-08-18; RICE: 3.6; dependencies: search-index; test approach: smoke via requests to /api/search and DOM exist checks (manual/demo)
+  - id: task:core-architecture/mvp/tests-hardening; ETA: 2025-08-18; RICE: 1.5; dependencies: none; test approach: extend pytest to cover error and idempotency (kept green)
+- Dependency Table
+  - home-search-ui → search-index (resolved in-session)
+- Demo Checklist
+  1) Start app (python -m scidk.app) 2) POST /api/scan with a dir containing .py and .csv 3) On Home, search for "python_code" and a known filename 4) Click a result to open dataset detail 5) Verify /api/search returns JSON with matched_on
+- Decision & Risk Log
+  - 2025-08-18: Decided to implement a minimal in-memory search over current datasets instead of a separate inverted index to fit 8h capacity; acceptable for GUI MVP; will revisit indexing later.
+  - 2025-08-18: Added pytest coverage for /api/search (filename and interpreter_id matches) to solidify DoD for search MVP; all tests green.
+- Tag to create: mvp-iter-2025-08-18-2258
 - Goals: End-to-end scan → dataset → interpret(.py) → list in UI.
 - GUI Acceptance: 
   - A simple web UI starts locally and shows datasets and at least one interpretation field.
@@ -52,6 +143,7 @@
       - 2025-08-18: Added test for rescan idempotency (no duplicate datasets); expanded test coverage for CSV interpreter and chat API.
       - 2025-08-18: Added tests for interpreter syntax errors and executor timeouts (python inline and bash); all tests green.
       - 2025-08-18: FilesystemManager now uses registry.select_for_dataset during scan to honor rule precedence; aligns scan-time interpretation with app API selection.
+      - 2025-08-18: Implemented /api/search and Home page Search UI; returns datasets by filename/path and interpreter_id; added simple ordering and GUI validated.
     - Status by Task:
       - [task:core-architecture/mvp/graph-inmemory]: Done (MVP in-memory adapter in scidk/core/graph.py).
       - [task:core-architecture/mvp/filesystem-scan]: Done (scan + dataset node + checksum idempotency).
@@ -96,39 +188,52 @@ Use these prompts to accelerate dev cycles.
 ---
 
 ## Next Cycle (2025-08-26 → 2025-08-30)
-- Theme: Quality hardening, UX polish, and groundwork for Neo4j.
-- Goals:
-  - Raise baseline quality via tests for idempotency and interpreter error paths.
-  - Deliver visible UX improvements: Chat UI (hooked to stub), clearer dataset detail.
-  - Expand interpreter coverage with CSV insights (headers, row counts).
-  - Define Graph interface boundary and migration steps toward Neo4j adapter.
+- Theme: Basic Search (UI-visible) + Neo4j Adapter Prep
+- E2E Objective: A user can search for datasets by filename or interpreter in the UI; and we have a documented, switchable graph boundary for future Neo4j.
+- Capacity: 24h (single agent)
 - GUI Acceptance:
-  - Home page includes a basic Chat UI wired to /api/chat, showing conversation history.
-  - Dataset detail page renders human-friendly interpretation sections with error states.
-- Stories:
-  - [story:quality-and-ux] Quality + UX slice
-    - Scope: [task:core-architecture/mvp/tests-hardening], [task:ui/mvp/chat-ui], [task:ui/mvp/dataset-detail-ux]
-    - Success: Tests pass reliably; Chat UI works; dataset detail is readable and shows errors gracefully.
+  - Home page search returns datasets by filename or interpreter_id via /api/search.
+  - dev/deployment.md contains a "Migration Plan" with adapter interface documented and a feature-flag plan.
+
+- Selected Stories
+  - [story:search-and-neo4j-prep] Thin slice for user-visible search and backend prep
+    - Success Criteria: Search box works end-to-end; migration plan written with clear adapter boundary and env flags.
     - Timeline: 2025-08-26 → 2025-08-30
-    - Updates:
-      - 2025-08-18: Drafted tasks for Chat UI and Dataset Detail UX, linked to cycles; aligned scope with MVP.
-  - [story:csv-expansion] CSV Interpreter MVP
-    - Scope: [task:interpreters/mvp/csv-interpreter]
-    - Success: For .csv datasets, interpreter extracts delimiter, headers (first row), and row count; visible in UI.
-    - Timeline: 2025-08-26 → 2025-08-30
-    - Updates:
-      - 2025-08-18: Drafted CSV interpreter task; planned registry mapping *.csv → csv interpreter.
-  - [story:neo4j-prep] Graph Interface & Migration
-    - Scope: [task:core-architecture/mvp/neo4j-adapter-prep]
-    - Success: Documented Graph interface boundary, adapter shim outline, and migration steps in dev/deployment.md; no runtime switch yet.
-    - Timeline: 2025-08-26 → 2025-08-28
-    - Updates:
-      - 2025-08-18: Drafted migration prep task; identified API surface in scidk/core/graph.py.
-- Risks:
-  - Scope creep on UI polish; keep to MVP increments.
-  - CSV parsing variability; constrain to utf-8 and simple delimiter detection for MVP.
-- Exit Criteria:
-  - New tests added and passing; Chat UI and dataset detail improvements visible; CSV interpreter integrated; migration doc updated.
+    - Tasks (max 5):
+      1) task:core-architecture/mvp/search-index — Implement indexer + /api/search
+         - Owner: agent; ETA: 2025-08-28; RICE: 4.0
+         - Dependencies: InMemoryGraph events/hooks; tests scaffold
+      2) task:ui/mvp/home-search-ui — Add Home search input + results list bound to /api/search
+         - Owner: agent; ETA: 2025-08-29; RICE: 3.6
+         - Dependencies: task:core-architecture/mvp/search-index
+      3) task:core-architecture/mvp/neo4j-adapter-prep — Document boundary + migration plan
+         - Owner: agent; ETA: 2025-08-28; RICE: 3.2
+         - Dependencies: current Graph usage survey (available)
+      4) task:core-architecture/mvp/tests-hardening — Follow-ups only if gaps discovered
+         - Owner: agent; ETA: 2025-08-30; RICE: 1.5
+         - Dependencies: none; skip if no gaps
+      5) task:ops/mvp/error-toasts — Small ops polish (error toasts/log clarity) — Cut first if needed
+         - Owner: agent; ETA: 2025-08-30; RICE: 1.2
+         - Dependencies: none
+
+- Dependency Table
+  - home-search-ui depends on search-index; status: planned
+  - neo4j-adapter-prep depends on current graph interface being identified; status: available
+  - tests-hardening follow-ups depend on discovered gaps; status: conditional
+
+- Demo Checklist
+  1) Start app
+  2) Run POST /api/scan on sample dir (small test data)
+  3) Visit Home page; enter a term matching a dataset filename and an interpreter_id (e.g., "python_code" or "csv")
+  4) Observe results list with clickable items leading to dataset detail
+  5) Open dev/deployment.md and verify "Migration Plan" section with adapter interface and feature flag
+
+- Risks & Cut Lines
+  - Cut order: (5) ops polish → (4) tests follow-ups → non-essential search fields/snippets.
+  - Mitigations: Keep search index minimal (filename, extension, interpreter_id) for MVP.
+
+- Decision & Risk Log
+  - 2025-08-18: Adopted RICE + Ready Queue selection protocol for weekly planning.
 
 
 ## Cycle After Next (2025-09-01 → 2025-09-05)
@@ -172,3 +277,12 @@ Use these prompts to accelerate dev cycles.
   - Parsing variability for notebooks and YAML; constrain to safe parsing and small summaries.
 - Exit Criteria:
   - Neo4j adapter functioning behind flag; plugins visible and stub callable; new interpreters integrated; search working in UI; tests updated.
+
+
+## Ready Queue (Scored, Not Scheduled This Week)
+- task:core-architecture/mvp/search-index — RICE 4.0
+- task:core-architecture/mvp/neo4j-adapter-prep — RICE 3.2
+- task:core-architecture/mvp/neo4j-adapter-impl — RICE 3.0 (will increase after prep completes)
+- task:interpreters/mvp/ipynb-interpreter — RICE 3.5
+- task:interpreters/mvp/json-yaml — RICE 2.8
+- task:plugins/mvp/loader (+ pubmed stub) — RICE 2.4

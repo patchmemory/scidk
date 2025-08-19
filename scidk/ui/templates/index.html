@@ -55,6 +55,15 @@
 </section>
 
 <section>
+  <h2>Search</h2>
+  <form id="search-form">
+    <input id="search-input" type="text" placeholder="Search by filename or interpreter id (e.g., python_code, csv)" style="width: 70%" />
+    <button type="submit">Search</button>
+  </form>
+  <div id="search-results" style="margin-top:0.5rem"></div>
+</section>
+
+<section>
   <h2>Datasets (latest)</h2>
   <table>
     <thead>
@@ -84,31 +93,59 @@
 {% block head %}
 <script>
   window.addEventListener('DOMContentLoaded', () => {
-    const form = document.getElementById('chat-form-home');
-    if (!form) return;
-    const input = document.getElementById('chat-input-home');
-    const history = document.getElementById('chat-history-home');
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const message = input.value.trim();
-      if (!message) return;
-      try {
-        const resp = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message })
-        });
-        const data = await resp.json();
-        if (data && data.history) {
-          history.innerHTML = data.history.map(m => `<div><strong>${m.role}:</strong> ${m.content}</div>`).join('');
+    // Chat
+    const chatForm = document.getElementById('chat-form-home');
+    if (chatForm) {
+      const input = document.getElementById('chat-input-home');
+      const history = document.getElementById('chat-history-home');
+      chatForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const message = input.value.trim();
+        if (!message) return;
+        try {
+          const resp = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message })
+          });
+          const data = await resp.json();
+          if (data && data.history) {
+            history.innerHTML = data.history.map(m => `<div><strong>${m.role}:</strong> ${m.content}</div>`).join('');
+          }
+        } catch (err) {
+          alert('Chat error: ' + err);
+        } finally {
+          input.value = '';
+          input.focus();
         }
-      } catch (err) {
-        alert('Chat error: ' + err);
-      } finally {
-        input.value = '';
-        input.focus();
-      }
-    });
+      });
+    }
+
+    // Search
+    const searchForm = document.getElementById('search-form');
+    if (searchForm) {
+      const searchInput = document.getElementById('search-input');
+      const resultsDiv = document.getElementById('search-results');
+      const render = (items) => {
+        if (!items || items.length === 0) { resultsDiv.innerHTML = '<p class="small">No results.</p>'; return; }
+        resultsDiv.innerHTML = '<ul>' + items.map(r => {
+          const mo = (r.matched_on || []).join(', ');
+          return `<li><a href="/datasets/${r.id}">${r.filename || r.path}</a> <span class="small">(${r.extension || ''}; matched: ${mo})</span></li>`;
+        }).join('') + '</ul>';
+      };
+      searchForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const q = searchInput.value.trim();
+        if (!q) { resultsDiv.innerHTML = ''; return; }
+        try {
+          const resp = await fetch('/api/search?q=' + encodeURIComponent(q));
+          const data = await resp.json();
+          render(data);
+        } catch (err) {
+          alert('Search error: ' + err);
+        }
+      });
+    }
   });
 </script>
 {% endblock %}

@@ -7,6 +7,8 @@ from .core.filesystem import FilesystemManager
 from .core.registry import InterpreterRegistry
 from .interpreters.python_code import PythonCodeInterpreter
 from .interpreters.csv_interpreter import CsvInterpreter
+from .interpreters.json_interpreter import JsonInterpreter
+from .interpreters.yaml_interpreter import YamlInterpreter
 from .core.pattern_matcher import Rule
 
 
@@ -20,11 +22,19 @@ def create_app():
     # Register interpreters
     py_interp = PythonCodeInterpreter()
     csv_interp = CsvInterpreter()
+    json_interp = JsonInterpreter()
+    yaml_interp = YamlInterpreter()
     registry.register_extension(".py", py_interp)
     registry.register_extension(".csv", csv_interp)
+    registry.register_extension(".json", json_interp)
+    registry.register_extension(".yml", yaml_interp)
+    registry.register_extension(".yaml", yaml_interp)
     # Register simple rules to prefer interpreters for extensions
     registry.register_rule(Rule(id="rule.py.default", interpreter_id=py_interp.id, pattern="*.py", priority=10, conditions={"ext": ".py"}))
     registry.register_rule(Rule(id="rule.csv.default", interpreter_id=csv_interp.id, pattern="*.csv", priority=10, conditions={"ext": ".csv"}))
+    registry.register_rule(Rule(id="rule.json.default", interpreter_id=json_interp.id, pattern="*.json", priority=10, conditions={"ext": ".json"}))
+    registry.register_rule(Rule(id="rule.yml.default", interpreter_id=yaml_interp.id, pattern="*.yml", priority=10, conditions={"ext": ".yml"}))
+    registry.register_rule(Rule(id="rule.yaml.default", interpreter_id=yaml_interp.id, pattern="*.yaml", priority=10, conditions={"ext": ".yaml"}))
 
     fs = FilesystemManager(graph=graph, registry=registry)
 
@@ -130,6 +140,38 @@ def create_app():
         store['history'].append(entry_assistant)
         return jsonify({"status": "ok", "reply": reply, "history": store['history']}), 200
 
+    @api.get('/search')
+    def api_search():
+        q = (request.args.get('q') or '').strip()
+        if not q:
+            return jsonify([]), 200
+        q_lower = q.lower()
+        results = []
+        for ds in graph.list_datasets():
+            matched_on = []
+            # Match filename
+            if q_lower in (ds.get('filename') or '').lower() or q_lower in (ds.get('path') or '').lower():
+                matched_on.append('filename')
+            # Match interpreter ids present
+            interps = (ds.get('interpretations') or {})
+            for interp_id in interps.keys():
+                if q_lower in interp_id.lower():
+                    if 'interpreter_id' not in matched_on:
+                        matched_on.append('interpreter_id')
+            if matched_on:
+                results.append({
+                    'id': ds.get('id'),
+                    'path': ds.get('path'),
+                    'filename': ds.get('filename'),
+                    'extension': ds.get('extension'),
+                    'matched_on': matched_on,
+                })
+        # Simple ordering: filename matches first, then interpreter_id
+        def score(r):
+            return (0 if 'filename' in r['matched_on'] else 1, r['filename'] or '')
+        results.sort(key=score)
+        return jsonify(results), 200
+
     app.register_blueprint(api)
 
     # UI routes
@@ -206,13 +248,18 @@ def create_app():
         interp_count = len(reg.by_id)
         return render_template('plugins.html', ext_count=ext_count, interp_count=interp_count)
 
-    @ui.get('/extensions')
-    def extensions():
+    @ui.get('/interpreters')
+    def interpreters():
         # List registry mappings and selection rules
         reg = app.extensions['scidk']['registry']
         mappings = {ext: [getattr(i, 'id', 'unknown') for i in interps] for ext, interps in reg.by_extension.items()}
         rules = list(reg.rules.rules)
         return render_template('extensions.html', mappings=mappings, rules=rules)
+
+    # Backward-compatible route
+    @ui.get('/extensions')
+    def extensions_legacy():
+        return redirect(url_for('ui.interpreters'))
 
     @ui.get('/settings')
     def settings():
