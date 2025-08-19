@@ -4,7 +4,7 @@
 - ID: task:ui/mvp/chat-ui
 - Vision: vision:ux
 - Phase: phase:ui/mvp
-- Status: planned
+- Status: done
 - Priority: P1
 - Owner: agent
 - Created: 2025-08-18
@@ -40,3 +40,4 @@ Backend stub exists: POST /api/chat echoes messages and stores in-memory history
 
 ## Progress Log
 - 2025-08-18: Drafted task and acceptance; pending implementation next cycle.
+- 2025-08-18: Implemented chat widget on Home page using /api/chat; basic JS for submit and rendering history; added API test; DoD met.

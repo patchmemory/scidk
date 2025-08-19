@@ -4,7 +4,7 @@
 - ID: task:ui/mvp/dataset-detail-ux
 - Vision: vision:ux
 - Phase: phase:ui/mvp
-- Status: planned
+- Status: done
 - Priority: P1
 - Owner: agent
 - Created: 2025-08-18
@@ -34,3 +34,4 @@ Make dataset detail page readable and resilient by rendering interpretation sect
 
 ## Progress Log
 - 2025-08-18: Drafted UX requirements and plan; implementation scheduled for next cycle.
+- 2025-08-18: Implemented status badges, friendly sections for python and csv, and error details; DoD met.

@@ -46,6 +46,10 @@
       - 2025-08-18: Graph Schema Summary improvements: added InMemoryGraph.schema_summary() with INTERPRETED_AS relation counts; index page now renders relations.
       - 2025-08-18: Extensions/Plugins/Settings pages now show real data: registry mappings, rules, interpreter counts, env info.
       - 2025-08-18: Finalized interpreter MVP scope; verified SecureInterpreterExecutor timeout behavior and empty env for bash; all tests green.
+      - 2025-08-18: Implemented CSV Interpreter MVP with registry mapping (*.csv → csv); added unit tests and dataset detail rendering.
+      - 2025-08-18: Added Chat UI widget to Home page wired to /api/chat; added API test; basic UX validated.
+      - 2025-08-18: Improved Dataset Detail UX with status badges, friendly sections for python/csv, and error details.
+      - 2025-08-18: Added test for rescan idempotency (no duplicate datasets); expanded test coverage for CSV interpreter and chat API.
     - Status by Task:
       - [task:core-architecture/mvp/graph-inmemory]: Done (MVP in-memory adapter in scidk/core/graph.py).
       - [task:core-architecture/mvp/filesystem-scan]: Done (scan + dataset node + checksum idempotency).
@@ -53,11 +57,11 @@
       - [task:interpreters/mvp/registry-and-executor]: Done (registry + rules + MVP executor with timeouts; further hardening and additional runtimes deferred).
 
 - Next Up (prioritized):
-  1) [task:core-architecture/mvp/tests-hardening] Add tests: checksum idempotency (no duplicate datasets across rescans) and interpreter error handling (timeout and syntax error paths). Status: in-progress
-  2) Add basic Chat UI on Home page: simple input + conversation history using /api/chat. Status: planned
-  3) Improve dataset_detail rendering: human-friendly interpretation sections and error states. Status: planned
+  1) [task:core-architecture/mvp/tests-hardening] Add tests: checksum idempotency (no duplicate datasets across rescans) and interpreter error handling (timeout and syntax error paths). Status: in-progress (rescan idempotency tests added and passing; interpreter timeout path deferred)
+  2) Add basic Chat UI on Home page: simple input + conversation history using /api/chat. Status: done
+  3) Improve dataset_detail rendering: human-friendly interpretation sections and error states. Status: done
   4) Prepare for Neo4j adapter: define Graph interface boundary and document migration steps in dev/deployment.md. Status: planned
-  5) Add CSV interpreter stub (list headers, row count) and map to .csv via registry. Status: planned
+  5) Add CSV interpreter stub (list headers, row count) and map to .csv via registry. Status: done
 
 - Retro Notes:
   - What went well: GUI-first approach clarified integration points; end-to-end flow verified quickly.

@@ -6,6 +6,7 @@ from .core.graph import InMemoryGraph
 from .core.filesystem import FilesystemManager
 from .core.registry import InterpreterRegistry
 from .interpreters.python_code import PythonCodeInterpreter
+from .interpreters.csv_interpreter import CsvInterpreter
 from .core.pattern_matcher import Rule
 
 
@@ -16,11 +17,14 @@ def create_app():
     graph = InMemoryGraph()
     registry = InterpreterRegistry()
 
-    # Register a minimal interpreter (Python code)
+    # Register interpreters
     py_interp = PythonCodeInterpreter()
+    csv_interp = CsvInterpreter()
     registry.register_extension(".py", py_interp)
-    # Register a simple rule to prefer python_code for *.py files
+    registry.register_extension(".csv", csv_interp)
+    # Register simple rules to prefer interpreters for extensions
     registry.register_rule(Rule(id="rule.py.default", interpreter_id=py_interp.id, pattern="*.py", priority=10, conditions={"ext": ".py"}))
+    registry.register_rule(Rule(id="rule.csv.default", interpreter_id=csv_interp.id, pattern="*.csv", priority=10, conditions={"ext": ".csv"}))
 
     fs = FilesystemManager(graph=graph, registry=registry)
 
@@ -144,6 +148,15 @@ def create_app():
         schema_summary = app.extensions['scidk']['graph'].schema_summary()
         telemetry = app.extensions['scidk'].get('telemetry', {})
         return render_template('index.html', datasets=datasets, by_ext=by_ext, schema_summary=schema_summary, telemetry=telemetry)
+
+    @ui.get('/chat')
+    def chat():
+        return render_template('chat.html')
+
+    @ui.get('/map')
+    def map_page():
+        schema_summary = app.extensions['scidk']['graph'].schema_summary()
+        return render_template('map.html', schema_summary=schema_summary)
 
     @ui.get('/datasets')
     def datasets():

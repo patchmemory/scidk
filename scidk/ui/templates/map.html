@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}SciDK - Map{% endblock %}
+{% block content %}
+<section>
+  <h2>Graph Schema Summary</h2>
+  <p class="small">MVP placeholder. Shows inferred node counts, relation counts, and interpretation types.</p>
+  <ul>
+    <li>Nodes: Dataset = {{ schema_summary.nodes.Dataset }}</li>
+    <li>Relations:
+      <ul>
+        {% for rel, cnt in schema_summary.relations.items() %}
+          <li>{{ rel }} = {{ cnt }}</li>
+        {% else %}
+          <li class="small">None</li>
+        {% endfor %}
+      </ul>
+    </li>
+    <li>Interpretation types: {{ schema_summary.interpretation_types }}</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Graph Visualization</h2>
+  <p class="small">Placeholder visualization. An interactive graph canvas will be added in a future iteration.</p>
+  <div style="border:1px dashed #ccc; height:200px; display:flex; align-items:center; justify-content:center; color:#666;">Graph canvas placeholder</div>
+</section>
+
+<section>
+  <h2>Workbook Viewer (XLSX)</h2>
+  <p class="small">Placeholder: select a .xlsx dataset to preview sheets as tabs in a future iteration.</p>
+  <p class="small">Tip: After scanning, go to Files and open an .xlsx dataset. A dedicated viewer is available per file.</p>
+</section>
+{% endblock %}

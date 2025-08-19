@@ -19,8 +19,52 @@
   <h2>Interpretations</h2>
   {% if dataset.interpretations %}
     {% for key, val in dataset.interpretations.items() %}
-      <h3>{{ key }}</h3>
-      <pre>{{ val.data | tojson(indent=2) }}</pre>
+      <section style="border:1px solid #eee; padding: .5rem; margin-bottom:.5rem;">
+        <h3 style="margin-top:0;">
+          {{ key }}
+          {% set status = val.status or 'unknown' %}
+          <span class="small" style="border:1px solid #ddd; padding: 0 .25rem; border-radius: 4px; margin-left:.5rem; color: {% if status=='success' %}#0a6{% elif status=='error' %}#b00{% else %}#666{% endif %};">
+            {{ status }}
+          </span>
+        </h3>
+        {% if status == 'error' %}
+          <p class="small" style="color:#b00;">An error occurred.</p>
+          <details>
+            <summary class="small">Details</summary>
+            <pre>{{ val.data | tojson(indent=2) }}</pre>
+          </details>
+        {% else %}
+          {% if key == 'python_code' %}
+            <p class="small">Python Summary</p>
+            <ul>
+              <li>Imports: <code>{{ (val.data.imports or []) | join(', ') }}</code></li>
+              <li>Functions: <code>{{ (val.data.functions or []) | join(', ') }}</code></li>
+              <li>Classes: <code>{{ (val.data.classes or []) | join(', ') }}</code></li>
+            </ul>
+            {% if val.data.docstring %}
+              <details>
+                <summary class="small">Docstring</summary>
+                <pre>{{ val.data.docstring }}</pre>
+              </details>
+            {% endif %}
+          {% elif key == 'csv' %}
+            <p class="small">CSV Summary</p>
+            <ul>
+              <li>Delimiter: <code>{{ val.data.delimiter }}</code></li>
+              <li>Headers: <code>{{ (val.data.headers or []) | join(', ') }}</code></li>
+              <li>Row count: <code>{{ val.data.row_count }}</code></li>
+            </ul>
+            {% if val.data.sample_rows %}
+              <details>
+                <summary class="small">Sample rows</summary>
+                <pre>{{ val.data.sample_rows | tojson(indent=2) }}</pre>
+              </details>
+            {% endif %}
+          {% else %}
+            <pre>{{ val.data | tojson(indent=2) }}</pre>
+          {% endif %}
+        {% endif %}
+      </section>
     {% endfor %}
   {% else %}
     <p class="small">No interpretations.</p>

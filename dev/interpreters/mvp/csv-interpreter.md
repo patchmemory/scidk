@@ -4,7 +4,7 @@
 - ID: task:interpreters/mvp/csv-interpreter
 - Vision: vision:interpreters
 - Phase: phase:interpreters/mvp
-- Status: planned
+- Status: done
 - Priority: P1
 - Owner: agent
 - Created: 2025-08-18
@@ -40,3 +40,4 @@ Provide a lightweight CSV interpreter to extract basic structure and summary: de
 
 ## Progress Log
 - 2025-08-18: Drafted task and acceptance; to be implemented in upcoming cycle.
+- 2025-08-18: Implemented CsvInterpreter with delimiter detection, headers, row count, size cap; registered *.csv; added tests; UI renders CSV summary; DoD met.
