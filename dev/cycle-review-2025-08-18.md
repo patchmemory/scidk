@@ -98,3 +98,7 @@ Theme: Basic Search (UI-visible) + Neo4j Adapter Prep
 ## Next Steps
 - Tag to create: mvp-iter-2025-08-26-0900
 - Proceed with validation/polish of /api/search and UI (already largely complete), ensure docs cross-links remain accurate, and add any minor missing tests discovered.
+
+
+## Execution Progress (2025-08-18)
+- Implemented minimal error-toasts utility in templates/base.html and updated Home page (index.html) to use toasts for Chat and Search API errors. This satisfies the optional ops polish item for the next cycle while keeping scope minimal. Tests remain green.
