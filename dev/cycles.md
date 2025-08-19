@@ -124,6 +124,15 @@
   - 2025-08-18: Implemented legacy redirect from /extensions to /interpreters to avoid broken bookmarks.
 - Tag to create: mvp-iter-2025-08-18-2259
 
+### Execution Updates (mvp-iter-2025-08-18-2259)
+- Implemented per plan:
+  - Interpreters: Added JSON and YAML interpreters; registered mappings and rules; dataset detail renders summaries; graceful error paths for oversize and missing PyYAML.
+  - UI: Renamed Extensions page to Interpreters; kept /extensions as a redirect to /interpreters; Interpreters page lists registry mappings and rules.
+- Artifacts updated:
+  - Docs: dev/interpreters/mvp/json-yaml.md; dev/ui/mvp/rename-extensions-to-interpreters.md
+- GUI Acceptance: Verified manually — /interpreters shows mappings; /extensions redirects; sample JSON/YAML datasets show summaries in detail view.
+- Tests: Smoke-tested via Flask client for routing; interpreter logic covered by existing patterns; YAML missing-dep path manually verified when PyYAML absent.
+
 ### Iteration Plan (mvp-iter-2025-08-18)
 1) E2E Objective
    - [objective]: A fresh user can search datasets by filename or interpreter id from the Home page and click through to details.
