@@ -118,7 +118,7 @@
             history.innerHTML = data.history.map(m => `<div><strong>${m.role}:</strong> ${m.content}</div>`).join('');
           }
         } catch (err) {
-          alert('Chat error: ' + err);
+          if (window.toast) { toast('Chat error: ' + err, 'error'); } else { alert('Chat error: ' + err); }
         } finally {
           input.value = '';
           input.focus();
@@ -147,7 +147,7 @@
           const data = await resp.json();
           render(data);
         } catch (err) {
-          alert('Search error: ' + err);
+          if (window.toast) { toast('Search error: ' + err, 'error'); } else { alert('Search error: ' + err); }
         }
       });
     }
