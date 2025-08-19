@@ -123,3 +123,46 @@ Use these prompts to accelerate dev cycles.
   - CSV parsing variability; constrain to utf-8 and simple delimiter detection for MVP.
 - Exit Criteria:
   - New tests added and passing; Chat UI and dataset detail improvements visible; CSV interpreter integrated; migration doc updated.
+
+
+## Cycle After Next (2025-09-01 → 2025-09-05)
+- Theme: Graph backend implementation, extensibility, and interpreter expansion.
+- Goals:
+  - Implement Neo4jGraphAdapter behind a feature flag and validate parity with InMemoryGraph.
+  - Introduce Plugin Loader MVP and a PubMed stub to prove extensibility.
+  - Expand interpreter coverage to Jupyter notebooks and JSON/YAML.
+  - Add a basic in-memory search index powering a simple UI search.
+- GUI Acceptance:
+  - Settings/Extensions shows registered plugins including PubMed Stub.
+  - Home page includes a search box that returns dataset results.
+  - Dataset detail shows notebook summaries (kernel, cell counts) when applicable.
+- Stories:
+  - [story:neo4j-adapter] Neo4j Adapter MVP
+    - Scope: [task:core-architecture/mvp/neo4j-adapter-impl]
+    - Success: With GRAPH_BACKEND=neo4j and Neo4j running, scan/interpret flows work and UI reflects data; fallback to inmemory on failure.
+    - Timeline: 2025-09-01 → 2025-09-04
+    - Updates:
+      - 2025-08-18: Drafted implementation task, aligned with deployment migration plan.
+  - [story:plugin-loader] Plugin Loader + PubMed Stub
+    - Scope: [task:plugins/mvp/loader]
+    - Success: /plugins lists PubMed Stub; /api/plugins/pubmed/search returns placeholder results.
+    - Timeline: 2025-09-01 → 2025-09-03
+    - Updates:
+      - 2025-08-18: Drafted loader task and UI exposure plan.
+  - [story:interpreter-expansion] Notebook + JSON/YAML Interpreters
+    - Scope: [task:interpreters/mvp/ipynb-interpreter], [task:interpreters/mvp/json-yaml]
+    - Success: .ipynb files show summary in UI; JSON/YAML show top-level summaries; size/malformed errors handled.
+    - Timeline: 2025-09-02 → 2025-09-05
+    - Updates:
+      - 2025-08-18: Drafted interpreter tasks and DoD.
+  - [story:search-mvp] Basic Search Index
+    - Scope: [task:core-architecture/mvp/search-index]
+    - Success: Home page search returns datasets by filename/extension/interpreter id; index updates on new scans.
+    - Timeline: 2025-09-02 → 2025-09-05
+    - Updates:
+      - 2025-08-18: Drafted indexing task and UI plan.
+- Risks:
+  - Competing priorities between adapter and UI features; timebox and prioritize adapter parity first.
+  - Parsing variability for notebooks and YAML; constrain to safe parsing and small summaries.
+- Exit Criteria:
+  - Neo4j adapter functioning behind flag; plugins visible and stub callable; new interpreters integrated; search working in UI; tests updated.
