@@ -2,16 +2,29 @@
 {% block title %}SciDK - Home{% endblock %}
 {% block content %}
 <section>
-  <h2>Scanned Directories</h2>
-  <p class="small">Directories scanned in this session. Use the Files page to scan a new directory.</p>
-  {% if directories %}
+  <h2>Recent Scans</h2>
+  <p class="small">Scan sessions recorded in this server session. Open a specific run in Files.</p>
+  {% if scans and scans|length > 0 %}
     <ul>
-      {% for d in directories %}
-        <li><code>{{ d.path }}</code> — files: {{ d.scanned }}, recursive: {{ d.recursive }}</li>
+      {% for s in scans %}
+        <li>
+          <a href="/datasets?scan_id={{ s.id }}">{{ s.path }}</a>
+          <span class="small">— files: {{ s.file_count }}, recursive: {{ s.recursive }}, time: {{ '%.0f'|format((s.ended or s.started) or 0) }}</span>
+        </li>
       {% endfor %}
     </ul>
   {% else %}
-    <p class="small">No directories scanned yet.</p>
+    <p class="small">No scans yet. Go to <a href="/datasets">Files</a> to run a scan.</p>
+  {% endif %}
+  {% if directories and directories|length > 0 %}
+    <details style="margin-top:.5rem;">
+      <summary class="small">Scanned Directories (aggregate)</summary>
+      <ul>
+        {% for d in directories %}
+          <li><code>{{ d.path }}</code> — files: {{ d.scanned }}, recursive: {{ d.recursive }}</li>
+        {% endfor %}
+      </ul>
+    </details>
   {% endif %}
 </section>
 

@@ -48,6 +48,10 @@ def create_app():
         'graph': graph,
         'registry': registry,
         'fs': fs,
+        # in-session registries
+        'scans': {},  # scan_id -> scan session dict
+        'directories': {},  # path -> aggregate info incl. scan_ids
+        'telemetry': {},
     }
 
     # API routes
@@ -59,11 +63,40 @@ def create_app():
         path = data.get('path') or os.getcwd()
         recursive = bool(data.get('recursive', True))
         try:
-            import time
+            import time, hashlib
+            # Pre-scan snapshot of checksums
+            before = set(ds.get('checksum') for ds in app.extensions['scidk']['graph'].list_datasets())
             started = time.time()
             count = fs.scan_directory(Path(path), recursive=recursive)
             ended = time.time()
             duration = ended - started
+            after = set(ds.get('checksum') for ds in app.extensions['scidk']['graph'].list_datasets())
+            new_checksums = sorted(list(after - before))
+            # Build simple by_ext from new datasets
+            by_ext = {}
+            ext_map = {}
+            for ds in app.extensions['scidk']['graph'].list_datasets():
+                ext_map[ds.get('checksum')] = ds.get('extension') or ''
+            for ch in new_checksums:
+                ext = ext_map.get(ch, '')
+                by_ext[ext] = by_ext.get(ext, 0) + 1
+            # Create scan session id (short sha1 of path+started)
+            sid_src = f"{path}|{started}"
+            scan_id = hashlib.sha1(sid_src.encode()).hexdigest()[:12]
+            scan = {
+                'id': scan_id,
+                'path': str(path),
+                'recursive': bool(recursive),
+                'started': started,
+                'ended': ended,
+                'duration_sec': duration,
+                'file_count': int(count),
+                'checksums': new_checksums,
+                'by_ext': by_ext,
+                'errors': [],
+            }
+            scans = app.extensions['scidk'].setdefault('scans', {})
+            scans[scan_id] = scan
             # Save telemetry on app
             telem = app.extensions['scidk'].setdefault('telemetry', {})
             telem['last_scan'] = {
@@ -76,13 +109,10 @@ def create_app():
             }
             # Track scanned directories (in-session registry)
             dirs = app.extensions['scidk'].setdefault('directories', {})
-            dirs[str(path)] = {
-                'path': str(path),
-                'recursive': bool(recursive),
-                'scanned': int(count),
-                'last_scanned': ended,
-            }
-            return jsonify({"status": "ok", "scanned": count, "duration_sec": duration, "path": str(path), "recursive": bool(recursive)}), 200
+            drec = dirs.setdefault(str(path), {'path': str(path), 'recursive': bool(recursive), 'scanned': 0, 'last_scanned': 0, 'scan_ids': []})
+            drec.update({'recursive': bool(recursive), 'scanned': int(count), 'last_scanned': ended})
+            drec.setdefault('scan_ids', []).append(scan_id)
+            return jsonify({"status": "ok", "scan_id": scan_id, "scanned": count, "duration_sec": duration, "path": str(path), "recursive": bool(recursive)}), 200
         except Exception as e:
             return jsonify({"status": "error", "error": str(e)}), 400
 
@@ -192,6 +222,34 @@ def create_app():
         values.sort(key=lambda d: d.get('last_scanned') or 0, reverse=True)
         return jsonify(values), 200
 
+    @api.get('/scans')
+    def api_scans():
+        scans = list(app.extensions['scidk'].get('scans', {}).values())
+        scans.sort(key=lambda s: s.get('ended') or s.get('started') or 0, reverse=True)
+        # Return a lighter summary by default
+        summaries = [
+            {
+                'id': s.get('id'),
+                'path': s.get('path'),
+                'recursive': s.get('recursive'),
+                'started': s.get('started'),
+                'ended': s.get('ended'),
+                'duration_sec': s.get('duration_sec'),
+                'file_count': s.get('file_count'),
+                'by_ext': s.get('by_ext', {}),
+                'checksum_count': len(s.get('checksums') or []),
+            }
+            for s in scans
+        ]
+        return jsonify(summaries), 200
+
+    @api.get('/scans/<scan_id>')
+    def api_scan_detail(scan_id):
+        s = app.extensions['scidk'].get('scans', {}).get(scan_id)
+        if not s:
+            return jsonify({"error": "not found"}), 404
+        return jsonify(s), 200
+
     app.register_blueprint(api)
 
     # UI routes
@@ -211,7 +269,9 @@ def create_app():
         telemetry = app.extensions['scidk'].get('telemetry', {})
         directories = list(app.extensions['scidk'].get('directories', {}).values())
         directories.sort(key=lambda d: d.get('last_scanned') or 0, reverse=True)
-        return render_template('index.html', datasets=datasets, by_ext=by_ext, schema_summary=schema_summary, telemetry=telemetry, directories=directories)
+        scans = list(app.extensions['scidk'].get('scans', {}).values())
+        scans.sort(key=lambda s: s.get('ended') or s.get('started') or 0, reverse=True)
+        return render_template('index.html', datasets=datasets, by_ext=by_ext, schema_summary=schema_summary, telemetry=telemetry, directories=directories, scans=scans)
 
     @ui.get('/chat')
     def chat():
@@ -224,10 +284,24 @@ def create_app():
 
     @ui.get('/datasets')
     def datasets():
-        datasets = app.extensions['scidk']['graph'].list_datasets()
+        all_datasets = app.extensions['scidk']['graph'].list_datasets()
+        scan_id = (request.args.get('scan_id') or '').strip()
+        selected_scan = None
+        if scan_id:
+            selected_scan = app.extensions['scidk'].get('scans', {}).get(scan_id)
+        if selected_scan:
+            checks = set(selected_scan.get('checksums') or [])
+            datasets = [d for d in all_datasets if d.get('checksum') in checks]
+        else:
+            datasets = all_datasets
         directories = list(app.extensions['scidk'].get('directories', {}).values())
         directories.sort(key=lambda d: d.get('last_scanned') or 0, reverse=True)
-        return render_template('datasets.html', datasets=datasets, directories=directories)
+        recent_scans = list(app.extensions['scidk'].get('scans', {}).values())
+        recent_scans.sort(key=lambda s: s.get('ended') or s.get('started') or 0, reverse=True)
+        # Show only the most recent N scans for dropdown
+        N = 20
+        recent_scans = recent_scans[:N]
+        return render_template('datasets.html', datasets=datasets, directories=directories, recent_scans=recent_scans, selected_scan=selected_scan)
 
     @ui.get('/datasets/<dataset_id>')
     def dataset_detail(dataset_id):
@@ -303,11 +377,36 @@ def create_app():
     def ui_scan():
         path = request.form.get('path') or os.getcwd()
         recursive = request.form.get('recursive') == 'on'
-        import time
+        import time, hashlib
+        # Pre-scan snapshot
+        before = set(ds.get('checksum') for ds in app.extensions['scidk']['graph'].list_datasets())
         started = time.time()
         count = fs.scan_directory(Path(path), recursive=recursive)
         ended = time.time()
         duration = ended - started
+        after = set(ds.get('checksum') for ds in app.extensions['scidk']['graph'].list_datasets())
+        new_checksums = sorted(list(after - before))
+        by_ext = {}
+        ext_map = {ds.get('checksum'): ds.get('extension') or '' for ds in app.extensions['scidk']['graph'].list_datasets()}
+        for ch in new_checksums:
+            ext = ext_map.get(ch, '')
+            by_ext[ext] = by_ext.get(ext, 0) + 1
+        sid_src = f"{path}|{started}"
+        scan_id = hashlib.sha1(sid_src.encode()).hexdigest()[:12]
+        scan = {
+            'id': scan_id,
+            'path': str(path),
+            'recursive': bool(recursive),
+            'started': started,
+            'ended': ended,
+            'duration_sec': duration,
+            'file_count': int(count),
+            'checksums': new_checksums,
+            'by_ext': by_ext,
+            'errors': [],
+        }
+        scans = app.extensions['scidk'].setdefault('scans', {})
+        scans[scan_id] = scan
         telem = app.extensions['scidk'].setdefault('telemetry', {})
         telem['last_scan'] = {
             'path': str(path),
@@ -319,13 +418,10 @@ def create_app():
         }
         # Track scanned directories here as well
         dirs = app.extensions['scidk'].setdefault('directories', {})
-        dirs[str(path)] = {
-            'path': str(path),
-            'recursive': bool(recursive),
-            'scanned': int(count),
-            'last_scanned': ended,
-        }
-        return redirect(url_for('ui.datasets'))
+        drec = dirs.setdefault(str(path), {'path': str(path), 'recursive': bool(recursive), 'scanned': 0, 'last_scanned': 0, 'scan_ids': []})
+        drec.update({'recursive': bool(recursive), 'scanned': int(count), 'last_scanned': ended})
+        drec.setdefault('scan_ids', []).append(scan_id)
+        return redirect(url_for('ui.datasets', scan_id=scan_id))
 
     app.register_blueprint(ui)
 

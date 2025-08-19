@@ -9,9 +9,22 @@
     <label><input type="checkbox" name="recursive" checked/> Recursive</label>
     <button type="submit">Scan</button>
   </form>
+  <div class="actions" style="margin-top:.5rem; align-items: baseline; gap: .5rem;">
+    <label class="small" for="recent-scans">Recent scans:</label>
+    <select id="recent-scans">
+      <option value="">-- select --</option>
+      {% for s in recent_scans or [] %}
+        <option value="{{ s.id }}">{{ s.path }} — {{ s.file_count }} files — {{ '%.0f'|format((s.ended or s.started) or 0) }}</option>
+      {% endfor %}
+    </select>
+    <button id="open-scan" type="button">Open</button>
+    {% if selected_scan %}
+      <span class="small">Filtering by scan <code>{{ selected_scan.id }}</code> for <code>{{ selected_scan.path }}</code> (recursive: {{ selected_scan.recursive }}) — <a href="/datasets">Clear filter</a></span>
+    {% endif %}
+  </div>
   {% if directories %}
-    <details>
-      <summary class="small">Previously scanned (this session)</summary>
+    <details style="margin-top:.5rem;">
+      <summary class="small">Previously scanned directories (this session)</summary>
       <ul>
         {% for d in directories %}
           <li><code>{{ d.path }}</code> — files: {{ d.scanned }}, recursive: {{ d.recursive }}</li>
@@ -22,6 +35,9 @@
 </section>
 
 <section>
+{% if selected_scan and (datasets|length == 0) %}
+  <p class="small">This scan did not add any new datasets (MVP shows newly added files only). Clear filter to see all datasets.</p>
+{% endif %}
 <table>
   <thead>
   <tr>
@@ -45,4 +61,22 @@
   </tbody>
 </table>
 </section>
+{% endblock %}
+{% block head %}
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    const select = document.getElementById('recent-scans');
+    const btn = document.getElementById('open-scan');
+    if (select && btn) {
+      btn.addEventListener('click', () => {
+        const id = select.value;
+        if (id) { window.location = '/datasets?scan_id=' + encodeURIComponent(id); }
+      });
+      select.addEventListener('change', () => {
+        const id = select.value;
+        if (id) { window.location = '/datasets?scan_id=' + encodeURIComponent(id); }
+      });
+    }
+  });
+</script>
 {% endblock %}

@@ -14,7 +14,7 @@
     <li>Mime: {{ dataset.mime_type }}</li>
   </ul>
   {% if dataset.extension in ['.xlsx', '.xlsm'] %}
-    <p><a href="/workbook/{{ dataset.checksum }}">Open Workbook Viewer</a></p>
+    <p><a href="/workbook/{{ dataset.id }}">Open Workbook Viewer</a></p>
   {% endif %}
   <h2>Interpretations</h2>
   {% if dataset.interpretations %}
