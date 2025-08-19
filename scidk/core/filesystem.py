@@ -98,7 +98,8 @@ class FilesystemManager:
             ds = self.create_dataset_node(p)
             self.graph.upsert_dataset(ds)
             # Try interpretations
-            interpreters = self.registry.get_by_extension(ds['extension'])
+            # Select interpreters using registry rules with extension fallback
+            interpreters = self.registry.select_for_dataset(ds)
             for interp in interpreters:
                 try:
                     result = interp.interpret(p)

@@ -50,6 +50,7 @@
       - 2025-08-18: Added Chat UI widget to Home page wired to /api/chat; added API test; basic UX validated.
       - 2025-08-18: Improved Dataset Detail UX with status badges, friendly sections for python/csv, and error details.
       - 2025-08-18: Added test for rescan idempotency (no duplicate datasets); expanded test coverage for CSV interpreter and chat API.
+      - 2025-08-18: FilesystemManager now uses registry.select_for_dataset during scan to honor rule precedence; aligns scan-time interpretation with app API selection.
     - Status by Task:
       - [task:core-architecture/mvp/graph-inmemory]: Done (MVP in-memory adapter in scidk/core/graph.py).
       - [task:core-architecture/mvp/filesystem-scan]: Done (scan + dataset node + checksum idempotency).

@@ -32,4 +32,6 @@ Add tests to ensure filesystem scan idempotency and robust interpreter error han
 - Documented in this task and referenced from dev/cycles.md.
 
 ## Progress Log
-- 2025-08-18: Drafted task and outlined unit tests; will implement in next session.
+- 2025-08-18: Drafted task and outlined unit tests.
+- 2025-08-18: Implemented rescan idempotency test (no duplicate datasets across rescans) and Python interpreter syntax error test; both passing.
+- 2025-08-18: Deferred timeout test to next cycle; will add executor-level timeout coverage.
