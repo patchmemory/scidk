@@ -4,7 +4,7 @@
 - ID: task:core-architecture/mvp/neo4j-adapter-prep
 - Vision: vision:core-architecture
 - Phase: phase:core-architecture/mvp
-- Status: planned
+- Status: done
 - Priority: P1
 - Owner: agent
 - Created: 2025-08-18
@@ -33,3 +33,4 @@ Define the Graph interface boundary and outline steps to migrate from InMemoryGr
 
 ## Progress Log
 - 2025-08-18: Drafted scope and DoD; write-up to be added during next cycle.
+- 2025-08-18: Completed prep documentation. Added "Migration Plan: InMemoryGraph → Neo4jAdapter" to dev/deployment.md with interface boundary, feature flag plan, rollout steps, and risks; cross-linked from this task. Status set to done.

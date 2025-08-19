@@ -281,6 +281,8 @@ Use these prompts to accelerate dev cycles.
 - Decision & Risk Log
   - 2025-08-18: Adopted RICE + Ready Queue selection protocol for weekly planning.
 
+- Pre-Work Completed (as of 2025-08-18)
+  - task:core-architecture/mvp/neo4j-adapter-prep — Completed documentation of the migration plan and adapter boundary. See dev/deployment.md ("Migration Plan: InMemoryGraph → Neo4jAdapter") and dev/core-architecture/mvp/neo4j-adapter-prep.md (Status: done).
 
 ## Cycle After Next (2025-09-01 → 2025-09-05)
 - Theme: Graph backend implementation, extensibility, and interpreter expansion.
