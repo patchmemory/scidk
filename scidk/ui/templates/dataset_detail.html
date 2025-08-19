@@ -60,6 +60,26 @@
                 <pre>{{ val.data.sample_rows | tojson(indent=2) }}</pre>
               </details>
             {% endif %}
+          {% elif key == 'ipynb' %}
+            <p class="small">Notebook Summary</p>
+            <ul>
+              <li>Kernel: <code>{{ val.data.kernel }}</code></li>
+              <li>Language: <code>{{ val.data.language }}</code></li>
+              <li>Cells: <code>code={{ val.data.cells.code or 0 }}, markdown={{ val.data.cells.markdown or 0 }}, raw={{ val.data.cells.raw or 0 }}</code></li>
+            </ul>
+            {% if val.data.first_headings %}
+              <details>
+                <summary class="small">First headings</summary>
+                <ul>
+                  {% for h in val.data.first_headings %}
+                    <li><code>{{ h }}</code></li>
+                  {% endfor %}
+                </ul>
+              </details>
+            {% endif %}
+            {% if val.data.imports %}
+              <p class="small">Imports: <code>{{ (val.data.imports or []) | join(', ') }}</code></p>
+            {% endif %}
           {% else %}
             <pre>{{ val.data | tojson(indent=2) }}</pre>
           {% endif %}

@@ -350,3 +350,41 @@ Use these prompts to accelerate dev cycles.
 ---
 
 Note: See also dev/cycle-review-2025-08-18.md for a consolidated review and next-cycle plan derived from this document.
+
+
+### Iteration Plan (mvp-iter-2025-08-19-0010)
+1) E2E Objective
+   - Add a Jupyter Notebook interpreter (ipynb) and surface notebook summaries on the Dataset Detail page. Keep GUI-first with a simple demo path.
+2) Capacity
+   - 8h
+3) GUI Acceptance
+   - Scanning a directory with at least one .ipynb yields a dataset entry.
+   - Visiting that dataset’s detail page shows a Notebook Summary with: kernel, language, cell counts by type, and first headings/imports (when available).
+   - Interpreters page lists a mapping for *.ipynb → ipynb.
+   - Oversized notebooks (>5MB for MVP) return a safe error state in the UI (no crash).
+4) Candidates (Ready Queue excerpt with RICE)
+   - task:interpreters/mvp/ipynb-interpreter — RICE 3.5
+   - task:core-architecture/mvp/tests-hardening — RICE 1.5
+   - task:ops/mvp/error-toasts — RICE 1.2 (cut if time-constrained)
+   - task:ui/mvp/home-search-ui — RICE 3.6 (out of scope for this iteration)
+5) Dependencies
+   - None external (parsing is JSON-only; no notebook execution).
+6) Risks & Cut Lines
+   - Cut order: imports/headings extraction → keep only kernel+cell counts → keep only counts if constrained.
+
+### Planning Protocol Outputs (mvp-iter-2025-08-19-0010)
+- Selected Tasks Table
+  - id: task:interpreters/mvp/ipynb-interpreter; ETA: 2025-08-19; RICE: 3.5; dependencies: none; test approach: unit tests with tiny fixture .ipynb and oversized error path
+  - id: task:ui/mvp/dataset-notebook-render; ETA: 2025-08-19; RICE: 2.2; dependencies: task:interpreters/mvp/ipynb-interpreter; test approach: Flask client render smoke for notebook sections
+  - id: task:core-architecture/mvp/tests-hardening; ETA: 2025-08-19; RICE: 1.5; dependencies: none; test approach: extend pytest to cover normal and error paths for ipynb
+- Dependency Table
+  - dataset-notebook-render → ipynb-interpreter (resolved in-session)
+- Demo Checklist
+  1) Start app (python -m scidk.app)
+  2) Prepare a folder with sample.ipynb (small JSON notebook); POST /api/scan with that path
+  3) Open Datasets; click the notebook dataset; confirm Notebook Summary (kernel, cell counts, headings/imports if present)
+  4) Visit /interpreters and verify *.ipynb mapping appears
+  5) Try an oversized notebook (>5MB) and confirm safe error state on detail view
+- Decision & Risk Log
+  - 2025-08-18: Decided to parse ipynb as JSON only (no execution) to stay safe and within capacity; cut advanced parsing if time-constrained.
+- Tag to create: mvp-iter-2025-08-19-0010

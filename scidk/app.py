@@ -9,6 +9,7 @@ from .interpreters.python_code import PythonCodeInterpreter
 from .interpreters.csv_interpreter import CsvInterpreter
 from .interpreters.json_interpreter import JsonInterpreter
 from .interpreters.yaml_interpreter import YamlInterpreter
+from .interpreters.ipynb_interpreter import IpynbInterpreter
 from .core.pattern_matcher import Rule
 
 
@@ -24,17 +25,20 @@ def create_app():
     csv_interp = CsvInterpreter()
     json_interp = JsonInterpreter()
     yaml_interp = YamlInterpreter()
+    ipynb_interp = IpynbInterpreter()
     registry.register_extension(".py", py_interp)
     registry.register_extension(".csv", csv_interp)
     registry.register_extension(".json", json_interp)
     registry.register_extension(".yml", yaml_interp)
     registry.register_extension(".yaml", yaml_interp)
+    registry.register_extension(".ipynb", ipynb_interp)
     # Register simple rules to prefer interpreters for extensions
     registry.register_rule(Rule(id="rule.py.default", interpreter_id=py_interp.id, pattern="*.py", priority=10, conditions={"ext": ".py"}))
     registry.register_rule(Rule(id="rule.csv.default", interpreter_id=csv_interp.id, pattern="*.csv", priority=10, conditions={"ext": ".csv"}))
     registry.register_rule(Rule(id="rule.json.default", interpreter_id=json_interp.id, pattern="*.json", priority=10, conditions={"ext": ".json"}))
     registry.register_rule(Rule(id="rule.yml.default", interpreter_id=yaml_interp.id, pattern="*.yml", priority=10, conditions={"ext": ".yml"}))
     registry.register_rule(Rule(id="rule.yaml.default", interpreter_id=yaml_interp.id, pattern="*.yaml", priority=10, conditions={"ext": ".yaml"}))
+    registry.register_rule(Rule(id="rule.ipynb.default", interpreter_id=ipynb_interp.id, pattern="*.ipynb", priority=10, conditions={"ext": ".ipynb"}))
 
     fs = FilesystemManager(graph=graph, registry=registry)
 
