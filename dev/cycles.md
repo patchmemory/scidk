@@ -50,6 +50,7 @@
       - 2025-08-18: Added Chat UI widget to Home page wired to /api/chat; added API test; basic UX validated.
       - 2025-08-18: Improved Dataset Detail UX with status badges, friendly sections for python/csv, and error details.
       - 2025-08-18: Added test for rescan idempotency (no duplicate datasets); expanded test coverage for CSV interpreter and chat API.
+      - 2025-08-18: Added tests for interpreter syntax errors and executor timeouts (python inline and bash); all tests green.
       - 2025-08-18: FilesystemManager now uses registry.select_for_dataset during scan to honor rule precedence; aligns scan-time interpretation with app API selection.
     - Status by Task:
       - [task:core-architecture/mvp/graph-inmemory]: Done (MVP in-memory adapter in scidk/core/graph.py).
@@ -58,7 +59,7 @@
       - [task:interpreters/mvp/registry-and-executor]: Done (registry + rules + MVP executor with timeouts; further hardening and additional runtimes deferred).
 
 - Next Up (prioritized):
-  1) [task:core-architecture/mvp/tests-hardening] Add tests: checksum idempotency (no duplicate datasets across rescans) and interpreter error handling (timeout and syntax error paths). Status: in-progress (rescan idempotency tests added and passing; interpreter timeout path deferred)
+  1) [task:core-architecture/mvp/tests-hardening] Add tests: checksum idempotency (no duplicate datasets across rescans) and interpreter error handling (timeout and syntax error paths). Status: done (rescan idempotency, syntax error, and timeout tests added and passing)
   2) Add basic Chat UI on Home page: simple input + conversation history using /api/chat. Status: done
   3) Improve dataset_detail rendering: human-friendly interpretation sections and error states. Status: done
   4) Prepare for Neo4j adapter: define Graph interface boundary and document migration steps in dev/deployment.md. Status: planned

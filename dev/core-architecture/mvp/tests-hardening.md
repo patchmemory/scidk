@@ -4,7 +4,7 @@
 - ID: task:core-architecture/mvp/tests-hardening
 - Vision: vision:core-architecture
 - Phase: phase:core-architecture/mvp
-- Status: in-progress
+- Status: done
 - Priority: P1
 - Owner: agent
 - Created: 2025-08-18
@@ -34,4 +34,4 @@ Add tests to ensure filesystem scan idempotency and robust interpreter error han
 ## Progress Log
 - 2025-08-18: Drafted task and outlined unit tests.
 - 2025-08-18: Implemented rescan idempotency test (no duplicate datasets across rescans) and Python interpreter syntax error test; both passing.
-- 2025-08-18: Deferred timeout test to next cycle; will add executor-level timeout coverage.
+- 2025-08-18: Added timeout coverage: SecureInterpreterExecutor inline python timeout and bash timeout; tests passing quickly.
