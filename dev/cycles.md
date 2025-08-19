@@ -470,3 +470,27 @@ Note: See also dev/cycle-review-2025-08-18.md for a consolidated review and next
   3) task:core-architecture/mvp/neo4j-adapter-prep — Finalize adapter boundary docs + feature flags. Owner: agent; RICE: 3.3.
   4) task:interpreters/mvp/ipynb-interpreter — Add notebook summary (kernel, cell counts) with safe size limits. Owner: agent; RICE: 3.5.
   5) task:ops/mvp/error-toasts — Minimal client-side error toasts/log clarity for API calls. Owner: agent; RICE: 1.4.
+
+### Planning Protocol (mvp-iter-2025-08-19-map-schema)
+1) E2E Objective and GUI Acceptance
+   - Objective: Make the current graph input and related schema visible on the Map page to support a transparent demo of what’s in the graph right now.
+   - GUI Acceptance: After scanning a small folder, visiting /map shows a Schema panel with node labels and relationship types, including counts. The page loads without errors and reflects the current session graph. Home continues to show a Schema Summary, and Map adds a clearer, dedicated view.
+2) Capacity
+   - 8h
+3) Selected Tasks Table with DoR (owner, ETA, RICE, dependencies, test approach)
+   - id: task:core-architecture/mvp/neo4j-adapter-prep; owner: agent; ETA: 2025-08-19; RICE: 3.2; dependencies: current InMemoryGraph API; test approach: unit tests for schema_summary() shape; doc check for adapter boundary and schema fields used by /map.
+   - id: task:core-architecture/mvp/neo4j-adapter-impl; owner: agent; ETA: 2025-08-19; RICE: 3.0; dependencies: task:core-architecture/mvp/neo4j-adapter-prep; test approach: extend schema_summary to include label/type counts used by Map; Flask client smoke test rendering /map.
+4) Dependency Table
+   - neo4j-adapter-impl → neo4j-adapter-prep (sequence for schema boundary and fields)
+5) Demo Checklist
+   1) Start app (python -m scidk.app)
+   2) POST /api/scan with a temp folder containing a few files
+   3) Open /map — Expect: Schema panel lists node labels and relationship types with counts; reflects the just-scanned data
+   4) Open / — Expect: existing Schema Summary present; Map view provides a more detailed layout of the same underlying schema
+6) Risks & Cut Lines
+   - Risks: Over-scoping visualization; schema fields mismatch; limited time.
+   - Cut lines: If time-constrained, render schema as two simple tables (labels, rel_types) without any graph drawing; if counts are expensive, show presence-only flags.
+7) Decision & Risk Log entry
+   - 2025-08-19: Decided to implement a minimal, table-based schema view on /map backed by schema_summary(); defer interactive graph drawing to a later iteration.
+8) Tag to create
+   - mvp-iter-2025-08-19-map-schema
