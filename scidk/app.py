@@ -100,6 +100,22 @@ def create_app():
             for ch in new_checksums:
                 ext = ext_map.get(ch, '')
                 by_ext[ext] = by_ext.get(ext, 0) + 1
+            # For non-recursive scans, include immediate subfolders for later commit/merge
+            folders = []
+            try:
+                if not recursive:
+                    base = Path(path)
+                    for child in base.iterdir():
+                        if child.is_dir():
+                            parent = str(child.parent)
+                            folders.append({
+                                'path': str(child.resolve()),
+                                'name': child.name,
+                                'parent': parent,
+                                'parent_name': Path(parent).name if parent else '',
+                            })
+            except Exception:
+                folders = []
             # Create scan session id (short sha1 of path+started)
             sid_src = f"{path}|{started}"
             scan_id = hashlib.sha1(sid_src.encode()).hexdigest()[:12]
@@ -111,7 +127,9 @@ def create_app():
                 'ended': ended,
                 'duration_sec': duration,
                 'file_count': int(count),
+                'folder_count': len(folders),
                 'checksums': new_checksums,
+                'folders': folders,
                 'by_ext': by_ext,
                 'source': getattr(fs, 'last_scan_source', 'python'),
                 'errors': [],
@@ -214,6 +232,22 @@ def create_app():
                         by_ext[ext] = by_ext.get(ext, 0) + 1
                     sid_src = f"{path}|{started}"
                     scan_id = hashlib.sha1(sid_src.encode()).hexdigest()[:12]
+                    # For non-recursive scans, include immediate subfolders
+                    folders = []
+                    try:
+                        if not recursive:
+                            base = Path(path)
+                            for child in base.iterdir():
+                                if child.is_dir():
+                                    parent = str(child.parent)
+                                    folders.append({
+                                        'path': str(child.resolve()),
+                                        'name': child.name,
+                                        'parent': parent,
+                                        'parent_name': Path(parent).name if parent else '',
+                                    })
+                    except Exception:
+                        folders = []
                     scan = {
                         'id': scan_id,
                         'path': str(path),
@@ -222,7 +256,9 @@ def create_app():
                         'ended': ended,
                         'duration_sec': ended - started,
                         'file_count': int(processed),
+                        'folder_count': len(folders),
                         'checksums': new_checksums,
+                        'folders': folders,
                         'by_ext': by_ext,
                         'source': 'python',
                         'errors': [],
@@ -271,7 +307,8 @@ def create_app():
                 'path': s.get('path'),
                 'started': started,
                 'ended': None,
-                'total': total,
+                # include one extra step for the Neo4j write phase so progress doesn't hit 100% before completion
+                'total': total + 1,
                 'processed': 0,
                 'progress': 0.0,
                 'neo4j_attempted': False,
@@ -290,8 +327,18 @@ def create_app():
                     s['committed_at'] = time.time()
                     # Build rows and advance progress
                     ds_map = getattr(g, 'datasets', {})
-                    rows = []
+                    # Precompute folders observed in this scan (parents of files)
                     from pathlib import Path as _P
+                    folder_set = set()
+                    for ch in checksums:
+                        dtmp = ds_map.get(ch)
+                        if not dtmp:
+                            continue
+                        try:
+                            folder_set.add(str(_P(dtmp.get('path')).parent))
+                        except Exception:
+                            pass
+                    rows = []
                     processed = 0
                     for ch in checksums:
                         d = ds_map.get(ch)
@@ -302,6 +349,17 @@ def create_app():
                         except Exception:
                             parent = ''
                         interps = list((d.get('interpretations') or {}).keys())
+                        # derive folder fields
+                        folder_path = parent
+                        try:
+                            from pathlib import Path as __P
+                            folder_name = __P(folder_path).name if folder_path else ''
+                            folder_parent = str(__P(folder_path).parent) if folder_path else ''
+                            folder_parent_name = __P(folder_parent).name if folder_parent else ''
+                        except Exception:
+                            folder_name = ''
+                            folder_parent = ''
+                            folder_parent_name = ''
                         rows.append({
                             'checksum': d.get('checksum'),
                             'path': d.get('path'),
@@ -311,13 +369,26 @@ def create_app():
                             'created': float(d.get('created') or 0),
                             'modified': float(d.get('modified') or 0),
                             'mime_type': d.get('mime_type'),
-                            'folder': parent,
+                            'folder': folder_path,
+                            'folder_name': folder_name,
+                            'folder_parent': folder_parent,
+                            'folder_parent_name': folder_parent_name,
+                            'parent_in_scan': bool(folder_parent and (folder_parent in folder_set)),
                             'interps': interps,
                         })
                         processed += 1
                         task['processed'] = processed
                         if total:
                             task['progress'] = processed / total
+                    # Build folder rows captured during non-recursive scan
+                    folder_rows = []
+                    for f in (s.get('folders') or []):
+                        folder_rows.append({
+                            'path': f.get('path'),
+                            'name': f.get('name'),
+                            'parent': f.get('parent'),
+                            'parent_name': f.get('parent_name'),
+                        })
                     # Neo4j write if configured
                     uri, user, pwd, database = _get_neo4j_params()
                     if uri and user and pwd:
@@ -332,19 +403,29 @@ def create_app():
                                     "SET f.path=r.path, f.filename=r.filename, f.extension=r.extension, f.size_bytes=r.size_bytes, "
                                     "    f.created=r.created, f.modified=r.modified, f.mime_type=r.mime_type "
                                     "FOREACH (_ IN CASE WHEN r.folder IS NOT NULL AND r.folder <> '' THEN [1] ELSE [] END | "
-                                    "  MERGE (fo:Folder {path:r.folder}) MERGE (fo)-[:CONTAINS]->(f) ) "
+                                    "  MERGE (fo:Folder {path:r.folder}) SET fo.name=r.folder_name MERGE (fo)-[:CONTAINS]->(f) "
+                                    "  FOREACH (__ IN CASE WHEN r.folder_parent IS NOT NULL AND r.folder_parent <> '' AND r.parent_in_scan THEN [1] ELSE [] END | "
+                                    "    MERGE (fop:Folder {path:r.folder_parent}) SET fop.name=r.folder_parent_name MERGE (fop)-[:CONTAINS]->(fo) ) "
+                                    ") "
                                     "MERGE (s:Scan {id:$scan_id}) SET s.path=$scan_path, s.started=$scan_started, s.ended=$scan_ended "
                                     "MERGE (f)-[:SCANNED_IN]->(s) "
-                                    "WITH r,f "
-                                    "FOREACH (it IN r.interps | MERGE (t:Type {id:it}) MERGE (f)-[:INTERPRETED_AS]->(t))"
+                                    "WITH 1 as _ "
+                                    "UNWIND $folders AS r2 "
+                                    "MERGE (s:Scan {id:$scan_id}) SET s.path=$scan_path, s.started=$scan_started, s.ended=$scan_ended "
+                                    "MERGE (fo:Folder {path:r2.path}) SET fo.name=r2.name "
+                                    "MERGE (fo)-[:SCANNED_IN]->(s) "
+                                    "FOREACH (__ IN CASE WHEN r2.parent IS NOT NULL AND r2.parent <> '' THEN [1] ELSE [] END | "
+                                    "  MERGE (fop:Folder {path:r2.parent}) SET fop.name=r2.parent_name MERGE (fop)-[:CONTAINS]->(fo) )"
                                 )
-                                res = sess.run(cypher, rows=rows, scan_id=s.get('id'), scan_path=s.get('path'), scan_started=s.get('started'), scan_ended=s.get('ended'))
+                                res = sess.run(cypher, rows=rows, folders=folder_rows, scan_id=s.get('id'), scan_path=s.get('path'), scan_started=s.get('started'), scan_ended=s.get('ended'))
                                 _ = list(res)
-                                task['neo4j_written'] = len(rows)
+                                task['neo4j_written'] = len(rows) + len(folder_rows)
                             driver.close()
                         except Exception as ne:
                             task['neo4j_error'] = str(ne)
                     # Done
+                    # mark final step (Neo4j write) as processed so progress reaches 100% only at the end
+                    task['processed'] = task.get('total') or task.get('processed')
                     task['ended'] = time.time()
                     task['status'] = 'completed'
                     task['progress'] = 1.0
@@ -623,8 +704,18 @@ def create_app():
                     driver = GraphDatabase.driver(uri, auth=(user, pwd))
                     # Prepare rows for UNWIND from present datasets only
                     ds_map = getattr(g, 'datasets', {})
-                    rows = []
+                    # Precompute folders observed in this scan (parents of files)
                     from pathlib import Path as _P
+                    folder_set = set()
+                    for ch in checksums:
+                        dtmp = ds_map.get(ch)
+                        if not dtmp:
+                            continue
+                        try:
+                            folder_set.add(str(_P(dtmp.get('path')).parent))
+                        except Exception:
+                            pass
+                    rows = []
                     for ch in checksums:
                         d = ds_map.get(ch)
                         if not d:
@@ -635,6 +726,17 @@ def create_app():
                         except Exception:
                             parent = ''
                         interps = list((d.get('interpretations') or {}).keys())
+                        # derive folder fields
+                        folder_path = parent
+                        try:
+                            from pathlib import Path as __P
+                            folder_name = __P(folder_path).name if folder_path else ''
+                            folder_parent = str(__P(folder_path).parent) if folder_path else ''
+                            folder_parent_name = __P(folder_parent).name if folder_parent else ''
+                        except Exception:
+                            folder_name = ''
+                            folder_parent = ''
+                            folder_parent_name = ''
                         rows.append({
                             'checksum': d.get('checksum'),
                             'path': d.get('path'),
@@ -644,24 +746,39 @@ def create_app():
                             'created': float(d.get('created') or 0),
                             'modified': float(d.get('modified') or 0),
                             'mime_type': d.get('mime_type'),
-                            'folder': parent,
+                            'folder': folder_path,
+                            'folder_name': folder_name,
+                            'folder_parent': folder_parent,
+                            'folder_parent_name': folder_parent_name,
+                            'parent_in_scan': bool(folder_parent and (folder_parent in folder_set)),
                             'interps': interps,
                         })
                     with driver.session(database=database) as sess:
-                        # MERGE File, Folder, Scan and relationships in batches
+                        # MERGE File, Folder, Scan and relationships in batches; include standalone folders from non-recursive scan
                         cypher = (
                             "UNWIND $rows AS r "
                             "MERGE (f:File {checksum:r.checksum}) "
                             "SET f.path=r.path, f.filename=r.filename, f.extension=r.extension, f.size_bytes=r.size_bytes, "
                             "    f.created=r.created, f.modified=r.modified, f.mime_type=r.mime_type "
                             "FOREACH (_ IN CASE WHEN r.folder IS NOT NULL AND r.folder <> '' THEN [1] ELSE [] END | "
-                            "  MERGE (fo:Folder {path:r.folder}) MERGE (fo)-[:CONTAINS]->(f) ) "
+                            "  MERGE (fo:Folder {path:r.folder}) SET fo.name=r.folder_name MERGE (fo)-[:CONTAINS]->(f) "
+                            "  FOREACH (__ IN CASE WHEN r.folder_parent IS NOT NULL AND r.folder_parent <> '' AND r.parent_in_scan THEN [1] ELSE [] END | "
+                            "    MERGE (fop:Folder {path:r.folder_parent}) SET fop.name=r.folder_parent_name MERGE (fop)-[:CONTAINS]->(fo) ) "
+                            ") "
                             "MERGE (s:Scan {id:$scan_id}) SET s.path=$scan_path, s.started=$scan_started, s.ended=$scan_ended "
                             "MERGE (f)-[:SCANNED_IN]->(s) "
-                            "WITH r,f "
-                            "FOREACH (it IN r.interps | MERGE (t:Type {id:it}) MERGE (f)-[:INTERPRETED_AS]->(t))"
+                            "WITH 1 as _ "
+                            "UNWIND $folders AS r2 "
+                            "MERGE (s:Scan {id:$scan_id}) SET s.path=$scan_path, s.started=$scan_started, s.ended=$scan_ended "
+                            "MERGE (fo:Folder {path:r2.path}) SET fo.name=r2.name "
+                            "MERGE (fo)-[:SCANNED_IN]->(s) "
+                            "FOREACH (__ IN CASE WHEN r2.parent IS NOT NULL AND r2.parent <> '' THEN [1] ELSE [] END | "
+                            "  MERGE (fop:Folder {path:r2.parent}) SET fop.name=r2.parent_name MERGE (fop)-[:CONTAINS]->(fo) )"
                         )
-                        res = sess.run(cypher, rows=rows, scan_id=s.get('id'), scan_path=s.get('path'), scan_started=s.get('started'), scan_ended=s.get('ended'))
+                        folder_rows = []
+                        for f in (s.get('folders') or []):
+                            folder_rows.append({'path': f.get('path'), 'name': f.get('name'), 'parent': f.get('parent'), 'parent_name': f.get('parent_name')})
+                        res = sess.run(cypher, rows=rows, folders=folder_rows, scan_id=s.get('id'), scan_path=s.get('path'), scan_started=s.get('started'), scan_ended=s.get('ended'))
                         # Consume result to ensure execution
                         _ = list(res)
                         neo_written = len(rows)

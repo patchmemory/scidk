@@ -26,6 +26,8 @@ def test_schema_includes_file_and_folder_after_scan(client, tmp_path: Path):
     assert labels2.get('File', 0) >= 2
     assert labels2.get('Folder', 0) >= 2
 
-    # Relationship types include INTERPRETED_AS (might be empty if no interpreter fired) and CONTAINS
+    # Relationship types include CONTAINS; ensure Folder→Folder appears when nested
     rel_types = {e['rel_type'] for e in sch2['edges']}
     assert 'CONTAINS' in rel_types
+    has_folder_folder = any(e['rel_type'] == 'CONTAINS' and e['start_label'] == 'Folder' and e['end_label'] == 'Folder' for e in sch2['edges'])
+    assert has_folder_folder, 'Expected Folder CONTAINS Folder triple when nested folders are present'

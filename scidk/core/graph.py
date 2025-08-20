@@ -130,6 +130,24 @@ class InMemoryGraph:
         if file_count and folder_count:
             key_cf = ('Folder', 'CONTAINS', 'File')
             edge_counts[key_cf] = sum(1 for _ in datasets)
+        # (2b) Folder -[CONTAINS]-> Folder (count unique child folders that have a parent)
+        try:
+            from pathlib import Path as _P
+            unique_folders = set(folder_paths)
+            parent_child_pairs = set()
+            for f in unique_folders:
+                try:
+                    p = str(_P(f).parent)
+                except Exception:
+                    p = ''
+                # Only count Folder->Folder when the parent folder is also part of the observed set
+                if p and p != f and p in unique_folders:
+                    parent_child_pairs.add((p, f))
+            if parent_child_pairs:
+                # One edge record representing Folder→CONTAINS→Folder, count = number of unique child folders
+                edge_counts[('Folder', 'CONTAINS', 'Folder')] = edge_counts.get(('Folder', 'CONTAINS', 'Folder'), 0) + len(parent_child_pairs)
+        except Exception:
+            pass
         # (3) File -[SCANNED_IN]-> Scan (count files linked to any committed scan)
         # (4) Folder -[SCANNED_IN]-> Scan (count unique folders that had files in committed scans)
         if self.dataset_scans:
@@ -231,7 +249,7 @@ class InMemoryGraph:
                     continue
                 parent = str(_P(p).parent)
                 counts[parent] = counts.get(parent, 0) + 1
-            rows = [{'path': k, 'file_count': v} for k, v in counts.items()]
+            rows = [{'path': k, 'name': (_P(k).name if k else ''), 'file_count': v} for k, v in counts.items()]
             rows.sort(key=lambda r: r['path'])
             return rows
         if label == 'Scan':
