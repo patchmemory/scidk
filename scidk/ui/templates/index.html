@@ -18,10 +18,14 @@
   {% endif %}
   {% if directories and directories|length > 0 %}
     <details style="margin-top:.5rem;">
-      <summary class="small">Scanned Directories (aggregate)</summary>
+      <summary class="small">Scanned Sources</summary>
       <ul>
         {% for d in directories %}
-          <li><code>{{ d.path }}</code> — files: {{ d.scanned }}, recursive: {{ d.recursive }}{% if d.source %} — <span class="badge">{{ d.source }}</span>{% endif %}</li>
+          <li>
+            {% if d.provider_id %}<span class="badge" title="Provider">{{ d.provider_id }}</span> {% endif %}
+            <code>{{ d.path }}</code> — files: {{ d.scanned }}, recursive: {{ d.recursive }}
+            {% if d.source %} — <span class="badge" title="Scanner">{{ d.source }}</span>{% endif %}
+          </li>
         {% endfor %}
       </ul>
     </details>

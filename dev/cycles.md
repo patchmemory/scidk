@@ -84,6 +84,39 @@
 - Tests: Covered indirectly via existing scan APIs; targeted unit tests can be added in follow-up if needed.
 - Added Test: tests/test_directories_api.py validates that scanned directories are returned by GET /api/directories.
 
+### Retro (mvp-iter-2025-08-18-2306)
+- What Worked
+  - GUI-first split between Home (directories list) and Files (scan action) kept scope focused and demoable.
+  - Lightweight in-memory registry for scanned directories enabled quick API/UI parity.
+  - Small, targeted API test (GET /api/directories) increased confidence with minimal overhead.
+- What Slowed Us
+  - Early ambiguity around persistence vs. session-only storage; resolved by deferring persistence.
+  - Minor rework moving scan form to Files page and updating links; some template churn.
+- Scope Adjustments
+  - Deferred persisted storage and advanced grouping/sorting of directories; shipped session-only list and basic fields.
+  - Cut rich grouping details per pre-defined cut line; kept a simple card/list.
+- Carry-overs
+  - Persistence for scanned directories across restarts (disk or DB-backed registry).
+  - UI polish for directories list (grouping, sorting, badges for source when external scanners in play).
+  - Additional unit tests for edge cases (duplicate scans, large trees) — optional if covered elsewhere.
+- Next Cycle Candidates (Updated RICE)
+  - task:core-architecture/mvp/search-index — RICE 4.2
+  - task:ui/mvp/home-search-ui — RICE 3.8
+  - task:core-architecture/mvp/neo4j-adapter-prep — RICE 3.3
+  - task:interpreters/mvp/ipynb-interpreter — RICE 3.4
+  - task:ops/mvp/error-toasts — RICE 1.3
+
+### Proposed Next Cycle (2025-08-25 → 2025-08-29)
+Story: providers-mvp-multi-source-files — see dev/stories/story-mvp-multi-provider-files-and-interpreters.md
+- E2E Objective
+  - A user can search datasets by filename or interpreter id from the Home page; retain a documented, switchable graph boundary to prepare for Neo4j. GUI-first: demo shows search working end-to-end.
+- Top 5 Tasks
+  1) task:core-architecture/mvp/search-index — Implement simple in-memory index and /api/search with fields: id, path, filename, extension, interpreter_id, matched_on. Owner: agent; RICE: 4.2.
+  2) task:ui/mvp/home-search-ui — Add Home search box + results list bound to /api/search; link to dataset detail. Owner: agent; RICE: 3.8.
+  3) task:core-architecture/mvp/neo4j-adapter-prep — Finalize adapter boundary docs + feature flag plan; ensure current usage audit complete. Owner: agent; RICE: 3.3.
+  4) task:core-architecture/mvp/tests-hardening — Add focused tests for /api/search (filename and interpreter matches, empty results) and idempotent scan behavior. Owner: agent; RICE: 1.5.
+  5) task:ops/mvp/error-toasts — Minimal client-side error toasts/log clarity for API calls (search, scan). Owner: agent; RICE: 1.3.
+
 ### Iteration Plan (mvp-iter-2025-08-18-2259)
 1) E2E Objective
    - Add more Interpreters and refactor "Extensions" to "Interpreters" for the page name and links; ensure legacy links still work.

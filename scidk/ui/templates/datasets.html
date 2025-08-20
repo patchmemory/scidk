@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
-{% block title %}SciDK - Files{% endblock %}
+{% block title %}SciDK - File{% endblock %}
 {% block content %}
-<h1>Files</h1>
+<h1>File</h1>
 <section>
   <h2>Scans Summary</h2>
   <div class="table-responsive" style="max-height:280px; overflow:auto; border:1px solid #eee">
@@ -53,14 +53,57 @@
 
   {% if directories %}
     <details style="margin-top:.5rem;">
-      <summary class="small">Previously scanned directories (this session)</summary>
+      <summary class="small">Previously scanned sources (this session)</summary>
       <ul>
         {% for d in directories %}
-          <li><code>{{ d.path }}</code> — files: {{ d.scanned }}, recursive: {{ d.recursive }}{% if d.source %} — <span class="badge">{{ d.source }}</span>{% endif %}</li>
+          <li>{% if d.provider_id %}<span class="badge">{{ d.provider_id }}</span> {% endif %}<code>{{ d.path }}</code> — files: {{ d.scanned }}, recursive: {{ d.recursive }}{% if d.source %} — <span class="badge">{{ d.source }}</span>{% endif %}</li>
         {% endfor %}
       </ul>
     </details>
   {% endif %}
+</section>
+
+<section>
+  <h2>Provider Browser (MVP)</h2>
+  <div class="row g-2" style="margin-bottom:.5rem">
+    <div class="col-auto">
+      <label for="prov-select" class="form-label small" style="margin-bottom:.25rem">Provider</label>
+      <select id="prov-select" class="form-select form-select-sm" style="min-width:220px"></select>
+    </div>
+    <div class="col-auto">
+      <label for="root-select" class="form-label small" style="margin-bottom:.25rem">Root</label>
+      <select id="root-select" class="form-select form-select-sm" style="min-width:320px"></select>
+    </div>
+    <div class="col-auto" style="display:flex; gap:.5rem; align-items:end;">
+      <button id="prov-load-root" class="btn btn-sm btn-outline-primary">Load</button>
+    </div>
+  </div>
+  <div id="prov-crumb" class="small" style="margin-bottom:.5rem"></div>
+  <div style="display:flex; gap:1rem; align-items:flex-start">
+    <div style="flex: 2 1 60%; border:1px solid #eee; max-height:420px; overflow:auto">
+      <table class="table table-sm" style="margin-bottom:0">
+        <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Modified</th><th>Provider</th></tr></thead>
+        <tbody id="prov-list"></tbody>
+      </table>
+    </div>
+    <div id="prov-panel" style="flex: 1 1 40%; border:1px solid #eee; min-height:200px; padding:.5rem; position:sticky; top:1rem">
+      <div class="small" id="prov-panel-content">Select a provider, root, and item to see details.
+        <div style="margin-top:.5rem">
+          <form id="prov-scan-form" class="row g-2">
+            <div class="col-auto small">Scan selected folder (recursive):</div>
+            <div class="col-auto form-check">
+              <input id="prov-scan-recursive" class="form-check-input" type="checkbox" checked />
+              <label class="form-check-label small" for="prov-scan-recursive">Recursive</label>
+            </div>
+            <div class="col-auto">
+              <button type="submit" class="btn btn-sm btn-primary">Scan</button>
+            </div>
+          </form>
+          <div class="small" id="prov-scan-msg" style="margin-top:.25rem"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </section>
 
 <section>
@@ -96,6 +139,100 @@
 {% block head %}
 <script>
   window.addEventListener('DOMContentLoaded', () => {
+    // Provider-aware browser
+    const provSelect = document.getElementById('prov-select');
+    const rootSelect = document.getElementById('root-select');
+    const provLoadBtn = document.getElementById('prov-load-root');
+    const provList = document.getElementById('prov-list');
+    const provCrumb = document.getElementById('prov-crumb');
+    const provPanel = document.getElementById('prov-panel-content');
+    const provScanForm = document.getElementById('prov-scan-form');
+    const provScanMsg = document.getElementById('prov-scan-msg');
+    let currentProv = null;
+    let currentRoot = null;
+    let currentPath = null;
+
+    function fmtBytes(n){ if(!n) return ''; const s=['B','KB','MB','GB','TB']; let i=0; let v=n; while(v>=1024 && i<s.length-1){ v/=1024; i++; } return (Math.round(v*10)/10)+' '+s[i]; }
+    function fmtTime(ts){ try { return new Date(ts*1000).toLocaleString(); } catch(e){ return String(ts); } }
+
+    async function loadProviders(){
+      try {
+        const r = await fetch('/api/providers');
+        const items = await r.json();
+        provSelect.innerHTML = items.map(p => `<option value="${p.id}">${p.display_name}</option>`).join('');
+        currentProv = items[0]?.id || 'local_fs';
+        provSelect.value = currentProv;
+        await loadRoots(currentProv);
+      } catch(e){ provSelect.innerHTML = '<option>(failed)</option>'; }
+    }
+
+    async function loadRoots(providerId){
+      try {
+        const r = await fetch('/api/provider_roots?provider_id=' + encodeURIComponent(providerId));
+        const roots = await r.json();
+        if (!Array.isArray(roots)) { rootSelect.innerHTML = '<option>(none)</option>'; return; }
+        rootSelect.innerHTML = roots.map(rt => `<option value="${rt.id}">${rt.name||rt.path||rt.id}</option>`).join('');
+        currentRoot = roots[0]?.id || '/';
+        rootSelect.value = currentRoot;
+      } catch(e){ rootSelect.innerHTML = '<option>(failed)</option>'; }
+    }
+
+    async function browse(providerId, rootId, path){
+      const qs = new URLSearchParams({ provider_id: providerId||'local_fs', root_id: rootId||'/', path: path||rootId||'/' });
+      try {
+        const r = await fetch('/api/browse?' + qs.toString());
+        const j = await r.json();
+        // no breadcrumb API; show current path and root only
+        const displayPath = path || rootId || '/';
+        provCrumb.innerHTML = `<span class="small">Path: <code>${displayPath}</code></span>`;
+        const rows = (j.entries||[]).map(e => {
+          const type = e.type === 'folder' ? 'Folder' : 'File';
+          const size = e.type === 'folder' ? '' : fmtBytes(e.size||0);
+          const mod = fmtTime(e.mtime||0);
+          const prov = providerId;
+          return `<tr class="prov-item" data-id="${e.id}" data-type="${e.type}"><td>${e.name}</td><td>${type}</td><td>${size}</td><td>${mod}</td><td><span class="badge">${prov}</span></td></tr>`;
+        }).join('');
+        provList.innerHTML = rows || '<tr><td colspan="5" class="small">Empty folder.</td></tr>';
+        attachProvHandlers();
+      } catch(e){ provList.innerHTML = '<tr><td colspan="5" class="small">Browse failed.</td></tr>'; }
+    }
+
+    function attachProvHandlers(){
+      document.querySelectorAll('tr.prov-item')?.forEach(tr => {
+        tr.addEventListener('click', () => {
+          const id = tr.getAttribute('data-id');
+          const type = tr.getAttribute('data-type');
+          if (type === 'folder'){
+            currentPath = id;
+            browse(currentProv, currentRoot, currentPath);
+          } else {
+            provPanel.innerHTML = `<div><strong>${tr.firstChild?.textContent||id}</strong></div><div class="small">Path: <code>${id}</code></div>`;
+          }
+        });
+      });
+    }
+
+    if (provSelect){
+      provSelect.addEventListener('change', async () => { currentProv = provSelect.value; await loadRoots(currentProv); provList.innerHTML = ''; provCrumb.innerHTML=''; });
+    }
+    if (provLoadBtn){
+      provLoadBtn.addEventListener('click', () => { currentProv = provSelect.value; currentRoot = rootSelect.value; currentPath = currentRoot; browse(currentProv, currentRoot, currentPath); });
+    }
+    if (provScanForm){
+      provScanForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!currentProv || !currentPath){ provScanMsg.textContent = 'Select a provider and folder first.'; return; }
+        const recursive = document.getElementById('prov-scan-recursive').checked;
+        try {
+          const r = await fetch('/api/scan', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ provider_id: currentProv, root_id: currentRoot||'/', path: currentPath, recursive }) });
+          const j = await r.json();
+          if (r.ok){ provScanMsg.textContent = `Scan started: ${j.scan_id} — scanned ${j.scanned} files`; }
+          else { provScanMsg.textContent = `Scan error: ${j.error||r.status}`; }
+        } catch(err){ provScanMsg.textContent = 'Scan error: ' + err; }
+      });
+    }
+
+    // Existing Files Browser (scanned directories)
     // Open scan from dropdown
     const select = document.getElementById('recent-scans');
     const btn = document.getElementById('open-scan');
@@ -304,6 +441,9 @@
     if (fbLoad){ fbLoad.addEventListener('click', () => { loadDir(fbBase.value, null); }); }
     // Auto-load for selected scan base if present
     if (fbBase && fbBase.value){ loadDir(fbBase.value, null); }
+
+    // Initialize provider UI
+    if (provSelect){ loadProviders(); }
   });
 </script>
 {% endblock %}

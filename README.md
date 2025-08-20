@@ -55,6 +55,14 @@ Note: The scanner prefers NCDU for fast filesystem enumeration when available. I
 - More details in dev/deployment.md (includes direct cypher-shell commands).
 
 ## API
+
+### Filesystem Providers (MVP)
+- Feature flag: set SCIDK_PROVIDERS to a comma-separated list (default: local_fs,mounted_fs)
+- GET /api/providers → [{ id, display_name, capabilities, auth }]
+- GET /api/provider_roots?provider_id=local_fs → list available roots/drives for the provider
+- GET /api/browse?provider_id=local_fs&root_id=/&path=/home/user → { entries: [ { id, name, type, size, mtime, provider_id } ] }
+- POST /api/scan { provider_id, root_id?, path, recursive? } → starts a scan using the provided path
+  - Legacy: provider_id omitted defaults to local_fs and scans the local filesystem path
 - POST /api/scan {"path": "/path", "recursive": true}
 - GET /api/datasets
 - GET /api/datasets/<id>

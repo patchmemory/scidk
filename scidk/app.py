@@ -10,7 +10,10 @@ from .interpreters.csv_interpreter import CsvInterpreter
 from .interpreters.json_interpreter import JsonInterpreter
 from .interpreters.yaml_interpreter import YamlInterpreter
 from .interpreters.ipynb_interpreter import IpynbInterpreter
+from .interpreters.txt_interpreter import TxtInterpreter
+from .interpreters.xlsx_interpreter import XlsxInterpreter
 from .core.pattern_matcher import Rule
+from .core.providers import ProviderRegistry as FsProviderRegistry, LocalFSProvider, MountedFSProvider
 
 
 def create_app():
@@ -26,12 +29,17 @@ def create_app():
     json_interp = JsonInterpreter()
     yaml_interp = YamlInterpreter()
     ipynb_interp = IpynbInterpreter()
+    txt_interp = TxtInterpreter()
+    xlsx_interp = XlsxInterpreter()
     registry.register_extension(".py", py_interp)
     registry.register_extension(".csv", csv_interp)
     registry.register_extension(".json", json_interp)
     registry.register_extension(".yml", yaml_interp)
     registry.register_extension(".yaml", yaml_interp)
     registry.register_extension(".ipynb", ipynb_interp)
+    registry.register_extension(".txt", txt_interp)
+    registry.register_extension(".xlsx", xlsx_interp)
+    registry.register_extension(".xlsm", xlsx_interp)
     # Register simple rules to prefer interpreters for extensions
     registry.register_rule(Rule(id="rule.py.default", interpreter_id=py_interp.id, pattern="*.py", priority=10, conditions={"ext": ".py"}))
     registry.register_rule(Rule(id="rule.csv.default", interpreter_id=csv_interp.id, pattern="*.csv", priority=10, conditions={"ext": ".csv"}))
@@ -39,8 +47,19 @@ def create_app():
     registry.register_rule(Rule(id="rule.yml.default", interpreter_id=yaml_interp.id, pattern="*.yml", priority=10, conditions={"ext": ".yml"}))
     registry.register_rule(Rule(id="rule.yaml.default", interpreter_id=yaml_interp.id, pattern="*.yaml", priority=10, conditions={"ext": ".yaml"}))
     registry.register_rule(Rule(id="rule.ipynb.default", interpreter_id=ipynb_interp.id, pattern="*.ipynb", priority=10, conditions={"ext": ".ipynb"}))
+    registry.register_rule(Rule(id="rule.txt.default", interpreter_id=txt_interp.id, pattern="*.txt", priority=10, conditions={"ext": ".txt"}))
+    registry.register_rule(Rule(id="rule.xlsx.default", interpreter_id=xlsx_interp.id, pattern="*.xlsx", priority=10, conditions={"ext": ".xlsx"}))
+    registry.register_rule(Rule(id="rule.xlsm.default", interpreter_id=xlsx_interp.id, pattern="*.xlsm", priority=10, conditions={"ext": ".xlsm"}))
 
     fs = FilesystemManager(graph=graph, registry=registry)
+
+    # Initialize filesystem providers (Phase 0)
+    prov_enabled = [p.strip() for p in (os.environ.get('SCIDK_PROVIDERS', 'local_fs,mounted_fs').split(',')) if p.strip()]
+    fs_providers = FsProviderRegistry(enabled=prov_enabled)
+    p_local = LocalFSProvider(); p_local.initialize(app, {})
+    p_mounted = MountedFSProvider(); p_mounted.initialize(app, {})
+    fs_providers.register(p_local)
+    fs_providers.register(p_mounted)
 
     # Store refs on app for easy access
     app.extensions = getattr(app, 'extensions', {})
@@ -48,6 +67,7 @@ def create_app():
         'graph': graph,
         'registry': registry,
         'fs': fs,
+                'providers': fs_providers, 
         # in-session registries
         'scans': {},  # scan_id -> scan session dict
         'directories': {},  # path -> aggregate info incl. scan_ids
@@ -80,7 +100,9 @@ def create_app():
     @api.post('/scan')
     def api_scan():
         data = request.get_json(force=True, silent=True) or {}
-        path = data.get('path') or os.getcwd()
+        provider_id = (data.get('provider_id') or 'local_fs').strip() or 'local_fs'
+        root_id = (data.get('root_id') or '/').strip() or '/'
+        path = data.get('path') or (root_id if provider_id != 'local_fs' else os.getcwd())
         recursive = bool(data.get('recursive', True))
         try:
             import time, hashlib
@@ -119,6 +141,16 @@ def create_app():
             # Create scan session id (short sha1 of path+started)
             sid_src = f"{path}|{started}"
             scan_id = hashlib.sha1(sid_src.encode()).hexdigest()[:12]
+            # Provider metadata for scan/session records
+            provs = app.extensions['scidk'].get('providers')
+            prov = provs.get(provider_id) if provs else None
+            root_label = None
+            try:
+                if prov:
+                    # Use last path part or name for label if possible
+                    root_label = Path(root_id).name or str(root_id)
+            except Exception:
+                root_label = None
             scan = {
                 'id': scan_id,
                 'path': str(path),
@@ -135,6 +167,10 @@ def create_app():
                 'errors': [],
                 'committed': False,
                 'committed_at': None,
+                'provider_id': provider_id,
+                'root_id': root_id,
+                'root_label': root_label,
+                'scan_source': f"provider:{provider_id}",
             }
             scans = app.extensions['scidk'].setdefault('scans', {})
             scans[scan_id] = scan
@@ -148,13 +184,33 @@ def create_app():
                 'ended': ended,
                 'duration_sec': duration,
                 'source': getattr(fs, 'last_scan_source', 'python'),
+                'provider_id': provider_id,
+                'root_id': root_id,
             }
             # Track scanned directories (in-session registry)
             dirs = app.extensions['scidk'].setdefault('directories', {})
-            drec = dirs.setdefault(str(path), {'path': str(path), 'recursive': bool(recursive), 'scanned': 0, 'last_scanned': 0, 'scan_ids': [], 'source': getattr(fs, 'last_scan_source', 'python')})
-            drec.update({'recursive': bool(recursive), 'scanned': int(count), 'last_scanned': ended, 'source': getattr(fs, 'last_scan_source', 'python')})
+            drec = dirs.setdefault(str(path), {
+                'path': str(path),
+                'recursive': bool(recursive),
+                'scanned': 0,
+                'last_scanned': 0,
+                'scan_ids': [],
+                'source': getattr(fs, 'last_scan_source', 'python'),
+                'provider_id': provider_id,
+                'root_id': root_id,
+                'root_label': root_label,
+            })
+            drec.update({
+                'recursive': bool(recursive),
+                'scanned': int(count),
+                'last_scanned': ended,
+                'source': getattr(fs, 'last_scan_source', 'python'),
+                'provider_id': provider_id,
+                'root_id': root_id,
+                'root_label': root_label,
+            })
             drec.setdefault('scan_ids', []).append(scan_id)
-            return jsonify({"status": "ok", "scan_id": scan_id, "scanned": count, "duration_sec": duration, "path": str(path), "recursive": bool(recursive)}), 200
+            return jsonify({"status": "ok", "scan_id": scan_id, "scanned": count, "duration_sec": duration, "path": str(path), "recursive": bool(recursive), "provider_id": provider_id}), 200
         except Exception as e:
             return jsonify({"status": "error", "error": str(e)}), 400
 
@@ -550,6 +606,51 @@ def create_app():
             return (0 if 'filename' in r['matched_on'] else 1, r['filename'] or '')
         results.sort(key=score)
         return jsonify(results), 200
+
+    @api.get('/providers')
+    def api_providers():
+        provs = app.extensions['scidk']['providers']
+        out = []
+        for d in provs.list():
+            out.append({
+                'id': d.id,
+                'display_name': d.display_name,
+                'capabilities': d.capabilities,
+                'auth': d.auth,
+            })
+        return jsonify(out), 200
+
+    @api.get('/provider_roots')
+    def api_provider_roots():
+        prov_id = (request.args.get('provider_id') or 'local_fs').strip() or 'local_fs'
+        try:
+            provs = app.extensions['scidk']['providers']
+            prov = provs.get(prov_id)
+            if not prov:
+                return jsonify({'error': 'provider not available'}), 400
+            roots = prov.list_roots()
+            return jsonify([{'id': r.id, 'name': r.name, 'path': r.path} for r in roots]), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @api.get('/browse')
+    def api_browse():
+        prov_id = (request.args.get('provider_id') or 'local_fs').strip() or 'local_fs'
+        root_id = (request.args.get('root_id') or '/').strip() or '/'
+        path_q = (request.args.get('path') or '').strip()
+        try:
+            provs = app.extensions['scidk']['providers']
+            prov = provs.get(prov_id)
+            if not prov:
+                return jsonify({'error': 'provider not available'}), 400
+            # If path empty, default to root_id
+            listing = prov.list(root_id=root_id, path=path_q or root_id)
+            # Augment with provider badge and convenience fields
+            for e in listing.get('entries', []):
+                e['provider_id'] = prov_id
+            return jsonify(listing), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
 
     @api.get('/directories')
     def api_directories():
@@ -1301,7 +1402,12 @@ def create_app():
             'dataset_count': len(datasets),
             'interpreter_count': len(reg.by_id),
         }
-        return render_template('settings.html', info=info)
+        # Provide interpreter mappings and rules, and plugin summary counts for the Set page sections
+        mappings = {ext: [getattr(i, 'id', 'unknown') for i in interps] for ext, interps in reg.by_extension.items()}
+        rules = list(reg.rules.rules)
+        ext_count = len(reg.by_extension)
+        interp_count = len(reg.by_id)
+        return render_template('settings.html', info=info, mappings=mappings, rules=rules, ext_count=ext_count, interp_count=interp_count)
 
     @ui.post('/scan')
     def ui_scan():

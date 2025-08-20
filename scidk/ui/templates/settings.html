@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
-{% block title %}SciDK - Settings{% endblock %}
+{% block title %}SciDK - Set{% endblock %}
 {% block content %}
-<h1>Settings</h1>
+<h1>Set</h1>
 <p class="small">Basic runtime information and counts.</p>
 <ul>
   <li>Host: {{ info.host }}</li>
@@ -10,6 +10,36 @@
   <li>Datasets: {{ info.dataset_count }}</li>
   <li>Interpreters: {{ info.interpreter_count }}</li>
 </ul>
+
+<section style="margin-top:1rem">
+  <h2>Interpreters</h2>
+  <p class="small">Registered interpreter mappings and selection rules. See full page at <a href="/interpreters">/interpreters</a>.</p>
+  <h3 class="small">Mappings (extension → interpreter ids)</h3>
+  <ul>
+    {% for ext, ids in (mappings or {}).items() %}
+      <li><code>{{ ext }}</code> → {{ ids }}</li>
+    {% else %}
+      <li class="small">No mappings.</li>
+    {% endfor %}
+  </ul>
+  <h3 class="small">Rules</h3>
+  <ul>
+    {% for r in (rules or []) %}
+      <li><code>{{ r.id }}</code> → interpreter_id={{ r.interpreter_id }}, pattern={{ r.pattern }}, priority={{ r.priority }}</li>
+    {% else %}
+      <li class="small">No rules.</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section style="margin-top:1rem">
+  <h2>Plugins</h2>
+  <p class="small">Plugin registry summary. See full page at <a href="/plugins">/plugins</a>.</p>
+  <ul>
+    <li class="small">Registered interpreter count: {{ interp_count or 0 }}</li>
+    <li class="small">Extensions mapped: {{ ext_count or 0 }}</li>
+  </ul>
+</section>
 
 <section style="margin-top:1rem">
   <h2>Neo4j Connection</h2>
