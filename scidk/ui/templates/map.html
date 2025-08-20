@@ -2,32 +2,266 @@
 {% block title %}SciDK - Map{% endblock %}
 {% block content %}
 <section>
-  <h2>Graph Schema Summary</h2>
-  <p class="small">MVP placeholder. Shows inferred node counts, relation counts, and interpretation types.</p>
-  <ul>
-    <li>Nodes: Dataset = {{ schema_summary.nodes.Dataset }}</li>
-    <li>Relations:
+  <h2>Graph Schema</h2>
+  <p class="small">MVP: table-based schema view showing node labels and relationship types with counts. Data reflects the current in-memory session.</p>
+  <div style="display:flex; gap:2rem; flex-wrap:wrap; align-items:flex-start;">
+    <div>
+      <h3>Node Labels</h3>
+      <table class="table table-sm">
+        <thead>
+          <tr><th>Label</th><th>Count</th></tr>
+        </thead>
+        <tbody>
+          {% for label, cnt in schema_summary.nodes.items() %}
+            <tr><td>{{ label }}</td><td>{{ cnt }}</td></tr>
+          {% else %}
+            <tr><td colspan="2" class="small">No nodes</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <h3>Relationship Types</h3>
+      <table class="table table-sm">
+        <thead>
+          <tr><th>Type</th><th>Count</th></tr>
+        </thead>
+        <tbody>
+          {% for rel, cnt in schema_summary.relations.items() %}
+            <tr><td>{{ rel }}</td><td>{{ cnt }}</td></tr>
+          {% else %}
+            <tr><td colspan="2" class="small">No relationships</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div>
+    <h3>Interpretation Types</h3>
+    {% if schema_summary.interpretation_types %}
       <ul>
-        {% for rel, cnt in schema_summary.relations.items() %}
-          <li>{{ rel }} = {{ cnt }}</li>
-        {% else %}
-          <li class="small">None</li>
+        {% for it in schema_summary.interpretation_types %}
+          <li>{{ it }}</li>
         {% endfor %}
       </ul>
-    </li>
-    <li>Interpretation types: {{ schema_summary.interpretation_types }}</li>
-  </ul>
+    {% else %}
+      <p class="small">None</p>
+    {% endif %}
+  </div>
 </section>
 
 <section>
-  <h2>Graph Visualization</h2>
-  <p class="small">Placeholder visualization. An interactive graph canvas will be added in a future iteration.</p>
-  <div style="border:1px dashed #ccc; height:200px; display:flex; align-items:center; justify-content:center; color:#666;">Graph canvas placeholder</div>
+  <h2>Schema Graph (Interactive)</h2>
+  <div class="row g-2" style="margin-bottom:.5rem">
+    <div class="col-auto">
+      <label for="filter-labels" class="form-label small" style="margin-bottom:.25rem">Labels</label>
+      <select id="filter-labels" class="form-select form-select-sm">
+        <option value="">All</option>
+        <option value="File">File</option>
+        <option value="Folder">Folder</option>
+        <option value="Scan">Scan</option>
+      </select>
+    </div>
+    <div class="col-auto">
+      <label for="filter-reltypes" class="form-label small" style="margin-bottom:.25rem">Relationship Types</label>
+      <select id="filter-reltypes" class="form-select form-select-sm">
+        <option value="">All</option>
+        <option value="INTERPRETED_AS">INTERPRETED_AS</option>
+        <option value="CONTAINS">CONTAINS</option>
+        <option value="SCANNED_IN">SCANNED_IN</option>
+      </select>
+    </div>
+    <div class="col-auto">
+      <label for="layout-mode" class="form-label small" style="margin-bottom:.25rem">Layout</label>
+      <select id="layout-mode" class="form-select form-select-sm">
+        <option value="cose">Force (cose)</option>
+        <option value="breadthfirst">Hierarchical (breadthfirst)</option>
+        <option value="manual">Manual</option>
+      </select>
+    </div>
+    <div class="col-auto" style="display:flex; gap:.5rem; align-items:end;">
+      <button id="save-positions" class="btn btn-sm btn-outline-secondary">Save</button>
+      <button id="load-positions" class="btn btn-sm btn-outline-secondary">Load</button>
+    </div>
+    <div class="col-auto">
+      <label for="node-size" class="form-label small" style="margin-bottom:.25rem">Node size</label>
+      <input id="node-size" type="range" class="form-range" min="0.5" max="3" step="0.1" value="1" style="width:140px">
+    </div>
+    <div class="col-auto">
+      <label for="edge-width" class="form-label small" style="margin-bottom:.25rem">Edge width</label>
+      <input id="edge-width" type="range" class="form-range" min="0.5" max="3" step="0.1" value="1" style="width:140px">
+    </div>
+    <div class="col-auto">
+      <label for="font-size" class="form-label small" style="margin-bottom:.25rem">Label font</label>
+      <input id="font-size" type="range" class="form-range" min="8" max="18" step="1" value="10" style="width:140px">
+    </div>
+    <div class="col-auto form-check" style="padding-top:1.6rem">
+      <input class="form-check-input" type="checkbox" id="high-contrast" />
+      <label class="form-check-label small" for="high-contrast">High-contrast labels</label>
+    </div>
+  </div>
+  <div id="schema-graph" style="width: 100%; height: 420px; border: 1px solid #ddd"></div>
+  <div style="margin-top: .5rem">
+    <button id="download-csv" class="btn btn-sm btn-outline-primary">Download Schema (CSV)</button>
+  </div>
+
+  <div style="margin-top:1rem">
+    <h3>Instances (preview & download)</h3>
+    <div class="row g-2" style="margin-bottom:.5rem">
+      <div class="col-auto">
+        <label for="instances-label" class="form-label small" style="margin-bottom:.25rem">Label</label>
+        <select id="instances-label" class="form-select form-select-sm">
+          <option value="Scan" selected>Scan</option>
+          <option value="File">File</option>
+          <option value="Folder">Folder</option>
+        </select>
+      </div>
+      <div class="col-auto" style="display:flex; gap:.5rem; align-items:end;">
+        <button id="instances-preview" class="btn btn-sm btn-outline-secondary">Preview</button>
+        <a id="dl-file-csv" class="btn btn-sm btn-outline-primary" href="/api/graph/instances.csv?label=File">Files CSV</a>
+        <a id="dl-folder-csv" class="btn btn-sm btn-outline-primary" href="/api/graph/instances.csv?label=Folder">Folders CSV</a>
+        <a id="dl-scan-csv" class="btn btn-sm btn-outline-primary" href="/api/graph/instances.csv?label=Scan">Scans CSV</a>
+        <a id="dl-file-xlsx" class="btn btn-sm btn-outline-secondary" href="/api/graph/instances.xlsx?label=File">Files XLSX</a>
+      </div>
+    </div>
+    <div id="instances-table" class="table-responsive" style="max-height:240px; overflow:auto; border:1px solid #eee"></div>
+  </div>
 </section>
 
-<section>
-  <h2>Workbook Viewer (XLSX)</h2>
-  <p class="small">Placeholder: select a .xlsx dataset to preview sheets as tabs in a future iteration.</p>
-  <p class="small">Tip: After scanning, go to Files and open an .xlsx dataset. A dedicated viewer is available per file.</p>
-</section>
+<script src="https://unpkg.com/cytoscape@3.27.0/dist/cytoscape.min.js"></script>
+<script>
+(async function() {
+  function qs(params){
+    const u = new URLSearchParams();
+    for (const [k,v] of Object.entries(params)) if (v) u.set(k, v);
+    return u.toString();
+  }
+  async function fetchSchema(params) {
+    try {
+      const q = params ? ('?' + qs(params)) : '';
+      const url = params ? ('/api/graph/subschema' + q) : '/api/graph/schema';
+      const res = await fetch(url);
+      return await res.json();
+    } catch (e) {
+      console.error('Schema fetch failed', e);
+      return { nodes: [], edges: [] };
+    }
+  }
+  let nodeMul = 1.0;
+  let edgeMul = 1.0;
+  let labelFont = 10;
+  let highContrast = false;
+  function scaleBase(val) { return 14 + 8 * Math.log(1 + (val||1)); }
+  function scale(val) { return scaleBase(val) * nodeMul; }
+  function toElements(data){
+    const nodes = new Map();
+    for (const n of (data.nodes||[])) {
+      nodes.set(n.label, { data: { id: n.label, label: n.label, count: n.count } });
+    }
+    const edges = [];
+    for (const e of (data.edges||[])) {
+      const id = `${e.start_label}|${e.rel_type}|${e.end_label}`;
+      if (!nodes.has(e.start_label)) nodes.set(e.start_label, { data: { id: e.start_label, label: e.start_label, count: 1 } });
+      if (!nodes.has(e.end_label)) nodes.set(e.end_label, { data: { id: e.end_label, label: e.end_label, count: 1 } });
+      edges.push({ data: { id, source: e.start_label, target: e.end_label, type: e.rel_type, count: e.count } });
+    }
+    return [...nodes.values(), ...edges];
+  }
+  let data = await fetchSchema();
+  const cy = cytoscape({
+    container: document.getElementById('schema-graph'),
+    elements: toElements(data),
+    style: [
+      { selector: 'node', style: {
+          'label': 'data(label)', 'text-valign': 'center', 'text-halign': 'center',
+          'background-color': '#4e79a7', 'color': '#fff', 'font-size': 10,
+          'width': ele => scale(ele.data('count')), 'height': ele => scale(ele.data('count'))
+      }},
+      { selector: 'edge', style: {
+          'curve-style': 'bezier', 'line-color': '#999', 'target-arrow-color': '#999', 'target-arrow-shape': 'triangle',
+          'width': ele => Math.max(1, Math.log(1 + (ele.data('count')||1))) * edgeMul,
+          'label': 'data(type)', 'font-size': () => labelFont, 'color': '#555', 'text-rotation': 'autorotate', 'text-margin-x': 2, 'text-margin-y': 2, 'text-outline-color': () => (highContrast ? '#fff' : 'transparent'), 'text-outline-width': () => (highContrast ? 3 : 0)
+      }}
+    ],
+    layout: { name: 'cose', animate: false }
+  });
+  function runLayout(name){
+    if (name === 'manual') return; // don't run a layout in manual mode
+    cy.layout({ name: name || 'cose', animate: false }).run();
+  }
+  function render(newData){
+    data = newData;
+    cy.json({ elements: toElements(data) });
+    const mode = (document.getElementById('layout-mode')||{}).value || 'cose';
+    runLayout(mode);
+  }
+  const lbl = document.getElementById('filter-labels');
+  const rlt = document.getElementById('filter-reltypes');
+  const layoutSel = document.getElementById('layout-mode');
+  const keyPos = 'scidk.schema.positions';
+  const keyLayout = 'scidk.schema.layout';
+  function savePositions(){
+    const pos = {};
+    cy.nodes().forEach(n => { pos[n.id()] = n.position(); });
+    localStorage.setItem(keyPos, JSON.stringify(pos));
+    const mode = layoutSel ? layoutSel.value : 'cose';
+    localStorage.setItem(keyLayout, mode);
+  }
+  function loadPositions(){
+    const pos = JSON.parse(localStorage.getItem(keyPos) || '{}');
+    const ids = Object.keys(pos);
+    if (ids.length){
+      cy.nodes().positions(n => pos[n.id()] || n.position());
+      cy.layout({ name: 'preset' }).run();
+    }
+    const savedLayout = localStorage.getItem(keyLayout);
+    if (savedLayout){ if (layoutSel) layoutSel.value = savedLayout; }
+  }
+  async function onFilter(){
+    const labels = lbl && lbl.value ? lbl.value : '';
+    const rel_types = rlt && rlt.value ? rlt.value : '';
+    const params = {};
+    if (labels) params.labels = labels;
+    if (rel_types) params.rel_types = rel_types;
+    const nd = await fetchSchema(Object.keys(params).length ? params : null);
+    render(nd);
+  }
+  if (lbl) lbl.onchange = onFilter;
+  if (rlt) rlt.onchange = onFilter;
+  if (layoutSel) layoutSel.onchange = () => runLayout(layoutSel.value);
+  const btn = document.getElementById('download-csv');
+  if (btn) btn.onclick = () => { window.location = '/api/graph/schema.csv'; };
+  const btnSave = document.getElementById('save-positions');
+  const btnLoad = document.getElementById('load-positions');
+  if (btnSave) btnSave.onclick = savePositions;
+  if (btnLoad) btnLoad.onclick = loadPositions;
+  // tuning controls
+  const nodeSize = document.getElementById('node-size');
+  const edgeWidth = document.getElementById('edge-width');
+  const fontSize = document.getElementById('font-size');
+  const hc = document.getElementById('high-contrast');
+  function updateStyles(){ cy.style().update(); }
+  if (nodeSize) nodeSize.oninput = () => { nodeMul = parseFloat(nodeSize.value||'1'); updateStyles(); };
+  if (edgeWidth) edgeWidth.oninput = () => { edgeMul = parseFloat(edgeWidth.value||'1'); updateStyles(); };
+  if (fontSize) fontSize.oninput = () => { labelFont = parseInt(fontSize.value||'10', 10); updateStyles(); };
+  if (hc) hc.onchange = () => { highContrast = !!hc.checked; updateStyles(); };
+  // instances preview
+  const instSel = document.getElementById('instances-label');
+  const instBtn = document.getElementById('instances-preview');
+  const instDiv = document.getElementById('instances-table');
+  async function previewInstances(){
+    const label = instSel ? instSel.value : 'File';
+    const res = await fetch('/api/graph/instances?label=' + encodeURIComponent(label) + '&limit=50');
+    const data = await res.json();
+    const rows = data.rows || [];
+    if (!rows.length){ instDiv.innerHTML = '<p class="small" style="margin:.5rem">No rows</p>'; return; }
+    const cols = Object.keys(rows[0]);
+    let html = '<table class="table table-sm"><thead><tr>' + cols.map(c=>`<th>${c}</th>`).join('') + '</tr></thead><tbody>';
+    for (const r of rows){ html += '<tr>' + cols.map(c=>`<td>${(r[c]!==undefined&&r[c]!==null)?String(r[c]):''}</td>`).join('') + '</tr>'; }
+    html += '</tbody></table>';
+    instDiv.innerHTML = html;
+  }
+  if (instBtn) instBtn.onclick = previewInstances;
+})();
+</script>
 {% endblock %}

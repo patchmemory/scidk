@@ -3,13 +3,34 @@
 {% block content %}
 <h1>Files</h1>
 <section>
-  <h2>Load Directory</h2>
-  <form action="/scan" method="post">
-    <label>Path: <input type="text" name="path" placeholder="/path/to/scan" style="width: 24rem"/></label>
-    <label><input type="checkbox" name="recursive" checked/> Recursive</label>
-    <button type="submit">Scan</button>
+  <h2>Scans Summary</h2>
+  <div class="table-responsive" style="max-height:280px; overflow:auto; border:1px solid #eee">
+    <table class="table table-sm" style="margin-bottom:0">
+      <thead><tr>
+        <th>ID</th><th>Path</th><th>Files</th><th>Recursive</th><th>Started</th><th>Ended</th><th>Committed</th>
+      </tr></thead>
+      <tbody id="scans-summary"></tbody>
+    </table>
+  </div>
+</section>
+<section>
+  <h2>Start Background Scan</h2>
+  <form id="bg-scan-form" class="row g-2">
+    <div class="col-auto">
+      <label for="scan-path" class="form-label small" style="margin-bottom:.25rem">Path</label>
+      <input id="scan-path" type="text" class="form-control form-control-sm" placeholder="/path/to/scan" style="width:320px" />
+    </div>
+    <div class="col-auto form-check" style="padding-top:1.8rem">
+      <input id="scan-recursive" class="form-check-input" type="checkbox" checked />
+      <label class="form-check-label small" for="scan-recursive">Recursive</label>
+    </div>
+    <div class="col-auto" style="padding-top:1.4rem">
+      <button type="submit" class="btn btn-sm btn-primary">Start Scan</button>
+    </div>
   </form>
-  <div class="actions" style="margin-top:.5rem; align-items: baseline; gap: .5rem;">
+  <div id="tasks-list" style="margin-top:.75rem"></div>
+
+  <div class="actions" style="margin-top:1rem; align-items: baseline; gap: .5rem;">
     <label class="small" for="recent-scans">Recent scans:</label>
     <select id="recent-scans">
       <option value="">-- select --</option>
@@ -17,11 +38,19 @@
         <option value="{{ s.id }}">{{ s.path }} — {{ s.file_count }} files — {{ '%.0f'|format((s.ended or s.started) or 0) }}</option>
       {% endfor %}
     </select>
-    <button id="open-scan" type="button">Open</button>
+    <button id="open-scan" type="button" class="btn btn-sm btn-outline-primary">Open</button>
+    <button id="refresh-scans" type="button" class="btn btn-sm btn-outline-secondary">Refresh</button>
     {% if selected_scan %}
       <span class="small">Filtering by scan <code>{{ selected_scan.id }}</code> for <code>{{ selected_scan.path }}</code> (recursive: {{ selected_scan.recursive }}) — <a href="/datasets">Clear filter</a></span>
     {% endif %}
   </div>
+
+  <div id="neo4j-status" class="small" style="margin-top:.5rem; display:flex; align-items:center; gap:.5rem">
+    <div id="neo4j-light-files" title="Disconnected" style="width:10px; height:10px; border-radius:50%; background:#000; border:1px solid #333;"></div>
+    <span id="neo4j-status-text-files">Neo4j: Not connected</span>
+  </div>
+  <div id="scans-panel" style="margin-top:0.5rem"></div>
+
   {% if directories %}
     <details style="margin-top:.5rem;">
       <summary class="small">Previously scanned directories (this session)</summary>
@@ -35,48 +64,246 @@
 </section>
 
 <section>
-{% if selected_scan and (datasets|length == 0) %}
-  <p class="small">This scan did not add any new datasets (MVP shows newly added files only). Clear filter to see all datasets.</p>
-{% endif %}
-<table>
-  <thead>
-  <tr>
-    <th>Path</th>
-    <th>Ext</th>
-    <th>Size</th>
-    <th>Interpreters</th>
-  </tr>
-  </thead>
-  <tbody>
-  {% for d in datasets %}
-    <tr>
-      <td><a href="/datasets/{{ d.id }}">{{ d.path }}</a></td>
-      <td>{{ d.extension }}</td>
-      <td class="small">{{ d.size_bytes }}</td>
-      <td class="small">{{ d.interpretations.keys()|list }}</td>
-    </tr>
-  {% else %}
-    <tr><td colspan="4" class="small">No datasets yet.</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
+  <h2>File Browser</h2>
+  <div class="row g-2" style="margin-bottom:.5rem">
+    <div class="col-auto">
+      <label for="fb-base" class="form-label small" style="margin-bottom:.25rem">Base</label>
+      <select id="fb-base" class="form-select form-select-sm" style="min-width:360px">
+        {% for d in directories or [] %}
+          <option value="{{ d.path }}" {% if selected_scan and selected_scan.path == d.path %}selected{% endif %}>{{ d.path }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto" style="display:flex; gap:.5rem; align-items:end;">
+      <button id="fb-load" class="btn btn-sm btn-outline-primary">Load</button>
+    </div>
+  </div>
+  <div id="fb-breadcrumb" class="small" style="margin-bottom:.5rem"></div>
+  <div style="display:flex; gap:1rem; align-items:flex-start">
+    <div style="flex: 2 1 60%; border:1px solid #eee; max-height:420px; overflow:auto">
+      <table class="table table-sm" style="margin-bottom:0">
+        <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Modified</th></tr></thead>
+        <tbody id="fb-list"></tbody>
+      </table>
+    </div>
+    <div id="fb-panel" style="flex: 1 1 40%; border:1px solid #eee; min-height:200px; padding:.5rem; position:sticky; top:1rem">
+      <div class="small" id="fb-panel-content">Select a file or folder to see details.</div>
+    </div>
+  </div>
 </section>
+
 {% endblock %}
 {% block head %}
 <script>
   window.addEventListener('DOMContentLoaded', () => {
+    // Open scan from dropdown
     const select = document.getElementById('recent-scans');
     const btn = document.getElementById('open-scan');
+    const refreshBtn = document.getElementById('refresh-scans');
+    function openSelected(){ const id = select.value; if (id) { window.location = '/datasets?scan_id=' + encodeURIComponent(id); } }
     if (select && btn) {
-      btn.addEventListener('click', () => {
-        const id = select.value;
-        if (id) { window.location = '/datasets?scan_id=' + encodeURIComponent(id); }
+      btn.addEventListener('click', openSelected);
+      select.addEventListener('change', openSelected);
+    }
+    async function loadScansIntoDropdown(){
+      try {
+        const r = await fetch('/api/scans');
+        const scans = await r.json();
+        if (!select) return;
+        const current = select.value;
+        select.innerHTML = '<option value="">-- select --</option>' + scans.map(s => `<option value="${s.id}">${s.path} — ${s.file_count} files — ${Math.round(s.ended||s.started||0)}</option>`).join('');
+        if (current) select.value = current;
+      } catch(e) { /* ignore */ }
+    }
+    if (refreshBtn) refreshBtn.addEventListener('click', loadScansIntoDropdown);
+
+    // Background scan tasks
+    const scanForm = document.getElementById('bg-scan-form');
+    const tasksDiv = document.getElementById('tasks-list');
+    const fmtPct = (x) => Math.round((x || 0) * 100);
+    function renderTasks(tasks){
+      if (!tasks || tasks.length === 0){ tasksDiv.innerHTML = '<p class="small">No background tasks.</p>'; return; }
+      tasksDiv.innerHTML = tasks.map(t => {
+        const total = (t.total===null||t.total===undefined) ? '?' : (t.total||0);
+        const pct = fmtPct(t.progress);
+        const bar = `<div style=\"width:100%; background:#eee; height:10px; border-radius:4px; overflow:hidden\"><div style=\"width:${pct}%; height:10px; background:${t.status==='completed'?'#4caf50':(t.status==='error'?'#e53935':'#2196f3')}\"></div></div>`;
+        const info = `<div class=\"small\">${t.type} ${t.status} — ${t.path || ''} — ${t.processed||0}/${total} (${pct}%) ${t.error?(' — error: '+t.error):''} ${t.scan_id?(' — <a href=\"/datasets?scan_id='+t.scan_id+'\">open</a>'):''}</div>`;
+        return `<div style=\"margin:.25rem 0\">${bar}${info}</div>`;
+      }).join('');
+    }
+    async function fetchTasks(){
+      try { const r = await fetch('/api/tasks'); const data = await r.json(); renderTasks(data); }
+      catch(e){ /* ignore */ }
+    }
+    let poller = null;
+    async function fetchNeoStatus(){
+      try {
+        const r = await fetch('/api/settings/neo4j');
+        const j = await r.json();
+        const light = document.getElementById('neo4j-light-files');
+        const txt = document.getElementById('neo4j-status-text-files');
+        const ok = !!(j && j.connected);
+        if (light) { light.style.background = ok ? '#19c37d' : '#000'; light.title = ok ? 'Connected' : 'Disconnected'; }
+        if (txt) { txt.textContent = ok ? 'Neo4j: Connected' : (j && j.last_error ? ('Neo4j: Error — ' + j.last_error) : 'Neo4j: Not connected'); }
+      } catch(e) {
+        const txt = document.getElementById('neo4j-status-text-files');
+        if (txt) txt.textContent = 'Neo4j: status unavailable';
+      }
+    }
+    function renderScansSummaryRows(scans){
+      const tbody = document.getElementById('scans-summary');
+      if (!tbody) return;
+      const fmtTs = (t) => { try { return t ? new Date(Math.round(t)*1000).toLocaleString() : ''; } catch(_) { return t || ''; } };
+      if (!scans || scans.length === 0){ tbody.innerHTML = '<tr><td colspan="7" class="small">No scans yet.</td></tr>'; return; }
+      tbody.innerHTML = scans.map(s => `<tr>
+        <td><code>${s.id}</code></td>
+        <td>${s.path}</td>
+        <td>${s.file_count||0}</td>
+        <td>${s.recursive?'yes':'no'}</td>
+        <td>${fmtTs(s.started)}</td>
+        <td>${fmtTs(s.ended)}</td>
+        <td>${s.committed?'yes':'no'}</td>
+      </tr>`).join('');
+    }
+    async function startPolling(){
+      if (poller) return;
+      poller = setInterval(async () => {
+        try {
+          const r = await fetch('/api/scans');
+          const scans = await r.json();
+          renderScansSummaryRows(scans);
+        } catch(e){ /* ignore */ }
+        fetchTasks();
+        loadScansIntoDropdown();
+        renderScansPanel();
+        fetchNeoStatus();
+      }, 1000);
+    }
+    function stopPolling(){ if (poller){ clearInterval(poller); poller = null; } }
+    if (scanForm){
+      scanForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const path = document.getElementById('scan-path').value.trim();
+        const recursive = document.getElementById('scan-recursive').checked;
+        try {
+          const r = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ type: 'scan', path, recursive }) });
+          if (r.status === 202){ startPolling(); fetchTasks(); }
+          else { const j = await r.json(); alert('Task error: ' + (j.error || r.status)); }
+        } catch(err){ alert('Task error: ' + err); }
       });
-      select.addEventListener('change', () => {
-        const id = select.value;
-        if (id) { window.location = '/datasets?scan_id=' + encodeURIComponent(id); }
+      // initial render
+      startPolling(); fetchTasks(); loadScansIntoDropdown(); fetchNeoStatus();
+    }
+
+    // Scans management panel
+    const scansDiv = document.getElementById('scans-panel');
+    function scansRow(s){
+      const ts = Math.round(s.ended||s.started||0);
+      return `<div style="padding:.25rem 0; border-bottom:1px solid #eee; display:flex; gap:.5rem; align-items:center; justify-content:space-between">
+        <div class="small"><code>${s.id}</code> — ${s.path} — files: ${s.file_count} — ${s.recursive?'recursive':'shallow'} — ${ts}</div>
+        <div style="display:flex; gap:.5rem">
+          <a class="btn btn-sm btn-outline-primary" href="/datasets?scan_id=${s.id}">Open</a>
+          <button class="btn btn-sm btn-outline-success" data-scan="${s.id}" data-action="commit">Commit to Graph</button>
+          <button class="btn btn-sm btn-outline-danger" data-scan="${s.id}" data-action="delete">Delete</button>
+        </div>
+      </div>`;
+    }
+    async function renderScansPanel(){
+      try { const r = await fetch('/api/scans'); const scans = await r.json(); scansDiv.innerHTML = scans.map(scansRow).join('') || '<p class="small">No scans yet.</p>'; }
+      catch(e){ scansDiv.innerHTML = '<p class="small">Failed to load scans.</p>'; }
+      // attach handlers
+      scansDiv.querySelectorAll('button[data-action]')?.forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-scan');
+          const action = btn.getAttribute('data-action');
+          try {
+            if (action === 'commit'){
+              // Start background commit task to show progress in the Tasks panel
+              const r = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ type: 'commit', scan_id: id }) });
+              if (r.status === 202){
+                alert('Commit started in background. Watch progress above.');
+                startPolling(); fetchTasks();
+              } else {
+                const j = await r.json();
+                alert('Commit task error: ' + (j.error || r.status));
+              }
+            } else if (action === 'delete'){
+              const r = await fetch('/api/scans/' + encodeURIComponent(id), { method: 'DELETE' });
+              if (!r.ok){ const j = await r.json(); alert('Delete failed: ' + (j.error || r.status)); }
+            }
+          } catch(err){ alert('Action failed: ' + err); }
+          renderScansPanel();
+          loadScansIntoDropdown();
+        });
       });
     }
+    renderScansPanel();
+
+    // File Browser logic
+    const fbBase = document.getElementById('fb-base');
+    const fbLoad = document.getElementById('fb-load');
+    const fbList = document.getElementById('fb-list');
+    const fbCrumb = document.getElementById('fb-breadcrumb');
+    const fbPanel = document.getElementById('fb-panel-content');
+
+    function fmtBytes(n){ if(!n) return ''; const s=['B','KB','MB','GB','TB']; let i=0; let v=n; while(v>=1024 && i<s.length-1){ v/=1024; i++; } return (Math.round(v*10)/10)+' '+s[i]; }
+    function fmtTime(ts){ try { return new Date(ts*1000).toLocaleString(); } catch(e){ return String(ts); } }
+
+    async function loadDir(base, path){
+      if (!base) { fbList.innerHTML = '<tr><td colspan="4" class="small">Select a base directory.</td></tr>'; return; }
+      const url = '/api/fs/list?base=' + encodeURIComponent(base) + (path?('&path='+encodeURIComponent(path)):'');
+      try {
+        const r = await fetch(url);
+        const j = await r.json();
+        if (!r.ok){ fbList.innerHTML = `<tr><td colspan="4" class="small">${j.error||('Error '+r.status)}</td></tr>`; return; }
+        // breadcrumb
+        fbCrumb.innerHTML = (j.breadcrumb||[]).map((b,i) => `<a href="#" data-path="${b.path}" class="fb-crumb">${b.name||b.path}</a>${i<j.breadcrumb.length-1?' / ':''}`).join('');
+        // list items
+        const rows = (j.items||[]).map(it => {
+          const type = it.is_dir ? 'Folder' : (it.ext || 'File');
+          const size = it.is_dir ? '' : fmtBytes(it.size_bytes||0);
+          const mod = fmtTime(it.modified||0);
+          // removed 'scanned' postfix from filename display per UX request
+          return `<tr class="fb-item" data-path="${it.path}" data-isdir="${it.is_dir?1:0}" data-dsid="${it.dataset_id||''}">`+
+                 `<td>${it.name}</td><td>${type}</td><td>${size}</td><td>${mod}</td></tr>`;
+        }).join('');
+        fbList.innerHTML = rows || '<tr><td colspan="4" class="small">Empty folder.</td></tr>';
+        attachBrowserHandlers(base);
+      } catch(e){
+        fbList.innerHTML = '<tr><td colspan="4" class="small">Load failed.</td></tr>';
+      }
+    }
+
+    function attachBrowserHandlers(base){
+      // breadcrumb clicks
+      fbCrumb.querySelectorAll('a.fb-crumb')?.forEach(a => {
+        a.addEventListener('click', (ev) => { ev.preventDefault(); const p = a.getAttribute('data-path'); loadDir(base, p); });
+      });
+      // item clicks
+      fbList.querySelectorAll('tr.fb-item')?.forEach(tr => {
+        tr.addEventListener('click', () => {
+          const p = tr.getAttribute('data-path');
+          const isdir = tr.getAttribute('data-isdir') === '1';
+          const dsid = tr.getAttribute('data-dsid');
+          if (isdir){ loadDir(base, p); return; }
+          // show metadata in panel
+          const name = tr.firstChild?.textContent || p;
+          const cols = tr.querySelectorAll('td');
+          const type = cols[1]?.textContent || '';
+          const size = cols[2]?.textContent || '';
+          const mod = cols[3]?.textContent || '';
+          let html = `<div><strong>${name}</strong></div>`+
+                     `<div class="small">Path: <code>${p}</code></div>`+
+                     `<div class="small">Type: ${type} — Size: ${size} — Modified: ${mod}</div>`;
+          if (dsid){ html += `<div class="small" style="margin-top:.25rem"><a class="btn btn-sm btn-outline-primary" href="/datasets/${dsid}">Open dataset</a></div>`; }
+          fbPanel.innerHTML = html;
+        });
+      });
+    }
+
+    if (fbLoad){ fbLoad.addEventListener('click', () => { loadDir(fbBase.value, null); }); }
+    // Auto-load for selected scan base if present
+    if (fbBase && fbBase.value){ loadDir(fbBase.value, null); }
   });
 </script>
 {% endblock %}

@@ -10,4 +10,160 @@
   <li>Datasets: {{ info.dataset_count }}</li>
   <li>Interpreters: {{ info.interpreter_count }}</li>
 </ul>
+
+<section style="margin-top:1rem">
+  <h2>Neo4j Connection</h2>
+  <div class="row g-2" style="max-width:720px">
+    <div class="col-12 col-md-6">
+      <label class="form-label small" for="neo4j-uri">URI</label>
+      <input id="neo4j-uri" type="text" class="form-control form-control-sm" placeholder="bolt://localhost:7687" />
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label small" for="neo4j-user">User</label>
+      <input id="neo4j-user" type="text" class="form-control form-control-sm" placeholder="neo4j" />
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label small" for="neo4j-db">Database (optional)</label>
+      <input id="neo4j-db" type="text" class="form-control form-control-sm" placeholder="neo4j" />
+    </div>
+    <div class="col-12 col-md-6">
+      <label class="form-label small" for="neo4j-pass">Password</label>
+      <div style="display:flex; gap:.5rem; align-items:center">
+        <input id="neo4j-pass" type="password" class="form-control form-control-sm" placeholder="••••••" />
+        <div class="form-check">
+          <input id="neo4j-pass-show" type="checkbox" class="form-check-input" />
+          <label class="form-check-label small" for="neo4j-pass-show">Show</label>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6" style="display:flex; gap:.5rem; align-items:end">
+      <button id="neo4j-save" class="btn btn-sm btn-outline-secondary">Save</button>
+      <button id="neo4j-connect" class="btn btn-sm btn-primary">Connect</button>
+      <button id="neo4j-disconnect" class="btn btn-sm btn-outline-danger" style="display:none">Disconnect</button>
+      <div id="neo4j-light" title="Disconnected" style="width:12px; height:12px; border-radius:50%; background:#000; border:1px solid #333; margin-left:.5rem"></div>
+      <span id="neo4j-status-text" class="small"></span>
+    </div>
+  </div>
+  <details style="margin-top:.5rem"><summary class="small">Advanced / Health</summary>
+    <div style="display:flex; gap:.5rem; align-items:center; margin:.5rem 0">
+      <button id="btn-test-graph" class="btn btn-sm btn-outline-primary">Test Graph Connection</button>
+      <span id="graph-health-status" class="small"></span>
+    </div>
+    <p class="small">You can also set env vars: NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, SCIDK_NEO4J_DATABASE</p>
+  </details>
+</section>
+{% endblock %}
+{% block head %}
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    const btn = document.getElementById('btn-test-graph');
+    const status = document.getElementById('graph-health-status');
+    async function testGraph(){
+      status.textContent = 'Checking...';
+      try {
+        const r = await fetch('/api/health/graph');
+        const j = await r.json();
+        if (!r.ok){ status.textContent = 'Error: ' + (j.error || r.status); return; }
+        const neo = j.neo4j || {};
+        const parts = [
+          `backend=${j.backend}`,
+          `in_memory_ok=${j.in_memory_ok}`,
+          `neo4j_configured=${neo.configured}`,
+          `neo4j_connectable=${neo.connectable}`
+        ];
+        if (neo.error) parts.push('neo4j_error=' + neo.error);
+        status.textContent = parts.join(' — ');
+      } catch(e){
+        status.textContent = 'Health check failed: ' + (e && e.message ? e.message : e);
+      }
+    }
+    if (btn) btn.addEventListener('click', testGraph);
+
+    // Neo4j settings UI
+    const elUri = document.getElementById('neo4j-uri');
+    const elUser = document.getElementById('neo4j-user');
+    const elDb = document.getElementById('neo4j-db');
+    const elPass = document.getElementById('neo4j-pass');
+    const elShow = document.getElementById('neo4j-pass-show');
+    const btnSave = document.getElementById('neo4j-save');
+    const btnConn = document.getElementById('neo4j-connect');
+    const btnDisc = document.getElementById('neo4j-disconnect');
+    const light = document.getElementById('neo4j-light');
+    const statusText = document.getElementById('neo4j-status-text');
+
+    if (elShow) elShow.addEventListener('change', () => {
+      elPass.type = elShow.checked ? 'text' : 'password';
+    });
+
+    function setLight(ok){
+      if (!light) return;
+      light.style.background = ok ? '#19c37d' : '#000';
+      light.title = ok ? 'Connected' : 'Disconnected';
+    }
+    function setButtons(ok){
+      if (btnConn) btnConn.style.display = ok ? 'none' : '';
+      if (btnDisc) btnDisc.style.display = ok ? '' : 'none';
+    }
+    function renderStatus(j){
+      setLight(!!j.connected);
+      setButtons(!!j.connected);
+      statusText.textContent = j.error ? ('Error: ' + j.error) : (j.connected ? 'Connected' : 'Not connected');
+    }
+
+    async function loadCfg(){
+      try {
+        const r = await fetch('/api/settings/neo4j');
+        const j = await r.json();
+        if (elUri) elUri.value = j.uri || '';
+        if (elUser) elUser.value = j.user || '';
+        if (elDb) elDb.value = j.database || '';
+        setLight(!!j.connected);
+        setButtons(!!j.connected);
+        statusText.textContent = j.connected ? 'Connected' : (j.last_error ? ('Error: ' + j.last_error) : 'Not connected');
+      } catch(e) {
+        statusText.textContent = 'Failed to load settings';
+      }
+    }
+
+    async function saveCfg(){
+      const payload = {
+        uri: (elUri && elUri.value) || '',
+        user: (elUser && elUser.value) || '',
+        password: (elPass && elPass.value) || '',
+        database: (elDb && elDb.value) || ''
+      };
+      try {
+        const r = await fetch('/api/settings/neo4j', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
+        if (!r.ok){ const j = await r.json(); alert('Save failed: ' + (j.error || r.status)); return; }
+        // Clear password field in UI after save
+        if (elPass) elPass.value = '';
+      } catch(e){ alert('Save failed: ' + e); }
+    }
+
+    async function connect(){
+      try {
+        const r = await fetch('/api/settings/neo4j/connect', { method: 'POST' });
+        const j = await r.json();
+        renderStatus(j);
+      } catch(e) {
+        statusText.textContent = 'Connect failed';
+      }
+    }
+    async function disconnect(){
+      try {
+        const r = await fetch('/api/settings/neo4j/disconnect', { method: 'POST' });
+        const j = await r.json();
+        renderStatus(j);
+      } catch(e) {
+        statusText.textContent = 'Disconnect failed';
+      }
+    }
+
+    if (btnSave) btnSave.addEventListener('click', async (e) => { e.preventDefault(); await saveCfg(); });
+    if (btnConn) btnConn.addEventListener('click', async (e) => { e.preventDefault(); await saveCfg(); await connect(); });
+    if (btnDisc) btnDisc.addEventListener('click', async (e) => { e.preventDefault(); await disconnect(); });
+
+    loadCfg();
+  });
+</script>
 {% endblock %}

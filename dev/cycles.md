@@ -494,3 +494,232 @@ Note: See also dev/cycle-review-2025-08-18.md for a consolidated review and next
    - 2025-08-19: Decided to implement a minimal, table-based schema view on /map backed by schema_summary(); defer interactive graph drawing to a later iteration.
 8) Tag to create
    - mvp-iter-2025-08-19-map-schema
+
+### Approval (mvp-iter-2025-08-19-map-schema)
+- APPROVED: 2025-08-19 10:14 (local)
+- Proceeding with execution per plan; add table-based Map view, demo link, and smoke test.
+
+### Planning Protocol (mvp-iter-2025-08-19-scan-map-schema-demo)
+1) E2E Objective and GUI Acceptance
+- Objective: Ship a runnable demo that scans a folder, maps files into a knowledge graph (dataset nodes with scanned properties and interpretation edges), and allows extracting nodes by label with the relevant schema visualized on the Map page.
+- GUI Acceptance:
+  - From Files page, a scan of a small folder creates Dataset nodes with visible properties (path, filename, extension, size_bytes, created, modified, mime_type) and any interpretations.
+  - Map page shows a schema table (Node Labels and Relationship Types with counts) and an interactive graph built from unique triples.
+  - Map page provides simple filters to extract a subschema by label and/or relationship type; graph updates accordingly.
+  - “Download Schema (CSV)” exports NodeLabels and RelationshipTypes sections.
+
+2) Capacity
+- 8h
+
+3) Selected Tasks Table with DoR (owner, ETA, RICE, dependencies, test approach)
+- id: task:demo/mvp/scan-map-oneclick; owner: agent; ETA: 2025-08-19; RICE: 2.0; dependencies: app running; test approach: manual run of script verifies URLs, scan success, and that /map renders. 
+- id: task:core-architecture/mvp/schema-triples-endpoint; owner: agent; ETA: 2025-08-19; RICE: 3.8; dependencies: InMemoryGraph; test approach: pytest validates JSON shape and CSV sections. Status: Done.
+- id: task:ui/mvp/map-schema-graph-visualization; owner: agent; ETA: 2025-08-19; RICE: 3.6; dependencies: schema-triples-endpoint; test approach: smoke GET /map for Cytoscape container and CSV button. Status: Done.
+- id: core-architecture/mvp/subschema-query-library; owner: agent; ETA: 2025-08-19; RICE: 3.3; dependencies: schema-triples-endpoint; test approach: add tests for GET /api/graph/subschema with params (labels, rel_types, limit) and named query; error on bad params; empty-graph path returns empty.
+- id: ui/mvp/map-filters; owner: agent; ETA: 2025-08-19; RICE: 3.1; dependencies: subschema-query-library; test approach: UI smoke check for presence of two controls (Labels, Relationship Types); JS refetches and re-renders elements without console errors; manual verification of updates.
+
+4) Dependency Table
+- ui/mvp/map-filters → core-architecture/mvp/subschema-query-library → core-architecture/mvp/schema-triples-endpoint
+
+5) Demo Checklist
+1) Start the app (python -m scidk.app) or via ./scripts/demo-mvp-iter-2025-08-19-gdu-ncdu.sh
+2) Script creates demo data and POSTs /api/scan {path: /tmp/scidk_demo_xxxx, recursive: false}
+3) Visit Files (/datasets) and optionally filter by printed scan_id.
+4) Open Map (/map):
+   - Confirm schema tables and interactive graph render; node size/edge width reflect counts.
+   - Click “Download Schema (CSV)” and confirm contents.
+5) Use Map filters (after implementation):
+   - Select label=Dataset and rel_types=INTERPRETED_AS to focus demo subschema.
+   - Observe graph updates accordingly.
+6) API spot checks:
+   - GET /api/graph/schema returns expected shape with counts.
+   - GET /api/graph/subschema?rel_types=INTERPRETED_AS returns focused subset.
+
+6) Risks & Cut Lines
+- Risks:
+  - Scope creep from filter UX/server query in tight capacity.
+  - Performance on large graphs (not an issue for tiny demo data).
+- Cut lines (apply in order):
+  1) If time-constrained, skip /api/graph/subschema and UI filters; ship full schema graph + CSV export.
+  2) If Cytoscape layout struggles, cap edges with limit param (default 500) or present table-only schema for the demo.
+  3) If CSV export causes issues, keep JSON-only; retain Map tables and graph.
+
+7) Decision & Risk Log entry
+- 2025-08-19: Keep unique-triples as canonical schema derivation for Map; add a thin subschema endpoint and minimal UI filters to satisfy “extract by label/type.” Maintain responsiveness via server-side limit and log-scaling.
+
+8) Tag to create
+- mvp-iter-2025-08-19-scan-map-schema-demo
+
+### Planning Protocol (mvp-iter-2025-08-19-scan-graph-and-delete)
+1) E2E Objective and GUI Acceptance
+- Objective: Provide a way to commit a completed scan into the knowledge graph and to delete previous scans (including unlinking them from the graph). Keep datasets intact by default.
+- GUI Acceptance (MVP via API-first):
+  - POST /api/scans/<scan_id>/commit marks a scan as committed and adds a Scan node to the graph with edges (Dataset)-[SCANNED_IN]->(Scan).
+  - DELETE /api/scans/<scan_id> removes the scan record and its graph node/edges; datasets remain and the app stays stable.
+  - Map page schema now reflects committed scans: Node label "Scan" count and SCANNED_IN relation counts.
+
+2) Capacity
+- 4h (within current cycle’s buffer)
+
+3) Selected Tasks Table with DoR (owner, ETA, RICE, dependencies, test approach)
+- id: task:core-architecture/mvp/graph-scan-commit; owner: agent; ETA: 2025-08-19; RICE: 3.9; deps: InMemoryGraph; tests: commit creates Scan node + SCANNED_IN edges in /api/graph/schema.
+- id: task:core-architecture/mvp/scan-delete; owner: agent; ETA: 2025-08-19; RICE: 3.5; deps: graph-scan-commit; tests: delete removes Scan node/edges; datasets remain.
+- id: task:core-architecture/mvp/tests-hardening; owner: agent; ETA: 2025-08-19; RICE: 1.4; deps: endpoints exist; tests: pytest for commit/delete flow.
+
+4) Dependency Table
+- scan-delete → graph-scan-commit
+
+5) Demo Checklist
+1) POST /api/scan a tmp dir; note scan_id.
+2) GET /api/graph/schema — no Scan nodes/SCANNED_IN initially.
+3) POST /api/scans/<scan_id>/commit — expect {status: ok, committed: true}.
+4) GET /api/graph/schema — now includes Scan node count >=1 and SCANNED_IN relation.
+5) DELETE /api/scans/<scan_id> — expect {status: ok}.
+6) GET /api/graph/schema — Scan count returns to 0 and SCANNED_IN edges disappear; datasets unaffected.
+
+6) Risks & Cut Lines
+- Risks: ambiguity whether deleting scans should also remove datasets; for MVP we keep datasets.
+- Cut lines: API-only this cycle; UI delete/commit buttons can follow.
+
+7) Decision & Risk Log entry
+- 2025-08-19: Decided to model scans as Scan nodes and SCANNED_IN edges; deletion unlinks edges but retains datasets to avoid accidental data loss.
+
+8) Tag to create
+- mvp-iter-2025-08-19-scan-graph-and-delete
+
+### Planning Protocol (mvp-iter-2025-08-20-demo-visual-and-schema)
+1) E2E Objective and GUI Acceptance
+- Objective: Prepare a demo where a folder is scanned, results are committed into the knowledge graph, and the Map page visualizes the schema with File/Folder nodes, shows relationship type labels, supports multiple layout modes, and allows saving/loading schema view configs and subschema queries.
+- GUI Acceptance:
+  - Files page scans a folder; user can commit the scan (API-first) so Map reflects it.
+  - Map visual shows:
+    - Nodes: File and Folder (replaces Dataset), plus Scan when committed.
+    - Edges: INTERPRETED_AS (File→<type>), CONTAINS (Folder→File/Folder), SCANNED_IN (File/Folder→Scan).
+    - Edge labels display relationship types on Cytoscape edges.
+    - Layout switcher with at least: force-based (cose), hierarchical (breadthfirst as MVP), and manual (drag) with Save/Load.
+  - Save/Load schema visualization configuration (positions, layout choice) and named subschema queries, persisted for the session (MVP: localStorage) and via simple API (optional if time allows).
+  - CSV export continues to work; subschema filters keep the export consistent.
+
+2) Capacity
+- 8h
+
+3) Selected Tasks Table with DoR (owner, ETA, RICE, dependencies, test approach)
+- id: core-architecture/mvp/schema-file-folder-shape; owner: agent; ETA: 2025-08-20; RICE: 3.9; deps: InMemoryGraph; test: update schema_triples to emit File/Folder counts; preserve Scan + SCANNED_IN; unit tests for new labels/edges.
+- id: ui/mvp/cyto-edge-labels; owner: agent; ETA: 2025-08-20; RICE: 3.2; deps: /api/graph/schema; test: /map HTML contains style for edge labels; manual verify labels rendered.
+- id: ui/mvp/layout-modes; owner: agent; ETA: 2025-08-20; RICE: 3.4; deps: cytoscape; test: dropdown with options {force,breadthfirst,manual}; switching re-runs layout without console errors.
+- id: ui-core/mvp/manual-save-load; owner: agent; ETA: 2025-08-20; RICE: 3.7; deps: layout-modes; test: Save stores positions to localStorage; Load applies positions; smoke test via DOM.
+- id: core-architecture/mvp/schema-config-api (optional); owner: agent; ETA: 2025-08-20; RICE: 2.7; deps: save-load; test: GET/POST /api/graph/configs returns/stores JSON; skipped if time-constrained.
+- id: core-architecture/mvp/query-presets; owner: agent; ETA: 2025-08-20; RICE: 3.3; deps: existing /api/graph/subschema; test: GET/POST /api/graph/queries for named filters; or MVP-only localStorage if API skipped.
+- id: demo/mvp/e2e-script-refresh; owner: agent; ETA: 2025-08-20; RICE: 2.0; deps: above; test: script prints Map URL, commit scan curl, and notes for Save/Load.
+
+4) Dependency Table
+- ui/mvp/layout-modes → ui/mvp/cyto-edge-labels → core-architecture/mvp/schema-file-folder-shape
+- ui-core/mvp/manual-save-load → ui/mvp/layout-modes
+- core-architecture/mvp/query-presets → existing /api/graph/subschema
+- demo/mvp/e2e-script-refresh → all of the above (if included)
+
+5) Demo Checklist
+1) Start app; POST /api/scan {path}; POST /api/scans/<scan_id>/commit.
+2) Visit /map: confirm File and Folder node labels, Scan label when committed.
+3) Confirm edge labels visible for INTERPRETED_AS, CONTAINS, SCANNED_IN.
+4) Switch layouts: force (cose), hierarchical (breadthfirst), manual drag; Save then refresh and Load positions.
+5) Use subschema filter (labels/rel_types) to focus on File↔INTERPRETED_AS; CSV export matches current view.
+6) Optionally save a named query/config via UI/API and reload it.
+
+6) Risks & Cut Lines
+- Risks: Larger scope (schema change + UI features) in one cycle; plugin needs for hierarchical layouts; persistence complexity.
+- Cut lines (apply in order):
+  1) Use breadthfirst (built-in) instead of external dagre; ship force + breadthfirst only if needed.
+  2) Save/Load via localStorage only; defer server API for configs/queries.
+  3) If schema refactor is heavy, surface File/Folder labels as derived categories while keeping Dataset internally for this demo.
+
+7) Decision & Risk Log entry
+- 2025-08-20: Will replace Dataset with File and Folder for schema visualization and counts; keep Scan nodes and SCANNED_IN edges. Edge labels will be rendered directly in Cytoscape. Layout modes will be implemented with built-in layouts (cose, breadthfirst). Save/Load MVP will rely on localStorage, with optional API if time allows.
+
+8) Tag to create
+- mvp-iter-2025-08-20-demo-visual-and-schema
+
+### Planning Protocol (mvp-iter-2025-08-20-feedback-docs-and-exports)
+1) E2E Objective and GUI Acceptance
+- Objective: Address feedback by documenting scan progress plan (ncdu background tasks and monitor), adding map tuning controls (node/edge size, readable labels), providing instances export per label, and clarifying Neo4j path.
+- GUI Acceptance:
+  - /map shows new sliders for Node size, Edge width, Label font, and a High-contrast toggle; styles update live.
+  - Instances section on /map can preview rows for File/Folder/Scan and download CSV; XLSX works if openpyxl is installed.
+  - Docs explain scan progress plan and Neo4j integration status and next steps.
+
+2) Capacity
+- 4h
+
+3) Selected Tasks Table with DoR (owner, ETA, RICE, dependencies, test approach)
+- id: ui/mvp/map-style-tuning; owner: agent; ETA: 2025-08-20; RICE: 3.4; deps: cytoscape; tests: smoke presence of controls; manual verify live updates.
+- id: core-architecture/mvp/instances-endpoints; owner: agent; ETA: 2025-08-20; RICE: 3.6; deps: InMemoryGraph; tests: GET /api/graph/instances JSON shape; CSV download.
+- id: docs/mvp/scan-progress-and-neo4j; owner: agent; ETA: 2025-08-20; RICE: 3.0; deps: none; tests: doc content present in README and cycles.
+
+4) Dependency Table
+- ui/mvp/map-style-tuning → none
+- core-architecture/mvp/instances-endpoints → InMemoryGraph list_instances
+
+5) Demo Checklist
+1) POST /api/scan to index files.
+2) Visit /map; adjust node/edge/label sliders; toggle high-contrast.
+3) Click Preview under Instances; switch labels; download CSV and (if available) XLSX.
+4) Confirm /api/graph/instances endpoints return expected shapes.
+
+6) Risks & Cut Lines
+- Risks: XLSX dependency not installed; large previews.
+- Cut lines: If openpyxl missing, return 501 for XLSX; limit preview to 50 rows.
+
+7) Decision & Risk Log entry
+- 2025-08-20: Decided to implement instances export via CSV/XLSX endpoints and UI preview on /map. Background scan progress to be introduced via a tasks API in a subsequent cycle; documented plan in README.
+
+8) Tag to create
+- mvp-iter-2025-08-20-feedback-docs-and-exports
+
+### Approval (mvp-iter-2025-08-20-demo-visual-and-schema)
+- COMPLETED: 2025-08-20 (local). Implemented File/Folder schema visualization, edge labels, layout modes, and manual Save/Load via localStorage; CSV export maintained; subschema filters working. Verified via automated tests and manual smoke on /map. 
+
+### Approval (mvp-iter-2025-08-20-feedback-docs-and-exports)
+- COMPLETED: 2025-08-20 (local). Added Map tuning controls (node size, edge width, label font, high-contrast), Instances preview/download (CSV; XLSX when openpyxl present), and documented scan-progress and Neo4j next steps. Tests added for instances endpoints; all green.
+
+### Planning Protocol (mvp-iter-2025-08-21-demo-polish-and-neo4j-flag)
+1) E2E Objective and GUI Acceptance
+- Objective: Wire a Neo4j-backed graph adapter behind a feature flag while keeping current in-memory functionality; ensure Files page scan management is solid (progress bars, commit/delete flow), and Map stays in parity across backends. Ship a crisp demo path.
+- GUI Acceptance:
+  - Environment can select backend via SCIDK_GRAPH_BACKEND=neo4j and NEO4J_URI/NEO4J_USER/NEO4J_PASSWORD.
+  - Scans add File/Folder/Scan nodes and relationships in Neo4j when flag is on; Map schema and graph reflect Neo4j data.
+  - Files page shows background scans with nonzero progress, scans appear in dropdown, and commit/delete work; Map updates accordingly.
+  - Instances tabs remain functional; CSV/XLSX exports work regardless of backend.
+
+2) Capacity
+- 8h
+
+3) Selected Tasks Table with DoR (owner, ETA, RICE, dependencies, test approach)
+- id: core-architecture/mvp/graph-adapter-interface; owner: agent; ETA: 2025-08-21; RICE: 3.6; deps: current InMemoryGraph; tests: unit import + stub adapter parity for methods.
+- id: core-architecture/mvp/neo4j-adapter; owner: agent; ETA: 2025-08-21; RICE: 3.9; deps: graph-adapter-interface; tests: integration using test Neo4j or mocked driver; verifies upsert_dataset, add_interpretation, commit_scan, schema_triples Cypher results shape.
+- id: ops/mvp/feature-flag-and-config; owner: agent; ETA: 2025-08-21; RICE: 3.2; deps: neo4j-adapter; tests: app boot logs backend selection; falls back to in-memory cleanly if env missing.
+- id: ui/mvp/instances-tabs; owner: agent; ETA: 2025-08-21; RICE: 2.3; deps: /api/graph/instances; tests: smoke for dynamic tabs from /api/graph/schema nodes; per-tab preview and download links. (Status: Done in current session.)
+- id: ui/mvp/files-scan-panel-solidify; owner: agent; ETA: 2025-08-21; RICE: 2.8; deps: tasks API; tests: minimal UI smoke + API assertions that scans appear in /api/scans and GET /api/tasks shows progress > 0 when files exist. (Partially done; verify and fix any regressions.)
+
+4) Dependency Table
+- neo4j-adapter → graph-adapter-interface → feature-flag-and-config
+- files-scan-panel-solidify → tasks API
+
+5) Demo Checklist
+1) Start app in in-memory mode; run a background scan; observe progress; open scan; commit to graph; open Map; verify schema and graph.
+2) Switch to Neo4j: export NEO4J env vars, set SCIDK_GRAPH_BACKEND=neo4j; start app; run a small scan; commit; verify Map schema/graph reflect Neo4j; spot-check in Neo4j Browser.
+3) Use Instances tabs to preview and download CSV/XLSX per label.
+
+6) Risks & Cut Lines
+- Risks: Neo4j connection/auth/config issues; driver availability; test environment for Neo4j.
+- Cut lines:
+  1) If Neo4j isn’t reachable, keep adapter behind flag and document steps; ship in-memory demo polish.
+  2) If Cypher schema_triples parity lags, compute schema from in-memory and leave a toggle for backend selection for /api/graph/schema.
+
+7) Decision & Risk Log entry
+- 2025-08-20: Proceed with a feature-flagged Neo4j adapter to gain persistence and scale while preserving the in-memory path. Parity for /api/graph/schema via Cypher (APOC optional later).
+
+8) Tag to create
+- mvp-iter-2025-08-21-demo-polish-and-neo4j-flag
+
+### Approval (mvp-iter-2025-08-21-demo-polish-and-neo4j-flag)
+- APPROVAL REQUESTED: Please reply “APPROVE CYCLE” to proceed.

@@ -83,29 +83,8 @@
 </section>
 
 <section>
-  <h2>Datasets (latest)</h2>
-  <table>
-    <thead>
-    <tr>
-      <th>Path</th>
-      <th>Extension</th>
-      <th>Size (bytes)</th>
-      <th>Interpreted</th>
-    </tr>
-    </thead>
-    <tbody>
-    {% for d in datasets %}
-      <tr>
-        <td><a href="/datasets/{{ d.id }}">{{ d.path }}</a></td>
-        <td>{{ d.extension }}</td>
-        <td class="small">{{ d.size_bytes }}</td>
-        <td class="small">{{ d.interpretations.keys()|list }}</td>
-      </tr>
-    {% else %}
-      <tr><td colspan="4" class="small">No datasets yet. Use the Scan form above.</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
+  <h2>Background Scans</h2>
+  <p class="small">Manage scans on the <a href="/datasets">Files</a> page. This Home page shows a recent scans summary only.</p>
 </section>
 
 {% endblock %}

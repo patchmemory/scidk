@@ -52,6 +52,7 @@ fi
 
 echo "[OPEN] Home UI:     ${APP_URL}/"
 echo "[OPEN] Files UI:    ${APP_URL}/datasets"
+echo "[OPEN] Map UI:      ${APP_URL}/map"
 echo "[OPEN] Scans API:   ${APP_URL}/api/scans"
 echo "[OPEN] Dirs API:    ${APP_URL}/api/directories"
 echo "[OPEN] Search API:  ${APP_URL}/api/search?q=py"

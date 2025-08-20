@@ -74,3 +74,53 @@ Conventions:
 ## Notes
 - This MVP uses an in-memory graph; data resets on restart.
 - Neo4j deployment docs reside in dev/deployment.md, but Neo4j is not yet wired in the MVP code.
+
+## Scanning progress and background tasks (ncdu/gdu)
+- Current behavior: POST /api/scan runs synchronously and returns when complete.
+- Near-term plan: run ncdu (or gdu) as a background task and expose polling endpoints:
+  - POST /api/tasks (type=scan) → returns task_id; GET /api/tasks/<id> for status/progress; GET /api/tasks for list (multiple concurrent tasks supported).
+  - When available, we will stream ncdu JSON and compute percent scanned by summing completed nodes; otherwise show a spinner and file count as it grows.
+- For now, scanning prefers ncdu or gdu for fast enumeration when installed; otherwise falls back to Python traversal.
+
+## Map page visualization tuning
+- On /map you can:
+  - Switch layouts (Force/breadthfirst/manual) and Save/Load positions.
+  - Adjust Node size, Edge width, and Label font via UI sliders; enable High-contrast labels for readability.
+  - Download the current schema as CSV.
+  - Preview and download instances for File, Folder, and Scan labels as CSV (XLSX if openpyxl is installed).
+
+## Neo4j integration
+- Status: The app ships with docker-compose.neo4j.yml to run a local Neo4j, but the Flask app currently uses an in-memory graph.
+- Next steps to enable Neo4j writes/reads:
+  1) Add a GraphAdapter interface and a Neo4jAdapter implementing upsert_dataset, add_interpretation, commit_scan, schema_triples.
+  2) Add config/feature flag (e.g., SCIDK_GRAPH_BACKEND=neo4j) to switch adapters.
+  3) Map current in-memory structures to Neo4j schema: (:File), (:Folder), (:Scan) nodes and CONTAINS, INTERPRETED_AS, SCANNED_IN relationships.
+  4) Use Cypher or APOC to compute schema triples for /api/graph/schema.
+- Until then, data is not persisted to Neo4j. Use the CSV exports or the in-memory map for the demo.
+
+
+## New in this cycle: Optional Neo4j schema endpoints and extra Instance exports
+
+Neo4j-backed schema (optional; in addition to the default in-memory /api/graph/schema):
+- GET /api/graph/schema.neo4j — Uses Cypher to return nodes and unique relationship triples with counts.
+- GET /api/graph/schema.apoc — Uses APOC (apoc.meta.data and apoc.meta.stats). Returns 502 if APOC procedures are not available.
+
+Environment variables required for Neo4j schema endpoints:
+- NEO4J_URI (e.g., bolt://localhost:7687)
+- NEO4J_USER
+- NEO4J_PASSWORD
+- SCIDK_NEO4J_DATABASE (optional; defaults to the driver/session default)
+
+Notes:
+- If the neo4j Python driver is not installed, these endpoints return 501 with an explanatory error.
+- If Neo4j or credentials are not configured, these endpoints return 501. The app’s default in-memory /api/graph/schema remains fully functional.
+
+Additional Instance export formats:
+- GET /api/graph/instances.pkl?label=<Label> — Python pickle of the rows (application/octet-stream).
+- GET /api/graph/instances.arrow?label=<Label> — Arrow IPC stream (requires pyarrow; returns 501 otherwise).
+- Existing:
+  - GET /api/graph/instances.csv?label=<Label>
+  - GET /api/graph/instances.xlsx?label=<Label> (requires openpyxl; returns 501 otherwise)
+
+Map page tweak:
+- The Instances selector now defaults to the Scan label for a more demo-friendly starting point.
