@@ -80,7 +80,7 @@ Active Story/Phase: story:providers-mvp-multi-source-files — phase:providers-m
   - Session storage: In-memory app.extensions['scidk']['directories'] updated on both API and UI scan flows.
 - Artifacts updated:
   - Code: scidk/app.py, scidk/ui/templates/index.html, scidk/ui/templates/datasets.html
-  - Docs: dev/ui/mvp/files-scan-ui-and-home-directories.md; dev/core-architecture/mvp/directories-registry-and-api.md
+  - Docs: dev/features/ui/feature-files-page-and-scanned-sources.md; dev/features/core-architecture/feature-directories-registry-and-api.md
 - GUI Acceptance: Verified manually — Home shows Scanned Directories; Files hosts the scan form; /api/directories returns expected JSON.
 - Tests: Covered indirectly via existing scan APIs; targeted unit tests can be added in follow-up if needed.
 - Added Test: tests/test_directories_api.py validates that scanned directories are returned by GET /api/directories.
@@ -164,7 +164,7 @@ Story: providers-mvp-multi-source-files — see dev/stories/providers-mvp-multi-
   - Interpreters: Added JSON and YAML interpreters; registered mappings and rules; dataset detail renders summaries; graceful error paths for oversize and missing PyYAML.
   - UI: Renamed Extensions page to Interpreters; kept /extensions as a redirect to /interpreters; Interpreters page lists registry mappings and rules.
 - Artifacts updated:
-  - Docs: dev/interpreters/mvp/json-yaml.md; dev/ui/mvp/rename-extensions-to-interpreters.md
+  - Docs: dev/features/interpreters/feature-json-yaml-interpreters.md; dev/tasks/ui/mvp/task-rename-extensions-to-interpreters.md
 - GUI Acceptance: Verified manually — /interpreters shows mappings; /extensions redirects; sample JSON/YAML datasets show summaries in detail view.
 - Tests: Smoke-tested via Flask client for routing; interpreter logic covered by existing patterns; YAML missing-dep path manually verified when PyYAML absent.
 
@@ -284,7 +284,7 @@ Use these prompts to accelerate dev cycles.
 - Capacity: 24h (single agent)
 - GUI Acceptance:
   - Home page search returns datasets by filename or interpreter_id via /api/search.
-  - dev/deployment.md contains a "Migration Plan" with adapter interface documented and a feature-flag plan.
+  - dev/ops/deployment-neo4j.md contains a "Migration Plan" with adapter interface documented and a feature-flag plan.
 
 - Selected Stories
   - [story:search-and-neo4j-prep] Thin slice for user-visible search and backend prep
@@ -317,7 +317,7 @@ Use these prompts to accelerate dev cycles.
   2) Run POST /api/scan on sample dir (small test data)
   3) Visit Home page; enter a term matching a dataset filename and an interpreter_id (e.g., "python_code" or "csv")
   4) Observe results list with clickable items leading to dataset detail
-  5) Open dev/deployment.md and verify "Migration Plan" section with adapter interface and feature flag
+  5) Open dev/ops/deployment-neo4j.md and verify "Migration Plan" section with adapter interface and feature flag
 
 - Risks & Cut Lines
   - Cut order: (5) ops polish → (4) tests follow-ups → non-essential search fields/snippets.
@@ -328,7 +328,7 @@ Use these prompts to accelerate dev cycles.
   - 2025-08-19: Ingested new vision docs; added tasks for NCDU/GDU Filesystem Scanner and RO-Crate MVP to Ready Queue; aligned Filesystem Scan design to prefer NCDU with GDU/Python fallback.
 
 - Pre-Work Completed (as of 2025-08-18)
-  - task:core-architecture/mvp/neo4j-adapter-prep — Completed documentation of the migration plan and adapter boundary. See dev/deployment.md ("Migration Plan: InMemoryGraph → Neo4jAdapter") and dev/core-architecture/mvp/neo4j-adapter-prep.md (Status: done).
+  - task:core-architecture/mvp/neo4j-adapter-prep — Completed documentation of the migration plan and adapter boundary. See dev/ops/deployment-neo4j.md ("Migration Plan: InMemoryGraph → Neo4jAdapter") and dev/core-architecture/mvp/neo4j-adapter-prep.md (Status: done).
 
 ## Cycle After Next (2025-09-01 → 2025-09-05)
 - Theme: Graph backend implementation, extensibility, and interpreter expansion.
@@ -401,7 +401,7 @@ Story: ro-crate-integration-mvp — Embed Crate-O and expose minimal RO-Crate en
 - Tasks (max 5)
   1) task:ui/mvp/rocrate-embedding — Implementation guide and UI plan
      - Owner: agent; ETA: 2025-08-21
-     - Artifact: dev/ui/mvp/rocrate-embedding.md (this doc) + Jinja flag placement plan
+     - Artifact: dev/features/ui/feature-rocrate-viewer-embedding.md + Jinja flag placement plan
   2) task:core-architecture/mvp/rocrate-endpoints — API contracts and test plan
      - Owner: agent; ETA: 2025-08-22
      - Deliverables: API spec for `/api/rocrate` and `/files` including caps and security notes; unit test outline
@@ -413,7 +413,7 @@ Story: ro-crate-integration-mvp — Embed Crate-O and expose minimal RO-Crate en
      - Deliverable: README section pointing to RO-Crate docs
   5) task:core-architecture/mvp/rocrate-neo4j-import-plan — Outline graph import
      - Owner: agent; ETA: 2025-08-22
-     - Deliverable: brief plan appended to dev/ui/mvp/rocrate-embedding.md (Future Enhancements)
+     - Deliverable: brief plan appended to dev/features/ui/feature-rocrate-viewer-embedding.md (Future Enhancements)
 - Definition of Ready (DoR)
   - Viewer choice and embed method decided (iframe for MVP). Dependencies: none external.
   - Endpoint contracts drafted with caps/security noted. Test approach stated.

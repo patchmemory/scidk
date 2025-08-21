@@ -53,7 +53,7 @@ Note: The scanner prefers NCDU for fast filesystem enumeration when available. I
 - Change an existing password:
   - With container: scripts/neo4j_set_password.sh 'NewPass123!' --container scidk-neo4j --current 'neo4jiscool'
   - Local cypher-shell: scripts/neo4j_set_password.sh 'NewPass123!' --host bolt://localhost:7687 --user neo4j --current 'neo4jiscool'
-- More details in dev/deployment.md (includes direct cypher-shell commands).
+- More details in dev/ops/deployment-neo4j.md (includes direct cypher-shell commands).
 
 ### Troubleshooting Neo4j Unauthorized errors
 - If you see "The client is unauthorized due to authentication failure" when committing:
@@ -68,7 +68,7 @@ Note: The scanner prefers NCDU for fast filesystem enumeration when available. I
 - Endpoints to be implemented next:
   - GET /api/rocrate — Generate minimal RO-Crate JSON-LD for a selected directory (depth=1, capped)
   - GET /files — Stream file bytes for viewer previews/downloads
-- See dev/ui/mvp/rocrate-embedding.md for contracts and UI integration plan.
+- See dev/features/ui/feature-rocrate-viewer-embedding.md for contracts and UI integration plan.
 
 ### Filesystem Providers (MVP)
 - Feature flag: set SCIDK_PROVIDERS to a comma-separated list (default: local_fs,mounted_fs)
@@ -101,11 +101,11 @@ Conventions:
 
 ## Notes
 - This MVP uses an in-memory graph; data resets on restart.
-- Neo4j deployment docs reside in dev/deployment.md, but Neo4j is not yet wired in the MVP code.
+- Neo4j deployment docs reside in dev/ops/deployment-neo4j.md, but Neo4j is not yet wired in the MVP code.
 
 ## Documentation
 - Delivery cycles and planning protocol: dev/cycles.md
-- RO-Crate Viewer embedding plan (Crate-O): dev/ui/mvp/rocrate-embedding.md
+- RO-Crate Viewer embedding plan (Crate-O): dev/features/ui/feature-rocrate-viewer-embedding.md
 - Describo integration (product vision): dev/vision/describo-integration.md
 
 ## Scanning progress and background tasks (MVP)

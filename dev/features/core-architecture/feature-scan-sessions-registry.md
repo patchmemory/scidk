@@ -16,4 +16,4 @@ links:
   stories: [story:providers-mvp-multi-source-files]
   tasks: []
 notes: |
-  Source reference doc: dev/ui/mvp/scan-sessions.md (legacy).
+  Source reference doc: dev/features/ui/feature-scan-sessions-ux.md.

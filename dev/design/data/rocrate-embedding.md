@@ -3,7 +3,7 @@
 This document outlines how to embed a RO-Crate viewer (Crate-O) into the UI with minimal changes.
 
 Artifacts:
-- Legacy doc: dev/ui/mvp/rocrate-embedding.md
+- Canonical: dev/features/ui/feature-rocrate-viewer-embedding.md
 
 Plan highlights:
 - Add conditional link from dataset detail to a viewer when a RO-Crate is detected
