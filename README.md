@@ -64,6 +64,12 @@ Note: The scanner prefers NCDU for fast filesystem enumeration when available. I
 
 ## API
 
+### RO-Crate (Planned MVP)
+- Endpoints to be implemented next:
+  - GET /api/rocrate — Generate minimal RO-Crate JSON-LD for a selected directory (depth=1, capped)
+  - GET /files — Stream file bytes for viewer previews/downloads
+- See dev/ui/mvp/rocrate-embedding.md for contracts and UI integration plan.
+
 ### Filesystem Providers (MVP)
 - Feature flag: set SCIDK_PROVIDERS to a comma-separated list (default: local_fs,mounted_fs)
 - GET /api/providers → [{ id, display_name, capabilities, auth }]
@@ -74,6 +80,12 @@ Note: The scanner prefers NCDU for fast filesystem enumeration when available. I
 - POST /api/scan {"path": "/path", "recursive": true}
 - GET /api/datasets
 - GET /api/datasets/<id>
+
+### Background Tasks (MVP)
+- POST /api/tasks { type: 'scan', path, recursive? } → { task_id }
+- GET /api/tasks → list all tasks (most recent first)
+- GET /api/tasks/<task_id> → details including status, progress, and scan_id when completed
+- POST /api/tasks { type: 'commit', scan_id } → start a background commit to graph (in-memory + optional Neo4j)
 
 ## Testing
 We use pytest for unit and API tests.
@@ -91,12 +103,18 @@ Conventions:
 - This MVP uses an in-memory graph; data resets on restart.
 - Neo4j deployment docs reside in dev/deployment.md, but Neo4j is not yet wired in the MVP code.
 
-## Scanning progress and background tasks (ncdu/gdu)
-- Current behavior: POST /api/scan runs synchronously and returns when complete.
-- Near-term plan: run ncdu (or gdu) as a background task and expose polling endpoints:
-  - POST /api/tasks (type=scan) → returns task_id; GET /api/tasks/<id> for status/progress; GET /api/tasks for list (multiple concurrent tasks supported).
-  - When available, we will stream ncdu JSON and compute percent scanned by summing completed nodes; otherwise show a spinner and file count as it grows.
-- For now, scanning prefers ncdu or gdu for fast enumeration when installed; otherwise falls back to Python traversal.
+## Documentation
+- Delivery cycles and planning protocol: dev/cycles.md
+- RO-Crate Viewer embedding plan (Crate-O): dev/ui/mvp/rocrate-embedding.md
+- Describo integration (product vision): dev/vision/describo-integration.md
+
+## Scanning progress and background tasks (MVP)
+- Current options:
+  - Synchronous: POST /api/scan runs immediately and returns when complete.
+  - Background: POST /api/tasks with { type: 'scan', path, recursive } enqueues a background scan and returns { task_id }. Poll GET /api/tasks/<id> for status/progress; GET /api/tasks lists recent tasks.
+- Progress: For Python traversal, progress reports files processed vs. total; percent reflects processed/total when determinable.
+- Enumeration: Scanning prefers ncdu or gdu when installed; otherwise falls back to Python traversal.
+- Future: When reliable streaming from ncdu/gdu is in place, percent will be computed from streamed JSON for better fidelity.
 
 ## Map page visualization tuning
 - On /map you can:

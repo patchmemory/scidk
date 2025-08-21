@@ -3,7 +3,7 @@
 ## Vision Summary
 - ID: vision:plugins
 - Owner: Extensions Team
-- Last Updated: 2025-08-18
+- Last Updated: 2025-08-21
 - Related Docs: dev/vision/plugins.md
 
 ## Problem & Value
@@ -13,6 +13,8 @@
 ## Scope (In / Out)
 - In: Plugin base, loader, registration hooks, route registration, basic handle_query.
 - Out: Full-featured plugin marketplace and permissioning (later phases).
+
+Provider plugins: Filesystem Providers (Local, Mounted, planned Rclone) are implemented via a pluggable ProviderRegistry. Future plugins can adopt a similar registration pattern and capability declaration.
 
 ## Phases
 - [phase:plugins/mvp] Plugin Loader + PubMed Stub — Status: planned, Target: 2025-09-20

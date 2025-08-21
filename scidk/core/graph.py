@@ -6,6 +6,8 @@ from typing import Dict, List, Optional
 class InMemoryGraph:
     """Very simple in-memory storage for datasets and interpretations.
     Dataset identity is by checksum.
+    Also supports ResearchObject nodes (representing RO-Crates) that can link to
+    files and folders contained in the crate.
     """
 
     def __init__(self):
@@ -16,9 +18,59 @@ class InMemoryGraph:
         self.scans: Dict[str, Dict] = {}
         # Mapping from dataset checksum -> set of scan_ids that included it
         self.dataset_scans: Dict[str, set] = {}
+        # ResearchObject nodes (id -> ro dict) and their relationships
+        self.research_objects: Dict[str, Dict] = {}
+        # ro_id -> set of dataset checksums (files contained in RO)
+        self.ro_files: Dict[str, set] = {}
+        # ro_id -> set of folder paths (strings) contained in RO
+        self.ro_folders: Dict[str, set] = {}
 
     def _dataset_id(self, checksum: str) -> str:
         return hashlib.sha1(checksum.encode()).hexdigest()[:16]
+
+    def _ro_id(self, key: str) -> str:
+        """Derive a stable ResearchObject id from a key (e.g., path)."""
+        try:
+            return 'ro_' + hashlib.sha1((key or '').encode('utf-8')).hexdigest()[:16]
+        except Exception:
+            return 'ro_' + hashlib.sha1(b'').hexdigest()[:16]
+
+    def upsert_research_object(self, meta: Dict, file_checksums: List[str], folder_paths: List[str]) -> Dict:
+        """Create or update a ResearchObject and link it to files/folders.
+        - meta should include at least 'path' or 'name' to derive id; arbitrary keys allowed.
+        - file_checksums should reference datasets already known in self.datasets (unknown are ignored).
+        - folder_paths are strings (absolute paths recommended).
+        Returns stored ResearchObject dict.
+        """
+        key = meta.get('path') or meta.get('name') or meta.get('id') or ''
+        ro_id = meta.get('id') or self._ro_id(key)
+        ro = self.research_objects.get(ro_id)
+        if ro:
+            # update metadata (shallow)
+            ro.update(meta)
+        else:
+            ro = meta.copy()
+            ro['id'] = ro_id
+            ro['label'] = 'ResearchObject'
+            ro['created_at'] = ro.get('created_at') or time.time()
+            self.research_objects[ro_id] = ro
+        # Link files
+        files_set = self.ro_files.setdefault(ro_id, set())
+        for ch in file_checksums or []:
+            if ch in self.datasets:
+                files_set.add(ch)
+        # Link folders
+        folders_set = self.ro_folders.setdefault(ro_id, set())
+        for p in folder_paths or []:
+            if p:
+                folders_set.add(p)
+        return ro
+
+    def list_research_objects(self) -> List[Dict]:
+        return list(self.research_objects.values())
+
+    def get_research_object(self, ro_id: str) -> Optional[Dict]:
+        return self.research_objects.get(ro_id)
 
     def upsert_dataset(self, dataset: Dict) -> Dict:
         checksum = dataset['checksum']
@@ -64,9 +116,11 @@ class InMemoryGraph:
 
     def schema_summary(self) -> Dict:
         """Compute a lightweight schema summary for UI display.
-        Nodes: Dataset count.
+        Nodes: Dataset count (+ ResearchObject and derived File/Folder/Scan counts).
         Relations (in-memory approximation):
           - INTERPRETED_AS: number of interpretation entries across datasets.
+          - CONTAINS: Folder→File (aggregate), Folder→Folder (aggregate), ResearchObject→File/Folder.
+          - SCANNED_IN: File→Scan, Folder→Scan.
         Interpretation types: unique interpreter ids present.
         """
         datasets = list(self.datasets.values())
@@ -77,13 +131,45 @@ class InMemoryGraph:
             interpreted_edges += len(interps)
             for k in interps.keys():
                 interp_types.add(k)
+        # Derive file/folder counts
+        folder_paths = set()
+        for d in datasets:
+            p = d.get('path')
+            if p:
+                try:
+                    from pathlib import Path as _P
+                    folder_paths.add(str(_P(p).parent))
+                except Exception:
+                    pass
+        nodes = {
+            'Dataset': len(datasets),
+        }
+        if folder_paths:
+            nodes['Folder'] = len(folder_paths)
+        if self.scans:
+            nodes['Scan'] = len(self.scans)
+        if self.research_objects:
+            nodes['ResearchObject'] = len(self.research_objects)
+        # Summarize relations minimalistically
+        relations = {
+            'INTERPRETED_AS': interpreted_edges,
+        }
+        # Include aggregate CONTAINS edges
+        if datasets and folder_paths:
+            relations['CONTAINS'] = relations.get('CONTAINS', 0) + len(datasets)  # Folder→File aggregate count
+        # ResearchObject→File and →Folder counts
+        if self.ro_files:
+            relations['CONTAINS'] = relations.get('CONTAINS', 0) + sum(len(v) for v in self.ro_files.values())
+        if self.ro_folders:
+            relations['CONTAINS'] = relations.get('CONTAINS', 0) + sum(len(v) for v in self.ro_folders.values())
+        # SCANNED_IN implicit counts
+        if self.dataset_scans:
+            file_scan_edges = sum(len(s) for s in self.dataset_scans.values())
+            if file_scan_edges:
+                relations['SCANNED_IN'] = relations.get('SCANNED_IN', 0) + file_scan_edges
         return {
-            'nodes': {
-                'Dataset': len(datasets),
-            },
-            'relations': {
-                'INTERPRETED_AS': interpreted_edges,
-            },
+            'nodes': nodes,
+            'relations': relations,
             'interpretation_types': sorted(list(interp_types)),
         }
 
@@ -117,6 +203,8 @@ class InMemoryGraph:
             nodes['Folder'] = folder_count
         if self.scans:
             nodes['Scan'] = len(self.scans)
+        if self.research_objects:
+            nodes['ResearchObject'] = len(self.research_objects)
         # Edge counts
         edge_counts: Dict[tuple, int] = {}
         # (1) File -[INTERPRETED_AS]-> <InterpreterId>
@@ -168,6 +256,14 @@ class InMemoryGraph:
                 edge_counts[('File', 'SCANNED_IN', 'Scan')] = edge_counts.get(('File', 'SCANNED_IN', 'Scan'), 0) + file_scan_edges
             if folder_scan_set:
                 edge_counts[('Folder', 'SCANNED_IN', 'Scan')] = edge_counts.get(('Folder', 'SCANNED_IN', 'Scan'), 0) + len(folder_scan_set)
+        # (5) ResearchObject -[CONTAINS]-> File and Folder
+        if self.research_objects:
+            total_rof = sum(len(v) for v in self.ro_files.values()) if self.ro_files else 0
+            total_rod = sum(len(v) for v in self.ro_folders.values()) if self.ro_folders else 0
+            if total_rof:
+                edge_counts[('ResearchObject', 'CONTAINS', 'File')] = edge_counts.get(('ResearchObject', 'CONTAINS', 'File'), 0) + total_rof
+            if total_rod:
+                edge_counts[('ResearchObject', 'CONTAINS', 'Folder')] = edge_counts.get(('ResearchObject', 'CONTAINS', 'Folder'), 0) + total_rod
         # Build edges list sorted by count desc
         edges_all = [
             {'start_label': k[0], 'rel_type': k[1], 'end_label': k[2], 'count': c}
@@ -263,5 +359,18 @@ class InMemoryGraph:
                     'num_files': len(s.get('checksums') or []),
                 })
             rows.sort(key=lambda r: r.get('started') or 0, reverse=True)
+            return rows
+        if label == 'ResearchObject':
+            rows = []
+            for ro_id, ro in self.research_objects.items():
+                rows.append({
+                    'id': ro_id,
+                    'name': ro.get('name'),
+                    'path': ro.get('path'),
+                    'created_at': ro.get('created_at'),
+                    'file_count': len(self.ro_files.get(ro_id, set())),
+                    'folder_count': len(self.ro_folders.get(ro_id, set())),
+                })
+            rows.sort(key=lambda r: (r.get('name') or r.get('path') or ''))
             return rows
         return []

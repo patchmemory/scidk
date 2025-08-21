@@ -388,6 +388,45 @@ Use these prompts to accelerate dev cycles.
 Note: See also dev/cycle-review-2025-08-18.md for a consolidated review and next-cycle plan derived from this document.
 
 
+## Proposed Immediate Cycle (2025-08-21 → 2025-08-23)
+Story: ro-crate-integration-mvp — Embed Crate-O and expose minimal RO-Crate endpoints
+- E2E Objective
+  - From the Files page, select a folder and open it in an embedded RO-Crate viewer which loads metadata from `/api/rocrate`; small files stream via `/files` for previews/downloads.
+- GUI Acceptance
+  - With `SCIDK_FILES_VIEWER=rocrate`, the Files page shows an "Open in RO-Crate Viewer" button and an iframe appears, loading a wrapper that points to `/api/rocrate?...`.
+  - Calling `/api/rocrate` on a temp directory returns a valid JSON-LD crate with the directory as dataset and its immediate children as entities (capped list, depth=1).
+  - `/files` streams a small file and denies traversal.
+- Tasks (max 5)
+  1) task:ui/mvp/rocrate-embedding — Implementation guide and UI plan
+     - Owner: agent; ETA: 2025-08-21
+     - Artifact: dev/ui/mvp/rocrate-embedding.md (this doc) + Jinja flag placement plan
+  2) task:core-architecture/mvp/rocrate-endpoints — API contracts and test plan
+     - Owner: agent; ETA: 2025-08-22
+     - Deliverables: API spec for `/api/rocrate` and `/files` including caps and security notes; unit test outline
+  3) task:vision/describo-integration — Product vision doc for Describo
+     - Owner: agent; ETA: 2025-08-21
+     - Deliverable: dev/vision/describo-integration.md
+  4) task:docs/link-readme — Link new docs from README and cycles
+     - Owner: agent; ETA: 2025-08-21
+     - Deliverable: README section pointing to RO-Crate docs
+  5) task:core-architecture/mvp/rocrate-neo4j-import-plan — Outline graph import
+     - Owner: agent; ETA: 2025-08-22
+     - Deliverable: brief plan appended to dev/ui/mvp/rocrate-embedding.md (Future Enhancements)
+- Definition of Ready (DoR)
+  - Viewer choice and embed method decided (iframe for MVP). Dependencies: none external.
+  - Endpoint contracts drafted with caps/security noted. Test approach stated.
+- Definition of Done (DoD)
+  - Docs added: rocrate-embedding.md, describo-integration.md.
+  - cycles.md updated with this cycle.
+  - README references added.
+  - Tests to be implemented next cycle alongside endpoint code.
+- Demo Checklist
+  1) Start app with `SCIDK_FILES_VIEWER=rocrate` (once implemented)
+  2) Navigate to Files → select a small folder → click Open in RO-Crate Viewer
+  3) Observe iframe; manual call to `/api/rocrate` returns JSON-LD
+  4) Call `/files` for a known file returns bytes; traversal blocked
+
+
 ### Iteration Plan (mvp-iter-2025-08-19-0010)
 1) E2E Objective
    - Add a Jupyter Notebook interpreter (ipynb) and surface notebook summaries on the Dataset Detail page. Keep GUI-first with a simple demo path.
@@ -782,3 +821,30 @@ Cross-link:
 - See dev/stories/story-mvp-multi-provider-files-and-interpreters.md (Status: Done).
 - See dev/plan-next-increments-2025-08-21.md for the consolidated next-increments plan and acceptance criteria.
 - See dev/ui/mvp/tasks-ui-polling.md for the UI polling pattern for /api/tasks.
+
+
+### Planning Protocol (mvp-iter-2025-08-21-rocrate-map)
+1) E2E Objective and GUI Acceptance
+   - Objective: Getting the current graph input and its related schema visible on the Map page, with RO-Crate endpoints available to feed crate metadata. Theme priority: Story: ro-crate-integration-mvp — embed Crate-O and RO-Crate endpoints.
+   - GUI Acceptance: After scanning a small folder, visiting /map shows a Schema panel with Node Labels and Relationship Types (with counts) reflecting the current session graph. When calling /api/rocrate on a chosen directory, a minimal JSON-LD crate is returned and can be used by an embedded viewer toggle on the Files page (link or iframe behind a flag).
+2) Capacity
+   - 8h
+3) Selected Tasks Table with DoR (owner, ETA, RICE, dependencies, test approach)
+   - id: task:core-architecture/mvp/research-objects-ro-crate; owner: agent; ETA: 2025-08-21; RICE: 3.4; dependencies: none; test approach: unit test asserting /api/rocrate returns minimal JSON-LD with @context, root Dataset, and children capped at depth=1; skip tests if flag disabled.
+   - id: task:core-architecture/mvp/neo4j-adapter-prep; owner: agent; ETA: 2025-08-21; RICE: 3.2; dependencies: InMemoryGraph schema_summary API; test approach: unit tests for schema_summary() shape and presence of label/type counts used by /map; docs update verifying boundary fields.
+   - id: task:core-architecture/mvp/neo4j-adapter-impl; owner: agent; ETA: 2025-08-21; RICE: 3.0; dependencies: task:core-architecture/mvp/neo4j-adapter-prep; test approach: Flask client smoke that /map renders schema tables after a POST /api/scan; verify counts non-negative and tables present.
+4) Dependency Table
+   - neo4j-adapter-impl → neo4j-adapter-prep
+5) Demo Checklist
+   1) Start app (python -m scidk.app)
+   2) POST /api/scan with a small temp folder
+   3) Visit /map — Expect: Schema tables list node labels and relationship types with counts matching the scan
+   4) Call /api/rocrate?path=<scanned_dir> — Expect: minimal JSON-LD crate (depth=1) response
+   5) If flag SCIDK_FILES_VIEWER=rocrate is enabled, Files page shows an "Open in RO-Crate Viewer" control (link or iframe) using the /api/rocrate output
+6) Risks & Cut Lines
+   - Risks: Over-scoping viewer integration; schema fields mismatch; tight capacity.
+   - Cut lines: If time-constrained, ship Map page schema tables only (no iframe); keep /api/rocrate JSON-LD generation minimal without save; defer any interactive graph changes.
+7) Decision & Risk Log entry
+   - 2025-08-21 10:59: Chosen a table-based schema display for /map backed by schema_summary() and a minimal /api/rocrate JSON-LD endpoint; Crate-O embedding behind a feature flag to control scope.
+8) Tag to create
+   - mvp-iter-2025-08-21-rocrate-map

@@ -7,7 +7,7 @@
     :root { --fg:#222; --muted:#666; --bg:#fff; --accent:#0a6; }
     * { box-sizing: border-box; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif; margin: 0; color: var(--fg); background: var(--bg); }
-    header { display:flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; border-bottom: 1px solid #eee; position: sticky; top:0; background: var(--bg); }
+    header { display:flex; align-items: center; justify-content: flex-start; gap: .75rem; padding: 0.75rem 1rem; border-bottom: 1px solid #eee; position: sticky; top:0; background: var(--bg); }
     header h1 { margin: 0; font-size: 1.1rem; font-weight: 600; }
     nav a { color: var(--fg); text-decoration: none; padding: 0.25rem 0.5rem; border-radius: 4px; }
     nav a + a { margin-left: 0.25rem; }
@@ -32,11 +32,11 @@
   <h1><a href="/" style="text-decoration:none;color:inherit">SciDK</a></h1>
   <nav>
     <!-- Home link removed; use SciDK logo as Home -->
-    <a href="/chat">Chat</a>
-    <a href="/map">Map</a>
-    <a href="/datasets">File</a>
-    <!-- Interpreters and Plugins moved into Set page -->
-    <a href="/settings">Set</a>
+    <a href="/datasets">Files</a>
+    <a href="/map">Maps</a>
+    <a href="/chat">Chats</a>
+    <!-- Interpreters and Plugins moved into Settings page -->
+    <a href="/settings">Settings</a>
   </nav>
 </header>
 <div id="toast-container" aria-live="polite" aria-atomic="true"></div>

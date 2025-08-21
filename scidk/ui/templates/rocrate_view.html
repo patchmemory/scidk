@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RO-Crate Viewer</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0.5rem; }
+    header { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+    #status { font-size: .9rem; color: #555; }
+    pre { background: #f9f9f9; border: 1px solid #eee; padding: .5rem; overflow: auto; max-height: calc(100vh - 90px); }
+    .hint { font-size: .85rem; color: #666; margin-bottom: .25rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <strong>RO-Crate</strong>
+      <span id="status" class="hint">Loading…</span>
+    </div>
+    <div class="hint" id="mode"></div>
+  </header>
+  <div id="container">
+    <div class="hint">This wrapper renders the RO-Crate JSON-LD for now. We will swap in the Crate-O viewer here next.</div>
+    <pre id="json">Fetching…</pre>
+  </div>
+  <script>
+    (async function(){
+      const metadataUrl = {{ metadata_url|tojson }};
+      const embedMode = {{ embed_mode|tojson }};
+      const modeEl = document.getElementById('mode');
+      const status = document.getElementById('status');
+      if (modeEl) modeEl.textContent = embedMode === 'crateo' ? 'Mode: Crate-O (pending assets)' : 'Mode: JSON preview';
+      try {
+        const res = await fetch(metadataUrl);
+        if (!res.ok){ status.textContent = 'Error: ' + res.status; document.getElementById('json').textContent = await res.text(); return; }
+        const data = await res.json();
+        document.getElementById('json').textContent = JSON.stringify(data, null, 2);
+        status.textContent = 'OK';
+      } catch (e){
+        status.textContent = 'Load failed';
+        document.getElementById('json').textContent = String(e);
+      }
+
+      // Placeholder for Crate-O embed path: when assets/CDN integration is ready, mount into #container
+      // Example (future):
+      // if (embedMode === 'crateo') {
+      //   const script = document.createElement('script');
+      //   script.src = 'https://cdn.example.com/crate-o/bundle.js';
+      //   script.onload = () => window.CrateO && window.CrateO.mount('#container', { metadataUrl });
+      //   document.body.appendChild(script);
+      // }
+    })();
+  </script>
+</body>
+</html>

@@ -1,55 +1,6 @@
 {% extends 'base.html' %}
-{% block title %}SciDK - Map{% endblock %}
+{% block title %}SciDK - Maps{% endblock %}
 {% block content %}
-<section>
-  <h2>Graph Schema</h2>
-  <p class="small">MVP: table-based schema view showing node labels and relationship types with counts. Data reflects the current in-memory session.</p>
-  <div style="display:flex; gap:2rem; flex-wrap:wrap; align-items:flex-start;">
-    <div>
-      <h3>Node Labels</h3>
-      <table class="table table-sm">
-        <thead>
-          <tr><th>Label</th><th>Count</th></tr>
-        </thead>
-        <tbody>
-          {% for label, cnt in schema_summary.nodes.items() %}
-            <tr><td>{{ label }}</td><td>{{ cnt }}</td></tr>
-          {% else %}
-            <tr><td colspan="2" class="small">No nodes</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <div>
-      <h3>Relationship Types</h3>
-      <table class="table table-sm">
-        <thead>
-          <tr><th>Type</th><th>Count</th></tr>
-        </thead>
-        <tbody>
-          {% for rel, cnt in schema_summary.relations.items() %}
-            <tr><td>{{ rel }}</td><td>{{ cnt }}</td></tr>
-          {% else %}
-            <tr><td colspan="2" class="small">No relationships</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-  <div>
-    <h3>Interpretation Types</h3>
-    {% if schema_summary.interpretation_types %}
-      <ul>
-        {% for it in schema_summary.interpretation_types %}
-          <li>{{ it }}</li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p class="small">None</p>
-    {% endif %}
-  </div>
-</section>
-
 <section>
   <h2>Schema Graph (Interactive)</h2>
   <div class="row g-2" style="margin-bottom:.5rem">
@@ -60,6 +11,7 @@
         <option value="File">File</option>
         <option value="Folder">Folder</option>
         <option value="Scan">Scan</option>
+        <option value="ResearchObject">ResearchObject</option>
       </select>
     </div>
     <div class="col-auto">
@@ -125,6 +77,56 @@
       </div>
     </div>
     <div id="instances-table" class="table-responsive" style="max-height:240px; overflow:auto; border:1px solid #eee"></div>
+  </div>
+</section>
+
+<section>
+  <h2>Graph Schema</h2>
+  <p class="small">MVP: table-based schema view showing node labels and relationship types with counts. Data reflects the current in-memory session.</p>
+  <div style="display:flex; gap:2rem; flex-wrap:wrap; align-items:flex-start;">
+    <div>
+      <h3>Node Labels</h3>
+      <table class="table table-sm">
+        <thead>
+          <tr><th>Label</th><th>Count</th></tr>
+        </thead>
+        <tbody>
+          {% for label, cnt in schema_summary.nodes.items() %}
+            <tr><td>{{ label }}</td><td>{{ cnt }}</td></tr>
+          {% else %}
+            <tr><td colspan="2" class="small">No nodes</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <h3>Relationship Types</h3>
+      <table class="table table-sm">
+        <thead>
+          <tr><th>Type</th><th>Count</th></tr>
+        </thead>
+        <tbody>
+          {% for rel, cnt in schema_summary.relations.items() %}
+            <tr><td>{{ rel }}</td><td>{{ cnt }}</td></tr>
+          {% else %}
+            <tr><td colspan="2" class="small">No relationships</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div>
+    <h3>Interpretation Types</h3>
+    {% set pref = ['csv','ipynb','json','python_code','txt','xlsx','yaml'] %}
+    {% set itypes = schema_summary.interpretation_types or [] %}
+    {% if itypes %}
+      <ul>
+        {% for it in pref if it in itypes %}<li>{{ it }}</li>{% endfor %}
+        {% for it in itypes if it not in pref %}<li>{{ it }}</li>{% endfor %}
+      </ul>
+    {% else %}
+      <p class="small">None</p>
+    {% endif %}
   </div>
 </section>
 

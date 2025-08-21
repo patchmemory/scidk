@@ -102,3 +102,15 @@ Theme: Basic Search (UI-visible) + Neo4j Adapter Prep
 
 ## Execution Progress (2025-08-18)
 - Implemented minimal error-toasts utility in templates/base.html and updated Home page (index.html) to use toasts for Chat and Search API errors. This satisfies the optional ops polish item for the next cycle while keeping scope minimal. Tests remain green.
+
+
+
+## Addendum — 2025-08-21
+Since this review, the following were delivered and are now reflected in README and code:
+- ProviderRegistry with LocalFS and MountedFS providers; feature flag SCIDK_PROVIDERS.
+- APIs: /api/providers, /api/provider_roots, /api/browse; /api/scan accepts provider_id (legacy defaults to local_fs).
+- UI: Files page consolidated (provider selector, roots, path input, browser table, scan action). Home shows “Scanned Sources.” Settings page exposes Neo4j config with connect/disconnect.
+- Interpreters: TXT and XLSX added (along with Python, CSV, JSON, YAML, IPYNB already registered). Rule-based selection in place.
+- Neo4j: Optional schema endpoints and a Commit-to-Graph flow with post-commit verification; mocked-driver unit test added.
+
+See also: dev/stories/story-mvp-multi-provider-files-and-interpreters.md (Status: Done).

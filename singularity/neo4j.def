@@ -10,7 +10,7 @@ From: neo4j:5.20.0
   Description "Neo4j for SciDK"
 
 %environment
-  export NEO4J_AUTH=${NEO4J_AUTH:-neo4j/neo4jpassword}
+  export NEO4J_AUTH=${NEO4J_AUTH:-neo4j/neo4jiscool}
   export NEO4J_dbms_default__listen__address=${NEO4J_LISTEN_ADDR:-0.0.0.0}
   export NEO4J_dbms_connector_bolt_listen__address=${NEO4J_BOLT_ADDR:-:7687}
   export NEO4J_dbms_connector_http_listen__address=${NEO4J_HTTP_ADDR:-:7474}

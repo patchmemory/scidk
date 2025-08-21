@@ -1536,6 +1536,190 @@ def create_app():
         st['connected'] = False
         return jsonify({'connected': False}), 200
 
+    @api.get('/rocrate')
+    def api_rocrate():
+        """Return a minimal RO-Crate JSON-LD for a given directory (depth=1).
+        Query: provider_id (default local_fs), root_id ('/'), path (directory path)
+        Caps: at most 1000 immediate children; include meta.truncated when applied.
+        """
+        prov_id = (request.args.get('provider_id') or 'local_fs').strip() or 'local_fs'
+        root_id = (request.args.get('root_id') or '/').strip() or '/'
+        sel_path = (request.args.get('path') or '').strip() or root_id
+        try:
+            provs = app.extensions['scidk']['providers']
+            prov = provs.get(prov_id)
+            if not prov:
+                return jsonify({'error': 'provider not available'}), 400
+            from pathlib import Path as _P
+            base = _P(root_id).resolve()
+            target = _P(sel_path).resolve()
+            # Ensure target resides under base (best-effort for local/mounted providers)
+            try:
+                target.relative_to(base)
+            except Exception:
+                # If not under base, fall back to base
+                target = base
+            if not target.exists() or not target.is_dir():
+                return jsonify({'error': 'path not a directory'}), 400
+            # Prepare root entity
+            from datetime import datetime as _DT
+            def iso(ts):
+                try:
+                    return _DT.fromtimestamp(float(ts)).isoformat()
+                except Exception:
+                    return None
+            # Enumerate immediate children
+            children = []
+            total = 0
+            LIMIT = 1000
+            import mimetypes as _mt
+            for child in target.iterdir():
+                total += 1
+                if len(children) >= LIMIT:
+                    continue
+                try:
+                    st = child.stat()
+                    is_dir = child.is_dir()
+                    mime = None if is_dir else (_mt.guess_type(child.name)[0] or 'application/octet-stream')
+                    children.append({
+                        '@id': child.name + ('/' if is_dir else ''),
+                        '@type': 'Dataset' if is_dir else 'File',
+                        'name': child.name or str(child),
+                        'contentSize': 0 if is_dir else int(st.st_size),
+                        'dateModified': iso(st.st_mtime),
+                        'encodingFormat': None if is_dir else mime,
+                        'url': None if is_dir else (f"/api/files?provider_id={prov_id}&root_id={root_id}&path=" + str(child.resolve())),
+                    })
+                except Exception:
+                    continue
+            graph = [{
+                '@id': './',
+                '@type': 'Dataset',
+                'name': target.name or str(target),
+                'hasPart': [{'@id': c['@id']} for c in children],
+            }] + children
+            out = {
+                '@context': 'https://w3id.org/ro/crate/1.1/context',
+                '@graph': graph,
+                'meta': {
+                    'truncated': bool(total > len(children)),
+                    'total_children': total,
+                    'shown': len(children),
+                }
+            }
+            return jsonify(out), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @api.get('/files')
+    def api_files():
+        """Stream a file's bytes with basic security and size limits.
+        Query: provider_id, root_id, path
+        Limits: default max 32MB unless SCIDK_FILE_MAX_BYTES is set.
+        """
+        prov_id = (request.args.get('provider_id') or 'local_fs').strip() or 'local_fs'
+        root_id = (request.args.get('root_id') or '/').strip() or '/'
+        file_path = (request.args.get('path') or '').strip()
+        if not file_path:
+            return jsonify({'error': 'missing path'}), 400
+        try:
+            from pathlib import Path as _P
+            base = _P(root_id).resolve()
+            target = _P(file_path).resolve()
+            # Enforce that target is within base
+            try:
+                target.relative_to(base)
+            except Exception:
+                return jsonify({'error': 'path outside root'}), 400
+            if not target.exists() or not target.is_file():
+                return jsonify({'error': 'not a file'}), 400
+            st = target.stat()
+            max_bytes = int(os.environ.get('SCIDK_FILE_MAX_BYTES', '33554432'))  # 32MB
+            if st.st_size > max_bytes:
+                return jsonify({'error': 'file too large', 'limit': max_bytes, 'size': int(st.st_size)}), 413
+            import mimetypes as _mt
+            mime = _mt.guess_type(target.name)[0] or 'application/octet-stream'
+            from flask import send_file as _send_file
+            return _send_file(str(target), mimetype=mime, as_attachment=False, download_name=target.name)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @api.post('/research_objects')
+    def api_research_objects_create():
+        """Create or update a ResearchObject node for a directory path.
+        Body JSON: { provider_id, root_id, path, name?, metadata? }
+        Links to known files (datasets) under the directory and includes derived folder paths.
+        """
+        data = request.get_json(silent=True) or {}
+        prov_id = (data.get('provider_id') or 'local_fs').strip() or 'local_fs'
+        root_id = (data.get('root_id') or '/').strip() or '/'
+        sel_path = (data.get('path') or '').strip() or root_id
+        name = (data.get('name') or '').strip() or None
+        extra_meta = data.get('metadata') or {}
+        try:
+            from pathlib import Path as _P
+            base = _P(root_id).resolve()
+            target = _P(sel_path).resolve()
+            try:
+                target.relative_to(base)
+            except Exception:
+                return jsonify({'error': 'path outside root'}), 400
+            if not target.exists() or not target.is_dir():
+                return jsonify({'error': 'path not a directory'}), 400
+            # Build file checksum list by matching datasets whose path is under target
+            g = app.extensions['scidk']['graph']
+            file_checksums = []
+            folder_paths = set()
+            for ds in g.list_datasets():
+                try:
+                    p = _P(ds.get('path') or '').resolve()
+                except Exception:
+                    continue
+                try:
+                    p.relative_to(target)
+                except Exception:
+                    continue
+                # Under target => include
+                file_checksums.append(ds.get('checksum'))
+                try:
+                    folder_paths.add(str(p.parent))
+                except Exception:
+                    pass
+            meta = {
+                'name': name or (target.name or str(target)),
+                'path': str(target),
+                'provider_id': prov_id,
+                'root_id': root_id,
+            }
+            # merge extra metadata
+            try:
+                if isinstance(extra_meta, dict):
+                    meta.update({k: v for k, v in extra_meta.items() if k not in meta})
+            except Exception:
+                pass
+            ro = g.upsert_research_object(meta, file_checksums, list(folder_paths))
+            return jsonify({'status': 'ok', 'research_object': ro, 'file_links': len(file_checksums), 'folder_links': len(folder_paths)}), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @api.get('/research_objects')
+    def api_research_objects_list():
+        g = app.extensions['scidk']['graph']
+        return jsonify(g.list_research_objects()), 200
+
+    @api.get('/research_objects/<ro_id>')
+    def api_research_objects_get(ro_id):
+        g = app.extensions['scidk']['graph']
+        ro = g.get_research_object(ro_id)
+        if not ro:
+            return jsonify({'error': 'not found'}), 404
+        # expand lightweight links counts
+        files = len(g.ro_files.get(ro_id, set()))
+        folders = len(g.ro_folders.get(ro_id, set()))
+        out = ro.copy()
+        out.update({'file_count': files, 'folder_count': folders})
+        return jsonify(out), 200
+
     app.register_blueprint(api)
 
     # UI routes
@@ -1587,7 +1771,9 @@ def create_app():
         # Show only the most recent N scans for dropdown
         N = 20
         recent_scans = recent_scans[:N]
-        return render_template('datasets.html', datasets=datasets, directories=directories, recent_scans=recent_scans, selected_scan=selected_scan)
+        # files viewer mode: allow query param override, else env, else classic
+        files_viewer = (request.args.get('files_viewer') or os.environ.get('SCIDK_FILES_VIEWER') or 'classic').strip()
+        return render_template('datasets.html', datasets=datasets, directories=directories, recent_scans=recent_scans, selected_scan=selected_scan, files_viewer=files_viewer)
 
     @ui.get('/datasets/<dataset_id>')
     def dataset_detail(dataset_id):
@@ -1644,6 +1830,21 @@ def create_app():
     @ui.get('/extensions')
     def extensions_legacy():
         return redirect(url_for('ui.interpreters'))
+
+    @ui.get('/rocrate_view')
+    def rocrate_view():
+        # Lightweight wrapper page to preview RO-Crate JSON-LD and prepare for embedding Crate-O
+        prov_id = (request.args.get('provider_id') or 'local_fs').strip() or 'local_fs'
+        root_id = (request.args.get('root_id') or '/').strip() or '/'
+        sel_path = (request.args.get('path') or root_id).strip()
+        try:
+            from urllib.parse import urlencode
+            qs = urlencode({'provider_id': prov_id, 'root_id': root_id, 'path': sel_path})
+        except Exception:
+            qs = f"provider_id={prov_id}&root_id={root_id}&path={sel_path}"
+        metadata_url = '/api/rocrate?' + qs
+        embed_mode = (os.environ.get('SCIDK_ROCRATE_EMBED') or 'json').strip()
+        return render_template('rocrate_view.html', metadata_url=metadata_url, embed_mode=embed_mode, prov_id=prov_id, root_id=root_id, path=sel_path)
 
     @ui.get('/settings')
     def settings():

@@ -11,7 +11,8 @@ Set these variables for the SciDK app and Neo4j connectivity:
 - NEO4J_URI: bolt://localhost:7687 (or bolt+s://host:7687 for TLS)
 - NEO4J_USER: neo4j
 - NEO4J_PASSWORD: <strong-password>
-- NEO4J_DB: neo4j (default)
+- SCIDK_NEO4J_DATABASE: neo4j (optional; defaults to driver/session default)
+- NEO4J_AUTH: none | neo4j/<password> (optional; 'none' enables no-auth mode)
 
 Optional Neo4j tuning (set in compose or Singularity environment):
 - NEO4J_server_memory_heap_initial__size: 2G
@@ -86,12 +87,13 @@ Plugins: The Singularity definition exports NEO4JLABS_PLUGINS='["apoc","n10s"]' 
 If cypher-shell is available inside the image, use the same commands as Docker, or run them via Neo4j Browser at http://host:7474.
 
 ## Application Configuration
-Point SciDK to Neo4j via environment variables or a config file:
+Point SciDK to Neo4j via environment variables or the in-app Settings page:
 - NEO4J_URI=bolt://localhost:7687
 - NEO4J_USER=neo4j
 - NEO4J_PASSWORD=strongpassword
+- Optional: SCIDK_NEO4J_DATABASE=neo4j; NEO4J_AUTH=none (no-auth mode)
 
-Future: When the SciDK Flask app is added, it should read these from environment or config/settings.yaml.
+The running Flask app reads environment variables at startup and also stores settings via the Settings UI (URI, User, Password, Database). The app prefers in-app saved settings over env when both are present.
 
 ## Backup & Maintenance (brief)
 - Backups: use neo4j-admin database dump/load or file-level backups when Neo4j is offline.
@@ -158,3 +160,24 @@ cypher-shell -u neo4j -p 'OldPass!' -a bolt://localhost:7687 "ALTER CURRENT USER
 Notes:
 - The scripts/init_env.sh and scripts/init_env.fish help manage NEO4J_AUTH and NEO4J_PASSWORD for both the app and Docker Compose.
 - If you change the password after first start, remember to update your .env and restart any dependent services.
+
+
+
+## Optional Neo4j schema endpoints (app)
+When Neo4j is configured, the app exposes optional schema endpoints in addition to the default in-memory schema view:
+- GET /api/graph/schema.neo4j — Uses Cypher to return node labels and unique relationship triples with counts.
+- GET /api/graph/schema.apoc — Uses APOC procedures (apoc.meta.data, apoc.meta.stats). Returns 502 if APOC procedures are unavailable.
+
+Requirements:
+- neo4j Python driver installed. If absent, endpoints return 501.
+- Environment or Settings configured: NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, optional SCIDK_NEO4J_DATABASE. NEO4J_AUTH=none is supported.
+
+If Neo4j or credentials are not configured, these endpoints return 501. The default in-memory /api/graph/schema remains available.
+
+## Commit to Graph (app)
+After a scan completes, you can persist results in Neo4j:
+- POST /api/scans/<scan_id>/commit — Writes File→SCANNED_IN→Scan and Folder→SCANNED_IN→Scan. The app performs post-commit verification and returns counts (files, folders) and verification status.
+- Settings UI supports saving credentials, connect/disconnect, and a health check at /api/health/graph.
+
+Testing:
+- See tests/test_neo4j_commit.py for a mocked-driver test that validates the commit Cypher shape and verification feedback.
