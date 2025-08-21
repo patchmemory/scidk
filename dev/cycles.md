@@ -764,3 +764,21 @@ Note: See also dev/cycle-review-2025-08-18.md for a consolidated review and next
   - Run a scan (non-recursive and recursive), press Commit to Graph.
   - Observe Background tasks line: “Neo4j: attempted=yes — verify=ok (files:X, folders:Y)”.
   - In Neo4j Browser: run MATCH (fo:Folder)-[:SCANNED_IN]->(:Scan) RETURN count(*), MATCH (f:File)-[:SCANNED_IN]->(:Scan) RETURN count(*).
+
+
+
+## Status Snapshot (2025-08-21)
+Done in current cycle window:
+- Providers MVP (LocalFS + MountedFS) with /api/providers, /api/provider_roots, /api/browse; /api/scan accepts provider_id with legacy default.
+- Files page consolidated: provider selector, roots, path input, browser table, scan action. Home shows “Scanned Sources.”
+- Interpreters: TXT and XLSX implemented; Python, CSV, JSON, YAML, IPYNB registered with rule-based selection.
+- Neo4j: Optional schema endpoints documented; Commit-to-Graph implemented with post-commit verification and a mocked-driver test.
+
+Next Objectives:
+- Background scanning tasks with a Tasks API and UI polling.
+- Feature-flagged RcloneProvider to unlock cloud backends via rclone.
+
+Cross-link:
+- See dev/stories/story-mvp-multi-provider-files-and-interpreters.md (Status: Done).
+- See dev/plan-next-increments-2025-08-21.md for the consolidated next-increments plan and acceptance criteria.
+- See dev/ui/mvp/tasks-ui-polling.md for the UI polling pattern for /api/tasks.
