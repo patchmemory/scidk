@@ -264,8 +264,18 @@
         const total = (t.total===null||t.total===undefined) ? '?' : (t.total||0);
         const pct = fmtPct(t.progress);
         const bar = `<div style=\"width:100%; background:#eee; height:10px; border-radius:4px; overflow:hidden\"><div style=\"width:${pct}%; height:10px; background:${t.status==='completed'?'#4caf50':(t.status==='error'?'#e53935':'#2196f3')}\"></div></div>`;
+        let extra = '';
+        if (t.type === 'commit'){
+          const attempted = t.neo4j_attempted ? 'yes' : 'no';
+          const written = (t.neo4j_written===undefined||t.neo4j_written===null) ? '' : String(t.neo4j_written);
+          const dbv = (t.neo4j_db_verified===undefined) ? '' : (t.neo4j_db_verified ? 'ok' : 'fail');
+          const dbf = (t.neo4j_db_files||0);
+          const dbfo = (t.neo4j_db_folders||0);
+          const err = t.neo4j_error ? (` — error: ${t.neo4j_error}`) : '';
+          extra = `<div class=\"small\">Neo4j: attempted=${attempted}${written!==''?(' — prepared='+written):''}${dbv!==''?(' — verify='+dbv+' (files:'+dbf+', folders:'+dbfo+')'):''}${err}</div>`;
+        }
         const info = `<div class=\"small\">${t.type} ${t.status} — ${t.path || ''} — ${t.processed||0}/${total} (${pct}%) ${t.error?(' — error: '+t.error):''} ${t.scan_id?(' — <a href=\"/datasets?scan_id='+t.scan_id+'\">open</a>'):''}</div>`;
-        return `<div style=\"margin:.25rem 0\">${bar}${info}</div>`;
+        return `<div style=\"margin:.25rem 0\">${bar}${info}${extra}</div>`;
       }).join('');
     }
     async function fetchTasks(){

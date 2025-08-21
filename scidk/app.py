@@ -73,6 +73,7 @@ def create_app():
         'directories': {},  # path -> aggregate info incl. scan_ids
         'telemetry': {},
         'tasks': {},  # task_id -> task dict (background jobs like scans)
+        'scan_fs': {},  # per-scan filesystem index cache for snapshot navigation
         'neo4j_config': {
             'uri': None,
             'user': None,
@@ -89,13 +90,288 @@ def create_app():
     api = Blueprint('api', __name__, url_prefix='/api')
 
     # Helper to read Neo4j configuration, preferring in-app settings over environment
+    # Returns tuple: (uri, user, password, database, auth_mode)
+    # auth_mode: 'basic' (username+password) or 'none' (no authentication)
     def _get_neo4j_params():
         cfg = app.extensions['scidk'].get('neo4j_config', {})
         uri = cfg.get('uri') or os.environ.get('NEO4J_URI') or os.environ.get('BOLT_URI')
         user = cfg.get('user') or os.environ.get('NEO4J_USER') or os.environ.get('NEO4J_USERNAME')
         pwd = cfg.get('password') or os.environ.get('NEO4J_PASSWORD')
         database = cfg.get('database') or os.environ.get('SCIDK_NEO4J_DATABASE') or None
-        return uri, user, pwd, database
+        # Parse NEO4J_AUTH env var if provided (formats: "user/pass" or "none")
+        neo4j_auth = (os.environ.get('NEO4J_AUTH') or '').strip()
+        if neo4j_auth:
+            if neo4j_auth.lower() == 'none':
+                user = user or None
+                pwd = pwd or None
+                auth_mode = 'none'
+            else:
+                try:
+                    # Expecting user/password
+                    parts = neo4j_auth.split('/')
+                    if len(parts) >= 2 and not (user and pwd):
+                        user = user or parts[0]
+                        pwd = pwd or '/'.join(parts[1:])
+                except Exception:
+                    pass
+        # If user/password still missing, try to parse from URI (bolt://user:pass@host:port)
+        auth_mode = 'basic'
+        try:
+            if uri and (not user or not pwd):
+                from urllib.parse import urlparse, unquote
+                parsed = urlparse(uri)
+                if parsed.username and parsed.password:
+                    user = user or unquote(parsed.username)
+                    pwd = pwd or unquote(parsed.password)
+        except Exception:
+            pass
+        # Determine auth mode: none only when explicitly set via NEO4J_AUTH=none
+        if (os.environ.get('NEO4J_AUTH') or '').strip().lower() == 'none':
+            auth_mode = 'none'
+        else:
+            auth_mode = 'basic'
+        return uri, user, pwd, database, auth_mode
+
+    # Build rows for commit: files (rows) and standalone folders (folder_rows)
+    def build_commit_rows(scan, ds_map):
+        checksums = scan.get('checksums') or []
+        # Precompute folders observed in this scan (parents of files)
+        from pathlib import Path as _P
+        folder_set = set()
+        for ch in checksums:
+            dtmp = ds_map.get(ch)
+            if not dtmp:
+                continue
+            try:
+                folder_set.add(str(_P(dtmp.get('path')).parent))
+            except Exception:
+                pass
+        rows = []
+        for ch in checksums:
+            d = ds_map.get(ch)
+            if not d:
+                continue
+            try:
+                parent = str(_P(d.get('path')).parent)
+            except Exception:
+                parent = ''
+            interps = list((d.get('interpretations') or {}).keys())
+            # derive folder fields
+            folder_path = parent
+            try:
+                from pathlib import Path as __P
+                folder_name = __P(folder_path).name if folder_path else ''
+                folder_parent = str(__P(folder_path).parent) if folder_path else ''
+                folder_parent_name = __P(folder_parent).name if folder_parent else ''
+            except Exception:
+                folder_name = ''
+                folder_parent = ''
+                folder_parent_name = ''
+            rows.append({
+                'checksum': d.get('checksum'),
+                'path': d.get('path'),
+                'filename': d.get('filename'),
+                'extension': d.get('extension'),
+                'size_bytes': int(d.get('size_bytes') or 0),
+                'created': float(d.get('created') or 0),
+                'modified': float(d.get('modified') or 0),
+                'mime_type': d.get('mime_type'),
+                'folder': folder_path,
+                'folder_name': folder_name,
+                'folder_parent': folder_parent,
+                'folder_parent_name': folder_parent_name,
+                'parent_in_scan': bool(folder_parent and (folder_parent in folder_set)),
+                'interps': interps,
+            })
+        # Build folder rows captured during non-recursive scan
+        folder_rows = []
+        for f in (scan.get('folders') or []):
+            folder_rows.append({
+                'path': f.get('path'),
+                'name': f.get('name'),
+                'parent': f.get('parent'),
+                'parent_name': f.get('parent_name'),
+            })
+        return rows, folder_rows
+
+    # Execute Neo4j commit using simplified, idempotent Cypher
+    def commit_to_neo4j(rows, folder_rows, scan, neo4j_params):
+        # Support 4-tuple (backward compat) and 5-tuple with auth_mode
+        try:
+            uri, user, pwd, database, auth_mode = neo4j_params
+        except Exception:
+            uri, user, pwd, database = neo4j_params
+            auth_mode = 'basic'
+        result = {'attempted': False, 'written_files': 0, 'written_folders': 0, 'error': None}
+        if not uri:
+            return result
+        # Decide if we can attempt a connection
+        can_basic = bool(user and pwd)
+        can_connect = (auth_mode == 'none') or can_basic
+        if not can_connect:
+            return result
+        # Backoff on recent auth failures to avoid rate limiting
+        st = app.extensions['scidk'].setdefault('neo4j_state', {})
+        import time as _t
+        now = _t.time()
+        next_after = float(st.get('next_connect_after') or 0)
+        if next_after and now < next_after:
+            result['error'] = f"neo4j connect backoff active; retry after {int(next_after-now)}s"
+            return result
+        result['attempted'] = True
+        try:
+            from neo4j import GraphDatabase  # type: ignore
+            driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
+            with driver.session(database=database) as sess:
+                cypher = (
+                    "WITH $rows AS rows, $folders AS folders, $scan_id AS scan_id, $scan_path AS scan_path, $scan_started AS scan_started, $scan_ended AS scan_ended "
+                    "MERGE (s:Scan {id: scan_id}) SET s.path = scan_path, s.started = scan_started, s.ended = scan_ended "
+                    "WITH rows, folders, s "
+                    "CALL { WITH rows, s UNWIND rows AS r "
+                    "  MERGE (f:File {checksum: r.checksum}) "
+                    "    SET f.path = r.path, f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, "
+                    "        f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type "
+                    "  MERGE (f)-[:SCANNED_IN]->(s) "
+                    "  FOREACH (_ IN CASE WHEN coalesce(r.folder,'') <> '' THEN [1] ELSE [] END | "
+                    "    MERGE (fo:Folder {path: r.folder}) SET fo.name = r.folder_name "
+                    "    MERGE (fo)-[:CONTAINS]->(f) "
+                    "    MERGE (fo)-[:SCANNED_IN]->(s) "
+                    "    FOREACH (__ IN CASE WHEN coalesce(r.folder_parent,'') <> '' AND r.parent_in_scan THEN [1] ELSE [] END | "
+                    "      MERGE (fop:Folder {path: r.folder_parent}) SET fop.name = r.folder_parent_name "
+                    "      MERGE (fop)-[:CONTAINS]->(fo) ) "
+                    "  ) RETURN 0 AS _files_done } "
+                    "CALL { WITH folders, s UNWIND folders AS r2 "
+                    "  MERGE (fo:Folder {path: r2.path}) SET fo.name = r2.name "
+                    "  MERGE (fo)-[:SCANNED_IN]->(s) "
+                    "  FOREACH (__ IN CASE WHEN coalesce(r2.parent,'') <> '' THEN [1] ELSE [] END | "
+                    "    MERGE (fop:Folder {path: r2.parent}) SET fop.name = r2.parent_name "
+                    "    MERGE (fop)-[:CONTAINS]->(fo) ) "
+                    "  RETURN 0 AS _folders_done } "
+                    "RETURN s.id AS scan_id"
+                )
+                res = sess.run(cypher, rows=rows, folders=folder_rows, scan_id=scan.get('id'), scan_path=scan.get('path'), scan_started=scan.get('started'), scan_ended=scan.get('ended'))
+                _ = list(res)
+                result['written_files'] = len(rows)
+                result['written_folders'] = len(folder_rows)
+                # Post-commit verification: confirm that Scan exists and at least one SCANNED_IN relationship was created
+                verify_q = (
+                    "OPTIONAL MATCH (s:Scan {id: $scan_id}) "
+                    "WITH s "
+                    "OPTIONAL MATCH (s)<-[:SCANNED_IN]-(f:File) "
+                    "WITH s, count(DISTINCT f) AS files_cnt "
+                    "OPTIONAL MATCH (s)<-[:SCANNED_IN]-(fo:Folder) "
+                    "RETURN coalesce(s IS NOT NULL, false) AS scan_exists, files_cnt AS files_cnt, count(DISTINCT fo) AS folders_cnt"
+                )
+                vrec = sess.run(verify_q, scan_id=scan.get('id')).single()
+                if vrec:
+                    scan_exists = bool(vrec.get('scan_exists'))
+                    files_cnt = int(vrec.get('files_cnt') or 0)
+                    folders_cnt = int(vrec.get('folders_cnt') or 0)
+                    result['db_scan_exists'] = scan_exists
+                    result['db_files'] = files_cnt
+                    result['db_folders'] = folders_cnt
+                    result['db_verified'] = bool(scan_exists and (files_cnt > 0 or folders_cnt > 0))
+            driver.close()
+        except Exception as e:
+            msg = str(e)
+            result['error'] = msg
+            # On auth-related errors, set a backoff to avoid rate limiting
+            try:
+                emsg = msg.lower()
+                if ('unauthorized' in emsg) or ('authentication' in emsg):
+                    # Exponential-ish backoff min 20s
+                    prev = float(st.get('next_connect_after') or 0)
+                    base = 20.0
+                    delay = base
+                    if prev and now < prev:
+                        # increase delay up to 120s
+                        rem = prev - now
+                        delay = min(max(base*2, rem*2), 120.0)
+                    st['next_connect_after'] = now + delay
+                    st['last_error'] = msg
+            except Exception:
+                pass
+        return result
+
+    # Build or fetch per-scan filesystem index for snapshot navigation
+    def _get_or_build_scan_index(scan_id: str):
+        cache = app.extensions['scidk'].setdefault('scan_fs', {})
+        if scan_id in cache:
+            return cache[scan_id]
+        scans = app.extensions['scidk'].get('scans', {})
+        s = scans.get(scan_id)
+        if not s:
+            return None
+        checksums = s.get('checksums') or []
+        ds_map = app.extensions['scidk']['graph'].datasets  # checksum -> dataset
+        from pathlib import Path as _P
+        folder_info = {}
+        children_files = {}
+        # Add files by parent folder
+        for ch in checksums:
+            d = ds_map.get(ch)
+            if not d:
+                continue
+            try:
+                p = _P(d.get('path'))
+            except Exception:
+                continue
+            parent = str(p.parent)
+            file_entry = {
+                'id': d.get('id'),
+                'path': d.get('path'),
+                'filename': d.get('filename'),
+                'extension': d.get('extension'),
+                'size_bytes': int(d.get('size_bytes') or 0),
+                'modified': float(d.get('modified') or 0),
+                'mime_type': d.get('mime_type'),
+                'checksum': d.get('checksum'),
+            }
+            children_files.setdefault(parent, []).append(file_entry)
+            # ensure folder info
+            folder_info[parent] = folder_info.get(parent) or {
+                'path': parent,
+                'name': _P(parent).name,
+                'parent': str(_P(parent).parent) if parent else '',
+            }
+        # Include folders captured on non-recursive scans
+        for f in (s.get('folders') or []):
+            path = f.get('path'); parent = f.get('parent')
+            name = f.get('name')
+            if path:
+                folder_info[path] = folder_info.get(path) or {
+                    'path': path,
+                    'name': name,
+                    'parent': parent,
+                }
+                if parent:
+                    folder_info[parent] = folder_info.get(parent) or {
+                        'path': parent,
+                        'name': _P(parent).name,
+                        'parent': str(_P(parent).parent),
+                    }
+        # Build children_folders map
+        children_folders = {}
+        for fpath, info in folder_info.items():
+            par = info.get('parent')
+            if par and par in folder_info:
+                children_folders.setdefault(par, []).append(fpath)
+        # Derive roots: folders with no parent in folder_info
+        roots = sorted([fp for fp, info in folder_info.items() if not info.get('parent') or info.get('parent') not in folder_info])
+        # Sort child folders
+        for k in list(children_folders.keys()):
+            children_folders[k].sort(key=lambda p: _P(p).name.lower())
+        # Sort files by filename
+        for k in list(children_files.keys()):
+            children_files[k].sort(key=lambda f: (f.get('filename') or '').lower())
+        idx = {
+            'folder_info': folder_info,
+            'children_folders': children_folders,
+            'children_files': children_files,
+            'roots': roots,
+        }
+        cache[scan_id] = idx
+        return idx
 
     @api.post('/scan')
     def api_scan():
@@ -381,104 +657,28 @@ def create_app():
                     g.commit_scan(s)
                     s['committed'] = True
                     s['committed_at'] = time.time()
-                    # Build rows and advance progress
+                    # Build rows once using helper
                     ds_map = getattr(g, 'datasets', {})
-                    # Precompute folders observed in this scan (parents of files)
-                    from pathlib import Path as _P
-                    folder_set = set()
-                    for ch in checksums:
-                        dtmp = ds_map.get(ch)
-                        if not dtmp:
-                            continue
-                        try:
-                            folder_set.add(str(_P(dtmp.get('path')).parent))
-                        except Exception:
-                            pass
-                    rows = []
-                    processed = 0
-                    for ch in checksums:
-                        d = ds_map.get(ch)
-                        if not d:
-                            continue
-                        try:
-                            parent = str(_P(d.get('path')).parent)
-                        except Exception:
-                            parent = ''
-                        interps = list((d.get('interpretations') or {}).keys())
-                        # derive folder fields
-                        folder_path = parent
-                        try:
-                            from pathlib import Path as __P
-                            folder_name = __P(folder_path).name if folder_path else ''
-                            folder_parent = str(__P(folder_path).parent) if folder_path else ''
-                            folder_parent_name = __P(folder_parent).name if folder_parent else ''
-                        except Exception:
-                            folder_name = ''
-                            folder_parent = ''
-                            folder_parent_name = ''
-                        rows.append({
-                            'checksum': d.get('checksum'),
-                            'path': d.get('path'),
-                            'filename': d.get('filename'),
-                            'extension': d.get('extension'),
-                            'size_bytes': int(d.get('size_bytes') or 0),
-                            'created': float(d.get('created') or 0),
-                            'modified': float(d.get('modified') or 0),
-                            'mime_type': d.get('mime_type'),
-                            'folder': folder_path,
-                            'folder_name': folder_name,
-                            'folder_parent': folder_parent,
-                            'folder_parent_name': folder_parent_name,
-                            'parent_in_scan': bool(folder_parent and (folder_parent in folder_set)),
-                            'interps': interps,
-                        })
-                        processed += 1
-                        task['processed'] = processed
-                        if total:
-                            task['progress'] = processed / total
-                    # Build folder rows captured during non-recursive scan
-                    folder_rows = []
-                    for f in (s.get('folders') or []):
-                        folder_rows.append({
-                            'path': f.get('path'),
-                            'name': f.get('name'),
-                            'parent': f.get('parent'),
-                            'parent_name': f.get('parent_name'),
-                        })
-                    # Neo4j write if configured
-                    uri, user, pwd, database = _get_neo4j_params()
-                    if uri and user and pwd:
+                    rows, folder_rows = build_commit_rows(s, ds_map)
+                    # Update progress for the file-processing phase
+                    task['processed'] = total
+                    if total:
+                        task['progress'] = total / (task.get('total') or (total + 1))
+                    # Neo4j write if configured via helper
+                    uri, user, pwd, database, auth_mode = _get_neo4j_params()
+                    result = commit_to_neo4j(rows, folder_rows, s, (uri, user, pwd, database, auth_mode))
+                    if result['attempted']:
                         task['neo4j_attempted'] = True
-                        try:
-                            from neo4j import GraphDatabase  # type: ignore
-                            driver = GraphDatabase.driver(uri, auth=(user, pwd))
-                            with driver.session(database=database) as sess:
-                                cypher = (
-                                    "UNWIND $rows AS r "
-                                    "MERGE (f:File {checksum:r.checksum}) "
-                                    "SET f.path=r.path, f.filename=r.filename, f.extension=r.extension, f.size_bytes=r.size_bytes, "
-                                    "    f.created=r.created, f.modified=r.modified, f.mime_type=r.mime_type "
-                                    "FOREACH (_ IN CASE WHEN r.folder IS NOT NULL AND r.folder <> '' THEN [1] ELSE [] END | "
-                                    "  MERGE (fo:Folder {path:r.folder}) SET fo.name=r.folder_name MERGE (fo)-[:CONTAINS]->(f) "
-                                    "  FOREACH (__ IN CASE WHEN r.folder_parent IS NOT NULL AND r.folder_parent <> '' AND r.parent_in_scan THEN [1] ELSE [] END | "
-                                    "    MERGE (fop:Folder {path:r.folder_parent}) SET fop.name=r.folder_parent_name MERGE (fop)-[:CONTAINS]->(fo) ) "
-                                    ") "
-                                    "MERGE (s:Scan {id:$scan_id}) SET s.path=$scan_path, s.started=$scan_started, s.ended=$scan_ended "
-                                    "MERGE (f)-[:SCANNED_IN]->(s) "
-                                    "WITH 1 as _ "
-                                    "UNWIND $folders AS r2 "
-                                    "MERGE (s:Scan {id:$scan_id}) SET s.path=$scan_path, s.started=$scan_started, s.ended=$scan_ended "
-                                    "MERGE (fo:Folder {path:r2.path}) SET fo.name=r2.name "
-                                    "MERGE (fo)-[:SCANNED_IN]->(s) "
-                                    "FOREACH (__ IN CASE WHEN r2.parent IS NOT NULL AND r2.parent <> '' THEN [1] ELSE [] END | "
-                                    "  MERGE (fop:Folder {path:r2.parent}) SET fop.name=r2.parent_name MERGE (fop)-[:CONTAINS]->(fo) )"
-                                )
-                                res = sess.run(cypher, rows=rows, folders=folder_rows, scan_id=s.get('id'), scan_path=s.get('path'), scan_started=s.get('started'), scan_ended=s.get('ended'))
-                                _ = list(res)
-                                task['neo4j_written'] = len(rows) + len(folder_rows)
-                            driver.close()
-                        except Exception as ne:
-                            task['neo4j_error'] = str(ne)
+                    if result['error']:
+                        task['neo4j_error'] = result['error']
+                    task['neo4j_written'] = int(result.get('written_files', 0)) + int(result.get('written_folders', 0))
+                    # Include DB verification results if available
+                    if 'db_verified' in result:
+                        task['neo4j_db_verified'] = bool(result.get('db_verified'))
+                        task['neo4j_db_files'] = int(result.get('db_files') or 0)
+                        task['neo4j_db_folders'] = int(result.get('db_folders') or 0)
+                        if task['neo4j_attempted'] and not task['neo4j_db_verified'] and not task.get('neo4j_error'):
+                            task['neo4j_error'] = 'Post-commit verification found 0 SCANNED_IN edges for this scan. Check Neo4j credentials/database or permissions.'
                     # Done
                     # mark final step (Neo4j write) as processed so progress reaches 100% only at the end
                     task['processed'] = task.get('total') or task.get('processed')
@@ -773,6 +973,43 @@ def create_app():
             return jsonify({"error": "not found"}), 404
         return jsonify(s), 200
 
+    @api.get('/scans/<scan_id>/fs')
+    def api_scan_fs(scan_id):
+        idx = _get_or_build_scan_index(scan_id)
+        if not idx:
+            return jsonify({'error': 'scan not found'}), 404
+        from pathlib import Path as _P
+        req_path = (request.args.get('path') or '').strip()
+        folder_info = idx['folder_info']
+        children_folders = idx['children_folders']
+        children_files = idx['children_files']
+        roots = idx['roots']
+        # Virtual root listing when no path specified
+        if not req_path:
+            folders = [{'name': _P(p).name, 'path': p, 'file_count': len(children_files.get(p, []))} for p in roots]
+            folders.sort(key=lambda r: r['name'].lower())
+            breadcrumb = [{'name': '(scan roots)', 'path': ''}]
+            return jsonify({'scan_id': scan_id, 'path': '', 'breadcrumb': breadcrumb, 'folders': folders, 'files': []}), 200
+        # Validate path exists in snapshot
+        if req_path not in folder_info:
+            return jsonify({'error': 'folder not found in scan'}), 404
+        # Breadcrumb from this scan’s perspective
+        bc_chain = []
+        cur = req_path
+        while cur and cur in folder_info:
+            bc_chain.append(cur)
+            par = folder_info[cur].get('parent')
+            if par == cur:
+                break
+            cur = par
+        bc_chain.reverse()
+        breadcrumb = [{'name': '(scan roots)', 'path': ''}] + [{'name': _P(p).name, 'path': p} for p in bc_chain]
+        # Children
+        sub_folders = [{'name': _P(p).name, 'path': p, 'file_count': len(children_files.get(p, []))} for p in children_folders.get(req_path, [])]
+        sub_folders.sort(key=lambda r: r['name'].lower())
+        files = children_files.get(req_path, [])
+        return jsonify({'scan_id': scan_id, 'path': req_path, 'breadcrumb': breadcrumb, 'folders': sub_folders, 'files': files}), 200
+
     @api.post('/scans/<scan_id>/commit')
     def api_scan_commit(scan_id):
         scans = app.extensions['scidk'].setdefault('scans', {})
@@ -797,93 +1034,24 @@ def create_app():
             neo_attempted = False
             neo_written = 0
             neo_error = None
-            uri, user, pwd, database = _get_neo4j_params()
-            if uri and user and pwd:
+            db_verified = None
+            db_files = 0
+            db_folders = 0
+            uri, user, pwd, database, auth_mode = _get_neo4j_params()
+            if uri and ((auth_mode == 'none') or (user and pwd)):
                 neo_attempted = True
                 try:
-                    from neo4j import GraphDatabase  # type: ignore
-                    driver = GraphDatabase.driver(uri, auth=(user, pwd))
-                    # Prepare rows for UNWIND from present datasets only
                     ds_map = getattr(g, 'datasets', {})
-                    # Precompute folders observed in this scan (parents of files)
-                    from pathlib import Path as _P
-                    folder_set = set()
-                    for ch in checksums:
-                        dtmp = ds_map.get(ch)
-                        if not dtmp:
-                            continue
-                        try:
-                            folder_set.add(str(_P(dtmp.get('path')).parent))
-                        except Exception:
-                            pass
-                    rows = []
-                    for ch in checksums:
-                        d = ds_map.get(ch)
-                        if not d:
-                            continue
-                        parent = ''
-                        try:
-                            parent = str(_P(d.get('path')).parent)
-                        except Exception:
-                            parent = ''
-                        interps = list((d.get('interpretations') or {}).keys())
-                        # derive folder fields
-                        folder_path = parent
-                        try:
-                            from pathlib import Path as __P
-                            folder_name = __P(folder_path).name if folder_path else ''
-                            folder_parent = str(__P(folder_path).parent) if folder_path else ''
-                            folder_parent_name = __P(folder_parent).name if folder_parent else ''
-                        except Exception:
-                            folder_name = ''
-                            folder_parent = ''
-                            folder_parent_name = ''
-                        rows.append({
-                            'checksum': d.get('checksum'),
-                            'path': d.get('path'),
-                            'filename': d.get('filename'),
-                            'extension': d.get('extension'),
-                            'size_bytes': int(d.get('size_bytes') or 0),
-                            'created': float(d.get('created') or 0),
-                            'modified': float(d.get('modified') or 0),
-                            'mime_type': d.get('mime_type'),
-                            'folder': folder_path,
-                            'folder_name': folder_name,
-                            'folder_parent': folder_parent,
-                            'folder_parent_name': folder_parent_name,
-                            'parent_in_scan': bool(folder_parent and (folder_parent in folder_set)),
-                            'interps': interps,
-                        })
-                    with driver.session(database=database) as sess:
-                        # MERGE File, Folder, Scan and relationships in batches; include standalone folders from non-recursive scan
-                        cypher = (
-                            "UNWIND $rows AS r "
-                            "MERGE (f:File {checksum:r.checksum}) "
-                            "SET f.path=r.path, f.filename=r.filename, f.extension=r.extension, f.size_bytes=r.size_bytes, "
-                            "    f.created=r.created, f.modified=r.modified, f.mime_type=r.mime_type "
-                            "FOREACH (_ IN CASE WHEN r.folder IS NOT NULL AND r.folder <> '' THEN [1] ELSE [] END | "
-                            "  MERGE (fo:Folder {path:r.folder}) SET fo.name=r.folder_name MERGE (fo)-[:CONTAINS]->(f) "
-                            "  FOREACH (__ IN CASE WHEN r.folder_parent IS NOT NULL AND r.folder_parent <> '' AND r.parent_in_scan THEN [1] ELSE [] END | "
-                            "    MERGE (fop:Folder {path:r.folder_parent}) SET fop.name=r.folder_parent_name MERGE (fop)-[:CONTAINS]->(fo) ) "
-                            ") "
-                            "MERGE (s:Scan {id:$scan_id}) SET s.path=$scan_path, s.started=$scan_started, s.ended=$scan_ended "
-                            "MERGE (f)-[:SCANNED_IN]->(s) "
-                            "WITH 1 as _ "
-                            "UNWIND $folders AS r2 "
-                            "MERGE (s:Scan {id:$scan_id}) SET s.path=$scan_path, s.started=$scan_started, s.ended=$scan_ended "
-                            "MERGE (fo:Folder {path:r2.path}) SET fo.name=r2.name "
-                            "MERGE (fo)-[:SCANNED_IN]->(s) "
-                            "FOREACH (__ IN CASE WHEN r2.parent IS NOT NULL AND r2.parent <> '' THEN [1] ELSE [] END | "
-                            "  MERGE (fop:Folder {path:r2.parent}) SET fop.name=r2.parent_name MERGE (fop)-[:CONTAINS]->(fo) )"
-                        )
-                        folder_rows = []
-                        for f in (s.get('folders') or []):
-                            folder_rows.append({'path': f.get('path'), 'name': f.get('name'), 'parent': f.get('parent'), 'parent_name': f.get('parent_name')})
-                        res = sess.run(cypher, rows=rows, folders=folder_rows, scan_id=s.get('id'), scan_path=s.get('path'), scan_started=s.get('started'), scan_ended=s.get('ended'))
-                        # Consume result to ensure execution
-                        _ = list(res)
-                        neo_written = len(rows)
-                    driver.close()
+                    rows, folder_rows = build_commit_rows(s, ds_map)
+                    result = commit_to_neo4j(rows, folder_rows, s, (uri, user, pwd, database, auth_mode))
+                    neo_written = int(result.get('written_files', 0)) + int(result.get('written_folders', 0))
+                    # Capture DB verification if provided
+                    if 'db_verified' in result:
+                        db_verified = bool(result.get('db_verified'))
+                        db_files = int(result.get('db_files') or 0)
+                        db_folders = int(result.get('db_folders') or 0)
+                    if result.get('error'):
+                        raise Exception(result['error'])
                     # Update state on success
                     neo_state['connected'] = True
                     neo_state['last_error'] = None
@@ -904,13 +1072,21 @@ def create_app():
                 "linked_edges_added": present,
                 "neo4j_attempted": neo_attempted,
                 "neo4j_written_files": neo_written,
+                # DB verification results (if commit attempted)
+                "neo4j_db_verified": db_verified,
+                "neo4j_db_files": db_files,
+                "neo4j_db_folders": db_folders,
             }
             if neo_error:
                 payload["neo4j_error"] = neo_error
+            # Add user-facing warnings
             if total == 0:
                 payload["warning"] = "This scan has 0 files; nothing was linked."
             elif present == 0:
                 payload["warning"] = "None of the scanned files are currently present in the graph; verify you scanned in this session or refresh."
+            # Neo4j-specific warning when verification fails but no explicit error was raised
+            if neo_attempted and (db_verified is not None) and (not db_verified) and (not neo_error):
+                payload["neo4j_warning"] = "Neo4j post-commit verification found 0 SCANNED_IN edges for this scan. Check Neo4j credentials, database name, or permissions."
             return jsonify(payload), 200
         except Exception as e:
             return jsonify({"status": "error", "error": "commit failed", "error_detail": str(e)}), 500
@@ -1126,15 +1302,15 @@ def create_app():
     @api.get('/graph/schema.neo4j')
     def api_graph_schema_neo4j():
         # Cypher-only triple derivation from a Neo4j instance if configured
-        uri, user, pwd, database = _get_neo4j_params()
-        if not (uri and user and pwd):
-            return jsonify({"error": "neo4j not configured (set in Settings or env: NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)"}), 501
+        uri, user, pwd, database, auth_mode = _get_neo4j_params()
+        if not uri:
+            return jsonify({"error": "neo4j not configured (set in Settings or env: NEO4J_URI, and NEO4J_USER/NEO4J_PASSWORD or NEO4J_AUTH=none)"}), 501
         try:
             from neo4j import GraphDatabase  # type: ignore
         except Exception:
             return jsonify({"error": "neo4j driver not installed"}), 501
         try:
-            driver = GraphDatabase.driver(uri, auth=(user, pwd))
+            driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
             with driver.session(database=database) as sess:
                 # Node label counts
                 q_nodes = "MATCH (n) WITH head(labels(n)) AS l, count(*) AS c RETURN l AS label, c ORDER BY c DESC"
@@ -1154,15 +1330,15 @@ def create_app():
     @api.get('/graph/schema.apoc')
     def api_graph_schema_apoc():
         # APOC-based schema where available; fall back is not done here; use /graph/schema or /graph/schema.neo4j otherwise
-        uri, user, pwd, database = _get_neo4j_params()
-        if not (uri and user and pwd):
-            return jsonify({"error": "neo4j not configured (set in Settings or env: NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)"}), 501
+        uri, user, pwd, database, auth_mode = _get_neo4j_params()
+        if not uri:
+            return jsonify({"error": "neo4j not configured (set in Settings or env: NEO4J_URI, and NEO4J_USER/NEO4J_PASSWORD or NEO4J_AUTH=none)"}), 501
         try:
             from neo4j import GraphDatabase  # type: ignore
         except Exception:
             return jsonify({"error": "neo4j driver not installed"}), 501
         try:
-            driver = GraphDatabase.driver(uri, auth=(user, pwd))
+            driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
             with driver.session(database=database) as sess:
                 # Use apoc.meta.data() to derive nodes and edges
                 # Relationship triples aggregation
@@ -1199,16 +1375,24 @@ def create_app():
                 'error': None,
             }
         }
-        uri, user, pwd, database = _get_neo4j_params()
-        if uri and user and pwd:
+        uri, user, pwd, database, auth_mode = _get_neo4j_params()
+        if uri:
             info['neo4j']['configured'] = True
             try:
                 from neo4j import GraphDatabase  # type: ignore
             except Exception as e:
                 info['neo4j']['error'] = f"neo4j driver not installed: {e}"
                 return jsonify(info), 200
+            # Respect auth-failure backoff
+            st = app.extensions['scidk'].setdefault('neo4j_state', {})
+            import time as _t
+            now = _t.time()
+            next_after = float(st.get('next_connect_after') or 0)
+            if next_after and now < next_after:
+                info['neo4j']['error'] = f"backoff active; retry after {int(next_after-now)}s"
+                return jsonify(info), 200
             try:
-                driver = GraphDatabase.driver(uri, auth=(user, pwd))
+                driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
                 with driver.session(database=database) as sess:
                     rec = sess.run("RETURN 1 AS ok").single()
                     if rec and rec.get('ok') == 1:
@@ -1237,12 +1421,21 @@ def create_app():
     def api_settings_neo4j_set():
         data = request.get_json(force=True, silent=True) or {}
         cfg = app.extensions['scidk'].setdefault('neo4j_config', {})
-        # Accept free text fields; empty strings treated as None
-        for k in ['uri','user','password','database']:
+        # Accept free text fields for uri, user, database
+        for k in ['uri','user','database']:
             v = data.get(k)
             if v is not None:
                 v = v.strip()
                 cfg[k] = v if v else None
+        # Password handling: only update if non-empty provided, unless clear_password=true
+        if data.get('clear_password') is True:
+            cfg['password'] = None
+        else:
+            if 'password' in data:
+                v = data.get('password')
+                if isinstance(v, str) and v.strip():
+                    cfg['password'] = v.strip()
+                # else: ignore empty password to avoid wiping stored secret
         # Reset state error on change
         st = app.extensions['scidk'].setdefault('neo4j_state', {})
         st['last_error'] = None
@@ -1250,29 +1443,54 @@ def create_app():
 
     @api.post('/settings/neo4j/connect')
     def api_settings_neo4j_connect():
-        uri, user, pwd, database = _get_neo4j_params()
+        uri, user, pwd, database, auth_mode = _get_neo4j_params()
         st = app.extensions['scidk'].setdefault('neo4j_state', {})
         st['connected'] = False
         st['last_error'] = None
-        if not (uri and user and pwd):
-            st['last_error'] = 'Missing uri/user/password'
+        if not uri:
+            st['last_error'] = 'Missing uri'
             return jsonify({'connected': False, 'error': st['last_error']}), 400
         try:
             from neo4j import GraphDatabase  # type: ignore
         except Exception as e:
             st['last_error'] = f'neo4j driver not installed: {e}'
             return jsonify({'connected': False, 'error': st['last_error']}), 501
+        # Respect auth-failure backoff
+        import time as _t
+        now = _t.time()
+        next_after = float(st.get('next_connect_after') or 0)
+        if next_after and now < next_after:
+            st['last_error'] = f"backoff active; retry after {int(next_after-now)}s"
+            return jsonify({'connected': False, 'error': st['last_error']}), 429
         try:
-            driver = GraphDatabase.driver(uri, auth=(user, pwd))
+            driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
             with driver.session(database=database) as sess:
                 rec = sess.run('RETURN 1 AS ok').single()
                 ok = bool(rec and rec.get('ok') == 1)
             driver.close()
             st['connected'] = ok
+            # On success, clear backoff
+            if ok:
+                st['next_connect_after'] = 0
+                st['last_error'] = None
             return jsonify({'connected': ok}), 200 if ok else 502
         except Exception as e:
-            st['last_error'] = str(e)
+            msg = str(e)
+            st['last_error'] = msg
             st['connected'] = False
+            # Apply backoff on auth errors
+            try:
+                emsg = msg.lower()
+                if ('unauthorized' in emsg) or ('authentication' in emsg):
+                    prev = float(st.get('next_connect_after') or 0)
+                    base = 20.0
+                    delay = base
+                    if prev and now < prev:
+                        rem = prev - now
+                        delay = min(max(base*2, rem*2), 120.0)
+                    st['next_connect_after'] = now + delay
+            except Exception:
+                pass
             return jsonify({'connected': False, 'error': st['last_error']}), 502
 
     @api.post('/settings/neo4j/disconnect')

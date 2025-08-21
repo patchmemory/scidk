@@ -54,7 +54,7 @@ set_default NEO4J_URI "bolt://localhost:7687"
 set_default NEO4J_USER "neo4j"
 
 # If NEO4J_AUTH is provided (format user/pass), use it to derive password unless NEO4J_PASSWORD is set
-set_default NEO4J_AUTH "neo4j/neo4jpassword"
+set_default NEO4J_AUTH "neo4j/neo4jiscool"
 # Derive password unless present or FORCE
 NEO4J_PASSWORD_VAL="${NEO4J_PASSWORD:-}"
 if [ -z "$NEO4J_PASSWORD_VAL" ] || [ "$FORCE" = "1" ]; then

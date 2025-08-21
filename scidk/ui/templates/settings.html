@@ -159,7 +159,8 @@
       const payload = {
         uri: (elUri && elUri.value) || '',
         user: (elUser && elUser.value) || '',
-        password: (elPass && elPass.value) || '',
+        // Only send password if non-empty to avoid clearing stored secret unintentionally
+        ...(elPass && elPass.value ? { password: elPass.value } : {}),
         database: (elDb && elDb.value) || ''
       };
       try {
@@ -192,6 +193,18 @@
     if (btnSave) btnSave.addEventListener('click', async (e) => { e.preventDefault(); await saveCfg(); });
     if (btnConn) btnConn.addEventListener('click', async (e) => { e.preventDefault(); await saveCfg(); await connect(); });
     if (btnDisc) btnDisc.addEventListener('click', async (e) => { e.preventDefault(); await disconnect(); });
+
+    // Optional: clear stored password explicitly
+    const btnClear = document.getElementById('neo4j-clear-pass');
+    if (btnClear) btnClear.addEventListener('click', async (e) => {
+      e.preventDefault();
+      try {
+        const r = await fetch('/api/settings/neo4j', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ clear_password: true }) });
+        if (!r.ok){ const j = await r.json(); alert('Clear failed: ' + (j.error || r.status)); return; }
+        if (elPass) elPass.value = '';
+        alert('Password cleared in server settings.');
+      } catch(err){ alert('Clear failed: ' + err); }
+    });
 
     loadCfg();
   });

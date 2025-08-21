@@ -41,19 +41,19 @@ __scidk_set_default SCIDK_DEBUG "1"
 # Neo4j connectivity defaults
 __scidk_set_default NEO4J_URI "bolt://localhost:7687"
 __scidk_set_default NEO4J_USER "neo4j"
-__scidk_set_default NEO4J_AUTH "neo4j/neo4jpassword"
+__scidk_set_default NEO4J_AUTH "neo4j/neo4jiscool"
 
 # Derive password unless present or FORCE
 if test -z "$NEO4J_PASSWORD" -o "$FORCE" = "1"
     if string match -q '*/ *' -- $NEO4J_AUTH
         # not expected due to space, fallback
-        set -gx NEO4J_PASSWORD neo4jpassword
+        set -gx NEO4J_PASSWORD neo4jiscool
     else if string match -q '*/ *' -- $NEO4J_AUTH
-        set -gx NEO4J_PASSWORD neo4jpassword
+        set -gx NEO4J_PASSWORD neo4jiscool
     else if string match -qr '/' -- $NEO4J_AUTH
         set -gx NEO4J_PASSWORD (string split -m1 '/' -- $NEO4J_AUTH)[2]
     else
-        set -gx NEO4J_PASSWORD neo4jpassword
+        set -gx NEO4J_PASSWORD neo4jiscool
     end
 end
 

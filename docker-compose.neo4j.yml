@@ -4,7 +4,7 @@ services:
     container_name: scidk-neo4j
     restart: unless-stopped
     environment:
-      - NEO4J_AUTH=${NEO4J_AUTH:-neo4j/neo4j}
+      - NEO4J_AUTH=${NEO4J_AUTH:-neo4j/neo4jiscool}
       - NEO4J_server_memory_heap_initial__size=${NEO4J_HEAP_INIT:-1G}
       - NEO4J_server_memory_heap_max__size=${NEO4J_HEAP_MAX:-2G}
       - NEO4J_dbms_security_auth__enabled=true
