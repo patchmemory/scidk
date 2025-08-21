@@ -1,5 +1,7 @@
 # Story: MVP Multi-Provider Files + TXT/XLSX Interpreters
 
+Note: This story has been relocated to dev/stories/providers-mvp-multi-source-files/story.md with phases under dev/stories/providers-mvp-multi-source-files/phases/. This legacy file is retained for link compatibility.
+
 id: story:providers-mvp-multi-source-files
 status: Done
 owner: agent

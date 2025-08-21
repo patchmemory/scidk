@@ -1,4 +1,7 @@
-# Task: In-Session Directories Registry and API (MVP)
+# Moved: Directories Registry and API
+
+This legacy MVP doc has been reorganized. See the canonical feature:
+- dev/features/core-architecture/feature-directories-registry-and-api.md
 
 ## Metadata
 - ID: task:core-architecture/mvp/directories-registry-and-api

@@ -1,4 +1,7 @@
-# Plugins
+# Moved: Plugins Vision
+
+This vision document has moved. See the canonical version:
+- dev/vision/plugins.md
 
 ## Vision Summary
 - ID: vision:plugins

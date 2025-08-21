@@ -1,4 +1,7 @@
-# Cycle Review and Plan Consolidation — 2025-08-18
+# Moved: Cycle Review — 2025-08-18
+
+This review has moved. See the canonical version:
+- dev/cycles/2025-08-18-review.md
 
 This report consolidates the review of dev/cycles.md and related task specs, captures what was executed during the current cycle, and records the selected plan for the upcoming cycle. It turns prior scratch planning into a durable in-repo artifact.
 

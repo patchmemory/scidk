@@ -1,4 +1,8 @@
-# Task: Graph Interface Boundary & Neo4j Adapter Prep
+# Moved: Graph Adapter Boundary & Neo4j Prep
+
+This legacy MVP doc has been reorganized. See the canonical feature and deployment guide:
+- dev/features/core-architecture/feature-graph-adapter-boundary.md
+- dev/ops/deployment-neo4j.md
 
 ## Metadata
 - ID: task:core-architecture/mvp/neo4j-adapter-prep

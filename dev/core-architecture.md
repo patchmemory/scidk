@@ -1,4 +1,7 @@
-# Core Architecture
+# Moved: Core Architecture Vision
+
+This vision document has moved. See the canonical version:
+- dev/vision/core_architecture.md
 
 ## Vision Summary
 - ID: vision:core-architecture

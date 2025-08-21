@@ -1,4 +1,7 @@
-# Deployment Guide: Neo4j alongside SciDK
+# Moved: Deployment Guide
+
+This document has moved. See the canonical version:
+- dev/ops/deployment-neo4j.md
 
 This document describes how to run Neo4j alongside the SciDK application. We standardize on Neo4j 5.x LTS as the knowledge graph backend. Choose Docker Compose for container-friendly environments, or Singularity for HPC contexts.
 

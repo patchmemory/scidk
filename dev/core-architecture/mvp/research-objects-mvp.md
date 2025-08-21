@@ -1,4 +1,7 @@
-# Task: Research Objects (RO-Crate) MVP
+# Legacy: Research Objects (RO-Crate) MVP
+
+Note: This document is pending reclassification into a story and/or feature spec under dev/stories/ or dev/features/. For now, see related design note:
+- dev/design/data/rocrate-embedding.md
 
 ## Metadata
 - ID: task:core-architecture/mvp/research-objects-ro-crate

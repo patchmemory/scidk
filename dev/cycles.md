@@ -36,6 +36,7 @@
   - Updates: diary of progress
 
 ## Current Cycle (2025-08-18 → 2025-08-23)
+Active Story/Phase: story:providers-mvp-multi-source-files — phase:providers-mvp-multi-source-files/00-contracts-local-mounted
 
 ### Iteration Plan (mvp-iter-2025-08-18-2306)
 1) E2E Objective
@@ -107,7 +108,8 @@
   - task:ops/mvp/error-toasts — RICE 1.3
 
 ### Proposed Next Cycle (2025-08-25 → 2025-08-29)
-Story: providers-mvp-multi-source-files — see dev/stories/story-mvp-multi-provider-files-and-interpreters.md
+Active Story/Phase: story:providers-mvp-multi-source-files — phase:providers-mvp-multi-source-files/02-rclone-provider
+Story: providers-mvp-multi-source-files — see dev/stories/providers-mvp-multi-source-files/story.md
 - E2E Objective
   - A user can search datasets by filename or interpreter id from the Home page; retain a documented, switchable graph boundary to prepare for Neo4j. GUI-first: demo shows search working end-to-end.
 - Top 5 Tasks
@@ -819,7 +821,7 @@ Next Objectives:
 
 Cross-link:
 - See dev/stories/story-mvp-multi-provider-files-and-interpreters.md (Status: Done).
-- See dev/plan-next-increments-2025-08-21.md for the consolidated next-increments plan and acceptance criteria.
+- See dev/plans/plan-2025-08-21.md for the consolidated next-increments plan and acceptance criteria.
 - See dev/ui/mvp/tasks-ui-polling.md for the UI polling pattern for /api/tasks.
 
 

@@ -6,7 +6,7 @@ owner: agent
 last_updated: 2025-08-21 09:45 local
 related:
 - README.md (Background Tasks section)
-- dev/plan-next-increments-2025-08-21.md (Progress Log)
+- dev/plans/plan-2025-08-21.md (Progress Log)
 
 Objective
 - Provide a simple polling pattern for background Tasks so the Files page (and others) can display progress and completion state for scan and commit tasks.

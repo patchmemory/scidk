@@ -1,4 +1,7 @@
-# Task: Neo4j Graph Adapter Implementation (MVP)
+# Moved: Neo4j Adapter Implementation
+
+This legacy MVP doc has been reorganized. See the canonical design note:
+- dev/design/graph/neo4j-adapter-impl.md
 
 ## Metadata
 - ID: task:core-architecture/mvp/neo4j-adapter-impl

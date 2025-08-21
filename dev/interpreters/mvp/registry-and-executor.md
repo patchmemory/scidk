@@ -1,4 +1,7 @@
-# Task: Registry, Rules, Executor Stub
+# Moved: Interpreter Registry and Executor
+
+This legacy MVP doc has been reorganized. See the canonical feature:
+- dev/features/interpreters/feature-interpreter-registry-and-executor.md
 
 ## Metadata
 - ID: task:interpreters/mvp/registry-and-executor

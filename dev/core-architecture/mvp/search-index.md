@@ -1,4 +1,7 @@
-# Task: Basic Search Index (MVP)
+# Moved: Search Index and API
+
+This legacy MVP doc has been reorganized. See the canonical feature:
+- dev/features/core-architecture/feature-search-index.md
 
 ## Metadata
 - ID: task:core-architecture/mvp/search-index

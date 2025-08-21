@@ -1,4 +1,7 @@
-# Task: Tests — Idempotency & Interpreter Error Handling
+# Moved: Tests Hardening
+
+This legacy MVP doc has been reorganized. See the canonical task:
+- dev/tasks/core-architecture/mvp/task-tests-hardening.md
 
 ## Metadata
 - ID: task:core-architecture/mvp/tests-hardening

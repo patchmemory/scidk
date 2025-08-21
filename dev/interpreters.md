@@ -1,4 +1,7 @@
-# Interpreters
+# Moved: Interpreters Vision
+
+This vision document has moved. See the canonical version:
+- dev/vision/interpreters.md
 
 ## Vision Summary
 - ID: vision:interpreters

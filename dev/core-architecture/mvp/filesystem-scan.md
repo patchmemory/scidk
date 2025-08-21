@@ -1,4 +1,7 @@
-# Task: Filesystem Scan + Dataset Node
+# Moved: Filesystem Scan
+
+This legacy MVP doc has been reorganized. See the canonical feature:
+- dev/features/core-architecture/feature-filesystem-scan.md
 
 ## Metadata
 - ID: task:core-architecture/mvp/filesystem-scan
