@@ -822,7 +822,7 @@ Next Objectives:
 Cross-link:
 - See dev/stories/story-mvp-multi-provider-files-and-interpreters.md (Status: Done).
 - See dev/plans/plan-2025-08-21.md for the consolidated next-increments plan and acceptance criteria.
-- See dev/ui/mvp/tasks-ui-polling.md for the UI polling pattern for /api/tasks.
+- See dev/tasks/ui/mvp/task-tasks-ui-polling.md for the UI polling pattern for /api/tasks.
 
 
 ### Planning Protocol (mvp-iter-2025-08-21-rocrate-map)

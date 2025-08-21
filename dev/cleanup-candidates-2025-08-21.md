@@ -5,7 +5,7 @@ Purpose
 - Preserve clear rationale and canonical replacements so we can backtrack if needed.
 
 Deletion policy
-- Do not delete immediately if external links may still point here. Keep short pointer stubs for one or two cycles, then delete.
+- Do not delete immediately if you KNOW external links still point here. If so, please first fix the old pointer, then delete.
 - When deleting, use a commit message like: "dev(cleanup): remove legacy dev/*/mvp docs now superseded by features/tasks; see dev/cleanup-candidates-2025-08-21.md for mapping and rationale."
 
 Canonical schema (reference)
