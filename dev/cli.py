@@ -205,6 +205,41 @@ CURRENT REPO STATE:
 """
         return context
 
+    def start_task(self, task_id: str):
+        """Start working on a task: validate DoR, create/switch branch, and print context."""
+        # 1) Locate task file
+        task_file = self.find_task_file(task_id)
+        if not task_file or not task_file.exists():
+            print(f"❌ Task {task_id} not found")
+            return
+        # 2) Validate DoR
+        if not self.validate_dor(task_id):
+            # validate_dor() already prints details
+            return
+        # 3) Determine branch name
+        branch = f"task/{task_id.replace(':', '-')}"
+        print(f"🌿 Target branch: {branch}")
+        # 4) Try to create/switch branch if this is a git repo
+        try:
+            # Check if inside a git repo
+            res = subprocess.run("git rev-parse --is-inside-work-tree", shell=True, capture_output=True, text=True)
+            if res.returncode == 0 and res.stdout.strip() == 'true':
+                # Check if branch exists
+                chk = subprocess.run(f"git rev-parse --verify {sh_quote(branch)}", shell=True)
+                if chk.returncode == 0:
+                    subprocess.run(f"git checkout {sh_quote(branch)}", shell=True)
+                    print(f"✅ Switched to existing branch {branch}")
+                else:
+                    subprocess.run(f"git checkout -b {sh_quote(branch)}", shell=True)
+                    print(f"✅ Created and switched to {branch}")
+            else:
+                print("ℹ️ Not a git repository; skipping branch creation.")
+        except Exception as e:
+            print(f"⚠️ Git operation skipped due to error: {e}")
+        # 5) Show context
+        print("\n🧭 TASK CONTEXT\n" + "=" * 40)
+        print(self.get_task_context(task_id))
+
     def complete_task(self, task_id: str):
         """Mark task as complete and validate DoD (lightweight)"""
         print(f"🎯 Completing task: {task_id}")

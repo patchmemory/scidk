@@ -228,3 +228,97 @@ class ProviderRegistry:
 
     def list(self) -> List[ProviderDescriptor]:
         return [p.descriptor() for p in self.providers.values()]
+
+
+class RcloneProvider(FilesystemProvider):
+    id = "rclone"
+    display_name = "Rclone Remotes"
+
+    def _run(self, args: List[str]):
+        import shutil, subprocess
+        exe = shutil.which('rclone')
+        if not exe:
+            raise RuntimeError("rclone not installed or not on PATH")
+        proc = subprocess.run([exe] + args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+        if proc.returncode != 0:
+            # Return stderr as message to surface clear errors
+            raise RuntimeError(proc.stderr.strip() or f"rclone exited {proc.returncode}")
+        return proc.stdout
+
+    def status(self, app) -> Dict:
+        try:
+            out = self._run(["version"])
+            ok = bool(out)
+            return {"ok": ok, "message": "ok" if ok else "unknown"}
+        except Exception as e:  # pragma: no cover (error surfaced in endpoints)
+            return {"ok": False, "message": str(e)}
+
+    def list_roots(self) -> List[DriveInfo]:
+        roots: List[DriveInfo] = []
+        out = self._run(["listremotes"])  # outputs lines like "gdrive:" "dropbox:"
+        for line in (out or "").splitlines():
+            name = line.strip()
+            if not name:
+                continue
+            # Ensure it ends with ':'
+            if not name.endswith(":"):
+                name = name + ":"
+            roots.append(DriveInfo(id=name, name=name.rstrip(':'), path=name))
+        return roots
+
+    def list(self, root_id: str, path: str, page_token: Optional[str] = None, page_size: Optional[int] = None) -> Dict:
+        target = (path or root_id or "").strip()
+        if not target:
+            return {"entries": []}
+        # Limit depth to immediate children
+        try:
+            import json, time
+            out = self._run(["lsjson", target, "--max-depth", "1"])
+            items = json.loads(out or "[]")
+        except Exception as e:
+            # Bubble error message in a structured way
+            return {"error": str(e), "entries": []}
+        entries: List[Entry] = []
+        for it in (items or []):
+            try:
+                is_dir = bool(it.get("IsDir"))
+                name = it.get("Name") or it.get("Path") or ""
+                size = int(it.get("Size") or 0)
+                # ModTime may be RFC3339; avoid strict parsing to keep lightweight
+                mtime = 0.0
+                entries.append(Entry(
+                    id=f"{target.rstrip('/')}/{name}" if not target.endswith(":") else f"{target}{name}",
+                    name=name,
+                    type="folder" if is_dir else "file",
+                    size=0 if is_dir else size,
+                    mtime=mtime,
+                ))
+            except Exception:
+                continue
+        # Sort directories first, then by name
+        entries.sort(key=lambda e: (0 if e.type == "folder" else 1, e.name.lower()))
+        return {"entries": [asdict(e) for e in entries]}
+
+    def get_entry(self, entry_id: str) -> Entry:
+        # Minimal: split remote:path and name; return a dummy entry shape (not used by current API)
+        name = entry_id.rsplit('/', 1)[-1]
+        return Entry(id=entry_id, name=name, type="file", size=0, mtime=0.0)
+
+    def open(self, entry_id: str):  # Optional streaming
+        import shutil, subprocess
+        exe = shutil.which('rclone')
+        if not exe:
+            raise RuntimeError("rclone not installed or not on PATH")
+        return subprocess.Popen([exe, 'cat', entry_id], stdout=subprocess.PIPE).stdout  # type: ignore
+
+    def resolve_scan_target(self, input: Dict) -> Dict:
+        # For rclone, path should be like "remote:folder"; label can be derived from the final path part
+        root_id = input.get('root_id') or ''
+        path = (input.get('path') or root_id or '').strip()
+        label = path.rsplit('/', 1)[-1] if path else root_id.rstrip(':')
+        return {"provider_id": self.id, "root_id": root_id, "path": path, "label": label}
+
+    def enumerate_files(self, scan_target: Dict, recursive: bool, progress_cb: Optional[Callable[[int], None]] = None):
+        # Not yet integrated into FilesystemManager scanning flow; placeholder for future work.
+        # Could yield string paths like "remote:path/file" or temporary local copies.
+        raise NotImplementedError("enumerate_files for rclone not implemented in this MVP")

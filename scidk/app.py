@@ -13,7 +13,7 @@ from .interpreters.ipynb_interpreter import IpynbInterpreter
 from .interpreters.txt_interpreter import TxtInterpreter
 from .interpreters.xlsx_interpreter import XlsxInterpreter
 from .core.pattern_matcher import Rule
-from .core.providers import ProviderRegistry as FsProviderRegistry, LocalFSProvider, MountedFSProvider
+from .core.providers import ProviderRegistry as FsProviderRegistry, LocalFSProvider, MountedFSProvider, RcloneProvider
 
 
 def create_app():
@@ -58,8 +58,10 @@ def create_app():
     fs_providers = FsProviderRegistry(enabled=prov_enabled)
     p_local = LocalFSProvider(); p_local.initialize(app, {})
     p_mounted = MountedFSProvider(); p_mounted.initialize(app, {})
+    p_rclone = RcloneProvider(); p_rclone.initialize(app, {})
     fs_providers.register(p_local)
     fs_providers.register(p_mounted)
+    fs_providers.register(p_rclone)
 
     # Store refs on app for easy access
     app.extensions = getattr(app, 'extensions', {})
