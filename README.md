@@ -46,13 +46,21 @@ Note: The scanner prefers NCDU for fast filesystem enumeration when available. I
 - Shell errors when initializing env: Use the script matching your shell (`init_env.sh` for bash/zsh, `init_env.fish` for fish). Avoid running `sh scripts/init_env.sh`; instead, source it.
 
 ## Neo4j Password: How to Set/Change
-- Choose your password before first start by setting NEO4J_AUTH in .env or your shell:
-  - echo "NEO4J_AUTH=neo4j/StrongPass123!" >> .env
+- Testing default: The testing Neo4j database uses password `neo4jiscool`. Set this in the app Settings or via environment.
+- Choose your password before first start by setting NEO4J_AUTH in .env or your shell (example uses testing default):
+  - echo "NEO4J_AUTH=neo4j/neo4jiscool" >> .env
   - docker compose -f docker-compose.neo4j.yml up -d
 - Change an existing password:
-  - With container: scripts/neo4j_set_password.sh 'NewPass123!' --container scidk-neo4j --current 'OldPass!'
-  - Local cypher-shell: scripts/neo4j_set_password.sh 'NewPass123!' --host bolt://localhost:7687 --user neo4j --current 'OldPass!'
+  - With container: scripts/neo4j_set_password.sh 'NewPass123!' --container scidk-neo4j --current 'neo4jiscool'
+  - Local cypher-shell: scripts/neo4j_set_password.sh 'NewPass123!' --host bolt://localhost:7687 --user neo4j --current 'neo4jiscool'
 - More details in dev/deployment.md (includes direct cypher-shell commands).
+
+### Troubleshooting Neo4j Unauthorized errors
+- If you see "The client is unauthorized due to authentication failure" when committing:
+  1) Ensure Settings → Neo4j has User=neo4j and Password=neo4jiscool (or your actual DB password).
+  2) Or set env NEO4J_AUTH=neo4j/neo4jiscool before starting the app, or update .env and restart.
+  3) Confirm Browser and app use the same DB: SHOW DATABASES; and :use neo4j.
+  4) Retry Commit to Graph.
 
 ## API
 
@@ -132,3 +140,10 @@ Additional Instance export formats:
 
 Map page tweak:
 - The Instances selector now defaults to the Scan label for a more demo-friendly starting point.
+
+## New in this cycle: Commit to Graph — SCANNED_IN consistency and verification
+- Commit now writes both File→SCANNED_IN→Scan and Folder→SCANNED_IN→Scan for recursive and non-recursive scans.
+- Cypher simplified: MERGE Scan once; two independent subqueries for files and standalone folders; proper WITH scoping and unique return aliases.
+- Post-commit verification runs automatically; Files page Background tasks shows: attempted, prepared, verify ok/fail with counts.
+- Neo4j configuration UX: Settings Save no longer clears password on empty; added explicit Clear Password; supports NEO4J_AUTH=none and URI-embedded creds; backoff after repeated auth failures.
+- Tests: added mocked-neo4j unit test for commit and verification; password persistence test.

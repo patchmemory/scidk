@@ -756,3 +756,11 @@ Note: See also dev/cycle-review-2025-08-18.md for a consolidated review and next
 
 ### Approval (mvp-iter-2025-08-21-demo-polish-and-neo4j-flag)
 - APPROVAL REQUESTED: Please reply “APPROVE CYCLE” to proceed.
+
+### Approval (mvp-iter-2025-08-20-neo4j-commit-consistency-and-verification)
+- COMPLETED: 2025-08-20 19:21 local. Commit to Graph now reliably writes both File→SCANNED_IN→Scan and Folder→SCANNED_IN→Scan for recursive and non-recursive scans. Simplified Cypher: MERGE Scan once, then two independent subqueries for files and standalone folders, with proper WITH scoping and unique aliases. Added post-commit DB verification (counts file/folder SCANNED_IN edges) and surfaced results in the UI Tasks panel. Hardened Neo4j configuration handling (no-auth mode support, safe password persistence, backoff after auth failures). Added unit tests with a mocked Neo4j driver verifying query shape and verification feedback.
+- How to test:
+  - Configure Neo4j in Settings (or set env). Click “Test Graph Connection” → Connected.
+  - Run a scan (non-recursive and recursive), press Commit to Graph.
+  - Observe Background tasks line: “Neo4j: attempted=yes — verify=ok (files:X, folders:Y)”.
+  - In Neo4j Browser: run MATCH (fo:Folder)-[:SCANNED_IN]->(:Scan) RETURN count(*), MATCH (f:File)-[:SCANNED_IN]->(:Scan) RETURN count(*).
