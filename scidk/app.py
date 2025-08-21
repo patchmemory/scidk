@@ -498,6 +498,15 @@ def create_app():
         import time, hashlib, threading
         started = time.time()
 
+        # Enforce max concurrent tasks (running)
+        try:
+            max_tasks = int(os.environ.get('SCIDK_MAX_BG_TASKS', '2'))
+        except Exception:
+            max_tasks = 2
+        running = sum(1 for t in app.extensions['scidk'].get('tasks', {}).values() if t.get('status') == 'running')
+        if running >= max_tasks:
+            return jsonify({'error': 'too many tasks running', 'code': 'max_tasks', 'max': max_tasks}), 429
+
         if ttype == 'scan':
             path = data.get('path') or os.getcwd()
             recursive = bool(data.get('recursive', True))
@@ -516,8 +525,9 @@ def create_app():
                 'progress': 0.0,
                 'scan_id': None,
                 'error': None,
+                'cancel_requested': False,
             }
-            app.extensions['scidk']['tasks'][task_id] = task
+            app.extensions['scidk'].setdefault('tasks', {})[task_id] = task
 
             def _worker():
                 try:
@@ -530,6 +540,11 @@ def create_app():
                     # Process each file similarly to scan_directory
                     processed = 0
                     for p in files:
+                        if task.get('cancel_requested'):
+                            task['status'] = 'canceled'
+                            task['ended'] = time.time()
+                            # progress remains as-is; do not create scan record
+                            return
                         # upsert
                         ds = fs.create_dataset_node(p)
                         app.extensions['scidk']['graph'].upsert_dataset(ds)
@@ -647,11 +662,16 @@ def create_app():
                 'neo4j_written': 0,
                 'neo4j_error': None,
                 'error': None,
+                'cancel_requested': False,
             }
-            app.extensions['scidk']['tasks'][task_id] = task
+            app.extensions['scidk'].setdefault('tasks', {})[task_id] = task
 
             def _worker_commit():
                 try:
+                    if task.get('cancel_requested'):
+                        task['status'] = 'canceled'
+                        task['ended'] = time.time()
+                        return
                     g = app.extensions['scidk']['graph']
                     # In-memory commit first
                     g.commit_scan(s)
@@ -664,6 +684,11 @@ def create_app():
                     task['processed'] = total
                     if total:
                         task['progress'] = total / (task.get('total') or (total + 1))
+                    # Allow cancel before Neo4j step
+                    if task.get('cancel_requested'):
+                        task['status'] = 'canceled'
+                        task['ended'] = time.time()
+                        return
                     # Neo4j write if configured via helper
                     uri, user, pwd, database, auth_mode = _get_neo4j_params()
                     result = commit_to_neo4j(rows, folder_rows, s, (uri, user, pwd, database, auth_mode))
@@ -708,6 +733,18 @@ def create_app():
         if not task:
             return jsonify({"error": "not found"}), 404
         return jsonify(task), 200
+
+    @api.post('/tasks/<task_id>/cancel')
+    def api_tasks_cancel(task_id):
+        tasks = app.extensions['scidk'].setdefault('tasks', {})
+        task = tasks.get(task_id)
+        if not task:
+            return jsonify({'error': 'not found'}), 404
+        # only running tasks can be canceled
+        if task.get('status') != 'running':
+            return jsonify({'status': task.get('status'), 'message': 'task not running'}), 400
+        task['cancel_requested'] = True
+        return jsonify({'status': 'canceling'}), 202
 
     @api.get('/datasets')
     def api_datasets():

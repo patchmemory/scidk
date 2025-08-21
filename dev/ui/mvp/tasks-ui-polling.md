@@ -50,4 +50,5 @@ UI Notes
 
 Next Steps
 - Wire this pattern into the Files page once the background-scan checkbox is added.
-- Add cancel endpoint and max concurrent tasks enforcement per plan (SCIDK_MAX_BG_TASKS).
+- Max concurrent tasks enforced via SCIDK_MAX_BG_TASKS; use POST /api/tasks to get 429 when exceeded.
+- Cancel endpoint available: POST /api/tasks/<task_id>/cancel; show a Cancel button while status=running and disable it after completion.

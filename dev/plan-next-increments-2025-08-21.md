@@ -66,7 +66,7 @@ Acceptance criteria
 - Background tasks
   - [x] POST /api/tasks returns task_id; status transitions to running and completes for scan tasks (test added) — 2025-08-21
   - [x] Progress updates during scan; polling works (validated by tests/test_tasks_scan.py) — 2025-08-21
-  - [ ] Max concurrent tasks enforced; cancel works
+  - [x] Max concurrent tasks enforced (SCIDK_MAX_BG_TASKS) with 429 when exceeded; cancel endpoint cancels running tasks — 2025-08-21
 - RcloneProvider
   - [ ] /api/providers lists rclone when feature-flagged; /api/provider_roots shows remotes
   - [ ] /api/browse works with a remote; pagination stable
@@ -95,3 +95,4 @@ Notes
 Progress Log
 - 2025-08-21 09:39 local: Added Background Tasks lifecycle test (tests/test_tasks_scan.py); updated README with Background Tasks API; endpoints verified via pytest.
 - 2025-08-21 09:45 local: Cross-linked plan from dev/cycles.md; documenting UI polling pattern for tasks in dev/ui/mvp/tasks-ui-polling.md.
+- 2025-08-21 09:58 local: Implemented SCIDK_MAX_BG_TASKS limit and cancel endpoint POST /api/tasks/<id>/cancel with cooperative cancel; added tests (tests/test_tasks_limits_cancel.py). All tests green.
