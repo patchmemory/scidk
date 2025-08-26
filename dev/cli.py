@@ -29,86 +29,102 @@ class DevCLI:
         self.dev_dir = self.repo_root / "dev"
         self.tasks_dir = self.dev_dir / "tasks"
         self.cycles_file = self.dev_dir / "cycles.md"
+        # Default base to compare merges against
+        self.default_base_branches = [
+            os.environ.get('SCIDK_BASE_BRANCH') or '',
+            'origin/main', 'main', 'origin/master', 'master'
+        ]
 
-    # ------------------------
-    # Frontmatter read/write
-    # ------------------------
-    def _detect_frontmatter_block(self, content: str) -> Tuple[Optional[int], Optional[int], bool]:
-        """Return (start_line, end_line, fenced) for existing frontmatter block.
-        - fenced: content starts with '---' and ends at the next '---' line (exclusive end index).
-        - unfenced: best-effort detection of top-of-file YAML-ish lines.
-        If not found, returns (None, None, False).
-        """
-        lines = content.splitlines()
-        if not lines:
-            return None, None, False
-        # Case 1: fenced
-        if lines[0].strip() == '---':
-            for i in range(1, len(lines)):
-                if lines[i].strip() == '---':
-                    return 0, i, True
-            # Unclosed fence: treat as no block
-        # Case 2: unfenced top-of-file YAML-ish
-        header_lines: List[str] = []
-        started = False
-        for idx, line in enumerate(lines):
-            if line.startswith('```') or line.startswith('~~~'):
-                break
-            if _is_yaml_kv_line(line) or (header_lines and line.startswith((' ', '\t', '-'))):
-                header_lines.append(line)
-                started = True
-            else:
-                if started:
-                    end = idx - 1
-                    if end >= 0 and header_lines:
-                        return 0, end, False
-                break
-        if header_lines:
-            return 0, len(header_lines) - 1, False
-        return None, None, False
+    def _pick_base_branch(self) -> Optional[str]:
+        """Pick the first base branch that exists locally or remotely."""
+        try:
+            # fetch refs quietly (ignore errors if offline)
+            subprocess.run("git fetch --all --prune -q", shell=True)
+        except Exception:
+            pass
+        for cand in self.default_base_branches:
+            if not cand:
+                continue
+            res = subprocess.run(f"git rev-parse --verify {sh_quote(cand)}", shell=True)
+            if res.returncode == 0:
+                return cand
+        return None
 
-    def update_frontmatter(self, file_path: Path, updates: Dict, create_if_missing: bool = True) -> bool:
-        """Update or create a frontmatter block with provided key/values.
-        Preserves the rest of the file content. Returns True on success.
+    def merge_safety(self, base: Optional[str] = None) -> Dict:
+        """Report potentially destructive changes versus a base branch.
+        Returns a dict with summary and detailed lists (also printed human-readable).
         """
+        base_branch = base or self._pick_base_branch()
+        if not base_branch:
+            print("⚠️ Could not determine a base branch (try setting SCIDK_BASE_BRANCH).")
+            return {"error": "no_base"}
+        print(f"🔎 Comparing against base: {base_branch}")
+        # Deleted files
         try:
-            content = file_path.read_text(encoding='utf-8')
-        except Exception:
-            return False
-        start, end, fenced = self._detect_frontmatter_block(content)
-        lines = content.splitlines()
-        existing: Dict = {}
-        if start is not None and end is not None:
-            fm_text = '\n'.join(lines[start + (1 if fenced else 0): end + 1]) if (end >= start) else ''
-            try:
-                existing = yaml.safe_load(fm_text) or {}
-                if not isinstance(existing, dict):
-                    existing = {}
-            except Exception:
-                existing = {}
-        # Merge
-        merged = dict(existing)
-        merged.update(updates or {})
-        # Stable YAML dump (no aliases, reasonable formatting)
-        new_yaml = yaml.safe_dump(merged, sort_keys=False).strip() + '\n'
-        if start is None or end is None:
-            if not create_if_missing:
-                return False
-            new_block = ['---', new_yaml.rstrip('\n'), '---', '']
-            new_content = '\n'.join(new_block + lines)
-        else:
-            if fenced:
-                new_block = ['---', new_yaml.rstrip('\n'), '---']
-                new_content = '\n'.join(lines[:start] + new_block + lines[end + 1:])
-            else:
-                # Replace lines[start:end]
-                new_block_lines = new_yaml.rstrip('\n').splitlines()
-                new_content = '\n'.join(lines[:start] + new_block_lines + lines[end + 1:])
+            res = subprocess.run(f"git diff --name-status {sh_quote(base_branch)}...HEAD", shell=True, capture_output=True, text=True)
+            lines = res.stdout.strip().splitlines() if res.stdout else []
+        except Exception as e:
+            print(f"⚠️ git diff failed: {e}")
+            return {"error": "git_diff_failed"}
+        deleted = [ln.split('\t', 1)[1] for ln in lines if ln.startswith('D\t') and '\t' in ln]
+        # Count added/removed lines overall and by file
         try:
-            file_path.write_text(new_content, encoding='utf-8')
-            return True
+            res2 = subprocess.run(f"git diff --numstat {sh_quote(base_branch)}...HEAD", shell=True, capture_output=True, text=True)
+            stats_lines = res2.stdout.strip().splitlines() if res2.stdout else []
         except Exception:
-            return False
+            stats_lines = []
+        file_stats = []
+        total_add = 0
+        total_del = 0
+        for ln in stats_lines:
+            parts = ln.split('\t')
+            if len(parts) >= 3:
+                try:
+                    add = int(parts[0]) if parts[0].isdigit() else 0
+                    dele = int(parts[1]) if parts[1].isdigit() else 0
+                except Exception:
+                    add = 0; dele = 0
+                path = parts[2]
+                total_add += add
+                total_del += dele
+                file_stats.append({"path": path, "added": add, "deleted": dele})
+        risky_paths = ['scidk/app.py', 'scidk/ui/templates', 'scidk/core', 'scidk/interpreters']
+        risky_deletions = [fs for fs in file_stats if fs['deleted'] >= 50 or any(fs['path'].startswith(p) for p in risky_paths)]
+        summary = {
+            "base": base_branch,
+            "deleted_files": len(deleted),
+            "total_added": total_add,
+            "total_deleted": total_del,
+            "risky_files": len(risky_deletions),
+        }
+        # Print human-readable report
+        print("\n🛡️ Merge Safety Report")
+        print("=" * 40)
+        print(f"Base: {base_branch}")
+        print(f"Deleted files: {len(deleted)}")
+        if deleted:
+            for p in deleted[:25]:
+                print(f"  D {p}")
+            if len(deleted) > 25:
+                print(f"  ... and {len(deleted) - 25} more")
+        print(f"Total lines: +{total_add} / -{total_del}")
+        if risky_deletions:
+            print("\nPotentially risky deletions (threshold 50 lines or key paths):")
+            for fs in risky_deletions[:25]:
+                print(f"  - {fs['path']}: -{fs['deleted']} (+{fs['added']})")
+            if len(risky_deletions) > 25:
+                print(f"  ... and {len(risky_deletions) - 25} more")
+        print("\nGuidance:")
+        print(" - If you see unexpected deletions, review other active branches for those files.")
+        print(" - Use 'git log --oneline -- <path>' on base and current to trace recent additions.")
+        print(" - Prefer cherry-pick of granular commits rather than bulk conflict resolution that deletes blocks.")
+        print(" - Ask a reviewer before removing large blocks in app/core/ui/interpreters.")
+        return {
+            "summary": summary,
+            "deleted_files": deleted,
+            "file_stats": file_stats,
+            "risky_deletions": risky_deletions,
+        }
 
     def parse_frontmatter(self, file_path: Path) -> Dict:
         """Parse YAML frontmatter or top-of-file YAML from markdown files.
@@ -286,7 +302,7 @@ CURRENT REPO STATE:
         return context
 
     def start_task(self, task_id: str):
-        """Start working on a task: validate DoR, create/switch branch, persist status, and print context."""
+        """Start working on a task: validate DoR, create/switch branch, and print context."""
         # 1) Locate task file
         task_file = self.find_task_file(task_id)
         if not task_file or not task_file.exists():
@@ -316,53 +332,25 @@ CURRENT REPO STATE:
                 print("ℹ️ Not a git repository; skipping branch creation.")
         except Exception as e:
             print(f"⚠️ Git operation skipped due to error: {e}")
-        # 5) Persist status to frontmatter
-        ts = datetime.utcnow().isoformat(timespec='seconds') + 'Z'
-        ok = self.update_frontmatter(task_file, {
-            'status': 'In Progress',
-            'started_at': ts,
-            'branch': branch,
-        }, create_if_missing=True)
-        if ok:
-            print(f"📝 Updated task frontmatter: status=In Progress, started_at={ts}, branch={branch}")
-        else:
-            print("⚠️ Failed to update task frontmatter")
-        # 6) Show context
+        # 5) Show context
         print("\n🧭 TASK CONTEXT\n" + "=" * 40)
         print(self.get_task_context(task_id))
 
     def complete_task(self, task_id: str):
-        """Mark task as complete: run tests, persist status, and show DoD checklist."""
+        """Mark task as complete and validate DoD (lightweight)"""
         print(f"🎯 Completing task: {task_id}")
         # 1) Run tests
         print("🧪 Running tests (pytest -q)...")
-        tests_passed = False
         try:
             res = subprocess.run("pytest -q", shell=True)
-            tests_passed = (res.returncode == 0)
-            if tests_passed:
+            if res.returncode == 0:
                 print("✅ Tests passing")
             else:
                 print(f"❌ Tests failed (exit {res.returncode}) — fix before completing.")
         except Exception as e:
             print(f"⚠️ Could not run tests: {e}")
-        # 2) Persist status to frontmatter
+        # 2) Show DoD checklist
         task_file = self.find_task_file(task_id)
-        if not task_file:
-            print("❌ Task file not found; cannot update status")
-        else:
-            ts = datetime.utcnow().isoformat(timespec='seconds') + 'Z'
-            updates = {
-                'status': 'Done',
-                'completed_at': ts,
-                'tests_passed': bool(tests_passed),
-            }
-            ok = self.update_frontmatter(task_file, updates, create_if_missing=True)
-            if ok:
-                print(f"📝 Updated task frontmatter: status=Done, completed_at={ts}, tests_passed={tests_passed}")
-            else:
-                print("⚠️ Failed to update task frontmatter")
-        # 3) Show DoD checklist
         task_data = self.parse_frontmatter(task_file) if task_file else {}
         dod = task_data.get('dod') if isinstance(task_data, dict) else None
         print("\n📋 DoD Checklist (from task frontmatter):")
@@ -420,24 +408,32 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: python dev_cli.py <command> [args]")
         print("\nCommands:")
-        print("  ready-queue            - Show ready tasks sorted by RICE")
-        print("  start [<task>]         - Start working on a task; persists status=In Progress")
-        print("  context <task>         - Get AI context for a task")
-        print("  validate <task>        - Validate DoR for a task")
-        print("  complete <task>        - Run tests and mark status=Done with timestamps")
-        print("  mark <task> <status>   - Manually set task status (adds timestamps for Done/In Progress)")
-        print("  backfill-status        - Add default status to tasks missing it (Ready/Backlog/Draft)")
-        print("  cycle-status           - Show current cycle")
-        print("  next-cycle             - Propose next cycle")
+        print("  ready-queue      - Show ready tasks sorted by RICE")
+        print("  start [<task>]   - Start working on a task (defaults to top Ready)")
+        print("  context <task>   - Get AI context for a task")
+        print("  validate <task>  - Validate DoR for a task")
+        print("  complete <task>  - Run DoD checks and summarize next steps")
+        print("  cycle-status     - Show current cycle")
+        print("  next-cycle       - Propose next cycle")
+        print("  merge-safety     - Report potentially risky deletions vs base (use --base <branch> to override)")
         return
 
     # Extract global flags (very light parser)
     argv = sys.argv[:]
     command = argv[1]
     json_flag = False
+    base_override = None
     if '--json' in argv:
         json_flag = True
         argv.remove('--json')
+    # simple flag parse for --base <branch>
+    if '--base' in argv:
+        try:
+            idx = argv.index('--base')
+            base_override = argv[idx + 1]
+            del argv[idx:idx + 2]
+        except Exception:
+            base_override = None
 
     cli = DevCLI()
 
@@ -559,47 +555,10 @@ def main():
     elif command == "complete" and len(argv) > 2:
         cli.complete_task(argv[2])
 
-    elif command == "mark" and len(argv) > 3:
-        tid = argv[2]
-        status = ' '.join(argv[3:]).strip()
-        task_file = cli.find_task_file(tid)
-        if not task_file:
-            print(f"❌ Task {tid} not found")
-            return
-        updates = {'status': status}
-        now = datetime.utcnow().isoformat(timespec='seconds') + 'Z'
-        # convenience timestamps
-        if status.lower() in ('in progress', 'in-progress', 'started'):
-            updates['status'] = 'In Progress'
-            updates['started_at'] = now
-        elif status.lower() in ('done', 'complete', 'completed'):
-            updates['status'] = 'Done'
-            updates['completed_at'] = now
-        ok = cli.update_frontmatter(task_file, updates, create_if_missing=True)
-        if ok:
-            print(f"📝 Updated {tid}: {updates}")
-        else:
-            print("⚠️ Failed to update task frontmatter")
-
-    elif command == "backfill-status":
-        changed = 0
-        scanned = 0
-        for md in cli._iter_task_files():
-            scanned += 1
-            data = cli.parse_frontmatter(md) or {}
-            status = str(data.get('status', '')).strip()
-            if not status:
-                # Heuristics to set defaults
-                if str(data.get('dor', '')).strip().lower() in ('true', '1', 'yes', 'y'):
-                    new_status = 'Ready'
-                elif all(data.get(k) for k in ('id', 'owner', 'estimate', 'story', 'phase')):
-                    new_status = 'Backlog'
-                else:
-                    new_status = 'Draft'
-                if cli.update_frontmatter(md, {'status': new_status}, create_if_missing=True):
-                    changed += 1
-                    print(f"📝 Backfilled status={new_status} in {md}")
-        print(f"✅ Backfill complete: changed {changed} of {scanned} task files")
+    elif command == "merge-safety":
+        res = cli.merge_safety(base_override)
+        if json_flag:
+            print(json.dumps(res, indent=2, default=str))
 
     else:
         print(f"Unknown command: {command}")
