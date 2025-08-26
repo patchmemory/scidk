@@ -81,6 +81,13 @@ Note: The scanner prefers NCDU for fast filesystem enumeration when available. I
 - GET /api/datasets
 - GET /api/datasets/<id>
 
+Rclone provider (optional):
+- Enable by installing rclone and setting SCIDK_PROVIDERS=local_fs,mounted_fs,rclone (or include rclone among others).
+- GET /api/providers will include { id: "rclone", ... } when enabled.
+- GET /api/provider_roots?provider_id=rclone lists rclone remotes (uses `rclone listremotes`).
+- GET /api/browse?provider_id=rclone&root_id=<remote>:&path=<remote>:<folder> lists entries via `rclone lsjson`.
+- If rclone is not installed or a remote is misconfigured, API returns a clear error message with HTTP 500 and {"error": "..."}.
+
 ### Background Tasks (MVP)
 - POST /api/tasks { type: 'scan', path, recursive? } → { task_id }
 - GET /api/tasks → list all tasks (most recent first)
