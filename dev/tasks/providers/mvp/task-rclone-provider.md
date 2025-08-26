@@ -1,6 +1,6 @@
 id: task:providers/mvp/rclone-provider
 title: Feature-flagged RcloneProvider (subprocess-based)
-status: In Progress
+status: Done
 owner: agent
 rice: 4.0
 estimate: "2\u20133d"
@@ -35,3 +35,9 @@ acceptance:
 - Clear errors when rclone not installed or remote not configured
 started_at: '2025-08-26T19:36:14Z'
 branch: task/task-providers/mvp/rclone-provider
+demo_steps:
+- Set SCIDK_PROVIDERS=local_fs,mounted_fs,rclone and start the app
+- Open /api/providers and verify 'rclone' is listed
+- Open /api/provider_roots?provider_id=rclone and verify remotes
+- Browse /api/browse?provider_id=rclone&root_id=<remote>:&path=<remote>:<folder>
+completed_at: '2025-08-26T19:40:00Z'
