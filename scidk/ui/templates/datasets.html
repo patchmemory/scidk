@@ -180,28 +180,14 @@
       } catch(e){ rootSelect.innerHTML = '<option>(failed)</option>'; }
     }
 
-    function formatErrorFromJson(j, fallback){
-      if (!j) return fallback;
-      const code = j.code ? ` (${j.code})` : '';
-      const hint = j.hint ? ` — ${j.hint}` : '';
-      const msg = j.error || j.message || fallback;
-      return String(msg) + code + hint;
-    }
     async function browse(providerId, rootId, path){
       const qs = new URLSearchParams({ provider_id: providerId||'local_fs', root_id: rootId||'/', path: path||rootId||'/' });
       try {
         const r = await fetch('/api/browse?' + qs.toString());
-        let j = null;
-        try { j = await r.json(); } catch(_) { /* keep null */ }
-        if (!r.ok){
-          const msg = formatErrorFromJson(j, `Browse failed: ${r.status}`);
-          if (window.toast) window.toast(msg, 'error');
-          provList.innerHTML = '<tr><td colspan="5" class="small">Browse failed.</td></tr>';
-          return;
-        }
+        const j = await r.json();
         // no breadcrumb API; show current path and root only
         const displayPath = path || rootId || '/';
-        provCrumb.innerHTML = `<span class=\"small\">Path: <code>${displayPath}</code></span>`;
+        provCrumb.innerHTML = `<span class="small">Path: <code>${displayPath}</code></span>`;
         // Sync input to actual path we browsed
         currentPath = displayPath;
         if (provPathInput) provPathInput.value = currentPath;
@@ -210,11 +196,11 @@
           const size = e.type === 'folder' ? '' : fmtBytes(e.size||0);
           const mod = fmtTime(e.mtime||0);
           const prov = providerId;
-          return `<tr class=\"prov-item\" data-id=\"${e.id}\" data-type=\"${e.type}\"><td>${e.name}</td><td>${type}</td><td>${size}</td><td>${mod}</td><td><span class=\"badge\">${prov}</span></td></tr>`;
+          return `<tr class="prov-item" data-id="${e.id}" data-type="${e.type}"><td>${e.name}</td><td>${type}</td><td>${size}</td><td>${mod}</td><td><span class="badge">${prov}</span></td></tr>`;
         }).join('');
-        provList.innerHTML = rows || '<tr><td colspan=\"5\" class=\"small\">Empty folder.</td></tr>';
+        provList.innerHTML = rows || '<tr><td colspan="5" class="small">Empty folder.</td></tr>';
         attachProvHandlers();
-      } catch(e){ provList.innerHTML = '<tr><td colspan="5" class="small">Browse failed.</td></tr>'; if (window.toast) window.toast('Browse failed: ' + (e?.message||String(e)), 'error'); }
+      } catch(e){ provList.innerHTML = '<tr><td colspan="5" class="small">Browse failed.</td></tr>'; }
     }
 
     function attachProvHandlers(){
@@ -293,10 +279,8 @@
               try { if (typeof startPolling === 'function') startPolling(); } catch(_) {}
               fetchTasks();
             } else {
-              let j = null; try { j = await r.json(); } catch(_) {}
-              const msg = formatErrorFromJson(j, 'Scan task error: ' + r.status);
-              provScanMsg.textContent = msg;
-              if (window.toast) window.toast(msg, 'error');
+              const j = await r.json();
+              provScanMsg.textContent = 'Scan task error: ' + (j.error || r.status);
             }
           } else {
             // For non-local providers, use synchronous provider scan API
@@ -306,21 +290,19 @@
             try { (window.scidkLocalTasks||[]).push(localTask); } catch(_) { /* ignore */ }
             fetchTasks(); // trigger re-render with local task
             const r = await fetch('/api/scan', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ provider_id: provId, root_id: rootId||'/', path, recursive }) });
-            let j = null; try { j = await r.json(); } catch(_) {}
+            const j = await r.json();
             if (r.ok){
-              provScanMsg.textContent = `Scan complete: ${j?.scan_id} — ${j?.scanned||0} files (${j?.duration_sec ? (Math.round(j.duration_sec*10)/10+'s') : ''})`;
+              provScanMsg.textContent = `Scan complete: ${j.scan_id} — ${j.scanned} files (${j.duration_sec ? (Math.round(j.duration_sec*10)/10+'s') : ''})`;
               // Mark local task completed
               localTask.status = 'completed';
-              localTask.processed = (j && j.scanned) || 0;
-              localTask.total = (j && j.scanned) || localTask.processed;
+              localTask.processed = j.scanned || 0;
+              localTask.total = j.scanned || localTask.processed;
               localTask.progress = 1;
-              localTask.scan_id = j && j.scan_id;
+              localTask.scan_id = j.scan_id;
             } else {
-              const msg = formatErrorFromJson(j, `Scan error: ${r.status}`);
-              provScanMsg.textContent = msg;
-              if (window.toast) window.toast(msg, 'error');
+              provScanMsg.textContent = `Scan error: ${j.error||r.status}`;
               localTask.status = 'error';
-              localTask.error = (j && (j.error||j.message)) || String(r.status);
+              localTask.error = j.error || String(r.status);
               localTask.progress = 1;
             }
           }
@@ -397,11 +379,8 @@
           btn.disabled = true; btn.textContent = 'Canceling…';
           try {
             const r = await fetch('/api/tasks/' + encodeURIComponent(tid) + '/cancel', { method: 'POST' });
-            if (!r.ok){ let j=null; try { j = await r.json(); } catch(_) {}
-              const msg = formatErrorFromJson(j, 'Cancel failed: ' + r.status);
-              if (window.toast) window.toast(msg, 'error');
-            }
-          } catch(err){ if (window.toast) window.toast('Cancel failed: ' + (err?.message||String(err)), 'error'); }
+            if (!r.ok){ try { const j = await r.json(); alert('Cancel failed: ' + (j.error || r.status)); } catch(_) { alert('Cancel failed: ' + r.status); } }
+          } catch(err){ alert('Cancel failed: ' + err); }
           fetchTasks();
         });
       });
@@ -463,11 +442,8 @@
         try {
           const r = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ type: 'scan', path, recursive }) });
           if (r.status === 202){ startPolling(); fetchTasks(); }
-          else { let j=null; try { j = await r.json(); } catch(_) {}
-            const msg = formatErrorFromJson(j, 'Task error: ' + r.status);
-            if (window.toast) window.toast(msg, 'error');
-          }
-        } catch(err){ if (window.toast) window.toast('Task error: ' + (err?.message||String(err)), 'error'); }
+          else { const j = await r.json(); alert('Task error: ' + (j.error || r.status)); }
+        } catch(err){ alert('Task error: ' + err); }
       });
       // initial render
       startPolling(); fetchTasks(); loadScansIntoDropdown(); fetchNeoStatus();
@@ -499,12 +475,11 @@
               // Start background commit task to show progress in the Tasks panel
               const r = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ type: 'commit', scan_id: id }) });
               if (r.status === 202){
-                if (window.toast) window.toast('Commit started in background. Watch progress above.', 'success');
+                alert('Commit started in background. Watch progress above.');
                 startPolling(); fetchTasks();
               } else {
-                let j=null; try { j = await r.json(); } catch(_) {}
-                const msg = formatErrorFromJson(j, 'Commit task error: ' + r.status);
-                if (window.toast) window.toast(msg, 'error');
+                const j = await r.json();
+                alert('Commit task error: ' + (j.error || r.status));
               }
             } else if (action === 'delete'){
               const r = await fetch('/api/scans/' + encodeURIComponent(id), { method: 'DELETE' });
