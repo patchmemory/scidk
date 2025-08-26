@@ -29,6 +29,11 @@ class DevCLI:
         self.dev_dir = self.repo_root / "dev"
         self.tasks_dir = self.dev_dir / "tasks"
         self.cycles_file = self.dev_dir / "cycles.md"
+        # Default base to compare merges against (helps keep dev/ results merged across branches)
+        self.default_base_branches = [
+            os.environ.get('SCIDK_BASE_BRANCH') or '',
+            'origin/main', 'main', 'origin/master', 'master'
+        ]
 
     def parse_frontmatter(self, file_path: Path) -> Dict:
         """Parse YAML frontmatter or top-of-file YAML from markdown files.
@@ -304,6 +309,98 @@ CURRENT REPO STATE:
             print()
 
 
+    def _pick_base_branch(self) -> Optional[str]:
+        """Pick the first base branch that exists locally or remotely."""
+        try:
+            # fetch refs quietly (ignore errors if offline)
+            subprocess.run("git fetch --all --prune -q", shell=True)
+        except Exception:
+            pass
+        for cand in self.default_base_branches:
+            if not cand:
+                continue
+            res = subprocess.run(f"git rev-parse --verify {sh_quote(cand)}", shell=True)
+            if res.returncode == 0:
+                return cand
+        return None
+
+    def merge_safety(self, base: Optional[str] = None) -> Dict:
+        """Report potentially destructive changes versus a base branch.
+        Returns a dict with summary and detailed lists (also printed human-readable).
+        """
+        base_branch = base or self._pick_base_branch()
+        if not base_branch:
+            print("⚠️ Could not determine a base branch (try setting SCIDK_BASE_BRANCH).")
+            return {"error": "no_base"}
+        print(f"🔎 Comparing against base: {base_branch}")
+        # Deleted files
+        try:
+            res = subprocess.run(f"git diff --name-status {sh_quote(base_branch)}...HEAD", shell=True, capture_output=True, text=True)
+            lines = res.stdout.strip().splitlines() if res.stdout else []
+        except Exception as e:
+            print(f"⚠️ git diff failed: {e}")
+            return {"error": "git_diff_failed"}
+        deleted = [ln.split('\t', 1)[1] for ln in lines if ln.startswith('D\t') and '\t' in ln]
+        # Count added/removed lines overall and by file
+        try:
+            res2 = subprocess.run(f"git diff --numstat {sh_quote(base_branch)}...HEAD", shell=True, capture_output=True, text=True)
+            stats_lines = res2.stdout.strip().splitlines() if res2.stdout else []
+        except Exception:
+            stats_lines = []
+        file_stats = []
+        total_add = 0
+        total_del = 0
+        for ln in stats_lines:
+            parts = ln.split('\t')
+            if len(parts) >= 3:
+                try:
+                    add = int(parts[0]) if parts[0].isdigit() else 0
+                    dele = int(parts[1]) if parts[1].isdigit() else 0
+                except Exception:
+                    add = 0; dele = 0
+                path = parts[2]
+                total_add += add
+                total_del += dele
+                file_stats.append({"path": path, "added": add, "deleted": dele})
+        risky_paths = ['scidk/app.py', 'scidk/ui/templates', 'scidk/core', 'scidk/interpreters', 'dev/']
+        risky_deletions = [fs for fs in file_stats if fs['deleted'] >= 50 or any(fs['path'].startswith(p) for p in risky_paths)]
+        summary = {
+            "base": base_branch,
+            "deleted_files": len(deleted),
+            "total_added": total_add,
+            "total_deleted": total_del,
+            "risky_files": len(risky_deletions),
+        }
+        # Print human-readable report
+        print("\n🛡️ Merge Safety Report")
+        print("=" * 40)
+        print(f"Base: {base_branch}")
+        print(f"Deleted files: {len(deleted)}")
+        if deleted:
+            for p in deleted[:25]:
+                print(f"  D {p}")
+            if len(deleted) > 25:
+                print(f"  ... and {len(deleted) - 25} more")
+        print(f"Total lines: +{total_add} / -{total_del}")
+        if risky_deletions:
+            print("\nPotentially risky deletions (threshold 50 lines or key paths):")
+            for fs in risky_deletions[:25]:
+                print(f"  - {fs['path']}: -{fs['deleted']} (+{fs['added']})")
+            if len(risky_deletions) > 25:
+                print(f"  ... and {len(risky_deletions) - 25} more")
+        print("\nGuidance:")
+        print(" - If you see unexpected deletions, review other active branches for those files.")
+        print(" - Use 'git log --oneline -- <path>' on base and current to trace recent additions.")
+        print(" - Prefer cherry-pick of granular commits rather than bulk conflict resolution that deletes blocks.")
+        print(" - Always ensure dev/ outputs are merged forward to avoid redoing work across branches.")
+        return {
+            "summary": summary,
+            "deleted_files": deleted,
+            "file_stats": file_stats,
+            "risky_deletions": risky_deletions,
+        }
+
+
 def sh_quote(s: str) -> str:
     return "'" + s.replace("'", "'\\''") + "'"
 
@@ -319,15 +416,25 @@ def main():
         print("  complete <task>  - Run DoD checks and summarize next steps")
         print("  cycle-status     - Show current cycle")
         print("  next-cycle       - Propose next cycle")
+        print("  merge-safety     - Report potentially risky deletions vs base (use --base <branch> to override)")
         return
 
     # Extract global flags (very light parser)
     argv = sys.argv[:]
     command = argv[1]
     json_flag = False
+    base_override = None
     if '--json' in argv:
         json_flag = True
         argv.remove('--json')
+    # simple flag parse for --base <branch>
+    if '--base' in argv:
+        try:
+            idx = argv.index('--base')
+            base_override = argv[idx + 1]
+            del argv[idx:idx + 2]
+        except Exception:
+            base_override = None
 
     cli = DevCLI()
 
@@ -448,6 +555,11 @@ def main():
 
     elif command == "complete" and len(argv) > 2:
         cli.complete_task(argv[2])
+
+    elif command == "merge-safety":
+        res = cli.merge_safety(base_override)
+        if json_flag:
+            print(json.dumps(res, indent=2, default=str))
 
     else:
         print(f"Unknown command: {command}")
