@@ -17,22 +17,33 @@
     <p class="small">No scans yet. Go to <a href="/datasets">Files</a> to run a scan.</p>
   {% endif %}
   {% if directories and directories|length > 0 %}
-    <details style="margin-top:.5rem;" open>
+    <details style="margin-top:.5rem;">
       <summary class="small">Scanned Sources</summary>
-      <form id="scanned-filter-form" class="small" style="margin:.5rem 0;">
-        <label>Provider: <input type="text" id="filter-provider" placeholder="e.g., local_fs" style="width:10rem"></label>
-        <label style="margin-left:.5rem;">Path contains: <input type="text" id="filter-path" placeholder="substring" style="width:14rem"></label>
-        <label style="margin-left:.5rem;">Recursive:
-          <select id="filter-recursive">
-            <option value="any">Any</option>
-            <option value="true">True</option>
-            <option value="false">False</option>
-          </select>
-        </label>
-        <button type="submit" style="margin-left:.5rem;">Filter</button>
-        <button type="button" id="filter-reset" style="margin-left:.25rem;">Reset</button>
-      </form>
-      <ul id="scanned-list">
+      <div id="dirs-filters" class="small" style="margin:.5rem 0;">
+        <form id="dirs-filter-form">
+          <label>
+            Provider:
+            <select id="dirs-filter-provider">
+              <option value="">Any</option>
+            </select>
+          </label>
+          <label style="margin-left:.5rem;">
+            Path contains:
+            <input id="dirs-filter-path" type="text" placeholder="substring" />
+          </label>
+          <label style="margin-left:.5rem;">
+            Recursive:
+            <select id="dirs-filter-recursive">
+              <option value="">Any</option>
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          </label>
+          <button type="submit" style="margin-left:.5rem;">Apply</button>
+          <button type="button" id="dirs-filter-reset" style="margin-left:.25rem;">Reset</button>
+        </form>
+      </div>
+      <ul id="dirs-list">
         {% for d in directories %}
           <li data-provider="{{ d.provider_id or '' }}" data-path="{{ d.path }}" data-recursive="{{ 'true' if d.recursive else 'false' }}">
             {% if d.provider_id %}<span class="badge" title="Provider">{{ d.provider_id }}</span> {% endif %}
@@ -162,36 +173,58 @@
       });
     }
   });
-  // Scanned Sources filter
-  const filterForm = document.getElementById('scanned-filter-form');
-  if (filterForm) {
-    const providerInput = document.getElementById('filter-provider');
-    const pathInput = document.getElementById('filter-path');
-    const recSel = document.getElementById('filter-recursive');
-    const list = document.getElementById('scanned-list');
-    const apply = () => {
-      const prov = (providerInput.value || '').trim().toLowerCase();
-      const pathSub = (pathInput.value || '').trim().toLowerCase();
-      const rec = (recSel.value || 'any');
-      const items = list ? Array.from(list.querySelectorAll('li')) : [];
-      items.forEach(li => {
-        const p = (li.getAttribute('data-provider') || '').toLowerCase();
-        const pa = (li.getAttribute('data-path') || '').toLowerCase();
-        const r = (li.getAttribute('data-recursive') || 'false');
-        let ok = true;
-        if (prov && !p.includes(prov)) ok = false;
-        if (pathSub && !pa.includes(pathSub)) ok = false;
-        if (rec !== 'any' && r !== rec) ok = false;
-        li.style.display = ok ? '' : 'none';
-      });
-    };
-    filterForm.addEventListener('submit', (e) => { e.preventDefault(); apply(); });
-    document.getElementById('filter-reset')?.addEventListener('click', () => {
-      providerInput.value = '';
-      pathInput.value = '';
-      recSel.value = 'any';
-      apply();
+  // Scanned Sources filters
+  (function setupDirsFilters(){
+    const list = document.getElementById('dirs-list');
+    const form = document.getElementById('dirs-filter-form');
+    if (!list || !form) return;
+    const selProv = document.getElementById('dirs-filter-provider');
+    const inpPath = document.getElementById('dirs-filter-path');
+    const selRec = document.getElementById('dirs-filter-recursive');
+    const btnReset = document.getElementById('dirs-filter-reset');
+
+    // Build provider options from list items
+    const providers = Array.from(new Set(Array.from(list.querySelectorAll('li')).map(li => (li.getAttribute('data-provider')||'').trim()).filter(Boolean))).sort();
+    providers.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p;
+      opt.textContent = p;
+      selProv.appendChild(opt);
     });
-  }
+
+    function applyFilters() {
+      const pv = (selProv.value || '').trim();
+      const q = (inpPath.value || '').trim().toLowerCase();
+      const rv = (selRec.value || '').trim();
+      const items = Array.from(list.querySelectorAll('li'));
+      let shown = 0;
+      items.forEach(li => {
+        const lp = (li.getAttribute('data-provider') || '').trim();
+        const lpath = (li.getAttribute('data-path') || '').toLowerCase();
+        const lrec = (li.getAttribute('data-recursive') || '').trim();
+        let ok = true;
+        if (pv && lp !== pv) ok = false;
+        if (ok && q && !lpath.includes(q)) ok = false;
+        if (ok && rv && lrec !== rv) ok = false;
+        li.style.display = ok ? '' : 'none';
+        if (ok) shown += 1;
+      });
+      // If no items shown, insert a note
+      let note = list.querySelector('li._no_results');
+      if (!shown) {
+        if (!note) {
+          note = document.createElement('li');
+          note.className = '_no_results small';
+          note.textContent = 'No sources match filters.';
+          list.appendChild(note);
+        }
+      } else if (note) {
+        note.remove();
+      }
+    }
+
+    form.addEventListener('submit', (e) => { e.preventDefault(); applyFilters(); });
+    btnReset?.addEventListener('click', () => { selProv.value=''; inpPath.value=''; selRec.value=''; applyFilters(); });
+  })();
 </script>
 {% endblock %}
