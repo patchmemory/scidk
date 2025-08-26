@@ -195,7 +195,9 @@ class DevCLI:
         return None
 
     def get_ready_queue(self) -> List[Dict]:
-        """Get tasks with status: Ready, sorted by RICE descending and dor true"""
+        """Get tasks with status: Ready, sorted by RICE descending and dor true.
+        If none found, fall back to dev/tasks/index.md ready_queue ordering.
+        """
         ready_tasks: List[Dict] = []
         for md in self._iter_task_files():
             data = self.parse_frontmatter(md)
@@ -212,7 +214,53 @@ class DevCLI:
                 return float(x.get('rice', 0))
             except Exception:
                 return 0.0
-        return sorted(ready_tasks, key=rice_value, reverse=True)
+        sorted_ready = sorted(ready_tasks, key=rice_value, reverse=True)
+        if sorted_ready:
+            return sorted_ready
+        # Fallback: parse dev/tasks/index.md ready_queue
+        index_md = self.tasks_dir / 'index.md'
+        if not index_md.exists():
+            return []
+        try:
+            txt = index_md.read_text(encoding='utf-8')
+        except Exception:
+            return []
+        # Extract YAML code block fenced with ```yaml ... ```
+        m = re.search(r"```yaml\n(.*?)\n```", txt, re.DOTALL | re.IGNORECASE)
+        if not m:
+            return []
+        try:
+            block = yaml.safe_load(m.group(1)) or {}
+        except Exception:
+            return []
+        rq = block.get('ready_queue') if isinstance(block, dict) else None
+        if not isinstance(rq, list):
+            return []
+        # Build list, preserving order from index.md
+        fallback_tasks: List[Dict] = []
+        for item in rq:
+            if not isinstance(item, dict):
+                continue
+            tid = item.get('id')
+            if not tid:
+                continue
+            tdata: Dict = {'id': tid}
+            # try enrich from actual task file if exists
+            tf = self.find_task_file(tid)
+            if tf:
+                pdata = self.parse_frontmatter(tf) or {}
+                if isinstance(pdata, dict):
+                    tdata.update(pdata)
+                    tdata['file_path'] = tf
+            # rice from index has priority for ordering
+            if 'rice' not in tdata and 'rice' in item:
+                tdata['rice'] = item.get('rice')
+            else:
+                # still prefer index value when present
+                if 'rice' in item:
+                    tdata['rice'] = item.get('rice')
+            fallback_tasks.append(tdata)
+        return fallback_tasks
 
     def validate_dor(self, task_id: str) -> bool:
         """Validate Definition of Ready for a task"""
