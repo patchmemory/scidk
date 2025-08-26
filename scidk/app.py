@@ -665,6 +665,10 @@ def create_app():
                                     })
                     except Exception:
                         folders = []
+                    # Minimal provider metadata for background scans (local filesystem default)
+                    provider_id = 'local_fs'
+                    root_id = '/'
+                    root_label = None
                     scan = {
                         'id': scan_id,
                         'path': str(path),
@@ -681,17 +685,28 @@ def create_app():
                         'errors': [],
                         'committed': False,
                         'committed_at': None,
+                        'provider_id': provider_id,
+                        'root_id': root_id,
+                        'root_label': root_label,
+                        'scan_source': f"provider:{provider_id}",
                     }
                     app.extensions['scidk']['scans'][scan_id] = scan
                     # Telemetry
                     app.extensions['scidk'].setdefault('telemetry', {})['last_scan'] = {
                         'path': str(path), 'recursive': bool(recursive), 'scanned': int(processed),
-                        'started': started, 'ended': ended, 'duration_sec': ended - started, 'source': 'python'
+                        'started': started, 'ended': ended, 'duration_sec': ended - started, 'source': 'python',
+                        'provider_id': provider_id, 'root_id': root_id,
                     }
                     # Directory registry
                     dirs = app.extensions['scidk'].setdefault('directories', {})
-                    drec = dirs.setdefault(str(path), {'path': str(path), 'recursive': bool(recursive), 'scanned': 0, 'last_scanned': 0, 'scan_ids': [], 'source': 'python'})
-                    drec.update({'recursive': bool(recursive), 'scanned': int(processed), 'last_scanned': ended, 'source': 'python'})
+                    drec = dirs.setdefault(str(path), {
+                        'path': str(path), 'recursive': bool(recursive), 'scanned': 0, 'last_scanned': 0,
+                        'scan_ids': [], 'source': 'python', 'provider_id': provider_id, 'root_id': root_id, 'root_label': root_label,
+                    })
+                    drec.update({
+                        'recursive': bool(recursive), 'scanned': int(processed), 'last_scanned': ended, 'source': 'python',
+                        'provider_id': provider_id, 'root_id': root_id, 'root_label': root_label,
+                    })
                     drec.setdefault('scan_ids', []).append(scan_id)
                     # Complete task
                     task['ended'] = ended
