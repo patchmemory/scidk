@@ -30,6 +30,86 @@ class DevCLI:
         self.tasks_dir = self.dev_dir / "tasks"
         self.cycles_file = self.dev_dir / "cycles.md"
 
+    # ------------------------
+    # Frontmatter read/write
+    # ------------------------
+    def _detect_frontmatter_block(self, content: str) -> Tuple[Optional[int], Optional[int], bool]:
+        """Return (start_line, end_line, fenced) for existing frontmatter block.
+        - fenced: content starts with '---' and ends at the next '---' line (exclusive end index).
+        - unfenced: best-effort detection of top-of-file YAML-ish lines.
+        If not found, returns (None, None, False).
+        """
+        lines = content.splitlines()
+        if not lines:
+            return None, None, False
+        # Case 1: fenced
+        if lines[0].strip() == '---':
+            for i in range(1, len(lines)):
+                if lines[i].strip() == '---':
+                    return 0, i, True
+            # Unclosed fence: treat as no block
+        # Case 2: unfenced top-of-file YAML-ish
+        header_lines: List[str] = []
+        started = False
+        for idx, line in enumerate(lines):
+            if line.startswith('```') or line.startswith('~~~'):
+                break
+            if _is_yaml_kv_line(line) or (header_lines and line.startswith((' ', '\t', '-'))):
+                header_lines.append(line)
+                started = True
+            else:
+                if started:
+                    end = idx - 1
+                    if end >= 0 and header_lines:
+                        return 0, end, False
+                break
+        if header_lines:
+            return 0, len(header_lines) - 1, False
+        return None, None, False
+
+    def update_frontmatter(self, file_path: Path, updates: Dict, create_if_missing: bool = True) -> bool:
+        """Update or create a frontmatter block with provided key/values.
+        Preserves the rest of the file content. Returns True on success.
+        """
+        try:
+            content = file_path.read_text(encoding='utf-8')
+        except Exception:
+            return False
+        start, end, fenced = self._detect_frontmatter_block(content)
+        lines = content.splitlines()
+        existing: Dict = {}
+        if start is not None and end is not None:
+            fm_text = '\n'.join(lines[start + (1 if fenced else 0): end + 1]) if (end >= start) else ''
+            try:
+                existing = yaml.safe_load(fm_text) or {}
+                if not isinstance(existing, dict):
+                    existing = {}
+            except Exception:
+                existing = {}
+        # Merge
+        merged = dict(existing)
+        merged.update(updates or {})
+        # Stable YAML dump (no aliases, reasonable formatting)
+        new_yaml = yaml.safe_dump(merged, sort_keys=False).strip() + '\n'
+        if start is None or end is None:
+            if not create_if_missing:
+                return False
+            new_block = ['---', new_yaml.rstrip('\n'), '---', '']
+            new_content = '\n'.join(new_block + lines)
+        else:
+            if fenced:
+                new_block = ['---', new_yaml.rstrip('\n'), '---']
+                new_content = '\n'.join(lines[:start] + new_block + lines[end + 1:])
+            else:
+                # Replace lines[start:end]
+                new_block_lines = new_yaml.rstrip('\n').splitlines()
+                new_content = '\n'.join(lines[:start] + new_block_lines + lines[end + 1:])
+        try:
+            file_path.write_text(new_content, encoding='utf-8')
+            return True
+        except Exception:
+            return False
+
     def parse_frontmatter(self, file_path: Path) -> Dict:
         """Parse YAML frontmatter or top-of-file YAML from markdown files.
         Supports both fenced '---' blocks and unfenced YAML headers at top of file.
@@ -206,76 +286,83 @@ CURRENT REPO STATE:
         return context
 
     def start_task(self, task_id: str):
-        """Start working on a task: validate DoR, show context, and create/switch to a git branch."""
-        # Find task file first
+        """Start working on a task: validate DoR, create/switch branch, persist status, and print context."""
+        # 1) Locate task file
         task_file = self.find_task_file(task_id)
-        if not task_file:
-            print(f"❌ Task {task_id} not found in dev/tasks")
+        if not task_file or not task_file.exists():
+            print(f"❌ Task {task_id} not found")
             return
-
-        # Validate DoR (non-blocking: warn if fails)
-        try:
-            ok = self.validate_dor(task_id)
-            if not ok:
-                print("⚠️ Proceeding despite DoR issues. Consider updating the task frontmatter.")
-        except Exception as e:
-            print(f"⚠️ DoR validation error: {e}")
-
-        # Determine branch name
+        # 2) Validate DoR
+        if not self.validate_dor(task_id):
+            # validate_dor() already prints details
+            return
+        # 3) Determine branch name
         branch = f"task/{task_id.replace(':', '-')}"
-
-        # Try to interact with git, but be resilient if not a git repo
-        def run_git(cmd: str) -> Tuple[int, str]:
-            try:
-                res = subprocess.run(cmd, shell=True, executable="/bin/bash", capture_output=True, text=True)
-                out = (res.stdout or "") + (res.stderr or "")
-                return res.returncode, out.strip()
-            except Exception as ex:
-                return 1, str(ex)
-
-        code, _ = run_git("git rev-parse --is-inside-work-tree")
-        if code == 0:
-            # Check if branch exists
-            exists_code, _ = run_git(f"git rev-parse --verify {sh_quote(branch)}")
-            if exists_code == 0:
-                print(f"🔀 Switching to existing branch: {branch}")
-                run_git(f"git checkout {sh_quote(branch)}")
+        print(f"🌿 Target branch: {branch}")
+        # 4) Try to create/switch branch if this is a git repo
+        try:
+            # Check if inside a git repo
+            res = subprocess.run("git rev-parse --is-inside-work-tree", shell=True, capture_output=True, text=True)
+            if res.returncode == 0 and res.stdout.strip() == 'true':
+                # Check if branch exists
+                chk = subprocess.run(f"git rev-parse --verify {sh_quote(branch)}", shell=True)
+                if chk.returncode == 0:
+                    subprocess.run(f"git checkout {sh_quote(branch)}", shell=True)
+                    print(f"✅ Switched to existing branch {branch}")
+                else:
+                    subprocess.run(f"git checkout -b {sh_quote(branch)}", shell=True)
+                    print(f"✅ Created and switched to {branch}")
             else:
-                print(f"🌱 Creating new branch: {branch}")
-                run_git(f"git checkout -b {sh_quote(branch)}")
+                print("ℹ️ Not a git repository; skipping branch creation.")
+        except Exception as e:
+            print(f"⚠️ Git operation skipped due to error: {e}")
+        # 5) Persist status to frontmatter
+        ts = datetime.utcnow().isoformat(timespec='seconds') + 'Z'
+        ok = self.update_frontmatter(task_file, {
+            'status': 'In Progress',
+            'started_at': ts,
+            'branch': branch,
+        }, create_if_missing=True)
+        if ok:
+            print(f"📝 Updated task frontmatter: status=In Progress, started_at={ts}, branch={branch}")
         else:
-            print("ℹ️ Not a git repository or git unavailable — skipping branch creation.")
-
-        # Show task context
-        print("\n🧭 TASK CONTEXT")
-        print("=" * 40)
+            print("⚠️ Failed to update task frontmatter")
+        # 6) Show context
+        print("\n🧭 TASK CONTEXT\n" + "=" * 40)
         print(self.get_task_context(task_id))
 
-        # Helpful next steps
-        print("\n➡️ Suggested next steps:")
-        print("  1) Implement acceptance criteria in small commits")
-        print("  2) Run tests: pytest -q")
-        print("  3) Mark complete when DoD is met: python dev_cli.py complete " + task_id)
-
     def complete_task(self, task_id: str):
-        """Mark task as complete and validate DoD (lightweight)"""
+        """Mark task as complete: run tests, persist status, and show DoD checklist."""
         print(f"🎯 Completing task: {task_id}")
         # 1) Run tests
         print("🧪 Running tests (pytest -q)...")
+        tests_passed = False
         try:
-            res = subprocess.run("pytest -q", shell=True, executable="/bin/bash")
-            if res.returncode == 127:
-                # Fallback when pytest isn't on PATH (common in local envs)
-                print("pytest not found on PATH; retrying with 'python3 -m pytest -q'...")
-                res = subprocess.run("python3 -m pytest -q", shell=True, executable="/bin/bash")
-            if res.returncode == 0:
+            res = subprocess.run("pytest -q", shell=True)
+            tests_passed = (res.returncode == 0)
+            if tests_passed:
                 print("✅ Tests passing")
             else:
                 print(f"❌ Tests failed (exit {res.returncode}) — fix before completing.")
         except Exception as e:
             print(f"⚠️ Could not run tests: {e}")
-        # 2) Show DoD checklist
+        # 2) Persist status to frontmatter
         task_file = self.find_task_file(task_id)
+        if not task_file:
+            print("❌ Task file not found; cannot update status")
+        else:
+            ts = datetime.utcnow().isoformat(timespec='seconds') + 'Z'
+            updates = {
+                'status': 'Done',
+                'completed_at': ts,
+                'tests_passed': bool(tests_passed),
+            }
+            ok = self.update_frontmatter(task_file, updates, create_if_missing=True)
+            if ok:
+                print(f"📝 Updated task frontmatter: status=Done, completed_at={ts}, tests_passed={tests_passed}")
+            else:
+                print("⚠️ Failed to update task frontmatter")
+        # 3) Show DoD checklist
         task_data = self.parse_frontmatter(task_file) if task_file else {}
         dod = task_data.get('dod') if isinstance(task_data, dict) else None
         print("\n📋 DoD Checklist (from task frontmatter):")
@@ -333,13 +420,15 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: python dev_cli.py <command> [args]")
         print("\nCommands:")
-        print("  ready-queue      - Show ready tasks sorted by RICE")
-        print("  start [<task>]   - Start working on a task (defaults to top Ready)")
-        print("  context <task>   - Get AI context for a task")
-        print("  validate <task>  - Validate DoR for a task")
-        print("  complete <task>  - Run DoD checks and summarize next steps")
-        print("  cycle-status     - Show current cycle")
-        print("  next-cycle       - Propose next cycle")
+        print("  ready-queue            - Show ready tasks sorted by RICE")
+        print("  start [<task>]         - Start working on a task; persists status=In Progress")
+        print("  context <task>         - Get AI context for a task")
+        print("  validate <task>        - Validate DoR for a task")
+        print("  complete <task>        - Run tests and mark status=Done with timestamps")
+        print("  mark <task> <status>   - Manually set task status (adds timestamps for Done/In Progress)")
+        print("  backfill-status        - Add default status to tasks missing it (Ready/Backlog/Draft)")
+        print("  cycle-status           - Show current cycle")
+        print("  next-cycle             - Propose next cycle")
         return
 
     # Extract global flags (very light parser)
@@ -469,6 +558,48 @@ def main():
 
     elif command == "complete" and len(argv) > 2:
         cli.complete_task(argv[2])
+
+    elif command == "mark" and len(argv) > 3:
+        tid = argv[2]
+        status = ' '.join(argv[3:]).strip()
+        task_file = cli.find_task_file(tid)
+        if not task_file:
+            print(f"❌ Task {tid} not found")
+            return
+        updates = {'status': status}
+        now = datetime.utcnow().isoformat(timespec='seconds') + 'Z'
+        # convenience timestamps
+        if status.lower() in ('in progress', 'in-progress', 'started'):
+            updates['status'] = 'In Progress'
+            updates['started_at'] = now
+        elif status.lower() in ('done', 'complete', 'completed'):
+            updates['status'] = 'Done'
+            updates['completed_at'] = now
+        ok = cli.update_frontmatter(task_file, updates, create_if_missing=True)
+        if ok:
+            print(f"📝 Updated {tid}: {updates}")
+        else:
+            print("⚠️ Failed to update task frontmatter")
+
+    elif command == "backfill-status":
+        changed = 0
+        scanned = 0
+        for md in cli._iter_task_files():
+            scanned += 1
+            data = cli.parse_frontmatter(md) or {}
+            status = str(data.get('status', '')).strip()
+            if not status:
+                # Heuristics to set defaults
+                if str(data.get('dor', '')).strip().lower() in ('true', '1', 'yes', 'y'):
+                    new_status = 'Ready'
+                elif all(data.get(k) for k in ('id', 'owner', 'estimate', 'story', 'phase')):
+                    new_status = 'Backlog'
+                else:
+                    new_status = 'Draft'
+                if cli.update_frontmatter(md, {'status': new_status}, create_if_missing=True):
+                    changed += 1
+                    print(f"📝 Backfilled status={new_status} in {md}")
+        print(f"✅ Backfill complete: changed {changed} of {scanned} task files")
 
     else:
         print(f"Unknown command: {command}")
