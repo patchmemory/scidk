@@ -267,37 +267,56 @@
         const btn = provScanForm.querySelector('button[type="submit"]');
         if (btn) { btn.disabled = true; btn.textContent = 'Scanning…'; }
         provScanMsg.textContent = `Starting scan for ${path}…`;
-        // Add a local pseudo-task so status appears with other progress bars
-        const localId = 'provscan-' + Date.now();
-        const localTask = { id: localId, type: 'scan', status: 'running', path, processed: 0, total: null, progress: 0 };
-        try { (window.scidkLocalTasks||[]).push(localTask); } catch(_) { /* ignore */ }
-        fetchTasks(); // trigger re-render with local task
+        // If local or mounted providers, use background task API for consistent behavior (progress/cancel)
+        const isBgCapable = (provId === 'local_fs' || provId === 'mounted_fs');
+        let localTask = null;
         try {
-          const r = await fetch('/api/scan', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ provider_id: provId, root_id: rootId||'/', path, recursive }) });
-          const j = await r.json();
-          if (r.ok){
-            provScanMsg.textContent = `Scan complete: ${j.scan_id} — ${j.scanned} files (${j.duration_sec ? (Math.round(j.duration_sec*10)/10+'s') : ''})`;
-            // Mark local task completed
-            localTask.status = 'completed';
-            localTask.processed = j.scanned || 0;
-            localTask.total = j.scanned || localTask.processed;
-            localTask.progress = 1;
-            localTask.scan_id = j.scan_id;
+          if (isBgCapable){
+            const r = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ type: 'scan', path, recursive }) });
+            if (r.status === 202){
+              provScanMsg.textContent = 'Scan started in background. Watch progress above.';
+              // Kick polling so the new task appears
+              try { if (typeof startPolling === 'function') startPolling(); } catch(_) {}
+              fetchTasks();
+            } else {
+              const j = await r.json();
+              provScanMsg.textContent = 'Scan task error: ' + (j.error || r.status);
+            }
           } else {
-            provScanMsg.textContent = `Scan error: ${j.error||r.status}`;
-            localTask.status = 'error';
-            localTask.error = j.error || String(r.status);
-            localTask.progress = 1;
+            // For non-local providers, use synchronous provider scan API
+            // Add a local pseudo-task so status appears with other progress bars
+            const localId = 'provscan-' + Date.now();
+            localTask = { id: localId, type: 'scan', status: 'running', path, processed: 0, total: null, progress: 0, local: true };
+            try { (window.scidkLocalTasks||[]).push(localTask); } catch(_) { /* ignore */ }
+            fetchTasks(); // trigger re-render with local task
+            const r = await fetch('/api/scan', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ provider_id: provId, root_id: rootId||'/', path, recursive }) });
+            const j = await r.json();
+            if (r.ok){
+              provScanMsg.textContent = `Scan complete: ${j.scan_id} — ${j.scanned} files (${j.duration_sec ? (Math.round(j.duration_sec*10)/10+'s') : ''})`;
+              // Mark local task completed
+              localTask.status = 'completed';
+              localTask.processed = j.scanned || 0;
+              localTask.total = j.scanned || localTask.processed;
+              localTask.progress = 1;
+              localTask.scan_id = j.scan_id;
+            } else {
+              provScanMsg.textContent = `Scan error: ${j.error||r.status}`;
+              localTask.status = 'error';
+              localTask.error = j.error || String(r.status);
+              localTask.progress = 1;
+            }
           }
         } catch(err){
           provScanMsg.textContent = 'Scan error: ' + err;
-          localTask.status = 'error';
-          localTask.error = (err && err.message) ? err.message : String(err);
-          localTask.progress = 1;
+          if (localTask){
+            localTask.status = 'error';
+            localTask.error = (err && err.message) ? err.message : String(err);
+            localTask.progress = 1;
+          }
         }
         finally {
           if (btn) { btn.disabled = false; btn.textContent = 'Scan'; }
-          fetchTasks(); // refresh tasks view to reflect final status
+          fetchTasks(); // refresh tasks view to reflect status
         }
       });
     }
@@ -334,7 +353,8 @@
       tasksDiv.innerHTML = tasks.map(t => {
         const total = (t.total===null||t.total===undefined) ? '?' : (t.total||0);
         const pct = fmtPct(t.progress);
-        const bar = `<div style=\"width:100%; background:#eee; height:10px; border-radius:4px; overflow:hidden\"><div style=\"width:${pct}%; height:10px; background:${t.status==='completed'?'#4caf50':(t.status==='error'?'#e53935':'#2196f3')}\"></div></div>`;
+        const color = (t.status==='completed') ? '#4caf50' : (t.status==='error' ? '#e53935' : (t.status==='canceled' ? '#9e9e9e' : (t.status==='canceling' ? '#ff9800' : '#2196f3')));
+        const bar = `<div style=\"width:100%; background:#eee; height:10px; border-radius:4px; overflow:hidden\"><div style=\"width:${pct}%; height:10px; background:${color}\"></div></div>`;
         let extra = '';
         if (t.type === 'commit'){
           const attempted = t.neo4j_attempted ? 'yes' : 'no';
@@ -345,25 +365,23 @@
           const err = t.neo4j_error ? (` — error: ${t.neo4j_error}`) : '';
           extra = `<div class=\"small\">Neo4j: attempted=${attempted}${written!==''?(' — prepared='+written):''}${dbv!==''?(' — verify='+dbv+' (files:'+dbf+', folders:'+dbfo+')'):''}${err}</div>`;
         }
-        const cancelBtn = (t.status==='running') ? ` <button class=\"btn btn-sm btn-outline-danger\" data-cancel=\"${t.id}\">Cancel</button>` : '';
-        const info = `<div class=\"small\">${t.type} ${t.status} — ${t.path || ''} — ${t.processed||0}/${total} (${pct}%) ${t.error?(' — error: '+t.error):''} ${t.scan_id?(' — <a href=\"/datasets?scan_id='+t.scan_id+'\">open</a>'):''} ${cancelBtn}</div>`;
+        const cancelBtn = (t.status==='running' && t.id && !t.local) ? (` <button class=\"btn btn-sm btn-outline-danger task-cancel\" data-task=\"${t.id}\">Cancel</button>`) : '';
+        const displayStatus = (t.status==='canceled' || t.status==='canceling') ? 'cancelled' : t.status;
+        const info = `<div class=\"small\">${t.type} ${displayStatus} — ${t.path || ''} — ${t.processed||0}/${total} (${pct}%) ${t.error?(' — error: '+t.error):''} ${t.scan_id?(' — <a href=\"/datasets?scan_id='+t.scan_id+'\">open</a>'):''} ${cancelBtn}</div>`;
         return `<div style=\"margin:.25rem 0\">${bar}${info}${extra}</div>`;
       }).join('');
-      // Attach cancel handlers
-      tasksDiv.querySelectorAll('button[data-cancel]')?.forEach(btn => {
+      // attach cancel handlers
+      tasksDiv.querySelectorAll('.task-cancel')?.forEach(btn => {
         btn.addEventListener('click', async () => {
-          const id = btn.getAttribute('data-cancel');
+          const tid = btn.getAttribute('data-task');
+          if (!tid) return;
+          // optimistic UI: disable and show canceling
+          btn.disabled = true; btn.textContent = 'Canceling…';
           try {
-            const r = await fetch('/api/tasks/' + encodeURIComponent(id) + '/cancel', { method: 'POST' });
-            if (!r.ok) {
-              try { const j = await r.json(); alert('Cancel failed: ' + (j.error || r.status)); }
-              catch(_) { alert('Cancel failed: ' + r.status); }
-            }
-          } catch (e) {
-            alert('Cancel failed: ' + e);
-          } finally {
-            try { fetchTasks(); } catch(_) { /* ignore */ }
-          }
+            const r = await fetch('/api/tasks/' + encodeURIComponent(tid) + '/cancel', { method: 'POST' });
+            if (!r.ok){ try { const j = await r.json(); alert('Cancel failed: ' + (j.error || r.status)); } catch(_) { alert('Cancel failed: ' + r.status); } }
+          } catch(err){ alert('Cancel failed: ' + err); }
+          fetchTasks();
         });
       });
     }
