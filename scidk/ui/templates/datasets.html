@@ -10,7 +10,7 @@
       <select id="prov-select" class="form-select form-select-sm" style="min-width:220px"></select>
     </div>
     <div class="col-auto">
-      <label for="root-select" id="root-label" class="form-label small" style="margin-bottom:.25rem">Root</label>
+      <label for="root-select" class="form-label small" style="margin-bottom:.25rem">Root</label>
       <select id="root-select" class="form-select form-select-sm" style="min-width:240px"></select>
     </div>
     <div class="col-auto">
@@ -137,7 +137,6 @@
     // Provider-aware browser
     const provSelect = document.getElementById('prov-select');
     const rootSelect = document.getElementById('root-select');
-    const rootLabel = document.getElementById('root-label');
     const provGoBtn = document.getElementById('prov-go');
     const provPathInput = document.getElementById('prov-path');
     const provList = document.getElementById('prov-list');
@@ -175,66 +174,47 @@
         rootSelect.innerHTML = roots.map(rt => `<option value="${rt.id}">${rt.name||rt.path||rt.id}</option>`).join('');
         currentRoot = roots[0]?.id || '/';
         rootSelect.value = currentRoot;
-        // Adjust labels/placeholders for rclone vs others
-        if (providerId === 'rclone'){
-          if (rootLabel) rootLabel.textContent = 'Remote';
-          if (provPathInput){ provPathInput.placeholder = 'folder/sub'; provPathInput.value = ''; }
-          currentPath = currentRoot; // full path always composed remote+rel
-        } else {
-          if (rootLabel) rootLabel.textContent = 'Root';
-          if (provPathInput){ provPathInput.placeholder = '/path/within/root'; provPathInput.value = currentRoot; }
-          currentPath = currentRoot;
-        }
+        // Reset current path and input to root
+        currentPath = currentRoot;
+        if (provPathInput) provPathInput.value = currentPath;
       } catch(e){ rootSelect.innerHTML = '<option>(failed)</option>'; }
     }
 
-    function joinRemotePath(remoteId, rel){
-      rel = (rel||'').trim();
-      // If user pasted a full remote prefix, strip it
-      if (rel.indexOf(':') !== -1 && rel.split(':')[0] + ':' === remoteId){
-        rel = rel.split(':').slice(1).join(':');
-      }
-      rel = rel.replace(/^\/+/, '');
-      if (!rel) return remoteId;
-      return remoteId.endsWith(':') ? (remoteId + rel) : (remoteId.replace(/\/$/,'') + '/' + rel);
+    function formatErrorFromJson(j, fallback){
+      if (!j) return fallback;
+      const code = j.code ? ` (${j.code})` : '';
+      const hint = j.hint ? ` — ${j.hint}` : '';
+      const msg = j.error || j.message || fallback;
+      return String(msg) + code + hint;
     }
     async function browse(providerId, rootId, path){
-      let targetPath = path || rootId || '/';
-      if (providerId === 'rclone'){
-        // When rclone, keep provPathInput as relative; compose full target for API
-        const rel = (provPathInput && provPathInput.value) ? provPathInput.value : (path && path.startsWith(rootId) ? path.slice(rootId.length) : '');
-        targetPath = joinRemotePath(rootId, rel||'');
-      }
-      const qs = new URLSearchParams({ provider_id: providerId||'local_fs', root_id: rootId||'/', path: targetPath });
+      const qs = new URLSearchParams({ provider_id: providerId||'local_fs', root_id: rootId||'/', path: path||rootId||'/' });
       try {
         const r = await fetch('/api/browse?' + qs.toString());
-        const j = await r.json();
-        // no breadcrumb API; show current path (full) and remote when rclone
-        const displayPath = targetPath;
-        provCrumb.innerHTML = providerId === 'rclone'
-          ? `<span class="small">Remote: <code>${rootId}</code> — Path: <code>${(provPathInput&&provPathInput.value)||'' || '(root)'}</code></span>`
-          : `<span class="small">Path: <code>${displayPath}</code></span>`;
-        // Sync inputs
-        currentPath = displayPath;
-        if (provPathInput){
-          if (providerId === 'rclone'){
-            // keep relative in the input
-            const rel = displayPath.startsWith(rootId) ? displayPath.slice(rootId.length) : '';
-            provPathInput.value = rel;
-          } else {
-            provPathInput.value = currentPath;
-          }
+        let j = null;
+        try { j = await r.json(); } catch(_) { /* keep null */ }
+        if (!r.ok){
+          const msg = formatErrorFromJson(j, `Browse failed: ${r.status}`);
+          if (window.toast) window.toast(msg, 'error');
+          provList.innerHTML = '<tr><td colspan="5" class="small">Browse failed.</td></tr>';
+          return;
         }
+        // no breadcrumb API; show current path and root only
+        const displayPath = path || rootId || '/';
+        provCrumb.innerHTML = `<span class=\"small\">Path: <code>${displayPath}</code></span>`;
+        // Sync input to actual path we browsed
+        currentPath = displayPath;
+        if (provPathInput) provPathInput.value = currentPath;
         const rows = (j.entries||[]).map(e => {
           const type = e.type === 'folder' ? 'Folder' : 'File';
           const size = e.type === 'folder' ? '' : fmtBytes(e.size||0);
           const mod = fmtTime(e.mtime||0);
           const prov = providerId;
-          return `<tr class="prov-item" data-id="${e.id}" data-type="${e.type}"><td>${e.name}</td><td>${type}</td><td>${size}</td><td>${mod}</td><td><span class="badge">${prov}</span></td></tr>`;
+          return `<tr class=\"prov-item\" data-id=\"${e.id}\" data-type=\"${e.type}\"><td>${e.name}</td><td>${type}</td><td>${size}</td><td>${mod}</td><td><span class=\"badge\">${prov}</span></td></tr>`;
         }).join('');
-        provList.innerHTML = rows || '<tr><td colspan="5" class="small">Empty folder.</td></tr>';
+        provList.innerHTML = rows || '<tr><td colspan=\"5\" class=\"small\">Empty folder.</td></tr>';
         attachProvHandlers();
-      } catch(e){ provList.innerHTML = '<tr><td colspan="5" class="small">Browse failed.</td></tr>'; }
+      } catch(e){ provList.innerHTML = '<tr><td colspan="5" class="small">Browse failed.</td></tr>'; if (window.toast) window.toast('Browse failed: ' + (e?.message||String(e)), 'error'); }
     }
 
     function attachProvHandlers(){
@@ -257,16 +237,7 @@
       provSelect.addEventListener('change', async () => { currentProv = provSelect.value; await loadRoots(currentProv); provList.innerHTML = ''; provCrumb.innerHTML=''; });
     }
     if (rootSelect){
-      rootSelect.addEventListener('change', () => { 
-        currentRoot = rootSelect.value; 
-        if (currentProv === 'rclone'){
-          // keep relative empty when switching remotes
-          if (provPathInput) provPathInput.value = '';
-          currentPath = currentRoot;
-        } else {
-          currentPath = currentRoot; if (provPathInput) provPathInput.value = currentPath;
-        }
-      });
+      rootSelect.addEventListener('change', () => { currentRoot = rootSelect.value; currentPath = currentRoot; if (provPathInput) provPathInput.value = currentPath; });
     }
     if (btnROC && rocFrame){
       btnROC.addEventListener('click', () => {
@@ -290,14 +261,7 @@
       });
     }
     if (provGoBtn){
-      const doGo = () => { 
-        currentProv = provSelect.value; 
-        currentRoot = rootSelect.value; 
-        const raw = (provPathInput && provPathInput.value) ? provPathInput.value : '';
-        const target = currentProv === 'rclone' ? joinRemotePath(currentRoot, raw) : (raw || currentRoot);
-        currentPath = target || currentRoot; 
-        browse(currentProv, currentRoot, currentPath); 
-      };
+      const doGo = () => { currentProv = provSelect.value; currentRoot = rootSelect.value; const p = (provPathInput && provPathInput.value) ? provPathInput.value : currentRoot; currentPath = p || currentRoot; browse(currentProv, currentRoot, currentPath); };
       provGoBtn.addEventListener('click', (e) => { e.preventDefault(); doGo(); });
       if (provPathInput){ provPathInput.addEventListener('keydown', (e) => { if (e.key === 'Enter'){ e.preventDefault(); doGo(); } }); }
     }
@@ -307,8 +271,8 @@
         // Derive values from UI at submit-time to avoid race with async init
         const provId = (provSelect && provSelect.value) || currentProv || 'local_fs';
         const rootId = (rootSelect && rootSelect.value) || currentRoot || '/';
-        const inputRel = (provPathInput && provPathInput.value && provPathInput.value.trim()) || '';
-        const path = (provId === 'rclone') ? joinRemotePath(rootId, inputRel) : (inputRel || currentPath || rootId || '/');
+        const inputPath = (provPathInput && provPathInput.value && provPathInput.value.trim()) || '';
+        const path = inputPath || currentPath || rootId || '/';
         currentProv = provId;
         currentRoot = rootId;
         currentPath = path;
@@ -329,8 +293,10 @@
               try { if (typeof startPolling === 'function') startPolling(); } catch(_) {}
               fetchTasks();
             } else {
-              const j = await r.json();
-              provScanMsg.textContent = 'Scan task error: ' + (j.error || r.status);
+              let j = null; try { j = await r.json(); } catch(_) {}
+              const msg = formatErrorFromJson(j, 'Scan task error: ' + r.status);
+              provScanMsg.textContent = msg;
+              if (window.toast) window.toast(msg, 'error');
             }
           } else {
             // For non-local providers, use synchronous provider scan API
@@ -340,19 +306,21 @@
             try { (window.scidkLocalTasks||[]).push(localTask); } catch(_) { /* ignore */ }
             fetchTasks(); // trigger re-render with local task
             const r = await fetch('/api/scan', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ provider_id: provId, root_id: rootId||'/', path, recursive }) });
-            const j = await r.json();
+            let j = null; try { j = await r.json(); } catch(_) {}
             if (r.ok){
-              provScanMsg.textContent = `Scan complete: ${j.scan_id} — ${j.scanned} files (${j.duration_sec ? (Math.round(j.duration_sec*10)/10+'s') : ''})`;
+              provScanMsg.textContent = `Scan complete: ${j?.scan_id} — ${j?.scanned||0} files (${j?.duration_sec ? (Math.round(j.duration_sec*10)/10+'s') : ''})`;
               // Mark local task completed
               localTask.status = 'completed';
-              localTask.processed = j.scanned || 0;
-              localTask.total = j.scanned || localTask.processed;
+              localTask.processed = (j && j.scanned) || 0;
+              localTask.total = (j && j.scanned) || localTask.processed;
               localTask.progress = 1;
-              localTask.scan_id = j.scan_id;
+              localTask.scan_id = j && j.scan_id;
             } else {
-              provScanMsg.textContent = `Scan error: ${j.error||r.status}`;
+              const msg = formatErrorFromJson(j, `Scan error: ${r.status}`);
+              provScanMsg.textContent = msg;
+              if (window.toast) window.toast(msg, 'error');
               localTask.status = 'error';
-              localTask.error = j.error || String(r.status);
+              localTask.error = (j && (j.error||j.message)) || String(r.status);
               localTask.progress = 1;
             }
           }
@@ -429,8 +397,11 @@
           btn.disabled = true; btn.textContent = 'Canceling…';
           try {
             const r = await fetch('/api/tasks/' + encodeURIComponent(tid) + '/cancel', { method: 'POST' });
-            if (!r.ok){ try { const j = await r.json(); alert('Cancel failed: ' + (j.error || r.status)); } catch(_) { alert('Cancel failed: ' + r.status); } }
-          } catch(err){ alert('Cancel failed: ' + err); }
+            if (!r.ok){ let j=null; try { j = await r.json(); } catch(_) {}
+              const msg = formatErrorFromJson(j, 'Cancel failed: ' + r.status);
+              if (window.toast) window.toast(msg, 'error');
+            }
+          } catch(err){ if (window.toast) window.toast('Cancel failed: ' + (err?.message||String(err)), 'error'); }
           fetchTasks();
         });
       });
@@ -492,8 +463,11 @@
         try {
           const r = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ type: 'scan', path, recursive }) });
           if (r.status === 202){ startPolling(); fetchTasks(); }
-          else { const j = await r.json(); alert('Task error: ' + (j.error || r.status)); }
-        } catch(err){ alert('Task error: ' + err); }
+          else { let j=null; try { j = await r.json(); } catch(_) {}
+            const msg = formatErrorFromJson(j, 'Task error: ' + r.status);
+            if (window.toast) window.toast(msg, 'error');
+          }
+        } catch(err){ if (window.toast) window.toast('Task error: ' + (err?.message||String(err)), 'error'); }
       });
       // initial render
       startPolling(); fetchTasks(); loadScansIntoDropdown(); fetchNeoStatus();
@@ -525,11 +499,12 @@
               // Start background commit task to show progress in the Tasks panel
               const r = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ type: 'commit', scan_id: id }) });
               if (r.status === 202){
-                alert('Commit started in background. Watch progress above.');
+                if (window.toast) window.toast('Commit started in background. Watch progress above.', 'success');
                 startPolling(); fetchTasks();
               } else {
-                const j = await r.json();
-                alert('Commit task error: ' + (j.error || r.status));
+                let j=null; try { j = await r.json(); } catch(_) {}
+                const msg = formatErrorFromJson(j, 'Commit task error: ' + r.status);
+                if (window.toast) window.toast(msg, 'error');
               }
             } else if (action === 'delete'){
               const r = await fetch('/api/scans/' + encodeURIComponent(id), { method: 'DELETE' });
