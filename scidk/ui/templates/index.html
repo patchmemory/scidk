@@ -19,9 +19,30 @@
   {% if directories and directories|length > 0 %}
     <details style="margin-top:.5rem;">
       <summary class="small">Scanned Sources</summary>
-      <ul>
+      <div id="scanned-sources-filters" class="small" style="margin:.5rem 0;">
+        <form id="source-filter-form" class="inline">
+          <label>Provider:
+            <select id="filter-provider">
+              <option value="">Any</option>
+            </select>
+          </label>
+          <label style="margin-left:.5rem;">Path contains:
+            <input type="text" id="filter-path" placeholder="substring" />
+          </label>
+          <label style="margin-left:.5rem;">Recursive:
+            <select id="filter-recursive">
+              <option value="">Any</option>
+              <option value="true">Recursive only</option>
+              <option value="false">Non-recursive only</option>
+            </select>
+          </label>
+          <button type="submit" style="margin-left:.5rem;">Apply</button>
+          <button type="button" id="filter-reset" style="margin-left:.25rem;">Reset</button>
+        </form>
+      </div>
+      <ul id="scanned-sources-list">
         {% for d in directories %}
-          <li>
+          <li data-provider="{{ d.provider_id or '' }}" data-path="{{ d.path }}" data-recursive="{{ 'true' if d.recursive else 'false' }}">
             {% if d.provider_id %}<span class="badge" title="Provider">{{ d.provider_id }}</span> {% endif %}
             <code>{{ d.path }}</code> — files: {{ d.scanned }}, recursive: {{ d.recursive }}
             {% if d.source %} — <span class="badge" title="Scanner">{{ d.source }}</span>{% endif %}
@@ -147,6 +168,53 @@
           if (window.toast) { toast('Search error: ' + err, 'error'); } else { alert('Search error: ' + err); }
         }
       });
+    }
+
+    // Scanned Sources Filters
+    const list = document.getElementById('scanned-sources-list');
+    const form = document.getElementById('source-filter-form');
+    const selProv = document.getElementById('filter-provider');
+    const inpPath = document.getElementById('filter-path');
+    const selRec = document.getElementById('filter-recursive');
+    const btnReset = document.getElementById('filter-reset');
+    if (list && form && selProv && inpPath && selRec) {
+      // Populate provider options from existing list items (unique values)
+      const items = Array.from(list.querySelectorAll('li'));
+      const providers = Array.from(new Set(items.map(li => li.getAttribute('data-provider') || '').filter(v => v)));
+      providers.sort();
+      for (const p of providers) {
+        const opt = document.createElement('option');
+        opt.value = p;
+        opt.textContent = p;
+        selProv.appendChild(opt);
+      }
+      const apply = () => {
+        const p = selProv.value;
+        const sub = (inpPath.value || '').toLowerCase();
+        const r = selRec.value; // '' | 'true' | 'false'
+        items.forEach(li => {
+          const lp = (li.getAttribute('data-provider') || '');
+          const lpath = (li.getAttribute('data-path') || '').toLowerCase();
+          const lr = (li.getAttribute('data-recursive') || '');
+          let ok = true;
+          if (p && lp !== p) ok = false;
+          if (sub && !lpath.includes(sub)) ok = false;
+          if (r && lr !== r) ok = false;
+          li.style.display = ok ? '' : 'none';
+        });
+      };
+      form.addEventListener('submit', (e) => { e.preventDefault(); apply(); });
+      selProv.addEventListener('change', apply);
+      selRec.addEventListener('change', apply);
+      inpPath.addEventListener('input', (e) => { if (!inpPath.value) apply(); });
+      if (btnReset) {
+        btnReset.addEventListener('click', () => {
+          selProv.value = '';
+          inpPath.value = '';
+          selRec.value = '';
+          apply();
+        });
+      }
     }
   });
 </script>
