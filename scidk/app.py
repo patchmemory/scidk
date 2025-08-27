@@ -223,57 +223,64 @@ def create_app():
         result['attempted'] = True
         try:
             from neo4j import GraphDatabase  # type: ignore
-            driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
-            with driver.session(database=database) as sess:
-                cypher = (
-                    "WITH $rows AS rows, $folders AS folders, $scan_id AS scan_id, $scan_path AS scan_path, $scan_started AS scan_started, $scan_ended AS scan_ended "
-                    "MERGE (s:Scan {id: scan_id}) SET s.path = scan_path, s.started = scan_started, s.ended = scan_ended "
-                    "WITH rows, folders, s "
-                    "CALL { WITH rows, s UNWIND rows AS r "
-                    "  MERGE (f:File {checksum: r.checksum}) "
-                    "    SET f.path = r.path, f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, "
-                    "        f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type "
-                    "  MERGE (f)-[:SCANNED_IN]->(s) "
-                    "  FOREACH (_ IN CASE WHEN coalesce(r.folder,'') <> '' THEN [1] ELSE [] END | "
-                    "    MERGE (fo:Folder {path: r.folder}) SET fo.name = r.folder_name "
-                    "    MERGE (fo)-[:CONTAINS]->(f) "
-                    "    MERGE (fo)-[:SCANNED_IN]->(s) "
-                    "    FOREACH (__ IN CASE WHEN coalesce(r.folder_parent,'') <> '' AND r.parent_in_scan THEN [1] ELSE [] END | "
-                    "      MERGE (fop:Folder {path: r.folder_parent}) SET fop.name = r.folder_parent_name "
-                    "      MERGE (fop)-[:CONTAINS]->(fo) ) "
-                    "  ) RETURN 0 AS _files_done } "
-                    "CALL { WITH folders, s UNWIND folders AS r2 "
-                    "  MERGE (fo:Folder {path: r2.path}) SET fo.name = r2.name "
-                    "  MERGE (fo)-[:SCANNED_IN]->(s) "
-                    "  FOREACH (__ IN CASE WHEN coalesce(r2.parent,'') <> '' THEN [1] ELSE [] END | "
-                    "    MERGE (fop:Folder {path: r2.parent}) SET fop.name = r2.parent_name "
-                    "    MERGE (fop)-[:CONTAINS]->(fo) ) "
-                    "  RETURN 0 AS _folders_done } "
-                    "RETURN s.id AS scan_id"
-                )
-                res = sess.run(cypher, rows=rows, folders=folder_rows, scan_id=scan.get('id'), scan_path=scan.get('path'), scan_started=scan.get('started'), scan_ended=scan.get('ended'))
-                _ = list(res)
-                result['written_files'] = len(rows)
-                result['written_folders'] = len(folder_rows)
-                # Post-commit verification: confirm that Scan exists and at least one SCANNED_IN relationship was created
-                verify_q = (
-                    "OPTIONAL MATCH (s:Scan {id: $scan_id}) "
-                    "WITH s "
-                    "OPTIONAL MATCH (s)<-[:SCANNED_IN]-(f:File) "
-                    "WITH s, count(DISTINCT f) AS files_cnt "
-                    "OPTIONAL MATCH (s)<-[:SCANNED_IN]-(fo:Folder) "
-                    "RETURN coalesce(s IS NOT NULL, false) AS scan_exists, files_cnt AS files_cnt, count(DISTINCT fo) AS folders_cnt"
-                )
-                vrec = sess.run(verify_q, scan_id=scan.get('id')).single()
-                if vrec:
-                    scan_exists = bool(vrec.get('scan_exists'))
-                    files_cnt = int(vrec.get('files_cnt') or 0)
-                    folders_cnt = int(vrec.get('folders_cnt') or 0)
-                    result['db_scan_exists'] = scan_exists
-                    result['db_files'] = files_cnt
-                    result['db_folders'] = folders_cnt
-                    result['db_verified'] = bool(scan_exists and (files_cnt > 0 or folders_cnt > 0))
-            driver.close()
+            driver = None
+            try:
+                driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
+                with driver.session(database=database) as sess:
+                    cypher = (
+                        "WITH $rows AS rows, $folders AS folders, $scan_id AS scan_id, $scan_path AS scan_path, $scan_started AS scan_started, $scan_ended AS scan_ended "
+                        "MERGE (s:Scan {id: scan_id}) SET s.path = scan_path, s.started = scan_started, s.ended = scan_ended "
+                        "WITH rows, folders, s "
+                        "CALL { WITH rows, s UNWIND rows AS r "
+                        "  MERGE (f:File {checksum: r.checksum}) "
+                        "    SET f.path = r.path, f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, "
+                        "        f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type "
+                        "  MERGE (f)-[:SCANNED_IN]->(s) "
+                        "  FOREACH (_ IN CASE WHEN coalesce(r.folder,'') <> '' THEN [1] ELSE [] END | "
+                        "    MERGE (fo:Folder {path: r.folder}) SET fo.name = r.folder_name "
+                        "    MERGE (fo)-[:CONTAINS]->(f) "
+                        "    MERGE (fo)-[:SCANNED_IN]->(s) "
+                        "    FOREACH (__ IN CASE WHEN coalesce(r.folder_parent,'') <> '' AND r.parent_in_scan THEN [1] ELSE [] END | "
+                        "      MERGE (fop:Folder {path: r.folder_parent}) SET fop.name = r.folder_parent_name "
+                        "      MERGE (fop)-[:CONTAINS]->(fo) ) "
+                        "  ) RETURN 0 AS _files_done } "
+                        "CALL { WITH folders, s UNWIND folders AS r2 "
+                        "  MERGE (fo:Folder {path: r2.path}) SET fo.name = r2.name "
+                        "  MERGE (fo)-[:SCANNED_IN]->(s) "
+                        "  FOREACH (__ IN CASE WHEN coalesce(r2.parent,'') <> '' THEN [1] ELSE [] END | "
+                        "    MERGE (fop:Folder {path: r2.parent}) SET fop.name = r2.parent_name "
+                        "    MERGE (fop)-[:CONTAINS]->(fo) ) "
+                        "  RETURN 0 AS _folders_done } "
+                        "RETURN s.id AS scan_id"
+                    )
+                    res = sess.run(cypher, rows=rows, folders=folder_rows, scan_id=scan.get('id'), scan_path=scan.get('path'), scan_started=scan.get('started'), scan_ended=scan.get('ended'))
+                    _ = list(res)
+                    result['written_files'] = len(rows)
+                    result['written_folders'] = len(folder_rows)
+                    # Post-commit verification: confirm that Scan exists and at least one SCANNED_IN relationship was created
+                    verify_q = (
+                        "OPTIONAL MATCH (s:Scan {id: $scan_id}) "
+                        "WITH s "
+                        "OPTIONAL MATCH (s)<-[:SCANNED_IN]-(f:File) "
+                        "WITH s, count(DISTINCT f) AS files_cnt "
+                        "OPTIONAL MATCH (s)<-[:SCANNED_IN]-(fo:Folder) "
+                        "RETURN coalesce(s IS NOT NULL, false) AS scan_exists, files_cnt AS files_cnt, count(DISTINCT fo) AS folders_cnt"
+                    )
+                    vrec = sess.run(verify_q, scan_id=scan.get('id')).single()
+                    if vrec:
+                        scan_exists = bool(vrec.get('scan_exists'))
+                        files_cnt = int(vrec.get('files_cnt') or 0)
+                        folders_cnt = int(vrec.get('folders_cnt') or 0)
+                        result['db_scan_exists'] = scan_exists
+                        result['db_files'] = files_cnt
+                        result['db_folders'] = folders_cnt
+                        result['db_verified'] = bool(scan_exists and (files_cnt > 0 or folders_cnt > 0))
+            finally:
+                try:
+                    if driver is not None:
+                        driver.close()
+                except Exception:
+                    pass
         except Exception as e:
             msg = str(e)
             result['error'] = msg
@@ -1349,19 +1356,26 @@ def create_app():
         except Exception:
             return jsonify({"error": "neo4j driver not installed"}), 501
         try:
-            driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
-            with driver.session(database=database) as sess:
-                # Node label counts
-                q_nodes = "MATCH (n) WITH head(labels(n)) AS l, count(*) AS c RETURN l AS label, c ORDER BY c DESC"
-                nodes = [dict(record) for record in sess.run(q_nodes)]
-                # Unique triples counts
-                q_edges = (
-                    "MATCH (s)-[r]->(t) "
-                    "WITH head(labels(s)) AS sl, type(r) AS rt, head(labels(t)) AS tl, count(*) AS c "
-                    "RETURN sl AS start_label, rt AS rel_type, tl AS end_label, c ORDER BY c DESC"
-                )
-                edges = [dict(record) for record in sess.run(q_edges)]
-            driver.close()
+            driver = None
+            try:
+                driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
+                with driver.session(database=database) as sess:
+                    # Node label counts
+                    q_nodes = "MATCH (n) WITH head(labels(n)) AS l, count(*) AS c RETURN l AS label, c ORDER BY c DESC"
+                    nodes = [dict(record) for record in sess.run(q_nodes)]
+                    # Unique triples counts
+                    q_edges = (
+                        "MATCH (s)-[r]->(t) "
+                        "WITH head(labels(s)) AS sl, type(r) AS rt, head(labels(t)) AS tl, count(*) AS c "
+                        "RETURN sl AS start_label, rt AS rel_type, tl AS end_label, c ORDER BY c DESC"
+                    )
+                    edges = [dict(record) for record in sess.run(q_edges)]
+            finally:
+                try:
+                    if driver is not None:
+                        driver.close()
+                except Exception:
+                    pass
             return jsonify({"nodes": nodes, "edges": edges, "truncated": False}), 200
         except Exception as e:
             return jsonify({"error": f"neo4j query failed: {str(e)}"}), 502
@@ -1377,25 +1391,32 @@ def create_app():
         except Exception:
             return jsonify({"error": "neo4j driver not installed"}), 501
         try:
-            driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
-            with driver.session(database=database) as sess:
-                # Use apoc.meta.data() to derive nodes and edges
-                # Relationship triples aggregation
-                q_apoc = (
-                    "CALL apoc.meta.data() YIELD label, other, elementType, type, count "
-                    "WITH label, other, elementType, type, count "
-                    "WHERE elementType = 'relationship' "
-                    "RETURN label AS start_label, type AS rel_type, other AS end_label, count ORDER BY count DESC"
-                )
-                edges = [dict(record) for record in sess.run(q_apoc)]
-                # Node label counts via apoc (fallback to Cypher if needed)
-                q_nodes = "CALL apoc.meta.stats() YIELD labels RETURN [k IN keys(labels) | {label:k, count: labels[k]}] AS pairs"
-                rec = sess.run(q_nodes).single()
-                nodes = []
-                if rec and 'pairs' in rec:
-                    for p in rec['pairs']:
-                        nodes.append({'label': p['label'], 'count': p['count']})
-            driver.close()
+            driver = None
+            try:
+                driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
+                with driver.session(database=database) as sess:
+                    # Use apoc.meta.data() to derive nodes and edges
+                    # Relationship triples aggregation
+                    q_apoc = (
+                        "CALL apoc.meta.data() YIELD label, other, elementType, type, count "
+                        "WITH label, other, elementType, type, count "
+                        "WHERE elementType = 'relationship' "
+                        "RETURN label AS start_label, type AS rel_type, other AS end_label, count ORDER BY count DESC"
+                    )
+                    edges = [dict(record) for record in sess.run(q_apoc)]
+                    # Node label counts via apoc (fallback to Cypher if needed)
+                    q_nodes = "CALL apoc.meta.stats() YIELD labels RETURN [k IN keys(labels) | {label:k, count: labels[k]}] AS pairs"
+                    rec = sess.run(q_nodes).single()
+                    nodes = []
+                    if rec and 'pairs' in rec:
+                        for p in rec['pairs']:
+                            nodes.append({'label': p['label'], 'count': p['count']})
+            finally:
+                try:
+                    if driver is not None:
+                        driver.close()
+                except Exception:
+                    pass
             return jsonify({"nodes": nodes, "edges": edges, "truncated": False}), 200
         except Exception as e:
             # If APOC procedures are missing or fail, inform the client
@@ -1431,12 +1452,19 @@ def create_app():
                 info['neo4j']['error'] = f"backoff active; retry after {int(next_after-now)}s"
                 return jsonify(info), 200
             try:
-                driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
-                with driver.session(database=database) as sess:
-                    rec = sess.run("RETURN 1 AS ok").single()
-                    if rec and rec.get('ok') == 1:
-                        info['neo4j']['connectable'] = True
-                driver.close()
+                driver = None
+                try:
+                    driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
+                    with driver.session(database=database) as sess:
+                        rec = sess.run("RETURN 1 AS ok").single()
+                        if rec and rec.get('ok') == 1:
+                            info['neo4j']['connectable'] = True
+                finally:
+                    try:
+                        if driver is not None:
+                            driver.close()
+                    except Exception:
+                        pass
             except Exception as e:
                 info['neo4j']['error'] = str(e)
         return jsonify(info), 200
@@ -1502,11 +1530,18 @@ def create_app():
             st['last_error'] = f"backoff active; retry after {int(next_after-now)}s"
             return jsonify({'connected': False, 'error': st['last_error']}), 429
         try:
-            driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
-            with driver.session(database=database) as sess:
-                rec = sess.run('RETURN 1 AS ok').single()
-                ok = bool(rec and rec.get('ok') == 1)
-            driver.close()
+            driver = None
+            try:
+                driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
+                with driver.session(database=database) as sess:
+                    rec = sess.run('RETURN 1 AS ok').single()
+                    ok = bool(rec and rec.get('ok') == 1)
+            finally:
+                try:
+                    if driver is not None:
+                        driver.close()
+                except Exception:
+                    pass
             st['connected'] = ok
             # On success, clear backoff
             if ok:
