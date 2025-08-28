@@ -137,38 +137,73 @@ def create_app():
     # Build rows for commit: files (rows) and standalone folders (folder_rows)
     def build_commit_rows(scan, ds_map):
         checksums = scan.get('checksums') or []
+        # Helpers to handle local paths and rclone remote paths like "remote:folder/sub/file"
+        def _split_remote(p: str):
+            # Returns (remote_prefix or None, rest)
+            try:
+                if p and (':' in p) and (p.index(':') < p.index('/') if '/' in p else True):
+                    i = p.index(':')
+                    return p[:i+1], p[i+1:]
+            except Exception:
+                pass
+            return None, p
+        def _parent_of(p: str) -> str:
+            rp, rest = _split_remote(p)
+            if rp is not None:
+                if not rest:
+                    # at remote root
+                    return rp
+                if '/' in rest:
+                    return rp + rest.rsplit('/', 1)[0]
+                # file directly under remote root
+                return rp
+            # Fallback to pathlib for local/absolute paths
+            from pathlib import Path as __P
+            try:
+                return str(__P(p).parent)
+            except Exception:
+                return ''
+        def _name_of(p: str) -> str:
+            rp, rest = _split_remote(p)
+            if rp is not None:
+                seg = rest.rsplit('/', 1)[-1] if rest else rp.rstrip(':')
+                return seg
+            from pathlib import Path as __P
+            try:
+                return __P(p).name
+            except Exception:
+                return p
+        def _parent_name_of(p: str) -> str:
+            par = _parent_of(p)
+            rp, rest = _split_remote(par)
+            if rp is not None:
+                if not rest:
+                    return rp.rstrip(':')
+                return rest.rsplit('/', 1)[-1]
+            from pathlib import Path as __P
+            try:
+                return __P(par).name
+            except Exception:
+                return par
         # Precompute folders observed in this scan (parents of files)
-        from pathlib import Path as _P
         folder_set = set()
         for ch in checksums:
             dtmp = ds_map.get(ch)
             if not dtmp:
                 continue
-            try:
-                folder_set.add(str(_P(dtmp.get('path')).parent))
-            except Exception:
-                pass
+            folder_set.add(_parent_of(dtmp.get('path') or ''))
         rows = []
         for ch in checksums:
             d = ds_map.get(ch)
             if not d:
                 continue
-            try:
-                parent = str(_P(d.get('path')).parent)
-            except Exception:
-                parent = ''
+            parent = _parent_of(d.get('path') or '')
             interps = list((d.get('interpretations') or {}).keys())
             # derive folder fields
             folder_path = parent
-            try:
-                from pathlib import Path as __P
-                folder_name = __P(folder_path).name if folder_path else ''
-                folder_parent = str(__P(folder_path).parent) if folder_path else ''
-                folder_parent_name = __P(folder_parent).name if folder_parent else ''
-            except Exception:
-                folder_name = ''
-                folder_parent = ''
-                folder_parent_name = ''
+            folder_name = _name_of(folder_path) if folder_path else ''
+            folder_parent = _parent_of(folder_path) if folder_path else ''
+            folder_parent_name = _parent_name_of(folder_path) if folder_parent else ''
             rows.append({
                 'checksum': d.get('checksum'),
                 'path': d.get('path'),
