@@ -12,6 +12,7 @@ links:
     - dev/stories/providers-mvp-multi-source-files/phases/phase-00-contracts-local-mounted.md
     - dev/stories/providers-mvp-multi-source-files/phases/phase-01-txt-xlsx-interpreters.md
     - dev/stories/providers-mvp-multi-source-files/phases/phase-02-rclone-provider.md
+    - dev/stories/providers-mvp-multi-source-files/phases/phase-02b-rclone-docs-and-mount-manager.md
     - dev/stories/providers-mvp-multi-source-files/phases/phase-03-native-rest-provider.md
     - dev/stories/providers-mvp-multi-source-files/phases/phase-04-globus-stub.md
   related_features:
