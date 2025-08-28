@@ -436,41 +436,51 @@ def create_app():
         root_id = (data.get('root_id') or '/').strip() or '/'
         path = data.get('path') or (root_id if provider_id != 'local_fs' else os.getcwd())
         recursive = bool(data.get('recursive', True))
+        fast_list = bool(data.get('fast_list', False))
         try:
             import time, hashlib, json
+            from .core import path_index_sqlite as pix
             # Pre-scan snapshot of checksums
             before = set(ds.get('checksum') for ds in app.extensions['scidk']['graph'].list_datasets())
             started = time.time()
+            # Precompute scan id early for SQLite tagging
+            sid_src = f"{path}|{started}"
+            scan_id = hashlib.sha1(sid_src.encode()).hexdigest()[:12]
             count = 0
+            ingested = 0
             folders = []
             if provider_id in ('local_fs', 'mounted_fs'):
                 count = fs.scan_directory(Path(path), recursive=recursive)
             elif provider_id == 'rclone':
-                # Use rclone lsjson to enumerate remote files; create dataset nodes without downloading.
+                # Use rclone lsjson to enumerate remote files; ingest into SQLite and create lightweight datasets.
                 provs = app.extensions['scidk'].get('providers')
                 prov = provs.get('rclone') if provs else None
                 if not prov:
                     raise RuntimeError('rclone provider not available')
                 try:
-                    items = prov.list_files(path, recursive=recursive)  # type: ignore[attr-defined]
+                    items = prov.list_files(path, recursive=recursive, fast_list=fast_list)  # type: ignore[attr-defined]
                 except Exception as ee:
                     return jsonify({"status": "error", "error": str(ee)}), 400
+                # Map to SQLite rows (files and folders); only files will have size > 0 typically.
+                rows = []
                 for it in (items or []):
                     try:
+                        # Track non-recursive immediate folders separately for UI convenience
                         if it.get('IsDir'):
-                            # collect immediate subfolders only when non-recursive
                             if not recursive:
-                                # rclone returns entries with only Name; reconstruct full path
                                 name = it.get('Name') or it.get('Path') or ''
                                 if name:
                                     parent = path if path.endswith(':') else path.rstrip('/')
                                     full = f"{parent}/{name}" if not parent.endswith(':') else f"{parent}{name}"
                                     folders.append({'path': full, 'name': name, 'parent': path, 'parent_name': Path(path).name if path else ''})
+                            # Still insert folder rows into SQLite for depth/structure awareness
+                            rows.append(pix.map_rclone_item_to_row(it, path, scan_id))
                             continue
                         # File entry
+                        rows.append(pix.map_rclone_item_to_row(it, path, scan_id))
+                        # Also create an in-memory dataset for current graph (to keep existing features/tests working)
                         name = it.get('Name') or it.get('Path') or ''
                         size = int(it.get('Size') or 0)
-                        # Construct full remote path safely
                         parent = path if path.endswith(':') else path.rstrip('/')
                         full = f"{parent}/{name}" if not parent.endswith(':') else f"{parent}{name}"
                         ds = fs.create_dataset_remote(full, size_bytes=size, modified_ts=0.0, mime=None)
@@ -478,6 +488,12 @@ def create_app():
                         count += 1
                     except Exception:
                         continue
+                # Batch insert into SQLite (10k/txn)
+                try:
+                    ingested = pix.batch_insert_files(rows, batch_size=10000)
+                except Exception as _e:
+                    # Surface as non-fatal for now; continue app flow but record error
+                    app.extensions['scidk'].setdefault('telemetry', {})['last_sqlite_error'] = str(_e)
             else:
                 return jsonify({"status": "error", "error": f"provider {provider_id} not supported for scan"}), 400
             ended = time.time()
@@ -508,9 +524,6 @@ def create_app():
                                 })
                 except Exception:
                     pass
-            # Create scan session id (short sha1 of path+started)
-            sid_src = f"{path}|{started}"
-            scan_id = hashlib.sha1(sid_src.encode()).hexdigest()[:12]
             # Provider metadata for scan/session records
             provs = app.extensions['scidk'].get('providers')
             prov = provs.get(provider_id) if provs else None
@@ -555,6 +568,7 @@ def create_app():
                 'root_id': root_id,
                 'root_label': root_label,
                 'scan_source': f"provider:{provider_id}",
+                'ingested_rows': int(ingested),
             }
             scans = app.extensions['scidk'].setdefault('scans', {})
             scans[scan_id] = scan
@@ -1321,6 +1335,7 @@ def create_app():
             'ended': ended,
             'duration_sec': s.get('duration_sec'),
             'file_count': s.get('file_count'),
+            'ingested_rows': s.get('ingested_rows', 0),
             'by_ext': s.get('by_ext', {}),
             'folder_count': s.get('folder_count'),
             'source': s.get('source'),
