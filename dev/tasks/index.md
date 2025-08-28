@@ -2,22 +2,22 @@
 
 id | title | area | status | RICE | estimate | tags
 ---|---|---|---|---:|---|---
-task:providers/mvp/rclone-provider | Feature-flagged RcloneProvider (subprocess-based) | providers | Ready | 4.0 | 2–3d | [rclone, browse, scan]
-task:ui/mvp/tasks-ui-polling | Files page polling for background Tasks | ui | Ready | 3.8 | 0.5–1d | [ui, tasks]
-task:ui/mvp/home-search-ui | Home search UI (quick filter over scanned sources) | ui | Ready | 3.8 | 0.5–1d | [ui, home, search]
-task:core-architecture/mvp/neo4j-adapter-prep | GraphAdapter prep for Neo4j backend | core-architecture | Ready | 3.3 | 0.5–1d | [graph, neo4j]
-task:ops/mvp/error-toasts | Error toasts for browse/scan failures | ops | Ready | 1.3 | 0.25–0.5d | [ux, errors]
+task:core-architecture/mvp/rclone-scan-ingest | rclone lsjson scan and batch ingest into SQLite | core-architecture | Ready | 4.3 | 2d | [rclone, discovery, ingest]
+task:core-architecture/mvp/sqlite-path-index | SQLite path-index schema and migrations (WAL enabled) | core-architecture | Ready | 4.2 | 1–2d | [sqlite, schema, performance]
+task:ui/mvp/browse-api-and-pagination | Browse API with parent_path listing and pagination | ui | Ready | 4.0 | 1–2d | [ui, api, browse]
+task:research-objects/mvp/ro-crate-referenced | Referenced RO-Crate generation from selection | research-objects | Ready | 4.1 | 1–2d | [ro-crate, metadata]
+task:ops/mvp/rclone-health-check | /diag/rclone endpoint (version + remotes or clear error) | ops | Ready | 3.5 | 0.5–1d | [ops, rclone, health]
 
 ```yaml
 ready_queue:
-  - id: task:providers/mvp/rclone-provider
+  - id: task:core-architecture/mvp/rclone-scan-ingest
+    rice: 4.3
+  - id: task:core-architecture/mvp/sqlite-path-index
+    rice: 4.2
+  - id: task:research-objects/mvp/ro-crate-referenced
+    rice: 4.1
+  - id: task:ui/mvp/browse-api-and-pagination
     rice: 4.0
-  - id: task:ui/mvp/tasks-ui-polling
-    rice: 3.8
-  - id: task:ui/mvp/home-search-ui
-    rice: 3.8
-  - id: task:core-architecture/mvp/neo4j-adapter-prep
-    rice: 3.3
-  - id: task:ops/mvp/error-toasts
-    rice: 1.3
+  - id: task:ops/mvp/rclone-health-check
+    rice: 3.5
 ```

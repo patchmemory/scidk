@@ -808,6 +808,26 @@ Story: ro-crate-integration-mvp — Embed Crate-O and expose minimal RO-Crate en
 
 
 
+## Current Cycle (2025-08-28 → 2025-09-04)
+Active Story/Phase: story:core-architecture-reboot — phase:core-architecture-reboot/01-skeleton
+
+### Iteration Plan (reboot-iter-2025-08-28)
+1) E2E Objective
+   - App boots with SQLite initialized (WAL) and a rclone diagnostics endpoint. This sets the foundation for rclone→SQLite→browse.
+2) Capacity
+   - 8–12h
+3) GUI/API Acceptance
+   - GET /health returns healthy for sqlite (SELECT 1).
+   - GET /diag/rclone returns {version, remotes[]} when available or {error, hint} if missing.
+4) Selected Tasks (from Ready Queue)
+   - id: task:ops/mvp/rclone-health-check; ETA: 2025-08-29; RICE: 3.5; dependencies: none; test approach: mock subprocess; negative path for missing binary.
+   - id: task:ops/mvp/sqlite-init-wal; ETA: 2025-08-29; RICE: 3.6; dependencies: none; test approach: SQLite PRAGMA journal_mode and SELECT 1 in health.
+5) Dependency Table
+   - None
+6) Demo Checklist
+   1) Start app; call GET /health → sqlite healthy.
+   2) Call GET /diag/rclone → version & remotes or friendly error.
+
 ## Status Snapshot (2025-08-21)
 Done in current cycle window:
 - Providers MVP (LocalFS + MountedFS) with /api/providers, /api/provider_roots, /api/browse; /api/scan accepts provider_id with legacy default.
