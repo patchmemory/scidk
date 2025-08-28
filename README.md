@@ -106,6 +106,20 @@ Rclone provider (optional):
 - GET /api/tasks/<task_id> → details including status, progress, and scan_id when completed
 - POST /api/tasks { type: 'commit', scan_id } → start a background commit to graph (in-memory + optional Neo4j)
 
+## Rclone scan and SQLite ingest (MVP)
+
+- Enable rclone provider: export SCIDK_PROVIDERS="local_fs,mounted_fs,rclone".
+- SQLite path index is created at SCIDK_DB_PATH (default ~/.scidk/db/files.db) and uses WAL mode.
+- Trigger a scan via HTTP:
+  - POST /api/scans with JSON {"provider_id":"rclone","root_id":"remote:","path":"remote:bucket","recursive":false,"fast_list":true}
+- Check progress/status:
+  - GET /api/scans/<scanId>/status → { status, file_count, folder_count, ingested_rows, by_ext, ... }
+- Browse the scan snapshot (virtual root):
+  - GET /api/scans/<scanId>/fs
+- Notes:
+  - Wrapper uses `rclone lsjson` with --recursive or --max-depth 1, and optional --fast-list.
+  - Batch insert to SQLite in 10k rows/transaction; rows include both files and folders.
+
 ## Testing
 We use pytest for unit and API tests.
 
