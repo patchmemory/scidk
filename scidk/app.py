@@ -390,11 +390,49 @@ def create_app():
         path = data.get('path') or (root_id if provider_id != 'local_fs' else os.getcwd())
         recursive = bool(data.get('recursive', True))
         try:
-            import time, hashlib
+            import time, hashlib, json
             # Pre-scan snapshot of checksums
             before = set(ds.get('checksum') for ds in app.extensions['scidk']['graph'].list_datasets())
             started = time.time()
-            count = fs.scan_directory(Path(path), recursive=recursive)
+            count = 0
+            folders = []
+            if provider_id in ('local_fs', 'mounted_fs'):
+                count = fs.scan_directory(Path(path), recursive=recursive)
+            elif provider_id == 'rclone':
+                # Use rclone lsjson to enumerate remote files; create dataset nodes without downloading.
+                provs = app.extensions['scidk'].get('providers')
+                prov = provs.get('rclone') if provs else None
+                if not prov:
+                    raise RuntimeError('rclone provider not available')
+                try:
+                    items = prov.list_files(path, recursive=recursive)  # type: ignore[attr-defined]
+                except Exception as ee:
+                    return jsonify({"status": "error", "error": str(ee)}), 400
+                for it in (items or []):
+                    try:
+                        if it.get('IsDir'):
+                            # collect immediate subfolders only when non-recursive
+                            if not recursive:
+                                # rclone returns entries with only Name; reconstruct full path
+                                name = it.get('Name') or it.get('Path') or ''
+                                if name:
+                                    parent = path if path.endswith(':') else path.rstrip('/')
+                                    full = f"{parent}/{name}" if not parent.endswith(':') else f"{parent}{name}"
+                                    folders.append({'path': full, 'name': name, 'parent': path, 'parent_name': Path(path).name if path else ''})
+                            continue
+                        # File entry
+                        name = it.get('Name') or it.get('Path') or ''
+                        size = int(it.get('Size') or 0)
+                        # Construct full remote path safely
+                        parent = path if path.endswith(':') else path.rstrip('/')
+                        full = f"{parent}/{name}" if not parent.endswith(':') else f"{parent}{name}"
+                        ds = fs.create_dataset_remote(full, size_bytes=size, modified_ts=0.0, mime=None)
+                        app.extensions['scidk']['graph'].upsert_dataset(ds)
+                        count += 1
+                    except Exception:
+                        continue
+            else:
+                return jsonify({"status": "error", "error": f"provider {provider_id} not supported for scan"}), 400
             ended = time.time()
             duration = ended - started
             after = set(ds.get('checksum') for ds in app.extensions['scidk']['graph'].list_datasets())
@@ -407,22 +445,22 @@ def create_app():
             for ch in new_checksums:
                 ext = ext_map.get(ch, '')
                 by_ext[ext] = by_ext.get(ext, 0) + 1
-            # For non-recursive scans, include immediate subfolders for later commit/merge
-            folders = []
-            try:
-                if not recursive:
-                    base = Path(path)
-                    for child in base.iterdir():
-                        if child.is_dir():
-                            parent = str(child.parent)
-                            folders.append({
-                                'path': str(child.resolve()),
-                                'name': child.name,
-                                'parent': parent,
-                                'parent_name': Path(parent).name if parent else '',
-                            })
-            except Exception:
-                folders = []
+            # For non-recursive local scans, include immediate subfolders for later commit/merge
+            if provider_id in ('local_fs', 'mounted_fs'):
+                try:
+                    if not recursive:
+                        base = Path(path)
+                        for child in base.iterdir():
+                            if child.is_dir():
+                                parent = str(child.parent)
+                                folders.append({
+                                    'path': str(child.resolve()),
+                                    'name': child.name,
+                                    'parent': parent,
+                                    'parent_name': Path(parent).name if parent else '',
+                                })
+                except Exception:
+                    pass
             # Create scan session id (short sha1 of path+started)
             sid_src = f"{path}|{started}"
             scan_id = hashlib.sha1(sid_src.encode()).hexdigest()[:12]
@@ -432,7 +470,6 @@ def create_app():
             root_label = None
             try:
                 if prov:
-                    # Use last path part or name for label if possible
                     root_label = Path(root_id).name or str(root_id)
             except Exception:
                 root_label = None
@@ -448,7 +485,7 @@ def create_app():
                 'checksums': new_checksums,
                 'folders': folders,
                 'by_ext': by_ext,
-                'source': getattr(fs, 'last_scan_source', 'python'),
+                'source': getattr(fs, 'last_scan_source', 'python') if provider_id in ('local_fs','mounted_fs') else f"provider:{provider_id}",
                 'errors': [],
                 'committed': False,
                 'committed_at': None,
@@ -468,7 +505,7 @@ def create_app():
                 'started': started,
                 'ended': ended,
                 'duration_sec': duration,
-                'source': getattr(fs, 'last_scan_source', 'python'),
+                'source': getattr(fs, 'last_scan_source', 'python') if provider_id in ('local_fs','mounted_fs') else f"provider:{provider_id}",
                 'provider_id': provider_id,
                 'root_id': root_id,
             }
@@ -480,7 +517,7 @@ def create_app():
                 'scanned': 0,
                 'last_scanned': 0,
                 'scan_ids': [],
-                'source': getattr(fs, 'last_scan_source', 'python'),
+                'source': getattr(fs, 'last_scan_source', 'python') if provider_id in ('local_fs','mounted_fs') else f"provider:{provider_id}",
                 'provider_id': provider_id,
                 'root_id': root_id,
                 'root_label': root_label,
@@ -489,7 +526,7 @@ def create_app():
                 'recursive': bool(recursive),
                 'scanned': int(count),
                 'last_scanned': ended,
-                'source': getattr(fs, 'last_scan_source', 'python'),
+                'source': getattr(fs, 'last_scan_source', 'python') if provider_id in ('local_fs','mounted_fs') else f"provider:{provider_id}",
                 'provider_id': provider_id,
                 'root_id': root_id,
                 'root_label': root_label,
@@ -888,15 +925,18 @@ def create_app():
             provs = app.extensions['scidk']['providers']
             prov = provs.get(prov_id)
             if not prov:
-                return jsonify({'error': 'provider not available'}), 400
+                return jsonify({'error': 'provider not available', 'code': 'provider_not_available'}), 400
             # If path empty, default to root_id
             listing = prov.list(root_id=root_id, path=path_q or root_id)
+            # Bubble provider-level errors clearly
+            if isinstance(listing, dict) and listing.get('error'):
+                return jsonify({'error': listing.get('error'), 'code': 'browse_failed'}), 400
             # Augment with provider badge and convenience fields
             for e in listing.get('entries', []):
                 e['provider_id'] = prov_id
             return jsonify(listing), 200
         except Exception as e:
-            return jsonify({'error': str(e)}), 500
+            return jsonify({'error': str(e), 'code': 'browse_exception'}), 500
 
     @api.get('/directories')
     def api_directories():

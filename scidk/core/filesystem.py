@@ -5,7 +5,7 @@ import os
 import shutil
 import subprocess
 import time
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Optional
 
 from .graph import InMemoryGraph
 from .registry import InterpreterRegistry
@@ -187,6 +187,28 @@ class FilesystemManager:
             'size_bytes': st.st_size,
             'created': st.st_ctime,
             'modified': st.st_mtime,
+            'mime_type': mime or 'application/octet-stream',
+            'checksum': checksum,
+            'lifecycle_state': 'active'
+        }
+
+    def create_dataset_remote(self, remote_path: str, size_bytes: int = 0, modified_ts: float = 0.0, mime: Optional[str] = None) -> Dict:
+        """Create a dataset node for a remote (non-local) file.
+        Uses a stable checksum derived from the remote path string to ensure idempotency.
+        """
+        # Derive filename and extension heuristically
+        from pathlib import PurePosixPath
+        p = PurePosixPath(remote_path)
+        name = p.name or remote_path
+        ext = ('.' + name.split('.')[-1].lower()) if ('.' in name and not name.endswith('.')) else ''
+        checksum = hashlib.sha256(remote_path.encode('utf-8')).hexdigest()
+        return {
+            'path': remote_path,
+            'filename': name,
+            'extension': ext,
+            'size_bytes': int(size_bytes or 0),
+            'created': modified_ts or 0.0,
+            'modified': modified_ts or 0.0,
             'mime_type': mime or 'application/octet-stream',
             'checksum': checksum,
             'lifecycle_state': 'active'

@@ -245,6 +245,24 @@ class RcloneProvider(FilesystemProvider):
             raise RuntimeError(proc.stderr.strip() or f"rclone exited {proc.returncode}")
         return proc.stdout
 
+    def list_files(self, target: str, recursive: bool = True) -> List[Dict]:
+        """Return rclone lsjson entries for a target (files only when recursive, or immediate children when not)."""
+        import json
+        if not target:
+            return []
+        args = ["lsjson", target]
+        if recursive:
+            args += ["--recursive"]
+        else:
+            args += ["--max-depth", "1"]
+        out = self._run(args)
+        try:
+            items = json.loads(out or "[]")
+        except Exception:
+            items = []
+        # When not recursive, rclone returns both files and directories; filter only files here and let callers decide otherwise.
+        return items or []
+
     def status(self, app) -> Dict:
         try:
             out = self._run(["version"])
