@@ -10,7 +10,7 @@
       <select id="prov-select" class="form-select form-select-sm" style="min-width:220px"></select>
     </div>
     <div class="col-auto">
-      <label for="root-select" class="form-label small" style="margin-bottom:.25rem">Root</label>
+      <label for="root-select" id="root-label" class="form-label small" style="margin-bottom:.25rem">Root</label>
       <select id="root-select" class="form-select form-select-sm" style="min-width:240px"></select>
     </div>
     <div class="col-auto">
@@ -137,6 +137,7 @@
     // Provider-aware browser
     const provSelect = document.getElementById('prov-select');
     const rootSelect = document.getElementById('root-select');
+    const rootLabel = document.getElementById('root-label');
     const provGoBtn = document.getElementById('prov-go');
     const provPathInput = document.getElementById('prov-path');
     const provList = document.getElementById('prov-list');
@@ -174,23 +175,56 @@
         rootSelect.innerHTML = roots.map(rt => `<option value="${rt.id}">${rt.name||rt.path||rt.id}</option>`).join('');
         currentRoot = roots[0]?.id || '/';
         rootSelect.value = currentRoot;
-        // Reset current path and input to root
-        currentPath = currentRoot;
-        if (provPathInput) provPathInput.value = currentPath;
+        // Adjust labels/placeholders for rclone vs others
+        if (providerId === 'rclone'){
+          if (rootLabel) rootLabel.textContent = 'Remote';
+          if (provPathInput){ provPathInput.placeholder = 'folder/sub'; provPathInput.value = ''; }
+          currentPath = currentRoot; // full path always composed remote+rel
+        } else {
+          if (rootLabel) rootLabel.textContent = 'Root';
+          if (provPathInput){ provPathInput.placeholder = '/path/within/root'; provPathInput.value = currentRoot; }
+          currentPath = currentRoot;
+        }
       } catch(e){ rootSelect.innerHTML = '<option>(failed)</option>'; }
     }
 
+    function joinRemotePath(remoteId, rel){
+      rel = (rel||'').trim();
+      // If user pasted a full remote prefix, strip it
+      if (rel.indexOf(':') !== -1 && rel.split(':')[0] + ':' === remoteId){
+        rel = rel.split(':').slice(1).join(':');
+      }
+      rel = rel.replace(/^\/+/, '');
+      if (!rel) return remoteId;
+      return remoteId.endsWith(':') ? (remoteId + rel) : (remoteId.replace(/\/$/,'') + '/' + rel);
+    }
     async function browse(providerId, rootId, path){
-      const qs = new URLSearchParams({ provider_id: providerId||'local_fs', root_id: rootId||'/', path: path||rootId||'/' });
+      let targetPath = path || rootId || '/';
+      if (providerId === 'rclone'){
+        // When rclone, keep provPathInput as relative; compose full target for API
+        const rel = (provPathInput && provPathInput.value) ? provPathInput.value : (path && path.startsWith(rootId) ? path.slice(rootId.length) : '');
+        targetPath = joinRemotePath(rootId, rel||'');
+      }
+      const qs = new URLSearchParams({ provider_id: providerId||'local_fs', root_id: rootId||'/', path: targetPath });
       try {
         const r = await fetch('/api/browse?' + qs.toString());
         const j = await r.json();
-        // no breadcrumb API; show current path and root only
-        const displayPath = path || rootId || '/';
-        provCrumb.innerHTML = `<span class="small">Path: <code>${displayPath}</code></span>`;
-        // Sync input to actual path we browsed
+        // no breadcrumb API; show current path (full) and remote when rclone
+        const displayPath = targetPath;
+        provCrumb.innerHTML = providerId === 'rclone'
+          ? `<span class="small">Remote: <code>${rootId}</code> — Path: <code>${(provPathInput&&provPathInput.value)||'' || '(root)'}</code></span>`
+          : `<span class="small">Path: <code>${displayPath}</code></span>`;
+        // Sync inputs
         currentPath = displayPath;
-        if (provPathInput) provPathInput.value = currentPath;
+        if (provPathInput){
+          if (providerId === 'rclone'){
+            // keep relative in the input
+            const rel = displayPath.startsWith(rootId) ? displayPath.slice(rootId.length) : '';
+            provPathInput.value = rel;
+          } else {
+            provPathInput.value = currentPath;
+          }
+        }
         const rows = (j.entries||[]).map(e => {
           const type = e.type === 'folder' ? 'Folder' : 'File';
           const size = e.type === 'folder' ? '' : fmtBytes(e.size||0);
@@ -223,7 +257,16 @@
       provSelect.addEventListener('change', async () => { currentProv = provSelect.value; await loadRoots(currentProv); provList.innerHTML = ''; provCrumb.innerHTML=''; });
     }
     if (rootSelect){
-      rootSelect.addEventListener('change', () => { currentRoot = rootSelect.value; currentPath = currentRoot; if (provPathInput) provPathInput.value = currentPath; });
+      rootSelect.addEventListener('change', () => { 
+        currentRoot = rootSelect.value; 
+        if (currentProv === 'rclone'){
+          // keep relative empty when switching remotes
+          if (provPathInput) provPathInput.value = '';
+          currentPath = currentRoot;
+        } else {
+          currentPath = currentRoot; if (provPathInput) provPathInput.value = currentPath;
+        }
+      });
     }
     if (btnROC && rocFrame){
       btnROC.addEventListener('click', () => {
@@ -247,7 +290,14 @@
       });
     }
     if (provGoBtn){
-      const doGo = () => { currentProv = provSelect.value; currentRoot = rootSelect.value; const p = (provPathInput && provPathInput.value) ? provPathInput.value : currentRoot; currentPath = p || currentRoot; browse(currentProv, currentRoot, currentPath); };
+      const doGo = () => { 
+        currentProv = provSelect.value; 
+        currentRoot = rootSelect.value; 
+        const raw = (provPathInput && provPathInput.value) ? provPathInput.value : '';
+        const target = currentProv === 'rclone' ? joinRemotePath(currentRoot, raw) : (raw || currentRoot);
+        currentPath = target || currentRoot; 
+        browse(currentProv, currentRoot, currentPath); 
+      };
       provGoBtn.addEventListener('click', (e) => { e.preventDefault(); doGo(); });
       if (provPathInput){ provPathInput.addEventListener('keydown', (e) => { if (e.key === 'Enter'){ e.preventDefault(); doGo(); } }); }
     }
@@ -257,8 +307,8 @@
         // Derive values from UI at submit-time to avoid race with async init
         const provId = (provSelect && provSelect.value) || currentProv || 'local_fs';
         const rootId = (rootSelect && rootSelect.value) || currentRoot || '/';
-        const inputPath = (provPathInput && provPathInput.value && provPathInput.value.trim()) || '';
-        const path = inputPath || currentPath || rootId || '/';
+        const inputRel = (provPathInput && provPathInput.value && provPathInput.value.trim()) || '';
+        const path = (provId === 'rclone') ? joinRemotePath(rootId, inputRel) : (inputRel || currentPath || rootId || '/');
         currentProv = provId;
         currentRoot = rootId;
         currentPath = path;
