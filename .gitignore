@@ -18,3 +18,6 @@ Thumbs.db
 .vscode/
 
 data/neo4j/
+
+# Ignore all contents under data/ (keep directory itself tracked)
+data/*
