@@ -1,7 +1,7 @@
 id: phase:providers-mvp-multi-source-files/02-rclone-provider
 story: story:providers-mvp-multi-source-files
 order: 2
-status: In Progress
+status: Planned
 owner: agent
 created: 2025-08-21
 updated: 2025-08-21

@@ -262,6 +262,17 @@ Available commands:
     - `python -m dev.cli --json merge-safety`
     - `python -m dev.cli --json merge-safety --base origin/main`
     - Plan only: `python -m dev.cli --json --dry-run merge-safety --base origin/main`
+- `dev-sync [--from <branch>]`
+  - Summary: Synchronize dev/ directory from a shared/base branch into the current branch
+  - Behavior: Restores dev/ from SCIDK_DEV_SHARED_BRANCH, SCIDK_BASE_BRANCH, or the specified --from branch
+  - Examples:
+    - `python -m dev.cli dev-sync`
+    - `python -m dev.cli --json dev-sync`
+    - `python -m dev.cli --json --explain dev-sync`
+    - `python -m dev.cli --json dev-sync --from origin/main`
+
+Environment variables for dev sync:
+- `SCIDK_DEV_SHARED_BRANCH`: Preferred source branch to pull dev/ from (e.g., `origin/main` or `main`). If unset, the CLI falls back to `SCIDK_BASE_BRANCH`, then `origin/main`, `main`, etc.
 
 Notes for agents:
 - Prefer `menu --json` for a quick navigable overview of commands.

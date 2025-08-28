@@ -13,13 +13,13 @@ dod:
   - demo_steps
 dependencies: []
 tags: [ui, home, search]
-story: story:providers-mvp-multi-source-files
-phase: phase:providers-mvp-ui-home-search
+story: 
+phase: 
 links:
   cycles: [dev/cycles.md]
   plan: []
-  story: [dev/stories/providers-mvp-multi-source-files/story.md]
-  phase: [dev/stories/providers-mvp-multi-source-files/phases/phase-05-ui-home-search.md]
+  story: []
+  phase: []
 acceptance:
   - Home page supports filtering by provider, path substring, recursive flag
   - Works on session data and (later) persisted source registry
