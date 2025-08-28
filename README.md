@@ -172,3 +172,86 @@ Map page tweak:
 - Post-commit verification runs automatically; Files page Background tasks shows: attempted, prepared, verify ok/fail with counts.
 - Neo4j configuration UX: Settings Save no longer clears password on empty; added explicit Clear Password; supports NEO4J_AUTH=none and URI-embedded creds; backoff after repeated auth failures.
 - Tests: added mocked-neo4j unit test for commit and verification; password persistence test.
+
+
+## Dev CLI (self-describing)
+
+The development CLI helps agents and humans navigate common workflows. It is self-describing and supports machine-friendly outputs.
+
+Key features:
+- argparse-based subcommands with consistent help
+- meta-commands for discovery: `menu` and `introspect`
+- global flags: `--json`, `--explain`, `--dry-run`
+- JSON envelope for all command outputs (when `--json` is used)
+
+JSON envelope schema:
+```json
+{
+  "status": "ok|error",
+  "command": "<name>",
+  "data": {},
+  "plan": {},
+  "warnings": []
+}
+```
+
+Quick start:
+- List commands (human): `python -m dev.cli menu`
+- List commands (JSON): `python -m dev.cli menu --json`
+- Full introspection (metadata for agents): `python -m dev.cli introspect` or `python -m dev.cli --json introspect`
+
+Global flags (place before the subcommand unless noted):
+- `--json`    Emit structured envelope for agents
+- `--explain` Show what would happen (no side-effects)
+- `--dry-run` Simulate without side-effects (returns a plan)
+
+Available commands:
+- `ready-queue`
+  - Summary: Show ready tasks sorted by RICE (DoR true)
+  - Examples:
+    - `python -m dev.cli ready-queue`
+    - `python -m dev.cli --json ready-queue`
+- `start [task_id]`
+  - Summary: Validate DoR, create/switch branch, print context
+  - Behavior: If task_id not provided, auto-picks top Ready task
+  - Examples:
+    - `python -m dev.cli start story:foo:bar`
+    - `python -m dev.cli --explain --json start` (plan only, no side effects)
+- `context <task_id>`
+  - Summary: Emit AI context for a task
+  - Examples:
+    - `python -m dev.cli context story:foo:bar`
+    - `python -m dev.cli --json context story:foo:bar`
+- `validate <task_id>`
+  - Summary: Validate Definition of Ready (DoR)
+  - Output (JSON): `{ ok: bool, missing: [fields] }`
+  - Examples:
+    - `python -m dev.cli validate story:foo:bar`
+    - `python -m dev.cli --json validate story:foo:bar`
+- `complete <task_id>`
+  - Summary: Run tests, print DoD checklist, and next steps
+  - Examples:
+    - `python -m dev.cli complete story:foo:bar`
+    - `python -m dev.cli --explain --json complete story:foo:bar`
+- `cycle-status`
+  - Summary: Show current cycle status from dev/cycles.md
+  - Examples:
+    - `python -m dev.cli cycle-status`
+    - `python -m dev.cli --json cycle-status`
+- `next-cycle`
+  - Summary: Propose next cycle using top Ready tasks
+  - Examples:
+    - `python -m dev.cli next-cycle`
+    - `python -m dev.cli --json next-cycle`
+- `merge-safety [--base <branch>]`
+  - Summary: Report potentially risky deletions vs base branch
+  - Examples:
+    - `python -m dev.cli merge-safety`
+    - `python -m dev.cli --json merge-safety`
+    - `python -m dev.cli --json merge-safety --base origin/main`
+    - Plan only: `python -m dev.cli --json --dry-run merge-safety --base origin/main`
+
+Notes for agents:
+- Prefer `menu --json` for a quick navigable overview of commands.
+- Use `introspect` to obtain full metadata about args/options, side-effects, and conventions.
+- Place `--json` before the subcommand to ensure the envelope applies to the whole invocation, e.g., `python -m dev.cli --json ready-queue`.
