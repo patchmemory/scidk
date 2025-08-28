@@ -288,32 +288,71 @@ class RcloneProvider(FilesystemProvider):
         target = (path or root_id or "").strip()
         if not target:
             return {"entries": []}
-        # Limit depth to immediate children
-        try:
-            import json, time
-            out = self._run(["lsjson", target, "--max-depth", "1"])
-            items = json.loads(out or "[]")
-        except Exception as e:
-            # Bubble error message in a structured way
-            return {"error": str(e), "entries": []}
-        entries: List[Entry] = []
-        for it in (items or []):
+        # Limit depth to immediate children. Some backends don't emit explicit folder placeholders.
+        # Strategy:
+        # 1) Try separate dirs-only and files-only lsjson calls.
+        # 2) If both empty, fall back to a single lsjson --max-depth 1 (legacy behavior/tests).
+        # 3) As a last resort, synthesize folder entries from file 'Path' prefixes.
+        import json
+        dirs_items: List[Dict] = []
+        files_items: List[Dict] = []
+        combined: List[Dict] = []
+        def _safe_ls(args: List[str]) -> List[Dict]:
             try:
+                out = self._run(args)
+                return json.loads(out or "[]")
+            except Exception:
+                return []
+        # Step 1: attempt split listing
+        dirs_items = _safe_ls(["lsjson", target, "--max-depth", "1", "--dirs-only"])
+        files_items = _safe_ls(["lsjson", target, "--max-depth", "1", "--files-only"])
+        combined = (dirs_items or []) + (files_items or [])
+        # Step 2: fallback to single call if nothing found (keeps tests/back-compat)
+        if not combined:
+            single = _safe_ls(["lsjson", target, "--max-depth", "1"])
+            combined = single or []
+        # Step 3: synthesize folders from file paths if needed
+        if (not dirs_items) and combined:
+            # Gather immediate child folder names from 'Path' fields that include '/'
+            prefixes = set()
+            for it in combined:
+                p = (it.get("Path") or it.get("Name") or "")
+                if isinstance(p, str) and "/" in p:
+                    first = p.split("/", 1)[0]
+                    if first:
+                        prefixes.add(first)
+            for name in sorted(prefixes):
+                # Only add if not present already
+                if not any((x.get("Name") == name and (x.get("IsDir") or False)) for x in combined):
+                    combined.append({"Name": name, "Path": name, "IsDir": True, "Size": 0})
+        # Build entries
+        entries: List[Entry] = []
+        seen_ids = set()
+        for it in (combined or []):
+            try:
+                # Heuristics: prefer IsDir; also check common folder MimeType for Drive
                 is_dir = bool(it.get("IsDir"))
+                mt = (it.get("MimeType") or "").lower()
+                if (not is_dir) and ("google-apps.folder" in mt):
+                    is_dir = True
                 name = it.get("Name") or it.get("Path") or ""
+                if not name:
+                    continue
                 size = int(it.get("Size") or 0)
-                # ModTime may be RFC3339; avoid strict parsing to keep lightweight
-                mtime = 0.0
+                eid = f"{target.rstrip('/')}/{name}" if not target.endswith(":") else f"{target}{name}"
+                if eid in seen_ids:
+                    continue
+                seen_ids.add(eid)
                 entries.append(Entry(
-                    id=f"{target.rstrip('/')}/{name}" if not target.endswith(":") else f"{target}{name}",
+                    id=eid,
                     name=name,
                     type="folder" if is_dir else "file",
                     size=0 if is_dir else size,
-                    mtime=mtime,
+                    mtime=0.0,
                 ))
             except Exception:
                 continue
-        # Sort directories first, then by name
+        # Sort: directories first, then by name
         entries.sort(key=lambda e: (0 if e.type == "folder" else 1, e.name.lower()))
         return {"entries": [asdict(e) for e in entries]}
 
