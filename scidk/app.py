@@ -1,6 +1,7 @@
 from flask import Flask, Blueprint, jsonify, request, render_template, redirect, url_for
 from pathlib import Path
 import os
+from typing import Optional
 
 from .core.graph import InMemoryGraph
 from .core.filesystem import FilesystemManager
@@ -69,7 +70,7 @@ def create_app():
         'graph': graph,
         'registry': registry,
         'fs': fs,
-                'providers': fs_providers, 
+        'providers': fs_providers,
         # in-session registries
         'scans': {},  # scan_id -> scan session dict
         'directories': {},  # path -> aggregate info incl. scan_ids
@@ -86,10 +87,17 @@ def create_app():
             'connected': False,
             'last_error': None,
         },
+        # rclone mounts runtime registry (feature-flagged API will use this)
+        'rclone_mounts': {},  # id/name -> { id, remote, subpath, path, read_only, started_at, pid, log_file }
     }
 
     # API routes
     api = Blueprint('api', __name__, url_prefix='/api')
+
+    # Feature flag for rclone mount manager
+    def _feature_rclone_mounts() -> bool:
+        val = (os.environ.get('SCIDK_RCLONE_MOUNTS') or os.environ.get('SCIDK_FEATURE_RCLONE_MOUNTS') or '').strip().lower()
+        return val in ('1', 'true', 'yes', 'y', 'on')
 
     # Helper to read Neo4j configuration, preferring in-app settings over environment
     # Returns tuple: (uri, user, password, database, auth_mode)
@@ -263,32 +271,35 @@ def create_app():
                 driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
                 with driver.session(database=database) as sess:
                     cypher = (
-                        "WITH $rows AS rows, $folders AS folders, $scan_id AS scan_id, $scan_path AS scan_path, $scan_started AS scan_started, $scan_ended AS scan_ended "
+                        "WITH $rows AS rows, $folders AS folders, $scan_id AS scan_id, $scan_path AS scan_path, $scan_started AS scan_started, $scan_ended AS scan_ended, $scan_provider AS scan_provider, $scan_host_type AS scan_host_type, $scan_host_id AS scan_host_id, $scan_root_id AS scan_root_id, $scan_root_label AS scan_root_label, $scan_source AS scan_source "
                         "MERGE (s:Scan {id: scan_id}) SET s.path = scan_path, s.started = scan_started, s.ended = scan_ended "
                         "WITH rows, folders, s "
-                        "CALL { WITH rows, s UNWIND rows AS r "
+                        "CALL { WITH rows, s, scan_provider AS scan_provider, scan_host_type AS scan_host_type, scan_host_id AS scan_host_id UNWIND rows AS r "
                         "  MERGE (f:File {checksum: r.checksum}) "
                         "    SET f.path = r.path, f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, "
-                        "        f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type "
+                        "        f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type, f.provider_id = scan_provider, f.host_type = scan_host_type, f.host_id = scan_host_id "
                         "  MERGE (f)-[:SCANNED_IN]->(s) "
                         "  FOREACH (_ IN CASE WHEN coalesce(r.folder,'') <> '' THEN [1] ELSE [] END | "
-                        "    MERGE (fo:Folder {path: r.folder}) SET fo.name = r.folder_name "
+                        "    MERGE (fo:Folder {path: r.folder}) SET fo.name = r.folder_name, fo.provider_id = scan_provider, fo.host_type = scan_host_type, fo.host_id = scan_host_id "
                         "    MERGE (fo)-[:CONTAINS]->(f) "
                         "    MERGE (fo)-[:SCANNED_IN]->(s) "
                         "    FOREACH (__ IN CASE WHEN coalesce(r.folder_parent,'') <> '' AND r.parent_in_scan THEN [1] ELSE [] END | "
-                        "      MERGE (fop:Folder {path: r.folder_parent}) SET fop.name = r.folder_parent_name "
+                        "      MERGE (fop:Folder {path: r.folder_parent}) SET fop.name = r.folder_parent_name, fop.provider_id = scan_provider, fop.host_type = scan_host_type, fop.host_id = scan_host_id "
                         "      MERGE (fop)-[:CONTAINS]->(fo) ) "
                         "  ) RETURN 0 AS _files_done } "
-                        "CALL { WITH folders, s UNWIND folders AS r2 "
-                        "  MERGE (fo:Folder {path: r2.path}) SET fo.name = r2.name "
+                        "WITH folders, s, scan_provider, scan_host_type, scan_host_id, scan_root_id, scan_root_label, scan_source "
+                        "CALL { WITH folders, s, scan_provider AS scan_provider, scan_host_type AS scan_host_type, scan_host_id AS scan_host_id UNWIND folders AS r2 "
+                        "  MERGE (fo:Folder {path: r2.path}) SET fo.name = r2.name, fo.provider_id = scan_provider, fo.host_type = scan_host_type, fo.host_id = scan_host_id "
                         "  MERGE (fo)-[:SCANNED_IN]->(s) "
                         "  FOREACH (__ IN CASE WHEN coalesce(r2.parent,'') <> '' THEN [1] ELSE [] END | "
-                        "    MERGE (fop:Folder {path: r2.parent}) SET fop.name = r2.parent_name "
+                        "    MERGE (fop:Folder {path: r2.parent}) SET fop.name = r2.parent_name, fop.provider_id = scan_provider, fop.host_type = scan_host_type, fop.host_id = scan_host_id "
                         "    MERGE (fop)-[:CONTAINS]->(fo) ) "
                         "  RETURN 0 AS _folders_done } "
+                        "WITH s, scan_provider, scan_host_type, scan_host_id, scan_root_id, scan_root_label, scan_source "
+                        "SET s.provider_id = scan_provider, s.host_type = scan_host_type, s.host_id = scan_host_id, s.root_id = scan_root_id, s.root_label = scan_root_label, s.scan_source = scan_source "
                         "RETURN s.id AS scan_id"
                     )
-                    res = sess.run(cypher, rows=rows, folders=folder_rows, scan_id=scan.get('id'), scan_path=scan.get('path'), scan_started=scan.get('started'), scan_ended=scan.get('ended'))
+                    res = sess.run(cypher, rows=rows, folders=folder_rows, scan_id=scan.get('id'), scan_path=scan.get('path'), scan_started=scan.get('started'), scan_ended=scan.get('ended'), scan_provider=scan.get('provider_id'), scan_host_type=scan.get('host_type'), scan_host_id=scan.get('host_id'), scan_root_id=scan.get('root_id'), scan_root_label=scan.get('root_label'), scan_source=scan.get('scan_source'))
                     _ = list(res)
                     result['written_files'] = len(rows)
                     result['written_folders'] = len(folder_rows)
@@ -508,6 +519,19 @@ def create_app():
                     root_label = Path(root_id).name or str(root_id)
             except Exception:
                 root_label = None
+            # Host/provider tagging
+            host_type = provider_id
+            host_id = None
+            try:
+                if provider_id == 'rclone':
+                    host_id = f"rclone:{(root_id or '').rstrip(':')}"
+                elif provider_id == 'local_fs':
+                    import socket as _sock
+                    host_id = f"local:{_sock.gethostname()}"
+                elif provider_id == 'mounted_fs':
+                    host_id = f"mounted:{root_id}"
+            except Exception:
+                host_id = f"{provider_id}:{root_id}" if root_id else provider_id
             scan = {
                 'id': scan_id,
                 'path': str(path),
@@ -525,6 +549,8 @@ def create_app():
                 'committed': False,
                 'committed_at': None,
                 'provider_id': provider_id,
+                'host_type': host_type,
+                'host_id': host_id,
                 'root_id': root_id,
                 'root_label': root_label,
                 'scan_source': f"provider:{provider_id}",
@@ -980,6 +1006,184 @@ def create_app():
         values = list(dirs.values())
         values.sort(key=lambda d: d.get('last_scanned') or 0, reverse=True)
         return jsonify(values), 200
+
+    # -----------------------------
+    # Rclone Mount Manager (flagged)
+    # -----------------------------
+    if _feature_rclone_mounts():
+        import time, subprocess, shutil, json as _json
+
+        def _mounts_dir() -> Path:
+            d = Path(app.root_path).parent / 'data' / 'mounts'
+            d.mkdir(parents=True, exist_ok=True)
+            return d
+
+        def _sanitize_name(name: str) -> str:
+            safe = ''.join([c for c in (name or '') if c.isalnum() or c in ('-', '_')]).strip()
+            return safe[:64] if safe else ''
+
+        def _listremotes() -> list:
+            try:
+                provs = app.extensions['scidk']['providers']
+                rp = provs.get('rclone') if provs else None
+                roots = rp.list_roots() if rp else []
+                return [r.id for r in roots]
+            except Exception:
+                return []
+
+        def _rclone_exe() -> Optional[str]:
+            return shutil.which('rclone')
+
+        @api.get('/rclone/mounts')
+        def api_rclone_mounts_list():
+            mounts = app.extensions['scidk'].setdefault('rclone_mounts', {})
+            out = []
+            for mid, m in list(mounts.items()):
+                proc = m.get('process')
+                alive = (proc is not None) and (proc.poll() is None)
+                status = 'running' if alive else ('exited' if proc is not None else 'unknown')
+                exit_code = None if alive else (proc.returncode if proc is not None else None)
+                out.append({
+                    'id': m.get('id'),
+                    'name': m.get('name'),
+                    'remote': m.get('remote'),
+                    'subpath': m.get('subpath'),
+                    'path': m.get('path'),
+                    'read_only': m.get('read_only'),
+                    'started_at': m.get('started_at'),
+                    'status': status,
+                    'exit_code': exit_code,
+                    'log_file': m.get('log_file'),
+                })
+            return jsonify(out), 200
+
+        @api.post('/rclone/mounts')
+        def api_rclone_mounts_create():
+            if not _rclone_exe():
+                return jsonify({'error': 'rclone not installed'}), 400
+            try:
+                body = request.get_json(silent=True) or {}
+                remote = str(body.get('remote') or '').strip()
+                subpath = str(body.get('subpath') or '').strip().lstrip('/')
+                name = _sanitize_name(str(body.get('name') or ''))
+                read_only = bool(body.get('read_only', True))
+                if not remote:
+                    return jsonify({'error': 'remote required'}), 400
+                if not remote.endswith(':'):
+                    remote = remote + ':'
+                if not name:
+                    return jsonify({'error': 'name required'}), 400
+                # Safety: restrict mountpoint and validate remote exists
+                remotes = _listremotes()
+                if remote not in remotes:
+                    return jsonify({'error': f'remote not configured: {remote}'}), 400
+                mdir = _mounts_dir()
+                mpath = mdir / name
+                try:
+                    mpath.mkdir(parents=True, exist_ok=True)
+                except Exception as e:
+                    return jsonify({'error': f'failed to create mount dir: {e}'}), 500
+                target = remote + (subpath if subpath else '')
+                log_file = mdir / f"{name}.log"
+                # Build rclone command
+                args = [
+                    _rclone_exe(), 'mount', target, str(mpath),
+                    '--dir-cache-time', '60m',
+                    '--poll-interval', '30s',
+                    '--vfs-cache-mode', 'minimal',
+                    '--log-format', 'DATE,TIME,LEVEL',
+                    '--log-level', 'INFO',
+                    '--log-file', str(log_file),
+                ]
+                if read_only:
+                    args.append('--read-only')
+                # Launch subprocess detached from terminal; logs go to file
+                try:
+                    fnull = open(os.devnull, 'wb')
+                    proc = subprocess.Popen(args, stdout=fnull, stderr=fnull)
+                except Exception as e:
+                    return jsonify({'error': f'failed to start rclone: {e}'}), 500
+                rec = {
+                    'id': name,
+                    'name': name,
+                    'remote': remote,
+                    'subpath': subpath,
+                    'path': str(mpath),
+                    'read_only': bool(read_only),
+                    'started_at': time.time(),
+                    'process': proc,
+                    'pid': proc.pid if proc else None,
+                    'log_file': str(log_file),
+                }
+                mounts = app.extensions['scidk'].setdefault('rclone_mounts', {})
+                mounts[name] = rec
+                return jsonify({'id': name, 'path': str(mpath)}), 201
+            except Exception as e:
+                return jsonify({'error': str(e)}), 500
+
+        @api.delete('/rclone/mounts/<mid>')
+        def api_rclone_mounts_delete(mid):
+            mounts = app.extensions['scidk'].setdefault('rclone_mounts', {})
+            m = mounts.get(mid)
+            if not m:
+                return jsonify({'error': 'not found'}), 404
+            proc = m.get('process')
+            mpath = m.get('path')
+            try:
+                if proc and (proc.poll() is None):
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=5)
+                    except Exception:
+                        proc.kill()
+                # Best-effort unmount
+                try:
+                    subprocess.run(['fusermount', '-u', mpath], check=False)
+                except Exception:
+                    pass
+                try:
+                    subprocess.run(['umount', mpath], check=False)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            mounts.pop(mid, None)
+            return jsonify({'ok': True}), 200
+
+        @api.get('/rclone/mounts/<mid>/logs')
+        def api_rclone_mounts_logs(mid):
+            mounts = app.extensions['scidk'].setdefault('rclone_mounts', {})
+            m = mounts.get(mid)
+            if not m:
+                return jsonify({'error': 'not found'}), 404
+            tail_n = int(request.args.get('tail') or 200)
+            path = m.get('log_file')
+            lines = []
+            try:
+                with open(path, 'r', encoding='utf-8', errors='ignore') as fh:
+                    lines = fh.readlines()
+            except Exception:
+                lines = []
+            if tail_n > 0 and len(lines) > tail_n:
+                lines = lines[-tail_n:]
+            return jsonify({'lines': [ln.rstrip('\n') for ln in lines]}), 200
+
+        @api.get('/rclone/mounts/<mid>/health')
+        def api_rclone_mounts_health(mid):
+            mounts = app.extensions['scidk'].setdefault('rclone_mounts', {})
+            m = mounts.get(mid)
+            if not m:
+                return jsonify({'ok': False, 'error': 'not found'}), 404
+            proc = m.get('process')
+            alive = (proc is not None) and (proc.poll() is None)
+            path = m.get('path')
+            listable = False
+            try:
+                p = Path(path)
+                listable = p.exists() and p.is_dir() and (len(list(p.iterdir())) >= 0)
+            except Exception:
+                listable = False
+            return jsonify({'ok': bool(alive and listable), 'alive': bool(alive), 'listable': bool(listable)}), 200
 
     @api.get('/fs/list')
     def api_fs_list():
@@ -1975,7 +2179,9 @@ def create_app():
         rules = list(reg.rules.rules)
         ext_count = len(reg.by_extension)
         interp_count = len(reg.by_id)
-        return render_template('settings.html', info=info, mappings=mappings, rules=rules, ext_count=ext_count, interp_count=interp_count)
+        # Feature flag for rclone mounts UI
+        rclone_mounts_feature = _feature_rclone_mounts()
+        return render_template('settings.html', info=info, mappings=mappings, rules=rules, ext_count=ext_count, interp_count=interp_count, rclone_mounts_feature=rclone_mounts_feature)
 
     @ui.post('/scan')
     def ui_scan():
