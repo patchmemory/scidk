@@ -205,6 +205,58 @@ CURRENT REPO STATE:
 """
         return context
 
+    def start_task(self, task_id: str):
+        """Start working on a task: validate DoR, show context, and create/switch to a git branch."""
+        # Find task file first
+        task_file = self.find_task_file(task_id)
+        if not task_file:
+            print(f"❌ Task {task_id} not found in dev/tasks")
+            return
+
+        # Validate DoR (non-blocking: warn if fails)
+        try:
+            ok = self.validate_dor(task_id)
+            if not ok:
+                print("⚠️ Proceeding despite DoR issues. Consider updating the task frontmatter.")
+        except Exception as e:
+            print(f"⚠️ DoR validation error: {e}")
+
+        # Determine branch name
+        branch = f"task/{task_id.replace(':', '-')}"
+
+        # Try to interact with git, but be resilient if not a git repo
+        def run_git(cmd: str) -> Tuple[int, str]:
+            try:
+                res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                out = (res.stdout or "") + (res.stderr or "")
+                return res.returncode, out.strip()
+            except Exception as ex:
+                return 1, str(ex)
+
+        code, _ = run_git("git rev-parse --is-inside-work-tree")
+        if code == 0:
+            # Check if branch exists
+            exists_code, _ = run_git(f"git rev-parse --verify {sh_quote(branch)}")
+            if exists_code == 0:
+                print(f"🔀 Switching to existing branch: {branch}")
+                run_git(f"git checkout {sh_quote(branch)}")
+            else:
+                print(f"🌱 Creating new branch: {branch}")
+                run_git(f"git checkout -b {sh_quote(branch)}")
+        else:
+            print("ℹ️ Not a git repository or git unavailable — skipping branch creation.")
+
+        # Show task context
+        print("\n🧭 TASK CONTEXT")
+        print("=" * 40)
+        print(self.get_task_context(task_id))
+
+        # Helpful next steps
+        print("\n➡️ Suggested next steps:")
+        print("  1) Implement acceptance criteria in small commits")
+        print("  2) Run tests: pytest -q")
+        print("  3) Mark complete when DoD is met: python dev_cli.py complete " + task_id)
+
     def complete_task(self, task_id: str):
         """Mark task as complete and validate DoD (lightweight)"""
         print(f"🎯 Completing task: {task_id}")

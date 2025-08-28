@@ -1299,6 +1299,33 @@ def create_app():
             return jsonify({"error": "not found"}), 404
         return jsonify(s), 200
 
+    # Convenience alias for creating scans via POST /api/scans (in addition to legacy /api/scan)
+    @api.post('/scans')
+    def api_scans_create():
+        return api_scan()
+
+    # Lightweight status endpoint with progress counters
+    @api.get('/scans/<scan_id>/status')
+    def api_scan_status(scan_id):
+        s = app.extensions['scidk'].get('scans', {}).get(scan_id)
+        if not s:
+            return jsonify({"error": "not found"}), 404
+        # Derive simple status and counters
+        started = s.get('started')
+        ended = s.get('ended')
+        status = 'complete' if ended else 'running'
+        return jsonify({
+            'id': s.get('id'),
+            'status': status,
+            'started': started,
+            'ended': ended,
+            'duration_sec': s.get('duration_sec'),
+            'file_count': s.get('file_count'),
+            'by_ext': s.get('by_ext', {}),
+            'folder_count': s.get('folder_count'),
+            'source': s.get('source'),
+        }), 200
+
     @api.get('/scans/<scan_id>/fs')
     def api_scan_fs(scan_id):
         idx = _get_or_build_scan_index(scan_id)
