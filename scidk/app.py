@@ -56,6 +56,10 @@ def create_app():
 
     # Initialize filesystem providers (Phase 0)
     prov_enabled = [p.strip() for p in (os.environ.get('SCIDK_PROVIDERS', 'local_fs,mounted_fs').split(',')) if p.strip()]
+    # If rclone mounts feature is enabled, ensure rclone provider is also enabled for listremotes validation
+    _ff_rc = (os.environ.get('SCIDK_RCLONE_MOUNTS') or os.environ.get('SCIDK_FEATURE_RCLONE_MOUNTS') or '').strip().lower() in ('1','true','yes','y','on')
+    if _ff_rc and 'rclone' not in prov_enabled:
+        prov_enabled.append('rclone')
     fs_providers = FsProviderRegistry(enabled=prov_enabled)
     p_local = LocalFSProvider(); p_local.initialize(app, {})
     p_mounted = MountedFSProvider(); p_mounted.initialize(app, {})
@@ -273,30 +277,27 @@ def create_app():
                     cypher = (
                         "WITH $rows AS rows, $folders AS folders, $scan_id AS scan_id, $scan_path AS scan_path, $scan_started AS scan_started, $scan_ended AS scan_ended, $scan_provider AS scan_provider, $scan_host_type AS scan_host_type, $scan_host_id AS scan_host_id, $scan_root_id AS scan_root_id, $scan_root_label AS scan_root_label, $scan_source AS scan_source "
                         "MERGE (s:Scan {id: scan_id}) SET s.path = scan_path, s.started = scan_started, s.ended = scan_ended "
-                        "WITH rows, folders, s "
-                        "CALL { WITH rows, s, scan_provider AS scan_provider, scan_host_type AS scan_host_type, scan_host_id AS scan_host_id UNWIND rows AS r "
+                        "WITH rows, folders, s CALL { WITH rows, s UNWIND rows AS r "
                         "  MERGE (f:File {checksum: r.checksum}) "
                         "    SET f.path = r.path, f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, "
-                        "        f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type, f.provider_id = scan_provider, f.host_type = scan_host_type, f.host_id = scan_host_id "
+                        "        f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type, f.provider_id = $scan_provider, f.host_type = $scan_host_type, f.host_id = $scan_host_id "
                         "  MERGE (f)-[:SCANNED_IN]->(s) "
                         "  FOREACH (_ IN CASE WHEN coalesce(r.folder,'') <> '' THEN [1] ELSE [] END | "
-                        "    MERGE (fo:Folder {path: r.folder}) SET fo.name = r.folder_name, fo.provider_id = scan_provider, fo.host_type = scan_host_type, fo.host_id = scan_host_id "
+                        "    MERGE (fo:Folder {path: r.folder}) SET fo.name = r.folder_name, fo.provider_id = $scan_provider, fo.host_type = $scan_host_type, fo.host_id = $scan_host_id "
                         "    MERGE (fo)-[:CONTAINS]->(f) "
                         "    MERGE (fo)-[:SCANNED_IN]->(s) "
                         "    FOREACH (__ IN CASE WHEN coalesce(r.folder_parent,'') <> '' AND r.parent_in_scan THEN [1] ELSE [] END | "
-                        "      MERGE (fop:Folder {path: r.folder_parent}) SET fop.name = r.folder_parent_name, fop.provider_id = scan_provider, fop.host_type = scan_host_type, fop.host_id = scan_host_id "
+                        "      MERGE (fop:Folder {path: r.folder_parent}) SET fop.name = r.folder_parent_name, fop.provider_id = $scan_provider, fop.host_type = $scan_host_type, fop.host_id = $scan_host_id "
                         "      MERGE (fop)-[:CONTAINS]->(fo) ) "
                         "  ) RETURN 0 AS _files_done } "
-                        "WITH folders, s, scan_provider, scan_host_type, scan_host_id, scan_root_id, scan_root_label, scan_source "
-                        "CALL { WITH folders, s, scan_provider AS scan_provider, scan_host_type AS scan_host_type, scan_host_id AS scan_host_id UNWIND folders AS r2 "
-                        "  MERGE (fo:Folder {path: r2.path}) SET fo.name = r2.name, fo.provider_id = scan_provider, fo.host_type = scan_host_type, fo.host_id = scan_host_id "
+                        "WITH folders, s CALL { WITH folders, s UNWIND folders AS r2 "
+                        "  MERGE (fo:Folder {path: r2.path}) SET fo.name = r2.name, fo.provider_id = $scan_provider, fo.host_type = $scan_host_type, fo.host_id = $scan_host_id "
                         "  MERGE (fo)-[:SCANNED_IN]->(s) "
                         "  FOREACH (__ IN CASE WHEN coalesce(r2.parent,'') <> '' THEN [1] ELSE [] END | "
-                        "    MERGE (fop:Folder {path: r2.parent}) SET fop.name = r2.parent_name, fop.provider_id = scan_provider, fop.host_type = scan_host_type, fop.host_id = scan_host_id "
+                        "    MERGE (fop:Folder {path: r2.parent}) SET fop.name = r2.parent_name, fop.provider_id = $scan_provider, fop.host_type = $scan_host_type, fop.host_id = $scan_host_id "
                         "    MERGE (fop)-[:CONTAINS]->(fo) ) "
                         "  RETURN 0 AS _folders_done } "
-                        "WITH s, scan_provider, scan_host_type, scan_host_id, scan_root_id, scan_root_label, scan_source "
-                        "SET s.provider_id = scan_provider, s.host_type = scan_host_type, s.host_id = scan_host_id, s.root_id = scan_root_id, s.root_label = scan_root_label, s.scan_source = scan_source "
+                        "WITH s SET s.provider_id = $scan_provider, s.host_type = $scan_host_type, s.host_id = $scan_host_id, s.root_id = $scan_root_id, s.root_label = $scan_root_label, s.scan_source = $scan_source "
                         "RETURN s.id AS scan_id"
                     )
                     res = sess.run(cypher, rows=rows, folders=folder_rows, scan_id=scan.get('id'), scan_path=scan.get('path'), scan_started=scan.get('started'), scan_ended=scan.get('ended'), scan_provider=scan.get('provider_id'), scan_host_type=scan.get('host_type'), scan_host_id=scan.get('host_id'), scan_root_id=scan.get('root_id'), scan_root_label=scan.get('root_label'), scan_source=scan.get('scan_source'))
