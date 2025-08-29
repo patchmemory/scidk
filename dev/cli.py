@@ -524,12 +524,24 @@ CURRENT REPO STATE:
 
         if git_commit:
             try:
-                res = subprocess.run("git rev-parse --is-inside-work-tree", shell=True, capture_output=True, text=True)
-                if res.returncode == 0 and (res.stdout or '').strip() == 'true':
-                    rel = os.path.relpath(str(task_file), start=str(self.repo_root))
-                    subprocess.run(f"git add {sh_quote(rel)}", shell=True)
+                # If dev/ is a git repo (submodule), commit inside it; otherwise commit in superproject.
+                dev_repo = self.dev_dir
+                sub_ok = False
+                if dev_repo.exists():
+                    chk = subprocess.run(f"git -C {sh_quote(str(dev_repo))} rev-parse --is-inside-work-tree", shell=True, capture_output=True, text=True)
+                    sub_ok = (chk.returncode == 0 and (chk.stdout or '').strip() == 'true')
+                if sub_ok and str(task_file).startswith(str(dev_repo)):
+                    rel_in_dev = os.path.relpath(str(task_file), start=str(dev_repo))
+                    subprocess.run(f"git -C {sh_quote(str(dev_repo))} add {sh_quote(rel_in_dev)}", shell=True)
                     msg = f"chore(task): update frontmatter {task_id}"
-                    subprocess.run(f"git commit -m {sh_quote(msg)}", shell=True)
+                    subprocess.run(f"git -C {sh_quote(str(dev_repo))} commit -m {sh_quote(msg)}", shell=True)
+                else:
+                    res = subprocess.run("git rev-parse --is-inside-work-tree", shell=True, capture_output=True, text=True)
+                    if res.returncode == 0 and (res.stdout or '').strip() == 'true':
+                        rel = os.path.relpath(str(task_file), start=str(self.repo_root))
+                        subprocess.run(f"git add {sh_quote(rel)}", shell=True)
+                        msg = f"chore(task): update frontmatter {task_id}"
+                        subprocess.run(f"git commit -m {sh_quote(msg)}", shell=True)
             except Exception:
                 pass
 
@@ -549,6 +561,8 @@ def _print_help():
     print("  cycle-status     - Show current cycle")
     print("  next-cycle       - Propose next cycle")
     print("  merge-safety     - Report potentially risky deletions vs base (use --base <branch> to override)")
+    print("  sync-dev         - Update dev submodule to latest remote (no pointer commit in CI-only mode)")
+    print("  doctor           - Diagnose dev submodule health and provide guidance")
     print("\nGlobal flags:")
     print("  --json           - Emit JSON instead of human-readable output (where supported)")
     print("  --base <branch>  - Override base branch for merge-safety")
@@ -704,6 +718,36 @@ def main():
         res = cli.merge_safety(base_override)
         if json_flag:
             print(json.dumps(res, indent=2, default=str))
+
+    elif command == "sync-dev":
+        # Update dev submodule (if present). In CI-only pointer bump policy, we do not commit the pointer here.
+        dev_dir = cli.dev_dir
+        # Ensure submodule initialized
+        res = subprocess.run(f"git submodule update --init --remote --merge {sh_quote(str(dev_dir))}", shell=True)
+        if res.returncode == 0:
+            print("✅ dev submodule updated to latest remote (pointer not committed; CI will bump across branches).")
+        else:
+            print("⚠️ Failed to update dev submodule. Run 'git submodule status' and 'git submodule sync'.")
+
+    elif command == "doctor":
+        dev_dir = cli.dev_dir
+        out = {"dev_present": dev_dir.exists(), "dev_is_git": False, "branch": None, "detached": None, "unpushed": None}
+        if dev_dir.exists():
+            chk = subprocess.run(f"git -C {sh_quote(str(dev_dir))} rev-parse --is-inside-work-tree", shell=True, capture_output=True, text=True)
+            out["dev_is_git"] = (chk.returncode == 0 and (chk.stdout or '').strip() == 'true')
+            if out["dev_is_git"]:
+                b = subprocess.run(f"git -C {sh_quote(str(dev_dir))} rev-parse --abbrev-ref HEAD", shell=True, capture_output=True, text=True)
+                out["branch"] = (b.stdout or '').strip()
+                out["detached"] = (out["branch"] == 'HEAD')
+                # Check unpushed commits
+                subprocess.run(f"git -C {sh_quote(str(dev_dir))} remote update", shell=True)
+                st = subprocess.run(f"git -C {sh_quote(str(dev_dir))} cherry -v", shell=True, capture_output=True, text=True)
+                out["unpushed"] = bool((st.stdout or '').strip())
+        print("🔎 dev/ doctor:\n" + json.dumps(out, indent=2))
+        if out["dev_is_git"] and out["detached"]:
+            print("Hint: git -C dev checkout main && git -C dev pull --ff-only")
+        if out["dev_is_git"] and out["unpushed"]:
+            print("Hint: git -C dev push")
 
     else:
         print(f"Unknown command: {command}")
