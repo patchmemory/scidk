@@ -21,3 +21,7 @@ data/neo4j/
 
 # Ignore all contents under data/ (keep directory itself tracked)
 data/*
+
+
+# Keep placeholder so data/ stays tracked while contents are ignored
+!data/.gitkeep
