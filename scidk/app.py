@@ -2,6 +2,8 @@ from flask import Flask, Blueprint, jsonify, request, render_template, redirect,
 from pathlib import Path
 import os
 from typing import Optional
+import time
+import json
 
 from .core.graph import InMemoryGraph
 from .core.filesystem import FilesystemManager
@@ -97,6 +99,9 @@ def create_app():
 
     # API routes
     api = Blueprint('api', __name__, url_prefix='/api')
+
+    # Import SQLite layer for selections/annotations lazily to avoid circular deps
+    from .core import annotations_sqlite as ann_db
 
     # Feature flag for rclone mount manager
     def _feature_rclone_mounts() -> bool:
@@ -2235,6 +2240,68 @@ def create_app():
         out = ro.copy()
         out.update({'file_count': files, 'folder_count': folders})
         return jsonify(out), 200
+
+    # Selections & Annotations API (SQLite-backed)
+    @api.post('/selections')
+    def api_create_selection():
+        payload = request.get_json(silent=True) or {}
+        sel_id = (payload.get('id') or '').strip()
+        name = (payload.get('name') or '').strip() or None
+        import time as _t
+        ts = _t.time()
+        # If id not provided, derive short id from time
+        if not sel_id:
+            sel_id = hex(int(ts * 1000000))[2:]
+        item = ann_db.create_selection(sel_id, name, ts)
+        return jsonify(item), 201
+
+    @api.post('/selections/<sel_id>/items')
+    def api_add_selection_items(sel_id):
+        payload = request.get_json(silent=True) or {}
+        file_ids = payload.get('file_ids') or payload.get('files') or []
+        if not isinstance(file_ids, list):
+            return jsonify({'error': 'file_ids must be a list'}), 400
+        import time as _t
+        ts = _t.time()
+        count = ann_db.add_selection_items(sel_id, [str(fid) for fid in file_ids], ts)
+        return jsonify({'selection_id': sel_id, 'added': int(count)}), 200
+
+    @api.post('/annotations')
+    def api_create_annotation():
+        payload = request.get_json(silent=True) or {}
+        file_id = (payload.get('file_id') or '').strip()
+        if not file_id:
+            return jsonify({'error': 'file_id is required'}), 400
+        kind = (payload.get('kind') or '').strip() or None
+        label = (payload.get('label') or '').strip() or None
+        note = payload.get('note')
+        if isinstance(note, str):
+            note = note
+        elif note is None:
+            note = None
+        else:
+            try:
+                note = json.dumps(note)
+            except Exception:
+                note = str(note)
+        data_json = payload.get('data_json')
+        if not isinstance(data_json, (str, type(None))):
+            try:
+                data_json = json.dumps(data_json)
+            except Exception:
+                data_json = None
+        import time as _t
+        ts = _t.time()
+        ann = ann_db.create_annotation(file_id, kind, label, note, data_json, ts)
+        return jsonify(ann), 201
+
+    @api.get('/annotations')
+    def api_get_annotations():
+        file_id = (request.args.get('file_id') or '').strip()
+        if not file_id:
+            return jsonify({'error': 'file_id query parameter is required'}), 400
+        items = ann_db.list_annotations_by_file(file_id)
+        return jsonify({'items': items, 'count': len(items)}), 200
 
     app.register_blueprint(api)
 
