@@ -429,6 +429,9 @@ def create_app():
         cache[scan_id] = idx
         return idx
 
+    # Feature flags for file indexing
+    _ff_index = (os.environ.get('SCIDK_FEATURE_FILE_INDEX') or '').strip().lower() in ('1','true','yes','y','on')
+
     @api.post('/scan')
     def api_scan():
         data = request.get_json(force=True, silent=True) or {}
@@ -492,9 +495,18 @@ def create_app():
                         count += 1
                     except Exception:
                         continue
-                # Batch insert into SQLite (10k/txn)
+                # Batch insert into SQLite (10k/txn) only if feature flag enabled
                 try:
-                    ingested = pix.batch_insert_files(rows, batch_size=10000)
+                    if _ff_index:
+                        ingested = pix.batch_insert_files(rows, batch_size=10000)
+                        # Minimal change detection to populate file_history
+                        try:
+                            _chg = pix.apply_basic_change_history(scan_id, path)
+                            app.extensions['scidk'].setdefault('telemetry', {})['last_change_counts'] = _chg
+                        except Exception as __e:
+                            app.extensions['scidk'].setdefault('telemetry', {})['last_change_error'] = str(__e)
+                    else:
+                        ingested = 0
                 except Exception as _e:
                     # Surface as non-fatal for now; continue app flow but record error
                     app.extensions['scidk'].setdefault('telemetry', {})['last_sqlite_error'] = str(_e)
@@ -1320,6 +1332,98 @@ def create_app():
             return jsonify({"error": "not found"}), 404
         return jsonify(s), 200
 
+    @api.get('/index/search')
+    def api_index_search():
+        # Feature-flagged minimal search over the SQLite files table
+        if not _ff_index:
+            return jsonify({"error": "file index disabled"}), 404
+        from .core import path_index_sqlite as pix
+        q = (request.args.get('q') or '').strip()
+        ext = (request.args.get('ext') or '').strip().lower() or None
+        prefix = (request.args.get('prefix') or '').strip() or None
+        scan_id = (request.args.get('scan_id') or '').strip() or None
+        try:
+            conn = pix.connect()
+            pix.init_db(conn)
+            cur = conn.cursor()
+            clauses = []
+            params = []
+            if q:
+                clauses.append('(name LIKE ? OR path LIKE ?)')
+                like = f"%{q}%"
+                params.extend([like, like])
+            if ext:
+                clauses.append('file_extension = ?')
+                params.append(ext if ext.startswith('.') else ('.' + ext if ext else ext))
+            if prefix:
+                # Ensure trailing slash for folder-like prefixes unless remote root
+                pfx = prefix if prefix.endswith(':') else (prefix.rstrip('/') + '/')
+                clauses.append('path LIKE ?')
+                params.append(f"{pfx}%")
+            if scan_id:
+                clauses.append('scan_id = ?')
+                params.append(scan_id)
+            where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
+            sql = f"SELECT path,name,size,file_extension,mime_type,scan_id FROM files{where} LIMIT 500"
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+            out = [
+                {
+                    'path': r[0],
+                    'name': r[1],
+                    'size': r[2],
+                    'ext': r[3],
+                    'mime': r[4],
+                    'scan_id': r[5],
+                } for r in rows
+            ]
+            conn.close()
+            return jsonify({'results': out, 'count': len(out)}), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @api.get('/index/duplicates')
+    def api_index_duplicates():
+        if not _ff_index:
+            return jsonify({"error": "file index disabled"}), 404
+        from .core import path_index_sqlite as pix
+        method = (request.args.get('method') or 'size_name').strip()
+        scan_id = (request.args.get('scan_id') or '').strip() or None
+        try:
+            conn = pix.connect()
+            pix.init_db(conn)
+            cur = conn.cursor()
+            where = ''
+            params = []
+            if scan_id:
+                where = ' WHERE scan_id = ?'
+                params = [scan_id]
+            out = []
+            if method == 'hash':
+                cur.execute(f"""
+                    SELECT hash, COUNT(*) as n, GROUP_CONCAT(path)
+                    FROM files{where} 
+                    WHERE hash IS NOT NULL AND hash <> ''
+                    GROUP BY hash HAVING n > 1
+                    ORDER BY n DESC LIMIT 200
+                """, params)
+                for h, n, paths in cur.fetchall():
+                    out.append({'hash': h, 'count': n, 'paths': (paths or '').split(',')})
+            else:
+                cur.execute(f"""
+                    SELECT name, size, COUNT(*) as n, GROUP_CONCAT(path)
+                    FROM files{where}
+                    WHERE size > 0 AND name <> ''
+                    GROUP BY name, size HAVING n > 1
+                    ORDER BY n DESC, size DESC LIMIT 200
+                """, params)
+                for name, size, n, paths in cur.fetchall():
+                    out.append({'name': name, 'size': size, 'count': n, 'paths': (paths or '').split(',')})
+            conn.close()
+            return jsonify({'duplicates': out, 'count': len(out), 'method': method}), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     # Lightweight status endpoint with progress counters
     @api.get('/scans/<scan_id>/status')
     def api_scan_status(scan_id):
@@ -1379,6 +1483,97 @@ def create_app():
         sub_folders.sort(key=lambda r: r['name'].lower())
         files = children_files.get(req_path, [])
         return jsonify({'scan_id': scan_id, 'path': req_path, 'breadcrumb': breadcrumb, 'folders': sub_folders, 'files': files}), 200
+
+    # New: SQLite-index-backed browse for a given scan
+    @api.get('/scans/<scan_id>/browse')
+    def api_scan_browse(scan_id):
+        """Browse direct children from the SQLite index for a scan.
+        Query params:
+          - path (required): parent folder to list direct children for.
+          - page_size (optional, default 100): limit per page.
+          - next_page_token (optional): opaque pagination token (OFFSET in MVP).
+          - extension (optional): filter by file_extension (e.g., ".txt").
+          - type (optional): filter by type ("file" or "folder").
+
+        Sorting: type DESC, name ASC.
+        Returns: { scan_id, path, page_size, next_page_token?, entries: [ ... ] }
+        """
+        # Validate scan exists in session
+        s = app.extensions['scidk'].get('scans', {}).get(scan_id)
+        if not s:
+            return jsonify({'error': 'scan not found'}), 404
+        from .core import path_index_sqlite as pix
+        req_path = (request.args.get('path') or '').strip()
+        if req_path == '':
+            # Default to the scan root path if not provided
+            req_path = str(s.get('path') or '')
+        # Normalize page_size and token
+        try:
+            page_size = int(request.args.get('page_size') or 100)
+        except Exception:
+            page_size = 100
+        page_size = max(1, min(page_size, 1000))  # simple guardrails
+        token_raw = (request.args.get('next_page_token') or '').strip()
+        try:
+            offset = int(token_raw) if token_raw else 0
+        except Exception:
+            offset = 0
+        # Optional filters
+        ext = (request.args.get('extension') or request.args.get('ext') or '').strip().lower()
+        typ = (request.args.get('type') or '').strip().lower()
+        # Build query
+        where = ["scan_id = ?", "parent_path = ?"]
+        params = [scan_id, req_path]
+        if ext:
+            where.append("file_extension = ?")
+            params.append(ext)
+        if typ:
+            where.append("type = ?")
+            params.append(typ)
+        where_sql = " AND ".join(where)
+        sql = (
+            "SELECT path, name, type, size, modified_time, file_extension, mime_type "
+            f"FROM files WHERE {where_sql} "
+            "ORDER BY type DESC, name ASC "
+            "LIMIT ? OFFSET ?"
+        )
+        params.extend([page_size + 1, offset])  # fetch one extra row to derive next_page_token
+        try:
+            conn = pix.connect()
+            pix.init_db(conn)
+            cur = conn.execute(sql, params)
+            rows = cur.fetchall()
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        # Build entries
+        entries = []
+        for r in rows[:page_size]:
+            path_val, name_val, type_val, size_val, mtime_val, ext_val, mime_val = r
+            entries.append({
+                'path': path_val,
+                'name': name_val,
+                'type': type_val,
+                'size': int(size_val or 0),
+                'modified': float(mtime_val or 0.0),
+                'extension': ext_val or '',
+                'mime_type': mime_val,
+            })
+        next_token = str(offset + page_size) if len(rows) > page_size else None
+        out = {
+            'scan_id': scan_id,
+            'path': req_path,
+            'page_size': page_size,
+            'entries': entries,
+        }
+        if next_token is not None:
+            out['next_page_token'] = next_token
+
+        return jsonify(out), 200
 
     @api.post('/ro-crates/referenced')
     def api_ro_crates_referenced():
@@ -2371,6 +2566,8 @@ def create_app():
             'host': os.environ.get('SCIDK_HOST', '127.0.0.1'),
             'port': os.environ.get('SCIDK_PORT', '5000'),
             'debug': os.environ.get('SCIDK_DEBUG', '1'),
+                        'feature_file_index': os.environ.get('SCIDK_FEATURE_FILE_INDEX', ''),
+                        'hash_policy': os.environ.get('SCIDK_HASH_POLICY', 'auto'),
             'dataset_count': len(datasets),
             'interpreter_count': len(reg.by_id),
         }

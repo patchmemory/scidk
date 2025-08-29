@@ -22,9 +22,13 @@ def _db_path() -> Path:
 def connect() -> sqlite3.Connection:
     p = _db_path()
     conn = sqlite3.connect(str(p))
-    # WAL mode as per acceptance
+    # Performance/safety PRAGMAs
     try:
         conn.execute('PRAGMA journal_mode=WAL;')
+        conn.execute("PRAGMA synchronous=NORMAL;")
+        conn.execute("PRAGMA temp_store=MEMORY;")
+        # Negative cache_size means KB pages; -80000 ≈ ~80MB if 1KB page, engines vary — acceptable default
+        conn.execute("PRAGMA cache_size=-80000;")
     except Exception:
         pass
     return conn
@@ -57,10 +61,32 @@ def init_db(conn: Optional[sqlite3.Connection] = None):
             );
             """
         )
-        # Indexes
+        # Indexes for files
         cur.execute("CREATE INDEX IF NOT EXISTS idx_files_scan_parent_name ON files(scan_id, parent_path, name);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_files_scan_ext ON files(scan_id, file_extension);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_files_scan_type ON files(scan_id, type);")
+        
+        # Minimal history table for future change tracking
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS file_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filesystem TEXT,
+                path TEXT NOT NULL,
+                size INTEGER,
+                modified_time REAL,
+                hash TEXT,
+                scan_id TEXT,
+                change_type TEXT,
+                previous_size INTEGER,
+                previous_modified_time REAL,
+                previous_path TEXT,
+                logical_key TEXT
+            );
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_hist_path ON file_history(path);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_hist_scan ON file_history(scan_id);")
         conn.commit()
     finally:
         if own:
@@ -162,5 +188,74 @@ def batch_insert_files(rows: Iterable[Tuple], batch_size: int = 10000) -> int:
             conn.commit()
             total += len(buf)
         return total
+    finally:
+        conn.close()
+
+
+def apply_basic_change_history(scan_id: str, target_root: str) -> dict:
+    """
+    Compute created/modified/deleted vs the most recent previous scan that indexed the same target_root prefix,
+    and append rows into file_history. This is a minimal, size-based change detector for MVP.
+    Returns counts dict.
+    """
+    conn = connect()
+    init_db(conn)
+    try:
+        cur = conn.cursor()
+        # Normalize prefix for LIKE match
+        prefix = target_root if target_root.endswith(':') else target_root.rstrip('/') + '/'
+        # Find previous scan for the same prefix (heuristic)
+        cur.execute(
+            """
+            SELECT scan_id FROM files
+            WHERE scan_id <> ? AND path LIKE ?
+            ORDER BY rowid DESC LIMIT 1
+            """,
+            (scan_id, f"{prefix}%"),
+        )
+        row = cur.fetchone()
+        prev_scan = row[0] if row else None
+        if not prev_scan:
+            return {"created": 0, "modified": 0, "deleted": 0}
+        # Create temp tables
+        cur.execute("DROP TABLE IF EXISTS _curr;")
+        cur.execute("DROP TABLE IF EXISTS _prev;")
+        cur.execute("CREATE TEMP TABLE _curr AS SELECT path, size FROM files WHERE scan_id=? AND path LIKE ?;", (scan_id, f"{prefix}%"))
+        cur.execute("CREATE TEMP TABLE _prev AS SELECT path, size FROM files WHERE scan_id=? AND path LIKE ?;", (prev_scan, f"{prefix}%"))
+        # New (created)
+        cur.execute(
+            """
+            INSERT INTO file_history(filesystem, path, size, modified_time, hash, scan_id, change_type, previous_size, previous_modified_time, previous_path, logical_key)
+            SELECT NULL as filesystem, c.path, c.size, NULL, NULL, ?, 'created', NULL, NULL, NULL, NULL
+            FROM _curr c LEFT JOIN _prev p ON p.path = c.path
+            WHERE p.path IS NULL;
+            """,
+            (scan_id,),
+        )
+        created = cur.rowcount if hasattr(cur, 'rowcount') else 0
+        # Deleted
+        cur.execute(
+            """
+            INSERT INTO file_history(filesystem, path, size, modified_time, hash, scan_id, change_type, previous_size, previous_modified_time, previous_path, logical_key)
+            SELECT NULL, p.path, NULL, NULL, NULL, ?, 'deleted', p.size, NULL, p.path, NULL
+            FROM _prev p LEFT JOIN _curr c ON c.path = p.path
+            WHERE c.path IS NULL;
+            """,
+            (scan_id,),
+        )
+        deleted = cur.rowcount if hasattr(cur, 'rowcount') else 0
+        # Modified (size change)
+        cur.execute(
+            """
+            INSERT INTO file_history(filesystem, path, size, modified_time, hash, scan_id, change_type, previous_size, previous_modified_time, previous_path, logical_key)
+            SELECT NULL, c.path, c.size, NULL, NULL, ?, 'modified', p.size, NULL, c.path, NULL
+            FROM _curr c JOIN _prev p ON p.path = c.path
+            WHERE COALESCE(c.size,-1) <> COALESCE(p.size,-1);
+            """,
+            (scan_id,),
+        )
+        modified = cur.rowcount if hasattr(cur, 'rowcount') else 0
+        conn.commit()
+        return {"created": int(created), "modified": int(modified), "deleted": int(deleted)}
     finally:
         conn.close()
