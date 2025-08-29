@@ -16,8 +16,9 @@ from typing import Dict, List, Optional, Tuple, Iterable
 
 def _is_yaml_kv_line(line: str) -> bool:
     # Accept key: value or key: (block start) ignoring leading spaces
+    # Empty lines are NOT considered part of the YAML header sentinel for our parser
     if not line.strip():
-        return True
+        return False
     if line.lstrip().startswith('#'):
         return False
     return bool(re.match(r"^[A-Za-z0-9_\-]+:\s*.*$", line.strip()))
@@ -217,9 +218,11 @@ class DevCLI:
             data = self.parse_frontmatter(md)
             if not isinstance(data, dict) or not data:
                 continue
-            status = str(data.get('status', '')).strip()
+            # normalize status
+            status_raw = str(data.get('status', '')).strip()
+            status = status_raw.lower()
             dor_val = str(data.get('dor', '')).strip().lower() in ('true', '1', 'yes', 'y')
-            if status == 'Ready' and dor_val:
+            if status == 'ready' and dor_val:
                 data['file_path'] = md
                 ready_tasks.append(data)
         # Sort by RICE descending
@@ -336,6 +339,14 @@ CURRENT REPO STATE:
         print("\n🧭 TASK CONTEXT\n" + "=" * 40)
         print(self.get_task_context(task_id))
 
+        # Mark as In Progress with started_at
+        try:
+            now = datetime.utcnow().isoformat() + "Z"
+            self.update_task_frontmatter(task_id, {"status": "In Progress", "started_at": now}, git_commit=True)
+            print(f"\n✍️  Updated task {task_id} → status: In Progress")
+        except Exception as e:
+            print(f"⚠️ Could not update task status: {e}")
+
     def complete_task(self, task_id: str):
         """Mark task as complete and validate DoD (lightweight)"""
         print(f"🎯 Completing task: {task_id}")
@@ -387,6 +398,24 @@ CURRENT REPO STATE:
             print(" - [ ] tests\n - [ ] docs\n - [ ] demo_steps")
         print("\nℹ️ Next steps (manual): create PR, ensure demo steps are documented, merge when CI is green.")
 
+        # If tests passed, mark Done
+        try:
+            tests_ok = False
+            # rely on a quick rerun to assert tests are passing now
+            try:
+                res = subprocess.run([sys.executable, '-m', 'pytest', '-q'])
+                tests_ok = (res.returncode == 0)
+            except Exception:
+                tests_ok = False
+            if tests_ok:
+                now = datetime.utcnow().isoformat() + "Z"
+                self.update_task_frontmatter(task_id, {"status": "Done", "completed_at": now}, git_commit=True)
+                print(f"\n✅ Marked task {task_id} as Done.")
+            else:
+                print("\n⏸️  Skipping status update to Done because tests did not pass just now.")
+        except Exception as e:
+            print(f"⚠️ Could not update task status: {e}")
+
     def cycle_status(self):
         """Show current cycle status (lightweight)"""
         if not self.cycles_file.exists():
@@ -424,6 +453,85 @@ CURRENT REPO STATE:
             acc_str = str(acc)
             print(f"   {acc_str[:80]}...")
             print()
+
+    # ------------------------
+    # Frontmatter write helper
+    # ------------------------
+    def update_task_frontmatter(self, task_id: str, updates: Dict, git_commit: bool = True) -> None:
+        """Safely merge and rewrite YAML frontmatter for a task file.
+        Always writes a fenced YAML frontmatter at top and preserves the rest of the file body.
+        """
+        task_file = self.find_task_file(task_id)
+        if not task_file or not task_file.exists():
+            raise FileNotFoundError(f"Task {task_id} not found")
+
+        text = task_file.read_text(encoding="utf-8")
+
+        def dump_yaml(d: Dict) -> str:
+            return yaml.safe_dump(d or {}, sort_keys=False).strip() + "\n"
+
+        # Parse existing metadata using reader (robust to styles)
+        try:
+            cur = self.parse_frontmatter(task_file) or {}
+        except Exception:
+            cur = {}
+        if not isinstance(cur, dict):
+            cur = {}
+        cur.update(updates or {})
+
+        # Compute the remaining body content by stripping any existing frontmatter/header
+        body = text
+        if text.startswith('---'):
+            lines = text.splitlines()
+            end_idx = None
+            for i in range(1, len(lines)):
+                if lines[i].strip() == '---':
+                    end_idx = i
+                    break
+            body = "\n".join(lines[end_idx+1:]) if (end_idx is not None and end_idx + 1 < len(lines)) else ""
+        else:
+            # Try to detect unfenced header and cut it off
+            lines = text.splitlines()
+            header_lines = []
+            body_start = 0
+            in_header = True
+            for idx, line in enumerate(lines):
+                if line.startswith('```') or line.startswith('~~~'):
+                    body_start = idx
+                    break
+                if in_header and (_is_yaml_kv_line(line) or (header_lines and line.startswith((' ', '\t', '-')))):
+                    header_lines.append(line)
+                    continue
+                if header_lines:
+                    body_start = idx
+                    break
+                else:
+                    in_header = False
+                    body_start = 0
+                    break
+            if header_lines:
+                # If the whole file is YAML-like (no clear boundary), treat it as pure metadata
+                if body_start == 0 and len(header_lines) == len(lines):
+                    body = ""
+                else:
+                    body = "\n".join(lines[body_start:])
+            else:
+                body = text
+
+        new_fm = dump_yaml(cur)
+        new_text = f"---\n{new_fm}---\n" + body.lstrip('\n')
+        task_file.write_text(new_text, encoding="utf-8")
+
+        if git_commit:
+            try:
+                res = subprocess.run("git rev-parse --is-inside-work-tree", shell=True, capture_output=True, text=True)
+                if res.returncode == 0 and (res.stdout or '').strip() == 'true':
+                    rel = os.path.relpath(str(task_file), start=str(self.repo_root))
+                    subprocess.run(f"git add {sh_quote(rel)}", shell=True)
+                    msg = f"chore(task): update frontmatter {task_id}"
+                    subprocess.run(f"git commit -m {sh_quote(msg)}", shell=True)
+            except Exception:
+                pass
 
 
 def sh_quote(s: str) -> str:
