@@ -87,10 +87,14 @@ Note: The scanner prefers NCDU for fast filesystem enumeration when available. I
 
 Rclone provider (optional):
 - Enable by installing rclone and setting SCIDK_PROVIDERS=local_fs,mounted_fs,rclone (or include rclone among others).
-- GET /api/providers will include { id: "rclone", ... } when enabled.
-- GET /api/provider_roots?provider_id=rclone lists rclone remotes (uses `rclone listremotes`).
-- GET /api/browse?provider_id=rclone&root_id=<remote>:&path=<remote>:<folder> lists entries via `rclone lsjson`.
+- UI: See docs/rclone/quickstart.md (README-ready snippet: dev/features/providers/README-snippet-rclone.md).
+- API:
+  - GET /api/providers will include { id: "rclone", ... } when enabled.
+  - GET /api/provider_roots?provider_id=rclone lists rclone remotes (uses `rclone listremotes`).
+  - GET /api/browse?provider_id=rclone&root_id=<remote>:&path=<remote>:<folder> lists entries via `rclone lsjson`.
+  - POST /api/scan { provider_id: 'rclone', path: '<remote:path>' } records a metadata-only scan.
 - If rclone is not installed or a remote is misconfigured, API returns a clear error message with HTTP 500 and {"error": "..."}.
+- Optional FUSE mount flow with safe defaults: see docs/rclone/mount-examples.md and dev/ops/rclone/systemd/rclone-mount@.service.
 
 ### Rclone Mount Manager (MVP, feature-flagged)
 - Enable the feature: set `SCIDK_RCLONE_MOUNTS=1` (or `SCIDK_FEATURE_RCLONE_MOUNTS=1`). When enabled, the rclone provider is auto-enabled for remote validation even if not listed in `SCIDK_PROVIDERS`.
