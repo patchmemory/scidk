@@ -101,6 +101,48 @@ def map_rclone_item_to_row(item: Dict, root_path: str, scan_id: str) -> Dict:
 
 
 
+def list_roots(scan_id: str) -> List[str]:
+    """Return root folder paths for a scan (folders whose parent_path is NULL or empty within this scan)."""
+    conn = _ensure_db()
+    try:
+        cur = conn.execute(
+            "SELECT path FROM files WHERE scan_id=? AND type='folder' AND (parent_path IS NULL OR parent_path='') ORDER BY name COLLATE NOCASE",
+            (scan_id,)
+        )
+        return [r[0] for r in cur.fetchall()]
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def list_children(scan_id: str, parent_path: str) -> Dict[str, List[Dict]]:
+    """List child folders and files for a given parent_path within a scan.
+    Returns dict with keys folders, files. Each entry has name, path, and size for files.
+    """
+    conn = _ensure_db()
+    try:
+        folders = []
+        files = []
+        for row in conn.execute(
+            "SELECT name, path FROM files WHERE scan_id=? AND parent_path=? AND type='folder' ORDER BY name COLLATE NOCASE",
+            (scan_id, parent_path)
+        ).fetchall():
+            folders.append({'name': row[0], 'path': row[1]})
+        for row in conn.execute(
+            "SELECT name, path, size, file_extension, mime_type FROM files WHERE scan_id=? AND parent_path=? AND type='file' ORDER BY name COLLATE NOCASE",
+            (scan_id, parent_path)
+        ).fetchall():
+            files.append({'name': row[0], 'path': row[1], 'size_bytes': int(row[2] or 0), 'extension': row[3] or '', 'mime_type': row[4]})
+        return {'folders': folders, 'files': files}
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def batch_insert_files(rows: List[Tuple], batch_size: int = 10000) -> int:
     """Insert rows into SQLite in batches. Returns inserted row count.
     Creates the DB and schema on first use.

@@ -1345,25 +1345,57 @@ def create_app():
 
     @api.get('/scans/<scan_id>/fs')
     def api_scan_fs(scan_id):
+        # Attempt SQLite-backed listing for rclone scans first
+        scans = app.extensions['scidk'].get('scans', {})
+        s = scans.get(scan_id)
+        req_path = (request.args.get('path') or '').strip()
+        if s and s.get('provider_id') == 'rclone':
+            try:
+                from .core import path_index_sqlite as pix
+                if not req_path:
+                    roots = pix.list_roots(scan_id)
+                    from pathlib import Path as _P
+                    folders = [{'name': _P(p).name, 'path': p, 'file_count': 0} for p in roots]
+                    folders.sort(key=lambda r: r['name'].lower())
+                    breadcrumb = [{'name': '(scan roots)', 'path': ''}]
+                    return jsonify({'scan_id': scan_id, 'path': '', 'breadcrumb': breadcrumb, 'folders': folders, 'files': []}), 200
+                # list children for requested path
+                listing = pix.list_children(scan_id, req_path)
+                from pathlib import Path as _P
+                # Build breadcrumb by walking up to a root present in DB
+                breadcrumb = [{'name': '(scan roots)', 'path': ''}]
+                cur = req_path
+                safety = 0
+                while cur and safety < 100:
+                    breadcrumb.append({'name': _P(cur).name or cur, 'path': cur})
+                    par = str(_P(cur).parent)
+                    if par == cur:
+                        break
+                    cur = par
+                    # stop when we reach an entry that has no parent in DB roots
+                    if cur in pix.list_roots(scan_id):
+                        breadcrumb.append({'name': _P(cur).name or cur, 'path': cur})
+                        break
+                    safety += 1
+                return jsonify({'scan_id': scan_id, 'path': req_path, 'breadcrumb': breadcrumb, 'folders': listing['folders'], 'files': listing['files']}), 200
+            except Exception:
+                pass  # fallback to in-memory index
+        # Fallback to in-memory index for local/mounted or if SQLite not available
         idx = _get_or_build_scan_index(scan_id)
         if not idx:
             return jsonify({'error': 'scan not found'}), 404
         from pathlib import Path as _P
-        req_path = (request.args.get('path') or '').strip()
         folder_info = idx['folder_info']
         children_folders = idx['children_folders']
         children_files = idx['children_files']
         roots = idx['roots']
-        # Virtual root listing when no path specified
         if not req_path:
             folders = [{'name': _P(p).name, 'path': p, 'file_count': len(children_files.get(p, []))} for p in roots]
             folders.sort(key=lambda r: r['name'].lower())
             breadcrumb = [{'name': '(scan roots)', 'path': ''}]
             return jsonify({'scan_id': scan_id, 'path': '', 'breadcrumb': breadcrumb, 'folders': folders, 'files': []}), 200
-        # Validate path exists in snapshot
         if req_path not in folder_info:
             return jsonify({'error': 'folder not found in scan'}), 404
-        # Breadcrumb from this scan’s perspective
         bc_chain = []
         cur = req_path
         while cur and cur in folder_info:
@@ -1374,7 +1406,6 @@ def create_app():
             cur = par
         bc_chain.reverse()
         breadcrumb = [{'name': '(scan roots)', 'path': ''}] + [{'name': _P(p).name, 'path': p} for p in bc_chain]
-        # Children
         sub_folders = [{'name': _P(p).name, 'path': p, 'file_count': len(children_files.get(p, []))} for p in children_folders.get(req_path, [])]
         sub_folders.sort(key=lambda r: r['name'].lower())
         files = children_files.get(req_path, [])
