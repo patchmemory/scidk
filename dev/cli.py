@@ -430,23 +430,34 @@ def sh_quote(s: str) -> str:
     return "'" + s.replace("'", "'\\''") + "'"
 
 
+def _print_help():
+    print("Usage: python dev_cli.py <command> [args]")
+    print("\nCommands:")
+    print("  ready-queue      - Show ready tasks sorted by RICE")
+    print("  start [<task>]   - Start working on a task (defaults to top Ready)")
+    print("  context <task>   - Get AI context for a task")
+    print("  validate <task>  - Validate DoR for a task")
+    print("  complete <task>  - Run DoD checks and summarize next steps")
+    print("  cycle-status     - Show current cycle")
+    print("  next-cycle       - Propose next cycle")
+    print("  merge-safety     - Report potentially risky deletions vs base (use --base <branch> to override)")
+    print("\nGlobal flags:")
+    print("  --json           - Emit JSON instead of human-readable output (where supported)")
+    print("  --base <branch>  - Override base branch for merge-safety")
+
+
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python dev_cli.py <command> [args]")
-        print("\nCommands:")
-        print("  ready-queue      - Show ready tasks sorted by RICE")
-        print("  start [<task>]   - Start working on a task (defaults to top Ready)")
-        print("  context <task>   - Get AI context for a task")
-        print("  validate <task>  - Validate DoR for a task")
-        print("  complete <task>  - Run DoD checks and summarize next steps")
-        print("  cycle-status     - Show current cycle")
-        print("  next-cycle       - Propose next cycle")
-        print("  merge-safety     - Report potentially risky deletions vs base (use --base <branch> to override)")
+        _print_help()
         return
 
     # Extract global flags (very light parser)
     argv = sys.argv[:]
     command = argv[1]
+    # Support conventional help triggers
+    if command in ("-h", "--help", "help"):
+        _print_help()
+        return
     json_flag = False
     base_override = None
     if '--json' in argv:
@@ -588,6 +599,7 @@ def main():
 
     else:
         print(f"Unknown command: {command}")
+        _print_help()
 
 
 if __name__ == "__main__":
