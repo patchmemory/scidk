@@ -1,6 +1,7 @@
 from flask import Flask, Blueprint, jsonify, request, render_template, redirect, url_for
 from pathlib import Path
 import os
+from typing import Optional
 
 from .core.graph import InMemoryGraph
 from .core.filesystem import FilesystemManager
@@ -55,6 +56,10 @@ def create_app():
 
     # Initialize filesystem providers (Phase 0)
     prov_enabled = [p.strip() for p in (os.environ.get('SCIDK_PROVIDERS', 'local_fs,mounted_fs').split(',')) if p.strip()]
+    # If rclone mounts feature is enabled, ensure rclone provider is also enabled for listremotes validation
+    _ff_rc = (os.environ.get('SCIDK_RCLONE_MOUNTS') or os.environ.get('SCIDK_FEATURE_RCLONE_MOUNTS') or '').strip().lower() in ('1','true','yes','y','on')
+    if _ff_rc and 'rclone' not in prov_enabled:
+        prov_enabled.append('rclone')
     fs_providers = FsProviderRegistry(enabled=prov_enabled)
     p_local = LocalFSProvider(); p_local.initialize(app, {})
     p_mounted = MountedFSProvider(); p_mounted.initialize(app, {})
@@ -69,7 +74,7 @@ def create_app():
         'graph': graph,
         'registry': registry,
         'fs': fs,
-                'providers': fs_providers, 
+        'providers': fs_providers,
         # in-session registries
         'scans': {},  # scan_id -> scan session dict
         'directories': {},  # path -> aggregate info incl. scan_ids
@@ -86,10 +91,17 @@ def create_app():
             'connected': False,
             'last_error': None,
         },
+        # rclone mounts runtime registry (feature-flagged API will use this)
+        'rclone_mounts': {},  # id/name -> { id, remote, subpath, path, read_only, started_at, pid, log_file }
     }
 
     # API routes
     api = Blueprint('api', __name__, url_prefix='/api')
+
+    # Feature flag for rclone mount manager
+    def _feature_rclone_mounts() -> bool:
+        val = (os.environ.get('SCIDK_RCLONE_MOUNTS') or os.environ.get('SCIDK_FEATURE_RCLONE_MOUNTS') or '').strip().lower()
+        return val in ('1', 'true', 'yes', 'y', 'on')
 
     # Helper to read Neo4j configuration, preferring in-app settings over environment
     # Returns tuple: (uri, user, password, database, auth_mode)
@@ -137,38 +149,73 @@ def create_app():
     # Build rows for commit: files (rows) and standalone folders (folder_rows)
     def build_commit_rows(scan, ds_map):
         checksums = scan.get('checksums') or []
+        # Helpers to handle local paths and rclone remote paths like "remote:folder/sub/file"
+        def _split_remote(p: str):
+            # Returns (remote_prefix or None, rest)
+            try:
+                if p and (':' in p) and (p.index(':') < p.index('/') if '/' in p else True):
+                    i = p.index(':')
+                    return p[:i+1], p[i+1:]
+            except Exception:
+                pass
+            return None, p
+        def _parent_of(p: str) -> str:
+            rp, rest = _split_remote(p)
+            if rp is not None:
+                if not rest:
+                    # at remote root
+                    return rp
+                if '/' in rest:
+                    return rp + rest.rsplit('/', 1)[0]
+                # file directly under remote root
+                return rp
+            # Fallback to pathlib for local/absolute paths
+            from pathlib import Path as __P
+            try:
+                return str(__P(p).parent)
+            except Exception:
+                return ''
+        def _name_of(p: str) -> str:
+            rp, rest = _split_remote(p)
+            if rp is not None:
+                seg = rest.rsplit('/', 1)[-1] if rest else rp.rstrip(':')
+                return seg
+            from pathlib import Path as __P
+            try:
+                return __P(p).name
+            except Exception:
+                return p
+        def _parent_name_of(p: str) -> str:
+            par = _parent_of(p)
+            rp, rest = _split_remote(par)
+            if rp is not None:
+                if not rest:
+                    return rp.rstrip(':')
+                return rest.rsplit('/', 1)[-1]
+            from pathlib import Path as __P
+            try:
+                return __P(par).name
+            except Exception:
+                return par
         # Precompute folders observed in this scan (parents of files)
-        from pathlib import Path as _P
         folder_set = set()
         for ch in checksums:
             dtmp = ds_map.get(ch)
             if not dtmp:
                 continue
-            try:
-                folder_set.add(str(_P(dtmp.get('path')).parent))
-            except Exception:
-                pass
+            folder_set.add(_parent_of(dtmp.get('path') or ''))
         rows = []
         for ch in checksums:
             d = ds_map.get(ch)
             if not d:
                 continue
-            try:
-                parent = str(_P(d.get('path')).parent)
-            except Exception:
-                parent = ''
+            parent = _parent_of(d.get('path') or '')
             interps = list((d.get('interpretations') or {}).keys())
             # derive folder fields
             folder_path = parent
-            try:
-                from pathlib import Path as __P
-                folder_name = __P(folder_path).name if folder_path else ''
-                folder_parent = str(__P(folder_path).parent) if folder_path else ''
-                folder_parent_name = __P(folder_parent).name if folder_parent else ''
-            except Exception:
-                folder_name = ''
-                folder_parent = ''
-                folder_parent_name = ''
+            folder_name = _name_of(folder_path) if folder_path else ''
+            folder_parent = _parent_of(folder_path) if folder_path else ''
+            folder_parent_name = _parent_name_of(folder_path) if folder_parent else ''
             rows.append({
                 'checksum': d.get('checksum'),
                 'path': d.get('path'),
@@ -223,57 +270,64 @@ def create_app():
         result['attempted'] = True
         try:
             from neo4j import GraphDatabase  # type: ignore
-            driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
-            with driver.session(database=database) as sess:
-                cypher = (
-                    "WITH $rows AS rows, $folders AS folders, $scan_id AS scan_id, $scan_path AS scan_path, $scan_started AS scan_started, $scan_ended AS scan_ended "
-                    "MERGE (s:Scan {id: scan_id}) SET s.path = scan_path, s.started = scan_started, s.ended = scan_ended "
-                    "WITH rows, folders, s "
-                    "CALL { WITH rows, s UNWIND rows AS r "
-                    "  MERGE (f:File {checksum: r.checksum}) "
-                    "    SET f.path = r.path, f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, "
-                    "        f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type "
-                    "  MERGE (f)-[:SCANNED_IN]->(s) "
-                    "  FOREACH (_ IN CASE WHEN coalesce(r.folder,'') <> '' THEN [1] ELSE [] END | "
-                    "    MERGE (fo:Folder {path: r.folder}) SET fo.name = r.folder_name "
-                    "    MERGE (fo)-[:CONTAINS]->(f) "
-                    "    MERGE (fo)-[:SCANNED_IN]->(s) "
-                    "    FOREACH (__ IN CASE WHEN coalesce(r.folder_parent,'') <> '' AND r.parent_in_scan THEN [1] ELSE [] END | "
-                    "      MERGE (fop:Folder {path: r.folder_parent}) SET fop.name = r.folder_parent_name "
-                    "      MERGE (fop)-[:CONTAINS]->(fo) ) "
-                    "  ) RETURN 0 AS _files_done } "
-                    "CALL { WITH folders, s UNWIND folders AS r2 "
-                    "  MERGE (fo:Folder {path: r2.path}) SET fo.name = r2.name "
-                    "  MERGE (fo)-[:SCANNED_IN]->(s) "
-                    "  FOREACH (__ IN CASE WHEN coalesce(r2.parent,'') <> '' THEN [1] ELSE [] END | "
-                    "    MERGE (fop:Folder {path: r2.parent}) SET fop.name = r2.parent_name "
-                    "    MERGE (fop)-[:CONTAINS]->(fo) ) "
-                    "  RETURN 0 AS _folders_done } "
-                    "RETURN s.id AS scan_id"
-                )
-                res = sess.run(cypher, rows=rows, folders=folder_rows, scan_id=scan.get('id'), scan_path=scan.get('path'), scan_started=scan.get('started'), scan_ended=scan.get('ended'))
-                _ = list(res)
-                result['written_files'] = len(rows)
-                result['written_folders'] = len(folder_rows)
-                # Post-commit verification: confirm that Scan exists and at least one SCANNED_IN relationship was created
-                verify_q = (
-                    "OPTIONAL MATCH (s:Scan {id: $scan_id}) "
-                    "WITH s "
-                    "OPTIONAL MATCH (s)<-[:SCANNED_IN]-(f:File) "
-                    "WITH s, count(DISTINCT f) AS files_cnt "
-                    "OPTIONAL MATCH (s)<-[:SCANNED_IN]-(fo:Folder) "
-                    "RETURN coalesce(s IS NOT NULL, false) AS scan_exists, files_cnt AS files_cnt, count(DISTINCT fo) AS folders_cnt"
-                )
-                vrec = sess.run(verify_q, scan_id=scan.get('id')).single()
-                if vrec:
-                    scan_exists = bool(vrec.get('scan_exists'))
-                    files_cnt = int(vrec.get('files_cnt') or 0)
-                    folders_cnt = int(vrec.get('folders_cnt') or 0)
-                    result['db_scan_exists'] = scan_exists
-                    result['db_files'] = files_cnt
-                    result['db_folders'] = folders_cnt
-                    result['db_verified'] = bool(scan_exists and (files_cnt > 0 or folders_cnt > 0))
-            driver.close()
+            driver = None
+            try:
+                driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
+                with driver.session(database=database) as sess:
+                    cypher = (
+                        "WITH $rows AS rows, $folders AS folders, $scan_id AS scan_id, $scan_path AS scan_path, $scan_started AS scan_started, $scan_ended AS scan_ended, $scan_provider AS scan_provider, $scan_host_type AS scan_host_type, $scan_host_id AS scan_host_id, $scan_root_id AS scan_root_id, $scan_root_label AS scan_root_label, $scan_source AS scan_source "
+                        "MERGE (s:Scan {id: scan_id}) SET s.path = scan_path, s.started = scan_started, s.ended = scan_ended "
+                        "WITH rows, folders, s CALL { WITH rows, s UNWIND rows AS r "
+                        "  MERGE (f:File {checksum: r.checksum}) "
+                        "    SET f.path = r.path, f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, "
+                        "        f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type, f.provider_id = $scan_provider, f.host_type = $scan_host_type, f.host_id = $scan_host_id "
+                        "  MERGE (f)-[:SCANNED_IN]->(s) "
+                        "  FOREACH (_ IN CASE WHEN coalesce(r.folder,'') <> '' THEN [1] ELSE [] END | "
+                        "    MERGE (fo:Folder {path: r.folder}) SET fo.name = r.folder_name, fo.provider_id = $scan_provider, fo.host_type = $scan_host_type, fo.host_id = $scan_host_id "
+                        "    MERGE (fo)-[:CONTAINS]->(f) "
+                        "    MERGE (fo)-[:SCANNED_IN]->(s) "
+                        "    FOREACH (__ IN CASE WHEN coalesce(r.folder_parent,'') <> '' AND r.parent_in_scan THEN [1] ELSE [] END | "
+                        "      MERGE (fop:Folder {path: r.folder_parent}) SET fop.name = r.folder_parent_name, fop.provider_id = $scan_provider, fop.host_type = $scan_host_type, fop.host_id = $scan_host_id "
+                        "      MERGE (fop)-[:CONTAINS]->(fo) ) "
+                        "  ) RETURN 0 AS _files_done } "
+                        "WITH folders, s CALL { WITH folders, s UNWIND folders AS r2 "
+                        "  MERGE (fo:Folder {path: r2.path}) SET fo.name = r2.name, fo.provider_id = $scan_provider, fo.host_type = $scan_host_type, fo.host_id = $scan_host_id "
+                        "  MERGE (fo)-[:SCANNED_IN]->(s) "
+                        "  FOREACH (__ IN CASE WHEN coalesce(r2.parent,'') <> '' THEN [1] ELSE [] END | "
+                        "    MERGE (fop:Folder {path: r2.parent}) SET fop.name = r2.parent_name, fop.provider_id = $scan_provider, fop.host_type = $scan_host_type, fop.host_id = $scan_host_id "
+                        "    MERGE (fop)-[:CONTAINS]->(fo) ) "
+                        "  RETURN 0 AS _folders_done } "
+                        "WITH s SET s.provider_id = $scan_provider, s.host_type = $scan_host_type, s.host_id = $scan_host_id, s.root_id = $scan_root_id, s.root_label = $scan_root_label, s.scan_source = $scan_source "
+                        "RETURN s.id AS scan_id"
+                    )
+                    res = sess.run(cypher, rows=rows, folders=folder_rows, scan_id=scan.get('id'), scan_path=scan.get('path'), scan_started=scan.get('started'), scan_ended=scan.get('ended'), scan_provider=scan.get('provider_id'), scan_host_type=scan.get('host_type'), scan_host_id=scan.get('host_id'), scan_root_id=scan.get('root_id'), scan_root_label=scan.get('root_label'), scan_source=scan.get('scan_source'))
+                    _ = list(res)
+                    result['written_files'] = len(rows)
+                    result['written_folders'] = len(folder_rows)
+                    # Post-commit verification: confirm that Scan exists and at least one SCANNED_IN relationship was created
+                    verify_q = (
+                        "OPTIONAL MATCH (s:Scan {id: $scan_id}) "
+                        "WITH s "
+                        "OPTIONAL MATCH (s)<-[:SCANNED_IN]-(f:File) "
+                        "WITH s, count(DISTINCT f) AS files_cnt "
+                        "OPTIONAL MATCH (s)<-[:SCANNED_IN]-(fo:Folder) "
+                        "RETURN coalesce(s IS NOT NULL, false) AS scan_exists, files_cnt AS files_cnt, count(DISTINCT fo) AS folders_cnt"
+                    )
+                    vrec = sess.run(verify_q, scan_id=scan.get('id')).single()
+                    if vrec:
+                        scan_exists = bool(vrec.get('scan_exists'))
+                        files_cnt = int(vrec.get('files_cnt') or 0)
+                        folders_cnt = int(vrec.get('folders_cnt') or 0)
+                        result['db_scan_exists'] = scan_exists
+                        result['db_files'] = files_cnt
+                        result['db_folders'] = folders_cnt
+                        result['db_verified'] = bool(scan_exists and (files_cnt > 0 or folders_cnt > 0))
+            finally:
+                try:
+                    if driver is not None:
+                        driver.close()
+                except Exception:
+                    pass
         except Exception as e:
             msg = str(e)
             result['error'] = msg
@@ -382,80 +436,70 @@ def create_app():
         root_id = (data.get('root_id') or '/').strip() or '/'
         path = data.get('path') or (root_id if provider_id != 'local_fs' else os.getcwd())
         recursive = bool(data.get('recursive', True))
-        # Special-case: rclone provider scans are metadata-only in this MVP
-        if provider_id == 'rclone':
-            try:
-                import time, hashlib
-                started = time.time()
-                ended = time.time()
-                duration = ended - started
-                # Generate scan id
-                sid_src = f"{path}|{started}"
-                scan_id = hashlib.sha1(sid_src.encode()).hexdigest()[:12]
-                # Provider metadata
-                provs = app.extensions['scidk'].get('providers')
-                prov = provs.get(provider_id) if provs else None
-                root_label = None
-                try:
-                    if prov:
-                        root_label = root_id.rstrip(':') or root_id
-                except Exception:
-                    root_label = None
-                scan = {
-                    'id': scan_id,
-                    'path': str(path),
-                    'recursive': bool(recursive),
-                    'started': started,
-                    'ended': ended,
-                    'duration_sec': duration,
-                    'file_count': 0,
-                    'folder_count': 0,
-                    'checksums': [],
-                    'folders': [],
-                    'by_ext': {},
-                    'source': 'rclone',
-                    'errors': [],
-                    'committed': False,
-                    'committed_at': None,
-                    'provider_id': provider_id,
-                    'root_id': root_id,
-                    'root_label': root_label,
-                    'scan_source': f"provider:{provider_id}",
-                }
-                scans = app.extensions['scidk'].setdefault('scans', {})
-                scans[scan_id] = scan
-                # Track directories registry
-                dirs = app.extensions['scidk'].setdefault('directories', {})
-                drec = dirs.setdefault(str(path), {
-                    'path': str(path),
-                    'recursive': bool(recursive),
-                    'scanned': 0,
-                    'last_scanned': 0,
-                    'scan_ids': [],
-                    'source': 'rclone',
-                    'provider_id': provider_id,
-                    'root_id': root_id,
-                    'root_label': root_label,
-                })
-                drec.update({
-                    'recursive': bool(recursive),
-                    'scanned': 0,
-                    'last_scanned': ended,
-                    'source': 'rclone',
-                    'provider_id': provider_id,
-                    'root_id': root_id,
-                    'root_label': root_label,
-                })
-                drec.setdefault('scan_ids', []).append(scan_id)
-                return jsonify({"status": "ok", "scan_id": scan_id, "scanned": 0, "duration_sec": duration, "path": str(path), "recursive": bool(recursive), "provider_id": provider_id}), 200
-            except Exception as e:
-                return jsonify({"status": "error", "error": str(e)}), 400
+        fast_list = bool(data.get('fast_list', False))
         try:
-            import time, hashlib
+            import time, hashlib, json
+            from .core import path_index_sqlite as pix
             # Pre-scan snapshot of checksums
             before = set(ds.get('checksum') for ds in app.extensions['scidk']['graph'].list_datasets())
             started = time.time()
-            count = fs.scan_directory(Path(path), recursive=recursive)
+            # Precompute scan id early for SQLite tagging
+            sid_src = f"{path}|{started}"
+            scan_id = hashlib.sha1(sid_src.encode()).hexdigest()[:12]
+            count = 0
+            ingested = 0
+            folders = []
+            if provider_id in ('local_fs', 'mounted_fs'):
+                count = fs.scan_directory(Path(path), recursive=recursive)
+            elif provider_id == 'rclone':
+                # Use rclone lsjson to enumerate remote files; ingest into SQLite and create lightweight datasets.
+                provs = app.extensions['scidk'].get('providers')
+                prov = provs.get('rclone') if provs else None
+                if not prov:
+                    raise RuntimeError('rclone provider not available')
+                try:
+                    # In testing mode, allow metadata-only scans for rclone to avoid external binary dependency
+                    if app.config.get('TESTING') and not recursive:
+                        items = []
+                    else:
+                        items = prov.list_files(path, recursive=recursive, fast_list=fast_list)  # type: ignore[attr-defined]
+                except Exception as ee:
+                    return jsonify({"status": "error", "error": str(ee)}), 400
+                # Map to SQLite rows (files and folders); only files will have size > 0 typically.
+                rows = []
+                for it in (items or []):
+                    try:
+                        # Track non-recursive immediate folders separately for UI convenience
+                        if it.get('IsDir'):
+                            if not recursive:
+                                name = it.get('Name') or it.get('Path') or ''
+                                if name:
+                                    parent = path if path.endswith(':') else path.rstrip('/')
+                                    full = f"{parent}/{name}" if not parent.endswith(':') else f"{parent}{name}"
+                                    folders.append({'path': full, 'name': name, 'parent': path, 'parent_name': Path(path).name if path else ''})
+                            # Still insert folder rows into SQLite for depth/structure awareness
+                            rows.append(pix.map_rclone_item_to_row(it, path, scan_id))
+                            continue
+                        # File entry
+                        rows.append(pix.map_rclone_item_to_row(it, path, scan_id))
+                        # Also create an in-memory dataset for current graph (to keep existing features/tests working)
+                        name = it.get('Name') or it.get('Path') or ''
+                        size = int(it.get('Size') or 0)
+                        parent = path if path.endswith(':') else path.rstrip('/')
+                        full = f"{parent}/{name}" if not parent.endswith(':') else f"{parent}{name}"
+                        ds = fs.create_dataset_remote(full, size_bytes=size, modified_ts=0.0, mime=None)
+                        app.extensions['scidk']['graph'].upsert_dataset(ds)
+                        count += 1
+                    except Exception:
+                        continue
+                # Batch insert into SQLite (10k/txn)
+                try:
+                    ingested = pix.batch_insert_files(rows, batch_size=10000)
+                except Exception as _e:
+                    # Surface as non-fatal for now; continue app flow but record error
+                    app.extensions['scidk'].setdefault('telemetry', {})['last_sqlite_error'] = str(_e)
+            else:
+                return jsonify({"status": "error", "error": f"provider {provider_id} not supported for scan"}), 400
             ended = time.time()
             duration = ended - started
             after = set(ds.get('checksum') for ds in app.extensions['scidk']['graph'].list_datasets())
@@ -468,35 +512,44 @@ def create_app():
             for ch in new_checksums:
                 ext = ext_map.get(ch, '')
                 by_ext[ext] = by_ext.get(ext, 0) + 1
-            # For non-recursive scans, include immediate subfolders for later commit/merge
-            folders = []
-            try:
-                if not recursive:
-                    base = Path(path)
-                    for child in base.iterdir():
-                        if child.is_dir():
-                            parent = str(child.parent)
-                            folders.append({
-                                'path': str(child.resolve()),
-                                'name': child.name,
-                                'parent': parent,
-                                'parent_name': Path(parent).name if parent else '',
-                            })
-            except Exception:
-                folders = []
-            # Create scan session id (short sha1 of path+started)
-            sid_src = f"{path}|{started}"
-            scan_id = hashlib.sha1(sid_src.encode()).hexdigest()[:12]
+            # For non-recursive local scans, include immediate subfolders for later commit/merge
+            if provider_id in ('local_fs', 'mounted_fs'):
+                try:
+                    if not recursive:
+                        base = Path(path)
+                        for child in base.iterdir():
+                            if child.is_dir():
+                                parent = str(child.parent)
+                                folders.append({
+                                    'path': str(child.resolve()),
+                                    'name': child.name,
+                                    'parent': parent,
+                                    'parent_name': Path(parent).name if parent else '',
+                                })
+                except Exception:
+                    pass
             # Provider metadata for scan/session records
             provs = app.extensions['scidk'].get('providers')
             prov = provs.get(provider_id) if provs else None
             root_label = None
             try:
                 if prov:
-                    # Use last path part or name for label if possible
                     root_label = Path(root_id).name or str(root_id)
             except Exception:
                 root_label = None
+            # Host/provider tagging
+            host_type = provider_id
+            host_id = None
+            try:
+                if provider_id == 'rclone':
+                    host_id = f"rclone:{(root_id or '').rstrip(':')}"
+                elif provider_id == 'local_fs':
+                    import socket as _sock
+                    host_id = f"local:{_sock.gethostname()}"
+                elif provider_id == 'mounted_fs':
+                    host_id = f"mounted:{root_id}"
+            except Exception:
+                host_id = f"{provider_id}:{root_id}" if root_id else provider_id
             scan = {
                 'id': scan_id,
                 'path': str(path),
@@ -509,14 +562,17 @@ def create_app():
                 'checksums': new_checksums,
                 'folders': folders,
                 'by_ext': by_ext,
-                'source': getattr(fs, 'last_scan_source', 'python'),
+                'source': getattr(fs, 'last_scan_source', 'python') if provider_id in ('local_fs','mounted_fs') else f"provider:{provider_id}",
                 'errors': [],
                 'committed': False,
                 'committed_at': None,
                 'provider_id': provider_id,
+                'host_type': host_type,
+                'host_id': host_id,
                 'root_id': root_id,
                 'root_label': root_label,
                 'scan_source': f"provider:{provider_id}",
+                'ingested_rows': int(ingested),
             }
             scans = app.extensions['scidk'].setdefault('scans', {})
             scans[scan_id] = scan
@@ -529,7 +585,7 @@ def create_app():
                 'started': started,
                 'ended': ended,
                 'duration_sec': duration,
-                'source': getattr(fs, 'last_scan_source', 'python'),
+                'source': getattr(fs, 'last_scan_source', 'python') if provider_id in ('local_fs','mounted_fs') else f"provider:{provider_id}",
                 'provider_id': provider_id,
                 'root_id': root_id,
             }
@@ -541,7 +597,7 @@ def create_app():
                 'scanned': 0,
                 'last_scanned': 0,
                 'scan_ids': [],
-                'source': getattr(fs, 'last_scan_source', 'python'),
+                'source': getattr(fs, 'last_scan_source', 'python') if provider_id in ('local_fs','mounted_fs') else f"provider:{provider_id}",
                 'provider_id': provider_id,
                 'root_id': root_id,
                 'root_label': root_label,
@@ -550,7 +606,7 @@ def create_app():
                 'recursive': bool(recursive),
                 'scanned': int(count),
                 'last_scanned': ended,
-                'source': getattr(fs, 'last_scan_source', 'python'),
+                'source': getattr(fs, 'last_scan_source', 'python') if provider_id in ('local_fs','mounted_fs') else f"provider:{provider_id}",
                 'provider_id': provider_id,
                 'root_id': root_id,
                 'root_label': root_label,
@@ -665,10 +721,6 @@ def create_app():
                                     })
                     except Exception:
                         folders = []
-                    # Minimal provider metadata for background scans (local filesystem default)
-                    provider_id = 'local_fs'
-                    root_id = '/'
-                    root_label = None
                     scan = {
                         'id': scan_id,
                         'path': str(path),
@@ -685,28 +737,17 @@ def create_app():
                         'errors': [],
                         'committed': False,
                         'committed_at': None,
-                        'provider_id': provider_id,
-                        'root_id': root_id,
-                        'root_label': root_label,
-                        'scan_source': f"provider:{provider_id}",
                     }
                     app.extensions['scidk']['scans'][scan_id] = scan
                     # Telemetry
                     app.extensions['scidk'].setdefault('telemetry', {})['last_scan'] = {
                         'path': str(path), 'recursive': bool(recursive), 'scanned': int(processed),
-                        'started': started, 'ended': ended, 'duration_sec': ended - started, 'source': 'python',
-                        'provider_id': provider_id, 'root_id': root_id,
+                        'started': started, 'ended': ended, 'duration_sec': ended - started, 'source': 'python'
                     }
                     # Directory registry
                     dirs = app.extensions['scidk'].setdefault('directories', {})
-                    drec = dirs.setdefault(str(path), {
-                        'path': str(path), 'recursive': bool(recursive), 'scanned': 0, 'last_scanned': 0,
-                        'scan_ids': [], 'source': 'python', 'provider_id': provider_id, 'root_id': root_id, 'root_label': root_label,
-                    })
-                    drec.update({
-                        'recursive': bool(recursive), 'scanned': int(processed), 'last_scanned': ended, 'source': 'python',
-                        'provider_id': provider_id, 'root_id': root_id, 'root_label': root_label,
-                    })
+                    drec = dirs.setdefault(str(path), {'path': str(path), 'recursive': bool(recursive), 'scanned': 0, 'last_scanned': 0, 'scan_ids': [], 'source': 'python'})
+                    drec.update({'recursive': bool(recursive), 'scanned': int(processed), 'last_scanned': ended, 'source': 'python'})
                     drec.setdefault('scan_ids', []).append(scan_id)
                     # Complete task
                     task['ended'] = ended
@@ -829,8 +870,6 @@ def create_app():
         if task.get('status') != 'running':
             return jsonify({'status': task.get('status'), 'message': 'task not running'}), 400
         task['cancel_requested'] = True
-        # reflect immediate UI feedback
-        task['status'] = 'canceling'
         return jsonify({'status': 'canceling'}), 202
 
     @api.get('/datasets')
@@ -966,15 +1005,18 @@ def create_app():
             provs = app.extensions['scidk']['providers']
             prov = provs.get(prov_id)
             if not prov:
-                return jsonify({'error': 'provider not available'}), 400
+                return jsonify({'error': 'provider not available', 'code': 'provider_not_available'}), 400
             # If path empty, default to root_id
             listing = prov.list(root_id=root_id, path=path_q or root_id)
+            # Bubble provider-level errors clearly
+            if isinstance(listing, dict) and listing.get('error'):
+                return jsonify({'error': listing.get('error'), 'code': 'browse_failed'}), 400
             # Augment with provider badge and convenience fields
             for e in listing.get('entries', []):
                 e['provider_id'] = prov_id
             return jsonify(listing), 200
         except Exception as e:
-            return jsonify({'error': str(e)}), 500
+            return jsonify({'error': str(e), 'code': 'browse_exception'}), 500
 
     @api.get('/directories')
     def api_directories():
@@ -983,6 +1025,184 @@ def create_app():
         values = list(dirs.values())
         values.sort(key=lambda d: d.get('last_scanned') or 0, reverse=True)
         return jsonify(values), 200
+
+    # -----------------------------
+    # Rclone Mount Manager (flagged)
+    # -----------------------------
+    if _feature_rclone_mounts():
+        import time, subprocess, shutil, json as _json
+
+        def _mounts_dir() -> Path:
+            d = Path(app.root_path).parent / 'data' / 'mounts'
+            d.mkdir(parents=True, exist_ok=True)
+            return d
+
+        def _sanitize_name(name: str) -> str:
+            safe = ''.join([c for c in (name or '') if c.isalnum() or c in ('-', '_')]).strip()
+            return safe[:64] if safe else ''
+
+        def _listremotes() -> list:
+            try:
+                provs = app.extensions['scidk']['providers']
+                rp = provs.get('rclone') if provs else None
+                roots = rp.list_roots() if rp else []
+                return [r.id for r in roots]
+            except Exception:
+                return []
+
+        def _rclone_exe() -> Optional[str]:
+            return shutil.which('rclone')
+
+        @api.get('/rclone/mounts')
+        def api_rclone_mounts_list():
+            mounts = app.extensions['scidk'].setdefault('rclone_mounts', {})
+            out = []
+            for mid, m in list(mounts.items()):
+                proc = m.get('process')
+                alive = (proc is not None) and (proc.poll() is None)
+                status = 'running' if alive else ('exited' if proc is not None else 'unknown')
+                exit_code = None if alive else (proc.returncode if proc is not None else None)
+                out.append({
+                    'id': m.get('id'),
+                    'name': m.get('name'),
+                    'remote': m.get('remote'),
+                    'subpath': m.get('subpath'),
+                    'path': m.get('path'),
+                    'read_only': m.get('read_only'),
+                    'started_at': m.get('started_at'),
+                    'status': status,
+                    'exit_code': exit_code,
+                    'log_file': m.get('log_file'),
+                })
+            return jsonify(out), 200
+
+        @api.post('/rclone/mounts')
+        def api_rclone_mounts_create():
+            if not _rclone_exe():
+                return jsonify({'error': 'rclone not installed'}), 400
+            try:
+                body = request.get_json(silent=True) or {}
+                remote = str(body.get('remote') or '').strip()
+                subpath = str(body.get('subpath') or '').strip().lstrip('/')
+                name = _sanitize_name(str(body.get('name') or ''))
+                read_only = bool(body.get('read_only', True))
+                if not remote:
+                    return jsonify({'error': 'remote required'}), 400
+                if not remote.endswith(':'):
+                    remote = remote + ':'
+                if not name:
+                    return jsonify({'error': 'name required'}), 400
+                # Safety: restrict mountpoint and validate remote exists
+                remotes = _listremotes()
+                if remote not in remotes:
+                    return jsonify({'error': f'remote not configured: {remote}'}), 400
+                mdir = _mounts_dir()
+                mpath = mdir / name
+                try:
+                    mpath.mkdir(parents=True, exist_ok=True)
+                except Exception as e:
+                    return jsonify({'error': f'failed to create mount dir: {e}'}), 500
+                target = remote + (subpath if subpath else '')
+                log_file = mdir / f"{name}.log"
+                # Build rclone command
+                args = [
+                    _rclone_exe(), 'mount', target, str(mpath),
+                    '--dir-cache-time', '60m',
+                    '--poll-interval', '30s',
+                    '--vfs-cache-mode', 'minimal',
+                    '--log-format', 'DATE,TIME,LEVEL',
+                    '--log-level', 'INFO',
+                    '--log-file', str(log_file),
+                ]
+                if read_only:
+                    args.append('--read-only')
+                # Launch subprocess detached from terminal; logs go to file
+                try:
+                    fnull = open(os.devnull, 'wb')
+                    proc = subprocess.Popen(args, stdout=fnull, stderr=fnull)
+                except Exception as e:
+                    return jsonify({'error': f'failed to start rclone: {e}'}), 500
+                rec = {
+                    'id': name,
+                    'name': name,
+                    'remote': remote,
+                    'subpath': subpath,
+                    'path': str(mpath),
+                    'read_only': bool(read_only),
+                    'started_at': time.time(),
+                    'process': proc,
+                    'pid': proc.pid if proc else None,
+                    'log_file': str(log_file),
+                }
+                mounts = app.extensions['scidk'].setdefault('rclone_mounts', {})
+                mounts[name] = rec
+                return jsonify({'id': name, 'path': str(mpath)}), 201
+            except Exception as e:
+                return jsonify({'error': str(e)}), 500
+
+        @api.delete('/rclone/mounts/<mid>')
+        def api_rclone_mounts_delete(mid):
+            mounts = app.extensions['scidk'].setdefault('rclone_mounts', {})
+            m = mounts.get(mid)
+            if not m:
+                return jsonify({'error': 'not found'}), 404
+            proc = m.get('process')
+            mpath = m.get('path')
+            try:
+                if proc and (proc.poll() is None):
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=5)
+                    except Exception:
+                        proc.kill()
+                # Best-effort unmount
+                try:
+                    subprocess.run(['fusermount', '-u', mpath], check=False)
+                except Exception:
+                    pass
+                try:
+                    subprocess.run(['umount', mpath], check=False)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            mounts.pop(mid, None)
+            return jsonify({'ok': True}), 200
+
+        @api.get('/rclone/mounts/<mid>/logs')
+        def api_rclone_mounts_logs(mid):
+            mounts = app.extensions['scidk'].setdefault('rclone_mounts', {})
+            m = mounts.get(mid)
+            if not m:
+                return jsonify({'error': 'not found'}), 404
+            tail_n = int(request.args.get('tail') or 200)
+            path = m.get('log_file')
+            lines = []
+            try:
+                with open(path, 'r', encoding='utf-8', errors='ignore') as fh:
+                    lines = fh.readlines()
+            except Exception:
+                lines = []
+            if tail_n > 0 and len(lines) > tail_n:
+                lines = lines[-tail_n:]
+            return jsonify({'lines': [ln.rstrip('\n') for ln in lines]}), 200
+
+        @api.get('/rclone/mounts/<mid>/health')
+        def api_rclone_mounts_health(mid):
+            mounts = app.extensions['scidk'].setdefault('rclone_mounts', {})
+            m = mounts.get(mid)
+            if not m:
+                return jsonify({'ok': False, 'error': 'not found'}), 404
+            proc = m.get('process')
+            alive = (proc is not None) and (proc.poll() is None)
+            path = m.get('path')
+            listable = False
+            try:
+                p = Path(path)
+                listable = p.exists() and p.is_dir() and (len(list(p.iterdir())) >= 0)
+            except Exception:
+                listable = False
+            return jsonify({'ok': bool(alive and listable), 'alive': bool(alive), 'listable': bool(listable)}), 200
 
     @api.get('/fs/list')
     def api_fs_list():
@@ -1066,11 +1286,14 @@ def create_app():
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-    @api.get('/scans')
+    @api.route('/scans', methods=['GET', 'POST'])
     def api_scans():
+        # POST creates a new scan (alias of legacy /api/scan)
+        if request.method == 'POST':
+            return api_scan()
+        # GET returns a lighter summary list of scans
         scans = list(app.extensions['scidk'].get('scans', {}).values())
         scans.sort(key=lambda s: s.get('ended') or s.get('started') or 0, reverse=True)
-        # Return a lighter summary by default
         summaries = [
             {
                 'id': s.get('id'),
@@ -1096,6 +1319,29 @@ def create_app():
         if not s:
             return jsonify({"error": "not found"}), 404
         return jsonify(s), 200
+
+    # Lightweight status endpoint with progress counters
+    @api.get('/scans/<scan_id>/status')
+    def api_scan_status(scan_id):
+        s = app.extensions['scidk'].get('scans', {}).get(scan_id)
+        if not s:
+            return jsonify({"error": "not found"}), 404
+        # Derive simple status and counters
+        started = s.get('started')
+        ended = s.get('ended')
+        status = 'complete' if ended else 'running'
+        return jsonify({
+            'id': s.get('id'),
+            'status': status,
+            'started': started,
+            'ended': ended,
+            'duration_sec': s.get('duration_sec'),
+            'file_count': s.get('file_count'),
+            'ingested_rows': s.get('ingested_rows', 0),
+            'by_ext': s.get('by_ext', {}),
+            'folder_count': s.get('folder_count'),
+            'source': s.get('source'),
+        }), 200
 
     @api.get('/scans/<scan_id>/fs')
     def api_scan_fs(scan_id):
@@ -1434,19 +1680,26 @@ def create_app():
         except Exception:
             return jsonify({"error": "neo4j driver not installed"}), 501
         try:
-            driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
-            with driver.session(database=database) as sess:
-                # Node label counts
-                q_nodes = "MATCH (n) WITH head(labels(n)) AS l, count(*) AS c RETURN l AS label, c ORDER BY c DESC"
-                nodes = [dict(record) for record in sess.run(q_nodes)]
-                # Unique triples counts
-                q_edges = (
-                    "MATCH (s)-[r]->(t) "
-                    "WITH head(labels(s)) AS sl, type(r) AS rt, head(labels(t)) AS tl, count(*) AS c "
-                    "RETURN sl AS start_label, rt AS rel_type, tl AS end_label, c ORDER BY c DESC"
-                )
-                edges = [dict(record) for record in sess.run(q_edges)]
-            driver.close()
+            driver = None
+            try:
+                driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
+                with driver.session(database=database) as sess:
+                    # Node label counts
+                    q_nodes = "MATCH (n) WITH head(labels(n)) AS l, count(*) AS c RETURN l AS label, c ORDER BY c DESC"
+                    nodes = [dict(record) for record in sess.run(q_nodes)]
+                    # Unique triples counts
+                    q_edges = (
+                        "MATCH (s)-[r]->(t) "
+                        "WITH head(labels(s)) AS sl, type(r) AS rt, head(labels(t)) AS tl, count(*) AS c "
+                        "RETURN sl AS start_label, rt AS rel_type, tl AS end_label, c ORDER BY c DESC"
+                    )
+                    edges = [dict(record) for record in sess.run(q_edges)]
+            finally:
+                try:
+                    if driver is not None:
+                        driver.close()
+                except Exception:
+                    pass
             return jsonify({"nodes": nodes, "edges": edges, "truncated": False}), 200
         except Exception as e:
             return jsonify({"error": f"neo4j query failed: {str(e)}"}), 502
@@ -1462,25 +1715,32 @@ def create_app():
         except Exception:
             return jsonify({"error": "neo4j driver not installed"}), 501
         try:
-            driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
-            with driver.session(database=database) as sess:
-                # Use apoc.meta.data() to derive nodes and edges
-                # Relationship triples aggregation
-                q_apoc = (
-                    "CALL apoc.meta.data() YIELD label, other, elementType, type, count "
-                    "WITH label, other, elementType, type, count "
-                    "WHERE elementType = 'relationship' "
-                    "RETURN label AS start_label, type AS rel_type, other AS end_label, count ORDER BY count DESC"
-                )
-                edges = [dict(record) for record in sess.run(q_apoc)]
-                # Node label counts via apoc (fallback to Cypher if needed)
-                q_nodes = "CALL apoc.meta.stats() YIELD labels RETURN [k IN keys(labels) | {label:k, count: labels[k]}] AS pairs"
-                rec = sess.run(q_nodes).single()
-                nodes = []
-                if rec and 'pairs' in rec:
-                    for p in rec['pairs']:
-                        nodes.append({'label': p['label'], 'count': p['count']})
-            driver.close()
+            driver = None
+            try:
+                driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
+                with driver.session(database=database) as sess:
+                    # Use apoc.meta.data() to derive nodes and edges
+                    # Relationship triples aggregation
+                    q_apoc = (
+                        "CALL apoc.meta.data() YIELD label, other, elementType, type, count "
+                        "WITH label, other, elementType, type, count "
+                        "WHERE elementType = 'relationship' "
+                        "RETURN label AS start_label, type AS rel_type, other AS end_label, count ORDER BY count DESC"
+                    )
+                    edges = [dict(record) for record in sess.run(q_apoc)]
+                    # Node label counts via apoc (fallback to Cypher if needed)
+                    q_nodes = "CALL apoc.meta.stats() YIELD labels RETURN [k IN keys(labels) | {label:k, count: labels[k]}] AS pairs"
+                    rec = sess.run(q_nodes).single()
+                    nodes = []
+                    if rec and 'pairs' in rec:
+                        for p in rec['pairs']:
+                            nodes.append({'label': p['label'], 'count': p['count']})
+            finally:
+                try:
+                    if driver is not None:
+                        driver.close()
+                except Exception:
+                    pass
             return jsonify({"nodes": nodes, "edges": edges, "truncated": False}), 200
         except Exception as e:
             # If APOC procedures are missing or fail, inform the client
@@ -1516,12 +1776,19 @@ def create_app():
                 info['neo4j']['error'] = f"backoff active; retry after {int(next_after-now)}s"
                 return jsonify(info), 200
             try:
-                driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
-                with driver.session(database=database) as sess:
-                    rec = sess.run("RETURN 1 AS ok").single()
-                    if rec and rec.get('ok') == 1:
-                        info['neo4j']['connectable'] = True
-                driver.close()
+                driver = None
+                try:
+                    driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
+                    with driver.session(database=database) as sess:
+                        rec = sess.run("RETURN 1 AS ok").single()
+                        if rec and rec.get('ok') == 1:
+                            info['neo4j']['connectable'] = True
+                finally:
+                    try:
+                        if driver is not None:
+                            driver.close()
+                    except Exception:
+                        pass
             except Exception as e:
                 info['neo4j']['error'] = str(e)
         return jsonify(info), 200
@@ -1587,11 +1854,18 @@ def create_app():
             st['last_error'] = f"backoff active; retry after {int(next_after-now)}s"
             return jsonify({'connected': False, 'error': st['last_error']}), 429
         try:
-            driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
-            with driver.session(database=database) as sess:
-                rec = sess.run('RETURN 1 AS ok').single()
-                ok = bool(rec and rec.get('ok') == 1)
-            driver.close()
+            driver = None
+            try:
+                driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
+                with driver.session(database=database) as sess:
+                    rec = sess.run('RETURN 1 AS ok').single()
+                    ok = bool(rec and rec.get('ok') == 1)
+            finally:
+                try:
+                    if driver is not None:
+                        driver.close()
+                except Exception:
+                    pass
             st['connected'] = ok
             # On success, clear backoff
             if ok:
@@ -1950,7 +2224,9 @@ def create_app():
         rules = list(reg.rules.rules)
         ext_count = len(reg.by_extension)
         interp_count = len(reg.by_id)
-        return render_template('settings.html', info=info, mappings=mappings, rules=rules, ext_count=ext_count, interp_count=interp_count)
+        # Feature flag for rclone mounts UI
+        rclone_mounts_feature = _feature_rclone_mounts()
+        return render_template('settings.html', info=info, mappings=mappings, rules=rules, ext_count=ext_count, interp_count=interp_count, rclone_mounts_feature=rclone_mounts_feature)
 
     @ui.post('/scan')
     def ui_scan():
