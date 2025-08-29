@@ -124,16 +124,17 @@ def _depth_of(path: str) -> int:
         return 0
 
 
+from .path_utils import join_remote_path, parent_remote_path
+
 def map_rclone_item_to_row(item: Dict, target_root: str, scan_id: str) -> Tuple:
     # rclone lsjson fields: Name, Path, Size, MimeType, ModTime, IsDir
     name = (item.get('Name') or item.get('Path') or '')
     is_dir = bool(item.get('IsDir'))
     size = int(item.get('Size') or 0)
     mime = item.get('MimeType')
-    # Full path under target root
-    base = target_root if target_root.endswith(':') else target_root.rstrip('/')
-    full = f"{base}/{name}" if not base.endswith(':') else f"{base}{name}"
-    parent = _parent_of(full)
+    # Full path under target root using central utils
+    full = join_remote_path(target_root, name)
+    parent = parent_remote_path(full)
     depth = _depth_of(full)
     ext = '' if is_dir else Path(name).suffix.lower()
     mtime = None

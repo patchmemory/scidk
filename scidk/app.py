@@ -153,27 +153,16 @@ def create_app():
 
     # Build rows for commit: files (rows) and standalone folders (folder_rows)
     def build_commit_rows(scan, ds_map):
+        from .core.path_utils import parse_remote_path, parent_remote_path
         checksums = scan.get('checksums') or []
-        # Helpers to handle local paths and rclone remote paths like "remote:folder/sub/file"
-        def _split_remote(p: str):
-            # Returns (remote_prefix or None, rest)
+        # Helpers unified on central path utils
+        def _parent_of(p: str) -> str:
             try:
-                if p and (':' in p) and (p.index(':') < p.index('/') if '/' in p else True):
-                    i = p.index(':')
-                    return p[:i+1], p[i+1:]
+                info = parse_remote_path(p)
+                if info.get('is_remote'):
+                    return parent_remote_path(p)
             except Exception:
                 pass
-            return None, p
-        def _parent_of(p: str) -> str:
-            rp, rest = _split_remote(p)
-            if rp is not None:
-                if not rest:
-                    # at remote root
-                    return rp
-                if '/' in rest:
-                    return rp + rest.rsplit('/', 1)[0]
-                # file directly under remote root
-                return rp
             # Fallback to pathlib for local/absolute paths
             from pathlib import Path as __P
             try:
@@ -181,22 +170,31 @@ def create_app():
             except Exception:
                 return ''
         def _name_of(p: str) -> str:
-            rp, rest = _split_remote(p)
-            if rp is not None:
-                seg = rest.rsplit('/', 1)[-1] if rest else rp.rstrip(':')
-                return seg
+            try:
+                info = parse_remote_path(p)
+                if info.get('is_remote'):
+                    parts = info.get('parts') or []
+                    if not parts:
+                        return info.get('remote_name') or ''
+                    return parts[-1]
+            except Exception:
+                pass
             from pathlib import Path as __P
             try:
                 return __P(p).name
             except Exception:
                 return p
         def _parent_name_of(p: str) -> str:
-            par = _parent_of(p)
-            rp, rest = _split_remote(par)
-            if rp is not None:
-                if not rest:
-                    return rp.rstrip(':')
-                return rest.rsplit('/', 1)[-1]
+            try:
+                par = _parent_of(p)
+                info = parse_remote_path(par)
+                if info.get('is_remote'):
+                    parts = info.get('parts') or []
+                    if not parts:
+                        return info.get('remote_name') or ''
+                    return parts[-1]
+            except Exception:
+                pass
             from pathlib import Path as __P
             try:
                 return __P(par).name
@@ -482,9 +480,17 @@ def create_app():
                             if not recursive:
                                 name = it.get('Name') or it.get('Path') or ''
                                 if name:
-                                    parent = path if path.endswith(':') else path.rstrip('/')
-                                    full = f"{parent}/{name}" if not parent.endswith(':') else f"{parent}{name}"
-                                    folders.append({'path': full, 'name': name, 'parent': path, 'parent_name': Path(path).name if path else ''})
+                                    from .core.path_utils import join_remote_path, parent_remote_path, parse_remote_path
+                                    full = join_remote_path(path, name)
+                                    parent = parent_remote_path(full)
+                                    # parent_name: last segment or remote name at root
+                                    info_par = parse_remote_path(parent)
+                                    if info_par.get('is_remote'):
+                                        parts = info_par.get('parts') or []
+                                        parent_name = (info_par.get('remote_name') or '') if not parts else parts[-1]
+                                    else:
+                                        parent_name = Path(parent).name if parent else ''
+                                    folders.append({'path': full, 'name': name, 'parent': parent, 'parent_name': parent_name})
                             # Still insert folder rows into SQLite for depth/structure awareness
                             rows.append(pix.map_rclone_item_to_row(it, path, scan_id))
                             continue
@@ -493,8 +499,8 @@ def create_app():
                         # Also create an in-memory dataset for current graph (to keep existing features/tests working)
                         name = it.get('Name') or it.get('Path') or ''
                         size = int(it.get('Size') or 0)
-                        parent = path if path.endswith(':') else path.rstrip('/')
-                        full = f"{parent}/{name}" if not parent.endswith(':') else f"{parent}{name}"
+                        from .core.path_utils import join_remote_path
+                        full = join_remote_path(path, name)
                         ds = fs.create_dataset_remote(full, size_bytes=size, modified_ts=0.0, mime=None)
                         app.extensions['scidk']['graph'].upsert_dataset(ds)
                         count += 1

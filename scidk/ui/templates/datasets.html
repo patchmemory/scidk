@@ -174,22 +174,44 @@
         rootSelect.innerHTML = roots.map(rt => `<option value="${rt.id}">${rt.name||rt.path||rt.id}</option>`).join('');
         currentRoot = roots[0]?.id || '/';
         rootSelect.value = currentRoot;
-        // Reset current path and input to root
-        currentPath = currentRoot;
-        if (provPathInput) provPathInput.value = currentPath;
+        // Reset current path and input: for rclone, use relative (empty)
+        if (providerId === 'rclone') {
+          currentPath = '';
+          if (provPathInput) provPathInput.value = '';
+        } else {
+          currentPath = currentRoot;
+          if (provPathInput) provPathInput.value = currentPath;
+        }
       } catch(e){ rootSelect.innerHTML = '<option>(failed)</option>'; }
     }
 
+    function composePath(providerId, rootId, relOrAbs){
+      if (providerId === 'rclone'){
+        const rel = (relOrAbs||'').replace(/^\/+/, '');
+        return rel ? (rootId.endsWith(':') ? rootId + rel : (rootId.replace(/\/+$/, '') + '/' + rel)) : rootId;
+      }
+      return relOrAbs || rootId || '/';
+    }
+
+    function displayPathFor(providerId, rootId, relOrAbs){
+      if (providerId === 'rclone'){
+        return (relOrAbs||'');
+      }
+      return relOrAbs || rootId || '/';
+    }
+
     async function browse(providerId, rootId, path){
-      const qs = new URLSearchParams({ provider_id: providerId||'local_fs', root_id: rootId||'/', path: path||rootId||'/' });
+      const fullPath = composePath(providerId||'local_fs', rootId||'/', path||'');
+      const qs = new URLSearchParams({ provider_id: providerId||'local_fs', root_id: rootId||'/', path: fullPath });
       try {
         const r = await fetch('/api/browse?' + qs.toString());
         const j = await r.json();
-        // no breadcrumb API; show current path and root only
-        const displayPath = path || rootId || '/';
-        provCrumb.innerHTML = `<span class="small">Path: <code>${displayPath}</code></span>`;
-        // Sync input to actual path we browsed
-        currentPath = displayPath;
+        // display breadcrumb: for rclone show Root→Remote and relative path
+        const disp = displayPathFor(providerId||'local_fs', rootId||'/', path||'');
+        const label = (providerId==='rclone') ? `${(rootId||'').replace(/:$/,'')} → ${disp||'(root)'}` : (fullPath||'/');
+        provCrumb.innerHTML = `<span class="small">Path: <code>${label}</code></span>`;
+        // Sync input to relative path for rclone; absolute otherwise
+        currentPath = disp;
         if (provPathInput) provPathInput.value = currentPath;
         const rows = (j.entries||[]).map(e => {
           const type = e.type === 'folder' ? 'Folder' : 'File';
@@ -209,7 +231,14 @@
           const id = tr.getAttribute('data-id');
           const type = tr.getAttribute('data-type');
           if (type === 'folder'){
-            currentPath = id;
+            // For rclone, set currentPath to relative portion (strip remote prefix)
+            if (currentProv === 'rclone'){
+              const i = id.indexOf(':');
+              const rel = i >= 0 ? id.slice(i+1).replace(/^\/+/, '') : id;
+              currentPath = rel;
+            } else {
+              currentPath = id;
+            }
             if (provPathInput) provPathInput.value = currentPath;
             browse(currentProv, currentRoot, currentPath);
           } else {
@@ -223,7 +252,7 @@
       provSelect.addEventListener('change', async () => { currentProv = provSelect.value; await loadRoots(currentProv); provList.innerHTML = ''; provCrumb.innerHTML=''; });
     }
     if (rootSelect){
-      rootSelect.addEventListener('change', () => { currentRoot = rootSelect.value; currentPath = currentRoot; if (provPathInput) provPathInput.value = currentPath; });
+      rootSelect.addEventListener('change', () => { currentRoot = rootSelect.value; if (currentProv==='rclone'){ currentPath=''; if (provPathInput) provPathInput.value=''; } else { currentPath = currentRoot; if (provPathInput) provPathInput.value = currentPath; } });
     }
     if (btnROC && rocFrame){
       btnROC.addEventListener('click', () => {
