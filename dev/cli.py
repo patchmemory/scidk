@@ -340,15 +340,41 @@ CURRENT REPO STATE:
         """Mark task as complete and validate DoD (lightweight)"""
         print(f"🎯 Completing task: {task_id}")
         # 1) Run tests
-        print("🧪 Running tests (pytest -q)...")
+        print("🧪 Running tests with project virtual environment preference...")
         try:
-            res = subprocess.run("pytest -q", shell=True)
-            if res.returncode == 0:
-                print("✅ Tests passing")
+            cmds = []
+            venv_py = Path('.venv') / 'bin' / 'python'
+            if venv_py.exists():
+                cmds.append([str(venv_py), '-m', 'pytest', '-q'])
+            # Always consider current interpreter next
+            cmds.append([sys.executable, '-m', 'pytest', '-q'])
+            # As last resort, try pytest from PATH
+            cmds.append(['pytest', '-q'])
+
+            last_rc = None
+            last_err = None
+            for cmd in cmds:
+                try:
+                    print(f"→ Trying: {' '.join(cmd)}")
+                    res = subprocess.run(cmd)
+                    last_rc = res.returncode
+                    if res.returncode == 0:
+                        print("✅ Tests passing")
+                        break
+                    else:
+                        print(f"ℹ️ Command exited with {res.returncode}, trying next fallback if any...")
+                except FileNotFoundError as fnf:
+                    last_err = str(fnf)
+                    print(f"ℹ️ Command not found: {' '.join(cmd)}; trying next fallback...")
+                    continue
             else:
-                print(f"❌ Tests failed (exit {res.returncode}) — fix before completing.")
+                # If loop didn't break (no success)
+                if last_rc is not None:
+                    print(f"❌ Tests failed (exit {last_rc}) — fix before completing.")
+                else:
+                    print(f"⚠️ Could not run tests — no suitable interpreter/pytest found. Last error: {last_err}")
         except Exception as e:
-            print(f"⚠️ Could not run tests: {e}")
+            print(f"⚠️ Unexpected error running tests: {e}")
         # 2) Show DoD checklist
         task_file = self.find_task_file(task_id)
         task_data = self.parse_frontmatter(task_file) if task_file else {}
