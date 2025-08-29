@@ -1,7 +1,7 @@
 ---
 id: task:core-architecture/mvp/rclone-scan-ingest
 title: rclone lsjson scan and batch ingest into SQLite
-status: In Progress
+status: Done
 owner: agent
 rice: 4.3
 estimate: 2d
@@ -60,6 +60,7 @@ docs:
 - Status endpoint returns file_count (files only), folder_count (top-level when non-recursive),
   and ingested_rows (files + folders inserted).
 started_at: '2025-08-29T16:46:40.699741Z'
+completed_at: '2025-08-29T16:47:03.910975Z'
 ---
     '
 - Start Flask app (example): 'python -c "from scidk.app import create_app; app=create_app();
