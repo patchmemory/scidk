@@ -227,7 +227,7 @@ CURRENT REPO STATE:
         # Try to interact with git, but be resilient if not a git repo
         def run_git(cmd: str) -> Tuple[int, str]:
             try:
-                res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                res = subprocess.run(cmd, shell=True, executable="/bin/bash", capture_output=True, text=True)
                 out = (res.stdout or "") + (res.stderr or "")
                 return res.returncode, out.strip()
             except Exception as ex:
@@ -263,7 +263,11 @@ CURRENT REPO STATE:
         # 1) Run tests
         print("🧪 Running tests (pytest -q)...")
         try:
-            res = subprocess.run("pytest -q", shell=True)
+            res = subprocess.run("pytest -q", shell=True, executable="/bin/bash")
+            if res.returncode == 127:
+                # Fallback when pytest isn't on PATH (common in local envs)
+                print("pytest not found on PATH; retrying with 'python3 -m pytest -q'...")
+                res = subprocess.run("python3 -m pytest -q", shell=True, executable="/bin/bash")
             if res.returncode == 0:
                 print("✅ Tests passing")
             else:
