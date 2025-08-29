@@ -343,6 +343,10 @@ CURRENT REPO STATE:
         print("🧪 Running tests (pytest -q)...")
         try:
             res = subprocess.run("pytest -q", shell=True)
+            if res.returncode == 127:
+                # Fallback when pytest isn't on PATH (common in local envs)
+                print("pytest not found on PATH; retrying with 'python3 -m pytest -q'...")
+                res = subprocess.run("python3 -m pytest -q", shell=True)
             if res.returncode == 0:
                 print("✅ Tests passing")
             else:
