@@ -1909,6 +1909,45 @@ def create_app():
                 info['neo4j']['error'] = str(e)
         return jsonify(info), 200
 
+    @api.get('/health')
+    def api_health():
+        """Overall health focusing on SQLite availability and WAL mode."""
+        from .core import path_index_sqlite as pix
+        info = {
+            'sqlite': {
+                'path': None,
+                'exists': False,
+                'journal_mode': None,
+                'select1': False,
+                'error': None,
+            }
+        }
+        try:
+            dbp = pix._db_path()
+            info['sqlite']['path'] = str(dbp)
+            conn = pix.connect()
+            try:
+                mode = (conn.execute('PRAGMA journal_mode;').fetchone() or [''])[0]
+                if isinstance(mode, str):
+                    info['sqlite']['journal_mode'] = mode.lower()
+                row = conn.execute('SELECT 1').fetchone()
+                info['sqlite']['select1'] = bool(row and row[0] == 1)
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            # After connecting, the DB file should exist on disk
+            try:
+                from pathlib import Path as _P
+                info['sqlite']['exists'] = _P(info['sqlite']['path']).exists()
+            except Exception:
+                pass
+        except Exception as e:
+            info['sqlite']['error'] = str(e)
+        # Always return 200 so UIs can render details; clients can decide on status
+        return jsonify(info), 200
+
     # Settings APIs for Neo4j configuration
     @api.get('/settings/neo4j')
     def api_settings_neo4j_get():
