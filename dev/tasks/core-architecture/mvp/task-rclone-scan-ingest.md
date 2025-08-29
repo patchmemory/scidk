@@ -59,7 +59,7 @@ docs:
     in WAL mode.
 - Status endpoint returns file_count (files only), folder_count (top-level when non-recursive),
   and ingested_rows (files + folders inserted).
-started_at: '2025-08-29T16:46:21.787296Z'
+started_at: '2025-08-29T16:46:40.699741Z'
 ---
     '
 - Start Flask app (example): 'python -c "from scidk.app import create_app; app=create_app();
