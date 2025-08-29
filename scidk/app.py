@@ -1380,6 +1380,106 @@ def create_app():
         files = children_files.get(req_path, [])
         return jsonify({'scan_id': scan_id, 'path': req_path, 'breadcrumb': breadcrumb, 'folders': sub_folders, 'files': files}), 200
 
+    @api.post('/ro-crates/referenced')
+    def api_ro_crate_referenced():
+        data = request.get_json(force=True, silent=True) or {}
+        dataset_ids = data.get('dataset_ids') or []
+        files = data.get('files') or []
+        title = data.get('title') or 'Referenced RO-Crate'
+        import time as _t, hashlib as _h, json as _json
+        now = _t.time()
+        crate_id = _h.sha1(f"{title}|{now}".encode()).hexdigest()[:12]
+        base_dir = os.path.expanduser('~/.scidk/crates')
+        out_dir = os.path.join(base_dir, crate_id)
+        try:
+            os.makedirs(out_dir, exist_ok=True)
+        except Exception as e:
+            return jsonify({"status": "error", "error": f"could not create crate dir: {e}"}), 500
+        # Gather items from dataset_ids and/or files
+        items = []
+        try:
+            g = app.extensions['scidk']['graph']
+        except Exception:
+            g = None
+        if dataset_ids and g is not None:
+            ds_map = getattr(g, 'datasets', {})
+            for did in dataset_ids:
+                d = ds_map.get(did)
+                if not d:
+                    continue
+                items.append({
+                    'path': d.get('path'),
+                    'name': d.get('filename') or Path(d.get('path') or '').name,
+                    'size': int(d.get('size_bytes') or 0),
+                    'mime_type': d.get('mime_type'),
+                    'modified_time': float(d.get('modified') or 0.0),
+                    'checksum': d.get('checksum'),
+                })
+        for f in files:
+            items.append({
+                'path': f.get('path') or f.get('url') or f.get('contentUrl'),
+                'name': f.get('name'),
+                'size': f.get('size') or f.get('size_bytes') or 0,
+                'mime_type': f.get('mime') or f.get('mime_type'),
+                'modified_time': f.get('modified') or f.get('modified_time') or 0.0,
+                'checksum': f.get('checksum'),
+            })
+        def to_rclone_url(p: Optional[str]) -> Optional[str]:
+            if not p or not isinstance(p, str):
+                return None
+            if '://' in p:
+                return p
+            if ':' in p:
+                remote, rest = p.split(':', 1)
+                rest = (rest or '').lstrip('/')
+                return f"rclone://{remote}/{rest}" if rest else f"rclone://{remote}/"
+            try:
+                return f"file://{str(Path(p).resolve())}"
+            except Exception:
+                return f"file://{p}"
+        graph = []
+        graph.append({
+            "@id": "ro-crate-metadata.json",
+            "@type": "CreativeWork",
+            "about": {"@id": "./"}
+        })
+        has_parts = []
+        file_nodes = []
+        import datetime as _dt
+        for it in items:
+            url = to_rclone_url(it.get('path'))
+            if not url:
+                continue
+            has_parts.append({"@id": url})
+            node = {"@id": url, "@type": "File", "contentUrl": url}
+            if it.get('name'):
+                node['name'] = it.get('name')
+            try:
+                node['contentSize'] = int(it.get('size') or 0)
+            except Exception:
+                pass
+            if it.get('mime_type'):
+                node['encodingFormat'] = it.get('mime_type')
+            try:
+                mt = float(it.get('modified_time') or 0.0)
+                if mt:
+                    node['dateModified'] = _dt.datetime.utcfromtimestamp(mt).isoformat() + 'Z'
+            except Exception:
+                pass
+            if it.get('checksum'):
+                node['checksum'] = it.get('checksum')
+            file_nodes.append(node)
+        root = {"@id": "./", "@type": "Dataset", "name": title, "hasPart": has_parts}
+        graph.append(root)
+        graph.extend(file_nodes)
+        ro = {"@context": "https://w3id.org/ro/crate/1.1/context", "@graph": graph}
+        try:
+            with open(os.path.join(out_dir, 'ro-crate-metadata.json'), 'w', encoding='utf-8') as fh:
+                _json.dump(ro, fh, indent=2)
+        except Exception as e:
+            return jsonify({"status": "error", "error": f"could not write ro-crate: {e}"}), 500
+        return jsonify({"status": "ok", "crate_id": crate_id, "path": out_dir}), 200
+
     @api.post('/scans/<scan_id>/commit')
     def api_scan_commit(scan_id):
         scans = app.extensions['scidk'].setdefault('scans', {})
