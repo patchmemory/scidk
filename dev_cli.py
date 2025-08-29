@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 Dev CLI wrapper
-Usage: python dev_cli.py <command> [args]
+Usage: python3 dev_cli.py <command> [args]
 This wrapper executes dev/cli.py as __main__ so the documented command works.
+Tip: In fish shell, prefer `python3 -m dev.cli <subcommand>` or `python3 dev_cli.py <command>`.
 """
 import os
 import runpy

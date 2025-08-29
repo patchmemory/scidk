@@ -6,8 +6,11 @@ This is a minimal runnable MVP to satisfy the current cycle's GUI acceptance: a 
 
 1) Install dependencies (prefer a virtualenv):
 ```
-python -m venv .venv
+python3 -m venv .venv
+# bash/zsh:
 source .venv/bin/activate
+# fish:
+source .venv/bin/activate.fish
 pip install -r requirements.txt
 ```
 
@@ -31,7 +34,7 @@ source scripts/init_env.fish --write-dotenv
 ```
 scidk-serve
 # or
-python -m scidk.app
+python3 -m scidk.app
 ```
 
 4) Open the UI in your browser:
@@ -126,8 +129,11 @@ We use pytest for unit and API tests.
 
 Pytest is included in requirements.txt; after installing dependencies, run:
 ```
-pytest
+python3 -m pytest -q
 ```
+Notes:
+- If your shell doesn't expose a global `pytest` command (common in fish), using `python3 -m pytest` is the most reliable.
+- You can still run `pytest -q` if your PATH includes the virtualenv's bin directory.
 
 Conventions:
 - Tests live in tests/ and rely on pytest fixtures in tests/conftest.py (e.g., Flask app and client).
@@ -223,9 +229,9 @@ JSON envelope schema:
 ```
 
 Quick start:
-- List commands (human): `python -m dev.cli menu`
-- List commands (JSON): `python -m dev.cli menu --json`
-- Full introspection (metadata for agents): `python -m dev.cli introspect` or `python -m dev.cli --json introspect`
+- List commands (human): `python3 -m dev.cli menu`
+- List commands (JSON): `python3 -m dev.cli menu --json`
+- Full introspection (metadata for agents): `python3 -m dev.cli introspect` or `python3 -m dev.cli --json introspect`
 
 Global flags (place before the subcommand unless noted):
 - `--json`    Emit structured envelope for agents
