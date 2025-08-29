@@ -1,3 +1,4 @@
+---
 id: task:core-architecture/mvp/rclone-scan-ingest
 title: rclone lsjson scan and batch ingest into SQLite
 status: In Progress
@@ -35,6 +36,31 @@ acceptance:
 demo_steps:
 - Export env to enable rclone provider: 'export SCIDK_PROVIDERS="local_fs,mounted_fs,rclone"
 
+    '
+- Start Flask app (example): 'python -c "from scidk.app import create_app; app=create_app();
+    app.run(port=5001)"
+
+    '
+- Trigger a scan via HTTP: "curl -s -X POST http://localhost:5001/api/scans \\\n \
+    \ -H 'Content-Type: application/json' \\\n  -d '{\"provider_id\":\"rclone\",\"\
+    root_id\":\"remote:\",\"path\":\"remote:bucket\",\"recursive\":false,\"fast_list\"\
+    :true}'\n"
+- Poll status: 'curl -s http://localhost:5001/api/scans/<scanId>/status | jq .
+
+    '
+- Browse the scan snapshot (virtual root): 'curl -s ''http://localhost:5001/api/scans/<scanId>/fs''
+    | jq .
+
+    '
+docs:
+- Rclone scanning uses `rclone lsjson`; when recursive=false, both folders and files
+  may be returned.
+- Ingest persists rows into SQLite at SCIDK_DB_PATH (default: ~/.scidk/db/files.db)
+    in WAL mode.
+- Status endpoint returns file_count (files only), folder_count (top-level when non-recursive),
+  and ingested_rows (files + folders inserted).
+started_at: '2025-08-29T16:46:21.787296Z'
+---
     '
 - Start Flask app (example): 'python -c "from scidk.app import create_app; app=create_app();
     app.run(port=5001)"
