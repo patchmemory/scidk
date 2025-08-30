@@ -6,7 +6,7 @@ Include the following in README:
 - UI usage: Scan Files panel → Provider: Rclone Remotes; Load Roots; Browse gdrive:folder; Scan.
 - API:
   - GET /api/provider_roots?provider_id=rclone
-  - GET /api/browse?provider_id=rclone&path=<remote:path>
+  - GET /api/browse?provider_id=rclone&path=<remote:path>&recursive=true|false&max_depth=1..N&fast_list=true|false
   - POST /api/scan { provider_id: 'rclone', path: '<remote:path>' }
 
 Install rclone:

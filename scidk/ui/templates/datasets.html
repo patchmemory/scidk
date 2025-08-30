@@ -17,6 +17,23 @@
       <label for="prov-path" class="form-label small" style="margin-bottom:.25rem">Path</label>
       <input id="prov-path" type="text" class="form-control form-control-sm" placeholder="/path/within/root" style="width:360px" />
     </div>
+    <div class="col-auto">
+      <label class="form-label small" style="margin-bottom:.25rem">Browse options</label>
+      <div class="small" style="display:flex; gap:.75rem; align-items:center; border:1px dashed #ddd; padding:.25rem .5rem; border-radius:.25rem">
+        <div class="form-check form-check-inline">
+          <input id="prov-browse-recursive" class="form-check-input" type="checkbox" />
+          <label class="form-check-label small" for="prov-browse-recursive">Recursive</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input id="prov-browse-fast-list" class="form-check-input" type="checkbox" />
+          <label class="form-check-label small" for="prov-browse-fast-list">Fast list</label>
+        </div>
+        <div class="input-group input-group-sm" style="width: 160px;">
+          <span class="input-group-text">Max depth</span>
+          <input id="prov-browse-max-depth" type="number" class="form-control" min="1" step="1" value="1" />
+        </div>
+      </div>
+    </div>
     <div class="col-auto" style="display:flex; gap:.5rem; align-items:end;">
       <button id="prov-go" class="btn btn-sm btn-outline-primary">Go</button>
     </div>
@@ -203,6 +220,18 @@
     async function browse(providerId, rootId, path){
       const fullPath = composePath(providerId||'local_fs', rootId||'/', path||'');
       const qs = new URLSearchParams({ provider_id: providerId||'local_fs', root_id: rootId||'/', path: fullPath });
+      // Append rclone-specific browse options if selected
+      if ((providerId||'') === 'rclone'){
+        try {
+          const chkRec = document.getElementById('prov-browse-recursive');
+          const chkFast = document.getElementById('prov-browse-fast-list');
+          const inpDepth = document.getElementById('prov-browse-max-depth');
+          if (chkRec && chkRec.checked) qs.set('recursive', 'true');
+          const d = Number(inpDepth && inpDepth.value ? inpDepth.value : '1');
+          if (d && d !== 1) qs.set('max_depth', String(d));
+          if (chkFast && chkFast.checked) qs.set('fast_list', 'true');
+        } catch(_) { /* ignore UI options if missing */ }
+      }
       try {
         const r = await fetch('/api/browse?' + qs.toString());
         const j = await r.json();
@@ -279,6 +308,14 @@
       const doGo = () => { currentProv = provSelect.value; currentRoot = rootSelect.value; const p = (provPathInput && provPathInput.value) ? provPathInput.value : currentRoot; currentPath = p || currentRoot; browse(currentProv, currentRoot, currentPath); };
       provGoBtn.addEventListener('click', (e) => { e.preventDefault(); doGo(); });
       if (provPathInput){ provPathInput.addEventListener('keydown', (e) => { if (e.key === 'Enter'){ e.preventDefault(); doGo(); } }); }
+      // Optional: re-browse on option changes for rclone
+      const chkRec = document.getElementById('prov-browse-recursive');
+      const chkFast = document.getElementById('prov-browse-fast-list');
+      const inpDepth = document.getElementById('prov-browse-max-depth');
+      const reBrowse = () => { if ((provSelect.value||'')==='rclone'){ doGo(); } };
+      if (chkRec) chkRec.addEventListener('change', reBrowse);
+      if (chkFast) chkFast.addEventListener('change', reBrowse);
+      if (inpDepth) inpDepth.addEventListener('change', reBrowse);
     }
     if (provScanForm){
       provScanForm.addEventListener('submit', async (e) => {

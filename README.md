@@ -92,6 +92,7 @@ Rclone provider (optional):
   - GET /api/providers will include { id: "rclone", ... } when enabled.
   - GET /api/provider_roots?provider_id=rclone lists rclone remotes (uses `rclone listremotes`).
   - GET /api/browse?provider_id=rclone&root_id=<remote>:&path=<remote>:<folder> lists entries via `rclone lsjson`.
+  - Optional browse flags: `recursive=true|false` (default false), `max_depth=1..N` (default 1), `fast_list=true|false` (default false). The provider retries automatically without fast-list if unsupported by a backend.
   - POST /api/scan { provider_id: 'rclone', path: '<remote:path>' } records a metadata-only scan.
 - If rclone is not installed or a remote is misconfigured, API returns a clear error message with HTTP 500 and {"error": "..."}.
 - Optional FUSE mount flow with safe defaults: see docs/rclone/mount-examples.md and dev/ops/rclone/systemd/rclone-mount@.service.
