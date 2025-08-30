@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """
 Dev CLI wrapper
-Usage: python3 dev_cli.py <command> [args]
+Usage: python3 dev_cli.py [--warn-default|--warn-error|--warn-ignore] <command> [args]
 This wrapper executes dev/cli.py as __main__ so the documented command works.
 Tip (fish): Prefer `python3 -m dev.cli <subcommand>` or `python3 dev_cli.py <command>`.
 When dev/ is a Git submodule and cli.py is missing, this wrapper will attempt to
 synchronize the submodule automatically.
+
+Warning controls (to surface or suppress DeprecationWarnings from tooling):
+- Flag:   --warn-default   → sets PYTHONWARNINGS=default
+- Flag:   --warn-error     → sets PYTHONWARNINGS=error::DeprecationWarning
+- Flag:   --warn-ignore    → sets PYTHONWARNINGS=ignore::DeprecationWarning
+- EnvVar: SCIDK_DEV_WARNINGS (used if PYTHONWARNINGS is not already set)
 """
 import os
 import runpy
@@ -39,6 +45,27 @@ def _try_submodule_sync(repo_root: str) -> bool:
 
 def main():
     repo_root = os.path.dirname(os.path.abspath(__file__))
+    # Warning controls: allow flags and env to tune PYTHONWARNINGS for the dev tooling
+    warn_map = {
+        '--warn-default': 'default',
+        '--warn-error': 'error::DeprecationWarning',
+        '--warn-ignore': 'ignore::DeprecationWarning',
+    }
+    # Parse and strip warning flags from argv so dev/cli.py doesn't see them
+    to_strip = [i for i, a in enumerate(sys.argv) if a in warn_map]
+    selected = None
+    if to_strip:
+        # Use the first occurrence
+        selected = sys.argv[to_strip[0]]
+        # Remove all occurrences (from end to start to keep indexes valid)
+        for idx in sorted(to_strip, reverse=True):
+            sys.argv.pop(idx)
+    # If PYTHONWARNINGS not explicitly set, prefer flag; else use SCIDK_DEV_WARNINGS
+    if 'PYTHONWARNINGS' not in os.environ:
+        if selected:
+            os.environ['PYTHONWARNINGS'] = warn_map[selected]
+        elif os.environ.get('SCIDK_DEV_WARNINGS'):
+            os.environ['PYTHONWARNINGS'] = os.environ['SCIDK_DEV_WARNINGS']
     # Intercept wrapper-provided helpers before delegating to submodule
     if len(sys.argv) > 1:
         cmd = sys.argv[1]
