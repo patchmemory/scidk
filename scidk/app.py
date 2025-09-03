@@ -19,7 +19,46 @@ from .core.pattern_matcher import Rule
 from .core.providers import ProviderRegistry as FsProviderRegistry, LocalFSProvider, MountedFSProvider, RcloneProvider
 
 
+def _apply_channel_defaults():
+    """Apply channel-based defaults for feature flags when unset.
+    Channels: stable (default), dev, beta.
+    Explicit env values always win; we only set defaults if unset.
+    Also soft-disable rclone provider by removing it from SCIDK_PROVIDERS if rclone binary is missing,
+    unless SCIDK_FORCE_RCLONE is truthy. Only perform soft-disable when SCIDK_PROVIDERS was not explicitly set by user.
+    """
+    import shutil
+    ch = (os.environ.get('SCIDK_CHANNEL') or 'stable').strip().lower()
+    had_prov_env = 'SCIDK_PROVIDERS' in os.environ
+    def setdefault_env(name: str, value: str):
+        if os.environ.get(name) is None:
+            os.environ[name] = value
+    if ch in ('dev', 'beta'):
+        # Providers default: include rclone
+        if os.environ.get('SCIDK_PROVIDERS') is None:
+            os.environ['SCIDK_PROVIDERS'] = 'local_fs,mounted_fs,rclone'
+        # Mounts UI
+        setdefault_env('SCIDK_RCLONE_MOUNTS', '1')
+        # Files viewer mode
+        setdefault_env('SCIDK_FILES_VIEWER', 'rocrate')
+        # File index work in progress
+        setdefault_env('SCIDK_FEATURE_FILE_INDEX', '1')
+    # Soft rclone detection: remove if missing and not forced, but only when we set providers implicitly
+    if not had_prov_env:
+        prov_env = os.environ.get('SCIDK_PROVIDERS')
+        if prov_env:
+            prov_list = [p.strip() for p in prov_env.split(',') if p.strip()]
+            if 'rclone' in prov_list and not shutil.which('rclone'):
+                force = (os.environ.get('SCIDK_FORCE_RCLONE') or '').strip().lower() in ('1','true','yes','y','on')
+                if not force:
+                    prov_list = [p for p in prov_list if p != 'rclone']
+                    os.environ['SCIDK_PROVIDERS'] = ','.join(prov_list)
+    # Record effective channel for UI/debug
+    os.environ.setdefault('SCIDK_CHANNEL', ch or 'stable')
+
+
 def create_app():
+    # Apply channel-based defaults before reading env-driven config
+    _apply_channel_defaults()
     app = Flask(__name__, template_folder="ui/templates", static_folder="ui/static")
 
     # Core singletons (MVP: in-memory)
@@ -1030,7 +1069,19 @@ def create_app():
             if not prov:
                 return jsonify({'error': 'provider not available', 'code': 'provider_not_available'}), 400
             # If path empty, default to root_id
-            listing = prov.list(root_id=root_id, path=path_q or root_id)
+            # Parse rclone browse options
+            opts = {}
+            if prov_id == 'rclone':
+                rec_s = (request.args.get('recursive') or '').strip().lower()
+                fast_s = (request.args.get('fast_list') or '').strip().lower()
+                depth_s = (request.args.get('max_depth') or '').strip()
+                opts['recursive'] = (rec_s in ('1','true','yes','on'))
+                opts['fast_list'] = (fast_s in ('1','true','yes','on'))
+                try:
+                    opts['max_depth'] = int(depth_s) if depth_s else 1
+                except Exception:
+                    opts['max_depth'] = 1
+            listing = prov.list(root_id=root_id, path=path_q or root_id, **opts)
             # Bubble provider-level errors clearly
             if isinstance(listing, dict) and listing.get('error'):
                 return jsonify({'error': listing.get('error'), 'code': 'browse_failed'}), 400
@@ -1701,6 +1752,53 @@ def create_app():
         except Exception as e:
             return jsonify({"status": "error", "error": f"could not write ro-crate: {e}"}), 500
         return jsonify({"status": "ok", "crate_id": crate_id, "path": out_dir}), 200
+
+        
+    @api.post('/ro-crates/<crate_id>/export')
+    def api_ro_crates_export(crate_id):
+        """Export a referenced RO-Crate directory as a ZIP (metadata-only).
+        Query param: target=zip (required)
+        Errors:
+          - 400 for missing/invalid target or inaccessible path
+          - 404 when crateId directory does not exist
+        """
+        target = (request.args.get('target') or '').strip().lower()
+        if target not in ('zip', 'application/zip', 'zipfile'):
+            return jsonify({'error': 'invalid or missing target; expected target=zip'}), 400
+        base_dir = os.environ.get('SCIDK_ROCRATE_DIR') or os.path.expanduser('~/.scidk/crates')
+        crate_dir = os.path.join(base_dir, crate_id)
+        try:
+            from pathlib import Path as _P
+            p = _P(crate_dir)
+            if not p.exists():
+                return jsonify({'error': 'crate not found'}), 404
+            if not p.is_dir():
+                return jsonify({'error': 'crate path is not a directory'}), 400
+            # Build a ZIP of the crate directory (metadata files only live here in referenced mode)
+            import io, zipfile
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, mode='w', compression=zipfile.ZIP_DEFLATED) as zf:
+                # include all files under the crate directory (non-recursive safe walk)
+                for root, dirs, files in os.walk(str(p)):
+                    rel_root = os.path.relpath(root, str(p))
+                    for fname in files:
+                        fpath = os.path.join(root, fname)
+                        arcname = fname if rel_root == '.' else os.path.join(rel_root, fname)
+                        try:
+                            zf.write(fpath, arcname)
+                        except Exception:
+                            # skip unreadable files but continue building the archive
+                            continue
+                    # Only shallow by default; but if metadata structure has subdirs, we include them
+                    # so we do not break out of walk intentionally.
+            buf.seek(0)
+            from flask import send_file as _send_file
+            dl_name = f"{crate_id}.zip"
+            return _send_file(buf, mimetype='application/zip', as_attachment=True, download_name=dl_name)
+        except PermissionError:
+            return jsonify({'error': 'inaccessible crate path'}), 400
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
 
     @api.post('/scans/<scan_id>/commit')
     def api_scan_commit(scan_id):
@@ -2643,6 +2741,10 @@ def create_app():
                         'hash_policy': os.environ.get('SCIDK_HASH_POLICY', 'auto'),
             'dataset_count': len(datasets),
             'interpreter_count': len(reg.by_id),
+                        'channel': os.environ.get('SCIDK_CHANNEL', 'stable'),
+                        'files_viewer': os.environ.get('SCIDK_FILES_VIEWER', ''),
+                        'rclone_mounts': (os.environ.get('SCIDK_RCLONE_MOUNTS') or os.environ.get('SCIDK_FEATURE_RCLONE_MOUNTS') or ''),
+                        'providers': os.environ.get('SCIDK_PROVIDERS', 'local_fs,mounted_fs'),
         }
         # Provide interpreter mappings and rules, and plugin summary counts for the Set page sections
         mappings = {ext: [getattr(i, 'id', 'unknown') for i in interps] for ext, interps in reg.by_extension.items()}
