@@ -523,24 +523,34 @@ def create_app():
                     return jsonify({"status": "error", "error": str(ee)}), 400
                 # Map to SQLite rows (files and folders); only files will have size > 0 typically.
                 rows = []
+                # Collect folders set for both non-recursive and recursive scans
+                seen_folders = set()
+                def _add_folder(full_path: str, name: str, parent: str):
+                    if full_path in seen_folders:
+                        return
+                    seen_folders.add(full_path)
+                    try:
+                        from .core.path_utils import parse_remote_path
+                        info_par = parse_remote_path(parent)
+                        if info_par.get('is_remote'):
+                            parts = info_par.get('parts') or []
+                            parent_name = (info_par.get('remote_name') or '') if not parts else parts[-1]
+                        else:
+                            parent_name = Path(parent).name if parent else ''
+                    except Exception:
+                        parent_name = ''
+                    folders.append({'path': full_path, 'name': name, 'parent': parent, 'parent_name': parent_name})
                 for it in (items or []):
                     try:
-                        # Track non-recursive immediate folders separately for UI convenience
+                        # Track folders for both modes
                         if it.get('IsDir'):
-                            if not recursive:
-                                name = it.get('Name') or it.get('Path') or ''
-                                if name:
-                                    from .core.path_utils import join_remote_path, parent_remote_path, parse_remote_path
-                                    full = join_remote_path(path, name)
-                                    parent = parent_remote_path(full)
-                                    # parent_name: last segment or remote name at root
-                                    info_par = parse_remote_path(parent)
-                                    if info_par.get('is_remote'):
-                                        parts = info_par.get('parts') or []
-                                        parent_name = (info_par.get('remote_name') or '') if not parts else parts[-1]
-                                    else:
-                                        parent_name = Path(parent).name if parent else ''
-                                    folders.append({'path': full, 'name': name, 'parent': parent, 'parent_name': parent_name})
+                            name = it.get('Name') or it.get('Path') or ''
+                            if name:
+                                from .core.path_utils import join_remote_path, parent_remote_path
+                                full = join_remote_path(path, name)
+                                parent = parent_remote_path(full)
+                                # record folder regardless of recursive flag so empty dirs are preserved
+                                _add_folder(full, name, parent)
                             # Still insert folder rows into SQLite for depth/structure awareness
                             rows.append(pix.map_rclone_item_to_row(it, path, scan_id))
                             continue
@@ -548,6 +558,18 @@ def create_app():
                         rows.append(pix.map_rclone_item_to_row(it, path, scan_id))
                         # Also create an in-memory dataset for current graph (to keep existing features/tests working)
                         name = it.get('Name') or it.get('Path') or ''
+                        # For recursive scans, synthesize intermediate folders from file paths
+                        if recursive and name:
+                            from .core.path_utils import join_remote_path, parent_remote_path
+                            # Build prefixes from relative name
+                            parts = [p for p in (name.split('/') if isinstance(name, str) else []) if p]
+                            cur = ''
+                            for i in range(len(parts)-1):  # exclude the file itself
+                                cur = parts[i] if i == 0 else (cur + '/' + parts[i])
+                                full = join_remote_path(path, cur)
+                                parent = parent_remote_path(full)
+                                _add_folder(full, parts[i], parent)
+                        # Also create an in-memory dataset for current graph (to keep existing features/tests working)
                         size = int(it.get('Size') or 0)
                         from .core.path_utils import join_remote_path
                         full = join_remote_path(path, name)

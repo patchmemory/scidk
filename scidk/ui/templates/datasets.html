@@ -368,19 +368,34 @@
         fetchTasks(); // trigger re-render with local task
         try {
           const r = await fetch('/api/scan', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ provider_id: provId, root_id: rootId||'/', path: scanPath, recursive }) });
-          const j = await r.json();
-          if (r.ok){
-            provScanMsg.textContent = `Scan complete: ${j.scan_id} — ${j.scanned} files (${j.duration_sec ? (Math.round(j.duration_sec*10)/10+'s') : ''})`;
+          const ctype = (r.headers && r.headers.get('content-type')) || '';
+          let j = null;
+          if (ctype.includes('application/json')){
+            try { j = await r.json(); } catch(_) { j = null; }
+          } else {
+            // Non-JSON response (proxy/gateway error). Read text for clarity
+            try { const txt = await r.text(); throw new Error(`HTTP ${r.status}: ${txt}`); } catch(e){ throw e; }
+          }
+          if (r.ok && j){
+            const files = j.scanned || 0;
+            const folders = (j.folder_count !== undefined) ? j.folder_count : undefined;
+            const dur = j.duration_sec ? (Math.round(j.duration_sec*10)/10+'s') : '';
+            let msg = `Scan complete: ${j.scan_id} — files: ${files}`;
+            if (folders !== undefined) msg += `, folders: ${folders}`;
+            if (files === 0 && folders > 0 && !recursive){ msg += ' — Only folders found. Enable Recursive to include files in subfolders.'; }
+            if (dur) msg += ` (${dur})`;
+            provScanMsg.textContent = msg;
             // Mark local task completed
             localTask.status = 'completed';
-            localTask.processed = j.scanned || 0;
-            localTask.total = j.scanned || localTask.processed;
+            localTask.processed = files;
+            localTask.total = files || localTask.processed;
             localTask.progress = 1;
             localTask.scan_id = j.scan_id;
           } else {
-            provScanMsg.textContent = `Scan error: ${j.error||r.status}`;
+            const err = (j && (j.error||j.message)) || `HTTP ${r.status}`;
+            provScanMsg.textContent = `Scan error: ${err}`;
             localTask.status = 'error';
-            localTask.error = j.error || String(r.status);
+            localTask.error = err;
             localTask.progress = 1;
           }
         } catch(err){
