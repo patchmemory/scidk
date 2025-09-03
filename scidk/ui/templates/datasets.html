@@ -195,17 +195,22 @@
         if (providerId === 'rclone') {
           currentPath = '';
           if (provPathInput) provPathInput.value = '';
+          // Auto-browse rclone root immediately
+          await browse(providerId, currentRoot, '');
         } else {
           currentPath = currentRoot;
           if (provPathInput) provPathInput.value = currentPath;
+          // Auto-browse non-rclone root immediately
+          await browse(providerId, currentRoot, currentPath);
         }
       } catch(e){ rootSelect.innerHTML = '<option>(failed)</option>'; }
     }
 
     function composePath(providerId, rootId, relOrAbs){
       if (providerId === 'rclone'){
+        const remote = (rootId||'').endsWith(':') ? (rootId||'') : ((rootId||'') + ':');
         const rel = (relOrAbs||'').replace(/^\/+/, '');
-        return rel ? (rootId.endsWith(':') ? rootId + rel : (rootId.replace(/\/+$/, '') + '/' + rel)) : rootId;
+        return rel ? (remote + rel) : remote;
       }
       return relOrAbs || rootId || '/';
     }
@@ -263,7 +268,8 @@
             // For rclone, set currentPath to relative portion (strip remote prefix)
             if (currentProv === 'rclone'){
               const i = id.indexOf(':');
-              const rel = i >= 0 ? id.slice(i+1).replace(/^\/+/, '') : id;
+              let rel = i >= 0 ? id.slice(i+1) : id;
+              rel = (rel||'').replace(/^\/+/, '');
               currentPath = rel;
             } else {
               currentPath = id;
@@ -271,17 +277,31 @@
             if (provPathInput) provPathInput.value = currentPath;
             browse(currentProv, currentRoot, currentPath);
           } else {
-            provPanel.innerHTML = `<div><strong>${tr.firstChild?.textContent||id}</strong></div><div class="small">Path: <code>${id}</code></div>`;
+            provPanel.innerHTML = `<div><strong>${tr.firstChild?.textContent||id}</strong></div><div class=\"small\">Path: <code>${id}</code></div>`;
           }
         });
       });
     }
 
     if (provSelect){
-      provSelect.addEventListener('change', async () => { currentProv = provSelect.value; await loadRoots(currentProv); provList.innerHTML = ''; provCrumb.innerHTML=''; });
+      provSelect.addEventListener('change', async () => {
+        currentProv = provSelect.value;
+        await loadRoots(currentProv); // auto-browse happens in loadRoots
+      });
     }
     if (rootSelect){
-      rootSelect.addEventListener('change', () => { currentRoot = rootSelect.value; if (currentProv==='rclone'){ currentPath=''; if (provPathInput) provPathInput.value=''; } else { currentPath = currentRoot; if (provPathInput) provPathInput.value = currentPath; } });
+      rootSelect.addEventListener('change', () => {
+        currentRoot = rootSelect.value;
+        if (currentProv==='rclone'){
+          currentPath='';
+          if (provPathInput) provPathInput.value='';
+          browse(currentProv, currentRoot, '');
+        } else {
+          currentPath = currentRoot;
+          if (provPathInput) provPathInput.value = currentPath;
+          browse(currentProv, currentRoot, currentPath);
+        }
+      });
     }
     if (btnROC && rocFrame){
       btnROC.addEventListener('click', () => {

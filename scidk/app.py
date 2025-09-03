@@ -1876,7 +1876,11 @@ def create_app():
                 payload["warning"] = "None of the scanned files are currently present in the graph; verify you scanned in this session or refresh."
             # Neo4j-specific warning when verification fails but no explicit error was raised
             if neo_attempted and (db_verified is not None) and (not db_verified) and (not neo_error):
-                payload["neo4j_warning"] = "Neo4j post-commit verification found 0 SCANNED_IN edges for this scan. Check Neo4j credentials, database name, or permissions."
+                payload["neo4j_warning"] = (
+                    "Neo4j post-commit verification found 0 SCANNED_IN edges for this scan. "
+                    "Verify: URI, credentials or set NEO4J_AUTH=none for no-auth, and database name. "
+                    "Also ensure the scan has files present in this session's graph."
+                )
             return jsonify(payload), 200
         except Exception as e:
             return jsonify({"status": "error", "error": "commit failed", "error_detail": str(e)}), 500
