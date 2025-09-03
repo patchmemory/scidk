@@ -502,6 +502,17 @@ def create_app():
                 prov = provs.get('rclone') if provs else None
                 if not prov:
                     raise RuntimeError('rclone provider not available')
+                # Normalize relative Rclone paths to full remote targets using root_id
+                try:
+                    from .core.path_utils import parse_remote_path, join_remote_path
+                    info = parse_remote_path(path or '')
+                    is_remote = bool(info.get('is_remote'))
+                except Exception:
+                    is_remote = False
+                if not is_remote:
+                    # path is relative or empty; compose with root_id
+                    from .core.path_utils import join_remote_path as _join
+                    path = _join(root_id, (path or '').lstrip('/'))
                 try:
                     # In testing mode, allow metadata-only scans for rclone to avoid external binary dependency
                     if app.config.get('TESTING') and not recursive:
