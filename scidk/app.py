@@ -2,6 +2,8 @@ from flask import Flask, Blueprint, jsonify, request, render_template, redirect,
 from pathlib import Path
 import os
 from typing import Optional
+import time
+import json
 
 from .core.graph import InMemoryGraph
 from .core.filesystem import FilesystemManager
@@ -17,7 +19,46 @@ from .core.pattern_matcher import Rule
 from .core.providers import ProviderRegistry as FsProviderRegistry, LocalFSProvider, MountedFSProvider, RcloneProvider
 
 
+def _apply_channel_defaults():
+    """Apply channel-based defaults for feature flags when unset.
+    Channels: stable (default), dev, beta.
+    Explicit env values always win; we only set defaults if unset.
+    Also soft-disable rclone provider by removing it from SCIDK_PROVIDERS if rclone binary is missing,
+    unless SCIDK_FORCE_RCLONE is truthy. Only perform soft-disable when SCIDK_PROVIDERS was not explicitly set by user.
+    """
+    import shutil
+    ch = (os.environ.get('SCIDK_CHANNEL') or 'stable').strip().lower()
+    had_prov_env = 'SCIDK_PROVIDERS' in os.environ
+    def setdefault_env(name: str, value: str):
+        if os.environ.get(name) is None:
+            os.environ[name] = value
+    if ch in ('dev', 'beta'):
+        # Providers default: include rclone
+        if os.environ.get('SCIDK_PROVIDERS') is None:
+            os.environ['SCIDK_PROVIDERS'] = 'local_fs,mounted_fs,rclone'
+        # Mounts UI
+        setdefault_env('SCIDK_RCLONE_MOUNTS', '1')
+        # Files viewer mode
+        setdefault_env('SCIDK_FILES_VIEWER', 'rocrate')
+        # File index work in progress
+        setdefault_env('SCIDK_FEATURE_FILE_INDEX', '1')
+    # Soft rclone detection: remove if missing and not forced, but only when we set providers implicitly
+    if not had_prov_env:
+        prov_env = os.environ.get('SCIDK_PROVIDERS')
+        if prov_env:
+            prov_list = [p.strip() for p in prov_env.split(',') if p.strip()]
+            if 'rclone' in prov_list and not shutil.which('rclone'):
+                force = (os.environ.get('SCIDK_FORCE_RCLONE') or '').strip().lower() in ('1','true','yes','y','on')
+                if not force:
+                    prov_list = [p for p in prov_list if p != 'rclone']
+                    os.environ['SCIDK_PROVIDERS'] = ','.join(prov_list)
+    # Record effective channel for UI/debug
+    os.environ.setdefault('SCIDK_CHANNEL', ch or 'stable')
+
+
 def create_app():
+    # Apply channel-based defaults before reading env-driven config
+    _apply_channel_defaults()
     app = Flask(__name__, template_folder="ui/templates", static_folder="ui/static")
 
     # Core singletons (MVP: in-memory)
@@ -98,6 +139,9 @@ def create_app():
     # API routes
     api = Blueprint('api', __name__, url_prefix='/api')
 
+    # Import SQLite layer for selections/annotations lazily to avoid circular deps
+    from .core import annotations_sqlite as ann_db
+
     # Feature flag for rclone mount manager
     def _feature_rclone_mounts() -> bool:
         val = (os.environ.get('SCIDK_RCLONE_MOUNTS') or os.environ.get('SCIDK_FEATURE_RCLONE_MOUNTS') or '').strip().lower()
@@ -148,27 +192,16 @@ def create_app():
 
     # Build rows for commit: files (rows) and standalone folders (folder_rows)
     def build_commit_rows(scan, ds_map):
+        from .core.path_utils import parse_remote_path, parent_remote_path
         checksums = scan.get('checksums') or []
-        # Helpers to handle local paths and rclone remote paths like "remote:folder/sub/file"
-        def _split_remote(p: str):
-            # Returns (remote_prefix or None, rest)
+        # Helpers unified on central path utils
+        def _parent_of(p: str) -> str:
             try:
-                if p and (':' in p) and (p.index(':') < p.index('/') if '/' in p else True):
-                    i = p.index(':')
-                    return p[:i+1], p[i+1:]
+                info = parse_remote_path(p)
+                if info.get('is_remote'):
+                    return parent_remote_path(p)
             except Exception:
                 pass
-            return None, p
-        def _parent_of(p: str) -> str:
-            rp, rest = _split_remote(p)
-            if rp is not None:
-                if not rest:
-                    # at remote root
-                    return rp
-                if '/' in rest:
-                    return rp + rest.rsplit('/', 1)[0]
-                # file directly under remote root
-                return rp
             # Fallback to pathlib for local/absolute paths
             from pathlib import Path as __P
             try:
@@ -176,22 +209,31 @@ def create_app():
             except Exception:
                 return ''
         def _name_of(p: str) -> str:
-            rp, rest = _split_remote(p)
-            if rp is not None:
-                seg = rest.rsplit('/', 1)[-1] if rest else rp.rstrip(':')
-                return seg
+            try:
+                info = parse_remote_path(p)
+                if info.get('is_remote'):
+                    parts = info.get('parts') or []
+                    if not parts:
+                        return info.get('remote_name') or ''
+                    return parts[-1]
+            except Exception:
+                pass
             from pathlib import Path as __P
             try:
                 return __P(p).name
             except Exception:
                 return p
         def _parent_name_of(p: str) -> str:
-            par = _parent_of(p)
-            rp, rest = _split_remote(par)
-            if rp is not None:
-                if not rest:
-                    return rp.rstrip(':')
-                return rest.rsplit('/', 1)[-1]
+            try:
+                par = _parent_of(p)
+                info = parse_remote_path(par)
+                if info.get('is_remote'):
+                    parts = info.get('parts') or []
+                    if not parts:
+                        return info.get('remote_name') or ''
+                    return parts[-1]
+            except Exception:
+                pass
             from pathlib import Path as __P
             try:
                 return __P(par).name
@@ -429,6 +471,9 @@ def create_app():
         cache[scan_id] = idx
         return idx
 
+    # Feature flags for file indexing
+    _ff_index = (os.environ.get('SCIDK_FEATURE_FILE_INDEX') or '').strip().lower() in ('1','true','yes','y','on')
+
     @api.post('/scan')
     def api_scan():
         data = request.get_json(force=True, silent=True) or {}
@@ -457,6 +502,17 @@ def create_app():
                 prov = provs.get('rclone') if provs else None
                 if not prov:
                     raise RuntimeError('rclone provider not available')
+                # Normalize relative Rclone paths to full remote targets using root_id
+                try:
+                    from .core.path_utils import parse_remote_path, join_remote_path
+                    info = parse_remote_path(path or '')
+                    is_remote = bool(info.get('is_remote'))
+                except Exception:
+                    is_remote = False
+                if not is_remote:
+                    # path is relative or empty; compose with root_id
+                    from .core.path_utils import join_remote_path as _join
+                    path = _join(root_id, (path or '').lstrip('/'))
                 try:
                     # In testing mode, allow metadata-only scans for rclone to avoid external binary dependency
                     if app.config.get('TESTING') and not recursive:
@@ -474,9 +530,17 @@ def create_app():
                             if not recursive:
                                 name = it.get('Name') or it.get('Path') or ''
                                 if name:
-                                    parent = path if path.endswith(':') else path.rstrip('/')
-                                    full = f"{parent}/{name}" if not parent.endswith(':') else f"{parent}{name}"
-                                    folders.append({'path': full, 'name': name, 'parent': path, 'parent_name': Path(path).name if path else ''})
+                                    from .core.path_utils import join_remote_path, parent_remote_path, parse_remote_path
+                                    full = join_remote_path(path, name)
+                                    parent = parent_remote_path(full)
+                                    # parent_name: last segment or remote name at root
+                                    info_par = parse_remote_path(parent)
+                                    if info_par.get('is_remote'):
+                                        parts = info_par.get('parts') or []
+                                        parent_name = (info_par.get('remote_name') or '') if not parts else parts[-1]
+                                    else:
+                                        parent_name = Path(parent).name if parent else ''
+                                    folders.append({'path': full, 'name': name, 'parent': parent, 'parent_name': parent_name})
                             # Still insert folder rows into SQLite for depth/structure awareness
                             rows.append(pix.map_rclone_item_to_row(it, path, scan_id))
                             continue
@@ -485,16 +549,25 @@ def create_app():
                         # Also create an in-memory dataset for current graph (to keep existing features/tests working)
                         name = it.get('Name') or it.get('Path') or ''
                         size = int(it.get('Size') or 0)
-                        parent = path if path.endswith(':') else path.rstrip('/')
-                        full = f"{parent}/{name}" if not parent.endswith(':') else f"{parent}{name}"
+                        from .core.path_utils import join_remote_path
+                        full = join_remote_path(path, name)
                         ds = fs.create_dataset_remote(full, size_bytes=size, modified_ts=0.0, mime=None)
                         app.extensions['scidk']['graph'].upsert_dataset(ds)
                         count += 1
                     except Exception:
                         continue
-                # Batch insert into SQLite (10k/txn)
+                # Batch insert into SQLite (10k/txn) only if feature flag enabled
                 try:
-                    ingested = pix.batch_insert_files(rows, batch_size=10000)
+                    if _ff_index:
+                        ingested = pix.batch_insert_files(rows, batch_size=10000)
+                        # Minimal change detection to populate file_history
+                        try:
+                            _chg = pix.apply_basic_change_history(scan_id, path)
+                            app.extensions['scidk'].setdefault('telemetry', {})['last_change_counts'] = _chg
+                        except Exception as __e:
+                            app.extensions['scidk'].setdefault('telemetry', {})['last_change_error'] = str(__e)
+                    else:
+                        ingested = 0
                 except Exception as _e:
                     # Surface as non-fatal for now; continue app flow but record error
                     app.extensions['scidk'].setdefault('telemetry', {})['last_sqlite_error'] = str(_e)
@@ -1007,7 +1080,19 @@ def create_app():
             if not prov:
                 return jsonify({'error': 'provider not available', 'code': 'provider_not_available'}), 400
             # If path empty, default to root_id
-            listing = prov.list(root_id=root_id, path=path_q or root_id)
+            # Parse rclone browse options
+            opts = {}
+            if prov_id == 'rclone':
+                rec_s = (request.args.get('recursive') or '').strip().lower()
+                fast_s = (request.args.get('fast_list') or '').strip().lower()
+                depth_s = (request.args.get('max_depth') or '').strip()
+                opts['recursive'] = (rec_s in ('1','true','yes','on'))
+                opts['fast_list'] = (fast_s in ('1','true','yes','on'))
+                try:
+                    opts['max_depth'] = int(depth_s) if depth_s else 1
+                except Exception:
+                    opts['max_depth'] = 1
+            listing = prov.list(root_id=root_id, path=path_q or root_id, **opts)
             # Bubble provider-level errors clearly
             if isinstance(listing, dict) and listing.get('error'):
                 return jsonify({'error': listing.get('error'), 'code': 'browse_failed'}), 400
@@ -1320,6 +1405,98 @@ def create_app():
             return jsonify({"error": "not found"}), 404
         return jsonify(s), 200
 
+    @api.get('/index/search')
+    def api_index_search():
+        # Feature-flagged minimal search over the SQLite files table
+        if not _ff_index:
+            return jsonify({"error": "file index disabled"}), 404
+        from .core import path_index_sqlite as pix
+        q = (request.args.get('q') or '').strip()
+        ext = (request.args.get('ext') or '').strip().lower() or None
+        prefix = (request.args.get('prefix') or '').strip() or None
+        scan_id = (request.args.get('scan_id') or '').strip() or None
+        try:
+            conn = pix.connect()
+            pix.init_db(conn)
+            cur = conn.cursor()
+            clauses = []
+            params = []
+            if q:
+                clauses.append('(name LIKE ? OR path LIKE ?)')
+                like = f"%{q}%"
+                params.extend([like, like])
+            if ext:
+                clauses.append('file_extension = ?')
+                params.append(ext if ext.startswith('.') else ('.' + ext if ext else ext))
+            if prefix:
+                # Ensure trailing slash for folder-like prefixes unless remote root
+                pfx = prefix if prefix.endswith(':') else (prefix.rstrip('/') + '/')
+                clauses.append('path LIKE ?')
+                params.append(f"{pfx}%")
+            if scan_id:
+                clauses.append('scan_id = ?')
+                params.append(scan_id)
+            where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
+            sql = f"SELECT path,name,size,file_extension,mime_type,scan_id FROM files{where} LIMIT 500"
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+            out = [
+                {
+                    'path': r[0],
+                    'name': r[1],
+                    'size': r[2],
+                    'ext': r[3],
+                    'mime': r[4],
+                    'scan_id': r[5],
+                } for r in rows
+            ]
+            conn.close()
+            return jsonify({'results': out, 'count': len(out)}), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @api.get('/index/duplicates')
+    def api_index_duplicates():
+        if not _ff_index:
+            return jsonify({"error": "file index disabled"}), 404
+        from .core import path_index_sqlite as pix
+        method = (request.args.get('method') or 'size_name').strip()
+        scan_id = (request.args.get('scan_id') or '').strip() or None
+        try:
+            conn = pix.connect()
+            pix.init_db(conn)
+            cur = conn.cursor()
+            where = ''
+            params = []
+            if scan_id:
+                where = ' WHERE scan_id = ?'
+                params = [scan_id]
+            out = []
+            if method == 'hash':
+                cur.execute(f"""
+                    SELECT hash, COUNT(*) as n, GROUP_CONCAT(path)
+                    FROM files{where} 
+                    WHERE hash IS NOT NULL AND hash <> ''
+                    GROUP BY hash HAVING n > 1
+                    ORDER BY n DESC LIMIT 200
+                """, params)
+                for h, n, paths in cur.fetchall():
+                    out.append({'hash': h, 'count': n, 'paths': (paths or '').split(',')})
+            else:
+                cur.execute(f"""
+                    SELECT name, size, COUNT(*) as n, GROUP_CONCAT(path)
+                    FROM files{where}
+                    WHERE size > 0 AND name <> ''
+                    GROUP BY name, size HAVING n > 1
+                    ORDER BY n DESC, size DESC LIMIT 200
+                """, params)
+                for name, size, n, paths in cur.fetchall():
+                    out.append({'name': name, 'size': size, 'count': n, 'paths': (paths or '').split(',')})
+            conn.close()
+            return jsonify({'duplicates': out, 'count': len(out), 'method': method}), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     # Lightweight status endpoint with progress counters
     @api.get('/scans/<scan_id>/status')
     def api_scan_status(scan_id):
@@ -1379,6 +1556,97 @@ def create_app():
         sub_folders.sort(key=lambda r: r['name'].lower())
         files = children_files.get(req_path, [])
         return jsonify({'scan_id': scan_id, 'path': req_path, 'breadcrumb': breadcrumb, 'folders': sub_folders, 'files': files}), 200
+
+    # New: SQLite-index-backed browse for a given scan
+    @api.get('/scans/<scan_id>/browse')
+    def api_scan_browse(scan_id):
+        """Browse direct children from the SQLite index for a scan.
+        Query params:
+          - path (required): parent folder to list direct children for.
+          - page_size (optional, default 100): limit per page.
+          - next_page_token (optional): opaque pagination token (OFFSET in MVP).
+          - extension (optional): filter by file_extension (e.g., ".txt").
+          - type (optional): filter by type ("file" or "folder").
+
+        Sorting: type DESC, name ASC.
+        Returns: { scan_id, path, page_size, next_page_token?, entries: [ ... ] }
+        """
+        # Validate scan exists in session
+        s = app.extensions['scidk'].get('scans', {}).get(scan_id)
+        if not s:
+            return jsonify({'error': 'scan not found'}), 404
+        from .core import path_index_sqlite as pix
+        req_path = (request.args.get('path') or '').strip()
+        if req_path == '':
+            # Default to the scan root path if not provided
+            req_path = str(s.get('path') or '')
+        # Normalize page_size and token
+        try:
+            page_size = int(request.args.get('page_size') or 100)
+        except Exception:
+            page_size = 100
+        page_size = max(1, min(page_size, 1000))  # simple guardrails
+        token_raw = (request.args.get('next_page_token') or '').strip()
+        try:
+            offset = int(token_raw) if token_raw else 0
+        except Exception:
+            offset = 0
+        # Optional filters
+        ext = (request.args.get('extension') or request.args.get('ext') or '').strip().lower()
+        typ = (request.args.get('type') or '').strip().lower()
+        # Build query
+        where = ["scan_id = ?", "parent_path = ?"]
+        params = [scan_id, req_path]
+        if ext:
+            where.append("file_extension = ?")
+            params.append(ext)
+        if typ:
+            where.append("type = ?")
+            params.append(typ)
+        where_sql = " AND ".join(where)
+        sql = (
+            "SELECT path, name, type, size, modified_time, file_extension, mime_type "
+            f"FROM files WHERE {where_sql} "
+            "ORDER BY type DESC, name ASC "
+            "LIMIT ? OFFSET ?"
+        )
+        params.extend([page_size + 1, offset])  # fetch one extra row to derive next_page_token
+        try:
+            conn = pix.connect()
+            pix.init_db(conn)
+            cur = conn.execute(sql, params)
+            rows = cur.fetchall()
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        # Build entries
+        entries = []
+        for r in rows[:page_size]:
+            path_val, name_val, type_val, size_val, mtime_val, ext_val, mime_val = r
+            entries.append({
+                'path': path_val,
+                'name': name_val,
+                'type': type_val,
+                'size': int(size_val or 0),
+                'modified': float(mtime_val or 0.0),
+                'extension': ext_val or '',
+                'mime_type': mime_val,
+            })
+        next_token = str(offset + page_size) if len(rows) > page_size else None
+        out = {
+            'scan_id': scan_id,
+            'path': req_path,
+            'page_size': page_size,
+            'entries': entries,
+        }
+        if next_token is not None:
+            out['next_page_token'] = next_token
+
+        return jsonify(out), 200
 
     @api.post('/ro-crates/referenced')
     def api_ro_crates_referenced():
@@ -1496,6 +1764,53 @@ def create_app():
             return jsonify({"status": "error", "error": f"could not write ro-crate: {e}"}), 500
         return jsonify({"status": "ok", "crate_id": crate_id, "path": out_dir}), 200
 
+        
+    @api.post('/ro-crates/<crate_id>/export')
+    def api_ro_crates_export(crate_id):
+        """Export a referenced RO-Crate directory as a ZIP (metadata-only).
+        Query param: target=zip (required)
+        Errors:
+          - 400 for missing/invalid target or inaccessible path
+          - 404 when crateId directory does not exist
+        """
+        target = (request.args.get('target') or '').strip().lower()
+        if target not in ('zip', 'application/zip', 'zipfile'):
+            return jsonify({'error': 'invalid or missing target; expected target=zip'}), 400
+        base_dir = os.environ.get('SCIDK_ROCRATE_DIR') or os.path.expanduser('~/.scidk/crates')
+        crate_dir = os.path.join(base_dir, crate_id)
+        try:
+            from pathlib import Path as _P
+            p = _P(crate_dir)
+            if not p.exists():
+                return jsonify({'error': 'crate not found'}), 404
+            if not p.is_dir():
+                return jsonify({'error': 'crate path is not a directory'}), 400
+            # Build a ZIP of the crate directory (metadata files only live here in referenced mode)
+            import io, zipfile
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, mode='w', compression=zipfile.ZIP_DEFLATED) as zf:
+                # include all files under the crate directory (non-recursive safe walk)
+                for root, dirs, files in os.walk(str(p)):
+                    rel_root = os.path.relpath(root, str(p))
+                    for fname in files:
+                        fpath = os.path.join(root, fname)
+                        arcname = fname if rel_root == '.' else os.path.join(rel_root, fname)
+                        try:
+                            zf.write(fpath, arcname)
+                        except Exception:
+                            # skip unreadable files but continue building the archive
+                            continue
+                    # Only shallow by default; but if metadata structure has subdirs, we include them
+                    # so we do not break out of walk intentionally.
+            buf.seek(0)
+            from flask import send_file as _send_file
+            dl_name = f"{crate_id}.zip"
+            return _send_file(buf, mimetype='application/zip', as_attachment=True, download_name=dl_name)
+        except PermissionError:
+            return jsonify({'error': 'inaccessible crate path'}), 400
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     @api.post('/scans/<scan_id>/commit')
     def api_scan_commit(scan_id):
         scans = app.extensions['scidk'].setdefault('scans', {})
@@ -1572,7 +1887,11 @@ def create_app():
                 payload["warning"] = "None of the scanned files are currently present in the graph; verify you scanned in this session or refresh."
             # Neo4j-specific warning when verification fails but no explicit error was raised
             if neo_attempted and (db_verified is not None) and (not db_verified) and (not neo_error):
-                payload["neo4j_warning"] = "Neo4j post-commit verification found 0 SCANNED_IN edges for this scan. Check Neo4j credentials, database name, or permissions."
+                payload["neo4j_warning"] = (
+                    "Neo4j post-commit verification found 0 SCANNED_IN edges for this scan. "
+                    "Verify: URI, credentials or set NEO4J_AUTH=none for no-auth, and database name. "
+                    "Also ensure the scan has files present in this session's graph."
+                )
             return jsonify(payload), 200
         except Exception as e:
             return jsonify({"status": "error", "error": "commit failed", "error_detail": str(e)}), 500
@@ -1909,6 +2228,45 @@ def create_app():
                 info['neo4j']['error'] = str(e)
         return jsonify(info), 200
 
+    @api.get('/health')
+    def api_health():
+        """Overall health focusing on SQLite availability and WAL mode."""
+        from .core import path_index_sqlite as pix
+        info = {
+            'sqlite': {
+                'path': None,
+                'exists': False,
+                'journal_mode': None,
+                'select1': False,
+                'error': None,
+            }
+        }
+        try:
+            dbp = pix._db_path()
+            info['sqlite']['path'] = str(dbp)
+            conn = pix.connect()
+            try:
+                mode = (conn.execute('PRAGMA journal_mode;').fetchone() or [''])[0]
+                if isinstance(mode, str):
+                    info['sqlite']['journal_mode'] = mode.lower()
+                row = conn.execute('SELECT 1').fetchone()
+                info['sqlite']['select1'] = bool(row and row[0] == 1)
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            # After connecting, the DB file should exist on disk
+            try:
+                from pathlib import Path as _P
+                info['sqlite']['exists'] = _P(info['sqlite']['path']).exists()
+            except Exception:
+                pass
+        except Exception as e:
+            info['sqlite']['error'] = str(e)
+        # Always return 200 so UIs can render details; clients can decide on status
+        return jsonify(info), 200
+
     # Settings APIs for Neo4j configuration
     @api.get('/settings/neo4j')
     def api_settings_neo4j_get():
@@ -2197,6 +2555,68 @@ def create_app():
         out.update({'file_count': files, 'folder_count': folders})
         return jsonify(out), 200
 
+    # Selections & Annotations API (SQLite-backed)
+    @api.post('/selections')
+    def api_create_selection():
+        payload = request.get_json(silent=True) or {}
+        sel_id = (payload.get('id') or '').strip()
+        name = (payload.get('name') or '').strip() or None
+        import time as _t
+        ts = _t.time()
+        # If id not provided, derive short id from time
+        if not sel_id:
+            sel_id = hex(int(ts * 1000000))[2:]
+        item = ann_db.create_selection(sel_id, name, ts)
+        return jsonify(item), 201
+
+    @api.post('/selections/<sel_id>/items')
+    def api_add_selection_items(sel_id):
+        payload = request.get_json(silent=True) or {}
+        file_ids = payload.get('file_ids') or payload.get('files') or []
+        if not isinstance(file_ids, list):
+            return jsonify({'error': 'file_ids must be a list'}), 400
+        import time as _t
+        ts = _t.time()
+        count = ann_db.add_selection_items(sel_id, [str(fid) for fid in file_ids], ts)
+        return jsonify({'selection_id': sel_id, 'added': int(count)}), 200
+
+    @api.post('/annotations')
+    def api_create_annotation():
+        payload = request.get_json(silent=True) or {}
+        file_id = (payload.get('file_id') or '').strip()
+        if not file_id:
+            return jsonify({'error': 'file_id is required'}), 400
+        kind = (payload.get('kind') or '').strip() or None
+        label = (payload.get('label') or '').strip() or None
+        note = payload.get('note')
+        if isinstance(note, str):
+            note = note
+        elif note is None:
+            note = None
+        else:
+            try:
+                note = json.dumps(note)
+            except Exception:
+                note = str(note)
+        data_json = payload.get('data_json')
+        if not isinstance(data_json, (str, type(None))):
+            try:
+                data_json = json.dumps(data_json)
+            except Exception:
+                data_json = None
+        import time as _t
+        ts = _t.time()
+        ann = ann_db.create_annotation(file_id, kind, label, note, data_json, ts)
+        return jsonify(ann), 201
+
+    @api.get('/annotations')
+    def api_get_annotations():
+        file_id = (request.args.get('file_id') or '').strip()
+        if not file_id:
+            return jsonify({'error': 'file_id query parameter is required'}), 400
+        items = ann_db.list_annotations_by_file(file_id)
+        return jsonify({'items': items, 'count': len(items)}), 200
+
     app.register_blueprint(api)
 
     # UI routes
@@ -2332,8 +2752,14 @@ def create_app():
             'host': os.environ.get('SCIDK_HOST', '127.0.0.1'),
             'port': os.environ.get('SCIDK_PORT', '5000'),
             'debug': os.environ.get('SCIDK_DEBUG', '1'),
+                        'feature_file_index': os.environ.get('SCIDK_FEATURE_FILE_INDEX', ''),
+                        'hash_policy': os.environ.get('SCIDK_HASH_POLICY', 'auto'),
             'dataset_count': len(datasets),
             'interpreter_count': len(reg.by_id),
+                        'channel': os.environ.get('SCIDK_CHANNEL', 'stable'),
+                        'files_viewer': os.environ.get('SCIDK_FILES_VIEWER', ''),
+                        'rclone_mounts': (os.environ.get('SCIDK_RCLONE_MOUNTS') or os.environ.get('SCIDK_FEATURE_RCLONE_MOUNTS') or ''),
+                        'providers': os.environ.get('SCIDK_PROVIDERS', 'local_fs,mounted_fs'),
         }
         # Provide interpreter mappings and rules, and plugin summary counts for the Set page sections
         mappings = {ext: [getattr(i, 'id', 'unknown') for i in interps] for ext, interps in reg.by_extension.items()}

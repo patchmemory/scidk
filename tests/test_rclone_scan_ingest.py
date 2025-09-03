@@ -7,6 +7,7 @@ def test_rclone_scan_ingest_monkeypatched(monkeypatch, tmp_path):
     # Ensure rclone provider is enabled and SQLite DB points to temp file
     monkeypatch.setenv('SCIDK_PROVIDERS', 'local_fs,mounted_fs,rclone')
     monkeypatch.setenv('SCIDK_DB_PATH', str(tmp_path / 'files.db'))
+    monkeypatch.setenv('SCIDK_FEATURE_FILE_INDEX', '1')
 
     # Fake rclone lsjson output: 2 files and 1 folder when non-recursive
     lsjson_payload = [

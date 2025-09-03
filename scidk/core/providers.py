@@ -50,7 +50,7 @@ class FilesystemProvider:
     def list_roots(self) -> List[DriveInfo]:
         raise NotImplementedError
 
-    def list(self, root_id: str, path: str, page_token: Optional[str] = None, page_size: Optional[int] = None) -> Dict:
+    def list(self, root_id: str, path: str, page_token: Optional[str] = None, page_size: Optional[int] = None, *, recursive: bool = False, max_depth: Optional[int] = 1, fast_list: bool = False) -> Dict:
         raise NotImplementedError
 
     def get_entry(self, entry_id: str) -> Entry:
@@ -87,7 +87,7 @@ class LocalFSProvider(FilesystemProvider):
     def _norm(self, p: str) -> Path:
         return Path(p).expanduser().resolve()
 
-    def list(self, root_id: str, path: str, page_token: Optional[str] = None, page_size: Optional[int] = None) -> Dict:
+    def list(self, root_id: str, path: str, page_token: Optional[str] = None, page_size: Optional[int] = None, *, recursive: bool = False, max_depth: Optional[int] = 1, fast_list: bool = False) -> Dict:
         base = self._norm(path or root_id or "/")
         if not base.exists():
             return {"entries": []}
@@ -164,7 +164,7 @@ class MountedFSProvider(FilesystemProvider):
             pass
         return drives
 
-    def list(self, root_id: str, path: str, page_token: Optional[str] = None, page_size: Optional[int] = None) -> Dict:
+    def list(self, root_id: str, path: str, page_token: Optional[str] = None, page_size: Optional[int] = None, *, recursive: bool = False, max_depth: Optional[int] = 1, fast_list: bool = False) -> Dict:
         # Treat path under selected mount root; if path is empty, list the root itself
         base = Path(path or root_id).resolve()
         if not base.exists():
@@ -245,7 +245,7 @@ class RcloneProvider(FilesystemProvider):
             raise RuntimeError(proc.stderr.strip() or f"rclone exited {proc.returncode}")
         return proc.stdout
 
-    def list_files(self, target: str, recursive: bool = True, fast_list: bool = False) -> List[Dict]:
+    def list_files(self, target: str, recursive: bool = True, fast_list: bool = False, max_depth: Optional[int] = None) -> List[Dict]:
         """Return rclone lsjson entries for a target.
         - When recursive=True, uses --recursive; otherwise limits to --max-depth 1.
         - When fast_list=True, includes --fast-list for backends that support it.
@@ -258,10 +258,23 @@ class RcloneProvider(FilesystemProvider):
         if recursive:
             args += ["--recursive"]
         else:
-            args += ["--max-depth", "1"]
+            depth = int(max_depth or 1)
+            args += ["--max-depth", str(depth)]
         if fast_list:
             args += ["--fast-list"]
-        out = self._run(args)
+        # Try once; if fast_list fails, retry without it
+        try:
+            out = self._run(args)
+        except Exception as e:
+            if fast_list:
+                # retry without fast-list
+                try:
+                    args2 = [a for a in args if a != "--fast-list"]
+                    out = self._run(args2)
+                except Exception:
+                    raise e
+            else:
+                raise e
         try:
             items = json.loads(out or "[]")
         except Exception:
@@ -289,7 +302,7 @@ class RcloneProvider(FilesystemProvider):
             roots.append(DriveInfo(id=name, name=name.rstrip(':'), path=name))
         return roots
 
-    def list(self, root_id: str, path: str, page_token: Optional[str] = None, page_size: Optional[int] = None) -> Dict:
+    def list(self, root_id: str, path: str, page_token: Optional[str] = None, page_size: Optional[int] = None, *, recursive: bool = False, max_depth: Optional[int] = 1, fast_list: bool = False) -> Dict:
         target = (path or root_id or "").strip()
         if not target:
             return {"entries": []}
@@ -308,14 +321,35 @@ class RcloneProvider(FilesystemProvider):
                 return json.loads(out or "[]")
             except Exception:
                 return []
-        # Step 1: attempt split listing
-        dirs_items = _safe_ls(["lsjson", target, "--max-depth", "1", "--dirs-only"])
-        files_items = _safe_ls(["lsjson", target, "--max-depth", "1", "--files-only"])
-        combined = (dirs_items or []) + (files_items or [])
-        # Step 2: fallback to single call if nothing found (keeps tests/back-compat)
-        if not combined:
-            single = _safe_ls(["lsjson", target, "--max-depth", "1"])
-            combined = single or []
+        # If options request deeper listing, use list_files to gather and then collapse to immediate children.
+        if recursive or (max_depth and int(max_depth) > 1):
+            try:
+                deep = self.list_files(target, recursive=bool(recursive), fast_list=bool(fast_list), max_depth=max_depth)
+            except Exception:
+                deep = []
+            # Immediate files: no slash in Path
+            for it in deep:
+                pth = (it.get("Path") or it.get("Name") or "")
+                if pth and ("/" not in pth) and (not it.get("IsDir")):
+                    files_items.append(it)
+            # Immediate folders: first segment of Path when slash present
+            prefixes = set()
+            for it in deep:
+                pth = (it.get("Path") or it.get("Name") or "")
+                if isinstance(pth, str) and "/" in pth:
+                    prefixes.add(pth.split("/",1)[0])
+            for name in sorted(prefixes):
+                dirs_items.append({"Name": name, "Path": name, "IsDir": True, "Size": 0})
+            combined = (dirs_items or []) + (files_items or [])
+        else:
+            # Step 1: attempt split listing
+            dirs_items = _safe_ls(["lsjson", target, "--max-depth", "1", "--dirs-only"])
+            files_items = _safe_ls(["lsjson", target, "--max-depth", "1", "--files-only"])
+            combined = (dirs_items or []) + (files_items or [])
+            # Step 2: fallback to single call if nothing found (keeps tests/back-compat)
+            if not combined:
+                single = _safe_ls(["lsjson", target, "--max-depth", "1"])
+                combined = single or []
         # Step 3: synthesize folders from file paths if needed
         if (not dirs_items) and combined:
             # Gather immediate child folder names from 'Path' fields that include '/'

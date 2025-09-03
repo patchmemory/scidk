@@ -17,6 +17,23 @@
       <label for="prov-path" class="form-label small" style="margin-bottom:.25rem">Path</label>
       <input id="prov-path" type="text" class="form-control form-control-sm" placeholder="/path/within/root" style="width:360px" />
     </div>
+    <div class="col-auto">
+      <label class="form-label small" style="margin-bottom:.25rem">Browse options</label>
+      <div class="small" style="display:flex; gap:.75rem; align-items:center; border:1px dashed #ddd; padding:.25rem .5rem; border-radius:.25rem">
+        <div class="form-check form-check-inline">
+          <input id="prov-browse-recursive" class="form-check-input" type="checkbox" />
+          <label class="form-check-label small" for="prov-browse-recursive">Recursive</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input id="prov-browse-fast-list" class="form-check-input" type="checkbox" />
+          <label class="form-check-label small" for="prov-browse-fast-list">Fast list</label>
+        </div>
+        <div class="input-group input-group-sm" style="width: 160px;">
+          <span class="input-group-text">Max depth</span>
+          <input id="prov-browse-max-depth" type="number" class="form-control" min="1" step="1" value="1" />
+        </div>
+      </div>
+    </div>
     <div class="col-auto" style="display:flex; gap:.5rem; align-items:end;">
       <button id="prov-go" class="btn btn-sm btn-outline-primary">Go</button>
     </div>
@@ -85,7 +102,10 @@
   <form id="bg-scan-form" class="row g-2">
     <div class="col-auto">
       <label for="scan-path" class="form-label small" style="margin-bottom:.25rem">Path</label>
-      <input id="scan-path" type="text" class="form-control form-control-sm" placeholder="/path/to/scan" style="width:320px" />
+      <div class="input-group input-group-sm" style="width: 420px;">
+        <input id="scan-path" type="text" class="form-control" placeholder="/path/to/scan or remote:sub/path" />
+        <button id="bg-use-current" type="button" class="btn btn-outline-secondary">Use current folder</button>
+      </div>
     </div>
     <div class="col-auto form-check" style="padding-top:1.8rem">
       <input id="scan-recursive" class="form-check-input" type="checkbox" checked />
@@ -174,22 +194,61 @@
         rootSelect.innerHTML = roots.map(rt => `<option value="${rt.id}">${rt.name||rt.path||rt.id}</option>`).join('');
         currentRoot = roots[0]?.id || '/';
         rootSelect.value = currentRoot;
-        // Reset current path and input to root
-        currentPath = currentRoot;
-        if (provPathInput) provPathInput.value = currentPath;
+        // Reset current path and input: for rclone, use relative (empty)
+        if (providerId === 'rclone') {
+          currentPath = '';
+          if (provPathInput) provPathInput.value = '';
+          // Auto-browse rclone root immediately
+          await browse(providerId, currentRoot, '');
+        } else {
+          currentPath = currentRoot;
+          if (provPathInput) provPathInput.value = currentPath;
+          // Auto-browse non-rclone root immediately
+          await browse(providerId, currentRoot, currentPath);
+        }
       } catch(e){ rootSelect.innerHTML = '<option>(failed)</option>'; }
     }
 
+    function composePath(providerId, rootId, relOrAbs){
+      if (providerId === 'rclone'){
+        const remote = (rootId||'').endsWith(':') ? (rootId||'') : ((rootId||'') + ':');
+        const rel = (relOrAbs||'').replace(/^\/+/, '');
+        return rel ? (remote + rel) : remote;
+      }
+      return relOrAbs || rootId || '/';
+    }
+
+    function displayPathFor(providerId, rootId, relOrAbs){
+      if (providerId === 'rclone'){
+        return (relOrAbs||'');
+      }
+      return relOrAbs || rootId || '/';
+    }
+
     async function browse(providerId, rootId, path){
-      const qs = new URLSearchParams({ provider_id: providerId||'local_fs', root_id: rootId||'/', path: path||rootId||'/' });
+      const fullPath = composePath(providerId||'local_fs', rootId||'/', path||'');
+      const qs = new URLSearchParams({ provider_id: providerId||'local_fs', root_id: rootId||'/', path: fullPath });
+      // Append rclone-specific browse options if selected
+      if ((providerId||'') === 'rclone'){
+        try {
+          const chkRec = document.getElementById('prov-browse-recursive');
+          const chkFast = document.getElementById('prov-browse-fast-list');
+          const inpDepth = document.getElementById('prov-browse-max-depth');
+          if (chkRec && chkRec.checked) qs.set('recursive', 'true');
+          const d = Number(inpDepth && inpDepth.value ? inpDepth.value : '1');
+          if (d && d !== 1) qs.set('max_depth', String(d));
+          if (chkFast && chkFast.checked) qs.set('fast_list', 'true');
+        } catch(_) { /* ignore UI options if missing */ }
+      }
       try {
         const r = await fetch('/api/browse?' + qs.toString());
         const j = await r.json();
-        // no breadcrumb API; show current path and root only
-        const displayPath = path || rootId || '/';
-        provCrumb.innerHTML = `<span class="small">Path: <code>${displayPath}</code></span>`;
-        // Sync input to actual path we browsed
-        currentPath = displayPath;
+        // display breadcrumb: for rclone show Root→Remote and relative path
+        const disp = displayPathFor(providerId||'local_fs', rootId||'/', path||'');
+        const label = (providerId==='rclone') ? `${(rootId||'').replace(/:$/,'')} → ${disp||'(root)'}` : (fullPath||'/');
+        provCrumb.innerHTML = `<span class="small">Path: <code>${label}</code></span>`;
+        // Sync input to relative path for rclone; absolute otherwise
+        currentPath = disp;
         if (provPathInput) provPathInput.value = currentPath;
         const rows = (j.entries||[]).map(e => {
           const type = e.type === 'folder' ? 'Folder' : 'File';
@@ -209,21 +268,43 @@
           const id = tr.getAttribute('data-id');
           const type = tr.getAttribute('data-type');
           if (type === 'folder'){
-            currentPath = id;
+            // For rclone, set currentPath to relative portion (strip remote prefix)
+            if (currentProv === 'rclone'){
+              const i = id.indexOf(':');
+              let rel = i >= 0 ? id.slice(i+1) : id;
+              rel = (rel||'').replace(/^\/+/, '');
+              currentPath = rel;
+            } else {
+              currentPath = id;
+            }
             if (provPathInput) provPathInput.value = currentPath;
             browse(currentProv, currentRoot, currentPath);
           } else {
-            provPanel.innerHTML = `<div><strong>${tr.firstChild?.textContent||id}</strong></div><div class="small">Path: <code>${id}</code></div>`;
+            provPanel.innerHTML = `<div><strong>${tr.firstChild?.textContent||id}</strong></div><div class=\"small\">Path: <code>${id}</code></div>`;
           }
         });
       });
     }
 
     if (provSelect){
-      provSelect.addEventListener('change', async () => { currentProv = provSelect.value; await loadRoots(currentProv); provList.innerHTML = ''; provCrumb.innerHTML=''; });
+      provSelect.addEventListener('change', async () => {
+        currentProv = provSelect.value;
+        await loadRoots(currentProv); // auto-browse happens in loadRoots
+      });
     }
     if (rootSelect){
-      rootSelect.addEventListener('change', () => { currentRoot = rootSelect.value; currentPath = currentRoot; if (provPathInput) provPathInput.value = currentPath; });
+      rootSelect.addEventListener('change', () => {
+        currentRoot = rootSelect.value;
+        if (currentProv==='rclone'){
+          currentPath='';
+          if (provPathInput) provPathInput.value='';
+          browse(currentProv, currentRoot, '');
+        } else {
+          currentPath = currentRoot;
+          if (provPathInput) provPathInput.value = currentPath;
+          browse(currentProv, currentRoot, currentPath);
+        }
+      });
     }
     if (btnROC && rocFrame){
       btnROC.addEventListener('click', () => {
@@ -250,6 +331,14 @@
       const doGo = () => { currentProv = provSelect.value; currentRoot = rootSelect.value; const p = (provPathInput && provPathInput.value) ? provPathInput.value : currentRoot; currentPath = p || currentRoot; browse(currentProv, currentRoot, currentPath); };
       provGoBtn.addEventListener('click', (e) => { e.preventDefault(); doGo(); });
       if (provPathInput){ provPathInput.addEventListener('keydown', (e) => { if (e.key === 'Enter'){ e.preventDefault(); doGo(); } }); }
+      // Optional: re-browse on option changes for rclone
+      const chkRec = document.getElementById('prov-browse-recursive');
+      const chkFast = document.getElementById('prov-browse-fast-list');
+      const inpDepth = document.getElementById('prov-browse-max-depth');
+      const reBrowse = () => { if ((provSelect.value||'')==='rclone'){ doGo(); } };
+      if (chkRec) chkRec.addEventListener('change', reBrowse);
+      if (chkFast) chkFast.addEventListener('change', reBrowse);
+      if (inpDepth) inpDepth.addEventListener('change', reBrowse);
     }
     if (provScanForm){
       provScanForm.addEventListener('submit', async (e) => {
@@ -258,22 +347,27 @@
         const provId = (provSelect && provSelect.value) || currentProv || 'local_fs';
         const rootId = (rootSelect && rootSelect.value) || currentRoot || '/';
         const inputPath = (provPathInput && provPathInput.value && provPathInput.value.trim()) || '';
-        const path = inputPath || currentPath || rootId || '/';
+        const relOrAbs = inputPath || currentPath || '';
+        // Compose full scan target for Rclone; keep other providers untouched
+        let scanPath = relOrAbs || rootId || '/';
+        if (provId === 'rclone') {
+          scanPath = composePath(provId, rootId, relOrAbs); // e.g., "dropbox:AIPT"
+        }
         currentProv = provId;
         currentRoot = rootId;
-        currentPath = path;
-        if (!provId || !path){ provScanMsg.textContent = 'Select a provider and folder first.'; return; }
+        currentPath = relOrAbs;
+        if (!provId || !scanPath){ provScanMsg.textContent = 'Select a provider and folder first.'; return; }
         const recursive = document.getElementById('prov-scan-recursive').checked;
         const btn = provScanForm.querySelector('button[type="submit"]');
         if (btn) { btn.disabled = true; btn.textContent = 'Scanning…'; }
-        provScanMsg.textContent = `Starting scan for ${path}…`;
+        provScanMsg.textContent = `Starting scan for ${scanPath}…`;
         // Add a local pseudo-task so status appears with other progress bars
         const localId = 'provscan-' + Date.now();
-        const localTask = { id: localId, type: 'scan', status: 'running', path, processed: 0, total: null, progress: 0 };
+        const localTask = { id: localId, type: 'scan', status: 'running', path: scanPath, processed: 0, total: null, progress: 0 };
         try { (window.scidkLocalTasks||[]).push(localTask); } catch(_) { /* ignore */ }
         fetchTasks(); // trigger re-render with local task
         try {
-          const r = await fetch('/api/scan', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ provider_id: provId, root_id: rootId||'/', path, recursive }) });
+          const r = await fetch('/api/scan', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ provider_id: provId, root_id: rootId||'/', path: scanPath, recursive }) });
           const j = await r.json();
           if (r.ok){
             provScanMsg.textContent = `Scan complete: ${j.scan_id} — ${j.scanned} files (${j.duration_sec ? (Math.round(j.duration_sec*10)/10+'s') : ''})`;
@@ -326,6 +420,17 @@
 
     const scanForm = document.getElementById('bg-scan-form');
     const tasksDiv = document.getElementById('tasks-list');
+    const bgUseCurrent = document.getElementById('bg-use-current');
+    if (bgUseCurrent) {
+      bgUseCurrent.addEventListener('click', () => {
+        const provId = (provSelect && provSelect.value) || currentProv || 'local_fs';
+        const rootId = (rootSelect && rootSelect.value) || currentRoot || '/';
+        const relOrAbs = (provPathInput && provPathInput.value && provPathInput.value.trim()) || currentPath || '';
+        const full = provId === 'rclone' ? composePath(provId, rootId, relOrAbs) : (relOrAbs || rootId || '/');
+        const bgInput = document.getElementById('scan-path');
+        if (bgInput) bgInput.value = full;
+      });
+    }
     // Keep a small client-side list for local (synchronous) scans so they appear alongside server tasks
     window.scidkLocalTasks = window.scidkLocalTasks || [];
     const fmtPct = (x) => Math.round((x || 0) * 100);
