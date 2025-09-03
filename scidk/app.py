@@ -482,6 +482,8 @@ def create_app():
         path = data.get('path') or (root_id if provider_id != 'local_fs' else os.getcwd())
         recursive = bool(data.get('recursive', True))
         fast_list = bool(data.get('fast_list', False))
+        # Prefer fast_list by default for recursive rclone scans if client omitted it
+        _client_specified_fast_list = ('fast_list' in data)
         try:
             import time, hashlib, json
             from .core import path_index_sqlite as pix
@@ -513,6 +515,9 @@ def create_app():
                     # path is relative or empty; compose with root_id
                     from .core.path_utils import join_remote_path as _join
                     path = _join(root_id, (path or '').lstrip('/'))
+                # If recursive rclone and client did not specify fast_list, enable it for robustness
+                if provider_id == 'rclone' and recursive and not _client_specified_fast_list:
+                    fast_list = True
                 try:
                     # In testing mode, allow metadata-only scans for rclone to avoid external binary dependency
                     if app.config.get('TESTING') and not recursive:

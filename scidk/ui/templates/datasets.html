@@ -212,7 +212,16 @@
     function composePath(providerId, rootId, relOrAbs){
       if (providerId === 'rclone'){
         const remote = (rootId||'').endsWith(':') ? (rootId||'') : ((rootId||'') + ':');
-        const rel = (relOrAbs||'').replace(/^\/+/, '');
+        let rel = (relOrAbs||'').replace(/^\/+/, '');
+        // If user pasted the remote prefix into the relative input, strip it
+        if (rel && rel.startsWith(remote)) {
+          rel = rel.slice(remote.length);
+        }
+        // Also strip any other "<name>:" prefix they might have pasted
+        const colonIdx = rel.indexOf(':');
+        if (colonIdx > 0) {
+          rel = rel.slice(colonIdx + 1).replace(/^\/+/, '');
+        }
         return rel ? (remote + rel) : remote;
       }
       return relOrAbs || rootId || '/';
@@ -328,7 +337,17 @@
       });
     }
     if (provGoBtn){
-      const doGo = () => { currentProv = provSelect.value; currentRoot = rootSelect.value; const p = (provPathInput && provPathInput.value) ? provPathInput.value : currentRoot; currentPath = p || currentRoot; browse(currentProv, currentRoot, currentPath); };
+      const doGo = () => {
+        currentProv = provSelect.value; 
+        currentRoot = rootSelect.value; 
+        let rel = (provPathInput && provPathInput.value) ? provPathInput.value.trim() : (currentPath || '');
+        // For rclone, keep empty to mean remote root; do not fallback to rootId string in the input
+        if (currentProv === 'rclone' && !rel) rel = '';
+        // For non-rclone, fallback to absolute root if empty
+        if (currentProv !== 'rclone' && !rel) rel = currentRoot || '/';
+        currentPath = rel; 
+        browse(currentProv, currentRoot, currentPath);
+      };
       provGoBtn.addEventListener('click', (e) => { e.preventDefault(); doGo(); });
       if (provPathInput){ provPathInput.addEventListener('keydown', (e) => { if (e.key === 'Enter'){ e.preventDefault(); doGo(); } }); }
       // Optional: re-browse on option changes for rclone
@@ -358,6 +377,8 @@
         currentPath = relOrAbs;
         if (!provId || !scanPath){ provScanMsg.textContent = 'Select a provider and folder first.'; return; }
         const recursive = document.getElementById('prov-scan-recursive').checked;
+        const chkFast = document.getElementById('prov-browse-fast-list');
+        const fastList = !!(chkFast && chkFast.checked);
         const btn = provScanForm.querySelector('button[type="submit"]');
         if (btn) { btn.disabled = true; btn.textContent = 'Scanning…'; }
         provScanMsg.textContent = `Starting scan for ${scanPath}…`;
@@ -367,7 +388,7 @@
         try { (window.scidkLocalTasks||[]).push(localTask); } catch(_) { /* ignore */ }
         fetchTasks(); // trigger re-render with local task
         try {
-          const r = await fetch('/api/scan', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ provider_id: provId, root_id: rootId||'/', path: scanPath, recursive }) });
+          const r = await fetch('/api/scan', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ provider_id: provId, root_id: rootId||'/', path: scanPath, recursive, fast_list: fastList }) });
           const ctype = (r.headers && r.headers.get('content-type')) || '';
           let j = null;
           if (ctype.includes('application/json')){
