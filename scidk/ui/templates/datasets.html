@@ -136,6 +136,28 @@
       <tbody id="snap-list"></tbody>
     </table>
   </div>
+  <div class="row g-2" style="margin-top:.5rem">
+    <div class="col-auto">
+      <label class="form-label small" style="margin-bottom:.25rem">Snapshot search</label>
+      <div class="input-group input-group-sm" style="width: 420px;">
+        <input id="snap-search-q" type="text" class="form-control" placeholder="search name or path within scan" />
+        <button id="snap-search-go" type="button" class="btn btn-outline-secondary">Search</button>
+      </div>
+    </div>
+    <div class="col-auto">
+      <div class="input-group input-group-sm" style="width: 200px;">
+        <span class="input-group-text">Ext</span>
+        <input id="snap-search-ext" type="text" class="form-control" placeholder=".txt" />
+      </div>
+    </div>
+    <div class="col-auto">
+      <div class="input-group input-group-sm" style="width: 320px;">
+        <span class="input-group-text">Prefix</span>
+        <input id="snap-search-prefix" type="text" class="form-control" placeholder="remote:folder or /abs/prefix" />
+      </div>
+    </div>
+  </div>
+  <div id="snap-search-results" class="small" style="margin-top:.25rem"></div>
 </section>
 
 <section>
@@ -496,6 +518,11 @@
     const snapUseLive = document.getElementById('snap-use-live');
     const snapCommit = document.getElementById('snap-commit');
     const snapStatus = document.getElementById('snap-status');
+    const snapSearchQ = document.getElementById('snap-search-q');
+    const snapSearchExt = document.getElementById('snap-search-ext');
+    const snapSearchPrefix = document.getElementById('snap-search-prefix');
+    const snapSearchBtn = document.getElementById('snap-search-go');
+    const snapSearchResults = document.getElementById('snap-search-results');
     const snapList = document.getElementById('snap-list');
     const snapCrumb = document.getElementById('snap-crumb');
     let snapToken = null;
@@ -540,7 +567,10 @@
           a.addEventListener('click', (ev) => { ev.preventDefault(); const np = a.getAttribute('data-snap-path'); if (snapPathInput){ snapPathInput.value = np||''; snapToken=null; snapHistory=[]; browseSnapshot(); } });
         });
         // Render
-        const rows = entries.map(e => `<tr data-path="${e.path}" data-type="${e.type}"><td>${e.name}</td><td>${e.type}</td><td>${e.type==='file'?(fmtBytes(e.size||0)):''}</td><td>${fmtTime(e.modified||0)}</td></tr>`).join('');
+        const rows = entries.map(e => {
+          const mod = (e.modified && e.modified > 0 && e.type==='file') ? fmtTime(e.modified) : '';
+          return `<tr data-path="${e.path}" data-type="${e.type}"><td>${e.name}</td><td>${e.type}</td><td>${e.type==='file'?(fmtBytes(e.size||0)):''}</td><td>${mod}</td></tr>`;
+        }).join('');
         snapList.innerHTML = rows || '<tr><td colspan="4" class="small">No entries.</td></tr>';
         snapNext.disabled = !snapToken;
         snapPrev.disabled = (snapHistory.length <= 1);
@@ -558,6 +588,24 @@
     if (snapGo){ snapGo.addEventListener('click', () => { snapToken = null; snapHistory = []; browseSnapshot(); }); }
     if (snapNext){ snapNext.addEventListener('click', () => browseSnapshot('next')); }
     if (snapPrev){ snapPrev.addEventListener('click', () => browseSnapshot('prev')); }
+    if (snapSearchBtn){ snapSearchBtn.addEventListener('click', async () => {
+      if (!snapScanSel || !snapScanSel.value){ snapSearchResults.textContent = 'Select a scan first.'; return; }
+      const qs = new URLSearchParams();
+      const q = (snapSearchQ && snapSearchQ.value.trim()) || '';
+      const ext = (snapSearchExt && snapSearchExt.value.trim()) || '';
+      const prefix = (snapSearchPrefix && snapSearchPrefix.value.trim()) || '';
+      if (q) qs.set('q', q);
+      if (ext) qs.set('ext', ext);
+      if (prefix) qs.set('prefix', prefix);
+      qs.set('scan_id', snapScanSel.value);
+      try{
+        const r = await fetch('/api/index/search?' + qs.toString());
+        const j = await r.json();
+        if (!r.ok){ snapSearchResults.textContent = 'Search error: ' + (j.error||r.status); return; }
+        const rows = (j.results||[]).map(it => `<div><code>${it.path}</code> — ${it.ext||''} ${it.size?('('+fmtBytes(it.size)+')'):''}</div>`).join('');
+        snapSearchResults.innerHTML = rows || '<div class="small">No matches.</div>';
+      } catch(e){ snapSearchResults.textContent = 'Search error: ' + e; }
+    }); }
     if (snapScanSel){ snapScanSel.addEventListener('change', () => { snapToken = null; snapHistory = []; browseSnapshot(); }); }
     if (snapUseLive){ snapUseLive.addEventListener('click', () => {
       const provId = (provSelect && provSelect.value) || currentProv || 'local_fs';
@@ -706,7 +754,10 @@
         const path = document.getElementById('scan-path').value.trim();
         const recursive = document.getElementById('scan-recursive').checked;
         try {
-          const r = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ type: 'scan', path, recursive }) });
+          const provId = (provSelect && provSelect.value) || currentProv || 'local_fs';
+          const rootId = (rootSelect && rootSelect.value) || currentRoot || '/';
+          const payload = { type: 'scan', path, recursive, provider_id: provId, root_id: rootId };
+          const r = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
           if (r.status === 202){ startPolling(); fetchTasks(); }
           else { const j = await r.json(); alert('Task error: ' + (j.error || r.status)); }
         } catch(err){ alert('Task error: ' + err); }
