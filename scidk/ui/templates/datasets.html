@@ -124,9 +124,12 @@
       <button id="snap-go" class="btn btn-sm btn-outline-primary">Browse</button>
       <button id="snap-prev" class="btn btn-sm btn-outline-secondary" disabled>Prev</button>
       <button id="snap-next" class="btn btn-sm btn-outline-secondary" disabled>Next</button>
+      <button id="snap-use-live" class="btn btn-sm btn-outline-secondary" title="Copy Live path into Snapshot">Use Live path</button>
+      <button id="snap-commit" class="btn btn-sm btn-outline-success" title="Commit selected scan to Graph">Commit selected scan</button>
     </div>
   </div>
-  <div class="small" id="snap-crumb" style="margin-bottom:.5rem"></div>
+  <div class="small" id="snap-crumb" style="margin-bottom:.25rem"></div>
+  <div class="small" id="snap-status" style="margin-bottom:.5rem"></div>
   <div class="table-responsive" style="max-height:320px; overflow:auto; border:1px solid #eee">
     <table class="table table-sm" style="margin-bottom:0">
       <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Modified</th></tr></thead>
@@ -490,6 +493,9 @@
     const snapGo = document.getElementById('snap-go');
     const snapPrev = document.getElementById('snap-prev');
     const snapNext = document.getElementById('snap-next');
+    const snapUseLive = document.getElementById('snap-use-live');
+    const snapCommit = document.getElementById('snap-commit');
+    const snapStatus = document.getElementById('snap-status');
     const snapList = document.getElementById('snap-list');
     const snapCrumb = document.getElementById('snap-crumb');
     let snapToken = null;
@@ -520,8 +526,19 @@
         const entries = j.entries||[];
         snapToken = j.next_page_token || null;
         if (direction !== 'prev') snapHistory.push(j.next_page_token || '');
-        // Update crumb
-        snapCrumb.innerHTML = `<span class="small">Scan <code>${scanId}</code> — Path: <code>${(j.path||'')}</code> — Showing ${entries.length}${snapToken?(' (next token '+snapToken+')'):''}</span>`;
+        // Update crumb with clickable ancestors
+        const p = j.path || '';
+        let parts = [];
+        if (p){
+          if (p.includes(':')){ const i = p.indexOf(':'); const rem = p.slice(0,i+1); const suff = p.slice(i+1).replace(/^\/+/, ''); const segs = suff? suff.split('/'): []; let acc = rem; parts.push({name: rem.replace(/:$/,''), path: rem}); for (let s of segs){ acc = acc + (acc.endsWith(':')? '':'/') + s; parts.push({name: s, path: acc}); }
+          } else { const segs = p.replace(/^\/+/, '').split('/'); let acc = ''; for (let i=0;i<segs.length;i++){ acc = (i===0? ('/'+segs[i]) : (acc + '/' + segs[i])); parts.push({name: segs[i]||'/', path: acc}); } }
+        }
+        const crumbHtml = parts.length? parts.map((c, idx) => `<a href="#" data-snap-path="${c.path}">${c.name||'/'}</a>`).join(' / ') : '(scan root)';
+        snapCrumb.innerHTML = `<span class="small">Scan <code>${scanId}</code> — Path: ${crumbHtml} — Showing ${entries.length}${snapToken?(' (next token '+snapToken+')'):''}</span>`;
+        // attach crumb handlers
+        snapCrumb.querySelectorAll('a[data-snap-path]')?.forEach(a => {
+          a.addEventListener('click', (ev) => { ev.preventDefault(); const np = a.getAttribute('data-snap-path'); if (snapPathInput){ snapPathInput.value = np||''; snapToken=null; snapHistory=[]; browseSnapshot(); } });
+        });
         // Render
         const rows = entries.map(e => `<tr data-path="${e.path}" data-type="${e.type}"><td>${e.name}</td><td>${e.type}</td><td>${e.type==='file'?(fmtBytes(e.size||0)):''}</td><td>${fmtTime(e.modified||0)}</td></tr>`).join('');
         snapList.innerHTML = rows || '<tr><td colspan="4" class="small">No entries.</td></tr>';
@@ -542,6 +559,20 @@
     if (snapNext){ snapNext.addEventListener('click', () => browseSnapshot('next')); }
     if (snapPrev){ snapPrev.addEventListener('click', () => browseSnapshot('prev')); }
     if (snapScanSel){ snapScanSel.addEventListener('change', () => { snapToken = null; snapHistory = []; browseSnapshot(); }); }
+    if (snapUseLive){ snapUseLive.addEventListener('click', () => {
+      const provId = (provSelect && provSelect.value) || currentProv || 'local_fs';
+      const rootId = (rootSelect && rootSelect.value) || currentRoot || '/';
+      const relOrAbs = (provPathInput && provPathInput.value && provPathInput.value.trim()) || currentPath || '';
+      const full = provId === 'rclone' ? composePath(provId, rootId, relOrAbs) : (relOrAbs || rootId || '/');
+      if (snapPathInput) snapPathInput.value = full;
+    }); }
+    if (snapCommit){ snapCommit.addEventListener('click', async () => {
+      if (!snapScanSel || !snapScanSel.value){ snapStatus.textContent = 'Select a scan first.'; return; }
+      const id = snapScanSel.value; snapCommit.disabled = true; const prev = snapCommit.textContent; snapCommit.textContent = 'Committing…'; snapStatus.textContent = '';
+      try{ const r = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ type: 'commit', scan_id: id }) }); if (r.status === 202){ snapStatus.textContent = 'Commit started in background. Watch progress above.'; } else { const j = await r.json(); snapStatus.textContent = 'Commit failed: ' + (j.error || r.status); } }
+      catch(e){ snapStatus.textContent = 'Commit failed: ' + e; }
+      finally { snapCommit.disabled = false; snapCommit.textContent = prev; }
+    }); }
 
     // Scans dropdown and background tasks
     // Recent scans dropdown helpers
