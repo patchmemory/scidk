@@ -192,6 +192,7 @@ def create_app():
 
     # Build rows for commit: files (rows) and standalone folders (folder_rows)
     def build_commit_rows(scan, ds_map):
+        """Legacy builder from in-memory datasets."""
         from .core.path_utils import parse_remote_path, parent_remote_path
         checksums = scan.get('checksums') or []
         # Helpers unified on central path utils
@@ -316,33 +317,42 @@ def create_app():
             try:
                 driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
                 with driver.session(database=database) as sess:
+                    # Try to create composite constraints (Neo4j 5+) — ignore if unsupported
+                    try:
+                        sess.run("CREATE CONSTRAINT file_identity IF NOT EXISTS FOR (f:File) REQUIRE (f.path, f.host, f.port) IS UNIQUE").consume()
+                    except Exception:
+                        pass
+                    try:
+                        sess.run("CREATE CONSTRAINT folder_identity IF NOT EXISTS FOR (d:Folder) REQUIRE (d.path, d.host, d.port) IS UNIQUE").consume()
+                    except Exception:
+                        pass
                     cypher = (
-                        "WITH $rows AS rows, $folders AS folders, $scan_id AS scan_id, $scan_path AS scan_path, $scan_started AS scan_started, $scan_ended AS scan_ended, $scan_provider AS scan_provider, $scan_host_type AS scan_host_type, $scan_host_id AS scan_host_id, $scan_root_id AS scan_root_id, $scan_root_label AS scan_root_label, $scan_source AS scan_source "
+                        "WITH $rows AS rows, $folders AS folders, $scan_id AS scan_id, $scan_path AS scan_path, $scan_started AS scan_started, $scan_ended AS scan_ended, $scan_provider AS scan_provider, $scan_host_type AS scan_host_type, $scan_host_id AS scan_host_id, $scan_root_id AS scan_root_id, $scan_root_label AS scan_root_label, $scan_source AS scan_source, $node_host AS node_host, $node_port AS node_port "
                         "MERGE (s:Scan {id: scan_id}) SET s.path = scan_path, s.started = scan_started, s.ended = scan_ended "
                         "WITH rows, folders, s CALL { WITH rows, s UNWIND rows AS r "
-                        "  MERGE (f:File {checksum: r.checksum}) "
-                        "    SET f.path = r.path, f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, "
+                        "  MERGE (f:File {path: r.path, host: $node_host, port: $node_port}) "
+                        "    SET f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, "
                         "        f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type, f.provider_id = $scan_provider, f.host_type = $scan_host_type, f.host_id = $scan_host_id "
                         "  MERGE (f)-[:SCANNED_IN]->(s) "
                         "  FOREACH (_ IN CASE WHEN coalesce(r.folder,'') <> '' THEN [1] ELSE [] END | "
-                        "    MERGE (fo:Folder {path: r.folder}) SET fo.name = r.folder_name, fo.provider_id = $scan_provider, fo.host_type = $scan_host_type, fo.host_id = $scan_host_id "
+                        "    MERGE (fo:Folder {path: r.folder, host: $node_host, port: $node_port}) SET fo.name = r.folder_name, fo.provider_id = $scan_provider, fo.host_type = $scan_host_type, fo.host_id = $scan_host_id "
                         "    MERGE (fo)-[:CONTAINS]->(f) "
                         "    MERGE (fo)-[:SCANNED_IN]->(s) "
                         "    FOREACH (__ IN CASE WHEN coalesce(r.folder_parent,'') <> '' AND r.parent_in_scan THEN [1] ELSE [] END | "
-                        "      MERGE (fop:Folder {path: r.folder_parent}) SET fop.name = r.folder_parent_name, fop.provider_id = $scan_provider, fop.host_type = $scan_host_type, fop.host_id = $scan_host_id "
+                        "      MERGE (fop:Folder {path: r.folder_parent, host: $node_host, port: $node_port}) SET fop.name = r.folder_parent_name, fop.provider_id = $scan_provider, fop.host_type = $scan_host_type, fop.host_id = $scan_host_id "
                         "      MERGE (fop)-[:CONTAINS]->(fo) ) "
                         "  ) RETURN 0 AS _files_done } "
                         "WITH folders, s CALL { WITH folders, s UNWIND folders AS r2 "
-                        "  MERGE (fo:Folder {path: r2.path}) SET fo.name = r2.name, fo.provider_id = $scan_provider, fo.host_type = $scan_host_type, fo.host_id = $scan_host_id "
+                        "  MERGE (fo:Folder {path: r2.path, host: $node_host, port: $node_port}) SET fo.name = r2.name, fo.provider_id = $scan_provider, fo.host_type = $scan_host_type, fo.host_id = $scan_host_id "
                         "  MERGE (fo)-[:SCANNED_IN]->(s) "
                         "  FOREACH (__ IN CASE WHEN coalesce(r2.parent,'') <> '' THEN [1] ELSE [] END | "
-                        "    MERGE (fop:Folder {path: r2.parent}) SET fop.name = r2.parent_name, fop.provider_id = $scan_provider, fop.host_type = $scan_host_type, fop.host_id = $scan_host_id "
+                        "    MERGE (fop:Folder {path: r2.parent, host: $node_host, port: $node_port}) SET fop.name = r2.parent_name, fop.provider_id = $scan_provider, fop.host_type = $scan_host_type, fop.host_id = $scan_host_id "
                         "    MERGE (fop)-[:CONTAINS]->(fo) ) "
                         "  RETURN 0 AS _folders_done } "
                         "WITH s SET s.provider_id = $scan_provider, s.host_type = $scan_host_type, s.host_id = $scan_host_id, s.root_id = $scan_root_id, s.root_label = $scan_root_label, s.scan_source = $scan_source "
                         "RETURN s.id AS scan_id"
                     )
-                    res = sess.run(cypher, rows=rows, folders=folder_rows, scan_id=scan.get('id'), scan_path=scan.get('path'), scan_started=scan.get('started'), scan_ended=scan.get('ended'), scan_provider=scan.get('provider_id'), scan_host_type=scan.get('host_type'), scan_host_id=scan.get('host_id'), scan_root_id=scan.get('root_id'), scan_root_label=scan.get('root_label'), scan_source=scan.get('scan_source'))
+                    res = sess.run(cypher, rows=rows, folders=folder_rows, scan_id=scan.get('id'), scan_path=scan.get('path'), scan_started=scan.get('started'), scan_ended=scan.get('ended'), scan_provider=scan.get('provider_id'), scan_host_type=scan.get('host_type'), scan_host_id=scan.get('host_id'), scan_root_id=scan.get('root_id'), scan_root_label=scan.get('root_label'), scan_source=scan.get('scan_source'), node_host=scan.get('host_id'), node_port=None)
                     _ = list(res)
                     result['written_files'] = len(rows)
                     result['written_folders'] = len(folder_rows)
@@ -497,7 +507,118 @@ def create_app():
             ingested = 0
             folders = []
             if provider_id in ('local_fs', 'mounted_fs'):
-                count = fs.scan_directory(Path(path), recursive=recursive)
+                # Local/Mounted: enumerate filesystem and ingest into SQLite index
+                base = Path(path)
+                # Build list of files and folders
+                items_files = []
+                items_dirs = set()
+                # Preserve source detection semantics (ncdu > gdu > python)
+                try:
+                    probe_ncdu = fs._list_files_with_ncdu(base, recursive=recursive)  # type: ignore
+                    if probe_ncdu:
+                        fs.last_scan_source = 'ncdu'
+                    else:
+                        probe_gdu = fs._list_files_with_gdu(base, recursive=recursive)  # type: ignore
+                        if probe_gdu:
+                            fs.last_scan_source = 'gdu'
+                        else:
+                            fs.last_scan_source = 'python'
+                except Exception:
+                    fs.last_scan_source = 'python'
+                try:
+                    if recursive:
+                        for p in base.rglob('*'):
+                            try:
+                                if p.is_dir():
+                                    items_dirs.add(p)
+                                else:
+                                    items_files.append(p)
+                                    # ensure parent chain exists in dirs set
+                                    parent = p.parent
+                                    while parent and parent != parent.parent and str(parent).startswith(str(base)):
+                                        items_dirs.add(parent)
+                                        if parent == base:
+                                            break
+                                        parent = parent.parent
+                            except Exception:
+                                continue
+                        # include base itself as a folder
+                        items_dirs.add(base)
+                    else:
+                        for p in base.iterdir():
+                            try:
+                                if p.is_dir():
+                                    items_dirs.add(p)
+                                else:
+                                    items_files.append(p)
+                            except Exception:
+                                continue
+                        items_dirs.add(base)
+                except Exception:
+                    items_files = []
+                    items_dirs = set()
+                # Map to rows
+                from .core import path_index_sqlite as pix
+                rows = []
+                def _row_from_local(pth: Path, typ: str) -> tuple:
+                    full = str(pth.resolve())
+                    parent = str(pth.parent.resolve()) if pth != pth.parent else ''
+                    name = pth.name or full
+                    depth = 0 if pth == base else max(0, len(str(pth.resolve()).rstrip('/').split('/')) - len(str(base.resolve()).rstrip('/').split('/')))
+                    size = 0
+                    mtime = None
+                    ext = ''
+                    mime = None
+                    if typ == 'file':
+                        try:
+                            st = pth.stat()
+                            size = int(st.st_size)
+                            mtime = float(st.st_mtime)
+                        except Exception:
+                            size = 0
+                            mtime = None
+                        ext = pth.suffix.lower()
+                    remote = f"local:{os.uname().nodename}" if provider_id == 'local_fs' else f"mounted:{root_id}"
+                    return (full, parent, name, depth, typ, size, mtime, ext, mime, None, None, remote, scan_id, None)
+                # Insert folder rows first for structure consistency
+                for d in sorted(items_dirs, key=lambda x: str(x)):
+                    rows.append(_row_from_local(d, 'folder'))
+                # Then files
+                for fpath in items_files:
+                    rows.append(_row_from_local(fpath, 'file'))
+                ingested = pix.batch_insert_files(rows)
+                # Also create in-memory datasets (keep legacy behavior)
+                count = 0
+                for fpath in items_files:
+                    try:
+                        ds = fs.create_dataset_node(fpath)
+                        app.extensions['scidk']['graph'].upsert_dataset(ds)
+                        interps = registry.select_for_dataset(ds)
+                        for interp in interps:
+                            try:
+                                result = interp.interpret(fpath)
+                                app.extensions['scidk']['graph'].add_interpretation(ds['checksum'], interp.id, {
+                                    'status': result.get('status', 'success'),
+                                    'data': result.get('data', result),
+                                    'interpreter_version': getattr(interp, 'version', '0.0.1'),
+                                })
+                            except Exception as e:
+                                app.extensions['scidk']['graph'].add_interpretation(ds['checksum'], interp.id, {
+                                    'status': 'error',
+                                    'data': {'error': str(e)},
+                                    'interpreter_version': getattr(interp, 'version', '0.0.1'),
+                                })
+                        count += 1
+                    except Exception:
+                        continue
+                # Collect folders metadata for scan record
+                folders = []
+                for d in items_dirs:
+                    try:
+                        parent = str(d.parent.resolve()) if d != d.parent else ''
+                        folders.append({'path': str(d.resolve()), 'name': d.name, 'parent': parent, 'parent_name': Path(parent).name if parent else ''})
+                    except Exception:
+                        continue
             elif provider_id == 'rclone':
                 # Use rclone lsjson to enumerate remote files; ingest into SQLite and create lightweight datasets.
                 provs = app.extensions['scidk'].get('providers')
@@ -712,7 +833,7 @@ def create_app():
                 'root_label': root_label,
             })
             drec.setdefault('scan_ids', []).append(scan_id)
-            return jsonify({"status": "ok", "scan_id": scan_id, "scanned": count, "duration_sec": duration, "path": str(path), "recursive": bool(recursive), "provider_id": provider_id}), 200
+            return jsonify({"status": "ok", "scan_id": scan_id, "scanned": count, "folder_count": len(folders), "ingested_rows": int(ingested), "duration_sec": duration, "path": str(path), "recursive": bool(recursive), "provider_id": provider_id}), 200
         except Exception as e:
             return jsonify({"status": "error", "error": str(e)}), 400
 
@@ -734,9 +855,20 @@ def create_app():
             return jsonify({'error': 'too many tasks running', 'code': 'max_tasks', 'max': max_tasks}), 429
 
         if ttype == 'scan':
-            path = data.get('path') or os.getcwd()
+            provider_id = (data.get('provider_id') or 'local_fs').strip() or 'local_fs'
+            root_id = (data.get('root_id') or ('/' if provider_id != 'rclone' else 'remote:')).strip()
+            path = data.get('path') or (root_id if provider_id != 'local_fs' else os.getcwd())
             recursive = bool(data.get('recursive', True))
-            tid_src = f"scan|{path}|{started}"
+            # Normalize rclone path to full remote target if needed
+            if provider_id == 'rclone':
+                try:
+                    from .core.path_utils import parse_remote_path, join_remote_path
+                    info = parse_remote_path(path or '')
+                    if not bool(info.get('is_remote')):
+                        path = join_remote_path(root_id, (path or '').lstrip('/'))
+                except Exception:
+                    pass
+            tid_src = f"scan|{provider_id}|{path}|{started}"
             task_id = hashlib.sha1(tid_src.encode()).hexdigest()[:12]
             task = {
                 'id': task_id,
@@ -757,98 +889,215 @@ def create_app():
 
             def _worker():
                 try:
-                    # Snapshot before
+                    import hashlib as _h
+                    from .core import path_index_sqlite as pix
+                    scans = app.extensions['scidk'].setdefault('scans', {})
+                    # Pre snapshot for in-memory dataset delta
                     before = set(ds.get('checksum') for ds in app.extensions['scidk']['graph'].list_datasets())
-                    # Estimate total using Python traversal (MVP)
-                    files = [p for p in fs._iter_files_python(Path(path), recursive=recursive)]  # type: ignore
-                    total = len(files)
-                    task['total'] = total
-                    # Process each file similarly to scan_directory
-                    processed = 0
-                    for p in files:
-                        if task.get('cancel_requested'):
-                            task['status'] = 'canceled'
-                            task['ended'] = time.time()
-                            # progress remains as-is; do not create scan record
-                            return
-                        # upsert
-                        ds = fs.create_dataset_node(p)
-                        app.extensions['scidk']['graph'].upsert_dataset(ds)
-                        # interpreters
-                        interps = registry.select_for_dataset(ds)
-                        for interp in interps:
+                    started_ts = time.time()
+                    scan_id = _h.sha1(f"{path}|{started_ts}".encode()).hexdigest()[:12]
+                    file_count = 0
+                    folder_count = 0
+                    ingested = 0
+                    folders_meta = []
+
+                    if provider_id in ('local_fs', 'mounted_fs'):
+                        base = Path(path)
+                        # Estimate total: Python traversal
+                        files_list = [p for p in fs._iter_files_python(base, recursive=recursive)]
+                        task['total'] = len(files_list)
+                        # Build rows like api_scan
+                        items_files = []
+                        items_dirs = set()
+                        if recursive:
+                            for p in base.rglob('*'):
+                                if task.get('cancel_requested'):
+                                    task['status'] = 'canceled'; task['ended'] = time.time(); return
+                                try:
+                                    if p.is_dir():
+                                        items_dirs.add(p)
+                                    else:
+                                        items_files.append(p)
+                                        parent = p.parent
+                                        while parent and parent != parent.parent and str(parent).startswith(str(base)):
+                                            items_dirs.add(parent)
+                                            if parent == base:
+                                                break
+                                            parent = parent.parent
+                                except Exception:
+                                    continue
+                            items_dirs.add(base)
+                        else:
                             try:
-                                result = interp.interpret(p)
-                                app.extensions['scidk']['graph'].add_interpretation(ds['checksum'], interp.id, {
-                                    'status': result.get('status', 'success'),
-                                    'data': result.get('data', result),
-                                    'interpreter_version': getattr(interp, 'version', '0.0.1'),
-                                })
-                            except Exception as e:
-                                app.extensions['scidk']['graph'].add_interpretation(ds['checksum'], interp.id, {
-                                    'status': 'error',
-                                    'data': {'error': str(e)},
-                                    'interpreter_version': getattr(interp, 'version', '0.0.1'),
-                                })
-                        processed += 1
-                        task['processed'] = processed
-                        if total:
-                            task['progress'] = processed / total
+                                for p in base.iterdir():
+                                    if p.is_dir(): items_dirs.add(p)
+                                    else: items_files.append(p)
+                            except Exception:
+                                pass
+                            items_dirs.add(base)
+                        # Map to rows
+                        def _row_from_local(pth: Path, typ: str) -> tuple:
+                            full = str(pth.resolve())
+                            parent = str(pth.parent.resolve()) if pth != pth.parent else ''
+                            name = pth.name or full
+                            depth = 0 if pth == base else max(0, len(str(pth.resolve()).rstrip('/').split('/')) - len(str(base.resolve()).rstrip('/').split('/')))
+                            size = 0; mtime = None; ext = ''; mime = None
+                            if typ == 'file':
+                                try:
+                                    st = pth.stat(); size = int(st.st_size); mtime = float(st.st_mtime)
+                                except Exception:
+                                    size = 0; mtime = None
+                                ext = pth.suffix.lower()
+                            remote = f"local:{os.uname().nodename}" if provider_id == 'local_fs' else f"mounted:{root_id}"
+                            return (full, parent, name, depth, typ, size, mtime, ext, mime, None, None, remote, scan_id, None)
+                        rows = []
+                        for d in sorted(items_dirs, key=lambda x: str(x)):
+                            rows.append(_row_from_local(d, 'folder'))
+                        for fpath in items_files:
+                            rows.append(_row_from_local(fpath, 'file'))
+                        ingested = pix.batch_insert_files(rows)
+                        # In-memory datasets and progress
+                        processed = 0
+                        for fpath in items_files:
+                            if task.get('cancel_requested'):
+                                task['status'] = 'canceled'; task['ended'] = time.time(); return
+                            try:
+                                ds = fs.create_dataset_node(fpath)
+                                app.extensions['scidk']['graph'].upsert_dataset(ds)
+                            except Exception:
+                                pass
+                            processed += 1; task['processed'] = processed
+                            if task['total']:
+                                task['progress'] = processed / task['total']
+                        file_count = len(items_files)
+                        # Folders meta
+                        for d in items_dirs:
+                            try:
+                                parent = str(d.parent.resolve()) if d != d.parent else ''
+                                folders_meta.append({'path': str(d.resolve()), 'name': d.name, 'parent': parent, 'parent_name': Path(parent).name if parent else ''})
+                            except Exception:
+                                continue
+                        folder_count = len(items_dirs)
+
+                    elif provider_id == 'rclone':
+                        provs = app.extensions['scidk'].get('providers')
+                        prov = provs.get('rclone') if provs else None
+                        if not prov:
+                            raise RuntimeError('rclone provider not available')
+                        # Prefer fast_list for recursive unless specified
+                        fast_list = True if recursive else False
+                        try:
+                            items = prov.list_files(path, recursive=recursive, fast_list=fast_list)  # type: ignore[attr-defined]
+                        except Exception as ee:
+                            raise RuntimeError(str(ee))
+                        rows = []
+                        seen_folders = set()
+                        def _add_folder(full_path: str, name: str, parent: str):
+                            nonlocal folders_meta
+                            if full_path in seen_folders: return
+                            seen_folders.add(full_path)
+                            try:
+                                from .core.path_utils import parse_remote_path
+                                info_par = parse_remote_path(parent)
+                                if info_par.get('is_remote'):
+                                    parts = info_par.get('parts') or []
+                                    parent_name = (info_par.get('remote_name') or '') if not parts else parts[-1]
+                                else:
+                                    parent_name = Path(parent).name if parent else ''
+                            except Exception:
+                                parent_name = ''
+                            folders_meta.append({'path': full_path, 'name': name, 'parent': parent, 'parent_name': parent_name})
+                        from .core.path_utils import join_remote_path, parent_remote_path
+                        for it in (items or []):
+                            name = it.get('Name') or it.get('Path') or ''
+                            if it.get('IsDir'):
+                                if name:
+                                    full = join_remote_path(path, name)
+                                    parent = parent_remote_path(full)
+                                    _add_folder(full, name, parent)
+                                rows.append(pix.map_rclone_item_to_row(it, path, scan_id))
+                                continue
+                            rows.append(pix.map_rclone_item_to_row(it, path, scan_id))
+                            if recursive and name:
+                                parts = [p for p in (name.split('/') if isinstance(name, str) else []) if p]
+                                cur = ''
+                                for i in range(len(parts)-1):
+                                    cur = parts[i] if i == 0 else (cur + '/' + parts[i])
+                                    full = join_remote_path(path, cur)
+                                    parent = parent_remote_path(full)
+                                    _add_folder(full, parts[i], parent)
+                            # In-memory dataset for file
+                            try:
+                                size = int(it.get('Size') or 0)
+                                full = join_remote_path(path, name)
+                                ds = fs.create_dataset_remote(full, size_bytes=size, modified_ts=0.0, mime=None)
+                                app.extensions['scidk']['graph'].upsert_dataset(ds)
+                            except Exception:
+                                pass
+                            file_count += 1
+                            task['processed'] = file_count
+                        folder_count = len(seen_folders)
+                        ingested = pix.batch_insert_files(rows)
+                    else:
+                        raise RuntimeError(f"provider {provider_id} not supported for background scan")
+
+                    # Build scan record
                     ended = time.time()
-                    # Build scan record (reuse logic from api_scan)
                     after = set(ds.get('checksum') for ds in app.extensions['scidk']['graph'].list_datasets())
                     new_checksums = sorted(list(after - before))
                     by_ext = {}
                     ext_map = {ds.get('checksum'): ds.get('extension') or '' for ds in app.extensions['scidk']['graph'].list_datasets()}
                     for ch in new_checksums:
-                        ext = ext_map.get(ch, '')
-                        by_ext[ext] = by_ext.get(ext, 0) + 1
-                    sid_src = f"{path}|{started}"
-                    scan_id = hashlib.sha1(sid_src.encode()).hexdigest()[:12]
-                    # For non-recursive scans, include immediate subfolders
-                    folders = []
+                        ext = ext_map.get(ch, ''); by_ext[ext] = by_ext.get(ext, 0) + 1
+                    # Host/provider tagging
+                    host_type = provider_id
+                    host_id = None
                     try:
-                        if not recursive:
-                            base = Path(path)
-                            for child in base.iterdir():
-                                if child.is_dir():
-                                    parent = str(child.parent)
-                                    folders.append({
-                                        'path': str(child.resolve()),
-                                        'name': child.name,
-                                        'parent': parent,
-                                        'parent_name': Path(parent).name if parent else '',
-                                    })
+                        if provider_id == 'rclone':
+                            host_id = f"rclone:{(root_id or '').rstrip(':')}"
+                        elif provider_id == 'local_fs':
+                            import socket as _sock
+                            host_id = f"local:{_sock.gethostname()}"
+                        elif provider_id == 'mounted_fs':
+                            host_id = f"mounted:{root_id}"
                     except Exception:
-                        folders = []
+                        host_id = f"{provider_id}:{root_id}" if root_id else provider_id
                     scan = {
                         'id': scan_id,
                         'path': str(path),
                         'recursive': bool(recursive),
-                        'started': started,
+                        'started': started_ts,
                         'ended': ended,
-                        'duration_sec': ended - started,
-                        'file_count': int(processed),
-                        'folder_count': len(folders),
+                        'duration_sec': ended - started_ts,
+                        'file_count': int(file_count),
+                        'folder_count': int(folder_count),
                         'checksums': new_checksums,
-                        'folders': folders,
+                        'folders': folders_meta,
                         'by_ext': by_ext,
-                        'source': 'python',
+                        'source': getattr(fs, 'last_scan_source', 'python') if provider_id in ('local_fs','mounted_fs') else f"provider:{provider_id}",
                         'errors': [],
                         'committed': False,
                         'committed_at': None,
+                        'provider_id': provider_id,
+                        'host_type': host_type,
+                        'host_id': host_id,
+                        'root_id': root_id,
+                        'root_label': Path(root_id).name if root_id else None,
+                        'scan_source': f"provider:{provider_id}",
+                        'ingested_rows': int(ingested),
                     }
-                    app.extensions['scidk']['scans'][scan_id] = scan
-                    # Telemetry
+                    scans[scan_id] = scan
+                    # Telemetry and directories
                     app.extensions['scidk'].setdefault('telemetry', {})['last_scan'] = {
-                        'path': str(path), 'recursive': bool(recursive), 'scanned': int(processed),
-                        'started': started, 'ended': ended, 'duration_sec': ended - started, 'source': 'python'
+                        'path': str(path), 'recursive': bool(recursive), 'scanned': int(file_count),
+                        'started': started_ts, 'ended': ended, 'duration_sec': ended - started_ts,
+                        'source': scan['source'], 'provider_id': provider_id, 'root_id': root_id,
                     }
-                    # Directory registry
                     dirs = app.extensions['scidk'].setdefault('directories', {})
-                    drec = dirs.setdefault(str(path), {'path': str(path), 'recursive': bool(recursive), 'scanned': 0, 'last_scanned': 0, 'scan_ids': [], 'source': 'python'})
-                    drec.update({'recursive': bool(recursive), 'scanned': int(processed), 'last_scanned': ended, 'source': 'python'})
+                    drec = dirs.setdefault(str(path), {'path': str(path), 'recursive': bool(recursive), 'scanned': 0, 'last_scanned': 0, 'scan_ids': [], 'source': scan['source'], 'provider_id': provider_id, 'root_id': root_id, 'root_label': scan.get('root_label')})
+                    drec.update({'recursive': bool(recursive), 'scanned': int(file_count), 'last_scanned': ended, 'source': scan['source'], 'provider_id': provider_id, 'root_id': root_id, 'root_label': scan.get('root_label')})
                     drec.setdefault('scan_ids', []).append(scan_id)
+
                     # Complete task
                     task['ended'] = ended
                     task['status'] = 'completed'
@@ -1845,14 +2094,103 @@ def create_app():
         if not s:
             return jsonify({"status": "error", "error": "scan not found"}), 404
         try:
-            checksums = s.get('checksums') or []
-            total = len(checksums)
-            # How many of these files are present in the current graph
+            use_index = (os.environ.get('SCIDK_COMMIT_FROM_INDEX') or '').strip().lower() in ('1','true','yes','y','on')
             g = app.extensions['scidk']['graph']
-            present = sum(1 for ch in checksums if ch in getattr(g, 'datasets', {}))
-            missing = total - present
-            # Commit into graph (idempotent add of Scan + edges)
-            g.commit_scan(s)
+            if use_index:
+                # Build rows directly from SQLite index for this scan
+                from .core import path_index_sqlite as pix
+                conn = pix.connect()
+                try:
+                    pix.init_db(conn)
+                    cur = conn.cursor()
+                    cur.execute(
+                        "SELECT path, parent_path, name, depth, type, size, modified_time, file_extension, mime_type FROM files WHERE scan_id = ?",
+                        (scan_id,)
+                    )
+                    items = cur.fetchall()
+                finally:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                # Transform into commit rows
+                rows = []
+                folder_rows = []
+                folders_seen = set()
+                def _parent(path: str) -> str:
+                    try:
+                        from .core.path_utils import parse_remote_path, parent_remote_path
+                        info = parse_remote_path(path)
+                        if info.get('is_remote'):
+                            return parent_remote_path(path)
+                    except Exception:
+                        pass
+                    try:
+                        from pathlib import Path as _P
+                        return str(_P(path).parent)
+                    except Exception:
+                        return ''
+                def _name(path: str) -> str:
+                    try:
+                        from .core.path_utils import parse_remote_path
+                        info = parse_remote_path(path)
+                        if info.get('is_remote'):
+                            parts = info.get('parts') or []
+                            return (info.get('remote_name') or '') if not parts else parts[-1]
+                    except Exception:
+                        pass
+                    try:
+                        from pathlib import Path as _P
+                        return _P(path).name
+                    except Exception:
+                        return path
+                for (p, parent, name, depth, typ, size, mtime, ext, mime) in items:
+                    if typ == 'folder':
+                        if p in folders_seen:
+                            continue
+                        folders_seen.add(p)
+                        folder_rows.append({
+                            'path': p,
+                            'name': name or _name(p),
+                            'parent': parent or _parent(p),
+                            'parent_name': _name(parent or _parent(p)),
+                        })
+                    else:
+                        rows.append({
+                            'checksum': None,  # index-driven path commit; checksum not required for graph model
+                            'path': p,
+                            'filename': name or _name(p),
+                            'extension': ext or '',
+                            'size_bytes': int(size or 0),
+                            'created': 0.0,
+                            'modified': float(mtime or 0.0),
+                            'mime_type': mime,
+                            'folder': parent or _parent(p),
+                            'folder_name': _name(parent or _parent(p)),
+                            'folder_parent': _parent(parent or _parent(p)) if (parent or _parent(p)) else '',
+                            'folder_parent_name': _name(_parent(parent or _parent(p))) if (parent or _parent(p)) else '',
+                            'parent_in_scan': True,
+                            'interps': [],
+                        })
+                # Totals for reporting
+                total = sum(1 for it in items if it[4] == 'file')
+                present = total  # index-driven commit considers all indexed files as present
+                missing = 0
+                # In-memory commit is skipped when using index, but we still create a Scan node in Neo4j. We keep in-memory flag for compatibility
+                s['committed'] = True
+                import time as _t
+                s['committed_at'] = _t.time()
+            else:
+                # Legacy in-memory path
+                checksums = s.get('checksums') or []
+                total = len(checksums)
+                # How many of these files are present in the current graph
+                present = sum(1 for ch in checksums if ch in getattr(g, 'datasets', {}))
+                missing = total - present
+                # Commit into graph (idempotent add of Scan + edges)
+                g.commit_scan(s)
+                ds_map = getattr(g, 'datasets', {})
+                rows, folder_rows = build_commit_rows(s, ds_map)
             import time as _t
             s['committed'] = True
             s['committed_at'] = _t.time()

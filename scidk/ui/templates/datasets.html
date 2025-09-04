@@ -87,6 +87,55 @@
 {% endif %}
 
 <section>
+  <h2>Snapshot (scanned) browse</h2>
+  <div class="row g-2" style="margin-bottom:.5rem">
+    <div class="col-auto">
+      <label for="snapshot-scan" class="form-label small" style="margin-bottom:.25rem">Scan</label>
+      <select id="snapshot-scan" class="form-select form-select-sm" style="min-width:300px">
+        <option value="">-- select a recent scan below --</option>
+      </select>
+    </div>
+    <div class="col-auto">
+      <label for="snap-path" class="form-label small" style="margin-bottom:.25rem">Path</label>
+      <input id="snap-path" type="text" class="form-control form-control-sm" placeholder="(defaults to scan root)" style="width:360px" />
+    </div>
+    <div class="col-auto">
+      <label class="form-label small" style="margin-bottom:.25rem">Filters</label>
+      <div class="small" style="display:flex; gap:.75rem; align-items:center; border:1px dashed #ddd; padding:.25rem .5rem; border-radius:.25rem">
+        <div class="input-group input-group-sm" style="width: 160px;">
+          <span class="input-group-text">Type</span>
+          <select id="snap-type" class="form-select form-select-sm">
+            <option value="">any</option>
+            <option value="folder">folder</option>
+            <option value="file">file</option>
+          </select>
+        </div>
+        <div class="input-group input-group-sm" style="width: 200px;">
+          <span class="input-group-text">Ext</span>
+          <input id="snap-ext" type="text" class="form-control" placeholder=".txt, .csv" />
+        </div>
+        <div class="input-group input-group-sm" style="width: 160px;">
+          <span class="input-group-text">Page size</span>
+          <input id="snap-page-size" type="number" class="form-control" min="1" max="1000" step="1" value="100" />
+        </div>
+      </div>
+    </div>
+    <div class="col-auto" style="display:flex; gap:.5rem; align-items:end;">
+      <button id="snap-go" class="btn btn-sm btn-outline-primary">Browse</button>
+      <button id="snap-prev" class="btn btn-sm btn-outline-secondary" disabled>Prev</button>
+      <button id="snap-next" class="btn btn-sm btn-outline-secondary" disabled>Next</button>
+    </div>
+  </div>
+  <div class="small" id="snap-crumb" style="margin-bottom:.5rem"></div>
+  <div class="table-responsive" style="max-height:320px; overflow:auto; border:1px solid #eee">
+    <table class="table table-sm" style="margin-bottom:0">
+      <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Modified</th></tr></thead>
+      <tbody id="snap-list"></tbody>
+    </table>
+  </div>
+</section>
+
+<section>
   <h2>Scans Summary</h2>
   <div class="table-responsive" style="max-height:280px; overflow:auto; border:1px solid #eee">
     <table class="table table-sm" style="margin-bottom:0">
@@ -432,6 +481,68 @@
       });
     }
 
+    // Snapshot browse logic (index-backed)
+    const snapScanSel = document.getElementById('snapshot-scan');
+    const snapPathInput = document.getElementById('snap-path');
+    const snapTypeSel = document.getElementById('snap-type');
+    const snapExtInput = document.getElementById('snap-ext');
+    const snapPageSize = document.getElementById('snap-page-size');
+    const snapGo = document.getElementById('snap-go');
+    const snapPrev = document.getElementById('snap-prev');
+    const snapNext = document.getElementById('snap-next');
+    const snapList = document.getElementById('snap-list');
+    const snapCrumb = document.getElementById('snap-crumb');
+    let snapToken = null;
+    let snapHistory = [];
+    async function loadScansForSnapshot(){
+      try{ const r = await fetch('/api/scans'); const scans = await r.json(); if (!snapScanSel) return; const current = snapScanSel.value; snapScanSel.innerHTML = '<option value="">-- select a recent scan below --</option>' + scans.map(s => `<option value="${s.id}">${s.path} — ${s.file_count} files</option>`).join(''); if (current) snapScanSel.value = current; } catch(e) { /* ignore */ }
+    }
+    async function browseSnapshot(direction){
+      if (!snapScanSel || !snapScanSel.value){ snapList.innerHTML = '<tr><td colspan="4" class="small">Select a scan first.</td></tr>'; return; }
+      const scanId = snapScanSel.value;
+      const path = (snapPathInput && snapPathInput.value.trim()) || '';
+      const type = (snapTypeSel && snapTypeSel.value) || '';
+      const ext = (snapExtInput && snapExtInput.value.trim()) || '';
+      const ps = Number((snapPageSize && snapPageSize.value) || '100') || 100;
+      const qs = new URLSearchParams({ page_size: String(ps) });
+      if (path !== '') qs.set('path', path);
+      if (type) qs.set('type', type);
+      if (ext) qs.set('extension', ext.toLowerCase());
+      if (direction === 'next' && snapToken) qs.set('next_page_token', snapToken);
+      if (direction === 'prev'){
+        // naive prev: step back one page using history
+        if (snapHistory.length >= 2){ snapHistory.pop(); const prevTok = snapHistory.pop(); if (prevTok) qs.set('next_page_token', prevTok); else qs.delete('next_page_token'); }
+      }
+      try{
+        const r = await fetch(`/api/scans/${encodeURIComponent(scanId)}/browse?` + qs.toString());
+        const j = await r.json();
+        if (!r.ok){ snapList.innerHTML = `<tr><td colspan="4" class="small">Error: ${j.error||r.status}</td></tr>`; return; }
+        const entries = j.entries||[];
+        snapToken = j.next_page_token || null;
+        if (direction !== 'prev') snapHistory.push(j.next_page_token || '');
+        // Update crumb
+        snapCrumb.innerHTML = `<span class="small">Scan <code>${scanId}</code> — Path: <code>${(j.path||'')}</code> — Showing ${entries.length}${snapToken?(' (next token '+snapToken+')'):''}</span>`;
+        // Render
+        const rows = entries.map(e => `<tr data-path="${e.path}" data-type="${e.type}"><td>${e.name}</td><td>${e.type}</td><td>${e.type==='file'?(fmtBytes(e.size||0)):''}</td><td>${fmtTime(e.modified||0)}</td></tr>`).join('');
+        snapList.innerHTML = rows || '<tr><td colspan="4" class="small">No entries.</td></tr>';
+        snapNext.disabled = !snapToken;
+        snapPrev.disabled = (snapHistory.length <= 1);
+        // Click to drill when folder
+        document.querySelectorAll('#snap-list tr')?.forEach(tr => {
+          tr.addEventListener('click', () => {
+            const t = tr.getAttribute('data-type'); const p = tr.getAttribute('data-path');
+            if (t === 'folder' && snapPathInput){ snapPathInput.value = p; snapToken = null; snapHistory = []; browseSnapshot(); }
+          });
+        });
+      } catch(e){
+        snapList.innerHTML = `<tr><td colspan="4" class="small">Browse failed.</td></tr>`;
+      }
+    }
+    if (snapGo){ snapGo.addEventListener('click', () => { snapToken = null; snapHistory = []; browseSnapshot(); }); }
+    if (snapNext){ snapNext.addEventListener('click', () => browseSnapshot('next')); }
+    if (snapPrev){ snapPrev.addEventListener('click', () => browseSnapshot('prev')); }
+    if (snapScanSel){ snapScanSel.addEventListener('change', () => { snapToken = null; snapHistory = []; browseSnapshot(); }); }
+
     // Scans dropdown and background tasks
     // Recent scans dropdown helpers
     const select = document.getElementById('recent-scans');
@@ -552,6 +663,7 @@
         } catch(e){ /* ignore */ }
         fetchTasks();
         loadScansIntoDropdown();
+        loadScansForSnapshot();
         renderScansPanel();
         fetchNeoStatus();
       }, 1000);
