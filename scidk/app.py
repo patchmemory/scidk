@@ -707,6 +707,16 @@ def create_app():
                 # Batch insert into SQLite (10k/txn) only if feature flag enabled
                 try:
                     if _ff_index:
+                        # Deduplicate rows by (path,type) before insert
+                        try:
+                            seen = set(); uniq = []
+                            for r in rows:
+                                key = (r[0], r[4])  # path, type
+                                if key in seen: continue
+                                seen.add(key); uniq.append(r)
+                            rows = uniq
+                        except Exception:
+                            pass
                         ingested = pix.batch_insert_files(rows, batch_size=10000)
                         # Minimal change detection to populate file_history
                         try:
@@ -955,6 +965,16 @@ def create_app():
                             rows.append(_row_from_local(d, 'folder'))
                         for fpath in items_files:
                             rows.append(_row_from_local(fpath, 'file'))
+                        # dedupe
+                        try:
+                            seen = set(); uniq = []
+                            for r in rows:
+                                key = (r[0], r[4])
+                                if key in seen: continue
+                                seen.add(key); uniq.append(r)
+                            rows = uniq
+                        except Exception:
+                            pass
                         ingested = pix.batch_insert_files(rows)
                         # In-memory datasets and progress
                         processed = 0
@@ -991,6 +1011,7 @@ def create_app():
                         except Exception as ee:
                             raise RuntimeError(str(ee))
                         rows = []
+                        seen_rows = set()
                         seen_folders = set()
                         def _add_folder(full_path: str, name: str, parent: str):
                             nonlocal folders_meta
@@ -1015,9 +1036,19 @@ def create_app():
                                     full = join_remote_path(path, name)
                                     parent = parent_remote_path(full)
                                     _add_folder(full, name, parent)
-                                rows.append(pix.map_rclone_item_to_row(it, path, scan_id))
+                                # rclone folder row
+                                rrow = pix.map_rclone_item_to_row(it, path, scan_id)
+                                key = (rrow[0], rrow[4])
+                                if key not in seen_rows:
+                                    seen_rows.add(key)
+                                    rows.append(rrow)
                                 continue
-                            rows.append(pix.map_rclone_item_to_row(it, path, scan_id))
+                            # rclone file row
+                            rrow = pix.map_rclone_item_to_row(it, path, scan_id)
+                            key = (rrow[0], rrow[4])
+                            if key not in seen_rows:
+                                seen_rows.add(key)
+                                rows.append(rrow)
                             if recursive and name:
                                 parts = [p for p in (name.split('/') if isinstance(name, str) else []) if p]
                                 cur = ''
