@@ -497,7 +497,118 @@ def create_app():
             ingested = 0
             folders = []
             if provider_id in ('local_fs', 'mounted_fs'):
-                count = fs.scan_directory(Path(path), recursive=recursive)
+                # Local/Mounted: enumerate filesystem and ingest into SQLite index
+                base = Path(path)
+                # Build list of files and folders
+                items_files = []
+                items_dirs = set()
+                # Preserve source detection semantics (ncdu > gdu > python)
+                try:
+                    probe_ncdu = fs._list_files_with_ncdu(base, recursive=recursive)  # type: ignore
+                    if probe_ncdu:
+                        fs.last_scan_source = 'ncdu'
+                    else:
+                        probe_gdu = fs._list_files_with_gdu(base, recursive=recursive)  # type: ignore
+                        if probe_gdu:
+                            fs.last_scan_source = 'gdu'
+                        else:
+                            fs.last_scan_source = 'python'
+                except Exception:
+                    fs.last_scan_source = 'python'
+                try:
+                    if recursive:
+                        for p in base.rglob('*'):
+                            try:
+                                if p.is_dir():
+                                    items_dirs.add(p)
+                                else:
+                                    items_files.append(p)
+                                    # ensure parent chain exists in dirs set
+                                    parent = p.parent
+                                    while parent and parent != parent.parent and str(parent).startswith(str(base)):
+                                        items_dirs.add(parent)
+                                        if parent == base:
+                                            break
+                                        parent = parent.parent
+                            except Exception:
+                                continue
+                        # include base itself as a folder
+                        items_dirs.add(base)
+                    else:
+                        for p in base.iterdir():
+                            try:
+                                if p.is_dir():
+                                    items_dirs.add(p)
+                                else:
+                                    items_files.append(p)
+                            except Exception:
+                                continue
+                        items_dirs.add(base)
+                except Exception:
+                    items_files = []
+                    items_dirs = set()
+                # Map to rows
+                from .core import path_index_sqlite as pix
+                rows = []
+                def _row_from_local(pth: Path, typ: str) -> tuple:
+                    full = str(pth.resolve())
+                    parent = str(pth.parent.resolve()) if pth != pth.parent else ''
+                    name = pth.name or full
+                    depth = 0 if pth == base else max(0, len(str(pth.resolve()).rstrip('/').split('/')) - len(str(base.resolve()).rstrip('/').split('/')))
+                    size = 0
+                    mtime = None
+                    ext = ''
+                    mime = None
+                    if typ == 'file':
+                        try:
+                            st = pth.stat()
+                            size = int(st.st_size)
+                            mtime = float(st.st_mtime)
+                        except Exception:
+                            size = 0
+                            mtime = None
+                        ext = pth.suffix.lower()
+                    remote = f"local:{os.uname().nodename}" if provider_id == 'local_fs' else f"mounted:{root_id}"
+                    return (full, parent, name, depth, typ, size, mtime, ext, mime, None, None, remote, scan_id, None)
+                # Insert folder rows first for structure consistency
+                for d in sorted(items_dirs, key=lambda x: str(x)):
+                    rows.append(_row_from_local(d, 'folder'))
+                # Then files
+                for fpath in items_files:
+                    rows.append(_row_from_local(fpath, 'file'))
+                ingested = pix.batch_insert_files(rows)
+                # Also create in-memory datasets (keep legacy behavior)
+                count = 0
+                for fpath in items_files:
+                    try:
+                        ds = fs.create_dataset_node(fpath)
+                        app.extensions['scidk']['graph'].upsert_dataset(ds)
+                        interps = registry.select_for_dataset(ds)
+                        for interp in interps:
+                            try:
+                                result = interp.interpret(fpath)
+                                app.extensions['scidk']['graph'].add_interpretation(ds['checksum'], interp.id, {
+                                    'status': result.get('status', 'success'),
+                                    'data': result.get('data', result),
+                                    'interpreter_version': getattr(interp, 'version', '0.0.1'),
+                                })
+                            except Exception as e:
+                                app.extensions['scidk']['graph'].add_interpretation(ds['checksum'], interp.id, {
+                                    'status': 'error',
+                                    'data': {'error': str(e)},
+                                    'interpreter_version': getattr(interp, 'version', '0.0.1'),
+                                })
+                        count += 1
+                    except Exception:
+                        continue
+                # Collect folders metadata for scan record
+                folders = []
+                for d in items_dirs:
+                    try:
+                        parent = str(d.parent.resolve()) if d != d.parent else ''
+                        folders.append({'path': str(d.resolve()), 'name': d.name, 'parent': parent, 'parent_name': Path(parent).name if parent else ''})
+                    except Exception:
+                        continue
             elif provider_id == 'rclone':
                 # Use rclone lsjson to enumerate remote files; ingest into SQLite and create lightweight datasets.
                 provs = app.extensions['scidk'].get('providers')
@@ -712,7 +823,7 @@ def create_app():
                 'root_label': root_label,
             })
             drec.setdefault('scan_ids', []).append(scan_id)
-            return jsonify({"status": "ok", "scan_id": scan_id, "scanned": count, "duration_sec": duration, "path": str(path), "recursive": bool(recursive), "provider_id": provider_id}), 200
+            return jsonify({"status": "ok", "scan_id": scan_id, "scanned": count, "folder_count": len(folders), "ingested_rows": int(ingested), "duration_sec": duration, "path": str(path), "recursive": bool(recursive), "provider_id": provider_id}), 200
         except Exception as e:
             return jsonify({"status": "error", "error": str(e)}), 400
 
