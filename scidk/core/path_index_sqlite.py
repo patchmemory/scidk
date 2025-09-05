@@ -128,17 +128,30 @@ from .path_utils import join_remote_path, parent_remote_path
 
 def map_rclone_item_to_row(item: Dict, target_root: str, scan_id: str) -> Tuple:
     # rclone lsjson fields: Name, Path, Size, MimeType, ModTime, IsDir
-    name = (item.get('Name') or item.get('Path') or '')
+    rel = str(item.get('Path') or item.get('Name') or '')
+    leaf = item.get('Name') or (rel.rsplit('/', 1)[-1] if rel else '')
     is_dir = bool(item.get('IsDir'))
     size = int(item.get('Size') or 0)
     mime = item.get('MimeType')
-    # Full path under target root using central utils
-    full = join_remote_path(target_root, name)
+    # Full path under target root using central utils; empty rel keeps base
+    full = join_remote_path(target_root, rel)
     parent = parent_remote_path(full)
     depth = _depth_of(full)
-    ext = '' if is_dir else Path(name).suffix.lower()
+    ext = '' if is_dir else Path(leaf).suffix.lower()
     mtime = None
-    # ModTime may be ISO8601; we can store as text in extra_json or leave None for MVP
+    # Best-effort ModTime parsing
+    mod = item.get('ModTime')
+    if mod:
+        try:
+            m = str(mod).replace('Z', '+00:00')
+            from datetime import datetime
+            mtime = datetime.fromisoformat(m).timestamp()
+        except Exception:
+            try:
+                from dateutil import parser as dtp  # type: ignore
+                mtime = dtp.parse(str(mod)).timestamp()
+            except Exception:
+                mtime = None
     # ETag/Hash not available from lsjson by default
     etag = None
     ahash = None
@@ -148,7 +161,7 @@ def map_rclone_item_to_row(item: Dict, target_root: str, scan_id: str) -> Tuple:
     return (
         full,            # path
         parent,          # parent_path
-        name,            # name
+        leaf,            # name (leaf)
         depth,           # depth
         type_val,        # type
         size,            # size

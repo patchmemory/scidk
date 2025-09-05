@@ -54,6 +54,9 @@ def _apply_channel_defaults():
                     os.environ['SCIDK_PROVIDERS'] = ','.join(prov_list)
     # Record effective channel for UI/debug
     os.environ.setdefault('SCIDK_CHANNEL', ch or 'stable')
+    # Default: when index feature is on, commit to graph should read from index
+    if os.environ.get('SCIDK_FEATURE_FILE_INDEX') in ('1', 'true', 'yes', 'y', 'on') and os.environ.get('SCIDK_COMMIT_FROM_INDEX') is None:
+        os.environ['SCIDK_COMMIT_FROM_INDEX'] = '1'
 
 
 def create_app():
@@ -319,34 +322,34 @@ def create_app():
                 with driver.session(database=database) as sess:
                     # Try to create composite constraints (Neo4j 5+) — ignore if unsupported
                     try:
-                        sess.run("CREATE CONSTRAINT file_identity IF NOT EXISTS FOR (f:File) REQUIRE (f.path, f.host, f.port) IS UNIQUE").consume()
+                        sess.run("CREATE CONSTRAINT file_identity IF NOT EXISTS FOR (f:File) REQUIRE (f.path, f.host) IS UNIQUE").consume()
                     except Exception:
                         pass
                     try:
-                        sess.run("CREATE CONSTRAINT folder_identity IF NOT EXISTS FOR (d:Folder) REQUIRE (d.path, d.host, d.port) IS UNIQUE").consume()
+                        sess.run("CREATE CONSTRAINT folder_identity IF NOT EXISTS FOR (d:Folder) REQUIRE (d.path, d.host) IS UNIQUE").consume()
                     except Exception:
                         pass
                     cypher = (
                         "WITH $rows AS rows, $folders AS folders, $scan_id AS scan_id, $scan_path AS scan_path, $scan_started AS scan_started, $scan_ended AS scan_ended, $scan_provider AS scan_provider, $scan_host_type AS scan_host_type, $scan_host_id AS scan_host_id, $scan_root_id AS scan_root_id, $scan_root_label AS scan_root_label, $scan_source AS scan_source, $node_host AS node_host, $node_port AS node_port "
                         "MERGE (s:Scan {id: scan_id}) SET s.path = scan_path, s.started = scan_started, s.ended = scan_ended "
                         "WITH rows, folders, s CALL { WITH rows, s UNWIND rows AS r "
-                        "  MERGE (f:File {path: r.path, host: $node_host, port: coalesce($node_port, -1)}) "
+                        "  MERGE (f:File {path: r.path, host: $node_host}) "
                         "    SET f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, "
                         "        f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type, f.provider_id = $scan_provider, f.host_type = $scan_host_type, f.host_id = $scan_host_id "
                         "  MERGE (f)-[:SCANNED_IN]->(s) "
                         "  FOREACH (_ IN CASE WHEN coalesce(r.folder,'') <> '' THEN [1] ELSE [] END | "
-                        "    MERGE (fo:Folder {path: r.folder, host: $node_host, port: coalesce($node_port, -1)}) SET fo.name = r.folder_name, fo.provider_id = $scan_provider, fo.host_type = $scan_host_type, fo.host_id = $scan_host_id "
+                        "    MERGE (fo:Folder {path: r.folder, host: $node_host}) SET fo.name = r.folder_name, fo.provider_id = $scan_provider, fo.host_type = $scan_host_type, fo.host_id = $scan_host_id "
                         "    MERGE (fo)-[:CONTAINS]->(f) "
                         "    MERGE (fo)-[:SCANNED_IN]->(s) "
                         "    FOREACH (__ IN CASE WHEN coalesce(r.folder_parent,'') <> '' AND r.parent_in_scan THEN [1] ELSE [] END | "
-                        "      MERGE (fop:Folder {path: r.folder_parent, host: $node_host, port: coalesce($node_port, -1)}) SET fop.name = r.folder_parent_name, fop.provider_id = $scan_provider, fop.host_type = $scan_host_type, fop.host_id = $scan_host_id "
+                        "      MERGE (fop:Folder {path: r.folder_parent, host: $node_host}) SET fop.name = r.folder_parent_name, fop.provider_id = $scan_provider, fop.host_type = $scan_host_type, fop.host_id = $scan_host_id "
                         "      MERGE (fop)-[:CONTAINS]->(fo) ) "
                         "  ) RETURN 0 AS _files_done } "
                         "WITH folders, s CALL { WITH folders, s UNWIND folders AS r2 "
-                        "  MERGE (fo:Folder {path: r2.path, host: $node_host, port: coalesce($node_port, -1)}) SET fo.name = r2.name, fo.provider_id = $scan_provider, fo.host_type = $scan_host_type, fo.host_id = $scan_host_id "
+                        "  MERGE (fo:Folder {path: r2.path, host: $node_host}) SET fo.name = r2.name, fo.provider_id = $scan_provider, fo.host_type = $scan_host_type, fo.host_id = $scan_host_id "
                         "  MERGE (fo)-[:SCANNED_IN]->(s) "
                         "  FOREACH (__ IN CASE WHEN coalesce(r2.parent,'') <> '' THEN [1] ELSE [] END | "
-                        "    MERGE (fop:Folder {path: r2.parent, host: $node_host, port: coalesce($node_port, -1)}) SET fop.name = r2.parent_name, fop.provider_id = $scan_provider, fop.host_type = $scan_host_type, fop.host_id = $scan_host_id "
+                        "    MERGE (fop:Folder {path: r2.parent, host: $node_host}) SET fop.name = r2.parent_name, fop.provider_id = $scan_provider, fop.host_type = $scan_host_type, fop.host_id = $scan_host_id "
                         "    MERGE (fop)-[:CONTAINS]->(fo) ) "
                         "  RETURN 0 AS _folders_done } "
                         "WITH s SET s.provider_id = $scan_provider, s.host_type = $scan_host_type, s.host_id = $scan_host_id, s.root_id = $scan_root_id, s.root_label = $scan_root_label, s.scan_source = $scan_source "
@@ -412,23 +415,74 @@ def create_app():
             return None
         checksums = s.get('checksums') or []
         ds_map = app.extensions['scidk']['graph'].datasets  # checksum -> dataset
+
+        from .core.path_utils import parse_remote_path, parent_remote_path
         from pathlib import Path as _P
+
         folder_info = {}
         children_files = {}
-        # Add files by parent folder
+
+        def ensure_complete_parent_chain(path_str: str):
+            """Ensure all parent folders exist in folder_info for any given path"""
+            if not path_str or path_str in folder_info:
+                return
+
+            info = parse_remote_path(path_str)
+            if info.get('is_remote'):
+                parent = parent_remote_path(path_str)
+                name = (info.get('parts')[-1] if info.get('parts') else info.get('remote_name') or path_str)
+            else:
+                try:
+                    p = _P(path_str)
+                    parent = str(p.parent)
+                    name = p.name or path_str
+                except Exception:
+                    parent = ''
+                    name = path_str
+
+            folder_info[path_str] = {
+                'path': path_str,
+                'name': name,
+                'parent': parent,
+            }
+
+            if parent and parent != path_str:
+                ensure_complete_parent_chain(parent)
+
+        # Seed scan base path (stable roots even on empty scans)
+        try:
+            base_path = s.get('path') or ''
+            if base_path:
+                ensure_complete_parent_chain(base_path)
+        except Exception:
+            pass
+
+        # Process files and ensure their parent chains exist
         for ch in checksums:
             d = ds_map.get(ch)
             if not d:
                 continue
-            try:
-                p = _P(d.get('path'))
-            except Exception:
+            file_path = d.get('path')
+            if not file_path:
                 continue
-            parent = str(p.parent)
+
+            info = parse_remote_path(file_path)
+            if info.get('is_remote'):
+                parent = parent_remote_path(file_path)
+                filename = (info.get('parts')[-1] if info.get('parts') else info.get('remote_name') or file_path)
+            else:
+                try:
+                    p = _P(file_path)
+                    parent = str(p.parent)
+                    filename = p.name or file_path
+                except Exception:
+                    parent = ''
+                    filename = file_path
+
             file_entry = {
                 'id': d.get('id'),
-                'path': d.get('path'),
-                'filename': d.get('filename'),
+                'path': file_path,
+                'filename': d.get('filename') or filename,
                 'extension': d.get('extension'),
                 'size_bytes': int(d.get('size_bytes') or 0),
                 'modified': float(d.get('modified') or 0),
@@ -436,42 +490,55 @@ def create_app():
                 'checksum': d.get('checksum'),
             }
             children_files.setdefault(parent, []).append(file_entry)
-            # ensure folder info
-            folder_info[parent] = folder_info.get(parent) or {
-                'path': parent,
-                'name': _P(parent).name,
-                'parent': str(_P(parent).parent) if parent else '',
-            }
-        # Include folders captured on non-recursive scans
+
+            if parent:
+                ensure_complete_parent_chain(parent)
+
+        # Process explicitly recorded folders
         for f in (s.get('folders') or []):
-            path = f.get('path'); parent = f.get('parent')
-            name = f.get('name')
+            path = f.get('path')
             if path:
-                folder_info[path] = folder_info.get(path) or {
-                    'path': path,
-                    'name': name,
-                    'parent': parent,
-                }
-                if parent:
-                    folder_info[parent] = folder_info.get(parent) or {
-                        'path': parent,
-                        'name': _P(parent).name,
-                        'parent': str(_P(parent).parent),
-                    }
+                ensure_complete_parent_chain(path)
+
         # Build children_folders map
         children_folders = {}
         for fpath, info in folder_info.items():
             par = info.get('parent')
             if par and par in folder_info:
                 children_folders.setdefault(par, []).append(fpath)
-        # Derive roots: folders with no parent in folder_info
-        roots = sorted([fp for fp, info in folder_info.items() if not info.get('parent') or info.get('parent') not in folder_info])
-        # Sort child folders
+
+        # Find actual roots
+        roots = sorted([fp for fp, info in folder_info.items()
+                        if not info.get('parent') or info.get('parent') not in folder_info])
+
+        # Prefer scan base as visible root and drop its ancestors
+        try:
+            base_path = s.get('path') or ''
+            if base_path and base_path in folder_info:
+                if base_path not in roots:
+                    roots.append(base_path)
+                def _is_ancestor(candidate: str, child: str) -> bool:
+                    if not candidate or candidate == child:
+                        return False
+                    cinf = parse_remote_path(candidate)
+                    chinf = parse_remote_path(child)
+                    if chinf.get('is_remote') and cinf.get('is_remote'):
+                        return child.startswith(candidate.rstrip('/') + '/')
+                    try:
+                        return str(_P(child)).startswith(str(_P(candidate)) + '/')
+                    except Exception:
+                        return False
+                roots = [r for r in roots if not _is_ancestor(r, base_path) or r == base_path]
+                roots = sorted(list(dict.fromkeys(roots)))
+        except Exception:
+            pass
+
+        # Sort children deterministically
         for k in list(children_folders.keys()):
-            children_folders[k].sort(key=lambda p: _P(p).name.lower())
-        # Sort files by filename
+            children_folders[k].sort(key=lambda p: folder_info.get(p, {}).get('name', '').lower())
         for k in list(children_files.keys()):
             children_files[k].sort(key=lambda f: (f.get('filename') or '').lower())
+
         idx = {
             'folder_info': folder_info,
             'children_folders': children_folders,
@@ -639,6 +706,43 @@ def create_app():
                 # If recursive rclone and client did not specify fast_list, enable it for robustness
                 if provider_id == 'rclone' and recursive and not _client_specified_fast_list:
                     fast_list = True
+
+                # ALWAYS RECORD THE SCAN BASE FOLDER for rclone scans
+                # Ensures the target path appears as a folder node, preventing flattened view
+                try:
+                    from .core.path_utils import parse_remote_path, parent_remote_path
+                    from .core import path_index_sqlite as pix
+
+                    info_t = parse_remote_path(path)
+                    base_name = (info_t.get('parts')[-1] if info_t.get('parts') else info_t.get('remote_name') or path)
+                    base_parent = parent_remote_path(path)
+
+                    # Create synthetic base folder SQLite row and initialize rows with it
+                    base_item = {"Name": base_name, "Path": "", "IsDir": True, "Size": 0}
+                    rows = [pix.map_rclone_item_to_row(base_item, path, scan_id)]
+
+                    # Compute parent display name for folders list
+                    try:
+                        info_par = parse_remote_path(base_parent) if base_parent else {}
+                        if info_par.get('is_remote'):
+                            parts = info_par.get('parts') or []
+                            parent_name = (info_par.get('remote_name') or '') if not parts else parts[-1]
+                        else:
+                            from pathlib import Path as _P
+                            parent_name = _P(base_parent).name if base_parent else ''
+                    except Exception:
+                        parent_name = ''
+
+                    folders.append({
+                        'path': path,
+                        'name': base_name,
+                        'parent': base_parent,
+                        'parent_name': parent_name,
+                    })
+                except Exception:
+                    # Non-fatal; initialize to empty rows if base insertion fails
+                    rows = []
+
                 try:
                     # In testing mode, allow metadata-only scans for rclone to avoid external binary dependency
                     if app.config.get('TESTING') and not recursive:
@@ -648,7 +752,7 @@ def create_app():
                 except Exception as ee:
                     return jsonify({"status": "error", "error": str(ee)}), 400
                 # Map to SQLite rows (files and folders); only files will have size > 0 typically.
-                rows = []
+                # rows is initialized above with the base folder row; continue accumulating
                 # Collect folders set for both non-recursive and recursive scans
                 seen_folders = set()
                 def _add_folder(full_path: str, name: str, parent: str):
@@ -670,13 +774,14 @@ def create_app():
                     try:
                         # Track folders for both modes
                         if it.get('IsDir'):
-                            name = it.get('Name') or it.get('Path') or ''
-                            if name:
+                            rel = it.get('Path') or it.get('Name') or ''
+                            if rel:
                                 from .core.path_utils import join_remote_path, parent_remote_path
-                                full = join_remote_path(path, name)
+                                full = join_remote_path(path, rel)
                                 parent = parent_remote_path(full)
+                                leaf = rel.rsplit('/',1)[-1] if isinstance(rel, str) and '/' in rel else rel
                                 # record folder regardless of recursive flag so empty dirs are preserved
-                                _add_folder(full, name, parent)
+                                _add_folder(full, leaf, parent)
                             # Still insert folder rows into SQLite for depth/structure awareness
                             rows.append(pix.map_rclone_item_to_row(it, path, scan_id))
                             continue
@@ -684,21 +789,27 @@ def create_app():
                         rows.append(pix.map_rclone_item_to_row(it, path, scan_id))
                         # Also create an in-memory dataset for current graph (to keep existing features/tests working)
                         name = it.get('Name') or it.get('Path') or ''
-                        # For recursive scans, synthesize intermediate folders from file paths
-                        if recursive and name:
+                        # For recursive scans, synthesize intermediate folders from file rel paths
+                        rel = it.get('Path') or it.get('Name') or ''
+                        if recursive and rel:
                             from .core.path_utils import join_remote_path, parent_remote_path
-                            # Build prefixes from relative name
-                            parts = [p for p in (name.split('/') if isinstance(name, str) else []) if p]
-                            cur = ''
+                            parts = [p for p in (rel.split('/') if isinstance(rel, str) else []) if p]
+                            cur_rel = ''
                             for i in range(len(parts)-1):  # exclude the file itself
-                                cur = parts[i] if i == 0 else (cur + '/' + parts[i])
-                                full = join_remote_path(path, cur)
+                                cur_rel = parts[i] if i == 0 else (cur_rel + '/' + parts[i])
+                                full = join_remote_path(path, cur_rel)
                                 parent = parent_remote_path(full)
                                 _add_folder(full, parts[i], parent)
+                                # ensure a folder row exists in SQLite, even if rclone didn't emit it
+                                try:
+                                    folder_item = {"Name": parts[i], "Path": cur_rel, "IsDir": True, "Size": 0}
+                                    rows.append(pix.map_rclone_item_to_row(folder_item, path, scan_id))
+                                except Exception:
+                                    pass
                         # Also create an in-memory dataset for current graph (to keep existing features/tests working)
                         size = int(it.get('Size') or 0)
                         from .core.path_utils import join_remote_path
-                        full = join_remote_path(path, name)
+                        full = join_remote_path(path, rel)
                         ds = fs.create_dataset_remote(full, size_bytes=size, modified_ts=0.0, mime=None)
                         app.extensions['scidk']['graph'].upsert_dataset(ds)
                         count += 1
@@ -807,6 +918,11 @@ def create_app():
             }
             scans = app.extensions['scidk'].setdefault('scans', {})
             scans[scan_id] = scan
+            # Clear cached fs index for this scan so next request rebuilds with fresh data
+            try:
+                app.extensions['scidk'].setdefault('scan_fs', {}).pop(scan_id, None)
+            except Exception:
+                pass
             # Save telemetry on app
             telem = app.extensions['scidk'].setdefault('telemetry', {})
             telem['last_scan'] = {
@@ -1840,10 +1956,53 @@ def create_app():
         roots = idx['roots']
         # Virtual root listing when no path specified
         if not req_path:
+            # Auto-enter the scan base folder for a stable, expected view
+            s = app.extensions['scidk'].get('scans', {}).get(scan_id) or {}
+            base_path = s.get('path') or ''
+            if base_path:
+                # Ensure base exists in folder_info for consistent naming
+                try:
+                    from .core.path_utils import parse_remote_path, parent_remote_path
+                    binfo = parse_remote_path(base_path)
+                    if base_path not in folder_info:
+                        if binfo.get('is_remote'):
+                            bname = (binfo.get('parts')[-1] if binfo.get('parts') else binfo.get('remote_name') or base_path)
+                            bparent = parent_remote_path(base_path)
+                        else:
+                            _bp = _P(base_path)
+                            bname = _bp.name or base_path
+                            bparent = str(_bp.parent)
+                        folder_info[base_path] = {'path': base_path, 'name': bname, 'parent': bparent}
+                except Exception:
+                    pass
+                req_path = base_path
+                # Build breadcrumb and children for the base path
+                breadcrumb = [
+                    {'name': '(scan base)', 'path': ''},
+                    {'name': folder_info.get(req_path, {}).get('name', _P(req_path).name), 'path': req_path},
+                ]
+                sub_folders = [
+                    {'name': folder_info.get(p, {}).get('name', _P(p).name), 'path': p, 'file_count': len(children_files.get(p, []))}
+                    for p in children_folders.get(req_path, [])
+                ]
+                sub_folders.sort(key=lambda r: r['name'].lower())
+                files = children_files.get(req_path, [])
+                return jsonify({
+                    'scan_id': scan_id,
+                    'path': req_path,
+                    'breadcrumb': breadcrumb,
+                    'folders': sub_folders,
+                    'files': files,
+                    'roots': idx['roots'],
+                    'folder_info': folder_info,
+                    'children_folders': children_folders,
+                    'children_files': children_files,
+                }), 200
+            # If no base_path, fall back to showing roots
             folders = [{'name': _P(p).name, 'path': p, 'file_count': len(children_files.get(p, []))} for p in roots]
             folders.sort(key=lambda r: r['name'].lower())
             breadcrumb = [{'name': '(scan roots)', 'path': ''}]
-            return jsonify({'scan_id': scan_id, 'path': '', 'breadcrumb': breadcrumb, 'folders': folders, 'files': []}), 200
+            return jsonify({'scan_id': scan_id, 'path': '', 'breadcrumb': breadcrumb, 'folders': folders, 'files': [], 'roots': roots, 'folder_info': folder_info, 'children_folders': children_folders, 'children_files': children_files}), 200
         # Validate path exists in snapshot
         if req_path not in folder_info:
             return jsonify({'error': 'folder not found in scan'}), 404
@@ -1862,7 +2021,7 @@ def create_app():
         sub_folders = [{'name': _P(p).name, 'path': p, 'file_count': len(children_files.get(p, []))} for p in children_folders.get(req_path, [])]
         sub_folders.sort(key=lambda r: r['name'].lower())
         files = children_files.get(req_path, [])
-        return jsonify({'scan_id': scan_id, 'path': req_path, 'breadcrumb': breadcrumb, 'folders': sub_folders, 'files': files}), 200
+        return jsonify({'scan_id': scan_id, 'path': req_path, 'breadcrumb': breadcrumb, 'folders': sub_folders, 'files': files, 'roots': roots, 'folder_info': folder_info, 'children_folders': children_folders, 'children_files': children_files}), 200
 
     # New: SQLite-index-backed browse for a given scan
     @api.get('/scans/<scan_id>/browse')
@@ -2203,11 +2362,82 @@ def create_app():
                             'parent_in_scan': True,
                             'interps': [],
                         })
+                # Synthesize full folder chain up to scan base to ensure Folder→Folder edges exist
+                scan_base = s.get('path') or ''
+                folder_nodes = set()
+                folder_edges = set()
+                def _walk_to_base(pth: str):
+                    seenp = set()
+                    curp = pth
+                    while curp and (curp not in seenp):
+                        seenp.add(curp)
+                        par = _parent(curp)
+                        if not par or par == curp:
+                            break
+                        yield (par, curp)
+                        if scan_base and par == scan_base:
+                            break
+                        curp = par
+                # Seed from existing folder_rows
+                for fr in list(folder_rows):
+                    child = fr.get('path') or ''
+                    parent_fp = fr.get('parent') or _parent(child)
+                    if child:
+                        folder_nodes.add(child)
+                        if parent_fp:
+                            folder_nodes.add(parent_fp)
+                            folder_edges.add((parent_fp, child))
+                            for (gp, pth) in _walk_to_base(parent_fp):
+                                folder_nodes.add(gp); folder_nodes.add(pth)
+                                folder_edges.add((gp, pth))
+                # Add ancestors for each file's folder
+                for r in rows:
+                    fld = r.get('folder') or ''
+                    if not fld:
+                        continue
+                    folder_nodes.add(fld)
+                    par = _parent(fld)
+                    if par:
+                        folder_nodes.add(par)
+                        folder_edges.add((par, fld))
+                        for (gp, pth) in _walk_to_base(par):
+                            folder_nodes.add(gp); folder_nodes.add(pth)
+                            folder_edges.add((gp, pth))
+                # Rebuild folder_rows from synthesized sets and deduplicate
+                new_folder_rows = []
+                for node in sorted(folder_nodes):
+                    pn = _parent(node)
+                    new_folder_rows.append({
+                        'path': node,
+                        'name': _name(node),
+                        'parent': pn,
+                        'parent_name': _name(pn) if pn else ''
+                    })
+                for (par, child) in sorted(folder_edges):
+                    new_folder_rows.append({
+                        'path': child,
+                        'name': _name(child),
+                        'parent': par,
+                        'parent_name': _name(par) if par else ''
+                    })
+                seen_fp = set()
+                dedup = []
+                for fr in new_folder_rows:
+                    key = (fr.get('path'), fr.get('parent'))
+                    if key in seen_fp:
+                        continue
+                    seen_fp.add(key)
+                    dedup.append(fr)
+                folder_rows = dedup
+                # For compatibility with schema endpoint, still add a Scan node to in-memory graph
+                try:
+                    g.commit_scan(s)
+                except Exception:
+                    pass
                 # Totals for reporting
                 total = sum(1 for it in items if it[4] == 'file')
                 present = total  # index-driven commit considers all indexed files as present
                 missing = 0
-                # In-memory commit is skipped when using index, but we still create a Scan node in Neo4j. We keep in-memory flag for compatibility
                 s['committed'] = True
                 import time as _t
                 s['committed_at'] = _t.time()
@@ -2238,9 +2468,13 @@ def create_app():
             if uri and ((auth_mode == 'none') or (user and pwd)):
                 neo_attempted = True
                 try:
-                    ds_map = getattr(g, 'datasets', {})
-                    rows, folder_rows = build_commit_rows(s, ds_map)
-                    result = commit_to_neo4j(rows, folder_rows, s, (uri, user, pwd, database, auth_mode))
+                    # If committing from index, use the rows built above from SQLite; otherwise build from legacy datasets
+                    if use_index:
+                        result = commit_to_neo4j(rows, folder_rows, s, (uri, user, pwd, database, auth_mode))
+                    else:
+                        ds_map = getattr(g, 'datasets', {})
+                        rows, folder_rows = build_commit_rows(s, ds_map)
+                        result = commit_to_neo4j(rows, folder_rows, s, (uri, user, pwd, database, auth_mode))
                     neo_written = int(result.get('written_files', 0)) + int(result.get('written_folders', 0))
                     # Capture DB verification if provided
                     if 'db_verified' in result:
