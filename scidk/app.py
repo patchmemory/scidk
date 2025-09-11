@@ -405,6 +405,15 @@ def create_app():
     else:
         graph = InMemoryGraph()
     registry = InterpreterRegistry()
+    # Load persisted interpreter toggle settings (optional)
+    try:
+        from .core.settings import InterpreterSettings
+        settings = InterpreterSettings(os.environ.get('SCIDK_SETTINGS_DB', 'scidk_settings.db'))
+        enabled = settings.load_enabled_interpreters()
+        if enabled:
+            registry.enabled_interpreters = set(enabled)
+    except Exception:
+        settings = None
 
     # Register interpreters
     py_interp = PythonCodeInterpreter()
@@ -475,6 +484,7 @@ def create_app():
         },
         # rclone mounts runtime registry (feature-flagged API will use this)
         'rclone_mounts': {},  # id/name -> { id, remote, subpath, path, read_only, started_at, pid, log_file }
+        'settings': settings,
     }
 
     # API routes
@@ -1659,14 +1669,25 @@ def create_app():
         results = []
         for interp in interps:
             try:
+                _t0 = time.time()
                 result = interp.interpret(file_path)
+                _t1 = time.time()
                 graph.add_interpretation(ds['checksum'], interp.id, {
                     'status': result.get('status', 'success'),
                     'data': result.get('data', result),
                     'interpreter_version': getattr(interp, 'version', '0.0.1'),
                 })
+                # Record success
+                try:
+                    registry.record_usage(interp.id, success=True, execution_time_ms=int((_t1 - _t0)*1000))
+                except Exception:
+                    pass
                 results.append({'interpreter_id': interp.id, 'status': 'ok'})
             except Exception as e:
+                try:
+                    registry.record_usage(interp.id, success=False, execution_time_ms=0)
+                except Exception:
+                    pass
                 graph.add_interpretation(ds['checksum'], interp.id, {
                     'status': 'error',
                     'data': {'error': str(e)},
@@ -1721,6 +1742,41 @@ def create_app():
             return (0 if 'filename' in r['matched_on'] else 1, r['filename'] or '')
         results.sort(key=score)
         return jsonify(results), 200
+
+    @api.get('/interpreters')
+    def api_interpreters_list():
+        reg = app.extensions['scidk']['registry']
+        items = []
+        for iid, interp in reg.by_id.items():
+            items.append({
+                'id': iid,
+                'name': getattr(interp, 'name', iid),
+                'version': getattr(interp, 'version', '0.0.1'),
+                'extensions': [ext for ext, arr in reg.by_extension.items() if any(getattr(i, 'id', None) == iid for i in arr)],
+                'enabled': reg._is_enabled(iid),
+                'runtime': getattr(interp, 'runtime', 'python'),
+                'last_used': reg.get_last_used(iid),
+                'success_rate': reg.get_success_rate(iid),
+            })
+        return jsonify(items), 200
+
+    @api.post('/interpreters/<interpreter_id>/toggle')
+    def api_interpreters_toggle(interpreter_id):
+        reg = app.extensions['scidk']['registry']
+        data = request.get_json(force=True, silent=True) or {}
+        enabled = bool(data.get('enabled', True))
+        if enabled:
+            reg.enable_interpreter(interpreter_id)
+        else:
+            reg.disable_interpreter(interpreter_id)
+        # Persist if settings available
+        try:
+            settings = app.extensions['scidk'].get('settings')
+            if settings is not None:
+                settings.save_enabled_interpreters(reg.enabled_interpreters)
+        except Exception:
+            pass
+        return jsonify({'status': 'updated', 'enabled': enabled}), 200
 
     @api.get('/providers')
     def api_providers():
