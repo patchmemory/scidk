@@ -390,6 +390,14 @@ def create_app():
     _apply_channel_defaults()
     app = Flask(__name__, template_folder="ui/templates", static_folder="ui/static")
 
+    # Auto-migrate SQLite schema on boot (best effort)
+    try:
+        from .core import migrations as _migs
+        _migs.migrate()
+    except Exception as _e:
+        # Defer reporting to /api/health if needed via app.extensions
+        pass
+
     # Core singletons (select backend)
     backend = (os.environ.get('SCIDK_GRAPH_BACKEND') or 'memory').strip().lower()
     if backend == 'neo4j':
