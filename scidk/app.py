@@ -1846,6 +1846,36 @@ def create_app():
         results.sort(key=score)
         return jsonify(results), 200
 
+    @api.get('/interpreters')
+    def api_interpreters():
+        # List interpreter registry metadata
+        reg = app.extensions['scidk']['registry']
+        # Build mapping ext -> interpreter ids
+        ext_map = {}
+        for ext, interps in reg.by_extension.items():
+            ext_map[ext] = [getattr(i, 'id', 'unknown') for i in interps]
+        # Compose interpreter-centric view
+        items = []
+        for iid, interp in reg.by_id.items():
+            # collect globs/extensions this interpreter is registered for
+            globs = sorted([ext for ext, ids in ext_map.items() if iid in ids])
+            items.append({
+                'id': iid,
+                'name': getattr(interp, 'name', iid),
+                'version': getattr(interp, 'version', '0.0.1'),
+                'globs': globs,
+                'default_enabled': bool(getattr(interp, 'default_enabled', getattr(reg, 'default_enabled', True))),
+                'cost': getattr(interp, 'cost', None),
+            })
+        # Support future effective view toggle
+        view = (request.args.get('view') or '').strip().lower()
+        if view == 'effective':
+            # For now, effective == default (global toggles coming in next task)
+            for it in items:
+                it['enabled'] = bool(it.get('default_enabled', True))
+                it['source'] = 'default'
+        return jsonify(items), 200
+
     @api.get('/providers')
     def api_providers():
         provs = app.extensions['scidk']['providers']
