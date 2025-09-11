@@ -2428,92 +2428,28 @@ def create_app():
     @api.get('/scans/<scan_id>/browse')
     def api_scan_browse(scan_id):
         """Browse direct children from the SQLite index for a scan.
+        Delegates to FSIndexService.browse_children.
         Query params:
-          - path (required): parent folder to list direct children for.
-          - page_size (optional, default 100): limit per page.
-          - next_page_token (optional): opaque pagination token (OFFSET in MVP).
-          - extension (optional): filter by file_extension (e.g., ".txt").
-          - type (optional): filter by type ("file" or "folder").
-
-        Sorting: type DESC, name ASC.
-        Returns: { scan_id, path, page_size, next_page_token?, entries: [ ... ] }
+          - path (optional): parent folder; defaults to scan base path
+          - page_size (optional, default 100)
+          - next_page_token (optional)
+          - extension / ext (optional)
+          - type (optional)
         """
-        # Validate scan exists in session
-        s = app.extensions['scidk'].get('scans', {}).get(scan_id)
-        if not s:
-            return jsonify({'error': 'scan not found'}), 404
-        from .core import path_index_sqlite as pix
+        from .services.fs_index_service import FSIndexService
+        svc = FSIndexService(app)
         req_path = (request.args.get('path') or '').strip()
-        if req_path == '':
-            # Default to the scan root path if not provided
-            req_path = str(s.get('path') or '')
-        # Normalize page_size and token
+        # page_size
         try:
             page_size = int(request.args.get('page_size') or 100)
         except Exception:
             page_size = 100
-        page_size = max(1, min(page_size, 1000))  # simple guardrails
-        token_raw = (request.args.get('next_page_token') or '').strip()
-        try:
-            offset = int(token_raw) if token_raw else 0
-        except Exception:
-            offset = 0
-        # Optional filters
-        ext = (request.args.get('extension') or request.args.get('ext') or '').strip().lower()
-        typ = (request.args.get('type') or '').strip().lower()
-        # Build query
-        where = ["scan_id = ?", "parent_path = ?"]
-        params = [scan_id, req_path]
-        if ext:
-            where.append("file_extension = ?")
-            params.append(ext)
-        if typ:
-            where.append("type = ?")
-            params.append(typ)
-        where_sql = " AND ".join(where)
-        sql = (
-            "SELECT path, name, type, size, modified_time, file_extension, mime_type "
-            f"FROM files WHERE {where_sql} "
-            "ORDER BY type DESC, name ASC "
-            "LIMIT ? OFFSET ?"
-        )
-        params.extend([page_size + 1, offset])  # fetch one extra row to derive next_page_token
-        try:
-            conn = pix.connect()
-            pix.init_db(conn)
-            cur = conn.execute(sql, params)
-            rows = cur.fetchall()
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
-        # Build entries
-        entries = []
-        for r in rows[:page_size]:
-            path_val, name_val, type_val, size_val, mtime_val, ext_val, mime_val = r
-            entries.append({
-                'path': path_val,
-                'name': name_val,
-                'type': type_val,
-                'size': int(size_val or 0),
-                'modified': float(mtime_val or 0.0),
-                'extension': ext_val or '',
-                'mime_type': mime_val,
-            })
-        next_token = str(offset + page_size) if len(rows) > page_size else None
-        out = {
-            'scan_id': scan_id,
-            'path': req_path,
-            'page_size': page_size,
-            'entries': entries,
+        token = (request.args.get('next_page_token') or '').strip()
+        filters = {
+            'extension': (request.args.get('extension') or request.args.get('ext') or '').strip().lower(),
+            'type': (request.args.get('type') or '').strip().lower(),
         }
-        if next_token is not None:
-            out['next_page_token'] = next_token
-
-        return jsonify(out), 200
+        return svc.browse_children(scan_id, req_path, page_size, token, filters)
 
     @api.post('/ro-crates/referenced')
     def api_ro_crates_referenced():
