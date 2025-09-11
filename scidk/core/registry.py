@@ -10,6 +10,8 @@ class InterpreterRegistry:
         self.by_extension: Dict[str, List] = defaultdict(list)
         self.by_id: Dict[str, object] = {}
         self.rules = RuleEngine()
+        # Global defaults for metadata
+        self.default_enabled: bool = True
 
     def register_extension(self, ext: str, interpreter):
         # Track by extension and by id for direct selection

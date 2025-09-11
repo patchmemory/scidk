@@ -70,10 +70,42 @@ def init_db(conn: Optional[sqlite3.Connection] = None):
             );
             """
         )
+        # New: relationships between entities/files
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS relationships (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                from_id TEXT NOT NULL,
+                to_id TEXT NOT NULL,
+                type TEXT,
+                properties_json TEXT,
+                created REAL
+            );
+            """
+        )
+        # New: sync queue for background syncing/projections
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sync_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_type TEXT,
+                entity_id TEXT,
+                action TEXT,
+                payload TEXT,
+                created REAL,
+                processed REAL
+            );
+            """
+        )
         # Indexes
         cur.execute("CREATE INDEX IF NOT EXISTS idx_selection_items_sel ON selection_items(selection_id);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_annotations_file ON annotations(file_id);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_annotations_kind ON annotations(kind);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_rel_from ON relationships(from_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_rel_to ON relationships(to_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_rel_type ON relationships(type);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_sync_processed ON sync_queue(processed);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_sync_entity ON sync_queue(entity_type, entity_id);")
         conn.commit()
     finally:
         if own:
@@ -144,5 +176,101 @@ def list_annotations_by_file(file_id: str) -> List[Dict[str, Any]]:
                 "created": r[6],
             })
         return res
+    finally:
+        conn.close()
+
+
+# --- New CRUD for relationships ---
+
+def create_relationship(from_id: str, to_id: str, rel_type: str, properties_json: Optional[str], created_ts: float) -> Dict[str, Any]:
+    conn = connect()
+    init_db(conn)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO relationships(from_id, to_id, type, properties_json, created) VALUES (?,?,?,?,?)",
+            (from_id, to_id, rel_type, properties_json, created_ts),
+        )
+        conn.commit()
+        rid = cur.lastrowid
+        return {"id": rid, "from_id": from_id, "to_id": to_id, "type": rel_type, "properties_json": properties_json, "created": created_ts}
+    finally:
+        conn.close()
+
+
+def list_relationships(entity_id: str) -> List[Dict[str, Any]]:
+    """List relationships touching the given entity/file id (as from or to)."""
+    conn = connect()
+    init_db(conn)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, from_id, to_id, type, properties_json, created FROM relationships WHERE from_id = ? OR to_id = ? ORDER BY id DESC",
+            (entity_id, entity_id),
+        )
+        rows = cur.fetchall()
+        return [
+            {"id": r[0], "from_id": r[1], "to_id": r[2], "type": r[3], "properties_json": r[4], "created": r[5]}
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+def delete_relationship(rel_id: int) -> bool:
+    conn = connect()
+    init_db(conn)
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM relationships WHERE id = ?", (rel_id,))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+# --- New CRUD for sync_queue ---
+
+def enqueue_sync(entity_type: str, entity_id: str, action: str, payload: Optional[str], created_ts: float) -> int:
+    conn = connect()
+    init_db(conn)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO sync_queue(entity_type, entity_id, action, payload, created, processed) VALUES (?,?,?,?,?,NULL)",
+            (entity_type, entity_id, action, payload, created_ts),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+    finally:
+        conn.close()
+
+
+def dequeue_unprocessed(limit: int = 100) -> List[Dict[str, Any]]:
+    conn = connect()
+    init_db(conn)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, entity_type, entity_id, action, payload, created FROM sync_queue WHERE processed IS NULL ORDER BY id ASC LIMIT ?",
+            (int(limit),),
+        )
+        rows = cur.fetchall()
+        return [
+            {"id": r[0], "entity_type": r[1], "entity_id": r[2], "action": r[3], "payload": r[4], "created": r[5]}
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+def mark_processed(item_id: int, processed_ts: float) -> bool:
+    conn = connect()
+    init_db(conn)
+    try:
+        cur = conn.cursor()
+        cur.execute("UPDATE sync_queue SET processed = ? WHERE id = ?", (processed_ts, item_id))
+        conn.commit()
+        return cur.rowcount > 0
     finally:
         conn.close()

@@ -390,6 +390,14 @@ def create_app():
     _apply_channel_defaults()
     app = Flask(__name__, template_folder="ui/templates", static_folder="ui/static")
 
+    # Auto-migrate SQLite schema on boot (best effort)
+    try:
+        from .core import migrations as _migs
+        _migs.migrate()
+    except Exception as _e:
+        # Defer reporting to /api/health if needed via app.extensions
+        pass
+
     # Core singletons (select backend)
     backend = (os.environ.get('SCIDK_GRAPH_BACKEND') or 'memory').strip().lower()
     if backend == 'neo4j':
@@ -434,6 +442,49 @@ def create_app():
     registry.register_rule(Rule(id="rule.xlsx.default", interpreter_id=xlsx_interp.id, pattern="*.xlsx", priority=10, conditions={"ext": ".xlsx"}))
     registry.register_rule(Rule(id="rule.xlsm.default", interpreter_id=xlsx_interp.id, pattern="*.xlsm", priority=10, conditions={"ext": ".xlsm"}))
 
+    # Compute effective interpreter enablement (CLI envs > global settings > defaults)
+    testing_env = bool(os.environ.get('PYTEST_CURRENT_TEST')) or bool(os.environ.get('SCIDK_DISABLE_SETTINGS'))
+    try:
+        from .core.settings import InterpreterSettings
+        settings = None if testing_env else InterpreterSettings(db_path=str(Path(os.getcwd()) / 'scidk_settings.db'))
+    except Exception:
+        settings = None
+    # Defaults from interpreter attributes (fallback True)
+    all_ids = list(registry.by_id.keys())
+    default_enabled_ids = set([iid for iid in all_ids if bool(getattr(registry.by_id[iid], 'default_enabled', True))])
+    # CLI overrides via env
+    en_list = [s.strip() for s in (os.environ.get('SCIDK_ENABLE_INTERPRETERS') or '').split(',') if s.strip()]
+    dis_list = [s.strip() for s in (os.environ.get('SCIDK_DISABLE_INTERPRETERS') or '').split(',') if s.strip()]
+    source = 'default'
+    if en_list or dis_list:
+        enabled_set = set(default_enabled_ids)
+        for d in dis_list:
+            enabled_set.discard(d)
+        for e in en_list:
+            enabled_set.add(e)
+        source = 'cli'
+        try:
+            if settings:
+                settings.save_enabled_interpreters(enabled_set)
+        except Exception:
+            pass
+    else:
+        # Load global saved set if any
+        loaded = set()
+        try:
+            if settings:
+                loaded = set(settings.load_enabled_interpreters())
+        except Exception:
+            loaded = set()
+        if loaded:
+            enabled_set = set(loaded)
+            source = 'global'
+        else:
+            enabled_set = set(default_enabled_ids)
+            source = 'default'
+    # Store effective on app
+    _interp_state = {'effective_enabled': enabled_set, 'source': source}
+
     fs = FilesystemManager(graph=graph, registry=registry)
 
     # Initialize filesystem providers (Phase 0)
@@ -457,6 +508,7 @@ def create_app():
         'registry': registry,
         'fs': fs,
         'providers': fs_providers,
+        'interpreters': _interp_state,
         # in-session registries
         'scans': {},  # scan_id -> scan session dict
         'directories': {},  # path -> aggregate info incl. scan_ids
@@ -918,6 +970,8 @@ def create_app():
             count = 0
             ingested = 0
             folders = []
+            files_skipped = 0
+            files_hashed = 0
             if provider_id in ('local_fs', 'mounted_fs'):
                 # Local/Mounted: enumerate filesystem and ingest into SQLite index
                 base = Path(path)
@@ -972,7 +1026,11 @@ def create_app():
                 # Map to rows
                 from .core import path_index_sqlite as pix
                 rows = []
+                files_skipped = 0
+                files_hashed = 0
+                hash_policy = (os.environ.get('SCIDK_HASH_POLICY') or 'auto').strip().lower()
                 def _row_from_local(pth: Path, typ: str) -> tuple:
+                    nonlocal files_skipped, files_hashed
                     full = str(pth.resolve())
                     parent = str(pth.parent.resolve()) if pth != pth.parent else ''
                     name = pth.name or full
@@ -981,6 +1039,8 @@ def create_app():
                     mtime = None
                     ext = ''
                     mime = None
+                    etag = None
+                    ahash = None
                     if typ == 'file':
                         try:
                             st = pth.stat()
@@ -990,8 +1050,23 @@ def create_app():
                             size = 0
                             mtime = None
                         ext = pth.suffix.lower()
+                        # Skip logic: reuse previous hash if unchanged (size + mtime)
+                        try:
+                            prev = pix.get_latest_file_meta(full)
+                        except Exception:
+                            prev = None
+                        if prev is not None and prev[0] == size and prev[1] == mtime and (prev[2] or '') != '':
+                            ahash = prev[2]
+                            files_skipped += 1
+                        else:
+                            # Compute content hash with policy
+                            try:
+                                ahash = pix.compute_content_hash(full, hash_policy)
+                            except Exception:
+                                ahash = None
+                            files_hashed += 1
                     remote = f"local:{os.uname().nodename}" if provider_id == 'local_fs' else f"mounted:{root_id}"
-                    return (full, parent, name, depth, typ, size, mtime, ext, mime, None, None, remote, scan_id, None)
+                    return (full, parent, name, depth, typ, size, mtime, ext, mime, etag, ahash, remote, scan_id, None)
                 # Insert folder rows first for structure consistency
                 for d in sorted(items_dirs, key=lambda x: str(x)):
                     rows.append(_row_from_local(d, 'folder'))
@@ -1273,6 +1348,12 @@ def create_app():
                 'root_label': root_label,
                 'scan_source': f"provider:{provider_id}",
                 'ingested_rows': int(ingested),
+                'config_json': {
+                    'interpreters': {
+                        'effective_enabled': sorted(list(app.extensions['scidk'].get('interpreters', {}).get('effective_enabled', []))),
+                        'source': app.extensions['scidk'].get('interpreters', {}).get('source', 'default'),
+                    }
+                },
             }
             scans = app.extensions['scidk'].setdefault('scans', {})
             scans[scan_id] = scan
@@ -1293,6 +1374,8 @@ def create_app():
                 'source': getattr(fs, 'last_scan_source', 'python') if provider_id in ('local_fs','mounted_fs') else f"provider:{provider_id}",
                 'provider_id': provider_id,
                 'root_id': root_id,
+                'files_skipped': int(files_skipped),
+                'files_hashed': int(files_hashed),
             }
             # Track scanned directories (in-session registry)
             dirs = app.extensions['scidk'].setdefault('directories', {})
@@ -1590,6 +1673,12 @@ def create_app():
                         'root_label': Path(root_id).name if root_id else None,
                         'scan_source': f"provider:{provider_id}",
                         'ingested_rows': int(ingested),
+                        'config_json': {
+                            'interpreters': {
+                                'effective_enabled': sorted(list(app.extensions['scidk'].get('interpreters', {}).get('effective_enabled', []))),
+                                'source': app.extensions['scidk'].get('interpreters', {}).get('source', 'default'),
+                            }
+                        },
                     }
                     scans[scan_id] = scan
                     # Telemetry and directories
@@ -1845,6 +1934,38 @@ def create_app():
             return (0 if 'filename' in r['matched_on'] else 1, r['filename'] or '')
         results.sort(key=score)
         return jsonify(results), 200
+
+    @api.get('/interpreters')
+    def api_interpreters():
+        # List interpreter registry metadata
+        reg = app.extensions['scidk']['registry']
+        # Build mapping ext -> interpreter ids
+        ext_map = {}
+        for ext, interps in reg.by_extension.items():
+            ext_map[ext] = [getattr(i, 'id', 'unknown') for i in interps]
+        # Compose interpreter-centric view
+        items = []
+        for iid, interp in reg.by_id.items():
+            # collect globs/extensions this interpreter is registered for
+            globs = sorted([ext for ext, ids in ext_map.items() if iid in ids])
+            items.append({
+                'id': iid,
+                'name': getattr(interp, 'name', iid),
+                'version': getattr(interp, 'version', '0.0.1'),
+                'globs': globs,
+                'default_enabled': bool(getattr(interp, 'default_enabled', getattr(reg, 'default_enabled', True))),
+                'cost': getattr(interp, 'cost', None),
+            })
+        # Support future effective view toggle
+        view = (request.args.get('view') or '').strip().lower()
+        if view == 'effective':
+            interp_state = app.extensions['scidk'].get('interpreters', {})
+            eff = set(interp_state.get('effective_enabled') or [])
+            src = interp_state.get('source') or 'default'
+            for it in items:
+                it['enabled'] = (it['id'] in eff)
+                it['source'] = src
+        return jsonify(items), 200
 
     @api.get('/providers')
     def api_providers():
