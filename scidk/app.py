@@ -970,6 +970,8 @@ def create_app():
             count = 0
             ingested = 0
             folders = []
+            files_skipped = 0
+            files_hashed = 0
             if provider_id in ('local_fs', 'mounted_fs'):
                 # Local/Mounted: enumerate filesystem and ingest into SQLite index
                 base = Path(path)
@@ -1024,7 +1026,11 @@ def create_app():
                 # Map to rows
                 from .core import path_index_sqlite as pix
                 rows = []
+                files_skipped = 0
+                files_hashed = 0
+                hash_policy = (os.environ.get('SCIDK_HASH_POLICY') or 'auto').strip().lower()
                 def _row_from_local(pth: Path, typ: str) -> tuple:
+                    nonlocal files_skipped, files_hashed
                     full = str(pth.resolve())
                     parent = str(pth.parent.resolve()) if pth != pth.parent else ''
                     name = pth.name or full
@@ -1033,6 +1039,8 @@ def create_app():
                     mtime = None
                     ext = ''
                     mime = None
+                    etag = None
+                    ahash = None
                     if typ == 'file':
                         try:
                             st = pth.stat()
@@ -1042,8 +1050,23 @@ def create_app():
                             size = 0
                             mtime = None
                         ext = pth.suffix.lower()
+                        # Skip logic: reuse previous hash if unchanged (size + mtime)
+                        try:
+                            prev = pix.get_latest_file_meta(full)
+                        except Exception:
+                            prev = None
+                        if prev is not None and prev[0] == size and prev[1] == mtime and (prev[2] or '') != '':
+                            ahash = prev[2]
+                            files_skipped += 1
+                        else:
+                            # Compute content hash with policy
+                            try:
+                                ahash = pix.compute_content_hash(full, hash_policy)
+                            except Exception:
+                                ahash = None
+                            files_hashed += 1
                     remote = f"local:{os.uname().nodename}" if provider_id == 'local_fs' else f"mounted:{root_id}"
-                    return (full, parent, name, depth, typ, size, mtime, ext, mime, None, None, remote, scan_id, None)
+                    return (full, parent, name, depth, typ, size, mtime, ext, mime, etag, ahash, remote, scan_id, None)
                 # Insert folder rows first for structure consistency
                 for d in sorted(items_dirs, key=lambda x: str(x)):
                     rows.append(_row_from_local(d, 'folder'))
@@ -1351,6 +1374,8 @@ def create_app():
                 'source': getattr(fs, 'last_scan_source', 'python') if provider_id in ('local_fs','mounted_fs') else f"provider:{provider_id}",
                 'provider_id': provider_id,
                 'root_id': root_id,
+                'files_skipped': int(files_skipped),
+                'files_hashed': int(files_hashed),
             }
             # Track scanned directories (in-session registry)
             dirs = app.extensions['scidk'].setdefault('directories', {})

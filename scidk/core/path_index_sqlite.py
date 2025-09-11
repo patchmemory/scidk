@@ -2,6 +2,7 @@ import os
 import sqlite3
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
+import hashlib
 
 # Minimal SQLite DAO for path index
 # Schema from task-sqlite-path-index:
@@ -187,6 +188,57 @@ def map_rclone_item_to_row(item: Dict, target_root: str, scan_id: str) -> Tuple:
         scan_id,         # scan_id
         extra,           # extra_json
     )
+
+
+def get_latest_file_meta(path: str) -> Optional[Tuple[Optional[int], Optional[float], Optional[str]]]:
+    """Return (size, modified_time, hash) for the latest indexed row for this path, or None."""
+    conn = connect()
+    init_db(conn)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT size, modified_time, hash FROM files WHERE path=? ORDER BY rowid DESC LIMIT 1;", (path,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        return (row[0], row[1], row[2])
+    finally:
+        conn.close()
+
+
+def compute_content_hash(file_path: str, policy: str = 'auto', chunk_size: int = 1024 * 1024) -> Optional[str]:
+    """Compute content hash with policy: 'auto' → blake3 if available else blake2b; 'blake3', 'blake2b', or 'none'.
+    Returns hex digest string or None if policy is 'none' or file unreadable.
+    """
+    policy = (policy or 'auto').lower()
+    if policy == 'none':
+        return None
+    try:
+        if policy in ('blake3', 'auto'):
+            try:
+                import blake3  # type: ignore
+                h = blake3.blake3()
+                with open(file_path, 'rb') as f:
+                    while True:
+                        chunk = f.read(chunk_size)
+                        if not chunk:
+                            break
+                        h.update(chunk)
+                return h.hexdigest()
+            except Exception:
+                if policy == 'blake3':
+                    return None
+                # fall through to blake2b
+        # blake2b fallback
+        h2 = hashlib.blake2b()
+        with open(file_path, 'rb') as f:
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                h2.update(chunk)
+        return h2.hexdigest()
+    except Exception:
+        return None
 
 
 def batch_insert_files(rows: Iterable[Tuple], batch_size: int = 10000) -> int:
