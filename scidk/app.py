@@ -534,104 +534,12 @@ def create_app():
     # Build rows for commit: files (rows) and standalone folders (folder_rows)
     def build_commit_rows(scan, ds_map):
         """Legacy builder from in-memory datasets."""
-        from .core.path_utils import parse_remote_path, parent_remote_path
-        checksums = scan.get('checksums') or []
-        # Helpers unified on central path utils
-        def _parent_of(p: str) -> str:
-            try:
-                info = parse_remote_path(p)
-                if info.get('is_remote'):
-                    return parent_remote_path(p)
-            except Exception:
-                pass
-            # Fallback to pathlib for local/absolute paths
-            from pathlib import Path as __P
-            try:
-                return str(__P(p).parent)
-            except Exception:
-                return ''
-        def _name_of(p: str) -> str:
-            try:
-                info = parse_remote_path(p)
-                if info.get('is_remote'):
-                    parts = info.get('parts') or []
-                    if not parts:
-                        return info.get('remote_name') or ''
-                    return parts[-1]
-            except Exception:
-                pass
-            from pathlib import Path as __P
-            try:
-                return __P(p).name
-            except Exception:
-                return p
-        def _parent_name_of(p: str) -> str:
-            try:
-                par = _parent_of(p)
-                info = parse_remote_path(par)
-                if info.get('is_remote'):
-                    parts = info.get('parts') or []
-                    if not parts:
-                        return info.get('remote_name') or ''
-                    return parts[-1]
-            except Exception:
-                pass
-            from pathlib import Path as __P
-            try:
-                return __P(par).name
-            except Exception:
-                return par
-        # Precompute folders observed in this scan (parents of files)
-        folder_set = set()
-        for ch in checksums:
-            dtmp = ds_map.get(ch)
-            if not dtmp:
-                continue
-            folder_set.add(_parent_of(dtmp.get('path') or ''))
-        rows = []
-        for ch in checksums:
-            d = ds_map.get(ch)
-            if not d:
-                continue
-            parent = _parent_of(d.get('path') or '')
-            interps = list((d.get('interpretations') or {}).keys())
-            # derive folder fields
-            folder_path = parent
-            folder_name = _name_of(folder_path) if folder_path else ''
-            folder_parent = _parent_of(folder_path) if folder_path else ''
-            folder_parent_name = _parent_name_of(folder_path) if folder_parent else ''
-            rows.append({
-                'checksum': d.get('checksum'),
-                'path': d.get('path'),
-                'filename': d.get('filename'),
-                'extension': d.get('extension'),
-                'size_bytes': int(d.get('size_bytes') or 0),
-                'created': float(d.get('created') or 0),
-                'modified': float(d.get('modified') or 0),
-                'mime_type': d.get('mime_type'),
-                'folder': folder_path,
-                'folder_name': folder_name,
-                'folder_parent': folder_parent,
-                'folder_parent_name': folder_parent_name,
-                'parent_in_scan': bool(folder_parent and (folder_parent in folder_set)),
-                'interps': interps,
-            })
-        # Build folder rows captured during non-recursive scan
-        folder_rows = []
-        for f in (scan.get('folders') or []):
-            folder_rows.append({
-                'path': f.get('path'),
-                'name': f.get('name'),
-                'parent': f.get('parent'),
-                'parent_name': f.get('parent_name'),
-            })
-        # Enhance with complete hierarchy
         try:
-            from .core.folder_hierarchy import build_complete_folder_hierarchy
-            folder_rows = build_complete_folder_hierarchy(rows, folder_rows, scan)
+            from .services.commit_service import CommitService
+            return CommitService().build_rows_legacy_from_datasets(scan, ds_map)
         except Exception:
-            pass
-        return rows, folder_rows
+            # Fallback to empty on unexpected import/runtime error
+            return [], []
 
     # Execute Neo4j commit using simplified, idempotent Cypher
     def commit_to_neo4j(rows, folder_rows, scan, neo4j_params):
@@ -659,75 +567,17 @@ def create_app():
             return result
         result['attempted'] = True
         try:
-            from neo4j import GraphDatabase  # type: ignore
-            driver = None
+            from .services.neo4j_client import Neo4jClient
+            client = Neo4jClient(uri, user, pwd, database, auth_mode).connect()
             try:
-                driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
-                with driver.session(database=database) as sess:
-                    # Try to create composite constraints (Neo4j 5+) — ignore if unsupported
-                    try:
-                        sess.run("CREATE CONSTRAINT file_identity IF NOT EXISTS FOR (f:File) REQUIRE (f.path, f.host) IS UNIQUE").consume()
-                    except Exception:
-                        pass
-                    try:
-                        sess.run("CREATE CONSTRAINT folder_identity IF NOT EXISTS FOR (d:Folder) REQUIRE (d.path, d.host) IS UNIQUE").consume()
-                    except Exception:
-                        pass
-                    cypher = (
-                        "MERGE (s:Scan {id: $scan_id}) "
-                        "SET s.path = $scan_path, s.started = $scan_started, s.ended = $scan_ended, "
-                        "    s.provider_id = $scan_provider, s.host_type = $scan_host_type, s.host_id = $scan_host_id, "
-                        "    s.root_id = $scan_root_id, s.root_label = $scan_root_label, s.scan_source = $scan_source "
-                        "WITH s "
-                        "UNWIND $folders AS folder "
-                        "MERGE (fo:Folder {path: folder.path, host: $node_host}) "
-                        "  SET fo.name = folder.name, fo.provider_id = $scan_provider, fo.host_type = $scan_host_type, fo.host_id = $scan_host_id "
-                        "MERGE (fo)-[:SCANNED_IN]->(s) "
-                        "WITH s "
-                        "UNWIND $folders AS folder "
-                        "WITH s, folder WHERE folder.parent IS NOT NULL AND folder.parent <> '' AND folder.parent <> folder.path "
-                        "MERGE (child:Folder {path: folder.path, host: $node_host}) "
-                        "MERGE (parent:Folder {path: folder.parent, host: $node_host}) "
-                        "MERGE (parent)-[:CONTAINS]->(child) "
-                        "WITH s "
-                        "UNWIND $rows AS r "
-                        "MERGE (f:File {path: r.path, host: $node_host}) "
-                        "  SET f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type, f.provider_id = $scan_provider, f.host_type = $scan_host_type, f.host_id = $scan_host_id "
-                        "MERGE (f)-[:SCANNED_IN]->(s) "
-                        "WITH r, f "
-                        "WHERE r.folder IS NOT NULL AND r.folder <> '' "
-                        "MERGE (fo:Folder {path: r.folder, host: $node_host}) "
-                        "MERGE (fo)-[:CONTAINS]->(f) "
-                        "RETURN $scan_id AS scan_id"
-                    )
-                    res = sess.run(cypher, rows=rows, folders=folder_rows, scan_id=scan.get('id'), scan_path=scan.get('path'), scan_started=scan.get('started'), scan_ended=scan.get('ended'), scan_provider=scan.get('provider_id'), scan_host_type=scan.get('host_type'), scan_host_id=scan.get('host_id'), scan_root_id=scan.get('root_id'), scan_root_label=scan.get('root_label'), scan_source=scan.get('scan_source'), node_host=scan.get('host_id'), node_port=None)
-                    _ = list(res)
-                    result['written_files'] = len(rows)
-                    result['written_folders'] = len(folder_rows)
-                    # Post-commit verification: confirm that Scan exists and at least one SCANNED_IN relationship was created
-                    verify_q = (
-                        "OPTIONAL MATCH (s:Scan {id: $scan_id}) "
-                        "WITH s "
-                        "OPTIONAL MATCH (s)<-[:SCANNED_IN]-(f:File) "
-                        "WITH s, count(DISTINCT f) AS files_cnt "
-                        "OPTIONAL MATCH (s)<-[:SCANNED_IN]-(fo:Folder) "
-                        "RETURN coalesce(s IS NOT NULL, false) AS scan_exists, files_cnt AS files_cnt, count(DISTINCT fo) AS folders_cnt"
-                    )
-                    vrec = sess.run(verify_q, scan_id=scan.get('id')).single()
-                    if vrec:
-                        scan_exists = bool(vrec.get('scan_exists'))
-                        files_cnt = int(vrec.get('files_cnt') or 0)
-                        folders_cnt = int(vrec.get('folders_cnt') or 0)
-                        result['db_scan_exists'] = scan_exists
-                        result['db_files'] = files_cnt
-                        result['db_folders'] = folders_cnt
-                        result['db_verified'] = bool(scan_exists and (files_cnt > 0 or folders_cnt > 0))
+                client.ensure_constraints()
+                wres = client.write_scan(rows, folder_rows, scan)
+                result['written_files'] = wres.get('written_files', 0)
+                result['written_folders'] = wres.get('written_folders', 0)
+                vres = client.verify(scan.get('id'))
+                result.update(vres)
             finally:
-                try:
-                    if driver is not None:
-                        driver.close()
-                except Exception:
-                    pass
+                client.close()
         except Exception as e:
             msg = str(e)
             result['error'] = msg
