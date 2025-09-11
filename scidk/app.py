@@ -906,6 +906,27 @@ def create_app():
         fast_list = bool(data.get('fast_list', False))
         # Prefer fast_list by default for recursive rclone scans if client omitted it
         _client_specified_fast_list = ('fast_list' in data)
+        # Delegate to ScansService (refactor): preserve payload and behavior
+        try:
+            from .services.scans_service import ScansService
+            svc = ScansService(app)
+            result = svc.run_scan({
+                'provider_id': provider_id,
+                'root_id': root_id,
+                'path': path,
+                'recursive': recursive,
+                'fast_list': fast_list,
+            })
+            if isinstance(result, dict) and result.get('status') == 'ok':
+                return jsonify(result), 200
+            # Error path with optional http_status
+            if isinstance(result, dict) and result.get('status') == 'error':
+                code = int(result.get('http_status', 400))
+                payload = {'status': 'error', 'error': result.get('error')}
+                return jsonify(payload), code
+        except Exception:
+            # On service failure, fallback to legacy in-place implementation below
+            pass
         try:
             import time, hashlib, json
             from .core import path_index_sqlite as pix
