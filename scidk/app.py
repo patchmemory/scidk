@@ -434,6 +434,48 @@ def create_app():
     registry.register_rule(Rule(id="rule.xlsx.default", interpreter_id=xlsx_interp.id, pattern="*.xlsx", priority=10, conditions={"ext": ".xlsx"}))
     registry.register_rule(Rule(id="rule.xlsm.default", interpreter_id=xlsx_interp.id, pattern="*.xlsm", priority=10, conditions={"ext": ".xlsm"}))
 
+    # Compute effective interpreter enablement (CLI envs > global settings > defaults)
+    try:
+        from .core.settings import InterpreterSettings
+        settings = InterpreterSettings(db_path=str(Path(os.getcwd()) / 'scidk_settings.db'))
+    except Exception:
+        settings = None
+    # Defaults from interpreter attributes (fallback True)
+    all_ids = list(registry.by_id.keys())
+    default_enabled_ids = set([iid for iid in all_ids if bool(getattr(registry.by_id[iid], 'default_enabled', True))])
+    # CLI overrides via env
+    en_list = [s.strip() for s in (os.environ.get('SCIDK_ENABLE_INTERPRETERS') or '').split(',') if s.strip()]
+    dis_list = [s.strip() for s in (os.environ.get('SCIDK_DISABLE_INTERPRETERS') or '').split(',') if s.strip()]
+    source = 'default'
+    if en_list or dis_list:
+        enabled_set = set(default_enabled_ids)
+        for d in dis_list:
+            enabled_set.discard(d)
+        for e in en_list:
+            enabled_set.add(e)
+        source = 'cli'
+        try:
+            if settings:
+                settings.save_enabled_interpreters(enabled_set)
+        except Exception:
+            pass
+    else:
+        # Load global saved set if any
+        loaded = set()
+        try:
+            if settings:
+                loaded = set(settings.load_enabled_interpreters())
+        except Exception:
+            loaded = set()
+        if loaded:
+            enabled_set = set(loaded)
+            source = 'global'
+        else:
+            enabled_set = set(default_enabled_ids)
+            source = 'default'
+    # Store effective on app
+    _interp_state = {'effective_enabled': enabled_set, 'source': source}
+
     fs = FilesystemManager(graph=graph, registry=registry)
 
     # Initialize filesystem providers (Phase 0)
@@ -457,6 +499,7 @@ def create_app():
         'registry': registry,
         'fs': fs,
         'providers': fs_providers,
+        'interpreters': _interp_state,
         # in-session registries
         'scans': {},  # scan_id -> scan session dict
         'directories': {},  # path -> aggregate info incl. scan_ids
@@ -1273,6 +1316,12 @@ def create_app():
                 'root_label': root_label,
                 'scan_source': f"provider:{provider_id}",
                 'ingested_rows': int(ingested),
+                'config_json': {
+                    'interpreters': {
+                        'effective_enabled': sorted(list(app.extensions['scidk'].get('interpreters', {}).get('effective_enabled', []))),
+                        'source': app.extensions['scidk'].get('interpreters', {}).get('source', 'default'),
+                    }
+                },
             }
             scans = app.extensions['scidk'].setdefault('scans', {})
             scans[scan_id] = scan
@@ -1590,6 +1639,12 @@ def create_app():
                         'root_label': Path(root_id).name if root_id else None,
                         'scan_source': f"provider:{provider_id}",
                         'ingested_rows': int(ingested),
+                        'config_json': {
+                            'interpreters': {
+                                'effective_enabled': sorted(list(app.extensions['scidk'].get('interpreters', {}).get('effective_enabled', []))),
+                                'source': app.extensions['scidk'].get('interpreters', {}).get('source', 'default'),
+                            }
+                        },
                     }
                     scans[scan_id] = scan
                     # Telemetry and directories
@@ -1870,10 +1925,12 @@ def create_app():
         # Support future effective view toggle
         view = (request.args.get('view') or '').strip().lower()
         if view == 'effective':
-            # For now, effective == default (global toggles coming in next task)
+            interp_state = app.extensions['scidk'].get('interpreters', {})
+            eff = set(interp_state.get('effective_enabled') or [])
+            src = interp_state.get('source') or 'default'
             for it in items:
-                it['enabled'] = bool(it.get('default_enabled', True))
-                it['source'] = 'default'
+                it['enabled'] = (it['id'] in eff)
+                it['source'] = src
         return jsonify(items), 200
 
     @api.get('/providers')
