@@ -948,6 +948,76 @@ def create_app():
     # Feature flags for file indexing
     _ff_index = (os.environ.get('SCIDK_FEATURE_FILE_INDEX') or '').strip().lower() in ('1','true','yes','y','on')
 
+    @api.post('/scan/dry-run')
+    def api_scan_dry_run():
+        from fnmatch import fnmatch
+        data = request.get_json(force=True, silent=True) or {}
+        path = data.get('path') or os.getcwd()
+        include = data.get('include') or []
+        exclude = data.get('exclude') or []
+        max_depth = data.get('max_depth')
+        use_ignore = bool(data.get('use_ignore', True))
+        base = Path(path)
+        if not base.exists() or not base.is_dir():
+            return jsonify({'status':'error','error':'invalid path'}), 400
+        # Load .scidkignore patterns (gitignore-like globs, one per line) at root
+        ignore_patterns = []
+        if use_ignore:
+            ign = base / '.scidkignore'
+            try:
+                if ign.exists():
+                    for line in ign.read_text(encoding='utf-8').splitlines():
+                        s = line.strip()
+                        if not s or s.startswith('#'):
+                            continue
+                        ignore_patterns.append(s)
+            except Exception:
+                pass
+        files = []
+        total_bytes = 0
+        base_parts = len(base.resolve().parts)
+        try:
+            for p in base.rglob('*'):
+                try:
+                    if p.is_file():
+                        rel = p.resolve().relative_to(base.resolve()).as_posix()
+                        # skip control file itself
+                        if rel == '.scidkignore':
+                            continue
+                        # depth filter
+                        if isinstance(max_depth, int):
+                            depth = len(p.resolve().parts) - base_parts
+                            if depth > max_depth:
+                                continue
+                        # ignore patterns
+                        ignored = any(fnmatch(rel, pat) for pat in ignore_patterns)
+                        if ignored:
+                            continue
+                        # include/exclude
+                        if include:
+                            if not any(fnmatch(rel, pat) for pat in include):
+                                continue
+                        if exclude and any(fnmatch(rel, pat) for pat in exclude):
+                            continue
+                        files.append(rel)
+                        try:
+                            total_bytes += int(p.stat().st_size)
+                        except Exception:
+                            pass
+                except Exception:
+                    continue
+        except Exception:
+            files = []
+            total_bytes = 0
+        files.sort()
+        return jsonify({
+            'status': 'ok',
+            'root': str(base.resolve()),
+            'total_files': len(files),
+            'total_bytes': int(total_bytes),
+            'files': files
+        })
+
     @api.post('/scan')
     def api_scan():
         data = request.get_json(force=True, silent=True) or {}
