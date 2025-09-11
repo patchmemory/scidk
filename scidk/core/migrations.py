@@ -187,6 +187,44 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 2)
             version = 2
 
+        # v3: relationships and sync_queue tables (annotations enhancements)
+        if version < 3:
+            # create via direct DDL to ensure upgrade path (even if ann.init_db changes)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS relationships (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    from_id TEXT NOT NULL,
+                    to_id TEXT NOT NULL,
+                    type TEXT,
+                    properties_json TEXT,
+                    created REAL
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_rel_from ON relationships(from_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_rel_to ON relationships(to_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_rel_type ON relationships(type);")
+
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS sync_queue (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity_type TEXT,
+                    entity_id TEXT,
+                    action TEXT,
+                    payload TEXT,
+                    created REAL,
+                    processed REAL
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_sync_processed ON sync_queue(processed);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_sync_entity ON sync_queue(entity_type, entity_id);")
+            conn.commit()
+            _set_version(conn, 3)
+            version = 3
+
         return version
     finally:
         if own:
