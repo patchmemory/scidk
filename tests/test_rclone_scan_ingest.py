@@ -62,3 +62,9 @@ def test_rclone_scan_ingest_monkeypatched(monkeypatch, tmp_path):
     fs_data = fs_resp.get_json()
     # Should have a virtual root with folders list possibly empty for this synthetic data
     assert fs_data['scan_id'] == scan_id
+
+    # Verify that base folder is always included in the scan detail
+    scan_detail = client.get(f'/api/scans/{scan_id}').get_json()
+    folders_list = scan_detail.get('folders', [])
+    base_paths = [f['path'] for f in folders_list]
+    assert 'remote:bucket' in base_paths, f"Base folder should be included in scan. Got: {base_paths}"

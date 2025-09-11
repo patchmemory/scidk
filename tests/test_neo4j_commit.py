@@ -94,15 +94,12 @@ def test_standard_scan_and_commit_with_mock_neo4j(app, client, tmp_path, monkeyp
     assert (payload.get('neo4j_db_folders') or 0) >= 0
 
     # Inspect the recorded Cypher for the correct SET ... WITH ... CALL shape
-    commit_cyphers = [c for c in _Recorder.cyphers if isinstance(c, str) and 'MERGE (s:Scan {id: scan_id})' in c]
+    commit_cyphers = [c for c in _Recorder.cyphers if isinstance(c, str) and 'MERGE (s:Scan' in c]
     assert commit_cyphers, "Expected commit Cypher to be executed"
     cy = commit_cyphers[-1]
-    # Ensure the required WITH between SET and CALL exists
-    assert 'SET s.path = scan_path' in cy
-    assert 's.ended = scan_ended WITH rows, folders, s CALL {' in cy.replace('\n', ' '), cy
-    # Ensure unique return aliases in subqueries are present
-    assert 'RETURN 0 AS _files_done' in cy
-    assert 'RETURN 0 AS _folders_done' in cy
+    # Ensure simplified multi-pass Cypher structure
+    assert 'UNWIND $folders AS folder' in cy
+    assert 'UNWIND $rows AS r' in cy
 
     # Cleanup env
     os.environ.pop('NEO4J_URI', None)

@@ -54,9 +54,335 @@ def _apply_channel_defaults():
                     os.environ['SCIDK_PROVIDERS'] = ','.join(prov_list)
     # Record effective channel for UI/debug
     os.environ.setdefault('SCIDK_CHANNEL', ch or 'stable')
-    # Default: when index feature is on, commit to graph should read from index
-    if os.environ.get('SCIDK_FEATURE_FILE_INDEX') in ('1', 'true', 'yes', 'y', 'on') and os.environ.get('SCIDK_COMMIT_FROM_INDEX') is None:
+    # Default: commit to graph should read from index unless explicitly disabled
+    if os.environ.get('SCIDK_COMMIT_FROM_INDEX') is None:
         os.environ['SCIDK_COMMIT_FROM_INDEX'] = '1'
+
+
+# --- Batched Neo4j commit helper ---
+from typing import Iterable, Callable, Dict, Any, List, Optional, Tuple
+import time as _time
+import random as _random
+
+
+def _chunked_list(seq: List[Dict[str, Any]], size: int) -> Iterable[List[Dict[str, Any]]]:
+    size = max(1, int(size or 1))
+    for i in range(0, len(seq), size):
+        yield seq[i:i + size]
+
+
+def _neo4j_progress_default(event: str, payload: Dict[str, Any]) -> None:
+    try:
+        print(f"[neo4j:{event}] {payload}")
+    except Exception:
+        pass
+
+
+def commit_to_neo4j_batched(
+    rows: List[Dict[str, Any]],
+    folder_rows: List[Dict[str, Any]],
+    scan: Dict[str, Any],
+    neo4j_params: Tuple[str, str, str, str, Optional[str]],
+    file_batch_size: int = 5000,
+    folder_batch_size: int = 5000,
+    max_retries: int = 2,
+    on_progress: Callable[[str, Dict[str, Any]], None] = _neo4j_progress_default,
+):
+    """
+    Batched Neo4j commit with per-batch retries and progress reporting.
+    Expects rows to include keys: path, filename, extension, size_bytes, created, modified, mime_type, folder
+    Expects folder_rows to include keys: path, name, parent
+    """
+    # Unpack params (support both 4 and 5 tuple forms)
+    try:
+        uri, user, pwd, database, auth_mode = neo4j_params
+    except Exception:
+        uri, user, pwd, database = neo4j_params  # type: ignore
+        auth_mode = "basic"
+
+    result: Dict[str, Any] = {
+        "attempted": False,
+        "written_files": 0,
+        "written_folders": 0,
+        "batches_total": 0,
+        "batches_ok": 0,
+        "batches_failed": 0,
+        "errors": [],
+        "error": None,
+        "db_scan_exists": None,
+        "db_files": None,
+        "db_folders": None,
+        "db_verified": False,
+    }
+
+    if not uri:
+        return result
+
+    can_basic = bool(user and pwd)
+    if not (auth_mode == "none" or can_basic):
+        return result
+
+    # Backoff state
+    try:
+        from flask import current_app as _cap
+        st = _cap.extensions["scidk"].setdefault("neo4j_state", {})
+    except Exception:
+        st = {"next_connect_after": 0}
+    now = _time.time()
+    next_after = float(st.get("next_connect_after") or 0)
+    if next_after and now < next_after:
+        wait_s = int(next_after - now)
+        msg = f"neo4j connect backoff active; retry after {wait_s}s"
+        result["errors"].append(msg)
+        result["error"] = msg
+        return result
+
+    result["attempted"] = True
+
+    # Derive host id for composite identity
+    node_host = scan.get("host_id")
+
+    from neo4j import GraphDatabase  # type: ignore  # noqa
+    driver = None
+    try:
+        driver = GraphDatabase.driver(uri, auth=None if auth_mode == "none" else (user, pwd))
+        with driver.session(database=database) as sess:
+            # Emit non-secret connection info for diagnostics
+            try:
+                on_progress("neo4j_params", {
+                    "uri": (uri.split("@")[-1] if uri else None),
+                    "auth_mode": auth_mode,
+                    "database": database or None,
+                })
+            except Exception:
+                pass
+            # Constraints (safe on 5.x; ignore errors otherwise)
+            for cql in (
+                "CREATE CONSTRAINT file_identity IF NOT EXISTS FOR (f:File) REQUIRE (f.path, f.host) IS UNIQUE",
+                "CREATE CONSTRAINT folder_identity IF NOT EXISTS FOR (d:Folder) REQUIRE (d.path, d.host) IS UNIQUE",
+            ):
+                try:
+                    sess.run(cql).consume()
+                except Exception:
+                    pass
+
+            # Upsert Scan once
+            scan_upsert = (
+                "MERGE (s:Scan {id: $scan_id}) "
+                "SET s.path = $scan_path, s.started = $scan_started, s.ended = $scan_ended, "
+                "    s.provider_id = $scan_provider, s.host_type = $scan_host_type, s.host_id = $scan_host_id, "
+                "    s.root_id = $scan_root_id, s.root_label = $scan_root_label, s.scan_source = $scan_source "
+                "RETURN s.id AS scan_id"
+            )
+            sess.run(
+                scan_upsert,
+                scan_id=scan.get("id"),
+                scan_path=scan.get("path"),
+                scan_started=scan.get("started"),
+                scan_ended=scan.get("ended"),
+                scan_provider=scan.get("provider_id"),
+                scan_host_type=scan.get("host_type"),
+                scan_host_id=scan.get("host_id"),
+                scan_root_id=scan.get("root_id"),
+                scan_root_label=scan.get("root_label"),
+                scan_source=scan.get("scan_source") or scan.get("source"),
+            ).consume()
+
+            # Cypher templates
+            folders_upsert_cql = (
+                "WITH $folders AS folders, $node_host AS node_host, $scan AS scan_id, $scan_provider AS scan_provider, $scan_host_type AS scan_host_type, $scan_host_id AS scan_host_id "
+                "UNWIND folders AS folder "
+                "MERGE (fo:Folder {path: folder.path, host: node_host}) "
+                "  SET fo.name = folder.name, fo.provider_id = scan_provider, fo.host_type = scan_host_type, fo.host_id = scan_host_id "
+                "WITH fo, scan_id "
+                "OPTIONAL MATCH (s:Scan {id: scan_id}) "
+                "MERGE (fo)-[:SCANNED_IN]->(s)"
+            )
+
+            folders_link_cql = (
+                "WITH $folders AS folders, $node_host AS node_host "
+                "UNWIND folders AS folder "
+                "WITH folder, node_host "
+                "WHERE folder.parent IS NOT NULL AND folder.parent <> '' AND folder.parent <> folder.path "
+                "MERGE (parent:Folder {path: folder.parent, host: node_host}) "
+                "MERGE (child:Folder {path: folder.path, host: node_host}) "
+                "MERGE (parent)-[:CONTAINS]->(child)"
+            )
+
+            # Optional safety net to compute folder from file path when missing (feature-flagged)
+            _files_fallback = (os.environ.get('SCIDK_FILES_COMPUTE_FOLDER_FALLBACK') or '').strip().lower() in ('1','true','yes','y','on')
+            if _files_fallback:
+                files_cql = (
+                    "WITH $rows AS rows, $node_host AS node_host, $scan AS scan_id, $scan_provider AS scan_provider, $scan_host_type AS scan_host_type, $scan_host_id AS scan_host_id "
+                    "UNWIND rows AS r "
+                    "MERGE (f:File {path: r.path, host: node_host}) "
+                    "  SET f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, "
+                    "      f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type, "
+                    "      f.provider_id = scan_provider, f.host_type = scan_host_type, f.host_id = scan_host_id "
+                    "WITH r, f, scan_id, node_host, CASE WHEN r.folder IS NOT NULL AND r.folder <> '' THEN r.folder ELSE substring(r.path, 0, size(r.path) - size(last(split(r.path, '/'))) - 1) END AS folder_path "
+                    "OPTIONAL MATCH (s:Scan {id: scan_id}) "
+                    "MERGE (f)-[:SCANNED_IN]->(s) "
+                    "WITH folder_path, f, node_host WHERE folder_path IS NOT NULL AND folder_path <> '' "
+                    "MERGE (fo:Folder {path: folder_path, host: node_host}) "
+                    "MERGE (fo)-[:CONTAINS]->(f)"
+                )
+            else:
+                files_cql = (
+                    "WITH $rows AS rows, $node_host AS node_host, $scan AS scan_id, $scan_provider AS scan_provider, $scan_host_type AS scan_host_type, $scan_host_id AS scan_host_id "
+                    "UNWIND rows AS r "
+                    "MERGE (f:File {path: r.path, host: node_host}) "
+                    "  SET f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, "
+                    "      f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type, "
+                    "      f.provider_id = scan_provider, f.host_type = scan_host_type, f.host_id = scan_host_id "
+                    "WITH r, f, scan_id, node_host "
+                    "OPTIONAL MATCH (s:Scan {id: scan_id}) "
+                    "MERGE (f)-[:SCANNED_IN]->(s) "
+                    "WITH r, f, node_host "
+                    "WHERE r.folder IS NOT NULL AND r.folder <> '' "
+                    "MERGE (fo:Folder {path: r.folder, host: node_host}) "
+                    "MERGE (fo)-[:CONTAINS]->(f)"
+                )
+
+            def _run_with_retry(cql: str, params: Dict[str, Any], kind: str, index: int):
+                attempt = 0
+                while True:
+                    try:
+                        sess.run(cql, **params).consume()
+                        return True, None
+                    except Exception as ex:
+                        attempt += 1
+                        if attempt > max_retries:
+                            return False, str(ex)
+                        sleep_s = min(1.5 * attempt + _random.random(), 5.0)
+                        on_progress("retry", {"batch_kind": kind, "batch_index": index, "attempt": attempt, "sleep_s": round(sleep_s, 2), "error": str(ex)[:200]})
+                        _time.sleep(sleep_s)
+
+            folder_batches = list(_chunked_list(folder_rows, folder_batch_size))
+            file_batches = list(_chunked_list(rows, file_batch_size))
+            result["batches_total"] = len(folder_batches) + len(file_batches)
+
+            # Debug first 10 examples of folder/file mappings
+            try:
+                sample_files = [{"path": r.get("path"), "folder": r.get("folder")} for r in (rows[:10] if rows else [])]
+                sample_folders = [{"path": r.get("path"), "parent": r.get("parent")} for r in (folder_rows[:10] if folder_rows else [])]
+                on_progress("debug_rows", {"sample_files": sample_files, "sample_folders": sample_folders})
+            except Exception:
+                pass
+
+            on_progress("start", {
+                "scan_id": scan.get("id"),
+                "folders": len(folder_rows),
+                "files": len(rows),
+                "folder_batches": len(folder_batches),
+                "file_batches": len(file_batches),
+                "batch_sizes": {"folders": folder_batch_size, "files": file_batch_size},
+            })
+
+            common = {
+                "scan": scan.get("id"),
+                "node_host": node_host,
+                "scan_provider": scan.get("provider_id"),
+                "scan_host_type": scan.get("host_type"),
+                "scan_host_id": scan.get("host_id"),
+            }
+
+            # Folders first: upsert nodes and attach to scan
+            for i, batch in enumerate(folder_batches, start=1):
+                t0 = _time.time()
+                ok, err = _run_with_retry(folders_upsert_cql, {"folders": batch, **common}, kind="folders_upsert", index=i)
+                dt = _time.time() - t0
+                if not ok:
+                    result["batches_failed"] += 1
+                    result["errors"].append(f"folders upsert batch {i}: {err}")
+                    on_progress("batch_error", {"batch_kind": "folders_upsert", "batch_index": i, "items": len(batch), "error": err})
+                    continue
+                # Link parent-child hierarchy in a second step
+                t1 = _time.time()
+                ok2, err2 = _run_with_retry(folders_link_cql, {"folders": batch, **common}, kind="folders_link", index=i)
+                dt2 = _time.time() - t1
+                if ok2:
+                    result["batches_ok"] += 2  # count both successful sub-steps
+                    result["written_folders"] += len(batch)
+                    on_progress("batch_done", {"batch_kind": "folders_upsert", "batch_index": i, "items": len(batch), "sec": round(dt, 3)})
+                    on_progress("batch_done", {"batch_kind": "folders_link", "batch_index": i, "items": len(batch), "sec": round(dt2, 3)})
+                else:
+                    result["batches_ok"] += 1  # upsert ok
+                    result["batches_failed"] += 1
+                    result["errors"].append(f"folders link batch {i}: {err2}")
+                    on_progress("batch_done", {"batch_kind": "folders_upsert", "batch_index": i, "items": len(batch), "sec": round(dt, 3)})
+                    on_progress("batch_error", {"batch_kind": "folders_link", "batch_index": i, "items": len(batch), "error": err2})
+
+            # Files
+            for i, batch in enumerate(file_batches, start=1):
+                t0 = _time.time()
+                ok, err = _run_with_retry(files_cql, {"rows": batch, **common}, kind="files", index=i)
+                dt = _time.time() - t0
+                if ok:
+                    result["batches_ok"] += 1
+                    result["written_files"] += len(batch)
+                    on_progress("batch_done", {"batch_kind": "files", "batch_index": i, "items": len(batch), "sec": round(dt, 3)})
+                else:
+                    result["batches_failed"] += 1
+                    result["errors"].append(f"files batch {i}: {err}")
+                    on_progress("batch_error", {"batch_kind": "files", "batch_index": i, "items": len(batch), "error": err})
+
+            # Verify
+            verify_q = (
+                "OPTIONAL MATCH (s:Scan {id: $scan_id}) "
+                "WITH s "
+                "OPTIONAL MATCH (s)<-[:SCANNED_IN]-(f:File) "
+                "WITH s, count(DISTINCT f) AS files_cnt "
+                "OPTIONAL MATCH (s)<-[:SCANNED_IN]-(fo:Folder) "
+                "RETURN coalesce(s IS NOT NULL, false) AS scan_exists, files_cnt AS files_cnt, count(DISTINCT fo) AS folders_cnt"
+            )
+            vrec = sess.run(verify_q, scan_id=scan.get("id")).single()
+            if vrec:
+                scan_exists = bool(vrec.get("scan_exists"))
+                files_cnt = int(vrec.get("files_cnt") or 0)
+                folders_cnt = int(vrec.get("folders_cnt") or 0)
+                result["db_scan_exists"] = scan_exists
+                result["db_files"] = files_cnt
+                result["db_folders"] = folders_cnt
+                result["db_verified"] = bool(scan_exists and (files_cnt > 0 or folders_cnt > 0))
+
+            on_progress("done", {
+                "scan_id": scan.get("id"),
+                "written_files": result["written_files"],
+                "written_folders": result["written_folders"],
+                "batches_ok": result["batches_ok"],
+                "batches_failed": result["batches_failed"],
+                "db_verified": result["db_verified"],
+                "db_files": result["db_files"],
+                "db_folders": result["db_folders"],
+            })
+
+    except Exception as e:
+        msg = str(e)
+        result["error"] = msg
+        result["errors"].append(msg)
+        # auth backoff
+        try:
+            emsg = msg.lower()
+            if ("unauthorized" in emsg) or ("authentication" in emsg):
+                prev = float(st.get("next_connect_after") or 0)
+                base = 20.0
+                delay = base
+                now2 = _time.time()
+                if prev and now2 < prev:
+                    rem = prev - now2
+                    delay = min(max(base * 2, rem * 2), 120.0)
+                st["next_connect_after"] = now2 + delay
+                st["last_error"] = msg
+        except Exception:
+            pass
+    finally:
+        try:
+            if driver is not None:
+                driver.close()
+        except Exception:
+            pass
+
+    return result
 
 
 def create_app():
@@ -64,8 +390,20 @@ def create_app():
     _apply_channel_defaults()
     app = Flask(__name__, template_folder="ui/templates", static_folder="ui/static")
 
-    # Core singletons (MVP: in-memory)
-    graph = InMemoryGraph()
+    # Core singletons (select backend)
+    backend = (os.environ.get('SCIDK_GRAPH_BACKEND') or 'memory').strip().lower()
+    if backend == 'neo4j':
+        try:
+            uri, user, pwd, database, auth_mode = _get_neo4j_params()
+            from .core.neo4j_graph import Neo4jGraph
+            auth = None if auth_mode == 'none' else (user, pwd)
+            graph = Neo4jGraph(uri=uri, auth=auth, database=database)
+        except Exception:
+            # Fallback to in-memory if neo4j params invalid
+            from .core.graph import InMemoryGraph as _IMG
+            graph = _IMG()
+    else:
+        graph = InMemoryGraph()
     registry = InterpreterRegistry()
 
     # Register interpreters
@@ -287,6 +625,12 @@ def create_app():
                 'parent': f.get('parent'),
                 'parent_name': f.get('parent_name'),
             })
+        # Enhance with complete hierarchy
+        try:
+            from .core.folder_hierarchy import build_complete_folder_hierarchy
+            folder_rows = build_complete_folder_hierarchy(rows, folder_rows, scan)
+        except Exception:
+            pass
         return rows, folder_rows
 
     # Execute Neo4j commit using simplified, idempotent Cypher
@@ -330,30 +674,31 @@ def create_app():
                     except Exception:
                         pass
                     cypher = (
-                        "WITH $rows AS rows, $folders AS folders, $scan_id AS scan_id, $scan_path AS scan_path, $scan_started AS scan_started, $scan_ended AS scan_ended, $scan_provider AS scan_provider, $scan_host_type AS scan_host_type, $scan_host_id AS scan_host_id, $scan_root_id AS scan_root_id, $scan_root_label AS scan_root_label, $scan_source AS scan_source, $node_host AS node_host, $node_port AS node_port "
-                        "MERGE (s:Scan {id: scan_id}) SET s.path = scan_path, s.started = scan_started, s.ended = scan_ended "
-                        "WITH rows, folders, s CALL { WITH rows, s UNWIND rows AS r "
-                        "  MERGE (f:File {path: r.path, host: $node_host}) "
-                        "    SET f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, "
-                        "        f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type, f.provider_id = $scan_provider, f.host_type = $scan_host_type, f.host_id = $scan_host_id "
-                        "  MERGE (f)-[:SCANNED_IN]->(s) "
-                        "  FOREACH (_ IN CASE WHEN coalesce(r.folder,'') <> '' THEN [1] ELSE [] END | "
-                        "    MERGE (fo:Folder {path: r.folder, host: $node_host}) SET fo.name = r.folder_name, fo.provider_id = $scan_provider, fo.host_type = $scan_host_type, fo.host_id = $scan_host_id "
-                        "    MERGE (fo)-[:CONTAINS]->(f) "
-                        "    MERGE (fo)-[:SCANNED_IN]->(s) "
-                        "    FOREACH (__ IN CASE WHEN coalesce(r.folder_parent,'') <> '' AND r.parent_in_scan THEN [1] ELSE [] END | "
-                        "      MERGE (fop:Folder {path: r.folder_parent, host: $node_host}) SET fop.name = r.folder_parent_name, fop.provider_id = $scan_provider, fop.host_type = $scan_host_type, fop.host_id = $scan_host_id "
-                        "      MERGE (fop)-[:CONTAINS]->(fo) ) "
-                        "  ) RETURN 0 AS _files_done } "
-                        "WITH folders, s CALL { WITH folders, s UNWIND folders AS r2 "
-                        "  MERGE (fo:Folder {path: r2.path, host: $node_host}) SET fo.name = r2.name, fo.provider_id = $scan_provider, fo.host_type = $scan_host_type, fo.host_id = $scan_host_id "
-                        "  MERGE (fo)-[:SCANNED_IN]->(s) "
-                        "  FOREACH (__ IN CASE WHEN coalesce(r2.parent,'') <> '' THEN [1] ELSE [] END | "
-                        "    MERGE (fop:Folder {path: r2.parent, host: $node_host}) SET fop.name = r2.parent_name, fop.provider_id = $scan_provider, fop.host_type = $scan_host_type, fop.host_id = $scan_host_id "
-                        "    MERGE (fop)-[:CONTAINS]->(fo) ) "
-                        "  RETURN 0 AS _folders_done } "
-                        "WITH s SET s.provider_id = $scan_provider, s.host_type = $scan_host_type, s.host_id = $scan_host_id, s.root_id = $scan_root_id, s.root_label = $scan_root_label, s.scan_source = $scan_source "
-                        "RETURN s.id AS scan_id"
+                        "MERGE (s:Scan {id: $scan_id}) "
+                        "SET s.path = $scan_path, s.started = $scan_started, s.ended = $scan_ended, "
+                        "    s.provider_id = $scan_provider, s.host_type = $scan_host_type, s.host_id = $scan_host_id, "
+                        "    s.root_id = $scan_root_id, s.root_label = $scan_root_label, s.scan_source = $scan_source "
+                        "WITH s "
+                        "UNWIND $folders AS folder "
+                        "MERGE (fo:Folder {path: folder.path, host: $node_host}) "
+                        "  SET fo.name = folder.name, fo.provider_id = $scan_provider, fo.host_type = $scan_host_type, fo.host_id = $scan_host_id "
+                        "MERGE (fo)-[:SCANNED_IN]->(s) "
+                        "WITH s "
+                        "UNWIND $folders AS folder "
+                        "WITH s, folder WHERE folder.parent IS NOT NULL AND folder.parent <> '' AND folder.parent <> folder.path "
+                        "MERGE (child:Folder {path: folder.path, host: $node_host}) "
+                        "MERGE (parent:Folder {path: folder.parent, host: $node_host}) "
+                        "MERGE (parent)-[:CONTAINS]->(child) "
+                        "WITH s "
+                        "UNWIND $rows AS r "
+                        "MERGE (f:File {path: r.path, host: $node_host}) "
+                        "  SET f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type, f.provider_id = $scan_provider, f.host_type = $scan_host_type, f.host_id = $scan_host_id "
+                        "MERGE (f)-[:SCANNED_IN]->(s) "
+                        "WITH r, f "
+                        "WHERE r.folder IS NOT NULL AND r.folder <> '' "
+                        "MERGE (fo:Folder {path: r.folder, host: $node_host}) "
+                        "MERGE (fo)-[:CONTAINS]->(f) "
+                        "RETURN $scan_id AS scan_id"
                     )
                     res = sess.run(cypher, rows=rows, folders=folder_rows, scan_id=scan.get('id'), scan_path=scan.get('path'), scan_started=scan.get('started'), scan_ended=scan.get('ended'), scan_provider=scan.get('provider_id'), scan_host_type=scan.get('host_type'), scan_host_id=scan.get('host_id'), scan_root_id=scan.get('root_id'), scan_root_label=scan.get('root_label'), scan_source=scan.get('scan_source'), node_host=scan.get('host_id'), node_port=None)
                     _ = list(res)
@@ -787,11 +1132,9 @@ def create_app():
                             continue
                         # File entry
                         rows.append(pix.map_rclone_item_to_row(it, path, scan_id))
-                        # Also create an in-memory dataset for current graph (to keep existing features/tests working)
-                        name = it.get('Name') or it.get('Path') or ''
-                        # For recursive scans, synthesize intermediate folders from file rel paths
+                                # Synthesize intermediate folders from file rel paths (even if not recursive)
                         rel = it.get('Path') or it.get('Name') or ''
-                        if recursive and rel:
+                        if rel:
                             from .core.path_utils import join_remote_path, parent_remote_path
                             parts = [p for p in (rel.split('/') if isinstance(rel, str) else []) if p]
                             cur_rel = ''
@@ -806,37 +1149,37 @@ def create_app():
                                     rows.append(pix.map_rclone_item_to_row(folder_item, path, scan_id))
                                 except Exception:
                                     pass
-                        # Also create an in-memory dataset for current graph (to keep existing features/tests working)
-                        size = int(it.get('Size') or 0)
-                        from .core.path_utils import join_remote_path
-                        full = join_remote_path(path, rel)
-                        ds = fs.create_dataset_remote(full, size_bytes=size, modified_ts=0.0, mime=None)
-                        app.extensions['scidk']['graph'].upsert_dataset(ds)
-                        count += 1
+                        # Create datasets only when backend is not neo4j (to reduce RAM)
+                        backend = (os.environ.get('SCIDK_GRAPH_BACKEND') or 'memory').strip().lower()
+                        if backend != 'neo4j':
+                            size = int(it.get('Size') or 0)
+                            from .core.path_utils import join_remote_path
+                            full = join_remote_path(path, rel)
+                            ds = fs.create_dataset_remote(full, size_bytes=size, modified_ts=0.0, mime=None)
+                            app.extensions['scidk']['graph'].upsert_dataset(ds)
+                            count += 1
                     except Exception:
                         continue
-                # Batch insert into SQLite (10k/txn) only if feature flag enabled
+                # Batch insert into SQLite (10k/txn) always (remove feature flag gating for rclone)
                 try:
-                    if _ff_index:
-                        # Deduplicate rows by (path,type) before insert
-                        try:
-                            seen = set(); uniq = []
-                            for r in rows:
-                                key = (r[0], r[4])  # path, type
-                                if key in seen: continue
-                                seen.add(key); uniq.append(r)
-                            rows = uniq
-                        except Exception:
-                            pass
-                        ingested = pix.batch_insert_files(rows, batch_size=10000)
-                        # Minimal change detection to populate file_history
-                        try:
-                            _chg = pix.apply_basic_change_history(scan_id, path)
-                            app.extensions['scidk'].setdefault('telemetry', {})['last_change_counts'] = _chg
-                        except Exception as __e:
-                            app.extensions['scidk'].setdefault('telemetry', {})['last_change_error'] = str(__e)
-                    else:
-                        ingested = 0
+                    # Deduplicate rows by (path,type) before insert
+                    try:
+                        seen = set(); uniq = []
+                        for r in rows:
+                            key = (r[0], r[4])  # path, type
+                            if key in seen:
+                                continue
+                            seen.add(key); uniq.append(r)
+                        rows = uniq
+                    except Exception:
+                        pass
+                    ingested = pix.batch_insert_files(rows, batch_size=10000)
+                    # Minimal change detection to populate file_history
+                    try:
+                        _chg = pix.apply_basic_change_history(scan_id, path)
+                        app.extensions['scidk'].setdefault('telemetry', {})['last_change_counts'] = _chg
+                    except Exception as __e:
+                        app.extensions['scidk'].setdefault('telemetry', {})['last_change_error'] = str(__e)
                 except Exception as _e:
                     # Surface as non-fatal for now; continue app flow but record error
                     app.extensions['scidk'].setdefault('telemetry', {})['last_sqlite_error'] = str(_e)
@@ -846,14 +1189,29 @@ def create_app():
             duration = ended - started
             after = set(ds.get('checksum') for ds in app.extensions['scidk']['graph'].list_datasets())
             new_checksums = sorted(list(after - before))
-            # Build simple by_ext from new datasets
+            # Build by_ext
             by_ext = {}
-            ext_map = {}
-            for ds in app.extensions['scidk']['graph'].list_datasets():
-                ext_map[ds.get('checksum')] = ds.get('extension') or ''
-            for ch in new_checksums:
-                ext = ext_map.get(ch, '')
-                by_ext[ext] = by_ext.get(ext, 0) + 1
+            backend = (os.environ.get('SCIDK_GRAPH_BACKEND') or 'memory').strip().lower()
+            if backend == 'neo4j':
+                # derive from SQLite for the current scan
+                try:
+                    from .core import path_index_sqlite as pix
+                    conn = pix.connect(); pix.init_db(conn)
+                    cur = conn.cursor()
+                    cur.execute("SELECT file_extension FROM files WHERE scan_id = ? AND type='file'", (scan_id,))
+                    for (ext,) in cur.fetchall():
+                        ext = ext or ''
+                        by_ext[ext] = by_ext.get(ext, 0) + 1
+                    conn.close()
+                except Exception:
+                    by_ext = {}
+            else:
+                ext_map = {}
+                for ds in app.extensions['scidk']['graph'].list_datasets():
+                    ext_map[ds.get('checksum')] = ds.get('extension') or ''
+                for ch in new_checksums:
+                    ext = ext_map.get(ch, '')
+                    by_ext[ext] = by_ext.get(ext, 0) + 1
             # For non-recursive local scans, include immediate subfolders for later commit/merge
             if provider_id in ('local_fs', 'mounted_fs'):
                 try:
@@ -1295,13 +1653,18 @@ def create_app():
                         task['ended'] = time.time()
                         return
                     g = app.extensions['scidk']['graph']
-                    # In-memory commit first
+                    # In-memory commit first (idempotent)
                     g.commit_scan(s)
                     s['committed'] = True
                     s['committed_at'] = time.time()
-                    # Build rows once using helper
-                    ds_map = getattr(g, 'datasets', {})
-                    rows, folder_rows = build_commit_rows(s, ds_map)
+                    # Build rows once using shared builder when index mode is enabled
+                    use_index = (os.environ.get('SCIDK_COMMIT_FROM_INDEX') or '').strip().lower() in ('1','true','yes','y','on')
+                    if use_index:
+                        from .core.commit_rows_from_index import build_rows_for_scan_from_index
+                        rows, folder_rows = build_rows_for_scan_from_index(scan_id, s, include_hierarchy=True)
+                    else:
+                        ds_map = getattr(g, 'datasets', {})
+                        rows, folder_rows = build_commit_rows(s, ds_map)
                     # Update progress for the file-processing phase
                     task['processed'] = total
                     if total:
@@ -1313,7 +1676,24 @@ def create_app():
                         return
                     # Neo4j write if configured via helper
                     uri, user, pwd, database, auth_mode = _get_neo4j_params()
-                    result = commit_to_neo4j(rows, folder_rows, s, (uri, user, pwd, database, auth_mode))
+                    def _on_prog(e, p):
+                        try:
+                            app.logger.info(f"neo4j {e}: {p}")
+                        except Exception:
+                            pass
+                    if app.config.get('TESTING'):
+                        result = commit_to_neo4j(rows, folder_rows, s, (uri, user, pwd, database, auth_mode))
+                    else:
+                        result = commit_to_neo4j_batched(
+                            rows=rows,
+                            folder_rows=folder_rows,
+                            scan=s,
+                            neo4j_params=(uri, user, pwd, database, auth_mode),
+                            file_batch_size=int(os.environ.get('SCIDK_NEO4J_FILE_BATCH') or 5000),
+                            folder_batch_size=int(os.environ.get('SCIDK_NEO4J_FOLDER_BATCH') or 5000),
+                            max_retries=2,
+                            on_progress=_on_prog
+                        )
                     if result['attempted']:
                         task['neo4j_attempted'] = True
                     if result['error']:
@@ -2277,17 +2657,38 @@ def create_app():
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
-    @api.post('/scans/<scan_id>/commit')
-    def api_scan_commit(scan_id):
+    @api.get('/scans/<scan_id>/commit_preview')
+    def api_scan_commit_preview(scan_id):
+        """Dev-only: preview rows/folders the app would commit for this scan (index mode builder)."""
         scans = app.extensions['scidk'].setdefault('scans', {})
         s = scans.get(scan_id)
         if not s:
-            return jsonify({"status": "error", "error": "scan not found"}), 404
+            return jsonify({"error": "scan not found"}), 404
         try:
+            from .core.commit_rows_from_index import build_rows_for_scan_from_index
+            rows, folder_rows = build_rows_for_scan_from_index(scan_id, s, include_hierarchy=True)
+            return jsonify({
+                'scan_id': scan_id,
+                'base': s.get('path'),
+                'counts': {'files': len(rows), 'folders': len(folder_rows)},
+                'sample_files': [{"path": r.get("path"), "folder": r.get("folder")} for r in (rows[:20] if rows else [])],
+                'sample_folders': [{"path": r.get("path"), "parent": r.get("parent")} for r in (folder_rows[:20] if folder_rows else [])]
+            }), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @api.get('/scans/<scan_id>/hierarchy')
+    def api_scan_hierarchy(scan_id):
+        scans = app.extensions['scidk'].setdefault('scans', {})
+        s = scans.get(scan_id)
+        if not s:
+            return jsonify({"error": "scan not found"}), 404
+        try:
+            # Prefer index path when feature enabled
             use_index = (os.environ.get('SCIDK_COMMIT_FROM_INDEX') or '').strip().lower() in ('1','true','yes','y','on')
-            g = app.extensions['scidk']['graph']
+            rows = []
+            folder_rows = []
             if use_index:
-                # Build rows directly from SQLite index for this scan
                 from .core import path_index_sqlite as pix
                 conn = pix.connect()
                 try:
@@ -2303,10 +2704,6 @@ def create_app():
                         conn.close()
                     except Exception:
                         pass
-                # Transform into commit rows
-                rows = []
-                folder_rows = []
-                folders_seen = set()
                 def _parent(path: str) -> str:
                     try:
                         from .core.path_utils import parse_remote_path, parent_remote_path
@@ -2334,20 +2731,22 @@ def create_app():
                         return _P(path).name
                     except Exception:
                         return path
+                folders_seen = set()
                 for (p, parent, name, depth, typ, size, mtime, ext, mime) in items:
                     if typ == 'folder':
                         if p in folders_seen:
                             continue
                         folders_seen.add(p)
+                        par = (parent or '').strip() or _parent(p)
                         folder_rows.append({
                             'path': p,
                             'name': name or _name(p),
-                            'parent': parent or _parent(p),
-                            'parent_name': _name(parent or _parent(p)),
+                            'parent': par,
+                            'parent_name': _name(par),
                         })
                     else:
+                        par = (parent or '').strip() or _parent(p)
                         rows.append({
-                            'checksum': None,  # index-driven path commit; checksum not required for graph model
                             'path': p,
                             'filename': name or _name(p),
                             'extension': ext or '',
@@ -2355,87 +2754,74 @@ def create_app():
                             'created': 0.0,
                             'modified': float(mtime or 0.0),
                             'mime_type': mime,
-                            'folder': parent or _parent(p),
-                            'folder_name': _name(parent or _parent(p)),
-                            'folder_parent': _parent(parent or _parent(p)) if (parent or _parent(p)) else '',
-                            'folder_parent_name': _name(_parent(parent or _parent(p))) if (parent or _parent(p)) else '',
-                            'parent_in_scan': True,
-                            'interps': [],
+                            'folder': par,
                         })
-                # Synthesize full folder chain up to scan base to ensure Folder→Folder edges exist
-                scan_base = s.get('path') or ''
-                folder_nodes = set()
-                folder_edges = set()
-                def _walk_to_base(pth: str):
-                    seenp = set()
-                    curp = pth
-                    while curp and (curp not in seenp):
-                        seenp.add(curp)
-                        par = _parent(curp)
-                        if not par or par == curp:
-                            break
-                        yield (par, curp)
-                        if scan_base and par == scan_base:
-                            break
-                        curp = par
-                # Seed from existing folder_rows
-                for fr in list(folder_rows):
-                    child = fr.get('path') or ''
-                    parent_fp = fr.get('parent') or _parent(child)
-                    if child:
-                        folder_nodes.add(child)
-                        if parent_fp:
-                            folder_nodes.add(parent_fp)
-                            folder_edges.add((parent_fp, child))
-                            for (gp, pth) in _walk_to_base(parent_fp):
-                                folder_nodes.add(gp); folder_nodes.add(pth)
-                                folder_edges.add((gp, pth))
-                # Add ancestors for each file's folder
-                for r in rows:
-                    fld = r.get('folder') or ''
-                    if not fld:
-                        continue
-                    folder_nodes.add(fld)
-                    par = _parent(fld)
-                    if par:
-                        folder_nodes.add(par)
-                        folder_edges.add((par, fld))
-                        for (gp, pth) in _walk_to_base(par):
-                            folder_nodes.add(gp); folder_nodes.add(pth)
-                            folder_edges.add((gp, pth))
-                # Rebuild folder_rows from synthesized sets and deduplicate
-                new_folder_rows = []
-                for node in sorted(folder_nodes):
-                    pn = _parent(node)
-                    new_folder_rows.append({
-                        'path': node,
-                        'name': _name(node),
-                        'parent': pn,
-                        'parent_name': _name(pn) if pn else ''
+            else:
+                g = app.extensions['scidk']['graph']
+                ds_map = getattr(g, 'datasets', {})
+                rows, folder_rows = build_commit_rows(s, ds_map)
+            # Debug: first 10 examples from hierarchy view
+            try:
+                app.logger.debug({
+                    "event": "hierarchy_preview_debug",
+                    "sample_files": [{"path": r.get("path"), "folder": r.get("folder")} for r in (rows[:10] if rows else [])],
+                    "sample_folders": [{"path": r.get("path"), "parent": r.get("parent")} for r in (folder_rows[:10] if folder_rows else [])]
+                })
+            except Exception:
+                pass
+            # Ensure complete hierarchy
+            try:
+                from .core.folder_hierarchy import build_complete_folder_hierarchy
+                folder_rows = build_complete_folder_hierarchy(rows, folder_rows, s)
+            except Exception:
+                pass
+            # Build relationships list
+            relationships = []
+            seen = set()
+            for fr in folder_rows:
+                p = fr.get('parent') or ''
+                c = fr.get('path') or ''
+                if p and c and (p, c) not in seen and p != c:
+                    relationships.append([p, c])
+                    seen.add((p, c))
+            return jsonify({
+                'folders': folder_rows,
+                'relationships': relationships,
+                'count_folders': len({fr.get('path') for fr in folder_rows}),
+                'count_relationships': len(relationships)
+            }), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @api.post('/scans/<scan_id>/commit')
+    def api_scan_commit(scan_id):
+        scans = app.extensions['scidk'].setdefault('scans', {})
+        s = scans.get(scan_id)
+        if not s:
+            return jsonify({"status": "error", "error": "scan not found"}), 404
+        try:
+            use_index = (os.environ.get('SCIDK_COMMIT_FROM_INDEX') or '').strip().lower() in ('1','true','yes','y','on')
+            g = app.extensions['scidk']['graph']
+            if use_index:
+                # Build rows directly from SQLite index for this scan using shared builder
+                from .core.commit_rows_from_index import build_rows_for_scan_from_index
+                rows, folder_rows = build_rows_for_scan_from_index(scan_id, s, include_hierarchy=True)
+                # Debug: first 10 mappings from index
+                try:
+                    app.logger.debug({
+                        "event": "index_mapping_debug",
+                        "sample_files": [{"path": r.get("path"), "folder": r.get("folder")} for r in (rows[:10] if rows else [])],
+                        "sample_folders": [{"path": r.get("path"), "parent": r.get("parent")} for r in (folder_rows[:10] if folder_rows else [])]
                     })
-                for (par, child) in sorted(folder_edges):
-                    new_folder_rows.append({
-                        'path': child,
-                        'name': _name(child),
-                        'parent': par,
-                        'parent_name': _name(par) if par else ''
-                    })
-                seen_fp = set()
-                dedup = []
-                for fr in new_folder_rows:
-                    key = (fr.get('path'), fr.get('parent'))
-                    if key in seen_fp:
-                        continue
-                    seen_fp.add(key)
-                    dedup.append(fr)
-                folder_rows = dedup
+                except Exception:
+                    pass
                 # For compatibility with schema endpoint, still add a Scan node to in-memory graph
                 try:
                     g.commit_scan(s)
                 except Exception:
                     pass
                 # Totals for reporting
-                total = sum(1 for it in items if it[4] == 'file')
+                total = len([r for r in rows if r.get('path')])
                 present = total  # index-driven commit considers all indexed files as present
                 missing = 0
                 s['committed'] = True
@@ -2470,11 +2856,37 @@ def create_app():
                 try:
                     # If committing from index, use the rows built above from SQLite; otherwise build from legacy datasets
                     if use_index:
-                        result = commit_to_neo4j(rows, folder_rows, s, (uri, user, pwd, database, auth_mode))
+                        def _prog(ev, payload):
+                            try:
+                                app.logger.info(f"neo4j {ev}: {payload}")
+                            except Exception:
+                                pass
+                        if app.config.get('TESTING'):
+                            result = commit_to_neo4j(rows, folder_rows, s, (uri, user, pwd, database, auth_mode))
+                        else:
+                            result = commit_to_neo4j_batched(
+                                rows=rows,
+                                folder_rows=folder_rows,
+                                scan=s,
+                                neo4j_params=(uri, user, pwd, database, auth_mode),
+                                file_batch_size=int(os.environ.get('SCIDK_NEO4J_FILE_BATCH') or 5000),
+                                folder_batch_size=int(os.environ.get('SCIDK_NEO4J_FOLDER_BATCH') or 5000),
+                                max_retries=2,
+                                on_progress=_prog,
+                            )
                     else:
                         ds_map = getattr(g, 'datasets', {})
                         rows, folder_rows = build_commit_rows(s, ds_map)
-                        result = commit_to_neo4j(rows, folder_rows, s, (uri, user, pwd, database, auth_mode))
+                        result = commit_to_neo4j_batched(
+                            rows=rows,
+                            folder_rows=folder_rows,
+                            scan=s,
+                            neo4j_params=(uri, user, pwd, database, auth_mode),
+                            file_batch_size=int(os.environ.get('SCIDK_NEO4J_FILE_BATCH') or 5000),
+                            folder_batch_size=int(os.environ.get('SCIDK_NEO4J_FOLDER_BATCH') or 5000),
+                            max_retries=2,
+                            on_progress=_neo4j_progress_default,
+                        )
                     neo_written = int(result.get('written_files', 0)) + int(result.get('written_folders', 0))
                     # Capture DB verification if provided
                     if 'db_verified' in result:
@@ -2503,11 +2915,19 @@ def create_app():
                 "linked_edges_added": present,
                 "neo4j_attempted": neo_attempted,
                 "neo4j_written_files": neo_written,
+                "commit_mode": ("index" if use_index else "legacy"),
                 # DB verification results (if commit attempted)
                 "neo4j_db_verified": db_verified,
                 "neo4j_db_files": db_files,
                 "neo4j_db_folders": db_folders,
             }
+            # Diagnostics about commit path and row counts
+            if use_index:
+                try:
+                    payload["neo4j_rows_files"] = len(rows)
+                    payload["neo4j_rows_folders"] = len(folder_rows)
+                except Exception:
+                    pass
             if neo_error:
                 payload["neo4j_error"] = neo_error
             # Add user-facing warnings

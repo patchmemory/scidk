@@ -124,11 +124,24 @@ def _depth_of(path: str) -> int:
         return 0
 
 
-from .path_utils import join_remote_path, parent_remote_path
+from .path_utils import join_remote_path, parent_remote_path, parse_remote_path
 
 def map_rclone_item_to_row(item: Dict, target_root: str, scan_id: str) -> Tuple:
     # rclone lsjson fields: Name, Path, Size, MimeType, ModTime, IsDir
     rel = str(item.get('Path') or item.get('Name') or '')
+    # Normalize rel to be relative to target_root to avoid base/base duplication
+    try:
+        info_base = parse_remote_path(target_root)
+        parts = info_base.get('parts') or []
+        base_suffix = '/'.join(parts) if parts else ''
+        if base_suffix:
+            if rel == base_suffix:
+                rel = ''
+            elif isinstance(rel, str) and rel.startswith(base_suffix + '/'):
+                rel = rel[len(base_suffix) + 1:]
+    except Exception:
+        # Best-effort; ignore on errors
+        pass
     leaf = item.get('Name') or (rel.rsplit('/', 1)[-1] if rel else '')
     is_dir = bool(item.get('IsDir'))
     size = int(item.get('Size') or 0)

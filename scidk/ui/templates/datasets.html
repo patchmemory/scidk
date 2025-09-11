@@ -790,7 +790,7 @@
           try {
             if (action === 'commit'){
               // Start background commit task to show progress in the Tasks panel
-              const r = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ type: 'commit', scan_id: id }) });
+              const r = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ type: 'commit', scan_id: id }) })
               if (r.status === 202){
                 alert('Commit started in background. Watch progress above.');
                 startPolling(); fetchTasks();
