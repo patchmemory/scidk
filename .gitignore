@@ -25,3 +25,13 @@ data/*
 
 # Keep placeholder so data/ stays tracked while contents are ignored
 !data/.gitkeep
+
+# SQLite databases (local settings/state)
+/scidk_settings.db
+/scidk_settings.db-shm
+/scidk_settings.db-wal
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
