@@ -1,5 +1,54 @@
 from __future__ import annotations
 from typing import Any, Dict, Optional, Tuple, List
+import os
+
+
+def get_neo4j_params(app: Optional[Any] = None) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str], str]:
+    """Read Neo4j connection parameters from app extensions or environment.
+    Returns (uri, user, password, database, auth_mode) where auth_mode is 'basic' or 'none'.
+    """
+    cfg = {}
+    try:
+        if app is not None:
+            cfg = getattr(app, 'extensions', {}).get('scidk', {}).get('neo4j_config', {}) or {}
+    except Exception:
+        cfg = {}
+    uri = cfg.get('uri') or os.environ.get('NEO4J_URI') or os.environ.get('BOLT_URI')
+    user = cfg.get('user') or os.environ.get('NEO4J_USER') or os.environ.get('NEO4J_USERNAME')
+    pwd = cfg.get('password') or os.environ.get('NEO4J_PASSWORD')
+    database = cfg.get('database') or os.environ.get('SCIDK_NEO4J_DATABASE') or None
+    # Parse NEO4J_AUTH env var if provided (formats: "user/pass" or "none")
+    neo4j_auth = (os.environ.get('NEO4J_AUTH') or '').strip()
+    auth_mode = 'basic'
+    if neo4j_auth:
+        if neo4j_auth.lower() == 'none':
+            user = user or None
+            pwd = pwd or None
+            auth_mode = 'none'
+        else:
+            try:
+                parts = neo4j_auth.split('/')
+                if len(parts) >= 2 and not (user and pwd):
+                    user = user or parts[0]
+                    pwd = pwd or '/'.join(parts[1:])
+            except Exception:
+                pass
+    # If user/password still missing, try to parse from URI (bolt://user:pass@host:port)
+    try:
+        if uri and (not user or not pwd):
+            from urllib.parse import urlparse, unquote  # type: ignore
+            parsed = urlparse(uri)
+            if parsed.username and parsed.password:
+                user = user or unquote(parsed.username)
+                pwd = pwd or unquote(parsed.password)
+    except Exception:
+        pass
+    # Determine auth mode final: none only when explicitly set via NEO4J_AUTH=none
+    if (os.environ.get('NEO4J_AUTH') or '').strip().lower() == 'none':
+        auth_mode = 'none'
+    else:
+        auth_mode = 'basic'
+    return uri, user, pwd, database, auth_mode
 
 
 class Neo4jClient:

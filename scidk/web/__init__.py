@@ -53,7 +53,11 @@ def _apply_channel_defaults():
 
 def create_app():
     # Apply channel-based defaults before reading env-driven config
-    _apply_channel_defaults()
+    try:
+        from ..services.config import apply_channel_defaults
+        apply_channel_defaults()
+    except Exception:
+        _apply_channel_defaults()
     app = Flask(__name__, template_folder="ui/templates", static_folder="ui/static")
 
     # Core singletons (select backend)
