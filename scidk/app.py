@@ -749,6 +749,11 @@ def create_app():
     @api.post('/scan')
     def api_scan():
         data = request.get_json(force=True, silent=True) or {}
+        try:
+            from .services.metrics import record_event_time
+            record_event_time(app, 'scan_started_times')
+        except Exception:
+            pass
         provider_id = (data.get('provider_id') or 'local_fs').strip() or 'local_fs'
         root_id = (data.get('root_id') or '/').strip() or '/'
         path = data.get('path') or (root_id if provider_id != 'local_fs' else os.getcwd())
@@ -1748,6 +1753,7 @@ def create_app():
         prov_id = (request.args.get('provider_id') or 'local_fs').strip() or 'local_fs'
         root_id = (request.args.get('root_id') or '/').strip() or '/'
         path_q = (request.args.get('path') or '').strip()
+        _t0 = _time.time()
         try:
             provs = app.extensions['scidk']['providers']
             prov = provs.get(prov_id)
@@ -1773,8 +1779,18 @@ def create_app():
             # Augment with provider badge and convenience fields
             for e in listing.get('entries', []):
                 e['provider_id'] = prov_id
+            try:
+                from .services.metrics import record_latency
+                record_latency(app, 'browse', _time.time() - _t0)
+            except Exception:
+                pass
             return jsonify(listing), 200
         except Exception as e:
+            try:
+                from .services.metrics import record_latency
+                record_latency(app, 'browse', _time.time() - _t0)
+            except Exception:
+                pass
             return jsonify({'error': str(e), 'code': 'browse_exception'}), 500
 
     @api.get('/directories')
@@ -2749,6 +2765,12 @@ def create_app():
                     "Verify: URI, credentials or set NEO4J_AUTH=none for no-auth, and database name. "
                     "Also ensure the scan has files present in this session's graph."
                 )
+            try:
+                from .services.metrics import inc_counter
+                # Consider files written as "rows" proxy for MVP
+                inc_counter(app, 'rows_ingested_total', int(payload.get('neo4j_written_files') or 0))
+            except Exception:
+                pass
             return jsonify(payload), 200
         except Exception as e:
             return jsonify({"status": "error", "error": "commit failed", "error_detail": str(e)}), 500
@@ -3123,6 +3145,15 @@ def create_app():
             info['sqlite']['error'] = str(e)
         # Always return 200 so UIs can render details; clients can decide on status
         return jsonify(info), 200
+
+    @api.get('/metrics')
+    def api_metrics():
+        try:
+            from .services.metrics import collect_metrics
+            m = collect_metrics(app)
+            return jsonify(m), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
 
     # Settings APIs for Neo4j configuration
     @api.get('/settings/neo4j')
