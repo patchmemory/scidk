@@ -435,9 +435,10 @@ def create_app():
     registry.register_rule(Rule(id="rule.xlsm.default", interpreter_id=xlsx_interp.id, pattern="*.xlsm", priority=10, conditions={"ext": ".xlsm"}))
 
     # Compute effective interpreter enablement (CLI envs > global settings > defaults)
+    testing_env = bool(os.environ.get('PYTEST_CURRENT_TEST')) or bool(os.environ.get('SCIDK_DISABLE_SETTINGS'))
     try:
         from .core.settings import InterpreterSettings
-        settings = InterpreterSettings(db_path=str(Path(os.getcwd()) / 'scidk_settings.db'))
+        settings = None if testing_env else InterpreterSettings(db_path=str(Path(os.getcwd()) / 'scidk_settings.db'))
     except Exception:
         settings = None
     # Defaults from interpreter attributes (fallback True)
