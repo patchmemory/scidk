@@ -35,6 +35,50 @@ class ScansService:
         fast_list = bool(data.get('fast_list', False))
         client_specified_fast_list = ('fast_list' in data)
 
+        # Optional selection configuration (rules + ignore policy)
+        selection = data.get('selection') or {}
+        rules = selection.get('rules') or []
+        use_ignore = bool(selection.get('use_ignore', True))
+        allow_override_ignores = bool(selection.get('allow_override_ignores', True))
+
+        # Compile a simple selector (MVP): decide(path)->(include,bool) + prune_dir(dir)->bool
+        from fnmatch import fnmatch
+        def _normalize_rules(rules_list):
+            out = []
+            for i, r in enumerate(rules_list or []):
+                act = (r.get('action') or '').lower()
+                p = (r.get('path') or '').rstrip('/')
+                if not act or not p:
+                    continue
+                rec = bool(r.get('recursive', False))
+                nt = r.get('node_type')
+                depth = p.count('/')
+                out.append({'action': act, 'path': p, 'recursive': rec, 'node_type': nt, 'depth': depth, 'order_index': i})
+            out.sort(key=lambda x: (x['depth'], x['order_index']), reverse=True)
+            return out
+        _rules = _normalize_rules(rules)
+        def _decide(path_str: str, ignored: bool) -> tuple[bool, str]:
+            if ignored and not allow_override_ignores:
+                return False, 'ignored_by_scidkignore'
+            for r in _rules:
+                rp = r['path']
+                if r['recursive']:
+                    if path_str == rp or path_str.startswith(rp + '/'):
+                        return (r['action'] == 'include'), (r['action'] + '_by_rule')
+                else:
+                    if path_str == rp:
+                        return (r['action'] == 'include'), (r['action'] + '_by_rule')
+            if ignored:
+                return False, 'ignored_by_scidkignore'
+            return True, 'inherited'
+        def _prune_dir(dir_path: str) -> bool:
+            for r in _rules:
+                if r['action'] == 'exclude' and r['recursive']:
+                    rp = r['path']
+                    if dir_path == rp or dir_path.startswith(rp + '/'):
+                        return True
+            return False
+
         # Snapshot before
         before = set(ds.get('checksum') for ds in app.extensions['scidk']['graph'].list_datasets())
         started = time.time()
@@ -61,6 +105,18 @@ class ScansService:
                         fs.last_scan_source = 'python'
             except Exception:
                 fs.last_scan_source = 'python'
+            # Optional ignore patterns from .scidkignore at base
+            ignore_patterns = []
+            if use_ignore:
+                try:
+                    ign = base / '.scidkignore'
+                    if ign.exists():
+                        for line in ign.read_text(encoding='utf-8').splitlines():
+                            s = line.strip()
+                            if s and not s.startswith('#'):
+                                ignore_patterns.append(s)
+                except Exception:
+                    ignore_patterns = []
             try:
                 if recursive:
                     for p in base.rglob('*'):
@@ -68,7 +124,16 @@ class ScansService:
                             if p.is_dir():
                                 items_dirs.add(p)
                             else:
-                                items_files.append(p)
+                                # Filter file by selection rules
+                                try:
+                                    rel = p.resolve().relative_to(base.resolve()).as_posix()
+                                except Exception:
+                                    rel = str(p)
+                                ignored = any(fnmatch(rel, pat) for pat in ignore_patterns)
+                                ok, _ = _decide(rel, ignored)
+                                if ok:
+                                    items_files.append(p)
+                                # ensure parent chain exists in dirs set
                                 parent = p.parent
                                 while parent and parent != parent.parent and str(parent).startswith(str(base)):
                                     items_dirs.add(parent)
@@ -84,7 +149,11 @@ class ScansService:
                             if p.is_dir():
                                 items_dirs.add(p)
                             else:
-                                items_files.append(p)
+                                rel = p.name
+                                ignored = any(fnmatch(rel, pat) for pat in ignore_patterns)
+                                ok, _ = _decide(rel, ignored)
+                                if ok:
+                                    items_files.append(p)
                         except Exception:
                             continue
                     items_dirs.add(base)
@@ -224,8 +293,12 @@ class ScansService:
                             _add_folder(full, leaf, parent)
                         rows.append(pix.map_rclone_item_to_row(it, path, scan_id))
                         continue
-                    # File row
-                    rows.append(pix.map_rclone_item_to_row(it, path, scan_id))
+                    # File row with selection filter (no .scidkignore for remotes here)
+                    rel = it.get('Path') or it.get('Name') or ''
+                    full_remote = join_remote_path(path, rel) if rel else join_remote_path(path, it.get('Name') or '')
+                    ok, _ = _decide(full_remote, ignored=False)
+                    if ok:
+                        rows.append(pix.map_rclone_item_to_row(it, path, scan_id))
                     # Synthesize folder chain for file rel paths
                     rel = it.get('Path') or it.get('Name') or ''
                     if rel:

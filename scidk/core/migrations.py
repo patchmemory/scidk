@@ -225,6 +225,29 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 3)
             version = 3
 
+        # v4: per-scan selection rules (normalized)
+        if version < 4:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS scan_selection_rules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scan_id TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    recursive INTEGER NOT NULL,
+                    node_type TEXT,
+                    order_index INTEGER NOT NULL DEFAULT 0,
+                    created REAL NOT NULL DEFAULT (strftime('%s','now')),
+                    created_by TEXT
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_ssr_scan ON scan_selection_rules(scan_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_ssr_scan_order ON scan_selection_rules(scan_id, order_index);")
+            conn.commit()
+            _set_version(conn, 4)
+            version = 4
+
         return version
     finally:
         if own:

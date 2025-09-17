@@ -1032,8 +1032,53 @@ def create_app():
                 'path': path,
                 'recursive': recursive,
                 'fast_list': fast_list,
+                'selection': data.get('selection') or {},
             })
             if isinstance(result, dict) and result.get('status') == 'ok':
+                # Persist selection, if provided
+                try:
+                    sel = data.get('selection') or {}
+                    if sel and result.get('scan_id'):
+                        from .core import path_index_sqlite as pix
+                        from .core import migrations as _migs
+                        import json as _json
+                        conn = pix.connect()
+                        try:
+                            _migs.migrate(conn)
+                            cur = conn.cursor()
+                            # Update scans.extra_json snapshot
+                            try:
+                                cur.execute("SELECT extra_json FROM scans WHERE id = ?", (result['scan_id'],))
+                                row = cur.fetchone()
+                                extra_obj = {}
+                                if row and row[0]:
+                                    try: extra_obj = _json.loads(row[0])
+                                    except Exception: extra_obj = {}
+                                extra_obj['selection'] = sel
+                                cur.execute("UPDATE scans SET extra_json = ? WHERE id = ?", (_json.dumps(extra_obj), result['scan_id']))
+                            except Exception:
+                                pass
+                            # Replace normalized rules rows
+                            try:
+                                cur.execute("DELETE FROM scan_selection_rules WHERE scan_id = ?", (result['scan_id'],))
+                            except Exception:
+                                pass
+                            rules = sel.get('rules') or []
+                            for i, r in enumerate(rules):
+                                act = (r.get('action') or '').lower()
+                                pth = (r.get('path') or '').strip()
+                                rec = 1 if r.get('recursive') else 0
+                                ntyp = r.get('node_type')
+                                cur.execute(
+                                    "INSERT INTO scan_selection_rules(scan_id, action, path, recursive, node_type, order_index) VALUES(?,?,?,?,?,?)",
+                                    (result['scan_id'], act, pth, rec, ntyp, i)
+                                )
+                            conn.commit()
+                        finally:
+                            try: conn.close()
+                            except Exception: pass
+                except Exception:
+                    pass
                 return jsonify(result), 200
             # Error path with optional http_status
             if isinstance(result, dict) and result.get('status') == 'error':
@@ -2926,6 +2971,165 @@ def create_app():
             except Exception:
                 return jsonify({"error": "not found"}), 404
         return jsonify(s), 200
+
+    @api.get('/scans/<scan_id>/config')
+    def api_scan_config_get(scan_id):
+        """Return stored selection config for a scan.
+        Prefers scans.extra_json.selection; falls back to scan_selection_rules reconstruction."""
+        try:
+            from .core import path_index_sqlite as pix
+            from .core import migrations as _migs
+            import json as _json
+            conn = pix.connect()
+            try:
+                _migs.migrate(conn)
+                cur = conn.cursor()
+                cur.execute("SELECT extra_json FROM scans WHERE id = ?", (scan_id,))
+                row = cur.fetchone()
+                if row and row[0]:
+                    try:
+                        extra = _json.loads(row[0])
+                        sel = (extra or {}).get('selection')
+                        if sel:
+                            return jsonify(sel), 200
+                    except Exception:
+                        pass
+                cur.execute("SELECT action, path, recursive, node_type, order_index FROM scan_selection_rules WHERE scan_id = ? ORDER BY order_index ASC", (scan_id,))
+                rules = []
+                for act, pth, rec, nt, oi in cur.fetchall() or []:
+                    rules.append({'action': act, 'path': pth, 'recursive': bool(rec), 'node_type': nt})
+                return jsonify({'rules': rules, 'use_ignore': True, 'allow_override_ignores': True}), 200
+            finally:
+                try: conn.close()
+                except Exception: pass
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @api.post('/scans/<scan_id>/config')
+    def api_scan_config_set(scan_id):
+        data = request.get_json(force=True, silent=True) or {}
+        try:
+            from .core import path_index_sqlite as pix
+            from .core import migrations as _migs
+            import json as _json
+            conn = pix.connect()
+            try:
+                _migs.migrate(conn)
+                cur = conn.cursor()
+                cur.execute("SELECT extra_json FROM scans WHERE id = ?", (scan_id,))
+                row = cur.fetchone()
+                extra_obj = {}
+                if row and row[0]:
+                    try: extra_obj = _json.loads(row[0])
+                    except Exception: extra_obj = {}
+                extra_obj['selection'] = data
+                cur.execute("UPDATE scans SET extra_json = ? WHERE id = ?", (_json.dumps(extra_obj), scan_id))
+                try:
+                    cur.execute("DELETE FROM scan_selection_rules WHERE scan_id = ?", (scan_id,))
+                except Exception:
+                    pass
+                rules = data.get('rules') or []
+                for i, r in enumerate(rules):
+                    act = (r.get('action') or '').lower()
+                    pth = (r.get('path') or '').strip()
+                    rec = 1 if r.get('recursive') else 0
+                    ntyp = r.get('node_type')
+                    cur.execute(
+                        "INSERT INTO scan_selection_rules(scan_id, action, path, recursive, node_type, order_index) VALUES(?,?,?,?,?,?)",
+                        (scan_id, act, pth, rec, ntyp, i)
+                    )
+                conn.commit()
+                return jsonify({'ok': True}), 200
+            finally:
+                try: conn.close()
+                except Exception: pass
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @api.post('/scans/<scan_id>/rescan')
+    def api_scan_rescan(scan_id):
+        override = request.get_json(force=True, silent=True) or {}
+        selection_override = override.get('selection_override')
+        # Fetch original scan
+        resp = api_scan_detail(scan_id)
+        try:
+            code = resp[1]
+        except Exception:
+            code = getattr(resp, 'status_code', 200)
+        if code != 200:
+            return resp
+        try:
+            original = resp.get_json()
+        except Exception:
+            original = resp[0].json
+        if not original:
+            return jsonify({'error': 'scan not found'}), 404
+        # Load stored selection unless overridden
+        sel = None
+        if not selection_override:
+            cfg = api_scan_config_get(scan_id)
+            try:
+                if getattr(cfg, 'status_code', 200) == 200:
+                    sel = cfg.get_json()
+            except Exception:
+                try:
+                    sel = cfg[0].json
+                except Exception:
+                    sel = None
+        else:
+            sel = selection_override
+        # Run a new scan with same params
+        try:
+            from .services.scans_service import ScansService
+            svc = ScansService(app)
+            result = svc.run_scan({
+                'provider_id': original.get('provider_id') or 'local_fs',
+                'root_id': original.get('root_id') or '/',
+                'path': original.get('path'),
+                'recursive': bool(original.get('recursive', True)),
+                'fast_list': True if (original.get('provider_id')=='rclone' and original.get('recursive')) else False,
+                'selection': sel or {},
+            })
+            if isinstance(result, dict) and result.get('status') == 'ok':
+                # Persist selection snapshot/rules and link to original
+                try:
+                    if sel and result.get('scan_id'):
+                        from .core import path_index_sqlite as pix
+                        from .core import migrations as _migs
+                        import json as _json
+                        conn = pix.connect()
+                        try:
+                            _migs.migrate(conn)
+                            cur = conn.cursor()
+                            cur.execute("SELECT extra_json FROM scans WHERE id = ?", (result['scan_id'],))
+                            row = cur.fetchone()
+                            extra_obj = {}
+                            if row and row[0]:
+                                try: extra_obj = _json.loads(row[0])
+                                except Exception: extra_obj = {}
+                            extra_obj['selection'] = sel
+                            extra_obj['rescan_of'] = scan_id
+                            cur.execute("UPDATE scans SET extra_json = ? WHERE id = ?", (_json.dumps(extra_obj), result['scan_id']))
+                            try:
+                                cur.execute("DELETE FROM scan_selection_rules WHERE scan_id = ?", (result['scan_id'],))
+                            except Exception:
+                                pass
+                            rules = sel.get('rules') or []
+                            for i, r in enumerate(rules):
+                                act = (r.get('action') or '').lower(); pth = (r.get('path') or '').strip(); rec = 1 if r.get('recursive') else 0; ntyp = r.get('node_type')
+                                cur.execute("INSERT INTO scan_selection_rules(scan_id, action, path, recursive, node_type, order_index) VALUES(?,?,?,?,?,?)", (result['scan_id'], act, pth, rec, ntyp, i))
+                            conn.commit()
+                        finally:
+                            try: conn.close()
+                            except Exception: pass
+                except Exception:
+                    pass
+                return jsonify(result), 200
+            if isinstance(result, dict) and result.get('status') == 'error':
+                code = int(result.get('http_status', 400)); return jsonify(result), code
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'rescan failed'}), 500
 
     @api.post('/interpret/scan/<scan_id>')
     def api_interpret_scan(scan_id):

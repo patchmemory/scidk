@@ -126,6 +126,7 @@
       <button id="snap-next" class="btn btn-sm btn-outline-secondary" disabled>Next</button>
       <button id="snap-use-live" class="btn btn-sm btn-outline-secondary" title="Copy Live path into Snapshot">Use Live path</button>
       <button id="snap-commit" class="btn btn-sm btn-outline-success" title="Commit selected scan to Graph">Commit selected scan</button>
+      <button id="snap-rescan" class="btn btn-sm btn-outline-warning" title="Run the scan again using saved selection">Rescan</button>
       <button id="snap-reinterpret" class="btn btn-sm btn-outline-secondary" title="Populate interpretations for selected scan">Re-interpret scan</button>
     </div>
   </div>
@@ -523,6 +524,7 @@
     const snapUseLive = document.getElementById('snap-use-live');
     const snapCommit = document.getElementById('snap-commit');
     const snapReint = document.getElementById('snap-reinterpret');
+    const snapRescan = document.getElementById('snap-rescan');
     const snapStatus = document.getElementById('snap-status');
     const snapSearchQ = document.getElementById('snap-search-q');
     const snapSearchExt = document.getElementById('snap-search-ext');
@@ -663,6 +665,18 @@
       catch(e){ snapStatus.textContent = 'Commit failed: ' + e; }
       finally { snapCommit.disabled = false; snapCommit.textContent = prev; }
     }); }
+    if (snapRescan){ snapRescan.addEventListener('click', async () => {
+      if (!snapScanSel || !snapScanSel.value){ snapStatus.textContent = 'Select a scan first.'; return; }
+      const id = snapScanSel.value; snapRescan.disabled = true; const prev = snapRescan.textContent; snapRescan.textContent = 'Rescanning…'; snapStatus.textContent = '';
+      try{
+        const r = await fetch(`/api/scans/${encodeURIComponent(id)}/rescan`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+        const j = await r.json();
+        if (!r.ok){ snapStatus.textContent = 'Rescan failed: ' + (j.error || r.status); }
+        else { snapStatus.textContent = `Rescan started: ${j.scan_id}`; loadScansForSnapshot(); }
+      } catch(e){ snapStatus.textContent = 'Rescan failed: ' + e; }
+      finally { snapRescan.disabled = false; snapRescan.textContent = prev; }
+    }); }
+
     if (snapReint){ snapReint.addEventListener('click', async () => {
       if (!snapScanSel || !snapScanSel.value){ snapStatus.textContent = 'Select a scan first.'; return; }
       const id = snapScanSel.value; snapReint.disabled = true; const prev = snapReint.textContent; snapReint.textContent = 'Re-interpreting…'; snapStatus.textContent = '';
@@ -857,6 +871,7 @@
         <div style="display:flex; gap:.5rem">
           <a class="btn btn-sm btn-outline-primary" href="/datasets?scan_id=${s.id}">Open</a>
           <button class="btn btn-sm btn-outline-success" data-scan="${s.id}" data-action="commit">Commit to Graph</button>
+          <button class="btn btn-sm btn-outline-warning" data-scan="${s.id}" data-action="rescan">Rescan</button>
           <button class="btn btn-sm btn-outline-danger" data-scan="${s.id}" data-action="delete">Delete</button>
         </div>
       </div>`;
@@ -883,6 +898,11 @@
             } else if (action === 'delete'){
               const r = await fetch('/api/scans/' + encodeURIComponent(id), { method: 'DELETE' });
               if (!r.ok){ const j = await r.json(); alert('Delete failed: ' + (j.error || r.status)); }
+            } else if (action === 'rescan'){
+              const r = await fetch('/api/scans/' + encodeURIComponent(id) + '/rescan', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({}) });
+              const j = await r.json();
+              if (!r.ok){ alert('Rescan failed: ' + (j.error || r.status)); }
+              else { alert('Rescan started: ' + (j.scan_id || '(ok)')); }
             }
           } catch(err){ alert('Action failed: ' + err); }
           renderScansPanel();
