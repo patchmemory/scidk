@@ -20,8 +20,8 @@ class ScansService:
         """
         # Import inside to avoid heavy imports at module import time
         from flask import jsonify  # type: ignore
-        from . import path_index_sqlite as pix  # type: ignore
-        from .path_utils import parse_remote_path, join_remote_path, parent_remote_path  # type: ignore
+        from ..core import path_index_sqlite as pix  # type: ignore
+        from ..core.path_utils import parse_remote_path, join_remote_path, parent_remote_path  # type: ignore
         import time, hashlib
 
         app = self.app
