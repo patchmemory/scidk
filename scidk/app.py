@@ -2971,6 +2971,7 @@ def create_app():
                         'committed': bool((extra_obj or {}).get('committed', False)),
                         'committed_at': (extra_obj or {}).get('committed_at'),
                         'status': status,
+                        'rescan_of': (extra_obj or {}).get('rescan_of'),
                     })
                 # Merge in-memory committed flags to reflect immediate commits
                 try:
@@ -3053,6 +3054,7 @@ def create_app():
                             'host_id': (extra_obj or {}).get('host_id'),
                             'root_id': (extra_obj or {}).get('root_id'),
                             'root_label': (extra_obj or {}).get('root_label'),
+                            'rescan_of': (extra_obj or {}).get('rescan_of'),
                         }
                         # Cache minimal record in-memory to help downstream endpoints
                         app.extensions['scidk'].setdefault('scans', {})[scan_id] = s

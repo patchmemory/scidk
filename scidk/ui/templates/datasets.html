@@ -38,6 +38,28 @@
       <button id="prov-go" class="btn btn-sm btn-outline-primary">Go</button>
     </div>
   </div>
+  <div class="row g-2" style="margin-bottom:.5rem">
+    <div class="col small">
+      <form id="prov-scan-form" class="row g-2" style="align-items: end;">
+        <div class="col-auto small">Scan selected folder (recursive):</div>
+        <div class="col-auto form-check">
+          <input id="prov-scan-recursive" class="form-check-input" type="checkbox" checked />
+          <label class="form-check-label small" for="prov-scan-recursive">Recursive</label>
+        </div>
+        <div class="col-auto">
+          <button type="submit" class="btn btn-sm btn-primary">Scan</button>
+        </div>
+        <div class="col-auto">
+          <button id="btn-scan-with-selection" class="btn btn-sm btn-outline-primary" type="button">Scan with selection</button>
+        </div>
+        <div class="col-auto form-check">
+          <label class="form-check-label small" title="If on, explicit includes can override .scidkignore patterns"><input id="sel-override-ignore" class="form-check-input" type="checkbox" checked /> Allow includes to override .scidkignore</label>
+        </div>
+        <div class="col-auto"><span id="sel-summary" class="small"></span></div>
+      </form>
+      <div class="small" id="prov-scan-msg" style="margin-top:.25rem"></div>
+    </div>
+  </div>
   <div id="prov-crumb" class="small" style="margin-bottom:.5rem"></div>
   <div style="display:flex; gap:1rem; align-items:flex-start">
     <div style="flex: 2 1 60%; border:1px solid #eee; max-height:420px; overflow:auto">
@@ -47,28 +69,7 @@
       </table>
     </div>
     <div id="prov-panel" style="flex: 1 1 40%; border:1px solid #eee; min-height:200px; padding:.5rem; position:sticky; top:1rem">
-      <div class="small" id="prov-panel-content">Select a provider, root, and item to see details.
-        <div style="margin-top:.5rem">
-          <form id="prov-scan-form" class="row g-2">
-            <div class="col-auto small">Scan selected folder (recursive):</div>
-            <div class="col-auto form-check">
-              <input id="prov-scan-recursive" class="form-check-input" type="checkbox" checked />
-              <label class="form-check-label small" for="prov-scan-recursive">Recursive</label>
-            </div>
-            <div class="col-auto">
-              <button type="submit" class="btn btn-sm btn-primary">Scan</button>
-            </div>
-          </form>
-          <div class="small" id="prov-scan-msg" style="margin-top:.25rem"></div>
-          <div class="small" id="prov-select-panel" style="margin-top:.5rem; border-top:1px dashed #eee; padding-top:.5rem">
-            <div style="display:flex; gap:.5rem; align-items:center; flex-wrap: wrap;">
-              <label class="form-check-label small" title="If on, explicit includes can override .scidkignore patterns"><input id="sel-override-ignore" class="form-check-input" type="checkbox" checked /> Allow includes to override .scidkignore</label>
-              <button id="btn-scan-with-selection" class="btn btn-sm btn-outline-primary">Scan with selection</button>
-              <span id="sel-summary" class="small"></span>
-            </div>
-          </div>
-        </div>
-      </div>
+      <div class="small" id="prov-panel-content">Select a provider, root, and item to see details.</div>
     </div>
   </div>
 </section>
@@ -144,7 +145,7 @@
   </div>
   <div class="table-responsive" style="max-height:320px; overflow:auto; border:1px solid #eee">
     <table class="table table-sm" style="margin-bottom:0">
-      <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Modified</th></tr></thead>
+      <thead><tr><th><input id="snap-sel-all" type="checkbox" title="Select/Deselect all on page" /></th><th>Name</th><th>Type</th><th>Size</th><th>Modified</th></tr></thead>
       <tbody id="snap-list"></tbody>
     </table>
   </div>
@@ -655,7 +656,7 @@
           const interp = e.interpreted_as ? `<span class=\"badge\">${e.interpreted_as}</span>` : '';
           const esc = (s) => (s||'').replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');
           const preview = e.interpretation_json ? esc((e.interpretation_json||'').slice(0,800)) : '';
-          return `<tr data-path="${e.path}" data-type="${e.type}" data-interp-as="${e.interpreted_as||''}" data-interp-json="${preview}"><td>${e.name} ${interp}</td><td>${e.type}</td><td>${e.type==='file'?(fmtBytes(e.size||0)):''}</td><td>${mod}</td></tr>`;
+          return `<tr data-path="${e.path}" data-type="${e.type}" data-interp-as="${e.interpreted_as||''}" data-interp-json="${preview}"><td><input type=\"checkbox\" class=\"snap-sel\" data-path=\"${e.path}\" data-type=\"${e.type}\" /></td><td>${e.name} ${interp}</td><td>${e.type}</td><td>${e.type==='file'?(fmtBytes(e.size||0)):''}</td><td>${mod}</td></tr>`;
         }).join('');
         snapList.innerHTML = rows || '<tr><td colspan="4" class="small">No entries.</td></tr>';
         snapNext.disabled = !snapToken;
@@ -728,10 +729,23 @@
       if (!snapScanSel || !snapScanSel.value){ snapStatus.textContent = 'Select a scan first.'; return; }
       const id = snapScanSel.value; snapRescan.disabled = true; const prev = snapRescan.textContent; snapRescan.textContent = 'Rescanning…'; snapStatus.textContent = '';
       try{
-        const r = await fetch(`/api/scans/${encodeURIComponent(id)}/rescan`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
-        const j = await r.json();
-        if (!r.ok){ snapStatus.textContent = 'Rescan failed: ' + (j.error || r.status); }
-        else { snapStatus.textContent = `Rescan started: ${j.scan_id}`; loadScansForSnapshot(); }
+        // Load original scan details and stored selection
+        const sd = await fetch(`/api/scans/${encodeURIComponent(id)}`);
+        const scan = await sd.json();
+        if (!sd.ok){ snapStatus.textContent = 'Rescan failed: ' + (scan.error || sd.status); return; }
+        const cfgResp = await fetch(`/api/scans/${encodeURIComponent(id)}/config`);
+        const sel = cfgResp.ok ? (await cfgResp.json()) : {};
+        const payload = {
+          type: 'scan',
+          path: scan.path,
+          recursive: !!scan.recursive,
+          provider_id: scan.provider_id || 'local_fs',
+          root_id: scan.root_id || '/',
+          selection: sel || {}
+        };
+        const r = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
+        if (r.status === 202){ snapStatus.textContent = 'Rescan started in background. Watch progress above.'; }
+        else { const j = await r.json(); snapStatus.textContent = 'Rescan failed: ' + (j.error || r.status); }
       } catch(e){ snapStatus.textContent = 'Rescan failed: ' + e; }
       finally { snapRescan.disabled = false; snapRescan.textContent = prev; }
     }); }
@@ -878,8 +892,8 @@
       const fmtTs = (t) => { try { return t ? new Date(Math.round(t)*1000).toLocaleString() : ''; } catch(_) { return t || ''; } };
       if (!scans || scans.length === 0){ tbody.innerHTML = '<tr><td colspan="7" class="small">No scans yet.</td></tr>'; return; }
       tbody.innerHTML = scans.map(s => `<tr>
-        <td><code>${s.id}</code></td>
-        <td>${s.path}</td>
+        <td><code>${s.id}</code>${s.rescan_of?` <span class=\"badge bg-warning text-dark\">rescan</span>`:''}</td>
+        <td>${s.path}${s.rescan_of?` <span class=\"small\">(of <code>${s.rescan_of}</code>)</span>`:''}</td>
         <td>${s.file_count||0}</td>
         <td>${s.recursive?'yes':'no'}</td>
         <td>${fmtTs(s.started)}</td>
@@ -927,13 +941,15 @@
     const scansDiv = document.getElementById('scans-panel');
     function scansRow(s){
       const ts = Math.round(s.ended||s.started||0);
-      return `<div style="padding:.25rem 0; border-bottom:1px solid #eee; display:flex; gap:.5rem; align-items:center; justify-content:space-between">
-        <div class="small"><code>${s.id}</code> — ${s.path} — files: ${s.file_count} — ${s.recursive?'recursive':'shallow'} — ${ts}</div>
-        <div style="display:flex; gap:.5rem">
-          <a class="btn btn-sm btn-outline-primary" href="/datasets?scan_id=${s.id}">Open</a>
-          <button class="btn btn-sm btn-outline-success" data-scan="${s.id}" data-action="commit">Commit to Graph</button>
-          <button class="btn btn-sm btn-outline-warning" data-scan="${s.id}" data-action="rescan">Rescan</button>
-          <button class="btn btn-sm btn-outline-danger" data-scan="${s.id}" data-action="delete">Delete</button>
+      const tag = s.rescan_of ? `<span class=\"badge bg-warning text-dark\" title=\"rescan of ${s.rescan_of}\">rescan</span>` : '';
+      const of = s.rescan_of ? ` (of <code>${s.rescan_of}</code>)` : '';
+      return `<div style=\"padding:.25rem 0; border-bottom:1px solid #eee; display:flex; gap:.5rem; align-items:center; justify-content:space-between\">
+        <div class=\"small\"><code>${s.id}</code> ${tag} — ${s.path}${of} — files: ${s.file_count} — ${s.recursive?'recursive':'shallow'} — ${ts}</div>
+        <div style=\"display:flex; gap:.5rem\">
+          <a class=\"btn btn-sm btn-outline-primary\" href=\"/datasets?scan_id=${s.id}\">Open</a>
+          <button class=\"btn btn-sm btn-outline-success\" data-scan=\"${s.id}\" data-action=\"commit\">Commit to Graph</button>
+          <button class=\"btn btn-sm btn-outline-warning\" data-scan=\"${s.id}\" data-action=\"rescan\">Rescan</button>
+          <button class=\"btn btn-sm btn-outline-danger\" data-scan=\"${s.id}\" data-action=\"delete\">Delete</button>
         </div>
       </div>`;
     }
