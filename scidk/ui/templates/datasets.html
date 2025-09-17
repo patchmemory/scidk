@@ -126,16 +126,21 @@
       <button id="snap-next" class="btn btn-sm btn-outline-secondary" disabled>Next</button>
       <button id="snap-use-live" class="btn btn-sm btn-outline-secondary" title="Copy Live path into Snapshot">Use Live path</button>
       <button id="snap-commit" class="btn btn-sm btn-outline-success" title="Commit selected scan to Graph">Commit selected scan</button>
+      <button id="snap-reinterpret" class="btn btn-sm btn-outline-secondary" title="Populate interpretations for selected scan">Re-interpret scan</button>
     </div>
   </div>
   <div class="small" id="snap-crumb" style="margin-bottom:.25rem"></div>
   <div class="small" id="snap-status" style="margin-bottom:.5rem"></div>
+  <div id="rclone-banner" class="small" style="display:none; margin-top:.5rem; padding:.5rem; border:1px dashed #cc9; background:#fffbf0">
+    This rclone scan is large. For better performance, consider mounting the remote and re-running the scan. You can also proceed with streaming reinterpretation in chunks.
+  </div>
   <div class="table-responsive" style="max-height:320px; overflow:auto; border:1px solid #eee">
     <table class="table table-sm" style="margin-bottom:0">
       <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Modified</th></tr></thead>
       <tbody id="snap-list"></tbody>
     </table>
   </div>
+  <div id="snap-panel" class="small" style="margin-top:.5rem; border:1px solid #eee; padding:.5rem; display:none"></div>
   <div class="row g-2" style="margin-top:.5rem">
     <div class="col-auto">
       <label class="form-label small" style="margin-bottom:.25rem">Snapshot search</label>
@@ -517,6 +522,7 @@
     const snapNext = document.getElementById('snap-next');
     const snapUseLive = document.getElementById('snap-use-live');
     const snapCommit = document.getElementById('snap-commit');
+    const snapReint = document.getElementById('snap-reinterpret');
     const snapStatus = document.getElementById('snap-status');
     const snapSearchQ = document.getElementById('snap-search-q');
     const snapSearchExt = document.getElementById('snap-search-ext');
@@ -527,8 +533,22 @@
     const snapCrumb = document.getElementById('snap-crumb');
     let snapToken = null;
     let snapHistory = [];
+    // cache rclone interpret settings
+    let rcSettings = { suggest_mount_threshold: 400, max_files_per_batch: 1000 };
+    async function loadRcSettings(){
+      try{ const r = await fetch('/api/settings/rclone-interpret'); const j = await r.json(); if (r.ok){ rcSettings = { suggest_mount_threshold: Number(j.suggest_mount_threshold||400), max_files_per_batch: Number(j.max_files_per_batch||1000) }; } }
+      catch(_) { /* ignore */ }
+    }
+    loadRcSettings();
     async function loadScansForSnapshot(){
       try{ const r = await fetch('/api/scans'); const scans = await r.json(); if (!snapScanSel) return; const current = snapScanSel.value; snapScanSel.innerHTML = '<option value="">-- select a recent scan below --</option>' + scans.map(s => `<option value="${s.id}">${s.path} — ${s.file_count} files</option>`).join(''); if (current) snapScanSel.value = current; } catch(e) { /* ignore */ }
+      // show/hide rclone banner if applicable
+      try {
+        const id = snapScanSel && snapScanSel.value;
+        const banner = document.getElementById('rclone-banner');
+        if (id){ const rs = await fetch(`/api/scans/${encodeURIComponent(id)}`); const scan = await rs.json(); const isRclone = (scan && scan.provider_id) === 'rclone'; const big = (scan && (scan.file_count||0)) >= (rcSettings.suggest_mount_threshold||400); if (banner) banner.style.display = (isRclone && big) ? '' : 'none'; }
+        else { if (banner) banner.style.display = 'none'; }
+      } catch(_) { /* ignore */ }
     }
     async function browseSnapshot(direction){
       if (!snapScanSel || !snapScanSel.value){ snapList.innerHTML = '<tr><td colspan="4" class="small">Select a scan first.</td></tr>'; return; }
@@ -556,6 +576,8 @@
         // Update crumb with clickable ancestors
         const p = j.path || '';
         let parts = [];
+        const panel = document.getElementById('snap-panel');
+        if (panel) { panel.style.display = 'none'; panel.innerHTML=''; }
         if (p){
           if (p.includes(':')){ const i = p.indexOf(':'); const rem = p.slice(0,i+1); const suff = p.slice(i+1).replace(/^\/+/, ''); const segs = suff? suff.split('/'): []; let acc = rem; parts.push({name: rem.replace(/:$/,''), path: rem}); for (let s of segs){ acc = acc + (acc.endsWith(':')? '':'/') + s; parts.push({name: s, path: acc}); }
           } else { const segs = p.replace(/^\/+/, '').split('/'); let acc = ''; for (let i=0;i<segs.length;i++){ acc = (i===0? ('/'+segs[i]) : (acc + '/' + segs[i])); parts.push({name: segs[i]||'/', path: acc}); } }
@@ -569,16 +591,36 @@
         // Render
         const rows = entries.map(e => {
           const mod = (e.modified && e.modified > 0 && e.type==='file') ? fmtTime(e.modified) : '';
-          return `<tr data-path="${e.path}" data-type="${e.type}"><td>${e.name}</td><td>${e.type}</td><td>${e.type==='file'?(fmtBytes(e.size||0)):''}</td><td>${mod}</td></tr>`;
+          const interp = e.interpreted_as ? `<span class=\"badge\">${e.interpreted_as}</span>` : '';
+          const esc = (s) => (s||'').replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+          const preview = e.interpretation_json ? esc((e.interpretation_json||'').slice(0,800)) : '';
+          return `<tr data-path="${e.path}" data-type="${e.type}" data-interp-as="${e.interpreted_as||''}" data-interp-json="${preview}"><td>${e.name} ${interp}</td><td>${e.type}</td><td>${e.type==='file'?(fmtBytes(e.size||0)):''}</td><td>${mod}</td></tr>`;
         }).join('');
         snapList.innerHTML = rows || '<tr><td colspan="4" class="small">No entries.</td></tr>';
         snapNext.disabled = !snapToken;
         snapPrev.disabled = (snapHistory.length <= 1);
-        // Click to drill when folder
+        // Click to drill when folder; show details when file
         document.querySelectorAll('#snap-list tr')?.forEach(tr => {
           tr.addEventListener('click', () => {
             const t = tr.getAttribute('data-type'); const p = tr.getAttribute('data-path');
-            if (t === 'folder' && snapPathInput){ snapPathInput.value = p; snapToken = null; snapHistory = []; browseSnapshot(); }
+            const panel = document.getElementById('snap-panel');
+            if (t === 'folder' && snapPathInput){ snapPathInput.value = p; snapToken = null; snapHistory = []; browseSnapshot(); return; }
+            if (t === 'file' && panel){
+              const ias = tr.getAttribute('data-interp-as') || '';
+              const ij = tr.getAttribute('data-interp-json') || '';
+              let body = '';
+              if (ias){ body += `<div>Interpreted as: <span class=\"badge\">${ias}</span></div>`; }
+              if (ij){
+                try {
+                  const parsed = JSON.parse(ij);
+                  body += `<details open style=\"margin-top:.25rem\"><summary class=\"small\">Interpretation</summary><pre style=\"white-space: pre-wrap;\">${JSON.stringify(parsed, null, 2)}</pre></details>`;
+                } catch(_){ body += `<details open style=\"margin-top:.25rem\"><summary class=\"small\">Interpretation</summary><pre style=\"white-space: pre-wrap;\">${ij}</pre></details>`; }
+              } else {
+                body += '<div class="small">No interpretation stored for this file.</div>';
+              }
+              panel.innerHTML = `<div><strong>Path:</strong> <code>${p}</code></div>${body}`;
+              panel.style.display = 'block';
+            }
           });
         });
       } catch(e){
@@ -606,7 +648,7 @@
         snapSearchResults.innerHTML = rows || '<div class="small">No matches.</div>';
       } catch(e){ snapSearchResults.textContent = 'Search error: ' + e; }
     }); }
-    if (snapScanSel){ snapScanSel.addEventListener('change', () => { snapToken = null; snapHistory = []; browseSnapshot(); }); }
+    if (snapScanSel){ snapScanSel.addEventListener('change', () => { snapToken = null; snapHistory = []; browseSnapshot(); loadScansForSnapshot(); }); }
     if (snapUseLive){ snapUseLive.addEventListener('click', () => {
       const provId = (provSelect && provSelect.value) || currentProv || 'local_fs';
       const rootId = (rootSelect && rootSelect.value) || currentRoot || '/';
@@ -620,6 +662,46 @@
       try{ const r = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ type: 'commit', scan_id: id }) }); if (r.status === 202){ snapStatus.textContent = 'Commit started in background. Watch progress above.'; } else { const j = await r.json(); snapStatus.textContent = 'Commit failed: ' + (j.error || r.status); } }
       catch(e){ snapStatus.textContent = 'Commit failed: ' + e; }
       finally { snapCommit.disabled = false; snapCommit.textContent = prev; }
+    }); }
+    if (snapReint){ snapReint.addEventListener('click', async () => {
+      if (!snapScanSel || !snapScanSel.value){ snapStatus.textContent = 'Select a scan first.'; return; }
+      const id = snapScanSel.value; snapReint.disabled = true; const prev = snapReint.textContent; snapReint.textContent = 'Re-interpreting…'; snapStatus.textContent = '';
+      try{
+        // Fetch scan details to decide which endpoint to call
+        const sd = await fetch(`/api/scans/${encodeURIComponent(id)}`);
+        const scan = await sd.json();
+        const providerId = (scan && scan.provider_id) || null;
+        if (providerId === 'rclone'){
+          // Chunked streaming interpretation for rclone scans
+          const batch = rcSettings.max_files_per_batch || 1000;
+          let cursor = null;
+          let totalProcessed = 0, totalErrors = 0, batches = 0;
+          const common = { include: ["*.txt","*.csv","*.md","*.json","*.yaml","*.yml","*.py","*.ipynb"], max_files: batch, max_size_bytes: 1048576, timeout_sec: 60, overwrite: true };
+          while (true){
+            const payload = cursor ? { ...common, after_rowid: cursor } : { ...common };
+            const r = await fetch(`/api/interpret/scan/${encodeURIComponent(id)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            const j = await r.json();
+            if (!r.ok){ snapStatus.textContent = 'Interpret (remote) failed: ' + (j.error || r.status); break; }
+            totalProcessed += (j.processed_count||0); totalErrors += (j.error_count||0); batches += 1;
+            snapStatus.textContent = `Interpret (remote): batches=${batches}, processed=${totalProcessed}, errors=${totalErrors}`;
+            if (!j.next_cursor){ break; }
+            cursor = j.next_cursor;
+          }
+          browseSnapshot();
+        } else {
+          // Legacy local reinterpret
+          const r = await fetch(`/api/scans/${encodeURIComponent(id)}/reinterpret`, { method: 'POST' });
+          const j = await r.json();
+          if (!r.ok){ snapStatus.textContent = 'Re-interpret failed: ' + (j.error || r.status); }
+          else {
+            const fs = (j.files_seen!==undefined)?`, files_seen=${j.files_seen}`:''; const fm = (j.files_matched!==undefined)?`, files_matched=${j.files_matched}`:'';
+            snapStatus.textContent = `Re-interpret: updated=${j.updated}, skipped_remote=${j.skipped_remote}, not_found=${j.not_found}, errors=${j.errors}${fs}${fm}`;
+            browseSnapshot();
+          }
+        }
+      }
+      catch(e){ snapStatus.textContent = 'Re-interpret failed: ' + e; }
+      finally { snapReint.disabled = false; snapReint.textContent = prev; }
     }); }
 
     // Scans dropdown and background tasks

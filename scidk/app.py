@@ -389,6 +389,16 @@ def create_app():
     # Apply channel-based defaults before reading env-driven config
     _apply_channel_defaults()
     app = Flask(__name__, template_folder="ui/templates", static_folder="ui/static")
+    # Feature: selective dry-run UI flag (dev default)
+    try:
+        ch = (os.environ.get('SCIDK_CHANNEL') or 'stable').strip().lower()
+        flag_env = (os.environ.get('SCIDK_FEATURE_SELECTIVE_DRYRUN') or '').strip().lower()
+        flag = flag_env in ('1','true','yes','y','on')
+        if flag_env == '' and ch == 'dev':
+            flag = True
+        app.config['feature.selectiveDryRun'] = bool(flag)
+    except Exception:
+        app.config['feature.selectiveDryRun'] = False
 
     # Auto-migrate SQLite schema on boot (best effort)
     try:
@@ -462,19 +472,30 @@ def create_app():
     all_ids = list(registry.by_id.keys())
     default_enabled_ids = set([iid for iid in all_ids if bool(getattr(registry.by_id[iid], 'default_enabled', True))])
     # CLI overrides via env
-    en_list = [s.strip() for s in (os.environ.get('SCIDK_ENABLE_INTERPRETERS') or '').split(',') if s.strip()]
-    dis_list = [s.strip() for s in (os.environ.get('SCIDK_DISABLE_INTERPRETERS') or '').split(',') if s.strip()]
+    # CLI overrides via env (case-insensitive); ignore unknown ids to avoid surprises
+    en_raw = [s.strip() for s in (os.environ.get('SCIDK_ENABLE_INTERPRETERS') or '').split(',') if s.strip()]
+    dis_raw = [s.strip() for s in (os.environ.get('SCIDK_DISABLE_INTERPRETERS') or '').split(',') if s.strip()]
+    # Normalize to lowercase (registry ids are lowercase)
+    en_list = [s.lower() for s in en_raw]
+    dis_list = [s.lower() for s in dis_raw]
     source = 'default'
     if en_list or dis_list:
+        known_ids = set(all_ids)
+        unknown_en = [x for x in en_list if x not in known_ids]
+        unknown_dis = [x for x in dis_list if x not in known_ids]
+        # Start from defaults; remove DISABLE; add ENABLE; ENABLE wins on conflicts
         enabled_set = set(default_enabled_ids)
         for d in dis_list:
-            enabled_set.discard(d)
+            if d in known_ids:
+                enabled_set.discard(d)
         for e in en_list:
-            enabled_set.add(e)
+            if e in known_ids:
+                enabled_set.add(e)
         source = 'cli'
+        # Do NOT persist CLI-derived sets to settings to avoid masking user intentions
         try:
-            if settings:
-                settings.save_enabled_interpreters(enabled_set)
+            _ist = app.extensions.setdefault('scidk', {}).setdefault('interpreters', {})
+            _ist['unknown_env'] = {'enable': unknown_en, 'disable': unknown_dis}
         except Exception:
             pass
     else:
@@ -493,6 +514,11 @@ def create_app():
             source = 'default'
     # Store effective on app
     _interp_state = {'effective_enabled': enabled_set, 'source': source}
+    # Apply effective enabled set to registry for selection logic
+    try:
+        registry.enabled_interpreters = set(enabled_set)
+    except Exception:
+        pass
 
     fs = FilesystemManager(graph=graph, registry=registry)
 
@@ -539,16 +565,119 @@ def create_app():
         'settings': settings,
     }
 
+    # Hydrate telemetry.last_scan from SQLite settings on startup (best-effort)
+    try:
+        from .core import path_index_sqlite as pix
+        from .core import migrations as _migs
+        import json as _json
+        conn = pix.connect()
+        try:
+            _migs.migrate(conn)
+            cur = conn.cursor()
+            row = cur.execute("SELECT value FROM settings WHERE key = ?", ("telemetry.last_scan",)).fetchone()
+            if row and row[0]:
+                try:
+                    last_scan = _json.loads(row[0])
+                    app.extensions.setdefault('scidk', {}).setdefault('telemetry', {})['last_scan'] = last_scan
+                except Exception:
+                    pass
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # Hydrate rclone interpretation settings (suggest mount threshold and batch size)
+    try:
+        def _env_int(name: str, dflt: int) -> int:
+            try:
+                v = os.environ.get(name)
+                return int(v) if v is not None and v != '' else dflt
+            except Exception:
+                return dflt
+        suggest_dflt = _env_int('SCIDK_RCLONE_INTERPRET_SUGGEST_MOUNT', 400)
+        max_batch_dflt = _env_int('SCIDK_RCLONE_INTERPRET_MAX_FILES', 1000)
+        max_batch_dflt = min(max(100, max_batch_dflt), 2000)
+        from .core import path_index_sqlite as pix
+        from .core import migrations as _migs
+        conn = pix.connect()
+        try:
+            _migs.migrate(conn)
+            cur = conn.cursor()
+            def _get_setting_int(key: str, dflt: int) -> int:
+                row = cur.execute("SELECT value FROM settings WHERE key= ?", (key,)).fetchone()
+                if row and row[0] not in (None, ''):
+                    try:
+                        return int(row[0])
+                    except Exception:
+                        return dflt
+                return dflt
+            suggest_mount_threshold = _get_setting_int('rclone.interpret.suggest_mount_threshold', suggest_dflt)
+            max_files_per_batch = _get_setting_int('rclone.interpret.max_files_per_batch', max_batch_dflt)
+            max_files_per_batch = min(max(100, int(max_files_per_batch)), 2000)
+            app.config['rclone.interpret.suggest_mount_threshold'] = int(suggest_mount_threshold)
+            app.config['rclone.interpret.max_files_per_batch'] = int(max_files_per_batch)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception:
+        # Defaults if hydration fails
+        app.config.setdefault('rclone.interpret.suggest_mount_threshold', 400)
+        app.config.setdefault('rclone.interpret.max_files_per_batch', 1000)
+
+    # Feature flag for rclone mount manager (define before first use)
+    def _feature_rclone_mounts() -> bool:
+        val = (os.environ.get('SCIDK_RCLONE_MOUNTS') or os.environ.get('SCIDK_FEATURE_RCLONE_MOUNTS') or '').strip().lower()
+        return val in ('1', 'true', 'yes', 'y', 'on')
+
+    # Rehydrate rclone mounts metadata from SQLite on startup (no process attached)
+    if _feature_rclone_mounts():
+        try:
+            from .core import path_index_sqlite as pix
+            from .core import migrations as _migs
+            import json as _json
+            conn = pix.connect()
+            try:
+                _migs.migrate(conn)
+                cur = conn.cursor()
+                cur.execute("SELECT id, provider, root, created, status, extra_json FROM provider_mounts WHERE provider='rclone'")
+                rows = cur.fetchall() or []
+                rm = app.extensions['scidk'].setdefault('rclone_mounts', {})
+                for (mid, provider, remote, created, status_persisted, extra) in rows:
+                    try:
+                        extra_obj = _json.loads(extra) if extra else {}
+                    except Exception:
+                        extra_obj = {}
+                    rm[mid] = {
+                        'id': mid,
+                        'name': mid,
+                        'remote': remote,
+                        'subpath': extra_obj.get('subpath'),
+                        'path': extra_obj.get('path'),
+                        'read_only': extra_obj.get('read_only'),
+                        'started_at': created,
+                        'process': None,
+                        'pid': None,
+                        'log_file': extra_obj.get('log_file'),
+                    }
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     # API routes
     api = Blueprint('api', __name__, url_prefix='/api')
 
     # Import SQLite layer for selections/annotations lazily to avoid circular deps
     from .core import annotations_sqlite as ann_db
 
-    # Feature flag for rclone mount manager
-    def _feature_rclone_mounts() -> bool:
-        val = (os.environ.get('SCIDK_RCLONE_MOUNTS') or os.environ.get('SCIDK_FEATURE_RCLONE_MOUNTS') or '').strip().lower()
-        return val in ('1', 'true', 'yes', 'y', 'on')
 
     # Helper to read Neo4j configuration, preferring in-app settings over environment
     # Returns tuple: (uri, user, password, database, auth_mode)
@@ -1040,17 +1169,69 @@ def create_app():
                         for interp in interps:
                             try:
                                 result = interp.interpret(fpath)
-                                app.extensions['scidk']['graph'].add_interpretation(ds['checksum'], interp.id, {
+                                payload = {
                                     'status': result.get('status', 'success'),
                                     'data': result.get('data', result),
                                     'interpreter_version': getattr(interp, 'version', '0.0.1'),
-                                })
+                                }
+                                app.extensions['scidk']['graph'].add_interpretation(ds['checksum'], interp.id, payload)
+                                # Persist interpretation metadata into SQLite files table for this path
+                                try:
+                                    from .core import path_index_sqlite as pix
+                                    conn_i = pix.connect(); pix.init_db(conn_i)
+                                    try:
+                                        cur_i = conn_i.cursor()
+                                        import json as _json
+                                        # Determine the canonical key used in the index for this file path
+                                        key_path = None
+                                        try:
+                                            # For rclone/remote scans, the index stores canonical remote paths like "remote:rel/path"
+                                            # Prefer dataset-provided original path if present
+                                            key_path = ds.get('path') or None
+                                        except Exception:
+                                            key_path = None
+                                        if not key_path:
+                                            # Fallback to absolute local path for local filesystem scans
+                                            key_path = str(fpath.resolve())
+                                        cur_i.execute(
+                                            "UPDATE files SET interpreted_as = ?, interpretation_json = ? WHERE path = ? AND type = 'file' AND scan_id = ?",
+                                            (interp.id, _json.dumps(payload.get('data')), key_path, scan_id)
+                                        )
+                                        conn_i.commit()
+                                    finally:
+                                        conn_i.close()
+                                except Exception:
+                                    pass
                             except Exception as e:
-                                app.extensions['scidk']['graph'].add_interpretation(ds['checksum'], interp.id, {
+                                err_payload = {
                                     'status': 'error',
                                     'data': {'error': str(e)},
                                     'interpreter_version': getattr(interp, 'version', '0.0.1'),
-                                })
+                                }
+                                app.extensions['scidk']['graph'].add_interpretation(ds['checksum'], interp.id, err_payload)
+                                try:
+                                    from .core import path_index_sqlite as pix
+                                    conn_i = pix.connect(); pix.init_db(conn_i)
+                                    try:
+                                        cur_i = conn_i.cursor()
+                                        import json as _json
+                                        # Determine canonical key as above
+                                        key_path = None
+                                        try:
+                                            key_path = ds.get('path') or None
+                                        except Exception:
+                                            key_path = None
+                                        if not key_path:
+                                            key_path = str(fpath.resolve())
+                                        cur_i.execute(
+                                            "UPDATE files SET interpreted_as = ?, interpretation_json = ? WHERE path = ? AND type = 'file' AND scan_id = ?",
+                                            (interp.id, _json.dumps(err_payload.get('data')), key_path, scan_id)
+                                        )
+                                        conn_i.commit()
+                                    finally:
+                                        conn_i.close()
+                                except Exception:
+                                    pass
                         count += 1
                     except Exception:
                         continue
@@ -1313,6 +1494,48 @@ def create_app():
             }
             scans = app.extensions['scidk'].setdefault('scans', {})
             scans[scan_id] = scan
+            # Persist scan summary to SQLite (best-effort)
+            try:
+                from .core import path_index_sqlite as pix
+                from .core import migrations as _migs
+                conn = pix.connect()
+                import json as _json
+                try:
+                    _migs.migrate(conn)
+                    cur = conn.cursor()
+                    cur.execute(
+                        "INSERT OR REPLACE INTO scans(id, root, started, completed, status, extra_json) VALUES(?,?,?,?,?,?)",
+                        (
+                            scan_id,
+                            str(path),
+                            float(started or 0.0),
+                            float(ended or 0.0),
+                            'completed',
+                            _json.dumps({
+                                'recursive': bool(recursive),
+                                'duration_sec': duration,
+                                'file_count': int(count),
+                                'by_ext': by_ext,
+                                'source': scan.get('source'),
+                                'checksums': new_checksums,
+                                'committed': False,
+                                'committed_at': None,
+                                'provider_id': provider_id,
+                                'root_id': root_id,
+                                'host_type': host_type,
+                                'host_id': host_id,
+                                'root_label': root_label,
+                            })
+                        )
+                    )
+                    conn.commit()
+                finally:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             # Clear cached fs index for this scan so next request rebuilds with fresh data
             try:
                 app.extensions['scidk'].setdefault('scan_fs', {}).pop(scan_id, None)
@@ -1333,6 +1556,27 @@ def create_app():
                 'files_skipped': int(files_skipped),
                 'files_hashed': int(files_hashed),
             }
+            # Persist telemetry.last_scan to SQLite (best-effort)
+            try:
+                from .core import path_index_sqlite as pix
+                from .core import migrations as _migs
+                import json as _json
+                conn = pix.connect()
+                try:
+                    _migs.migrate(conn)
+                    cur = conn.cursor()
+                    cur.execute(
+                        "INSERT OR REPLACE INTO settings(key, value) VALUES(?, ?)",
+                        ("telemetry.last_scan", _json.dumps(telem.get('last_scan') or {}))
+                    )
+                    conn.commit()
+                finally:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             # Track scanned directories (in-session registry)
             dirs = app.extensions['scidk'].setdefault('directories', {})
             drec = dirs.setdefault(str(path), {
@@ -1637,6 +1881,48 @@ def create_app():
                         },
                     }
                     scans[scan_id] = scan
+                    # Persist scan summary to SQLite (best-effort)
+                    try:
+                        from .core import path_index_sqlite as pix
+                        from .core import migrations as _migs
+                        import json as _json
+                        conn = pix.connect()
+                        try:
+                            _migs.migrate(conn)
+                            cur = conn.cursor()
+                            cur.execute(
+                                "INSERT OR REPLACE INTO scans(id, root, started, completed, status, extra_json) VALUES(?,?,?,?,?,?)",
+                                (
+                                    scan_id,
+                                    str(path),
+                                    float(started_ts or 0.0),
+                                    float(ended or 0.0),
+                                    'completed',
+                                    _json.dumps({
+                                        'recursive': bool(recursive),
+                                        'duration_sec': ended - started_ts,
+                                        'file_count': int(file_count),
+                                        'by_ext': by_ext,
+                                        'source': scan.get('source'),
+                                        'checksums': new_checksums,
+                                        'committed': False,
+                                        'committed_at': None,
+                                        'provider_id': provider_id,
+                                        'root_id': root_id,
+                                        'host_type': host_type,
+                                        'host_id': host_id,
+                                        'root_label': scan.get('root_label'),
+                                    })
+                                )
+                            )
+                            conn.commit()
+                        finally:
+                            try:
+                                conn.close()
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
                     # Telemetry and directories
                     app.extensions['scidk'].setdefault('telemetry', {})['last_scan'] = {
                         'path': str(path), 'recursive': bool(recursive), 'scanned': int(file_count),
@@ -1702,6 +1988,36 @@ def create_app():
                     g.commit_scan(s)
                     s['committed'] = True
                     s['committed_at'] = time.time()
+                    # Persist commit status to SQLite (best-effort)
+                    try:
+                        from .core import path_index_sqlite as pix
+                        import json as _json
+                        conn = pix.connect()
+                        try:
+                            cur = conn.cursor()
+                            # fetch existing extra_json to merge
+                            cur.execute("SELECT extra_json FROM scans WHERE id = ?", (s.get('id'),))
+                            row = cur.fetchone()
+                            extra_obj = {}
+                            try:
+                                if row and row[0]:
+                                    extra_obj = _json.loads(row[0])
+                            except Exception:
+                                extra_obj = {}
+                            extra_obj['committed'] = True
+                            extra_obj['committed_at'] = s.get('committed_at')
+                            cur.execute(
+                                "UPDATE scans SET status = ?, extra_json = ? WHERE id = ?",
+                                ('committed', _json.dumps(extra_obj), s.get('id'))
+                            )
+                            conn.commit()
+                        finally:
+                            try:
+                                conn.close()
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
                     # Build rows once using shared builder when index mode is enabled
                     use_index = (os.environ.get('SCIDK_COMMIT_FROM_INDEX') or '').strip().lower() in ('1','true','yes','y','on')
                     if use_index:
@@ -1942,6 +2258,46 @@ def create_app():
                 it['source'] = src
         return jsonify(items), 200
 
+    @api.get('/interpreters/effective_debug')
+    def api_interpreters_effective_debug():
+        istate = app.extensions.get('scidk', {}).get('interpreters', {})
+        eff = sorted(list(istate.get('effective_enabled') or []))
+        src = istate.get('source') or 'default'
+        unknown_env = istate.get('unknown_env') or {}
+        reg = app.extensions['scidk']['registry']
+        all_ids = sorted(list(reg.by_id.keys()))
+        default_enabled = []
+        for iid in all_ids:
+            try:
+                if bool(getattr(reg.by_id[iid], 'default_enabled', True)):
+                    default_enabled.append(iid)
+            except Exception:
+                pass
+        loaded = []
+        try:
+            settings = app.extensions['scidk'].get('settings')
+            if settings is not None and src != 'cli':
+                loaded = sorted(list(settings.load_enabled_interpreters() or []))
+        except Exception:
+            loaded = []
+        en_raw = [s.strip() for s in (os.environ.get('SCIDK_ENABLE_INTERPRETERS') or '').split(',') if s.strip()]
+        dis_raw = [s.strip() for s in (os.environ.get('SCIDK_DISABLE_INTERPRETERS') or '').split(',') if s.strip()]
+        en_norm = [s.lower() for s in en_raw]
+        dis_norm = [s.lower() for s in dis_raw]
+        return jsonify({
+            'source': src,
+            'effective_enabled': eff,
+            'default_enabled': sorted(default_enabled),
+            'loaded_settings': loaded,
+            'env': {
+                'enable_raw': en_raw,
+                'disable_raw': dis_raw,
+                'enable_norm': en_norm,
+                'disable_norm': dis_norm,
+                'unknown': unknown_env,
+            }
+        }), 200
+
     @api.post('/interpreters/<interpreter_id>/toggle')
     def api_interpreters_toggle(interpreter_id):
         reg = app.extensions['scidk']['registry']
@@ -1956,6 +2312,20 @@ def create_app():
             settings = app.extensions['scidk'].get('settings')
             if settings is not None:
                 settings.save_enabled_interpreters(reg.enabled_interpreters)
+        except Exception:
+            pass
+        # Refresh effective interpreter view so /api/interpreters?view=effective reflects the change immediately
+        try:
+            istate = app.extensions['scidk'].setdefault('interpreters', {})
+            eff = set(istate.get('effective_enabled') or [])
+            # If snapshot missing/empty, rebuild from current registry state
+            if not eff:
+                eff = set([iid for iid in reg.by_id.keys() if reg._is_enabled(iid)])
+            if enabled:
+                eff.add(interpreter_id)
+            else:
+                eff.discard(interpreter_id)
+            istate['effective_enabled'] = eff
         except Exception:
             pass
         return jsonify({'status': 'updated', 'enabled': enabled}), 200
@@ -2033,8 +2403,63 @@ def create_app():
 
     @api.get('/directories')
     def api_directories():
+        # Prefer SQLite-backed aggregation by root; fallback to in-memory registry
+        try:
+            from .core import path_index_sqlite as pix
+            from .core import migrations as _migs
+            import json as _json
+            conn = pix.connect()
+            try:
+                _migs.migrate(conn)
+                cur = conn.cursor()
+                cur.execute("SELECT id, root, completed, extra_json FROM scans WHERE root IS NOT NULL AND root <> '' ORDER BY coalesce(completed, 0) DESC LIMIT 2000")
+                rows = cur.fetchall()
+                agg = {}
+                for (sid, root, completed, extra) in rows:
+                    if not root:
+                        continue
+                    rec = agg.get(root) or {'path': root, 'scanned': 0, 'last_scanned': 0, 'scan_ids': [], 'recursive': None}
+                    rec['scan_ids'].append(sid)
+                    try:
+                        if completed and float(completed) > float(rec.get('last_scanned') or 0):
+                            rec['last_scanned'] = float(completed)
+                    except Exception:
+                        pass
+                    try:
+                        ex = _json.loads(extra) if extra else {}
+                        # Best-effort fields
+                        if ex:
+                            if rec.get('recursive') is None:
+                                rec['recursive'] = bool(ex.get('recursive', False))
+                            if 'file_count' in ex:
+                                rec['scanned'] = int(ex.get('file_count') or rec.get('scanned') or 0)
+                            if 'source' in ex and not rec.get('source'):
+                                rec['source'] = ex.get('source')
+                            if 'provider_id' in ex and not rec.get('provider_id'):
+                                rec['provider_id'] = ex.get('provider_id')
+                            if 'root_id' in ex and not rec.get('root_id'):
+                                rec['root_id'] = ex.get('root_id')
+                            if 'root_label' in ex and not rec.get('root_label'):
+                                rec['root_label'] = ex.get('root_label')
+                    except Exception:
+                        pass
+                    agg[root] = rec
+                values = list(agg.values())
+                values.sort(key=lambda d: d.get('last_scanned') or 0, reverse=True)
+                # Fill defaults
+                for v in values:
+                    if v.get('recursive') is None:
+                        v['recursive'] = False
+                return jsonify(values), 200
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Fallback
         dirs = app.extensions['scidk'].get('directories', {})
-        # Return stable order: most recently scanned first
         values = list(dirs.values())
         values.sort(key=lambda d: d.get('last_scanned') or 0, reverse=True)
         return jsonify(values), 200
@@ -2068,24 +2493,48 @@ def create_app():
 
         @api.get('/rclone/mounts')
         def api_rclone_mounts_list():
-            mounts = app.extensions['scidk'].setdefault('rclone_mounts', {})
+            mounts_mem = app.extensions['scidk'].setdefault('rclone_mounts', {})
+            rows = []
+            try:
+                from .core import path_index_sqlite as pix
+                from .core import migrations as _migs
+                import json as _json
+                conn = pix.connect()
+                try:
+                    _migs.migrate(conn)
+                    cur = conn.cursor()
+                    cur.execute("SELECT id, provider, root, created, status, extra_json FROM provider_mounts WHERE provider='rclone'")
+                    rows = cur.fetchall() or []
+                finally:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+            except Exception:
+                rows = []
             out = []
-            for mid, m in list(mounts.items()):
-                proc = m.get('process')
+            for (mid, provider, remote, created, status_persisted, extra) in rows:
+                try:
+                    extra_obj = json.loads(extra) if extra else {}
+                except Exception:
+                    extra_obj = {}
+                mem = mounts_mem.get(mid) or {}
+                proc = mem.get('process')
                 alive = (proc is not None) and (proc.poll() is None)
-                status = 'running' if alive else ('exited' if proc is not None else 'unknown')
+                status = 'running' if alive else ('exited' if proc is not None else (status_persisted or 'unknown'))
                 exit_code = None if alive else (proc.returncode if proc is not None else None)
                 out.append({
-                    'id': m.get('id'),
-                    'name': m.get('name'),
-                    'remote': m.get('remote'),
-                    'subpath': m.get('subpath'),
-                    'path': m.get('path'),
-                    'read_only': m.get('read_only'),
-                    'started_at': m.get('started_at'),
+                    'id': mid,
+                    'name': mid,
+                    'remote': remote,
+                    'subpath': extra_obj.get('subpath'),
+                    'path': extra_obj.get('path'),
+                    'read_only': extra_obj.get('read_only'),
+                    'started_at': created,
                     'status': status,
                     'exit_code': exit_code,
-                    'log_file': m.get('log_file'),
+                    'log_file': extra_obj.get('log_file'),
+                    'pid': extra_obj.get('pid') or mem.get('pid'),
                 })
             return jsonify(out), 200
 
@@ -2149,6 +2598,34 @@ def create_app():
                 }
                 mounts = app.extensions['scidk'].setdefault('rclone_mounts', {})
                 mounts[name] = rec
+                # Persist mount definition to SQLite (best-effort)
+                try:
+                    from .core import path_index_sqlite as pix
+                    from .core import migrations as _migs
+                    import json as _json
+                    conn = pix.connect()
+                    try:
+                        _migs.migrate(conn)
+                        cur = conn.cursor()
+                        extra = {
+                            'subpath': subpath,
+                            'path': str(mpath),
+                            'read_only': bool(read_only),
+                            'log_file': str(log_file),
+                            'pid': rec.get('pid'),
+                        }
+                        cur.execute(
+                            "INSERT OR REPLACE INTO provider_mounts(id, provider, root, created, status, extra_json) VALUES(?,?,?,?,?,?)",
+                            (name, 'rclone', remote, float(rec.get('started_at') or time.time()), 'running', _json.dumps(extra))
+                        )
+                        conn.commit()
+                    finally:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
                 return jsonify({'id': name, 'path': str(mpath)}), 201
             except Exception as e:
                 return jsonify({'error': str(e)}), 500
@@ -2180,6 +2657,23 @@ def create_app():
             except Exception:
                 pass
             mounts.pop(mid, None)
+            # Remove persisted mount definition (best-effort)
+            try:
+                from .core import path_index_sqlite as pix
+                from .core import migrations as _migs
+                conn = pix.connect()
+                try:
+                    _migs.migrate(conn)
+                    cur = conn.cursor()
+                    cur.execute("DELETE FROM provider_mounts WHERE id = ?", (mid,))
+                    conn.commit()
+                finally:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             return jsonify({'ok': True}), 200
 
         @api.get('/rclone/mounts/<mid>/logs')
@@ -2304,34 +2798,507 @@ def create_app():
         # POST creates a new scan (alias of legacy /api/scan)
         if request.method == 'POST':
             return api_scan()
-        # GET returns a lighter summary list of scans
-        scans = list(app.extensions['scidk'].get('scans', {}).values())
-        scans.sort(key=lambda s: s.get('ended') or s.get('started') or 0, reverse=True)
-        summaries = [
-            {
-                'id': s.get('id'),
-                'path': s.get('path'),
-                'recursive': s.get('recursive'),
-                'started': s.get('started'),
-                'ended': s.get('ended'),
-                'duration_sec': s.get('duration_sec'),
-                'file_count': s.get('file_count'),
-                'by_ext': s.get('by_ext', {}),
-                'source': s.get('source'),
-                'checksum_count': len(s.get('checksums') or []),
-                'committed': bool(s.get('committed', False)),
-                'committed_at': s.get('committed_at'),
-            }
-            for s in scans
-        ]
+        # GET: Prefer SQLite-backed history with in-memory fallback
+        summaries = []
+        try:
+            from .core import path_index_sqlite as pix
+            import json as _json
+            conn = pix.connect()
+            try:
+                from .core import migrations as _migs
+                _migs.migrate(conn)
+                cur = conn.cursor()
+                cur.execute("SELECT id, root, started, completed, status, extra_json FROM scans ORDER BY coalesce(completed, started) DESC LIMIT 500")
+                rows = cur.fetchall()
+                for (sid, root, started, completed, status, extra) in rows:
+                    extra_obj = {}
+                    try:
+                        if extra:
+                            extra_obj = _json.loads(extra)
+                    except Exception:
+                        extra_obj = {}
+                    summaries.append({
+                        'id': sid,
+                        'path': root,
+                        'recursive': bool((extra_obj or {}).get('recursive')),
+                        'started': started,
+                        'ended': completed,
+                        'duration_sec': (extra_obj or {}).get('duration_sec'),
+                        'file_count': (extra_obj or {}).get('file_count'),
+                        'by_ext': (extra_obj or {}).get('by_ext') or {},
+                        'source': (extra_obj or {}).get('source'),
+                        'checksum_count': len((extra_obj or {}).get('checksums') or []),
+                        'committed': bool((extra_obj or {}).get('committed', False)),
+                        'committed_at': (extra_obj or {}).get('committed_at'),
+                        'status': status,
+                    })
+                # Merge in-memory committed flags to reflect immediate commits
+                try:
+                    inmem = {s.get('id'): s for s in app.extensions['scidk'].get('scans', {}).values()}
+                    for i in range(len(summaries)):
+                        sid = summaries[i].get('id')
+                        if sid in inmem:
+                            if bool(inmem[sid].get('committed')):
+                                summaries[i]['committed'] = True
+                                summaries[i]['committed_at'] = inmem[sid].get('committed_at')
+                except Exception:
+                    pass
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        except Exception:
+            summaries = []
+        if not summaries:
+            scans = list(app.extensions['scidk'].get('scans', {}).values())
+            scans.sort(key=lambda s: s.get('ended') or s.get('started') or 0, reverse=True)
+            summaries = [
+                {
+                    'id': s.get('id'),
+                    'path': s.get('path'),
+                    'recursive': s.get('recursive'),
+                    'started': s.get('started'),
+                    'ended': s.get('ended'),
+                    'duration_sec': s.get('duration_sec'),
+                    'file_count': s.get('file_count'),
+                    'by_ext': s.get('by_ext', {}),
+                    'source': s.get('source'),
+                    'checksum_count': len(s.get('checksums') or []),
+                    'committed': bool(s.get('committed', False)),
+                    'committed_at': s.get('committed_at'),
+                }
+                for s in scans
+            ]
         return jsonify(summaries), 200
 
     @api.get('/scans/<scan_id>')
     def api_scan_detail(scan_id):
         s = app.extensions['scidk'].get('scans', {}).get(scan_id)
         if not s:
-            return jsonify({"error": "not found"}), 404
+            # Try to reconstruct minimal scan dict from SQLite persistence
+            try:
+                from .core import path_index_sqlite as pix
+                from .core import migrations as _migs
+                import json as _json
+                conn = pix.connect()
+                try:
+                    _migs.migrate(conn)
+                    cur = conn.cursor()
+                    cur.execute("SELECT id, root, started, completed, status, extra_json FROM scans WHERE id = ?", (scan_id,))
+                    row = cur.fetchone()
+                    if row:
+                        sid, root, started, completed, status, extra = row
+                        extra_obj = {}
+                        try:
+                            if extra:
+                                extra_obj = _json.loads(extra)
+                        except Exception:
+                            extra_obj = {}
+                        s = {
+                            'id': sid,
+                            'path': root,
+                            'recursive': bool((extra_obj or {}).get('recursive')),
+                            'started': started,
+                            'ended': completed,
+                            'duration_sec': (extra_obj or {}).get('duration_sec'),
+                            'file_count': (extra_obj or {}).get('file_count'),
+                            'by_ext': (extra_obj or {}).get('by_ext') or {},
+                            'source': (extra_obj or {}).get('source'),
+                            'checksums': (extra_obj or {}).get('checksums') or [],
+                            'committed': bool((extra_obj or {}).get('committed', False)),
+                            'committed_at': (extra_obj or {}).get('committed_at'),
+                            'provider_id': (extra_obj or {}).get('provider_id'),
+                            'host_type': (extra_obj or {}).get('host_type'),
+                            'host_id': (extra_obj or {}).get('host_id'),
+                            'root_id': (extra_obj or {}).get('root_id'),
+                            'root_label': (extra_obj or {}).get('root_label'),
+                        }
+                        # Cache minimal record in-memory to help downstream endpoints
+                        app.extensions['scidk'].setdefault('scans', {})[scan_id] = s
+                    else:
+                        return jsonify({"error": "not found"}), 404
+                finally:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+            except Exception:
+                return jsonify({"error": "not found"}), 404
         return jsonify(s), 200
+
+    @api.post('/interpret/scan/<scan_id>')
+    def api_interpret_scan(scan_id):
+        """
+        Interpret files for a completed scan, streaming remote content via rclone when needed (no mounts required).
+
+        JSON body (optional):
+          - include: ["*.py","*.ipynb","*.txt"]
+          - exclude: ["*.csv"]
+          - max_files: 200
+          - max_size_bytes: 1048576
+          - interpreters: ["python","ipynb","txt"]
+          - overwrite: false
+          - timeout_sec: 60
+        """
+        import fnmatch, json as _json
+        body = request.get_json(force=True, silent=True) or {}
+        include = body.get('include') or []
+        exclude = body.get('exclude') or []
+        # Client-requested batch size (subject to server cap)
+        try:
+            req_max = int(body.get('max_files')) if body.get('max_files') not in (None, '') else None
+        except Exception:
+            req_max = None
+        cap = int(app.config.get('rclone.interpret.max_files_per_batch', 1000))
+        cap = min(max(100, cap), 2000)
+        max_files = int(req_max) if (req_max is not None) else cap
+        max_files = min(max(1, max_files), cap)
+        max_size_bytes = body.get('max_size_bytes')
+        max_size_bytes = int(max_size_bytes) if max_size_bytes not in (None, '') else None
+        only_interps = set((body.get('interpreters') or []))
+        overwrite = bool(body.get('overwrite', False))
+        timeout_sec = float(body.get('timeout_sec') or 60.0)
+
+        # Ensure we have a scan record (use existing detail reconstruction if missing)
+        scan = app.extensions['scidk'].get('scans', {}).get(scan_id)
+        if not scan:
+            resp = api_scan_detail(scan_id)
+            # api_scan_detail returns (json, code) in some fallbacks; support both
+            try:
+                code = resp[1]
+            except Exception:
+                code = getattr(resp, 'status_code', 200)
+            if code != 200:
+                return resp
+            try:
+                scan = resp.get_json()  # Response
+            except Exception:
+                try:
+                    scan = resp[0].json  # tuple from our internal call pattern
+                except Exception:
+                    scan = None
+        if not scan:
+            return jsonify({'status': 'error', 'error': 'scan not found'}), 404
+
+        provider_id = (scan or {}).get('provider_id') or 'local_fs'
+        provs = app.extensions['scidk'].get('providers') or {}
+        rclone = provs.get('rclone') if provider_id == 'rclone' else None
+        if provider_id == 'rclone' and not rclone:
+            return jsonify({'status': 'error', 'error': 'rclone provider not available'}), 400
+
+        # Load candidate files from SQLite for this scan_id
+        try:
+            from .core import path_index_sqlite as pix
+            from .core import migrations as _migs
+            conn = pix.connect(); _migs.migrate(conn)
+            cur = conn.cursor()
+            # Build base query with optional overwrite and cursor, then apply LIMIT
+            if overwrite:
+                if (body.get('after_rowid') not in (None, '')):
+                    try:
+                        after_rowid = int(body.get('after_rowid'))
+                    except Exception:
+                        after_rowid = None
+                else:
+                    after_rowid = None
+                if after_rowid is not None:
+                    cur.execute(
+                        "SELECT rowid, path, size, file_extension FROM files WHERE scan_id=? AND type='file' AND rowid > ? ORDER BY rowid ASC LIMIT ?",
+                        (scan_id, after_rowid, max_files)
+                    )
+                else:
+                    cur.execute(
+                        "SELECT rowid, path, size, file_extension FROM files WHERE scan_id=? AND type='file' ORDER BY rowid ASC LIMIT ?",
+                        (scan_id, max_files)
+                    )
+            else:
+                if (body.get('after_rowid') not in (None, '')):
+                    try:
+                        after_rowid = int(body.get('after_rowid'))
+                    except Exception:
+                        after_rowid = None
+                else:
+                    after_rowid = None
+                if after_rowid is not None:
+                    cur.execute(
+                        "SELECT rowid, path, size, file_extension FROM files WHERE scan_id=? AND type='file' AND (interpreted_as IS NULL OR interpreted_as='') AND rowid > ? ORDER BY rowid ASC LIMIT ?",
+                        (scan_id, after_rowid, max_files)
+                    )
+                else:
+                    cur.execute(
+                        "SELECT rowid, path, size, file_extension FROM files WHERE scan_id=? AND type='file' AND (interpreted_as IS NULL OR interpreted_as='') ORDER BY rowid ASC LIMIT ?",
+                        (scan_id, max_files)
+                    )
+            rows = cur.fetchall() or []
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        # Interpreter selection based on registry rules and extension map
+        registry: InterpreterRegistry = app.extensions['scidk']['registry']
+        # Build extension -> interpreters map using existing registry data
+        ext_to_interpreters = {}
+        try:
+            # registry.by_extension is available; also respect only_interps filter by id
+            for ext_key, interps in getattr(registry, 'by_extension', {}).items():
+                cand = []
+                for interp in interps:
+                    iid = getattr(interp, 'id', '')
+                    if only_interps and iid not in only_interps:
+                        continue
+                    # Use registry enabled state if any explicitly enabled
+                    if getattr(registry, 'enabled_interpreters', None):
+                        if iid not in registry.enabled_interpreters:
+                            continue
+                    cand.append(interp)
+                if cand:
+                    ext_to_interpreters[ext_key.lower()] = cand
+        except Exception:
+            ext_to_interpreters = {}
+
+        def _wanted(path: str) -> bool:
+            if include and not any(fnmatch.fnmatch(path, pat) for pat in include):
+                return False
+            if exclude and any(fnmatch.fnmatch(path, pat) for pat in exclude):
+                return False
+            return True
+
+        # Diagnostics counters
+        files_seen = 0
+        filtered_by_size = 0
+        filtered_by_include = 0
+        filtered_no_interpreter = 0
+
+        candidates = []
+        last_rowid = 0
+        for (rowid, path, size, ext) in rows:
+            try:
+                last_rowid = int(rowid)
+            except Exception:
+                pass
+            files_seen += 1
+            try:
+                size_i = int(size or 0)
+            except Exception:
+                size_i = 0
+            if (max_size_bytes is not None) and size_i > max_size_bytes:
+                filtered_by_size += 1
+                continue
+            if not _wanted(path):
+                filtered_by_include += 1
+                continue
+            interps = (ext_to_interpreters.get((ext or '').lower()) or [])
+            if not interps:
+                # Allow any interpreter with empty ext rule if present in map
+                interps = ext_to_interpreters.get('', []) or []
+            if not interps:
+                filtered_no_interpreter += 1
+                continue
+            candidates.append((path, size_i, ext, interps))
+            if len(candidates) >= max_files:
+                break
+
+        processed, errors = [], []
+
+        def _run_interp(interp, target_path: str, content_bytes: bytes):
+            # Prefer interpret_bytes/text when available, fallback to temp-file + interpret(path)
+            try:
+                if hasattr(interp, 'interpret_bytes'):
+                    return interp.interpret_bytes(content_bytes, path_hint=target_path)
+            except Exception:
+                pass
+            try:
+                if hasattr(interp, 'interpret_text'):
+                    return interp.interpret_text(content_bytes.decode('utf-8', errors='replace'), path_hint=target_path)
+            except Exception:
+                pass
+            import tempfile
+            from pathlib import Path as _P
+            with tempfile.NamedTemporaryFile(delete=True) as tf:
+                try:
+                    tf.write(content_bytes)
+                    tf.flush()
+                except Exception:
+                    pass
+                return interp.interpret(_P(tf.name))
+
+        for (fpath, fsize, ext, interps) in candidates:
+            last_err = None
+            try:
+                if provider_id == 'rclone':
+                    content = rclone.cat(fpath, max_bytes=max_size_bytes, timeout_sec=timeout_sec)  # type: ignore[attr-defined]
+                else:
+                    with open(fpath, 'rb') as f:
+                        content = f.read(max_size_bytes or (16 * 1024 * 1024))
+                success = False
+                for interp in interps:
+                    try:
+                        result = _run_interp(interp, fpath, content) or {}
+                        payload = {
+                            'status': result.get('status', 'success'),
+                            'data': result.get('data', result),
+                            'interpreter_version': getattr(interp, 'version', '0.0.1'),
+                        }
+                        try:
+                            from .core import path_index_sqlite as pix
+                            conn_i = pix.connect(); pix.init_db(conn_i)
+                            cur_i = conn_i.cursor()
+                            cur_i.execute(
+                                "UPDATE files SET interpreted_as=?, interpretation_json=? WHERE path=? AND type='file' AND scan_id=?",
+                                (getattr(interp, 'id', None), _json.dumps(payload.get('data')), fpath, scan_id)
+                            )
+                            conn_i.commit(); conn_i.close()
+                        except Exception:
+                            pass
+                        processed.append({'path': fpath, 'size': fsize, 'interpreter': getattr(interp, 'id', None), 'status': 'ok'})
+                        success = True
+                        break
+                    except Exception as e:
+                        last_err = str(e)
+                        continue
+                if not success:
+                    errors.append({'path': fpath, 'error': last_err or 'no interpreter succeeded'})
+            except Exception as e:
+                errors.append({'path': fpath, 'error': str(e)})
+
+        return jsonify({
+            'status': 'ok',
+            'scan_id': scan_id,
+            'provider_id': provider_id,
+            'processed_count': len(processed),
+            'error_count': len(errors),
+            'files_seen': files_seen,
+            'filtered_by_size': filtered_by_size,
+            'filtered_by_include': filtered_by_include,
+            'filtered_no_interpreter': filtered_no_interpreter,
+            'processed': processed[:100],
+            'errors': errors[:50],
+        }), 200
+
+    @api.post('/scans/<scan_id>/reinterpret')
+    def api_scan_reinterpret(scan_id):
+        """
+        Re-run interpreters for files in an existing scan and persist results into SQLite.
+        - Operates only on local files (absolute paths). Remote canonical paths like "remote:sub/path" are skipped
+          unless they are mounted locally and resolvable; this MVP does not stream remote bytes.
+        - Honors current effective interpreter enablement.
+        - Matching is by filename against each interpreter's globs (fnmatch), with normalization:
+          patterns like ".csv" are treated as "*.csv". We also fall back to extension-based matching.
+        Returns a summary with counts, including files_seen and files_matched.
+        """
+        try:
+            from .core import path_index_sqlite as pix
+            from .core import migrations as _migs
+            import json as _json
+            import fnmatch
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        # Resolve effective enabled interpreters
+        reg = app.extensions['scidk']['registry']
+        istate = app.extensions.get('scidk', {}).get('interpreters', {})
+        eff_set = set(istate.get('effective_enabled') or [])
+        if not eff_set:
+            # Fallback to current registry defaults if snapshot missing
+            eff_set = set([iid for iid in reg.by_id.keys() if getattr(reg.by_id[iid], 'default_enabled', True)])
+        enabled_interpreters = [reg.by_id[i] for i in reg.by_id.keys() if i in eff_set]
+        # Prepare minimal debug snapshot of interpreter patterns
+        _dbg_interps = []
+        try:
+            for it in enabled_interpreters:
+                try:
+                    _dbg_interps.append({
+                        'id': getattr(it, 'id', None),
+                        'globs': list((getattr(it, 'globs', []) or [])),
+                        'extensions': list((getattr(it, 'extensions', []) or [])),
+                    })
+                except Exception:
+                    pass
+        except Exception:
+            _dbg_interps = []
+        # Open DB
+        conn = pix.connect()
+        _migs.migrate(conn)
+        updated = 0
+        skipped_remote = 0
+        not_found = 0
+        errors = 0
+        files_seen = 0
+        files_matched = 0
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT path, name, file_extension FROM files WHERE scan_id=? AND type='file'", (scan_id,))
+            rows = cur.fetchall()
+            for (path_val, name_val, ext_val) in rows:
+                files_seen += 1
+                try:
+                    # Skip remote canonical paths (e.g., "remote:...")
+                    if isinstance(path_val, str) and ':' in path_val and not path_val.startswith('/'):
+                        skipped_remote += 1
+                        continue
+                    fpath = Path(path_val)
+                    if not fpath.exists():
+                        not_found += 1
+                        continue
+                    # Choose applicable interpreters using registry rule engine with extension fallback
+                    ds = {
+                        'path': path_val,
+                        'extension': (ext_val or '').strip().lower(),
+                        'name': name_val,
+                    }
+                    matched = reg.select_for_dataset(ds) or []
+                    if not matched:
+                        continue
+                    files_matched += 1
+                    # Run first matching interpreter (MVP). If multiple, prefer first.
+                    interp = matched[0]
+                    try:
+                        result = interp.interpret(fpath)
+                        payload = {
+                            'status': result.get('status', 'success'),
+                            'data': result.get('data', result),
+                            'interpreter_version': getattr(interp, 'version', '0.0.1'),
+                        }
+                    except Exception as ie:
+                        payload = {
+                            'status': 'error',
+                            'data': {'error': str(ie)},
+                            'interpreter_version': getattr(interp, 'version', '0.0.1'),
+                        }
+                    # Persist into SQLite
+                    cur.execute(
+                        "UPDATE files SET interpreted_as = ?, interpretation_json = ? WHERE path = ? AND type = 'file' AND scan_id = ?",
+                        (interp.id, _json.dumps(payload.get('data')), str(fpath), scan_id)
+                    )
+                    updated += (1 if cur.rowcount else 0)
+                except Exception:
+                    errors += 1
+                    continue
+            conn.commit()
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        # Minimal server-side log for diagnostics
+        try:
+            print(f"[reinterpret] scan={scan_id} updated={updated} skipped_remote={skipped_remote} not_found={not_found} errors={errors} files_seen={files_seen} files_matched={files_matched}")
+        except Exception:
+            pass
+        # Minimal server-side log for diagnostics
+        try:
+            print(f"[reinterpret] scan={scan_id} updated={updated} skipped_remote={skipped_remote} not_found={not_found} errors={errors} files_seen={files_seen} files_matched={files_matched}")
+            if files_matched == 0 and files_seen > 0:
+                # Log first few file names and extensions plus interpreter patterns
+                try:
+                    print(f"[reinterpret] enabled_interpreters={_dbg_interps}")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return jsonify({'status': 'ok', 'updated': int(updated), 'skipped_remote': int(skipped_remote), 'not_found': int(not_found), 'errors': int(errors), 'files_seen': int(files_seen), 'files_matched': int(files_matched)}), 200
 
     @api.get('/index/search')
     def api_index_search():
@@ -2724,7 +3691,36 @@ def create_app():
         scans = app.extensions['scidk'].setdefault('scans', {})
         s = scans.get(scan_id)
         if not s:
-            return jsonify({"error": "scan not found"}), 404
+            # Try to load minimal scan from SQLite to allow preview
+            try:
+                from .core import path_index_sqlite as pix
+                from .core import migrations as _migs
+                import json as _json
+                conn = pix.connect()
+                try:
+                    _migs.migrate(conn)
+                    cur = conn.cursor()
+                    cur.execute("SELECT id, root, started, completed, status, extra_json FROM scans WHERE id = ?", (scan_id,))
+                    row = cur.fetchone()
+                    if row:
+                        sid, root, started, completed, status, extra = row
+                        ex = {}
+                        try:
+                            if extra:
+                                ex = _json.loads(extra)
+                        except Exception:
+                            ex = {}
+                        s = {'id': sid, 'path': root, 'started': started, 'ended': completed}
+                        scans[scan_id] = s
+                    else:
+                        return jsonify({"error": "scan not found"}), 404
+                finally:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+            except Exception:
+                return jsonify({"error": "scan not found"}), 404
         try:
             from .core.commit_rows_from_index import build_rows_for_scan_from_index
             rows, folder_rows = build_rows_for_scan_from_index(scan_id, s, include_hierarchy=True)
@@ -2743,7 +3739,46 @@ def create_app():
         scans = app.extensions['scidk'].setdefault('scans', {})
         s = scans.get(scan_id)
         if not s:
-            return jsonify({"error": "scan not found"}), 404
+            # Attempt to reconstruct minimal scan from SQLite so the hierarchy can be built from index
+            try:
+                from .core import path_index_sqlite as pix
+                from .core import migrations as _migs
+                import json as _json
+                conn = pix.connect()
+                try:
+                    _migs.migrate(conn)
+                    cur = conn.cursor()
+                    cur.execute("SELECT id, root, started, completed, status, extra_json FROM scans WHERE id = ?", (scan_id,))
+                    row = cur.fetchone()
+                    if row:
+                        sid, root, started, completed, status, extra = row
+                        extra_obj = {}
+                        try:
+                            if extra:
+                                extra_obj = _json.loads(extra)
+                        except Exception:
+                            extra_obj = {}
+                        s = {
+                            'id': sid,
+                            'path': root,
+                            'started': started,
+                            'ended': completed,
+                            'provider_id': (extra_obj or {}).get('provider_id') or 'local_fs',
+                            'host_type': (extra_obj or {}).get('host_type'),
+                            'host_id': (extra_obj or {}).get('host_id'),
+                            'root_id': (extra_obj or {}).get('root_id') or '/',
+                            'root_label': (extra_obj or {}).get('root_label'),
+                        }
+                        scans[scan_id] = s
+                    else:
+                        return jsonify({"error": "scan not found"}), 404
+                finally:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+            except Exception:
+                return jsonify({"error": "scan not found"}), 404
         try:
             # Prefer index path when feature enabled
             use_index = (os.environ.get('SCIDK_COMMIT_FROM_INDEX') or '').strip().lower() in ('1','true','yes','y','on')
@@ -3393,6 +4428,57 @@ def create_app():
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    # Rclone interpretation settings (GET/POST)
+    @api.get('/settings/rclone-interpret')
+    def api_settings_rclone_interpret_get():
+        return jsonify({
+            'suggest_mount_threshold': int(app.config.get('rclone.interpret.suggest_mount_threshold', 400)),
+            'max_files_per_batch': int(app.config.get('rclone.interpret.max_files_per_batch', 1000)),
+        }), 200
+
+    @api.post('/settings/rclone-interpret')
+    def api_settings_rclone_interpret_set():
+        data = request.get_json(force=True, silent=True) or {}
+        try:
+            suggest = int(data.get('suggest_mount_threshold')) if data.get('suggest_mount_threshold') not in (None, '') else None
+        except Exception:
+            suggest = None
+        try:
+            max_batch = int(data.get('max_files_per_batch')) if data.get('max_files_per_batch') not in (None, '') else None
+        except Exception:
+            max_batch = None
+        # Validate and clamp
+        if suggest is not None:
+            suggest = max(0, int(suggest))
+        if max_batch is not None:
+            max_batch = min(max(100, int(max_batch)), 2000)
+        # Persist best-effort
+        try:
+            from .core import path_index_sqlite as pix
+            from .core import migrations as _migs
+            conn = pix.connect()
+            try:
+                _migs.migrate(conn)
+                cur = conn.cursor()
+                if suggest is not None:
+                    cur.execute("INSERT OR REPLACE INTO settings(key, value) VALUES(?, ?)", ('rclone.interpret.suggest_mount_threshold', str(suggest)))
+                if max_batch is not None:
+                    cur.execute("INSERT OR REPLACE INTO settings(key, value) VALUES(?, ?)", ('rclone.interpret.max_files_per_batch', str(max_batch)))
+                conn.commit()
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Update in-memory config
+        if suggest is not None:
+            app.config['rclone.interpret.suggest_mount_threshold'] = int(suggest)
+        if max_batch is not None:
+            app.config['rclone.interpret.max_files_per_batch'] = int(max_batch)
+        return jsonify({'ok': True, 'suggest_mount_threshold': int(app.config.get('rclone.interpret.suggest_mount_threshold', 400)), 'max_files_per_batch': int(app.config.get('rclone.interpret.max_files_per_batch', 1000))}), 200
+
     # Settings APIs for Neo4j configuration
     @api.get('/settings/neo4j')
     def api_settings_neo4j_get():
@@ -3764,7 +4850,25 @@ def create_app():
         directories.sort(key=lambda d: d.get('last_scanned') or 0, reverse=True)
         scans = list(app.extensions['scidk'].get('scans', {}).values())
         scans.sort(key=lambda s: s.get('ended') or s.get('started') or 0, reverse=True)
-        return render_template('index.html', datasets=datasets, by_ext=by_ext, schema_summary=schema_summary, telemetry=telemetry, directories=directories, scans=scans)
+        # Add SQLite-backed scan_count for landing summary
+        scan_count = None
+        try:
+            from .core import path_index_sqlite as pix
+            conn = pix.connect()
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT COUNT(1) FROM scans")
+                row = cur.fetchone()
+                if row:
+                    scan_count = int(row[0])
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        except Exception:
+            scan_count = None
+        return render_template('index.html', datasets=datasets, by_ext=by_ext, schema_summary=schema_summary, telemetry=telemetry, directories=directories, scans=scans, scan_count=scan_count)
 
     @ui.get('/chat')
     def chat():
@@ -3931,6 +5035,43 @@ def create_app():
         }
         scans = app.extensions['scidk'].setdefault('scans', {})
         scans[scan_id] = scan
+        # Persist scan summary to SQLite (best-effort)
+        try:
+            from .core import path_index_sqlite as pix
+            from .core import migrations as _migs
+            import json as _json
+            conn = pix.connect()
+            try:
+                _migs.migrate(conn)
+                cur = conn.cursor()
+                cur.execute(
+                    "INSERT OR REPLACE INTO scans(id, root, started, completed, status, extra_json) VALUES(?,?,?,?,?,?)",
+                    (
+                        scan_id,
+                        str(path),
+                        float(started or 0.0),
+                        float(ended or 0.0),
+                        'completed',
+                        _json.dumps({
+                            'recursive': bool(recursive),
+                            'duration_sec': duration,
+                            'file_count': int(count),
+                            'by_ext': by_ext,
+                            'source': getattr(fs, 'last_scan_source', 'python'),
+                            'checksums': new_checksums,
+                            'committed': bool(scan.get('committed', False)),
+                            'committed_at': scan.get('committed_at'),
+                        })
+                    )
+                )
+                conn.commit()
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        except Exception:
+            pass
         telem = app.extensions['scidk'].setdefault('telemetry', {})
         telem['last_scan'] = {
             'path': str(path),
