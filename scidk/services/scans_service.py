@@ -476,5 +476,47 @@ class ScansService:
             'root_label': root_label,
         })
         drec.setdefault('scan_ids', []).append(scan_id)
+        # Persist scan summary to SQLite (best-effort), mirroring background worker
+        try:
+            conn = pix.connect()
+            try:
+                from ..core import migrations as _migs
+                import json as _json
+                _migs.migrate(conn)
+                cur = conn.cursor()
+                cur.execute(
+                    "INSERT OR REPLACE INTO scans(id, root, started, completed, status, extra_json) VALUES(?,?,?,?,?,?)",
+                    (
+                        scan_id,
+                        str(path),
+                        float(started or 0.0),
+                        float(ended or 0.0),
+                        'completed',
+                        _json.dumps({
+                            'recursive': bool(recursive),
+                            'duration_sec': duration,
+                            'file_count': int(count),
+                            'by_ext': by_ext,
+                            'source': scan.get('source'),
+                            'checksums': new_checksums,
+                            'committed': False,
+                            'committed_at': None,
+                            'provider_id': provider_id,
+                            'root_id': root_id,
+                            'host_type': host_type,
+                            'host_id': host_id,
+                            'root_label': root_label,
+                            'selection': (selection or {}),
+                        })
+                    )
+                )
+                conn.commit()
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        except Exception:
+            pass
         # return payload identical to previous endpoint
         return {"status": "ok", "scan_id": scan_id, "scanned": count, "folder_count": len(folders), "ingested_rows": int(ingested), "duration_sec": duration, "path": str(path), "recursive": bool(recursive), "provider_id": provider_id}
