@@ -1696,6 +1696,7 @@ def create_app():
                 'scan_id': None,
                 'error': None,
                 'cancel_requested': False,
+                'selection': data.get('selection') or {},
             }
             app.extensions['scidk'].setdefault('tasks', {})[task_id] = task
 
@@ -1718,7 +1719,44 @@ def create_app():
                         # Estimate total: Python traversal
                         files_list = [p for p in fs._iter_files_python(base, recursive=recursive)]
                         task['total'] = len(files_list)
-                        # Build rows like api_scan
+                        # Build rows like api_scan, apply selection rules when provided
+                        sel = (task.get('selection') or {})
+                        rules = sel.get('rules') or []
+                        use_ignore = bool(sel.get('use_ignore', True))
+                        allow_override_ignores = bool(sel.get('allow_override_ignores', True))
+                        from fnmatch import fnmatch as _fn
+                        def _norm_rules(rules_list):
+                            out = []
+                            for i, r in enumerate(rules_list or []):
+                                act = (r.get('action') or '').lower(); pth=(r.get('path') or '').rstrip('/');
+                                if not act or not pth: continue
+                                rec = bool(r.get('recursive', False)); nt=r.get('node_type'); depth=pth.count('/');
+                                out.append({'action':act,'path':pth,'recursive':rec,'node_type':nt,'depth':depth,'order_index':i})
+                            out.sort(key=lambda x:(x['depth'], x['order_index']), reverse=True)
+                            return out
+                        _rules = _norm_rules(rules)
+                        def _decide(rel_path: str, ignored: bool):
+                            if ignored and not allow_override_ignores: return (False, 'ignored_by_scidkignore')
+                            for r in _rules:
+                                rp = r['path']
+                                if r['recursive']:
+                                    if rel_path == rp or rel_path.startswith(rp + '/'):
+                                        return ((r['action']=='include'), r['action']+'_by_rule')
+                                else:
+                                    if rel_path == rp:
+                                        return ((r['action']=='include'), r['action']+'_by_rule')
+                            if ignored: return (False, 'ignored_by_scidkignore')
+                            return (True, 'inherited')
+                        ignore_patterns = []
+                        if use_ignore:
+                            try:
+                                ign = base / '.scidkignore'
+                                if ign.exists():
+                                    for line in ign.read_text(encoding='utf-8').splitlines():
+                                        s = line.strip();
+                                        if s and not s.startswith('#'): ignore_patterns.append(s)
+                            except Exception:
+                                ignore_patterns = []
                         items_files = []
                         items_dirs = set()
                         if recursive:
@@ -1729,7 +1767,15 @@ def create_app():
                                     if p.is_dir():
                                         items_dirs.add(p)
                                     else:
-                                        items_files.append(p)
+                                        # selection filter on files
+                                        try:
+                                            rel = p.resolve().relative_to(base.resolve()).as_posix()
+                                        except Exception:
+                                            rel = str(p)
+                                        ignored = any(_fn(rel, pat) for pat in ignore_patterns)
+                                        ok, _ = _decide(rel, ignored)
+                                        if ok:
+                                            items_files.append(p)
                                         parent = p.parent
                                         while parent and parent != parent.parent and str(parent).startswith(str(base)):
                                             items_dirs.add(parent)
@@ -1743,7 +1789,11 @@ def create_app():
                             try:
                                 for p in base.iterdir():
                                     if p.is_dir(): items_dirs.add(p)
-                                    else: items_files.append(p)
+                                    else:
+                                        rel = p.name
+                                        ignored = any(_fn(rel, pat) for pat in ignore_patterns)
+                                        ok, _ = _decide(rel, ignored)
+                                        if ok: items_files.append(p)
                             except Exception:
                                 pass
                             items_dirs.add(base)
@@ -1812,6 +1862,29 @@ def create_app():
                             items = prov.list_files(path, recursive=recursive, fast_list=fast_list)  # type: ignore[attr-defined]
                         except Exception as ee:
                             raise RuntimeError(str(ee))
+                        # Selection for remote: apply only to files using full remote path
+                        sel = (task.get('selection') or {})
+                        rules = sel.get('rules') or []
+                        def _norm_rules(rules_list):
+                            out = []
+                            for i, r in enumerate(rules_list or []):
+                                act = (r.get('action') or '').lower(); pth=(r.get('path') or '').rstrip('/');
+                                if not act or not pth: continue
+                                rec = bool(r.get('recursive', False)); nt=r.get('node_type'); depth=pth.count('/');
+                                out.append({'action':act,'path':pth,'recursive':rec,'node_type':nt,'depth':depth,'order_index':i})
+                            out.sort(key=lambda x:(x['depth'], x['order_index']), reverse=True)
+                            return out
+                        _rules = _norm_rules(rules)
+                        def _decide(full_remote: str):
+                            for r in _rules:
+                                rp = r['path']
+                                if r['recursive']:
+                                    if full_remote == rp or full_remote.startswith(rp + '/'):
+                                        return (r['action']=='include')
+                                else:
+                                    if full_remote == rp:
+                                        return (r['action']=='include')
+                            return True
                         rows = []
                         seen_rows = set()
                         seen_folders = set()
@@ -1845,12 +1918,23 @@ def create_app():
                                     seen_rows.add(key)
                                     rows.append(rrow)
                                 continue
-                            # rclone file row
-                            rrow = pix.map_rclone_item_to_row(it, path, scan_id)
-                            key = (rrow[0], rrow[4])
-                            if key not in seen_rows:
-                                seen_rows.add(key)
-                                rows.append(rrow)
+                            # rclone file row (apply selection)
+                            full_remote = join_remote_path(path, name)
+                            if _decide(full_remote):
+                                rrow = pix.map_rclone_item_to_row(it, path, scan_id)
+                                key = (rrow[0], rrow[4])
+                                if key not in seen_rows:
+                                    seen_rows.add(key)
+                                    rows.append(rrow)
+                                # In-memory dataset for file
+                                try:
+                                    size = int(it.get('Size') or 0)
+                                    ds = fs.create_dataset_remote(full_remote, size_bytes=size, modified_ts=0.0, mime=None)
+                                    app.extensions['scidk']['graph'].upsert_dataset(ds)
+                                except Exception:
+                                    pass
+                                file_count += 1
+                                task['processed'] = file_count
                             if recursive and name:
                                 parts = [p for p in (name.split('/') if isinstance(name, str) else []) if p]
                                 cur = ''
@@ -1859,16 +1943,6 @@ def create_app():
                                     full = join_remote_path(path, cur)
                                     parent = parent_remote_path(full)
                                     _add_folder(full, parts[i], parent)
-                            # In-memory dataset for file
-                            try:
-                                size = int(it.get('Size') or 0)
-                                full = join_remote_path(path, name)
-                                ds = fs.create_dataset_remote(full, size_bytes=size, modified_ts=0.0, mime=None)
-                                app.extensions['scidk']['graph'].upsert_dataset(ds)
-                            except Exception:
-                                pass
-                            file_count += 1
-                            task['processed'] = file_count
                         folder_count = len(seen_folders)
                         ingested = pix.batch_insert_files(rows)
                     else:
@@ -1957,6 +2031,7 @@ def create_app():
                                         'host_type': host_type,
                                         'host_id': host_id,
                                         'root_label': scan.get('root_label'),
+                                        'selection': (task.get('selection') or {}),
                                     })
                                 )
                             )
@@ -1966,6 +2041,26 @@ def create_app():
                                 conn.close()
                             except Exception:
                                 pass
+                    except Exception:
+                        pass
+                    # Also persist normalized selection rules for this scan (best-effort)
+                    try:
+                        from .core import path_index_sqlite as pix
+                        from .core import migrations as _migs
+                        conn = pix.connect()
+                        try:
+                            _migs.migrate(conn)
+                            cur = conn.cursor()
+                            cur.execute("DELETE FROM scan_selection_rules WHERE scan_id = ?", (scan_id,))
+                            sel = task.get('selection') or {}
+                            rules = sel.get('rules') or []
+                            for i, r in enumerate(rules):
+                                act = (r.get('action') or '').lower(); pth = (r.get('path') or '').strip(); rec = 1 if r.get('recursive') else 0; ntyp = r.get('node_type')
+                                cur.execute("INSERT INTO scan_selection_rules(scan_id, action, path, recursive, node_type, order_index) VALUES(?,?,?,?,?,?)", (scan_id, act, pth, rec, ntyp, i))
+                            conn.commit()
+                        finally:
+                            try: conn.close()
+                            except Exception: pass
                     except Exception:
                         pass
                     # Telemetry and directories

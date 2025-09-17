@@ -42,7 +42,7 @@
   <div style="display:flex; gap:1rem; align-items:flex-start">
     <div style="flex: 2 1 60%; border:1px solid #eee; max-height:420px; overflow:auto">
       <table class="table table-sm" style="margin-bottom:0">
-        <thead><tr><th>Sel</th><th>Name</th><th>Type</th><th>Size</th><th>Modified</th><th>Provider</th></tr></thead>
+        <thead><tr><th><input id="prov-sel-all" type="checkbox" title="Select/Deselect all on page" /></th><th>Name</th><th>Type</th><th>Size</th><th>Modified</th><th>Provider</th></tr></thead>
         <tbody id="prov-list"></tbody>
       </table>
     </div>
@@ -379,6 +379,21 @@
     }
 
     function attachProvHandlers(){
+      // Select/Deselect all on page
+      const selAll = document.getElementById('prov-sel-all');
+      if (selAll){
+        selAll.addEventListener('change', () => {
+          const boxes = document.querySelectorAll('input.prov-sel');
+          boxes.forEach(chk => {
+            const was = chk.checked;
+            chk.checked = selAll.checked;
+            if (was !== selAll.checked){
+              // trigger change handler to update rules
+              chk.dispatchEvent(new Event('change'));
+            }
+          });
+        });
+      }
       // Row click navigates into folders; file shows details
       document.querySelectorAll('tr.prov-item')?.forEach(tr => {
         tr.addEventListener('click', (ev) => {
@@ -896,7 +911,9 @@
         try {
           const provId = (provSelect && provSelect.value) || currentProv || 'local_fs';
           const rootId = (rootSelect && rootSelect.value) || currentRoot || '/';
-          const payload = { type: 'scan', path, recursive, provider_id: provId, root_id: rootId };
+          const overrideIgSel = !!(document.getElementById('sel-override-ignore') && document.getElementById('sel-override-ignore').checked);
+                    const selection = { rules: selectionRules.slice(), use_ignore: true, allow_override_ignores: overrideIgSel };
+                    const payload = { type: 'scan', path, recursive, provider_id: provId, root_id: rootId, selection };
           const r = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
           if (r.status === 202){ startPolling(); fetchTasks(); }
           else { const j = await r.json(); alert('Task error: ' + (j.error || r.status)); }
