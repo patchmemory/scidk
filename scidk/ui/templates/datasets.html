@@ -42,7 +42,7 @@
   <div style="display:flex; gap:1rem; align-items:flex-start">
     <div style="flex: 2 1 60%; border:1px solid #eee; max-height:420px; overflow:auto">
       <table class="table table-sm" style="margin-bottom:0">
-        <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Modified</th><th>Provider</th></tr></thead>
+        <thead><tr><th>Sel</th><th>Name</th><th>Type</th><th>Size</th><th>Modified</th><th>Provider</th></tr></thead>
         <tbody id="prov-list"></tbody>
       </table>
     </div>
@@ -60,6 +60,13 @@
             </div>
           </form>
           <div class="small" id="prov-scan-msg" style="margin-top:.25rem"></div>
+          <div class="small" id="prov-select-panel" style="margin-top:.5rem; border-top:1px dashed #eee; padding-top:.5rem">
+            <div style="display:flex; gap:.5rem; align-items:center; flex-wrap: wrap;">
+              <label class="form-check-label small" title="If on, explicit includes can override .scidkignore patterns"><input id="sel-override-ignore" class="form-check-input" type="checkbox" checked /> Allow includes to override .scidkignore</label>
+              <button id="btn-scan-with-selection" class="btn btn-sm btn-outline-primary">Scan with selection</button>
+              <span id="sel-summary" class="small"></span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -344,20 +351,42 @@
           const size = e.type === 'folder' ? '' : fmtBytes(e.size||0);
           const mod = fmtTime(e.mtime||0);
           const prov = providerId;
-          return `<tr class="prov-item" data-id="${e.id}" data-type="${e.type}"><td>${e.name}</td><td>${type}</td><td>${size}</td><td>${mod}</td><td><span class="badge">${prov}</span></td></tr>`;
+          const chkId = `sel-${btoa((e.id||'')+':'+(e.type||''))}`;
+          return `<tr class="prov-item" data-id="${e.id}" data-type="${e.type}">
+            <td><input type="checkbox" class="prov-sel" data-id="${e.id}" data-type="${e.type}" /></td>
+            <td>${e.name}</td><td>${type}</td><td>${size}</td><td>${mod}</td><td><span class="badge">${prov}</span></td></tr>`;
         }).join('');
         provList.innerHTML = rows || '<tr><td colspan="5" class="small">Empty folder.</td></tr>';
         attachProvHandlers();
       } catch(e){ provList.innerHTML = '<tr><td colspan="5" class="small">Browse failed.</td></tr>'; }
     }
 
+    // Selection store (rules)
+    const selectionRules = [];
+    function upsertRule(action, path, recursive, node_type){
+      // Remove opposite rule if exists, then add/replace
+      const idx = selectionRules.findIndex(r => r.path===path && r.recursive===!!recursive && r.node_type===node_type);
+      if (idx >= 0) selectionRules.splice(idx,1);
+      selectionRules.push({ action, path, recursive: !!recursive, node_type });
+      renderSelSummary();
+    }
+    function renderSelSummary(){
+      const s = document.getElementById('sel-summary');
+      if (!s) return;
+      const inc = selectionRules.filter(r=>r.action==='include').length;
+      const exc = selectionRules.filter(r=>r.action==='exclude').length;
+      s.textContent = `Selection: ${inc} include, ${exc} exclude`;
+    }
+
     function attachProvHandlers(){
+      // Row click navigates into folders; file shows details
       document.querySelectorAll('tr.prov-item')?.forEach(tr => {
-        tr.addEventListener('click', () => {
+        tr.addEventListener('click', (ev) => {
+          // Ignore clicks originating from checkbox
+          if (ev.target && ev.target.closest && ev.target.closest('input.prov-sel')) return;
           const id = tr.getAttribute('data-id');
           const type = tr.getAttribute('data-type');
           if (type === 'folder'){
-            // For rclone, set currentPath to relative portion (strip remote prefix)
             if (currentProv === 'rclone'){
               const i = id.indexOf(':');
               let rel = i >= 0 ? id.slice(i+1) : id;
@@ -369,10 +398,23 @@
             if (provPathInput) provPathInput.value = currentPath;
             browse(currentProv, currentRoot, currentPath);
           } else {
-            provPanel.innerHTML = `<div><strong>${tr.firstChild?.textContent||id}</strong></div><div class=\"small\">Path: <code>${id}</code></div>`;
+            provPanel.innerHTML = `<div><strong>${tr.children[1]?.textContent||id}</strong></div><div class=\"small\">Path: <code>${id}</code></div>`;
           }
         });
       });
+      // Checkbox selection → translate to include/exclude rules
+      document.querySelectorAll('input.prov-sel')?.forEach(chk => {
+        chk.addEventListener('change', () => {
+          const id = chk.getAttribute('data-id');
+          const type = chk.getAttribute('data-type');
+          const isFolder = (type === 'folder');
+          const recursive = isFolder;
+          const node_type = isFolder ? 'folder' : 'file';
+          const action = chk.checked ? 'include' : 'exclude';
+          upsertRule(action, id, recursive, node_type);
+        });
+      });
+      renderSelSummary();
     }
 
     if (provSelect){
@@ -468,13 +510,14 @@
         try { (window.scidkLocalTasks||[]).push(localTask); } catch(_) { /* ignore */ }
         fetchTasks(); // trigger re-render with local task
         try {
-          const r = await fetch('/api/scan', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ provider_id: provId, root_id: rootId||'/', path: scanPath, recursive, fast_list: fastList }) });
+          const overrideIg = !!(document.getElementById('sel-override-ignore') && document.getElementById('sel-override-ignore').checked);
+          const selection = { rules: selectionRules.slice(), use_ignore: true, allow_override_ignores: overrideIg };
+          const r = await fetch('/api/scan', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ provider_id: provId, root_id: rootId||'/', path: scanPath, recursive, fast_list: fastList, selection }) });
           const ctype = (r.headers && r.headers.get('content-type')) || '';
           let j = null;
           if (ctype.includes('application/json')){
             try { j = await r.json(); } catch(_) { j = null; }
           } else {
-            // Non-JSON response (proxy/gateway error). Read text for clarity
             try { const txt = await r.text(); throw new Error(`HTTP ${r.status}: ${txt}`); } catch(e){ throw e; }
           }
           if (r.ok && j){
@@ -486,7 +529,6 @@
             if (files === 0 && folders > 0 && !recursive){ msg += ' — Only folders found. Enable Recursive to include files in subfolders.'; }
             if (dur) msg += ` (${dur})`;
             provScanMsg.textContent = msg;
-            // Mark local task completed
             localTask.status = 'completed';
             localTask.processed = files;
             localTask.total = files || localTask.processed;
@@ -507,10 +549,12 @@
         }
         finally {
           if (btn) { btn.disabled = false; btn.textContent = 'Scan'; }
-          fetchTasks(); // refresh tasks view to reflect final status
+          fetchTasks();
         }
       });
     }
+    const btnScanWithSel = document.getElementById('btn-scan-with-selection');
+    if (btnScanWithSel){ btnScanWithSel.addEventListener('click', (ev) => { ev.preventDefault(); if (provScanForm) provScanForm.dispatchEvent(new Event('submit')); }); }
 
     // Snapshot browse logic (index-backed)
     const snapScanSel = document.getElementById('snapshot-scan');
