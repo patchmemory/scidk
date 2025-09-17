@@ -51,14 +51,23 @@
       </ul>
     </details>
   {% endif %}
+{% if config.get('feature.selectiveDryRun') %}
+<section>
+  <h2>Selective dry-run (dev)</h2>
+  <p class="small">Preview which files would be scanned using include/exclude rules and .scidkignore. Use the Files page for full scans.</p>
+  <a class="btn btn-sm btn-outline-secondary" href="/datasets">Open Files</a>
 </section>
+{% endif %}
 
 <section>
   <h2>Summary</h2>
-  <p class="small">Saved filesystem scans summary (derived from current datasets).</p>
+  <p class="small">Saved filesystem scans summary (from SQLite and in-memory).</p>
   <ul>
     <li>Total datasets: {{ datasets|length }}</li>
     <li>Unique extensions: {{ by_ext|length }}</li>
+    {% if scan_count is not none %}
+      <li>Total scans in SQLite: {{ scan_count }}</li>
+    {% endif %}
   </ul>
   <details>
     <summary class="small">By extension</summary>
