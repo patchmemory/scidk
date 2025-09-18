@@ -1,0 +1,9 @@
+UX: Files and Snapshot parity; move scan controls; rescan visibility and progress
+
+- Files page: moved scan controls (Scan / Scan with selection / override toggle) into a toolbar above the file browser so they are never covered by the details panel; right panel now shows only item details.
+- Files page: kept select-all header checkbox for Gmail-like selection.
+- Snapshot browser: made table header include a select-all checkbox and row checkboxes for visual parity (informational for now), keeping the same crumb/detail panel behavior.
+- Rescans visibility: API /api/scans now includes rescan_of in summaries; detail includes rescan_of as well. UI Scans Summary and Scans panel display a "rescan" badge and the original scan id.
+- Rescan progress: Snapshot "Rescan" button now starts a background scan task using the original scan parameters and stored selection, so progress shows in the Tasks panel and persists across page switches.
+
+No backend schema change; minimal additions in /api/scans payload and frontend templates.

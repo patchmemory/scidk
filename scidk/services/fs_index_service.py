@@ -29,10 +29,48 @@ class FSIndexService:
         from flask import jsonify  # lazy import to avoid hard dependency at import time
         from ..core import path_index_sqlite as pix
 
-        # Ensure scan exists
+        # Ensure scan exists (reconstruct from SQLite if missing in memory)
         scan = self.app.extensions['scidk'].get('scans', {}).get(scan_id)
         if not scan:
-            return jsonify({'error': 'scan not found'}), 404
+            try:
+                from ..core import path_index_sqlite as pix
+                from ..core import migrations as _migs
+                import json as _json
+                conn = pix.connect()
+                try:
+                    _migs.migrate(conn)
+                    cur = conn.cursor()
+                    cur.execute("SELECT id, root, started, completed, status, extra_json FROM scans WHERE id = ?", (scan_id,))
+                    row = cur.fetchone()
+                    if row:
+                        sid, root, started, completed, status, extra = row
+                        extra_obj = {}
+                        try:
+                            if extra:
+                                extra_obj = _json.loads(extra)
+                        except Exception:
+                            extra_obj = {}
+                        scan = {
+                            'id': sid,
+                            'path': root,
+                            'started': started,
+                            'ended': completed,
+                            'provider_id': (extra_obj or {}).get('provider_id') or 'local_fs',
+                            'host_type': (extra_obj or {}).get('host_type'),
+                            'host_id': (extra_obj or {}).get('host_id'),
+                            'root_id': (extra_obj or {}).get('root_id') or '/',
+                            'root_label': (extra_obj or {}).get('root_label'),
+                        }
+                        self.app.extensions['scidk'].setdefault('scans', {})[scan_id] = scan
+                    else:
+                        return jsonify({'error': 'scan not found'}), 404
+                finally:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+            except Exception:
+                return jsonify({'error': 'scan not found'}), 404
 
         # Resolve parent path default to scan base path
         req_path = (parent_path or '').strip()
@@ -67,7 +105,7 @@ class FSIndexService:
             params.append(typ)
         where_sql = " AND ".join(where)
         sql = (
-            "SELECT path, name, type, size, modified_time, file_extension, mime_type "
+            "SELECT path, name, type, size, modified_time, file_extension, mime_type, interpreted_as, interpretation_json "
             f"FROM files WHERE {where_sql} "
             "ORDER BY type DESC, name ASC "
             "LIMIT ? OFFSET ?"
@@ -88,7 +126,7 @@ class FSIndexService:
 
         entries = []
         for r in rows[:limit]:
-            path_val, name_val, type_val, size_val, mtime_val, ext_val, mime_val = r
+            path_val, name_val, type_val, size_val, mtime_val, ext_val, mime_val, interp_as, interp_json = r
             entries.append({
                 'path': path_val,
                 'name': name_val,
@@ -97,6 +135,8 @@ class FSIndexService:
                 'modified': float(mtime_val or 0.0),
                 'extension': ext_val or '',
                 'mime_type': mime_val,
+                'interpreted_as': interp_as,
+                'interpretation_json': interp_json,
             })
         next_token = str(offset + limit) if len(rows) > limit else None
 
