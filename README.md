@@ -364,7 +364,9 @@ http://localhost:7474/
 Notes:
 - The compose file exposes only Bolt (7687) from the Neo4j server. The Workspace container serves the web UI at host port 7474.
 - If port 7474 or 7687 are occupied on your machine, stop the conflicting service or adjust the port mappings in docker-compose.neo4j.yml.
-- The data, logs, and plugins directories are bound to ./data/neo4j so your graph persists across restarts.
+- Volumes and mount points follow Neo4j Docker guidance: we bind ./data/neo4j subfolders to /data, /logs, /plugins, and /import inside the container so your graph persists across restarts.
+- Avoid mounting anything under /var/lib/neo4j inside the container. The entrypoint changes ownership in that path and can cause permission issues. Stick to /data, /logs, /plugins, and /import.
+- The Workspace UI image is hosted on GitHub Container Registry (GHCR) as ghcr.io/neo4j/neo4j-workspace:latest. If you previously tried neo4j/neo4j-workspace on Docker Hub and saw "pull access denied", update and use the provided compose file.
 
 Manage lifecycle:
 ```
