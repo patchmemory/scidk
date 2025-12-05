@@ -1,0 +1,19 @@
+name: E2E Tests
+
+on: [push, pull_request]
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Python deps
+        run: |
+          pip install -e .[dev]
+      - name: Install Playwright browsers and OS deps
+        uses: microsoft/playwright-github-action@v1
+      - name: Run E2E tests (headless)
+        run: pytest tests/e2e -v
