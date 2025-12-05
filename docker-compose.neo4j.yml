@@ -14,7 +14,7 @@ services:
       - NEO4J_apoc_import_file_enabled=true
       - NEO4J_apoc_import_file_use__neo4j__config=true
     ports:
-      # Expose only Bolt; Workspace will occupy host 7474 for the UI
+      - "7474:7474"   # HTTP (Neo4j Browser/Workspace if bundled)
       - "7687:7687"   # Bolt
     volumes:
       - ${NEO4J_HOST_DATA_DIR:-./data/neo4j/data}:/data
@@ -28,15 +28,3 @@ services:
       retries: 10
       start_period: 20s
 
-  browser:
-    image: neo4j/neo4j-browser:latest
-    container_name: scidk-neo4j-browser
-    restart: unless-stopped
-    depends_on:
-      - neo4j
-    environment:
-      # Point Browser at the Neo4j service over the compose network (defaults shown in UI)
-      - NEO4J_URL=bolt://neo4j:7687
-      - NEO4J_URI=bolt://neo4j:7687
-    ports:
-      - "7474:8080"   # Neo4j Browser UI on the classic port 7474
