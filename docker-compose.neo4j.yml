@@ -17,10 +17,10 @@ services:
       # Expose only Bolt; Workspace will occupy host 7474 for the UI
       - "7687:7687"   # Bolt
     volumes:
-      - ./data/neo4j/data:/data
-      - ./data/neo4j/logs:/logs
-      - ./data/neo4j/plugins:/plugins
-      - ./data/neo4j/import:/import
+      - ${NEO4J_HOST_DATA_DIR:-./data/neo4j/data}:/data
+      - ${NEO4J_HOST_LOGS_DIR:-./data/neo4j/logs}:/logs
+      - ${NEO4J_HOST_PLUGINS_DIR:-./data/neo4j/plugins}:/plugins
+      - ${NEO4J_HOST_IMPORT_DIR:-./data/neo4j/import}:/import
     healthcheck:
       test: ["CMD-SHELL", "PASS=$${NEO4J_AUTH#neo4j/}; cypher-shell -u neo4j -p \"$${PASS}\" -a bolt://localhost:7687 \"RETURN 1;\""]
       interval: 15s

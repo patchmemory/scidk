@@ -351,6 +351,12 @@ Quick start:
 # Optional: set password (default is neo4j/neo4jiscool)
 export NEO4J_AUTH=neo4j/neo4jiscool
 
+# Optional: override host directories (defaults are under ./data/neo4j)
+export NEO4J_HOST_DATA_DIR=${NEO4J_HOST_DATA_DIR:-./data/neo4j/data}
+export NEO4J_HOST_LOGS_DIR=${NEO4J_HOST_LOGS_DIR:-./data/neo4j/logs}
+export NEO4J_HOST_PLUGINS_DIR=${NEO4J_HOST_PLUGINS_DIR:-./data/neo4j/plugins}
+export NEO4J_HOST_IMPORT_DIR=${NEO4J_HOST_IMPORT_DIR:-./data/neo4j/import}
+
 # Start services in background
 docker compose -f docker-compose.neo4j.yml up -d
 
@@ -360,9 +366,11 @@ http://localhost:7474/
 ```
 
 Notes:
+- We do NOT mount or write to system paths like /var/lib/neo4j on the host. By default we persist under the repository at ./data/neo4j, which works without root.
+- You can override the host directories per environment using NEO4J_HOST_* variables shown above (use absolute or relative paths you own).
 - The compose file exposes only Bolt (7687) from the Neo4j server. The Workspace container serves the web UI at host port 7474.
 - If port 7474 or 7687 are occupied on your machine, stop the conflicting service or adjust the port mappings in docker-compose.neo4j.yml.
-- Volumes and mount points follow Neo4j Docker guidance: we bind ./data/neo4j subfolders to /data, /logs, /plugins, and /import inside the container so your graph persists across restarts.
+- Volumes and mount points follow Neo4j Docker guidance: we bind host dirs to /data, /logs, /plugins, and /import inside the container so your graph persists across restarts.
 - Avoid mounting anything under /var/lib/neo4j inside the container. The entrypoint changes ownership in that path and can cause permission issues. Stick to /data, /logs, /plugins, and /import.
 - The Workspace UI image is hosted on GitHub Container Registry (GHCR) as ghcr.io/neo4j/neo4j-workspace:latest. If you previously tried neo4j/neo4j-workspace on Docker Hub and saw "pull access denied", update and use the provided compose file.
 
