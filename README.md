@@ -339,3 +339,49 @@ Notes for agents:
 - Prefer `menu --json` for a quick navigable overview of commands.
 - Use `introspect` to obtain full metadata about args/options, side-effects, and conventions.
 - Place `--json` before the subcommand to ensure the envelope applies to the whole invocation, e.g., `python -m dev.cli --json ready-queue`.
+
+
+## Neo4j in Docker with Workspace on port 7474
+
+We ship a docker-compose file that runs Neo4j and the official Neo4j Workspace UI. The UI is exposed on the classic port 7474, while the database Bolt port remains 7687.
+
+Quick start:
+
+```
+# Optional: set password (default is neo4j/neo4jiscool)
+export NEO4J_AUTH=neo4j/neo4jiscool
+
+# Start services in background
+docker compose -f docker-compose.neo4j.yml up -d
+
+# Open the Workspace UI
+# Login with user neo4j and the password above
+http://localhost:7474/
+```
+
+Notes:
+- The compose file exposes only Bolt (7687) from the Neo4j server. The Workspace container serves the web UI at host port 7474.
+- If port 7474 or 7687 are occupied on your machine, stop the conflicting service or adjust the port mappings in docker-compose.neo4j.yml.
+- The data, logs, and plugins directories are bound to ./data/neo4j so your graph persists across restarts.
+
+Manage lifecycle:
+```
+# Stop containers
+docker compose -f docker-compose.neo4j.yml down
+
+# Stop and remove all data (DANGER: wipes the graph)
+docker compose -f docker-compose.neo4j.yml down -v
+```
+
+Connect SciDK to this Neo4j:
+```
+export NEO4J_URI=bolt://localhost:7687
+export NEO4J_AUTH=${NEO4J_AUTH:-neo4j/neo4jiscool}
+# Optional named database
+echo "SCIDK_NEO4J_DATABASE=neo4j" >> .env
+
+# Start SciDK
+scidk-serve
+# or
+python -m scidk.app
+```
