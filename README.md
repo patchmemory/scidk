@@ -48,6 +48,41 @@ Note: The scanner prefers NCDU for fast filesystem enumeration when available. I
 - Editable install error (Multiple top-level packages discovered): We ship setuptools config to include only the scidk package. If you previously had this error, pull latest and try again: `pip install -e .`.
 - Shell errors when initializing env: Use the script matching your shell (`init_env.sh` for bash/zsh, `init_env.fish` for fish). Avoid running `sh scripts/init_env.sh`; instead, source it.
 
+## End-to-End (E2E) tests
+
+These tests run in a real browser using Playwright and pytest. The test suite automatically starts the Flask app on port 5001 with safe defaults and no external Neo4j connection.
+
+Prereqs (once per machine):
+- Python virtual environment activated.
+- Install dev dependencies and Playwright browsers.
+
+Commands:
+```
+# Install dev deps (if not yet installed)
+pip install -e .[dev]
+
+# Install Playwright browsers (Chromium, Firefox, WebKit)
+make e2e-install-browsers  # or: python -m playwright install --with-deps
+
+# Run headless E2E tests
+make e2e                   # or: pytest -m e2e tests/e2e -q
+
+# Run headed with inspector (debug mode)
+make e2e-headed            # or: PLAYWRIGHT_HEADLESS=0 PWDEBUG=1 pytest -m e2e tests/e2e -q
+
+# Parallel execution (if pytest-xdist is installed; falls back to serial)
+make e2e-parallel
+```
+
+Notes:
+- The E2E test fixture sets:
+  - SCIDK_PORT=5001
+  - NEO4J_AUTH=none
+  - SCIDK_PROVIDERS=local_fs
+  - SCIDK_DB_PATH=sqlite:///:memory:
+- Ensure port 5001 is free before running, or adjust the fixture if needed.
+- For verbose logs during a failing test, use: `make e2e-debug` or `pytest -m e2e -vv -s`.
+
 ## Neo4j Password: How to Set/Change
 - Testing default: The testing Neo4j database uses password `neo4jiscool`. Set this in the app Settings or via environment.
 - Choose your password before first start by setting NEO4J_AUTH in .env or your shell (example uses testing default):

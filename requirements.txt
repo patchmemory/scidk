@@ -1,7 +1,13 @@
+# Runtime dependencies (must match pyproject.toml [project.dependencies])
 Flask>=3.0
-pytest>=7.4
 openpyxl>=3.1
 PyYAML>=6.0
-playwright==1.40.0
+neo4j>=5.14
+psutil>=5.9
+python-dateutil>=2.8
+
+# Dev/test dependencies (same as pyproject.toml [project.optional-dependencies].dev)
+pytest>=7.4
 pytest-playwright==0.4.3
+playwright==1.40.0
 requests>=2.32
