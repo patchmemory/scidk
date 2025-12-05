@@ -1,12 +1,12 @@
 Bootstrap: docker
-From: neo4j:5.20.0
+From: neo4j:5.24.0-community
 
 %help
   Neo4j 5.x container for SciDK deployments in HPC/Singularity contexts.
 
 %labels
   Maintainer SciDK
-  Version 5.20.0
+  Version 5.24.0
   Description "Neo4j for SciDK"
 
 %environment
@@ -16,14 +16,14 @@ From: neo4j:5.20.0
   export NEO4J_dbms_connector_http_listen__address=${NEO4J_HTTP_ADDR:-:7474}
   export NEO4J_server_memory_heap_initial__size=${NEO4J_HEAP_INIT:-1G}
   export NEO4J_server_memory_heap_max__size=${NEO4J_HEAP_MAX:-2G}
-  export NEO4JLABS_PLUGINS='["apoc","n10s"]'
-  export NEO4J_dbms_security_procedures_unrestricted='apoc.* , n10s.*'
+  export NEO4J_PLUGINS='["apoc"]'
+  export NEO4J_dbms_security_procedures_unrestricted='apoc.*'
   export NEO4J_apoc_export_file_enabled=true
   export NEO4J_apoc_import_file_enabled=true
   export NEO4J_apoc_import_file_use__neo4j__config=true
 
 %post
-  echo "Using base docker://neo4j:5.20.0"
+  echo "Using base docker://neo4j:5.24.0-community"
 
 %runscript
   exec neo4j "$@"
