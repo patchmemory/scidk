@@ -35,3 +35,4 @@ data/*
 *.db
 *.db-shm
 *.db-wal
+*.xlsx*
