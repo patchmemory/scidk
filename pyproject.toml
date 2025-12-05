@@ -12,11 +12,17 @@ requires-python = ">=3.10"
 dependencies = [
   "Flask>=3.0",
   "pytest>=7.4",
+  "openpyxl>=3.1",
+  "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
+# Dev/test dependencies used locally and in CI
 dev = [
   "pytest>=7.4",
+  "pytest-playwright==0.4.3",
+  "playwright==1.40.0",
+  "requests>=2.32",
 ]
 
 [project.scripts]
@@ -34,3 +40,7 @@ testpaths = [
   "tests",
 ]
 addopts = "-q"
+markers = [
+  "e2e: end-to-end tests",
+  "slow: slow tests",
+]
