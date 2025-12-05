@@ -341,9 +341,9 @@ Notes for agents:
 - Place `--json` before the subcommand to ensure the envelope applies to the whole invocation, e.g., `python -m dev.cli --json ready-queue`.
 
 
-## Neo4j in Docker with Workspace on port 7474
+## Neo4j in Docker with Browser UI on port 7474
 
-We ship a docker-compose file that runs Neo4j and the official Neo4j Workspace UI. The UI is exposed on the classic port 7474, while the database Bolt port remains 7687.
+We ship a docker-compose file that runs Neo4j and the official Neo4j Browser UI (as a separate container). The UI is exposed on the classic port 7474, while the database Bolt port remains 7687.
 
 Quick start:
 
@@ -360,7 +360,7 @@ export NEO4J_HOST_IMPORT_DIR=${NEO4J_HOST_IMPORT_DIR:-./data/neo4j/import}
 # Start services in background
 docker compose -f docker-compose.neo4j.yml up -d
 
-# Open the Workspace UI
+# Open the Browser UI
 # Login with user neo4j and the password above
 http://localhost:7474/
 ```
