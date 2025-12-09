@@ -234,6 +234,33 @@ class RcloneProvider(FilesystemProvider):
     id = "rclone"
     display_name = "Rclone Remotes"
 
+    def cat(self, target_file: str, max_bytes: Optional[int] = None, timeout_sec: Optional[float] = 60.0) -> bytes:
+        """Stream file bytes from a remote path using rclone cat.
+        Optionally limit to max_bytes and enforce a timeout.
+        """
+        import shutil, subprocess
+        exe = shutil.which('rclone')
+        if not exe:
+            raise RuntimeError("rclone not installed or not on PATH")
+        p = subprocess.Popen([exe, 'cat', target_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            out, err = p.communicate(timeout=timeout_sec)
+        except Exception:
+            try:
+                p.kill()
+            except Exception:
+                pass
+            raise
+        if p.returncode != 0:
+            try:
+                msg = err.decode('utf-8', errors='ignore').strip()
+            except Exception:
+                msg = 'rclone cat failed'
+            raise RuntimeError(msg or 'rclone cat failed')
+        if (max_bytes is not None) and isinstance(out, (bytes, bytearray)) and len(out) > max_bytes:
+            return out[:max_bytes]
+        return out
+
     def _run(self, args: List[str]):
         import shutil, subprocess
         exe = shutil.which('rclone')

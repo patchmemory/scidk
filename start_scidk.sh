@@ -17,7 +17,8 @@ export SCIDK_FILES_VIEWER=rocrate
 # Optional: keep rclone provider visible even if rclone missing (for UI/testing)
 # export SCIDK_FORCE_RCLONE=1
 # Optional: set a specific SQLite DB path
-export SCIDK_DB_PATH="$HOME/.scidk/db/files.db"
+#export SCIDK_DB_PATH="$HOME/.scidk/db/files.db"
+export SCIDK_DB_PATH="$HOME/PycharmProjects/scidk/data/files.db"
 
 # Bind address/port
 HOST=0.0.0.0
