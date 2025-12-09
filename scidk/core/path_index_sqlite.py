@@ -62,6 +62,16 @@ def init_db(conn: Optional[sqlite3.Connection] = None):
             );
             """
         )
+        # Ensure new interpretation columns exist (SQLite lacks IF EXISTS for ADD COLUMN -> check via PRAGMA)
+        try:
+            cols = {row[1] for row in cur.execute("PRAGMA table_info(files);").fetchall()}
+            if 'interpreted_as' not in cols:
+                cur.execute("ALTER TABLE files ADD COLUMN interpreted_as TEXT;")
+            if 'interpretation_json' not in cols:
+                cur.execute("ALTER TABLE files ADD COLUMN interpretation_json TEXT;")
+        except Exception:
+            # best-effort; ignore if failed (old SQLite variants)
+            pass
         # Indexes for files
         cur.execute("CREATE INDEX IF NOT EXISTS idx_files_scan_parent_name ON files(scan_id, parent_path, name);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_files_scan_ext ON files(scan_id, file_extension);")
