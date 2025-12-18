@@ -7,7 +7,7 @@ on:
 
 jobs:
   tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         python-version: ["3.12"]
@@ -21,9 +21,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .[dev]
-      - name: Install Playwright browsers
+      - name: Install Playwright browsers (repo-local, no root)
         if: matrix.tier == 'e2e'
-        uses: microsoft/playwright-github-action@v1
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/dev/test-runs/pw-browsers
+          TMPDIR: ${{ github.workspace }}/dev/test-runs/tmp
+        run: |
+          python -m playwright install chromium
       - name: Prepare repo-local temp directories
         run: |
           mkdir -p dev/test-runs/{tmp,pytest-tmp,artifacts,downloads,pw-browsers}
