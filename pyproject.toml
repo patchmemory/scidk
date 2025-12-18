@@ -46,8 +46,11 @@ exclude = ["dev*", "data*", "singularity*", "scripts*", "*.dist-info*", "*.egg-i
 testpaths = [
   "tests",
 ]
-addopts = "-q"
+addopts = "-ra"
 markers = [
-  "e2e: end-to-end tests",
+  "unit: fast, pure unit tests",
+  "integration: tests that touch DB/files/HTTP without browser",
+  "e2e: end-to-end Playwright/browser tests",
   "slow: slow tests",
+  "smoke: short, high-signal tests",
 ]

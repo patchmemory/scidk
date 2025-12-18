@@ -8,8 +8,8 @@ class TestGraphFeatures:
     def test_graph_page_loads(self, page_helpers):
         """Graph explorer page loads"""
         page_helpers.goto_page("/map")
-        # Wait for graph to render (adjust selector to your page)
-        page_helpers.wait_for_element(".graph-explorer", timeout=10000)
+        # Wait for graph to render using stable testid
+        page_helpers.wait_for_element("[data-testid='graph-explorer-root']", timeout=10000)
         assert True
 
     def test_graph_visualization_exists(self, page_helpers):
