@@ -40,7 +40,7 @@
   </div>
   <div class="row g-2" style="margin-bottom:.5rem">
     <div class="col small">
-      <form id="prov-scan-form" class="row g-2" style="align-items: end;">
+      <form id="prov-scan-form" class="row g-2" style="align-items: end;" data-testid="prov-scan-form">
         <div class="col-auto small">Scan selected folder (recursive):</div>
         <div class="col-auto form-check">
           <input id="prov-scan-recursive" class="form-check-input" type="checkbox" checked />
@@ -191,7 +191,7 @@
     <div class="col-auto">
       <label for="scan-path" class="form-label small" style="margin-bottom:.25rem">Path</label>
       <div class="input-group input-group-sm" style="width: 420px;">
-        <input id="scan-path" type="text" class="form-control" placeholder="/path/to/scan or remote:sub/path" />
+        <input id="scan-path" type="text" class="form-control" placeholder="/path/to/scan or remote:sub/path" data-testid="scan-path" />
         <button id="bg-use-current" type="button" class="btn btn-outline-secondary">Use current folder</button>
       </div>
     </div>
@@ -200,7 +200,7 @@
       <label class="form-check-label small" for="scan-recursive">Recursive</label>
     </div>
     <div class="col-auto" style="padding-top:1.4rem">
-      <button type="submit" class="btn btn-sm btn-primary">Start Scan</button>
+      <button type="submit" class="btn btn-sm btn-primary" data-testid="scan-submit">Start Scan</button>
     </div>
   </form>
   <div id="tasks-list" style="margin-top:.75rem"></div>
