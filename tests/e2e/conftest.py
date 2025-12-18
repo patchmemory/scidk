@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 import requests
+import sys
 
 FLASK_PORT = 5001
 FLASK_HOST = "127.0.0.1"
@@ -16,15 +17,20 @@ TEST_DB = os.getenv("SCIDK_TEST_DB", "sqlite:///:memory:")
 
 @pytest.fixture(scope="session", autouse=True)
 def flask_app():
-    """Start Flask app in test mode for the whole test session."""
+    """Start Flask app in test mode for the whole test session.
+    Skips E2E entirely unless running in CI or SCIDK_E2E=1 is set, to avoid local Playwright browser issues.
+    """
+    if not (os.environ.get("CI") or os.environ.get("SCIDK_E2E") == "1"):
+        pytest.skip("Skipping E2E: set SCIDK_E2E=1 or run in CI to enable Playwright tests")
     env = os.environ.copy()
     env.update({
-        "FLASK_ENV": "testing",
         "FLASK_DEBUG": "0",
         # Make the app listen on the port our tests will hit
         "SCIDK_PORT": str(FLASK_PORT),
         # Use in-memory/throwaway DB by default
         "SCIDK_DB_PATH": TEST_DB,
+        # Prefer sqlite-backed state when supported
+        "SCIDK_STATE_BACKEND": os.environ.get("SCIDK_STATE_BACKEND", "sqlite"),
         # Ensure no real Neo4j connection attempt occurs
         "NEO4J_AUTH": "none",
         # Keep providers simple and reliable for E2E
@@ -36,7 +42,7 @@ def flask_app():
 
     repo_root = Path(__file__).resolve().parents[2]
     flask_process = subprocess.Popen(
-        ["python", "-m", "scidk.app"],
+        [sys.executable, "-m", "scidk.app"],
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -75,6 +81,15 @@ def flask_app():
 @pytest.fixture(scope="session")
 def base_url():
     return f"http://{FLASK_HOST}:{FLASK_PORT}"
+
+
+@pytest.fixture(scope="session")
+def context_kwargs():
+    """Ensure Playwright downloads and artifacts land under the repo, not system /tmp."""
+    repo_root = Path(__file__).resolve().parents[2]
+    downloads_dir = repo_root / "dev/test-runs/downloads"
+    downloads_dir.mkdir(parents=True, exist_ok=True)
+    return {"acceptDownloads": True, "downloadsPath": str(downloads_dir)}
 
 
 class PageHelpers:

@@ -394,3 +394,92 @@ scidk-serve
 # or
 python -m scidk.app
 ```
+
+
+
+
+
+---
+
+## Test tiers (Python 3.12)
+
+Our CI runs all tests under Python 3.12 in three tiers using pytest markers:
+- unit: fast, pure unit tests that do not touch network/DB/browser
+- integration: tests that touch DB/files/HTTP without a browser
+- e2e: full-browser Playwright tests
+
+Local commands:
+- make unit → pytest -m "not integration and not e2e"
+- make integration → pytest -m integration
+- make e2e → pytest -m e2e tests/e2e -q
+- make check → runs unit, integration, and e2e sequentially
+
+See .github/workflows/tests.yml for the CI matrix that runs each tier.
+
+## Verify CI and Record Demo Artifacts
+
+Follow these steps to verify the full test suite and automatically capture screenshots/JSON for the demo.
+
+1) Verify CI on GitHub
+- Navigate to GitHub → Actions → "Tests" workflow (defined in `.github/workflows/tests.yml`).
+- Confirm that all three matrix jobs are green:
+  - tier=unit
+  - tier=integration
+  - tier=e2e (installs Playwright browsers automatically)
+- Click into the latest run to see logs if any job is red.
+
+2) Run all tests locally (mirrors CI)
+```
+make check
+```
+This runs unit → integration → e2e sequentially under Python 3.12.
+
+3) Capture demo screenshots and API snapshots (automated)
+- Headless (recommended for CI or quick local runs):
+```
+make demo-record
+```
+- Headed with Playwright inspector (debugging):
+```
+make demo-record-headed
+```
+Artifacts are saved under `dev/test-runs/last-demo` by default. Override the output directory with:
+```
+DEMO_ARTIFACTS_DIR=dev/test-runs/my-demo make demo-record
+```
+Generated artifacts include:
+- `01-home.png`, `02-datasets-before.png`, `03-datasets-after.png`, `04-map.png`
+- `api-api-health.json`, `api-api-scans.json`, `api-api-directories.json`, `api-api-tasks.json`
+- `SUMMARY.json` with the artifact path and timestamp
+
+4) Tag and record (optional)
+You can create a tag and attach the artifact folder to a GitHub Release:
+```
+git tag -a vX.Y.Z -m "Cycle demo: SQLite persistence + selective scan cache"
+git push origin vX.Y.Z
+# Then, on GitHub → Releases → Draft a new release → Attach the files from dev/test-runs/...
+```
+
+Troubleshooting:
+- First-time Playwright run locally: install browsers with `make e2e-install-browsers`.
+- Port conflicts: ensure 127.0.0.1:5001 is free; the E2E harness auto-starts the app on that port.
+- Backend toggle: default is SQLite. Override with `export SCIDK_STATE_BACKEND=memory` before `make e2e` if you need the legacy path.
+
+## State backend toggle and Health endpoint
+
+The app can read registry state (scans, directories, tasks, telemetry) through SQLite or in-memory structures.
+- Default: SCIDK_STATE_BACKEND=sqlite
+- Fallback: SCIDK_STATE_BACKEND=memory (restores legacy in-memory reads)
+
+Set the backend via environment before starting the app:
+```
+export SCIDK_STATE_BACKEND=sqlite   # or: memory
+scidk-serve
+```
+
+Health endpoint includes SQLite details useful during migrations and troubleshooting:
+- GET /api/health → { sqlite: { path, exists, journal_mode, wal_mode, schema_version, select1, error? } }
+
+Notes:
+- Auto-migrations run on boot and /api/health reports the final schema_version.
+- WAL mode is enabled by default; journal_mode and wal_mode are both reported for clarity.
