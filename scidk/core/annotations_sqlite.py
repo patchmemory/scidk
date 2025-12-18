@@ -180,6 +180,80 @@ def list_annotations_by_file(file_id: str) -> List[Dict[str, Any]]:
         conn.close()
 
 
+def get_annotation(ann_id: int) -> Optional[Dict[str, Any]]:
+    conn = connect()
+    init_db(conn)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id, file_id, kind, label, note, data_json, created FROM annotations WHERE id = ?", (ann_id,))
+        r = cur.fetchone()
+        if not r:
+            return None
+        return {"id": r[0], "file_id": r[1], "kind": r[2], "label": r[3], "note": r[4], "data_json": r[5], "created": r[6]}
+    finally:
+        conn.close()
+
+
+def update_annotation(ann_id: int, fields: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    allowed = {"kind", "label", "note", "data_json"}
+    sets = []
+    vals = []
+    for k, v in fields.items():
+        if k in allowed:
+            sets.append(f"{k} = ?")
+            vals.append(v)
+    if not sets:
+        return get_annotation(ann_id)
+    conn = connect()
+    init_db(conn)
+    try:
+        cur = conn.cursor()
+        vals.append(ann_id)
+        cur.execute(f"UPDATE annotations SET {', '.join(sets)} WHERE id = ?", vals)
+        conn.commit()
+        if cur.rowcount == 0:
+            return None
+        return get_annotation(ann_id)
+    finally:
+        conn.close()
+
+
+def delete_annotation(ann_id: int) -> bool:
+    conn = connect()
+    init_db(conn)
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM annotations WHERE id = ?", (ann_id,))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def list_annotations(limit: int = 100, offset: int = 0, file_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    conn = connect()
+    init_db(conn)
+    try:
+        cur = conn.cursor()
+        if file_id:
+            cur.execute(
+                "SELECT id, file_id, kind, label, note, data_json, created FROM annotations WHERE file_id = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+                (file_id, int(limit), int(offset)),
+            )
+        else:
+            cur.execute(
+                "SELECT id, file_id, kind, label, note, data_json, created FROM annotations ORDER BY id DESC LIMIT ? OFFSET ?",
+                (int(limit), int(offset)),
+            )
+        rows = cur.fetchall()
+        return [
+            {"id": r[0], "file_id": r[1], "kind": r[2], "label": r[3], "note": r[4], "data_json": r[5], "created": r[6]}
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
 # --- New CRUD for relationships ---
 
 def create_relationship(from_id: str, to_id: str, rel_type: str, properties_json: Optional[str], created_ts: float) -> Dict[str, Any]:

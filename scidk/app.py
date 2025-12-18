@@ -408,6 +408,15 @@ def create_app():
         # Defer reporting to /api/health if needed via app.extensions
         pass
 
+    # State backend toggle (sqlite|memory) for app registries (reads)
+    try:
+        state_backend = (os.environ.get('SCIDK_STATE_BACKEND') or 'sqlite').strip().lower()
+        if state_backend not in ('sqlite', 'memory'):
+            state_backend = 'sqlite'
+    except Exception:
+        state_backend = 'sqlite'
+    app.config['state.backend'] = state_backend
+
     # Core singletons (select backend)
     backend = (os.environ.get('SCIDK_GRAPH_BACKEND') or 'memory').strip().lower()
     if backend == 'neo4j':
@@ -2225,10 +2234,58 @@ def create_app():
 
     @api.get('/tasks')
     def api_tasks_list():
-        tasks = list(app.extensions['scidk'].get('tasks', {}).values())
+        # Prefer persisted tasks when state.backend=sqlite; merge with in-memory running tasks
+        items = []
+        if app.config.get('state.backend') == 'sqlite':
+            try:
+                from .core import path_index_sqlite as pix
+                from .core import migrations as _migs
+                import json as _json
+                conn = pix.connect()
+                try:
+                    _migs.migrate(conn)
+                    cur = conn.cursor()
+                    cur.execute("SELECT id, type, status, created, updated, payload FROM background_tasks ORDER BY coalesce(updated, created) DESC LIMIT 500")
+                    for (tid, ttype, status, created, updated, payload) in cur.fetchall() or []:
+                        try:
+                            payload_obj = _json.loads(payload) if payload else {}
+                        except Exception:
+                            payload_obj = {}
+                        items.append({
+                            'id': tid,
+                            'type': ttype,
+                            'status': status,
+                            'started': created,
+                            'ended': updated if status in ('completed','error','canceled') else None,
+                            'progress': payload_obj.get('progress'),
+                            'processed': payload_obj.get('processed'),
+                            'total': payload_obj.get('total'),
+                            'error': payload_obj.get('error'),
+                        })
+                finally:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        # Merge/augment with in-memory tasks (these represent current session/running tasks)
+        try:
+            mem_tasks = list(app.extensions['scidk'].get('tasks', {}).values())
+        except Exception:
+            mem_tasks = []
+        # Overwrite same-id entries with in-memory (more up-to-date)
+        by_id = {t.get('id'): t for t in items if t.get('id')}
+        for t in mem_tasks:
+            if t.get('id'):
+                by_id[t['id']] = t
+            else:
+                # anonymous tasks unlikely; append
+                items.append(t)
+        items = list(by_id.values()) if by_id else items
         # sort newest first
-        tasks.sort(key=lambda t: t.get('started') or 0, reverse=True)
-        return jsonify(tasks), 200
+        items.sort(key=lambda t: t.get('ended') or t.get('started') or 0, reverse=True)
+        return jsonify(items), 200
 
     @api.get('/tasks/<task_id>')
     def api_tasks_detail(task_id):
@@ -2737,62 +2794,65 @@ def create_app():
 
     @api.get('/directories')
     def api_directories():
-        # Prefer SQLite-backed aggregation by root; fallback to in-memory registry
-        try:
-            from .core import path_index_sqlite as pix
-            from .core import migrations as _migs
-            import json as _json
-            conn = pix.connect()
+        # Prefer SQLite-backed aggregation by root when state.backend=sqlite; fallback to in-memory registry
+        use_sqlite = (app.config.get('state.backend') == 'sqlite')
+        if use_sqlite:
             try:
-                _migs.migrate(conn)
-                cur = conn.cursor()
-                cur.execute("SELECT id, root, completed, extra_json FROM scans WHERE root IS NOT NULL AND root <> '' ORDER BY coalesce(completed, 0) DESC LIMIT 2000")
-                rows = cur.fetchall()
-                agg = {}
-                for (sid, root, completed, extra) in rows:
-                    if not root:
-                        continue
-                    rec = agg.get(root) or {'path': root, 'scanned': 0, 'last_scanned': 0, 'scan_ids': [], 'recursive': None}
-                    rec['scan_ids'].append(sid)
-                    try:
-                        if completed and float(completed) > float(rec.get('last_scanned') or 0):
-                            rec['last_scanned'] = float(completed)
-                    except Exception:
-                        pass
-                    try:
-                        ex = _json.loads(extra) if extra else {}
-                        # Best-effort fields
-                        if ex:
-                            if rec.get('recursive') is None:
-                                rec['recursive'] = bool(ex.get('recursive', False))
-                            if 'file_count' in ex:
-                                rec['scanned'] = int(ex.get('file_count') or rec.get('scanned') or 0)
-                            if 'source' in ex and not rec.get('source'):
-                                rec['source'] = ex.get('source')
-                            if 'provider_id' in ex and not rec.get('provider_id'):
-                                rec['provider_id'] = ex.get('provider_id')
-                            if 'root_id' in ex and not rec.get('root_id'):
-                                rec['root_id'] = ex.get('root_id')
-                            if 'root_label' in ex and not rec.get('root_label'):
-                                rec['root_label'] = ex.get('root_label')
-                    except Exception:
-                        pass
-                    agg[root] = rec
-                values = list(agg.values())
-                values.sort(key=lambda d: d.get('last_scanned') or 0, reverse=True)
-                # Fill defaults
-                for v in values:
-                    if v.get('recursive') is None:
-                        v['recursive'] = False
-                return jsonify(values), 200
-            finally:
+                from .core import path_index_sqlite as pix
+                from .core import migrations as _migs
+                import json as _json
+                conn = pix.connect()
                 try:
-                    conn.close()
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        # Fallback
+                    _migs.migrate(conn)
+                    cur = conn.cursor()
+                    cur.execute("SELECT id, root, completed, extra_json FROM scans WHERE root IS NOT NULL AND root <> '' ORDER BY coalesce(completed, 0) DESC LIMIT 2000")
+                    rows = cur.fetchall()
+                    agg = {}
+                    for (sid, root, completed, extra) in rows:
+                        if not root:
+                            continue
+                        rec = agg.get(root) or {'path': root, 'scanned': 0, 'last_scanned': 0, 'scan_ids': [], 'recursive': None}
+                        rec['scan_ids'].append(sid)
+                        try:
+                            if completed and float(completed) > float(rec.get('last_scanned') or 0):
+                                rec['last_scanned'] = float(completed)
+                        except Exception:
+                            pass
+                        try:
+                            ex = _json.loads(extra) if extra else {}
+                            # Best-effort fields
+                            if ex:
+                                if rec.get('recursive') is None:
+                                    rec['recursive'] = bool(ex.get('recursive', False))
+                                if 'file_count' in ex:
+                                    rec['scanned'] = int(ex.get('file_count') or rec.get('scanned') or 0)
+                                if 'source' in ex and not rec.get('source'):
+                                    rec['source'] = ex.get('source')
+                                if 'provider_id' in ex and not rec.get('provider_id'):
+                                    rec['provider_id'] = ex.get('provider_id')
+                                if 'root_id' in ex and not rec.get('root_id'):
+                                    rec['root_id'] = ex.get('root_id')
+                                if 'root_label' in ex and not rec.get('root_label'):
+                                    rec['root_label'] = ex.get('root_label')
+                        except Exception:
+                            pass
+                        agg[root] = rec
+                    values = list(agg.values())
+                    values.sort(key=lambda d: d.get('last_scanned') or 0, reverse=True)
+                    # Fill defaults
+                    for v in values:
+                        if v.get('recursive') is None:
+                            v['recursive'] = False
+                    return jsonify(values), 200
+                finally:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+            except Exception:
+                # fall through to in-memory
+                pass
+        # Fallback (in-memory)
         dirs = app.extensions['scidk'].get('directories', {})
         values = list(dirs.values())
         values.sort(key=lambda d: d.get('last_scanned') or 0, reverse=True)
@@ -3132,59 +3192,61 @@ def create_app():
         # POST creates a new scan (alias of legacy /api/scan)
         if request.method == 'POST':
             return api_scan()
-        # GET: Prefer SQLite-backed history with in-memory fallback
+        # GET: Prefer SQLite-backed history when state.backend=sqlite; fallback to in-memory
         summaries = []
-        try:
-            from .core import path_index_sqlite as pix
-            import json as _json
-            conn = pix.connect()
+        use_sqlite = (app.config.get('state.backend') == 'sqlite')
+        if use_sqlite:
             try:
-                from .core import migrations as _migs
-                _migs.migrate(conn)
-                cur = conn.cursor()
-                cur.execute("SELECT id, root, started, completed, status, extra_json FROM scans ORDER BY coalesce(completed, started) DESC LIMIT 500")
-                rows = cur.fetchall()
-                for (sid, root, started, completed, status, extra) in rows:
-                    extra_obj = {}
-                    try:
-                        if extra:
-                            extra_obj = _json.loads(extra)
-                    except Exception:
+                from .core import path_index_sqlite as pix
+                import json as _json
+                conn = pix.connect()
+                try:
+                    from .core import migrations as _migs
+                    _migs.migrate(conn)
+                    cur = conn.cursor()
+                    cur.execute("SELECT id, root, started, completed, status, extra_json FROM scans ORDER BY coalesce(completed, started) DESC LIMIT 500")
+                    rows = cur.fetchall()
+                    for (sid, root, started, completed, status, extra) in rows:
                         extra_obj = {}
-                    summaries.append({
-                        'id': sid,
-                        'path': root,
-                        'recursive': bool((extra_obj or {}).get('recursive')),
-                        'started': started,
-                        'ended': completed,
-                        'duration_sec': (extra_obj or {}).get('duration_sec'),
-                        'file_count': (extra_obj or {}).get('file_count'),
-                        'by_ext': (extra_obj or {}).get('by_ext') or {},
-                        'source': (extra_obj or {}).get('source'),
-                        'checksum_count': len((extra_obj or {}).get('checksums') or []),
-                        'committed': bool((extra_obj or {}).get('committed', False)),
-                        'committed_at': (extra_obj or {}).get('committed_at'),
-                        'status': status,
-                        'rescan_of': (extra_obj or {}).get('rescan_of'),
-                    })
-                # Merge in-memory committed flags to reflect immediate commits
-                try:
-                    inmem = {s.get('id'): s for s in app.extensions['scidk'].get('scans', {}).values()}
-                    for i in range(len(summaries)):
-                        sid = summaries[i].get('id')
-                        if sid in inmem:
-                            if bool(inmem[sid].get('committed')):
-                                summaries[i]['committed'] = True
-                                summaries[i]['committed_at'] = inmem[sid].get('committed_at')
-                except Exception:
-                    pass
-            finally:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
-        except Exception:
-            summaries = []
+                        try:
+                            if extra:
+                                extra_obj = _json.loads(extra)
+                        except Exception:
+                            extra_obj = {}
+                        summaries.append({
+                            'id': sid,
+                            'path': root,
+                            'recursive': bool((extra_obj or {}).get('recursive')),
+                            'started': started,
+                            'ended': completed,
+                            'duration_sec': (extra_obj or {}).get('duration_sec'),
+                            'file_count': (extra_obj or {}).get('file_count'),
+                            'by_ext': (extra_obj or {}).get('by_ext') or {},
+                            'source': (extra_obj or {}).get('source'),
+                            'checksum_count': len((extra_obj or {}).get('checksums') or []),
+                            'committed': bool((extra_obj or {}).get('committed', False)),
+                            'committed_at': (extra_obj or {}).get('committed_at'),
+                            'status': status,
+                            'rescan_of': (extra_obj or {}).get('rescan_of'),
+                        })
+                    # Merge in-memory committed flags to reflect immediate commits
+                    try:
+                        inmem = {s.get('id'): s for s in app.extensions['scidk'].get('scans', {}).values()}
+                        for i in range(len(summaries)):
+                            sid = summaries[i].get('id')
+                            if sid in inmem:
+                                if bool(inmem[sid].get('committed')):
+                                    summaries[i]['committed'] = True
+                                    summaries[i]['committed_at'] = inmem[sid].get('committed_at')
+                    except Exception:
+                        pass
+                finally:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+            except Exception:
+                summaries = []
         if not summaries:
             scans = list(app.extensions['scidk'].get('scans', {}).values())
             scans.sort(key=lambda s: s.get('ended') or s.get('started') or 0, reverse=True)
@@ -4879,11 +4941,14 @@ def create_app():
     def api_health():
         """Overall health focusing on SQLite availability and WAL mode."""
         from .core import path_index_sqlite as pix
+        from .core import migrations as _migs
         info = {
             'sqlite': {
                 'path': None,
                 'exists': False,
                 'journal_mode': None,
+                'wal_mode': None,
+                'schema_version': None,
                 'select1': False,
                 'error': None,
             }
@@ -4893,9 +4958,22 @@ def create_app():
             info['sqlite']['path'] = str(dbp)
             conn = pix.connect()
             try:
+                # Ensure schema and capture version
+                try:
+                    v = _migs.migrate(conn)
+                    info['sqlite']['schema_version'] = int(v)
+                except Exception:
+                    try:
+                        row_ver = conn.execute('SELECT version FROM schema_migrations LIMIT 1').fetchone()
+                        if row_ver and row_ver[0] is not None:
+                            info['sqlite']['schema_version'] = int(row_ver[0])
+                    except Exception:
+                        pass
                 mode = (conn.execute('PRAGMA journal_mode;').fetchone() or [''])[0]
                 if isinstance(mode, str):
-                    info['sqlite']['journal_mode'] = mode.lower()
+                    jm = mode.lower()
+                    info['sqlite']['journal_mode'] = jm
+                    info['sqlite']['wal_mode'] = jm
                 row = conn.execute('SELECT 1').fetchone()
                 info['sqlite']['select1'] = bool(row and row[0] == 1)
             finally:
@@ -5318,11 +5396,39 @@ def create_app():
 
     @api.get('/annotations')
     def api_get_annotations():
-        file_id = (request.args.get('file_id') or '').strip()
-        if not file_id:
-            return jsonify({'error': 'file_id query parameter is required'}), 400
-        items = ann_db.list_annotations_by_file(file_id)
-        return jsonify({'items': items, 'count': len(items)}), 200
+        # Optional filters and pagination
+        file_id = (request.args.get('file_id') or '').strip() or None
+        try:
+            limit = int(request.args.get('limit') or 100)
+            offset = int(request.args.get('offset') or 0)
+        except Exception:
+            limit, offset = 100, 0
+        items = ann_db.list_annotations(limit=limit, offset=offset, file_id=file_id)
+        return jsonify({'items': items, 'count': len(items), 'limit': limit, 'offset': offset}), 200
+
+    @api.get('/annotations/<int:ann_id>')
+    def api_get_annotation(ann_id: int):
+        item = ann_db.get_annotation(ann_id)
+        if not item:
+            return jsonify({'error': 'not found'}), 404
+        return jsonify(item), 200
+
+    @api.patch('/annotations/<int:ann_id>')
+    def api_update_annotation(ann_id: int):
+        payload = request.get_json(silent=True) or {}
+        # Enforce privacy: only allow kind, label, note, data_json updates
+        fields = {k: v for k, v in payload.items() if k in {'kind', 'label', 'note', 'data_json'}}
+        updated = ann_db.update_annotation(ann_id, fields)
+        if not updated:
+            return jsonify({'error': 'not found'}), 404
+        return jsonify(updated), 200
+
+    @api.delete('/annotations/<int:ann_id>')
+    def api_delete_annotation(ann_id: int):
+        ok = ann_db.delete_annotation(ann_id)
+        if not ok:
+            return jsonify({'error': 'not found'}), 404
+        return jsonify({'status': 'deleted', 'id': ann_id}), 200
 
     app.register_blueprint(api)
 
