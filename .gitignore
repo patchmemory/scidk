@@ -35,4 +35,16 @@ data/*
 *.db
 *.db-shm
 *.db-wal
+# Excel outputs (if any)
 *.xlsx*
+# Local test artifacts
+dev/test-runs/
+playwright-report/
+test-results/
+pytest-of-patch/
+.output.txt
+# Accidental directories from env expansion
+(pwd)/
+sqlite:/
+sqlite:/home
+sqlite:/tmp
