@@ -25,14 +25,13 @@ jobs:
         if: matrix.tier == 'e2e'
         uses: microsoft/playwright-github-action@v1
       - name: Prepare repo-local temp directories
-        if: matrix.tier == 'e2e'
         run: |
           mkdir -p dev/test-runs/{tmp,pytest-tmp,artifacts,downloads,pw-browsers}
       - name: Run tests by tier
         env:
           SCIDK_E2E: ${{ matrix.tier == 'e2e' && '1' || '0' }}
           TMPDIR: ${{ github.workspace }}/dev/test-runs/tmp
-          PYTEST_ADDOPTS: ${{ matrix.tier == 'e2e' && format('--basetemp={0}/dev/test-runs/pytest-tmp', github.workspace) || '' }}
+          PYTEST_ADDOPTS: --basetemp=${{ github.workspace }}/dev/test-runs/pytest-tmp
           PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/dev/test-runs/pw-browsers
         run: |
           case "${{ matrix.tier }}" in
