@@ -8,14 +8,21 @@ flags-index:
 # docs-check: run generator and diff; non-zero exit if mismatched
 # Note: this target assumes Unix tools (diff)
 docs-check:
-	python -m dev.tools.feature_flags_index > /tmp/feature-flags.md
-	diff -q /tmp/feature-flags.md dev/features/feature-flags.md
+	@mkdir -p dev/test-runs/tmp
+	python -m dev.tools.feature_flags_index > dev/test-runs/tmp/feature-flags.md
+	diff -q dev/test-runs/tmp/feature-flags.md dev/features/feature-flags.md
 
 # Test tiers
 unit:
+	@mkdir -p dev/test-runs/{tmp,pytest-tmp}
+	TMPDIR=$$(pwd)/dev/test-runs/tmp \
+	PYTEST_ADDOPTS="--basetemp=$$(pwd)/dev/test-runs/pytest-tmp" \
 	pytest -m "not integration and not e2e" -q
 
 integration:
+	@mkdir -p dev/test-runs/{tmp,pytest-tmp}
+	TMPDIR=$$(pwd)/dev/test-runs/tmp \
+	PYTEST_ADDOPTS="--basetemp=$$(pwd)/dev/test-runs/pytest-tmp" \
 	pytest -m integration -q
 
 check:
@@ -32,7 +39,7 @@ e2e-install-browsers:
 # Ensures port 5001 is used by tests; app is auto-started by tests/e2e/conftest.py
 e2e:
 	@mkdir -p dev/test-runs/{tmp,pytest-tmp,artifacts,downloads,pw-browsers}
- SCIDK_E2E=1 TMPDIR=$$(pwd)/dev/test-runs/tmp TMP=$$(pwd)/dev/test-runs/tmp TEMP=$$(pwd)/dev/test-runs/tmp PYTEST_ADDOPTS="--basetemp=$$(pwd)/dev/test-runs/pytest-tmp" PLAYWRIGHT_BROWSERS_PATH=$$(pwd)/dev/test-runs/pw-browsers pytest -m e2e tests/e2e -q
+	 SCIDK_E2E=1 TMPDIR=$$(pwd)/dev/test-runs/tmp TMP=$$(pwd)/dev/test-runs/tmp TEMP=$$(pwd)/dev/test-runs/tmp PYTEST_ADDOPTS="--basetemp=$$(pwd)/dev/test-runs/pytest-tmp" PLAYWRIGHT_BROWSERS_PATH=$$(pwd)/dev/test-runs/pw-browsers pytest -m e2e tests/e2e -v --maxfail=1
 
 # Run E2E tests in headed mode with Playwright inspector
 e2e-headed:

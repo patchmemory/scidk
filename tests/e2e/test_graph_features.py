@@ -13,10 +13,8 @@ class TestGraphFeatures:
         assert True
 
     def test_graph_visualization_exists(self, page_helpers):
-        """Visualization is present"""
+        """Visualization is present (stable testid)"""
         page_helpers.goto_page("/map")
-        # Any of these common elements should exist if a graph renders
-        visible = page_helpers.page.locator(
-            ".plotly-graph-div, svg, [id*='plotly']"
-        ).first.is_visible()
-        assert visible, "No visualization found"
+        # Assert our stable container becomes visible rather than relying on library DOM
+        page_helpers.wait_for_element("[data-testid='graph-explorer-root']", timeout=10000)
+        assert page_helpers.page.is_visible("[data-testid='graph-explorer-root']")
