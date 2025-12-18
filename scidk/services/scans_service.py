@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Dict, Any
 from pathlib import Path
 import os
+import json
 
 # This service encapsulates the scan orchestration that used to live inside app.api_scan
 # It is intentionally kept very close to the original logic to preserve behavior and payload.
@@ -11,6 +12,10 @@ class ScansService:
         self.app = app
         self.fs = app.extensions['scidk']['fs']
         self.registry = app.extensions['scidk']['registry']
+        # Selective scan cache metrics (per-run)
+        self._skipped_files = 0
+        self._skipped_dirs = 0
+        self._walk_time_ms = 0.0
 
     def run_scan(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -118,32 +123,234 @@ class ScansService:
                 except Exception:
                     ignore_patterns = []
             try:
-                if recursive:
-                    for p in base.rglob('*'):
+                import time as _t
+                t_walk0 = _t.time()
+                # Load previous scan id for this root (if any)
+                prev_scan_id = None
+                try:
+                    conn_prev = pix.connect()
+                    from ..core import migrations as _migs
+                    _migs.migrate(conn_prev)
+                    curp = conn_prev.cursor()
+                    curp.execute("SELECT id FROM scans WHERE root = ? ORDER BY COALESCE(completed, started) DESC LIMIT 1", (str(path),))
+                    rowp = curp.fetchone()
+                    if rowp:
+                        prev_scan_id = rowp[0]
+                except Exception:
+                    prev_scan_id = None
+                finally:
+                    try:
+                        conn_prev.close()
+                    except Exception:
+                        pass
+                # Helper: compute immediate dir signature (files only)
+                def _dir_signature(dir_path: Path):
+                    total = 0
+                    max_m = 0.0
+                    files_n = 0
+                    try:
+                        with os.scandir(dir_path) as it:
+                            for ent in it:
+                                if ent.is_file(follow_symlinks=False):
+                                    files_n += 1
+                                    try:
+                                        st = ent.stat(follow_symlinks=False)
+                                        total += int(st.st_size)
+                                        if st.st_mtime and float(st.st_mtime) > max_m:
+                                            max_m = float(st.st_mtime)
+                                    except Exception:
+                                        pass
+                    except Exception:
+                        pass
+                    return {'files': files_n, 'sum_size': int(total), 'max_mtime': float(max_m)}
+                # Load previous cache for quick compare
+                prev_cache = {}
+                if prev_scan_id:
+                    try:
+                        conn2 = pix.connect()
+                        cur2 = conn2.cursor()
+                        cur2.execute("SELECT path, children_json FROM directory_cache WHERE scan_id = ?", (prev_scan_id,))
+                        import json as _json
+                        for (pth, js) in cur2.fetchall() or []:
+                            try:
+                                prev_cache[pth] = _json.loads(js) if js else {}
+                            except Exception:
+                                prev_cache[pth] = {}
+                    except Exception:
+                        prev_cache = {}
+                    finally:
                         try:
-                            if p.is_dir():
-                                items_dirs.add(p)
-                            else:
-                                # Filter file by selection rules
-                                try:
-                                    rel = p.resolve().relative_to(base.resolve()).as_posix()
-                                except Exception:
-                                    rel = str(p)
-                                ignored = any(fnmatch(rel, pat) for pat in ignore_patterns)
-                                ok, _ = _decide(rel, ignored)
-                                if ok:
-                                    items_files.append(p)
-                                # ensure parent chain exists in dirs set
-                                parent = p.parent
-                                while parent and parent != parent.parent and str(parent).startswith(str(base)):
-                                    items_dirs.add(parent)
-                                    if parent == base:
-                                        break
-                                    parent = parent.parent
+                            conn2.close()
                         except Exception:
-                            continue
-                    items_dirs.add(base)
+                            pass
+                # Current cache rows to persist
+                curr_cache_rows = []
+                if recursive:
+                    # Controlled walk with pruning
+                    # Folder-config cache for effective config per directory
+                    from ..core.folder_config import load_effective_config  # lazy import
+                    _conf_cache: dict[str, dict] = {}
+                    for dirpath, dirnames, filenames in os.walk(base, topdown=True, followlinks=False):
+                        dpath = Path(dirpath)
+                        # compute signature and compare
+                        sig = _dir_signature(dpath)
+                        prev_sig = prev_cache.get(str(dpath.resolve()))
+                        # If unchanged vs previous, consider pruning traversal
+                        if prev_sig and all(str(sig.get(k)) == str(prev_sig.get(k)) for k in ('files','sum_size','max_mtime')):
+                            # For the base (root) directory: skip files in this dir but still traverse subdirectories
+                            if dpath == base:
+                                try:
+                                    with os.scandir(dpath) as it2:
+                                        for ent2 in it2:
+                                            if ent2.is_file(follow_symlinks=False):
+                                                self._skipped_files += 1
+                                except Exception:
+                                    pass
+                                # Do not modify dirnames for root; we still want to descend
+                            else:
+                                self._skipped_dirs += 1
+                                # estimate skipped files as current immediate files
+                                self._skipped_files += int(sig.get('files') or 0)
+                                dirnames[:] = []  # prune subdirs
+                                # still record base dir
+                                items_dirs.add(dpath)
+                                # persist current cache for this dir
+                                curr_cache_rows.append((scan_id, str(dpath.resolve()), json.dumps(sig), time.time()))
+                                continue
+                        # keep walking: record dir and files
+                        items_dirs.add(dpath)
+                        # persist cache row
+                        curr_cache_rows.append((scan_id, str(dpath.resolve()), json.dumps(sig), time.time()))
+                        # filter files by rules + folder-config include/exclude
+                        # Load effective folder-config for this directory (cached)
+                        key = str(dpath.resolve())
+                        conf = _conf_cache.get(key)
+                        if conf is None:
+                            # Prefer local .scidk.toml in this directory (closest wins), then fall back to effective config
+                            try:
+                                tpath = Path(dpath) / '.scidk.toml'
+                                if tpath.exists():
+                                    import tomllib as _toml
+                                    try:
+                                        data = _toml.loads(tpath.read_text(encoding='utf-8'))
+                                    except Exception:
+                                        data = {}
+                                    inc = data.get('include') if isinstance(data.get('include'), list) else []
+                                    exc = data.get('exclude') if isinstance(data.get('exclude'), list) else []
+                                    conf = {'include': [str(x) for x in inc], 'exclude': [str(x) for x in exc], 'interpreters': None}
+                                else:
+                                    conf = load_effective_config(dpath, stop_at=base)
+                            except Exception:
+                                conf = {'include': [], 'exclude': [], 'interpreters': None}
+                            _conf_cache[key] = conf
+                        fc_includes = conf.get('include') or []
+                        fc_excludes = conf.get('exclude') or []
+                        from pathlib import Path as _P
+                        def _normalize_patterns(patterns: list[str]) -> list[str]:
+                            out = []
+                            for pat in patterns:
+                                if not pat:
+                                    continue
+                                norm_pat = pat.strip()
+                                if norm_pat.startswith('./'):
+                                    norm_pat = norm_pat[2:]
+                                if norm_pat.startswith('/'):
+                                    norm_pat = norm_pat[1:]
+                                out.append(norm_pat)
+                                # If pattern starts with '**/', also consider without that prefix
+                                if norm_pat.startswith('**/'):
+                                    out.append(norm_pat[3:])
+                                # If pattern contains path segments, add basename-only variant
+                                if '/' in norm_pat:
+                                    seg = norm_pat.split('/')[-1]
+                                    if seg and seg not in out:
+                                        out.append(seg)
+                            return out
+                        def _matches_any(rel_path: str, name: str, patterns: list[str]) -> bool:
+                            # Normalize cases for case-insensitive filesystems and user patterns
+                            rel_l = (rel_path or '').lower()
+                            name_l = (name or '').lower()
+                            pats = _normalize_patterns(patterns)
+                            p_rel = _P(rel_l)
+                            p_name = _P(name_l)
+                            for pat in pats:
+                                p = (pat or '').strip()
+                                if not p:
+                                    continue
+                                p_l = p.lower()
+                                try:
+                                    if p_rel.match(p_l) or p_name.match(p_l):
+                                        return True
+                                except Exception:
+                                    pass
+                                # Suffix-based relaxed match for common patterns like '*.ext' or '**/*.ext'
+                                if p_l.startswith('**/*.') or p_l.startswith('*.'):
+                                    suf = p_l.split('*')[-1]
+                                    # Normalize suffix by removing any leading path separator introduced by '**/' patterns
+                                    if suf.startswith('/'):
+                                        suf = suf[1:]
+                                    if suf and name_l.endswith(suf):
+                                        return True
+                                # Always check basename-only equality as last resort
+                                try:
+                                    if '/' in p_l:
+                                        base = p_l.split('/')[-1]
+                                    else:
+                                        base = p_l
+                                    if base and name_l == base:
+                                        return True
+                                except Exception:
+                                    pass
+                                # Fallback to fnmatch-like simple compare
+                                from fnmatch import fnmatch as _fn
+                                if _fn(rel_l, p_l) or _fn(name_l, p_l):
+                                    return True
+                            return False
+                        for fname in filenames:
+                            try:
+                                rel = str(Path(dirpath) / fname)
+                                try:
+                                    rel_disp = Path(rel).resolve().relative_to(base.resolve()).as_posix()
+                                except Exception:
+                                    rel_disp = fname
+                                # Folder-config include/exclude first (match against base-relative, dir-relative, and basename)
+                                rel_local = fname
+                                from fnmatch import fnmatch as _fn2
+                                def _simple_match(patterns: list[str]) -> bool:
+                                    for pat in patterns or []:
+                                        p = (pat or '').strip()
+                                        if not p:
+                                            continue
+                                        p = p.lstrip('./')
+                                        p_l = p.lower()
+                                        if _fn2(rel_disp.lower(), p_l) or _fn2(rel_local.lower(), p_l):
+                                            return True
+                                        if p_l.startswith('**/*.') or p_l.startswith('*.'):
+                                            suf = p_l.split('*')[-1]
+                                            if suf.startswith('/'):
+                                                suf = suf[1:]
+                                            if suf and rel_local.lower().endswith(suf):
+                                                return True
+                                    return False
+                                include_ok = True
+                                if fc_includes:
+                                    include_ok = _simple_match(fc_includes)
+                                if not include_ok:
+                                    continue
+                                if fc_excludes and (_simple_match(fc_excludes)):
+                                    continue
+                                # .scidkignore and explicit selection rules
+                                ignored = any(fnmatch(rel_disp, pat) for pat in ignore_patterns)
+                                ok, _ = _decide(rel_disp, ignored)
+                                if ok:
+                                    items_files.append(Path(dirpath) / fname)
+                            except Exception:
+                                continue
                 else:
+                    # Non-recursive: list only base
+                    items_dirs.add(base)
+                    sig = _dir_signature(base)
+                    curr_cache_rows.append((scan_id, str(base.resolve()), json.dumps(sig), time.time()))
                     for p in base.iterdir():
                         try:
                             if p.is_dir():
@@ -156,7 +363,21 @@ class ScansService:
                                     items_files.append(p)
                         except Exception:
                             continue
-                    items_dirs.add(base)
+                # Persist directory_cache rows (best-effort)
+                try:
+                    connc = pix.connect()
+                    curc = connc.cursor()
+                    curc.executemany("INSERT OR REPLACE INTO directory_cache(scan_id, path, children_json, created) VALUES(?,?,?,?)", curr_cache_rows)
+                    connc.commit()
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        connc.close()
+                    except Exception:
+                        pass
+                self._walk_time_ms = ( _t.time() - t_walk0 ) * 1000.0
+                items_dirs.add(base)
             except Exception:
                 items_files = []
                 items_dirs = set()
@@ -438,6 +659,11 @@ class ScansService:
         }
         scans = app.extensions['scidk'].setdefault('scans', {})
         scans[scan_id] = scan
+        # Emit selective cache metrics to logs for observability
+        try:
+            app.logger.info(f"scan metrics: skipped_dirs={int(getattr(self, '_skipped_dirs', 0))} skipped_files={int(getattr(self, '_skipped_files', 0))} walk_time_ms={float(getattr(self, '_walk_time_ms', 0.0)):.2f}")
+        except Exception:
+            pass
         try:
             app.extensions['scidk'].setdefault('scan_fs', {}).pop(scan_id, None)
         except Exception:
@@ -507,6 +733,9 @@ class ScansService:
                             'host_id': host_id,
                             'root_label': root_label,
                             'selection': (selection or {}),
+                            'skipped_dirs': int(getattr(self, '_skipped_dirs', 0)),
+                            'skipped_files': int(getattr(self, '_skipped_files', 0)),
+                            'walk_time_ms': float(getattr(self, '_walk_time_ms', 0.0)),
                         })
                     )
                 )
