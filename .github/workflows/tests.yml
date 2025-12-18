@@ -47,7 +47,7 @@ jobs:
               pytest -m integration -q
               ;;
             e2e)
-              pytest -m e2e tests/e2e -v --maxfail=1 --suppress-no-test-exit-code
+              pytest -m e2e tests/e2e -v --maxfail=1
               ;;
           esac
       - name: Upload Playwright report (on failure)
