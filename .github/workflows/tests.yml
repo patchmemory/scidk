@@ -29,6 +29,8 @@ jobs:
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/dev/test-runs/pw-browsers
           TMPDIR: ${{ github.workspace }}/dev/test-runs/tmp
+          TMP: ${{ github.workspace }}/dev/test-runs/tmp
+          TEMP: ${{ github.workspace }}/dev/test-runs/tmp
         run: |
           npx playwright install chromium --with-deps
       - name: Run tests by tier
