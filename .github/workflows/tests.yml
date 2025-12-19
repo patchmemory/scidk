@@ -24,7 +24,7 @@ jobs:
       - name: Prepare repo-local temp directories
         run: |
           mkdir -p dev/test-runs/{tmp,pytest-tmp,artifacts,downloads,pw-browsers}
-      - name: Install Playwright browsers
+      - name: Install Playwright browsers (python CLI, repo-local)
         if: matrix.tier == 'e2e'
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/dev/test-runs/pw-browsers
@@ -32,7 +32,7 @@ jobs:
           TMP: ${{ github.workspace }}/dev/test-runs/tmp
           TEMP: ${{ github.workspace }}/dev/test-runs/tmp
         run: |
-          npx playwright install chromium --with-deps
+          python -m playwright install chromium
       - name: Run tests by tier
         env:
           SCIDK_E2E: ${{ matrix.tier == 'e2e' && '1' || '0' }}
