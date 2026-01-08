@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}SciDK - Home{% endblock %}
 {% block content %}
-<section>
+<section data-testid="home-recent-scans">
   <h2>Recent Scans</h2>
   <p class="small">Scan sessions recorded in this server session. Open a specific run in Files.</p>
   {% if scans and scans|length > 0 %}
@@ -51,9 +51,9 @@
       </ul>
     </details>
   {% endif %}
+</section>
 {% if config.get('feature.selectiveDryRun') %}
 <section>
-  <h2>Selective dry-run (dev)</h2>
   <p class="small">Preview which files would be scanned using include/exclude rules and .scidkignore. Use the Files page for full scans.</p>
   <a class="btn btn-sm btn-outline-secondary" href="/datasets">Open Files</a>
 </section>

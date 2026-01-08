@@ -132,7 +132,7 @@ Rclone provider (optional):
 ## Testing
 We use pytest for unit and API tests.
 
-Pytest is included in requirements.txt; after installing dependencies, run:
+Quick start:
 ```
 python3 -m pytest -q
 ```
@@ -140,8 +140,10 @@ Notes:
 - If your shell doesn't expose a global `pytest` command (common in fish), using `python3 -m pytest` is the most reliable.
 - You can still run `pytest -q` if your PATH includes the virtualenv's bin directory.
 
-Conventions:
-- Tests live in tests/ and rely on pytest fixtures in tests/conftest.py (e.g., Flask app and client).
+Details:
+- Full testing overview: docs/testing.md (tools, fixtures, mocking strategy, env vars, and how to run subsets)
+- Pytest configuration lives in pyproject.toml (testpaths=tests, addopts=-q)
+- Tests live in tests/ and rely on pytest fixtures in tests/conftest.py (e.g., Flask app and client)
 - Add tests alongside new features in future cycles; see dev/cycles.md for cycle protocol.
 
 ## Notes
