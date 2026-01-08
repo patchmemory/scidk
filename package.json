@@ -1,0 +1,13 @@
+{
+  "name": "scidk-e2e",
+  "private": true,
+  "version": "0.1.0",
+  "devDependencies": {
+    "@playwright/test": "^1.42.0"
+  },
+  "scripts": {
+    "e2e": "playwright test -c e2e/playwright.config.ts",
+    "e2e:headed": "PWDEBUG=1 playwright test -c e2e/playwright.config.ts --headed",
+    "e2e:install": "npx playwright install --with-deps"
+  }
+}

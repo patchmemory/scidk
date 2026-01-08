@@ -28,19 +28,19 @@
   {% block head %}{% endblock %}
 </head>
 <body>
-<header>
-  <h1><a href="/" style="text-decoration:none;color:inherit">SciDK</a></h1>
-  <nav>
+<header data-testid="header">
+  <h1><a href="/" style="text-decoration:none;color:inherit" data-testid="nav-home">SciDK</a></h1>
+  <nav data-testid="nav">
     <!-- Home link removed; use SciDK logo as Home -->
-    <a href="/datasets">Files</a>
-    <a href="/map">Maps</a>
-    <a href="/chat">Chats</a>
+    <a href="/datasets" data-testid="nav-files">Files</a>
+    <a href="/map" data-testid="nav-maps">Maps</a>
+    <a href="/chat" data-testid="nav-chats">Chats</a>
     <!-- Interpreters and Plugins moved into Settings page -->
-    <a href="/settings">Settings</a>
+    <a href="/settings" data-testid="nav-settings">Settings</a>
   </nav>
 </header>
 <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
-<main>
+<main data-testid="main">
   {% block content %}{% endblock %}
 </main>
 <script>
