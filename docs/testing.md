@@ -200,7 +200,31 @@ CI (phase 05)
   - Python tests (pytest): sets up Python 3.11, installs deps (requirements.txt / pyproject), runs python -m pytest -q
   - E2E smoke (Playwright): sets up Node 18, installs deps, installs browsers with npx playwright install --with-deps, runs npm run e2e
 - Environment: SCIDK_PROVIDERS=local_fs is used during E2E to avoid external dependencies.
-- Continue-on-error: E2E job is marked continue-on-error: true during bring-up; tighten later when stable.
+- E2E job is strict (no continue-on-error) now that smoke and core flows are stable; monitor the first PR run and investigate any flakes.
 - To run the same locally:
   - python -m pytest -q
   - npm install && npx playwright install --with-deps && npm run e2e
+
+
+
+Updates (Phase 03 prep)
+- New API contracts added under tests/contracts/test_api_contracts.py:
+  - test_scan_contract_local_fs: POST /api/scan returns a payload with an id or ok.
+  - test_scan_status_contract: GET /api/scans/<id>/status returns a dict with a status/state/done field.
+  - test_directories_contract: GET /api/directories returns a list with items containing path.
+- New Playwright specs:
+  - e2e/browse.spec.ts: navigates to Files and verifies stable hooks, no console errors.
+  - e2e/scan.spec.ts: posts /api/scan for a temp directory and verifies the Home page lists it.
+
+How to run the new tests
+- Contracts subset:
+  - python -m pytest tests/contracts/test_api_contracts.py::test_scan_contract_local_fs -q
+  - python -m pytest tests/contracts/test_api_contracts.py::test_scan_status_contract -q
+  - python -m pytest tests/contracts/test_api_contracts.py::test_directories_contract -q
+- E2E specs:
+  - npm run e2e                # runs all specs including smoke, browse, scan
+  - npm run e2e:headed         # optional, debug mode
+
+Notes
+- E2E relies on BASE_URL from global-setup (spawns Flask). SCIDK_PROVIDERS defaults to local_fs in CI.
+- The scan E2E uses a real temp directory under the runner OS temp path and triggers a synchronous scan via /api/scan.
