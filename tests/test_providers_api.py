@@ -1,7 +1,9 @@
 from pathlib import Path
+import pytest
 from scidk.app import create_app
 
 
+@pytest.mark.integration
 def test_list_providers(client):
     resp = client.get('/api/providers')
     assert resp.status_code == 200
@@ -11,6 +13,7 @@ def test_list_providers(client):
     assert 'mounted_fs' in ids  # may be empty at runtime but should be registered
 
 
+@pytest.mark.integration
 def test_browse_local_root(client, tmp_path: Path):
     # Ensure tmp directory exists and has files
     f = tmp_path / 'a.txt'

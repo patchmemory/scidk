@@ -11,6 +11,7 @@ def test_providers_contract(client):
     assert all('id' in p and 'display_name' in p for p in data)
 
 
+@pytest.mark.integration
 def test_provider_roots_contract_local_fs(client):
     # local_fs is always available; ensure shape of roots is a list of {id,name,path}
     r = client.get('/api/provider_roots', query_string={'provider_id': 'local_fs'})
@@ -22,6 +23,7 @@ def test_provider_roots_contract_local_fs(client):
         assert 'id' in item and 'name' in item and 'path' in item
 
 
+@pytest.mark.integration
 def test_browse_contract_local_fs_root_listing(client):
     # Basic browse shape for local_fs at root
     r = client.get('/api/browse', query_string={'provider_id': 'local_fs', 'root_id': '/'})
