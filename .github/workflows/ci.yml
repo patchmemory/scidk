@@ -20,9 +20,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .[dev]
-      - name: Run pytest
+      - name: Run pytest (exclude E2E)
         run: |
-          python -m pytest -q
+          python -m pytest -q -m "not e2e"
 
   e2e:
     name: E2E smoke (Playwright)
