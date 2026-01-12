@@ -45,7 +45,7 @@ jobs:
           TMPDIR: ${{ github.workspace }}/dev/test-runs/tmp
           PYTEST_ADDOPTS: --basetemp=${{ github.workspace }}/dev/test-runs/pytest-tmp
           PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/dev/test-runs/pw-browsers
-          SCIDK_PROVIDERS: local_fs
+          SCIDK_PROVIDERS: ${{ matrix.tier != 'unit' && 'local_fs' || '' }}
         run: |
           case "${{ matrix.tier }}" in
             unit)
