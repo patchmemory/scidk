@@ -5,9 +5,9 @@ PyYAML>=6.0
 neo4j>=5.14
 psutil>=5.9
 python-dateutil>=2.8
+requests>=2.32
 
 # Dev/test dependencies (same as pyproject.toml [project.optional-dependencies].dev)
 pytest>=7.4
 pytest-playwright==0.4.3
 playwright==1.40.0
-requests>=2.32

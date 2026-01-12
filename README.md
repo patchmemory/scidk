@@ -11,8 +11,17 @@ python3 -m venv .venv
 source .venv/bin/activate
 # fish:
 source .venv/bin/activate.fish
-pip install -r requirements.txt
+
+# Recommended: install the package in editable mode
+pip install -e .            # runtime deps only
+# or for development (tests, Playwright helpers, etc.)
+pip install -e .[dev]
+# alternatively, use the provided requirements files:
+#   pip install -r requirements.txt         # runtime-only
+#   pip install -r requirements-dev.txt     # dev extras (editable)
 ```
+
+Note: do NOT run `pip install -r pyproject.toml`. pyproject.toml is not a requirements file; it is a build/metadata file. Use one of the commands above instead.
 
 2) Initialize environment variables (recommended):
 - bash/zsh:

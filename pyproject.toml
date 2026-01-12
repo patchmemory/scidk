@@ -16,6 +16,7 @@ dependencies = [
   "neo4j>=5.14",
   "psutil>=5.9",
   "python-dateutil>=2.8",
+  "requests>=2.32",
 ]
 
 [project.optional-dependencies]
