@@ -44,3 +44,6 @@ Notes:
 - If running headless in CI, confirm browsers are installed (`playwright install`).
 - If optional deps (openpyxl/pyarrow) are not installed, related export tests will be skipped or should target CSV-only paths.
 - Check server logs for endpoint errors during tests (`/api/interpreters*`, `/api/scans/<id>/interpret`).
+
+## Process note
+- We keep one active branch per contributor and rely on CI as the gate. See docs/branching-and-ci.md for details and a short PR checklist.
