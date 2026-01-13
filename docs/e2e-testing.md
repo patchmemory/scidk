@@ -32,6 +32,8 @@ Notes:
 - Show prioritized Ready Queue: `python -m dev.cli ready-queue`
 - Validate a task file: `python -m dev.cli validate task:e2e:01-smoke-baseline`
 - Start working on the top task: `python -m dev.cli start`
+- Branch hygiene (non-blocking): `python -m dev.cli branch-guard` (add --json for machine-readable)
+- Finish the git (stage, commit, push, print PR link): `python -m dev.cli git-finish -m "chore: update docs"` (add --json for structured output)
 
 ## Active Story & Phase
 - See `dev/cycles.md` for the current Active Story/Phase pointer.
