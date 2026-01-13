@@ -1,0 +1,88 @@
+name: Dev Submodule Sync
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  verify-dev-submodule:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (no submodules)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Read submodule config
+        id: cfg
+        run: |
+          url=$(git config -f .gitmodules --get submodule.dev.url)
+          branch=$(git config -f .gitmodules --get submodule.dev.branch || echo main)
+          echo "url=$url" >> $GITHUB_OUTPUT
+          echo "branch=$branch" >> $GITHUB_OUTPUT
+      - name: Get recorded submodule SHA
+        id: recorded
+        run: |
+          rec=$(git ls-tree HEAD dev | awk '{print $3}')
+          echo "sha=$rec" >> $GITHUB_OUTPUT
+      - name: Get latest upstream SHA for dev submodule
+        id: upstream
+        run: |
+          set -e
+          url="${{ steps.cfg.outputs.url }}"
+          branch="${{ steps.cfg.outputs.branch }}"
+          latest=$(git ls-remote "$url" "refs/heads/$branch" | awk '{print $1}')
+          echo "sha=$latest" >> $GITHUB_OUTPUT
+      - name: Compare and fail if behind
+        run: |
+          echo "Recorded: ${{ steps.recorded.outputs.sha }}"
+          echo "Upstream:  ${{ steps.upstream.outputs.sha }}"
+          if [ -z "${{ steps.upstream.outputs.sha }}" ]; then
+            echo "Could not resolve upstream dev submodule SHA. Skipping check.";
+            exit 0;
+          fi
+          if [ "${{ steps.recorded.outputs.sha }}" != "${{ steps.upstream.outputs.sha }}" ]; then
+            echo "::error::dev/ submodule is behind. Please bump dev to ${{ steps.upstream.outputs.sha }} (branch ${{ steps.cfg.outputs.branch }}).";
+            echo "Tip: git -C dev fetch origin && git -C dev checkout ${{ steps.cfg.outputs.branch }} && git add dev && git commit -m 'chore(submodule): bump dev'";
+            exit 1;
+          fi
+          echo "dev/ submodule is up-to-date. ✅"
+
+  sync-dev-submodule-on-main:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout with token
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+          submodules: false
+      - name: Configure git credentials for submodule access
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+      - name: Initialize and update submodule to latest configured branch
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --remote dev
+      - name: Commit submodule pointer if changed
+        run: |
+          set -e
+          if ! git diff --quiet -- dev; then
+            new_sha=$(git ls-tree HEAD dev | awk '{print $3}')
+            # The above SHA is from HEAD; we need the updated working tree's target
+            # Refresh index and compute the updated SHA from the working tree
+            git add dev
+            new_sha=$(git ls-tree :dev | awk '{print $3}') || true
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore(submodule): bump dev to latest"
+            git push
+          else
+            echo "No submodule changes to commit."
+          fi
