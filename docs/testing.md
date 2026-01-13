@@ -290,3 +290,104 @@ npm run e2e:headed   # optional, debug mode
 ```
 
 **Note:** E2E relies on BASE_URL from global-setup (spawns Flask). `SCIDK_PROVIDERS` defaults to `local_fs` in CI. The scan E2E uses a real temp directory under the runner OS temp path and triggers a synchronous scan via `/api/scan`.
+
+## E2E Testing Complete Guide
+
+### Quick Start
+
+1. **Install dependencies** (one-time setup):
+   ```bash
+   npm install
+   npm run e2e:install  # Installs Playwright browsers
+   ```
+
+2. **Run all E2E tests**:
+   ```bash
+   npm run e2e          # Headless (recommended for CI/local verification)
+   npm run e2e:headed   # With visible browser (useful for debugging)
+   ```
+
+3. **Run specific test files**:
+   ```bash
+   npm run e2e -- e2e/smoke.spec.ts
+   npm run e2e -- e2e/core-flows.spec.ts
+   npm run e2e -- e2e/negative.spec.ts
+   ```
+
+### Available Test Suites
+
+- **`e2e/smoke.spec.ts`**: Basic page load and navigation smoke tests
+- **`e2e/core-flows.spec.ts`**: Full user workflows (scan → browse → details)
+- **`e2e/scan.spec.ts`**: Directory scanning functionality
+- **`e2e/browse.spec.ts`**: File browsing and navigation
+- **`e2e/negative.spec.ts`**: Error handling, empty states, edge cases
+
+### CI Integration
+
+E2E tests run automatically in GitHub Actions on every push and PR. See `.github/workflows/ci.yml`:
+
+- **Job: `e2e`**: Runs Playwright tests with `SCIDK_PROVIDERS=local_fs`
+- **On failure**: Uploads Playwright report and traces as artifacts
+- **Access artifacts**: Go to Actions → failed run → download `playwright-report`
+
+To view traces locally:
+```bash
+npx playwright show-trace test-results/<test-name>/trace.zip
+```
+
+## Troubleshooting
+
+### E2E Tests
+
+**Problem: `spawn python ENOENT` or Python not found**
+- **Cause**: Playwright global-setup can't find Python executable
+- **Fix**: The `e2e/global-setup.ts` uses `python3` on Linux/Mac, `python` on Windows
+- **Verify**: `which python3` (Linux/Mac) or `where python` (Windows)
+
+**Problem: Tests fail with "element not found" or timeouts**
+- **Cause**: Page load too slow, or elements missing `data-testid` attributes
+- **Fix 1**: Check Flask server logs in test output for errors
+- **Fix 2**: Run with headed mode to see what's happening: `npm run e2e:headed`
+- **Fix 3**: Verify `data-testid` attributes exist in templates (`scidk/ui/templates/`)
+
+**Problem: "Port already in use" error**
+- **Cause**: Previous Flask server didn't shut down cleanly
+- **Fix**: Kill stale processes: `pkill -f "python.*scidk.app"` or `lsof -ti:5000 | xargs kill`
+
+**Problem: Tests pass locally but fail in CI**
+- **Cause**: Different providers enabled, or timing differences
+- **Check**: CI uses `SCIDK_PROVIDERS=local_fs` only (see `.github/workflows/ci.yml`)
+- **Fix**: Run locally with same env: `SCIDK_PROVIDERS=local_fs npm run e2e`
+
+### pytest Tests
+
+**Problem: `ModuleNotFoundError` for scidk package**
+- **Cause**: Package not installed in editable mode
+- **Fix**: `pip install -e .[dev]`
+
+**Problem: Tests fail with "No such file or directory" for temp files**
+- **Cause**: Tests didn't clean up properly, or timing issue with `tmp_path`
+- **Fix**: Use pytest's `tmp_path` fixture, which auto-cleans after each test
+
+**Problem: "RuntimeError: Working outside of application context"**
+- **Cause**: Flask test missing `app` or `client` fixture
+- **Fix**: Add `def test_something(client):` to use Flask test client
+
+**Problem: Neo4j or rclone tests fail**
+- **Cause**: Missing mocks/fakes for external dependencies
+- **Fix**: Use helpers from `tests/helpers/`:
+  - `from tests.helpers.neo4j import inject_fake_neo4j`
+  - `from tests.helpers.rclone import rclone_env`
+
+**Problem: Slow tests or database locks**
+- **Cause**: SQLite WAL mode or concurrent access
+- **Fix**: Use `tmp_path` for isolated test databases, avoid shared state between tests
+
+### General Tips
+
+- **Run tests verbosely**: `python -m pytest -v` or `npm run e2e -- --debug`
+- **Run single test**: `python -m pytest tests/test_foo.py::test_bar -v`
+- **Skip slow tests**: `python -m pytest -m "not e2e" -q`
+- **Clear pytest cache**: `rm -rf .pytest_cache`
+- **Check logs**: E2E server logs appear inline with test output
+- **Update snapshots**: If visual regression tests exist, use `npm run e2e -- --update-snapshots`
