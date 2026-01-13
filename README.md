@@ -62,7 +62,9 @@ To keep CI reliable and PRs easy to review, we follow a simple workflow: one act
 
 ## End-to-End (E2E) tests
 
-These tests run in a real browser using Playwright and pytest. The test suite automatically starts the Flask app on port 5001 with safe defaults and no external Neo4j connection.
+These tests run in a real browser using Playwright and pytest.
+
+Important: For the initial smoke baseline, you must start the server yourself (for example, python -m scidk.app) and set the BASE_URL environment variable for the tests to know where to connect (e.g., http://localhost:5000). The tests are headless by default and designed to be fast and deterministic.
 
 Prereqs (once per machine):
 - Python virtual environment activated.
