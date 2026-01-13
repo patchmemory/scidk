@@ -36,7 +36,7 @@ e2e-install-browsers:
 	.venv/bin/python -m playwright install chromium
 
 # Run headless E2E tests
-# Ensures port 5001 is used by tests; app is auto-started by tests/e2e/conftest.py
+# Requires a running server and BASE_URL to be set (e.g., http://localhost:5000)
 e2e:
 	@mkdir -p dev/test-runs/{tmp,pytest-tmp,artifacts,downloads,pw-browsers}
 	 SCIDK_E2E=1 TMPDIR=$$(pwd)/dev/test-runs/tmp TMP=$$(pwd)/dev/test-runs/tmp TEMP=$$(pwd)/dev/test-runs/tmp PYTEST_ADDOPTS="--basetemp=$$(pwd)/dev/test-runs/pytest-tmp" PLAYWRIGHT_BROWSERS_PATH=$$(pwd)/dev/test-runs/pw-browsers pytest -m e2e tests/e2e -v --maxfail=1
