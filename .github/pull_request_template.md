@@ -1,42 +1,24 @@
-Title: E2E foundation, contracts, and CI
+# PR Title
 
-Summary
-- Implements Playwright E2E scaffold with smoke + core flow specs (browse, scan)
-- Adds minimal API contracts for /api/scan, /api/scans/<id>/status, /api/directories
-- Aligns Dev CLI timestamps to timezone-aware ISO8601
-- Adds stable data-testid hooks to UI templates
-- Wires CI for pytest and strict E2E smoke
-- Updates docs/testing.md with quickstarts and CI notes
+## Summary
+- Short description of the change and why.
 
-Related
-- Story: story:e2e-testing
-- Phase: 02–03
-- Task(s):
-  - task:e2e:02-playwright-scaffold (Done)
-  - task:e2e:03-core-flows (partially addressed by initial specs; remaining flows in next branch)
+## Linked Work
+- Story/Phase: <!-- e.g., story:e2e-testing / phase:e2e-testing/01-smoke-baseline -->
+- Task: <!-- e.g., task:e2e:01-smoke-baseline -->
 
-Local verification
-- Python tests: python -m pytest -q → green
-- Playwright E2E: npm install && npx playwright install --with-deps && npm run e2e → green
+## Checklist
+- [ ] Single active branch: This PR represents my current active branch (exceptions justified below).
+- [ ] CI green: Unit tests and smoke checks pass (or expected failures explained).
+- [ ] Scope focused: PR covers a single topic and is sized for quick review.
+- [ ] Docs updated: README/docs touched if behavior/workflow changed.
+- [ ] Tests: Added/updated tests or rationale why not needed.
+- [ ] Merge strategy: Prefer rebase onto main; no local merges from other feature branches.
 
-CI
-- GitHub Actions workflow runs:
-  - Python tests (3.11)
-  - E2E smoke (Node 18) — strict, SCIDK_PROVIDERS=local_fs
+## Demo Steps (if UI/API visible)
+1. 
+2. 
+3. 
 
-How to run locally
-- API contracts: python -m pytest tests/contracts/test_api_contracts.py -q
-- E2E: npm run e2e (uses e2e/global-setup.ts to boot the Flask server)
-
-Risk assessment
-- Low risk. Mostly additive tests/config/docs. UI changes limited to data-testid attributes.
-
-Merge checklist
-- [x] pytest green locally
-- [x] E2E green locally
-- [x] CI expected to pass (strict E2E)
-- [x] task:e2e:02-playwright-scaffold marked Done with completed_at
-- [ ] Reviewer sanity pass on docs/testing.md and CI workflow
-
-Post-merge (follow-up branch)
-- Expand Phase 03 core flows E2E and refine contracts as needed.
+## Exceptions / Notes
+- If working on multiple branches concurrently, document why and link related PRs.

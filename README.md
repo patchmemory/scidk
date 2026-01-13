@@ -57,6 +57,9 @@ Note: The scanner prefers NCDU for fast filesystem enumeration when available. I
 - Editable install error (Multiple top-level packages discovered): We ship setuptools config to include only the scidk package. If you previously had this error, pull latest and try again: `pip install -e .`.
 - Shell errors when initializing env: Use the script matching your shell (`init_env.sh` for bash/zsh, `init_env.fish` for fish). Avoid running `sh scripts/init_env.sh`; instead, source it.
 
+## Branching & CI Policy
+To keep CI reliable and PRs easy to review, we follow a simple workflow: one active feature branch per contributor, open small PRs early, and let CI be the gate before merge. See docs/branching-and-ci.md for details and a PR checklist.
+
 ## End-to-End (E2E) tests
 
 These tests run in a real browser using Playwright and pytest. The test suite automatically starts the Flask app on port 5001 with safe defaults and no external Neo4j connection.
