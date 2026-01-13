@@ -1,230 +1,292 @@
-SciDK testing overview
+# SciDK Testing Overview
 
 This repository uses pytest for unit, API, and integration-like tests that are hermetic by default (no external services required). The goal is fast feedback with realistic behavior via controlled monkeypatching.
 
-How to run
-- Preferred: python3 -m pytest -q
+## How to Run
+
+- Preferred: `python3 -m pytest -q`
 - Virtualenv: If you use .venv, activate it first; pytest is in requirements.txt and [project] dependencies.
-- Dev CLI: python3 -m dev.cli test (calls pytest with sensible fallbacks). Some subcommands also run tests as part of DoD checks.
+- Dev CLI: `python3 -m dev.cli test` (calls pytest with sensible fallbacks). Some subcommands also run tests as part of DoD checks.
 - Pytest config: Defined in pyproject.toml
   - testpaths = ["tests"]
   - addopts = "-q"
 
-Quickstart: API contracts (phase 00)
-- Minimal contracts live under tests/contracts/.
-- Example: tests/contracts/test_api_contracts.py::test_providers_contract
-  - Run: python -m pytest tests/contracts/test_api_contracts.py -q
+## Test Taxonomy and Organization
 
-Quickstart: Playwright E2E smoke (phase 02)
-- Requires Node.js. Install Playwright deps once:
-  - npm install
-  - npm run e2e:install
-- Run smoke locally:
-  - npm run e2e
-- The Playwright config uses e2e/global-setup.ts to spawn the Flask server and exports BASE_URL. See e2e/smoke.spec.ts for the first spec.
+The test suite is organized into several layers with different purposes:
 
-Dev CLI flows (validate/context/start)
-- Inspect Ready Queue ordering (E2E tasks are top via RICE=999 and DoR):
-  - python -m dev.cli ready-queue
-- Validate Definition of Ready for a task:
-  - python -m dev.cli validate task:e2e:02-playwright-scaffold
-- Print the context for prompting/PR:
-  - python -m dev.cli context task:e2e:02-playwright-scaffold
-- Start the task (creates branch if in git, updates status to In Progress with a timezone-aware ISO8601 timestamp):
-  - python -m dev.cli start task:e2e:02-playwright-scaffold
+### Unit Tests
+- **Purpose:** Fast, isolated tests of individual functions/classes
+- **Characteristics:** No I/O, mocked dependencies, deterministic
+- **Location:** Throughout `tests/` directory
+- **Example:** Testing interpreter parsing logic with in-memory strings
 
-Test layout and conventions
-- Location: tests/
-- Shared fixtures: tests/conftest.py
-  - app() -> Flask app with TESTING=True, created via scidk.app.create_app
-  - client(app) -> Flask test client
-  - sample_py_file/tmp files -> helper fixtures for interpreter tests
-- Style: Each test file focuses on a feature area (API endpoints, providers, interpreters, scan/index, graph/neo4j, tasks, UI smoke).
-- Naming: test_*.py, functions starting with test_*.
+### Contract Tests
+- **Purpose:** Validate API endpoint shapes and response structures
+- **Location:** `tests/contracts/`
+- **Focus:** JSON structure, HTTP status codes, required fields
+- **Examples:**
+  - `/api/providers` returns list with `id` + `display_name`
+  - `/api/scan` returns dict with `id`
+  - `/api/scans/<id>/status` returns dict with `status`/`state`/`done`
+- **Why:** Catch breaking changes to API contracts early
+- **Run:** `python -m pytest tests/contracts/test_api_contracts.py -q`
 
-External dependency strategy (mock-first)
+### Integration Tests
+- **Purpose:** Test feature interactions with mocked external services
+- **Characteristics:** Use monkeypatch at process/module boundaries
+- **Examples:**
+  - rclone provider with mocked subprocess
+  - Neo4j commit with fake driver
+  - SQLite batch operations with temp databases
+- **Markers:** `@pytest.mark.integration` (when needed)
+
+### E2E Tests
+- **Purpose:** Full user workflows through the browser
+- **Locations:**
+  - TypeScript Playwright: `e2e/*.spec.ts` (preferred for UI flows)
+  - Python pytest-playwright: `tests/e2e/` (alternative for same scenarios)
+- **Focus:** User-visible outcomes, navigation flows, data persistence across pages
+- **Examples:** scan a folder → browse results → verify file details appear
+- **Markers:** `@pytest.mark.e2e`
+- **Run:**
+  - TypeScript: `npm run e2e`
+  - Python: `SCIDK_E2E=1 python -m pytest -m e2e -q`
+
+### Smoke Tests
+- **Purpose:** Minimal health checks to catch catastrophic failures quickly
+- **Characteristics:**
+  - Page loads without errors
+  - Critical elements present
+  - No console errors
+- **Location:** `e2e/smoke.spec.ts`, `tests/e2e/test_*`
+- **CI:** Run on every PR to gate merges
+
+## Test Markers (pytest -m)
+
+- `@pytest.mark.e2e`: End-to-end tests requiring a running Flask app (skipped unless `SCIDK_E2E=1` or CI)
+- `@pytest.mark.integration`: Tests that require environment setup or mocked external services
+- No marker (default): Fast unit/API tests that run in every CI job
+
+## Quickstart Examples
+
+### API Contracts (Phase 00)
+```bash
+# Run all contract tests
+python -m pytest tests/contracts/test_api_contracts.py -q
+
+# Run specific contract
+python -m pytest tests/contracts/test_api_contracts.py::test_providers_contract -q
+```
+
+### Playwright E2E Smoke (Phase 02)
+Requires Node.js. Install Playwright deps once:
+```bash
+npm install
+npm run e2e:install
+```
+
+Run smoke locally:
+```bash
+npm run e2e          # headless
+npm run e2e:headed   # with browser window
+```
+
+The Playwright config uses `e2e/global-setup.ts` to spawn the Flask server and exports BASE_URL. See `e2e/smoke.spec.ts` for the first spec.
+
+## Dev CLI Flows
+
+Inspect Ready Queue ordering (E2E tasks are top via RICE=999 and DoR):
+```bash
+python -m dev.cli ready-queue
+```
+
+Validate Definition of Ready for a task:
+```bash
+python -m dev.cli validate task:e2e:02-playwright-scaffold
+```
+
+Print the context for prompting/PR:
+```bash
+python -m dev.cli context task:e2e:02-playwright-scaffold
+```
+
+Start the task (creates branch if in git, updates status to In Progress):
+```bash
+python -m dev.cli start task:e2e:02-playwright-scaffold
+```
+
+## Test Layout and Conventions
+
+- **Location:** `tests/`
+- **Shared fixtures:** `tests/conftest.py`
+  - `app()` → Flask app with TESTING=True, created via `scidk.app.create_app`
+  - `client(app)` → Flask test client
+  - `sample_py_file`/tmp files → helper fixtures for interpreter tests
+- **Style:** Each test file focuses on a feature area (API endpoints, providers, interpreters, scan/index, graph/neo4j, tasks, UI smoke)
+- **Naming:** `test_*.py`, functions starting with `test_*`
+
+## External Dependency Strategy (Mock-First)
+
 Many features integrate with tools/services such as rclone and Neo4j. The test suite isolates these by mocking at process or module boundaries:
-- rclone
-  - Enable provider via env: SCIDK_PROVIDERS=local_fs,mounted_fs,rclone
-  - Pretend binary exists: monkeypatch shutil.which('rclone') to a fake path
-  - Simulate commands: monkeypatch subprocess.run to return canned outputs for
-    - rclone version
-    - rclone listremotes
-    - rclone lsjson <target> [--max-depth N | --recursive]
-  - Tests verify API behavior (providers list, roots, browse) and error messages when rclone is “not installed”. No real rclone needed.
-- Neo4j
-  - Fake driver module by injecting a stub into sys.modules['neo4j'] with GraphDatabase.driver → fake driver/session
-  - Session.run records Cypher and returns synthetic rows for verification queries
-  - Tests assert that commit flow fires expected Cypher and that post-commit verification reports counts/flags
-  - Tests can set env like NEO4J_URI, NEO4J_AUTH=none for the app to attempt a Neo4j path without requiring the real driver
-- SQLite and filesystem
-  - Uses tmp_path for isolated file trees
-  - Batch inserts and migrations exercised against ephemeral databases; WAL mode is default in app config
 
-What the tests cover (representative)
-- API surface: /api/providers, /api/provider_roots, /api/browse, /api/scan, /api/scans/<id>/status|fs|commit, /api/graph/*, files/folders/instances exports, health/metrics
-- Providers: local_fs, mounted_fs, rclone (mocked subprocess), rclone scan ingest and recursive hierarchy
-- Interpreters: Python, CSV, IPYNB basic parsing and UI rendering
-- Graph: in-memory schema endpoints; optional Neo4j schema and commit verification (mocked driver)
-- Tasks: background task queue limits, cancel, status
-- UI smoke: basic route existence for map/interpreters pages
+### rclone
+- Enable provider via env: `SCIDK_PROVIDERS=local_fs,mounted_fs,rclone`
+- Pretend binary exists: monkeypatch `shutil.which('rclone')` to a fake path
+- Simulate commands: monkeypatch `subprocess.run` to return canned outputs for:
+  - `rclone version`
+  - `rclone listremotes`
+  - `rclone lsjson <target> [--max-depth N | --recursive]`
+- Tests verify API behavior (providers list, roots, browse) and error messages when rclone is "not installed". No real rclone needed.
+- **Helper:** `tests/helpers/rclone.py` provides `rclone_env()` fixture
 
-Environment variables commonly used in tests
-- SCIDK_PROVIDERS: Feature-flag providers set (e.g., local_fs,mounted_fs,rclone)
-- NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD / NEO4J_AUTH: Used to steer code paths; tests often set NEO4J_AUTH=none with a fake neo4j module
-- SCIDK_RCLONE_MOUNTS or SCIDK_FEATURE_RCLONE_MOUNTS: Enables rclone mount manager endpoints (tests mock subprocess)
+### Neo4j
+- Fake driver module by injecting a stub into `sys.modules['neo4j']` with `GraphDatabase.driver` → fake driver/session
+- Session.run records Cypher and returns synthetic rows for verification queries
+- Tests assert that commit flow fires expected Cypher and that post-commit verification reports counts/flags
+- Tests can set env like `NEO4J_URI`, `NEO4J_AUTH=none` for the app to attempt a Neo4j path without requiring the real driver
+- **Helper:** `tests/helpers/neo4j.py` provides `inject_fake_neo4j()` and `CypherRecorder`
 
-Running subsets and debugging
-- Run a single file: python3 -m pytest tests/test_rclone_provider.py -q
-- Run a test node: python3 -m pytest tests/test_neo4j_commit.py::test_standard_scan_and_commit_with_mock_neo4j -q
-- Increase verbosity temporarily: add -vv; drop -q if needed
+### SQLite and Filesystem
+- Uses `tmp_path` for isolated file trees
+- Batch inserts and migrations exercised against ephemeral databases; WAL mode is default in app config
+- **Helper:** `tests/helpers/builders.py` provides file structure builders
 
-Notes and tips
+## What the Tests Cover
+
+- **API surface:** `/api/providers`, `/api/provider_roots`, `/api/browse`, `/api/scan`, `/api/scans/<id>/status|fs|commit`, `/api/graph/*`, files/folders/instances exports, health/metrics
+- **Providers:** local_fs, mounted_fs, rclone (mocked subprocess), rclone scan ingest and recursive hierarchy
+- **Interpreters:** Python, CSV, IPYNB basic parsing and UI rendering
+- **Graph:** in-memory schema endpoints; optional Neo4j schema and commit verification (mocked driver)
+- **Tasks:** background task queue limits, cancel, status
+- **UI smoke:** basic route existence for map/interpreters pages
+
+## Environment Variables in Tests
+
+- `SCIDK_PROVIDERS`: Feature-flag providers set (e.g., `local_fs,mounted_fs,rclone`)
+- `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD` / `NEO4J_AUTH`: Used to steer code paths; tests often set `NEO4J_AUTH=none` with a fake neo4j module
+- `SCIDK_RCLONE_MOUNTS` or `SCIDK_FEATURE_RCLONE_MOUNTS`: Enables rclone mount manager endpoints (tests mock subprocess)
+- `SCIDK_E2E`: Set to `1` to enable E2E tests in local runs (automatically set in CI)
+
+## Running Subsets and Debugging
+
+Run a single file:
+```bash
+python3 -m pytest tests/test_rclone_provider.py -q
+```
+
+Run a specific test:
+```bash
+python3 -m pytest tests/test_neo4j_commit.py::test_standard_scan_and_commit_with_mock_neo4j -q
+```
+
+Increase verbosity:
+```bash
+python3 -m pytest tests/test_rclone_provider.py -vv
+```
+
+Run only contract tests:
+```bash
+python3 -m pytest tests/contracts/ -q
+```
+
+Skip E2E tests:
+```bash
+python3 -m pytest -m "not e2e" -q
+```
+
+## UI Selectors for E2E
+
+Stable hooks are provided via `data-testid` attributes on key elements:
+- Header/nav/main in `scidk/ui/templates/base.html`:
+  - `data-testid="header"` - Main header element
+  - `data-testid="nav"` - Navigation container
+  - `data-testid="nav-home"` - Home link
+  - `data-testid="nav-files"` - Files link
+  - `data-testid="nav-maps"` - Maps link
+  - `data-testid="nav-chats"` - Chats link
+  - `data-testid="nav-settings"` - Settings link
+  - `data-testid="main"` - Main content area
+- Home page in `scidk/ui/templates/index.html`:
+  - `data-testid="home-recent-scans"` - Recent scans section
+- Files page in `scidk/ui/templates/datasets.html`:
+  - `data-testid="files-root"` - Root container
+  - `data-testid="files-title"` - Page title
+
+**Best practice:** In Playwright, prefer `page.getByTestId('nav-files')` over brittle CSS paths.
+
+## CI Configuration (Phase 05)
+
+A GitHub Actions workflow is provided at `.github/workflows/ci.yml`
+
+### Jobs
+
+**Python tests (pytest):**
+- Sets up Python 3.12
+- Installs deps (`requirements.txt` / `pyproject.toml`)
+- Runs `python -m pytest -q -m "not e2e"`
+- Fast feedback on API/unit/contract tests
+
+**E2E smoke (Playwright):**
+- Sets up Python 3.12 (for Flask app)
+- Sets up Node 18
+- Installs deps and Playwright browsers (`npx playwright install --with-deps`)
+- Runs `npm run e2e`
+- Environment: `SCIDK_PROVIDERS=local_fs` to avoid external dependencies
+- Strict (no continue-on-error) now that smoke and core flows are stable
+
+### Running Locally (CI-equivalent)
+
+```bash
+# Python tests
+python -m pytest -q -m "not e2e"
+
+# E2E tests
+npm install
+npx playwright install --with-deps
+npm run e2e
+```
+
+## Notes and Tips
+
 - The test suite avoids network or real external binaries by default. If you wish to run against real services, do so manually in an isolated environment; this is outside normal CI/local flows.
-- Cached artifacts under pytest-of-patch/ are output from past runs and are not part of the active suite.
-- If your shell lacks a pytest command, always prefer python3 -m pytest.
+- Cached artifacts under `pytest-of-patch/` are output from past runs and are not part of the active suite.
+- If your shell lacks a pytest command, always prefer `python3 -m pytest`.
 
-Maintenance guidelines
-- When adding new features, create tests in tests/ alongside related areas and reuse existing fixtures/mocking patterns
+## Maintenance Guidelines
+
+- When adding new features, create tests in `tests/` alongside related areas and reuse existing fixtures/mocking patterns
 - Prefer monkeypatch at the highest useful boundary (subprocess/module) rather than deep internals to keep tests robust
-- Keep tests deterministic and independent; rely on tmp_path and in-memory/synthetic data
+- Keep tests deterministic and independent; rely on `tmp_path` and in-memory/synthetic data
+- Add `data-testid` attributes to new UI elements that will be tested in E2E specs
+- Update contract tests when API response shapes change
+- Keep E2E specs focused on user-visible outcomes, not implementation details
 
-UI selectors for E2E
-- Stable hooks are provided via data-testid attributes on key elements:
-  - Header/nav/main in scidk/ui/templates/base.html (e.g., [data-testid="nav-files"]).
-  - Home page recent scans section in scidk/ui/templates/index.html (data-testid="home-recent-scans").
-  - Files page root container and title in scidk/ui/templates/datasets.html (data-testid="files-root", "files-title").
-- In Playwright, prefer page.getByTestId('nav-files') etc. over brittle CSS paths.
+## Recent Updates
 
-SciDK testing overview
+### Phase 03 (Core Flows)
+New API contracts added under `tests/contracts/test_api_contracts.py`:
+- `test_scan_contract_local_fs`: POST `/api/scan` returns a payload with an `id` or `ok`
+- `test_scan_status_contract`: GET `/api/scans/<id>/status` returns a dict with a `status`/`state`/`done` field
+- `test_directories_contract`: GET `/api/directories` returns a list with items containing `path`
 
-This repository uses pytest for unit, API, and integration-like tests that are hermetic by default (no external services required). The goal is fast feedback with realistic behavior via controlled monkeypatching.
+New Playwright specs:
+- `e2e/browse.spec.ts`: navigates to Files and verifies stable hooks, no console errors
+- `e2e/scan.spec.ts`: posts `/api/scan` for a temp directory and verifies the Home page lists it
 
-How to run
-- Preferred: python3 -m pytest -q
-- Virtualenv: If you use .venv, activate it first; pytest is in requirements.txt and [project] dependencies.
-- Dev CLI: python3 -m dev.cli test (calls pytest with sensible fallbacks). Some subcommands also run tests as part of DoD checks.
-- Pytest config: Defined in pyproject.toml
-  - testpaths = ["tests"]
-  - addopts = "-q"
+### How to Run New Tests
 
-Quickstart: API contracts (phase 00)
-- Minimal contracts live under tests/contracts/.
-- Example: tests/contracts/test_api_contracts.py::test_providers_contract
-  - Run: python -m pytest tests/contracts/test_api_contracts.py -q
+Contracts subset:
+```bash
+python -m pytest tests/contracts/test_api_contracts.py::test_scan_contract_local_fs -q
+python -m pytest tests/contracts/test_api_contracts.py::test_scan_status_contract -q
+python -m pytest tests/contracts/test_api_contracts.py::test_directories_contract -q
+```
 
-Quickstart: Playwright E2E smoke (phase 02)
-- Requires Node.js. Install Playwright deps once:
-  - npm install
-  - npm run e2e:install
-- Run smoke locally:
-  - npm run e2e
-- The Playwright config uses e2e/global-setup.ts to spawn the Flask server and exports BASE_URL. See e2e/smoke.spec.ts for the first spec.
+E2E specs:
+```bash
+npm run e2e          # runs all specs including smoke, browse, scan
+npm run e2e:headed   # optional, debug mode
+```
 
-Dev CLI flows (validate/context/start)
-- Inspect Ready Queue ordering (E2E tasks are top via RICE=999 and DoR):
-  - python -m dev.cli ready-queue
-- Validate Definition of Ready for a task:
-  - python -m dev.cli validate task:e2e:02-playwright-scaffold
-- Print the context for prompting/PR:
-  - python -m dev.cli context task:e2e:02-playwright-scaffold
-- Start the task (creates branch if in git, updates status to In Progress with a timezone-aware ISO8601 timestamp):
-  - python -m dev.cli start task:e2e:02-playwright-scaffold
-
-Test layout and conventions
-- Location: tests/
-- Shared fixtures: tests/conftest.py
-  - app() -> Flask app with TESTING=True, created via scidk.app.create_app
-  - client(app) -> Flask test client
-  - sample_py_file/tmp files -> helper fixtures for interpreter tests
-- Style: Each test file focuses on a feature area (API endpoints, providers, interpreters, scan/index, graph/neo4j, tasks, UI smoke).
-- Naming: test_*.py, functions starting with test_*.
-
-External dependency strategy (mock-first)
-Many features integrate with tools/services such as rclone and Neo4j. The test suite isolates these by mocking at process or module boundaries:
-- rclone
-  - Enable provider via env: SCIDK_PROVIDERS=local_fs,mounted_fs,rclone
-  - Pretend binary exists: monkeypatch shutil.which('rclone') to a fake path
-  - Simulate commands: monkeypatch subprocess.run to return canned outputs for
-    - rclone version
-    - rclone listremotes
-    - rclone lsjson <target> [--max-depth N | --recursive]
-  - Tests verify API behavior (providers list, roots, browse) and error messages when rclone is “not installed”. No real rclone needed.
-- Neo4j
-  - Fake driver module by injecting a stub into sys.modules['neo4j'] with GraphDatabase.driver → fake driver/session
-  - Session.run records Cypher and returns synthetic rows for verification queries
-  - Tests assert that commit flow fires expected Cypher and that post-commit verification reports counts/flags
-  - Tests can set env like NEO4J_URI, NEO4J_AUTH=none for the app to attempt a Neo4j path without requiring the real driver
-- SQLite and filesystem
-  - Uses tmp_path for isolated file trees
-  - Batch inserts and migrations exercised against ephemeral databases; WAL mode is default in app config
-
-What the tests cover (representative)
-- API surface: /api/providers, /api/provider_roots, /api/browse, /api/scan, /api/scans/<id>/status|fs|commit, /api/graph/*, files/folders/instances exports, health/metrics
-- Providers: local_fs, mounted_fs, rclone (mocked subprocess), rclone scan ingest and recursive hierarchy
-- Interpreters: Python, CSV, IPYNB basic parsing and UI rendering
-- Graph: in-memory schema endpoints; optional Neo4j schema and commit verification (mocked driver)
-- Tasks: background task queue limits, cancel, status
-- UI smoke: basic route existence for map/interpreters pages
-
-Environment variables commonly used in tests
-- SCIDK_PROVIDERS: Feature-flag providers set (e.g., local_fs,mounted_fs,rclone)
-- NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD / NEO4J_AUTH: Used to steer code paths; tests often set NEO4J_AUTH=none with a fake neo4j module
-- SCIDK_RCLONE_MOUNTS or SCIDK_FEATURE_RCLONE_MOUNTS: Enables rclone mount manager endpoints (tests mock subprocess)
-
-Running subsets and debugging
-- Run a single file: python3 -m pytest tests/test_rclone_provider.py -q
-- Run a test node: python3 -m pytest tests/test_neo4j_commit.py::test_standard_scan_and_commit_with_mock_neo4j -q
-- Increase verbosity temporarily: add -vv; drop -q if needed
-
-Notes and tips
-- The test suite avoids network or real external binaries by default. If you wish to run against real services, do so manually in an isolated environment; this is outside normal CI/local flows.
-- Cached artifacts under pytest-of-patch/ are output from past runs and are not part of the active suite.
-- If your shell lacks a pytest command, always prefer python3 -m pytest.
-
-Maintenance guidelines
-- When adding new features, create tests in tests/ alongside related areas and reuse existing fixtures/mocking patterns
-- Prefer monkeypatch at the highest useful boundary (subprocess/module) rather than deep internals to keep tests robust
-- Keep tests deterministic and independent; rely on tmp_path and in-memory/synthetic data
-
-UI selectors for E2E
-- Stable hooks are provided via data-testid attributes on key elements:
-  - Header/nav/main in scidk/ui/templates/base.html (e.g., [data-testid="nav-files"]).
-  - Home page recent scans section in scidk/ui/templates/index.html (data-testid="home-recent-scans").
-  - Files page root container and title in scidk/ui/templates/datasets.html (data-testid="files-root", "files-title").
-- In Playwright, prefer page.getByTestId('nav-files') etc. over brittle CSS paths.
-
-CI (phase 05)
-- A GitHub Actions workflow is provided at .github/workflows/ci.yml
-- Jobs:
-  - Python tests (pytest): sets up Python 3.11, installs deps (requirements.txt / pyproject), runs python -m pytest -q
-  - E2E smoke (Playwright): sets up Node 18, installs deps, installs browsers with npx playwright install --with-deps, runs npm run e2e
-- Environment: SCIDK_PROVIDERS=local_fs is used during E2E to avoid external dependencies.
-- E2E job is strict (no continue-on-error) now that smoke and core flows are stable; monitor the first PR run and investigate any flakes.
-- To run the same locally:
-  - python -m pytest -q
-  - npm install && npx playwright install --with-deps && npm run e2e
-
-
-
-Updates (Phase 03 prep)
-- New API contracts added under tests/contracts/test_api_contracts.py:
-  - test_scan_contract_local_fs: POST /api/scan returns a payload with an id or ok.
-  - test_scan_status_contract: GET /api/scans/<id>/status returns a dict with a status/state/done field.
-  - test_directories_contract: GET /api/directories returns a list with items containing path.
-- New Playwright specs:
-  - e2e/browse.spec.ts: navigates to Files and verifies stable hooks, no console errors.
-  - e2e/scan.spec.ts: posts /api/scan for a temp directory and verifies the Home page lists it.
-
-How to run the new tests
-- Contracts subset:
-  - python -m pytest tests/contracts/test_api_contracts.py::test_scan_contract_local_fs -q
-  - python -m pytest tests/contracts/test_api_contracts.py::test_scan_status_contract -q
-  - python -m pytest tests/contracts/test_api_contracts.py::test_directories_contract -q
-- E2E specs:
-  - npm run e2e                # runs all specs including smoke, browse, scan
-  - npm run e2e:headed         # optional, debug mode
-
-Notes
-- E2E relies on BASE_URL from global-setup (spawns Flask). SCIDK_PROVIDERS defaults to local_fs in CI.
-- The scan E2E uses a real temp directory under the runner OS temp path and triggers a synchronous scan via /api/scan.
+**Note:** E2E relies on BASE_URL from global-setup (spawns Flask). `SCIDK_PROVIDERS` defaults to `local_fs` in CI. The scan E2E uses a real temp directory under the runner OS temp path and triggers a synchronous scan via `/api/scan`.

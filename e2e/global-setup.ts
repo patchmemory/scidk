@@ -34,7 +34,9 @@ export default async function globalSetup(config: FullConfig) {
     "app.run(host='127.0.0.1', port=int(__import__('os').environ.get('PORT','5000')), use_reloader=False)"
   ].join('; ');
 
-  proc = spawn('python', ['-c', pyCode], {
+  // Use python3 explicitly for better cross-platform compatibility
+  const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+  proc = spawn(pythonCmd, ['-c', pyCode], {
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
