@@ -31,6 +31,7 @@ Goal: Keep the development flow simple and reliable by working on one active bra
 - Unit tests and smoke checks run on every PR.
 - E2E smoke (where applicable) runs within a few minutes (<5s/spec target).
 - Required checks must be green before merge.
+- Dev submodule freshness: PRs to main must keep dev/ submodule at the latest commit of its configured branch (see .gitmodules). A CI check enforces this, and main auto-syncs dev/ after merge.
 
 ## Tips
 - Use `python -m dev.cli ready-queue` to confirm current priorities.

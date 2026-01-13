@@ -1,4 +1,4 @@
 [submodule "dev"]
 	path = dev
-	url = git@github.com:patchmemory/scidk-dev.git
+	url = https://github.com/patchmemory/scidk-dev.git
 	branch = main
