@@ -2,7 +2,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-import tomllib  # Python 3.11+
+try:
+    import tomllib  # Python 3.11+
+except ModuleNotFoundError:
+    import tomli as tomllib  # Python < 3.11 fallback
 
 DEFAULTS = {
     'include': [],  # list of glob patterns

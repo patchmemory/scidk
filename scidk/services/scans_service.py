@@ -230,7 +230,10 @@ class ScansService:
                             try:
                                 tpath = Path(dpath) / '.scidk.toml'
                                 if tpath.exists():
-                                    import tomllib as _toml
+                                    try:
+                                        import tomllib as _toml
+                                    except ModuleNotFoundError:
+                                        import tomli as _toml
                                     try:
                                         data = _toml.loads(tpath.read_text(encoding='utf-8'))
                                     except Exception:
