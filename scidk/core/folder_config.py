@@ -2,7 +2,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-import tomllib  # Python 3.11+ (built-in)
+# Python 3.11+ has tomllib built-in, 3.10 needs tomli backport
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib  # type: ignore
 
 DEFAULTS = {
     'include': [],  # list of glob patterns

@@ -226,20 +226,9 @@ class ScansService:
                         key = str(dpath.resolve())
                         conf = _conf_cache.get(key)
                         if conf is None:
-                            # Prefer local .scidk.toml in this directory (closest wins), then fall back to effective config
+                            # Use load_effective_config to properly honor per-folder precedence
                             try:
-                                tpath = Path(dpath) / '.scidk.toml'
-                                if tpath.exists():
-                                    import tomllib as _toml
-                                    try:
-                                        data = _toml.loads(tpath.read_text(encoding='utf-8'))
-                                    except Exception:
-                                        data = {}
-                                    inc = data.get('include') if isinstance(data.get('include'), list) else []
-                                    exc = data.get('exclude') if isinstance(data.get('exclude'), list) else []
-                                    conf = {'include': [str(x) for x in inc], 'exclude': [str(x) for x in exc], 'interpreters': None}
-                                else:
-                                    conf = load_effective_config(dpath, stop_at=base)
+                                conf = load_effective_config(dpath, stop_at=base)
                             except Exception:
                                 conf = {'include': [], 'exclude': [], 'interpreters': None}
                             _conf_cache[key] = conf
