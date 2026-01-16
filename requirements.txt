@@ -1,5 +1,6 @@
 # Runtime dependencies (must match pyproject.toml [project.dependencies])
 Flask>=3.0
+ijson>=3.2
 openpyxl>=3.1
 PyYAML>=6.0
 neo4j>=5.14
