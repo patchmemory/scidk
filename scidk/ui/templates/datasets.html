@@ -38,38 +38,31 @@
       <button id="prov-go" class="btn btn-sm btn-outline-primary">Go</button>
     </div>
   </div>
-  <div class="row g-2" style="margin-bottom:.5rem">
-    <div class="col small">
-      <form id="prov-scan-form" class="row g-2" style="align-items: end;" data-testid="prov-scan-form">
-        <div class="col-auto small">Scan selected folder (recursive):</div>
-        <div class="col-auto form-check">
-          <input id="prov-scan-recursive" class="form-check-input" type="checkbox" checked />
-          <label class="form-check-label small" for="prov-scan-recursive">Recursive</label>
-        </div>
-        <div class="col-auto">
-          <button type="submit" class="btn btn-sm btn-primary">Scan</button>
-        </div>
-        <div class="col-auto">
-          <button id="btn-scan-with-selection" class="btn btn-sm btn-outline-primary" type="button">Scan with selection</button>
-        </div>
-        <div class="col-auto form-check">
-          <label class="form-check-label small" title="If on, explicit includes can override .scidkignore patterns"><input id="sel-override-ignore" class="form-check-input" type="checkbox" checked /> Allow includes to override .scidkignore</label>
-        </div>
-        <div class="col-auto"><span id="sel-summary" class="small"></span></div>
-      </form>
-      <div class="small" id="prov-scan-msg" style="margin-top:.25rem"></div>
-    </div>
-  </div>
   <div id="prov-crumb" class="small" style="margin-bottom:.5rem"></div>
   <div style="display:flex; gap:1rem; align-items:flex-start">
     <div style="flex: 2 1 60%; border:1px solid #eee; max-height:420px; overflow:auto">
       <table class="table table-sm" style="margin-bottom:0">
-        <thead><tr><th><input id="prov-sel-all" type="checkbox" title="Select/Deselect all on page" /></th><th>Name</th><th>Type</th><th>Size</th><th>Modified</th><th>Provider</th></tr></thead>
+        <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Modified</th><th>Provider</th></tr></thead>
         <tbody id="prov-list"></tbody>
       </table>
     </div>
     <div id="prov-panel" style="flex: 1 1 40%; border:1px solid #eee; min-height:200px; padding:.5rem; position:sticky; top:1rem">
-      <div class="small" id="prov-panel-content">Select a provider, root, and item to see details.</div>
+      <div class="small" id="prov-panel-content">
+        <div style="margin-bottom:0.5rem; padding:0.5rem; background:#f8f9fa; border-radius:0.25rem">
+          <strong>Current Location:</strong>
+          <div id="prov-current-path" class="small" style="margin-top:0.25rem; font-family:monospace">
+            No folder selected
+          </div>
+        </div>
+        <div style="margin-top:0.5rem">
+          <button id="prov-scan-btn" type="button" class="btn btn-sm btn-primary" style="width:100%" disabled>
+            🔍 Scan This Folder
+          </button>
+          <div class="small text-muted" style="margin-top:0.25rem">
+            Select a folder to enable scanning. All scans run as background tasks with progress tracking.
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
@@ -134,22 +127,16 @@
       <button id="snap-next" class="btn btn-sm btn-outline-secondary" disabled>Next</button>
       <button id="snap-use-live" class="btn btn-sm btn-outline-secondary" title="Copy Live path into Snapshot">Use Live path</button>
       <button id="snap-commit" class="btn btn-sm btn-outline-success" title="Commit selected scan to Graph">Commit selected scan</button>
-      <button id="snap-rescan" class="btn btn-sm btn-outline-warning" title="Run the scan again using saved selection">Rescan</button>
-      <button id="snap-reinterpret" class="btn btn-sm btn-outline-secondary" title="Populate interpretations for selected scan">Re-interpret scan</button>
     </div>
   </div>
   <div class="small" id="snap-crumb" style="margin-bottom:.25rem"></div>
   <div class="small" id="snap-status" style="margin-bottom:.5rem"></div>
-  <div id="rclone-banner" class="small" style="display:none; margin-top:.5rem; padding:.5rem; border:1px dashed #cc9; background:#fffbf0">
-    This rclone scan is large. For better performance, consider mounting the remote and re-running the scan. You can also proceed with streaming reinterpretation in chunks.
-  </div>
   <div class="table-responsive" style="max-height:320px; overflow:auto; border:1px solid #eee">
     <table class="table table-sm" style="margin-bottom:0">
-      <thead><tr><th><input id="snap-sel-all" type="checkbox" title="Select/Deselect all on page" /></th><th>Name</th><th>Type</th><th>Size</th><th>Modified</th></tr></thead>
+      <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Modified</th></tr></thead>
       <tbody id="snap-list"></tbody>
     </table>
   </div>
-  <div id="snap-panel" class="small" style="margin-top:.5rem; border:1px solid #eee; padding:.5rem; display:none"></div>
   <div class="row g-2" style="margin-top:.5rem">
     <div class="col-auto">
       <label class="form-label small" style="margin-bottom:.25rem">Snapshot search</label>
@@ -186,23 +173,7 @@
   </div>
 </section>
 <section>
-  <h2>Start Background Scan</h2>
-  <form id="bg-scan-form" class="row g-2">
-    <div class="col-auto">
-      <label for="scan-path" class="form-label small" style="margin-bottom:.25rem">Path</label>
-      <div class="input-group input-group-sm" style="width: 420px;">
-        <input id="scan-path" type="text" class="form-control" placeholder="/path/to/scan or remote:sub/path" data-testid="scan-path" />
-        <button id="bg-use-current" type="button" class="btn btn-outline-secondary">Use current folder</button>
-      </div>
-    </div>
-    <div class="col-auto form-check" style="padding-top:1.8rem">
-      <input id="scan-recursive" class="form-check-input" type="checkbox" checked />
-      <label class="form-check-label small" for="scan-recursive">Recursive</label>
-    </div>
-    <div class="col-auto" style="padding-top:1.4rem">
-      <button type="submit" class="btn btn-sm btn-primary" data-testid="scan-submit">Start Scan</button>
-    </div>
-  </form>
+  <h2>Scans Summary</h2>
   <div id="tasks-list" style="margin-top:.75rem"></div>
 
   <div class="actions" style="margin-top:1rem; align-items: baseline; gap: .5rem;">
@@ -250,8 +221,8 @@
     const provList = document.getElementById('prov-list');
     const provCrumb = document.getElementById('prov-crumb');
     const provPanel = document.getElementById('prov-panel-content');
-    const provScanForm = document.getElementById('prov-scan-form');
-    const provScanMsg = document.getElementById('prov-scan-msg');
+    const provScanBtn = document.getElementById('prov-scan-btn');
+    const provCurrentPath = document.getElementById('prov-current-path');
     const btnROC = document.getElementById('open-rocrate');
     const btnROCClose = document.getElementById('close-rocrate');
     const rocFrame = document.getElementById('rocrate-frame');
@@ -352,57 +323,31 @@
           const size = e.type === 'folder' ? '' : fmtBytes(e.size||0);
           const mod = fmtTime(e.mtime||0);
           const prov = providerId;
-          const chkId = `sel-${btoa((e.id||'')+':'+(e.type||''))}`;
-          return `<tr class="prov-item" data-id="${e.id}" data-type="${e.type}">
-            <td><input type="checkbox" class="prov-sel" data-id="${e.id}" data-type="${e.type}" /></td>
-            <td>${e.name}</td><td>${type}</td><td>${size}</td><td>${mod}</td><td><span class="badge">${prov}</span></td></tr>`;
+          return `<tr class="prov-item" data-id="${e.id}" data-type="${e.type}"><td>${e.name}</td><td>${type}</td><td>${size}</td><td>${mod}</td><td><span class="badge">${prov}</span></td></tr>`;
         }).join('');
         provList.innerHTML = rows || '<tr><td colspan="5" class="small">Empty folder.</td></tr>';
         attachProvHandlers();
-      } catch(e){ provList.innerHTML = '<tr><td colspan="5" class="small">Browse failed.</td></tr>'; }
-    }
 
-    // Selection store (rules)
-    const selectionRules = [];
-    function upsertRule(action, path, recursive, node_type){
-      // Remove opposite rule if exists, then add/replace
-      const idx = selectionRules.findIndex(r => r.path===path && r.recursive===!!recursive && r.node_type===node_type);
-      if (idx >= 0) selectionRules.splice(idx,1);
-      selectionRules.push({ action, path, recursive: !!recursive, node_type });
-      renderSelSummary();
-    }
-    function renderSelSummary(){
-      const s = document.getElementById('sel-summary');
-      if (!s) return;
-      const inc = selectionRules.filter(r=>r.action==='include').length;
-      const exc = selectionRules.filter(r=>r.action==='exclude').length;
-      s.textContent = `Selection: ${inc} include, ${exc} exclude`;
+        // Update current path display and enable scan button
+        if (provCurrentPath) {
+          provCurrentPath.textContent = fullPath || '(root)';
+        }
+        if (provScanBtn) {
+          provScanBtn.disabled = false;
+        }
+      } catch(e){
+        provList.innerHTML = '<tr><td colspan="5" class="small">Browse failed.</td></tr>';
+        if (provScanBtn) provScanBtn.disabled = true;
+      }
     }
 
     function attachProvHandlers(){
-      // Select/Deselect all on page
-      const selAll = document.getElementById('prov-sel-all');
-      if (selAll){
-        selAll.addEventListener('change', () => {
-          const boxes = document.querySelectorAll('input.prov-sel');
-          boxes.forEach(chk => {
-            const was = chk.checked;
-            chk.checked = selAll.checked;
-            if (was !== selAll.checked){
-              // trigger change handler to update rules
-              chk.dispatchEvent(new Event('change'));
-            }
-          });
-        });
-      }
-      // Row click navigates into folders; file shows details
       document.querySelectorAll('tr.prov-item')?.forEach(tr => {
-        tr.addEventListener('click', (ev) => {
-          // Ignore clicks originating from checkbox
-          if (ev.target && ev.target.closest && ev.target.closest('input.prov-sel')) return;
+        tr.addEventListener('click', () => {
           const id = tr.getAttribute('data-id');
           const type = tr.getAttribute('data-type');
           if (type === 'folder'){
+            // For rclone, set currentPath to relative portion (strip remote prefix)
             if (currentProv === 'rclone'){
               const i = id.indexOf(':');
               let rel = i >= 0 ? id.slice(i+1) : id;
@@ -414,23 +359,10 @@
             if (provPathInput) provPathInput.value = currentPath;
             browse(currentProv, currentRoot, currentPath);
           } else {
-            provPanel.innerHTML = `<div><strong>${tr.children[1]?.textContent||id}</strong></div><div class=\"small\">Path: <code>${id}</code></div>`;
+            provPanel.innerHTML = `<div><strong>${tr.firstChild?.textContent||id}</strong></div><div class=\"small\">Path: <code>${id}</code></div>`;
           }
         });
       });
-      // Checkbox selection → translate to include/exclude rules
-      document.querySelectorAll('input.prov-sel')?.forEach(chk => {
-        chk.addEventListener('change', () => {
-          const id = chk.getAttribute('data-id');
-          const type = chk.getAttribute('data-type');
-          const isFolder = (type === 'folder');
-          const recursive = isFolder;
-          const node_type = isFolder ? 'folder' : 'file';
-          const action = chk.checked ? 'include' : 'exclude';
-          upsertRule(action, id, recursive, node_type);
-        });
-      });
-      renderSelSummary();
     }
 
     if (provSelect){
@@ -497,80 +429,68 @@
       if (chkFast) chkFast.addEventListener('change', reBrowse);
       if (inpDepth) inpDepth.addEventListener('change', reBrowse);
     }
-    if (provScanForm){
-      provScanForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        // Derive values from UI at submit-time to avoid race with async init
+
+    // Unified scan button handler - uses background tasks
+    if (provScanBtn){
+      provScanBtn.addEventListener('click', async () => {
+        // Get current browse context
         const provId = (provSelect && provSelect.value) || currentProv || 'local_fs';
         const rootId = (rootSelect && rootSelect.value) || currentRoot || '/';
         const inputPath = (provPathInput && provPathInput.value && provPathInput.value.trim()) || '';
         const relOrAbs = inputPath || currentPath || '';
-        // Compose full scan target for Rclone; keep other providers untouched
+
+        // Compose full scan path
         let scanPath = relOrAbs || rootId || '/';
         if (provId === 'rclone') {
-          scanPath = composePath(provId, rootId, relOrAbs); // e.g., "dropbox:AIPT"
+          scanPath = composePath(provId, rootId, relOrAbs);
         }
-        currentProv = provId;
-        currentRoot = rootId;
-        currentPath = relOrAbs;
-        if (!provId || !scanPath){ provScanMsg.textContent = 'Select a provider and folder first.'; return; }
-        const recursive = document.getElementById('prov-scan-recursive').checked;
-        const chkFast = document.getElementById('prov-browse-fast-list');
-        const fastList = !!(chkFast && chkFast.checked);
-        const btn = provScanForm.querySelector('button[type="submit"]');
-        if (btn) { btn.disabled = true; btn.textContent = 'Scanning…'; }
-        provScanMsg.textContent = `Starting scan for ${scanPath}…`;
-        // Add a local pseudo-task so status appears with other progress bars
-        const localId = 'provscan-' + Date.now();
-        const localTask = { id: localId, type: 'scan', status: 'running', path: scanPath, processed: 0, total: null, progress: 0 };
-        try { (window.scidkLocalTasks||[]).push(localTask); } catch(_) { /* ignore */ }
-        fetchTasks(); // trigger re-render with local task
+
+        if (!provId || !scanPath){
+          alert('Please select a provider and folder first.');
+          return;
+        }
+
+        // Populate background scan form and trigger it
+        const bgPathInput = document.getElementById('scan-path');
+        const bgRecursive = document.getElementById('scan-recursive');
+        if (bgPathInput) bgPathInput.value = scanPath;
+        if (bgRecursive) bgRecursive.checked = true;
+
+        // Trigger background scan via tasks API (same as "Start Background Scan" button)
+        const recursive = true;
+        provScanBtn.disabled = true;
+        provScanBtn.textContent = 'Starting scan...';
+
         try {
-          const overrideIg = !!(document.getElementById('sel-override-ignore') && document.getElementById('sel-override-ignore').checked);
-          const selection = { rules: selectionRules.slice(), use_ignore: true, allow_override_ignores: overrideIg };
-          const r = await fetch('/api/scan', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ provider_id: provId, root_id: rootId||'/', path: scanPath, recursive, fast_list: fastList, selection }) });
-          const ctype = (r.headers && r.headers.get('content-type')) || '';
-          let j = null;
-          if (ctype.includes('application/json')){
-            try { j = await r.json(); } catch(_) { j = null; }
+          const payload = {
+            type: 'scan',
+            path: scanPath,
+            recursive,
+            provider_id: provId,
+            root_id: rootId
+          };
+          const r = await fetch('/api/tasks', {
+            method: 'POST',
+            headers: { 'Content-Type':'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          if (r.status === 202){
+            startPolling();
+            fetchTasks();
+            alert(`Background scan started for: ${scanPath}\nCheck progress in "Scans Summary" section below.`);
           } else {
-            try { const txt = await r.text(); throw new Error(`HTTP ${r.status}: ${txt}`); } catch(e){ throw e; }
-          }
-          if (r.ok && j){
-            const files = j.scanned || 0;
-            const folders = (j.folder_count !== undefined) ? j.folder_count : undefined;
-            const dur = j.duration_sec ? (Math.round(j.duration_sec*10)/10+'s') : '';
-            let msg = `Scan complete: ${j.scan_id} — files: ${files}`;
-            if (folders !== undefined) msg += `, folders: ${folders}`;
-            if (files === 0 && folders > 0 && !recursive){ msg += ' — Only folders found. Enable Recursive to include files in subfolders.'; }
-            if (dur) msg += ` (${dur})`;
-            provScanMsg.textContent = msg;
-            localTask.status = 'completed';
-            localTask.processed = files;
-            localTask.total = files || localTask.processed;
-            localTask.progress = 1;
-            localTask.scan_id = j.scan_id;
-          } else {
-            const err = (j && (j.error||j.message)) || `HTTP ${r.status}`;
-            provScanMsg.textContent = `Scan error: ${err}`;
-            localTask.status = 'error';
-            localTask.error = err;
-            localTask.progress = 1;
+            const j = await r.json();
+            alert('Scan error: ' + (j.error || r.status));
           }
         } catch(err){
-          provScanMsg.textContent = 'Scan error: ' + err;
-          localTask.status = 'error';
-          localTask.error = (err && err.message) ? err.message : String(err);
-          localTask.progress = 1;
-        }
-        finally {
-          if (btn) { btn.disabled = false; btn.textContent = 'Scan'; }
-          fetchTasks();
+          alert('Scan error: ' + err);
+        } finally {
+          provScanBtn.disabled = false;
+          provScanBtn.textContent = '🔍 Scan This Folder';
         }
       });
     }
-    const btnScanWithSel = document.getElementById('btn-scan-with-selection');
-    if (btnScanWithSel){ btnScanWithSel.addEventListener('click', (ev) => { ev.preventDefault(); if (provScanForm) provScanForm.dispatchEvent(new Event('submit')); }); }
 
     // Snapshot browse logic (index-backed)
     const snapScanSel = document.getElementById('snapshot-scan');
@@ -583,8 +503,6 @@
     const snapNext = document.getElementById('snap-next');
     const snapUseLive = document.getElementById('snap-use-live');
     const snapCommit = document.getElementById('snap-commit');
-    const snapReint = document.getElementById('snap-reinterpret');
-    const snapRescan = document.getElementById('snap-rescan');
     const snapStatus = document.getElementById('snap-status');
     const snapSearchQ = document.getElementById('snap-search-q');
     const snapSearchExt = document.getElementById('snap-search-ext');
@@ -595,22 +513,8 @@
     const snapCrumb = document.getElementById('snap-crumb');
     let snapToken = null;
     let snapHistory = [];
-    // cache rclone interpret settings
-    let rcSettings = { suggest_mount_threshold: 400, max_files_per_batch: 1000 };
-    async function loadRcSettings(){
-      try{ const r = await fetch('/api/settings/rclone-interpret'); const j = await r.json(); if (r.ok){ rcSettings = { suggest_mount_threshold: Number(j.suggest_mount_threshold||400), max_files_per_batch: Number(j.max_files_per_batch||1000) }; } }
-      catch(_) { /* ignore */ }
-    }
-    loadRcSettings();
     async function loadScansForSnapshot(){
       try{ const r = await fetch('/api/scans'); const scans = await r.json(); if (!snapScanSel) return; const current = snapScanSel.value; snapScanSel.innerHTML = '<option value="">-- select a recent scan below --</option>' + scans.map(s => `<option value="${s.id}">${s.path} — ${s.file_count} files</option>`).join(''); if (current) snapScanSel.value = current; } catch(e) { /* ignore */ }
-      // show/hide rclone banner if applicable
-      try {
-        const id = snapScanSel && snapScanSel.value;
-        const banner = document.getElementById('rclone-banner');
-        if (id){ const rs = await fetch(`/api/scans/${encodeURIComponent(id)}`); const scan = await rs.json(); const isRclone = (scan && scan.provider_id) === 'rclone'; const big = (scan && (scan.file_count||0)) >= (rcSettings.suggest_mount_threshold||400); if (banner) banner.style.display = (isRclone && big) ? '' : 'none'; }
-        else { if (banner) banner.style.display = 'none'; }
-      } catch(_) { /* ignore */ }
     }
     async function browseSnapshot(direction){
       if (!snapScanSel || !snapScanSel.value){ snapList.innerHTML = '<tr><td colspan="4" class="small">Select a scan first.</td></tr>'; return; }
@@ -638,8 +542,6 @@
         // Update crumb with clickable ancestors
         const p = j.path || '';
         let parts = [];
-        const panel = document.getElementById('snap-panel');
-        if (panel) { panel.style.display = 'none'; panel.innerHTML=''; }
         if (p){
           if (p.includes(':')){ const i = p.indexOf(':'); const rem = p.slice(0,i+1); const suff = p.slice(i+1).replace(/^\/+/, ''); const segs = suff? suff.split('/'): []; let acc = rem; parts.push({name: rem.replace(/:$/,''), path: rem}); for (let s of segs){ acc = acc + (acc.endsWith(':')? '':'/') + s; parts.push({name: s, path: acc}); }
           } else { const segs = p.replace(/^\/+/, '').split('/'); let acc = ''; for (let i=0;i<segs.length;i++){ acc = (i===0? ('/'+segs[i]) : (acc + '/' + segs[i])); parts.push({name: segs[i]||'/', path: acc}); } }
@@ -653,36 +555,16 @@
         // Render
         const rows = entries.map(e => {
           const mod = (e.modified && e.modified > 0 && e.type==='file') ? fmtTime(e.modified) : '';
-          const interp = e.interpreted_as ? `<span class=\"badge\">${e.interpreted_as}</span>` : '';
-          const esc = (s) => (s||'').replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');
-          const preview = e.interpretation_json ? esc((e.interpretation_json||'').slice(0,800)) : '';
-          return `<tr data-path="${e.path}" data-type="${e.type}" data-interp-as="${e.interpreted_as||''}" data-interp-json="${preview}"><td><input type=\"checkbox\" class=\"snap-sel\" data-path=\"${e.path}\" data-type=\"${e.type}\" /></td><td>${e.name} ${interp}</td><td>${e.type}</td><td>${e.type==='file'?(fmtBytes(e.size||0)):''}</td><td>${mod}</td></tr>`;
+          return `<tr data-path="${e.path}" data-type="${e.type}"><td>${e.name}</td><td>${e.type}</td><td>${e.type==='file'?(fmtBytes(e.size||0)):''}</td><td>${mod}</td></tr>`;
         }).join('');
         snapList.innerHTML = rows || '<tr><td colspan="4" class="small">No entries.</td></tr>';
         snapNext.disabled = !snapToken;
         snapPrev.disabled = (snapHistory.length <= 1);
-        // Click to drill when folder; show details when file
+        // Click to drill when folder
         document.querySelectorAll('#snap-list tr')?.forEach(tr => {
           tr.addEventListener('click', () => {
             const t = tr.getAttribute('data-type'); const p = tr.getAttribute('data-path');
-            const panel = document.getElementById('snap-panel');
-            if (t === 'folder' && snapPathInput){ snapPathInput.value = p; snapToken = null; snapHistory = []; browseSnapshot(); return; }
-            if (t === 'file' && panel){
-              const ias = tr.getAttribute('data-interp-as') || '';
-              const ij = tr.getAttribute('data-interp-json') || '';
-              let body = '';
-              if (ias){ body += `<div>Interpreted as: <span class=\"badge\">${ias}</span></div>`; }
-              if (ij){
-                try {
-                  const parsed = JSON.parse(ij);
-                  body += `<details open style=\"margin-top:.25rem\"><summary class=\"small\">Interpretation</summary><pre style=\"white-space: pre-wrap;\">${JSON.stringify(parsed, null, 2)}</pre></details>`;
-                } catch(_){ body += `<details open style=\"margin-top:.25rem\"><summary class=\"small\">Interpretation</summary><pre style=\"white-space: pre-wrap;\">${ij}</pre></details>`; }
-              } else {
-                body += '<div class="small">No interpretation stored for this file.</div>';
-              }
-              panel.innerHTML = `<div><strong>Path:</strong> <code>${p}</code></div>${body}`;
-              panel.style.display = 'block';
-            }
+            if (t === 'folder' && snapPathInput){ snapPathInput.value = p; snapToken = null; snapHistory = []; browseSnapshot(); }
           });
         });
       } catch(e){
@@ -710,7 +592,7 @@
         snapSearchResults.innerHTML = rows || '<div class="small">No matches.</div>';
       } catch(e){ snapSearchResults.textContent = 'Search error: ' + e; }
     }); }
-    if (snapScanSel){ snapScanSel.addEventListener('change', () => { snapToken = null; snapHistory = []; browseSnapshot(); loadScansForSnapshot(); }); }
+    if (snapScanSel){ snapScanSel.addEventListener('change', () => { snapToken = null; snapHistory = []; browseSnapshot(); }); }
     if (snapUseLive){ snapUseLive.addEventListener('click', () => {
       const provId = (provSelect && provSelect.value) || currentProv || 'local_fs';
       const rootId = (rootSelect && rootSelect.value) || currentRoot || '/';
@@ -724,71 +606,6 @@
       try{ const r = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ type: 'commit', scan_id: id }) }); if (r.status === 202){ snapStatus.textContent = 'Commit started in background. Watch progress above.'; } else { const j = await r.json(); snapStatus.textContent = 'Commit failed: ' + (j.error || r.status); } }
       catch(e){ snapStatus.textContent = 'Commit failed: ' + e; }
       finally { snapCommit.disabled = false; snapCommit.textContent = prev; }
-    }); }
-    if (snapRescan){ snapRescan.addEventListener('click', async () => {
-      if (!snapScanSel || !snapScanSel.value){ snapStatus.textContent = 'Select a scan first.'; return; }
-      const id = snapScanSel.value; snapRescan.disabled = true; const prev = snapRescan.textContent; snapRescan.textContent = 'Rescanning…'; snapStatus.textContent = '';
-      try{
-        // Load original scan details and stored selection
-        const sd = await fetch(`/api/scans/${encodeURIComponent(id)}`);
-        const scan = await sd.json();
-        if (!sd.ok){ snapStatus.textContent = 'Rescan failed: ' + (scan.error || sd.status); return; }
-        const cfgResp = await fetch(`/api/scans/${encodeURIComponent(id)}/config`);
-        const sel = cfgResp.ok ? (await cfgResp.json()) : {};
-        const payload = {
-          type: 'scan',
-          path: scan.path,
-          recursive: !!scan.recursive,
-          provider_id: scan.provider_id || 'local_fs',
-          root_id: scan.root_id || '/',
-          selection: sel || {}
-        };
-        const r = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
-        if (r.status === 202){ snapStatus.textContent = 'Rescan started in background. Watch progress above.'; }
-        else { const j = await r.json(); snapStatus.textContent = 'Rescan failed: ' + (j.error || r.status); }
-      } catch(e){ snapStatus.textContent = 'Rescan failed: ' + e; }
-      finally { snapRescan.disabled = false; snapRescan.textContent = prev; }
-    }); }
-
-    if (snapReint){ snapReint.addEventListener('click', async () => {
-      if (!snapScanSel || !snapScanSel.value){ snapStatus.textContent = 'Select a scan first.'; return; }
-      const id = snapScanSel.value; snapReint.disabled = true; const prev = snapReint.textContent; snapReint.textContent = 'Re-interpreting…'; snapStatus.textContent = '';
-      try{
-        // Fetch scan details to decide which endpoint to call
-        const sd = await fetch(`/api/scans/${encodeURIComponent(id)}`);
-        const scan = await sd.json();
-        const providerId = (scan && scan.provider_id) || null;
-        if (providerId === 'rclone'){
-          // Chunked streaming interpretation for rclone scans
-          const batch = rcSettings.max_files_per_batch || 1000;
-          let cursor = null;
-          let totalProcessed = 0, totalErrors = 0, batches = 0;
-          const common = { include: ["*.txt","*.csv","*.md","*.json","*.yaml","*.yml","*.py","*.ipynb"], max_files: batch, max_size_bytes: 1048576, timeout_sec: 60, overwrite: true };
-          while (true){
-            const payload = cursor ? { ...common, after_rowid: cursor } : { ...common };
-            const r = await fetch(`/api/interpret/scan/${encodeURIComponent(id)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-            const j = await r.json();
-            if (!r.ok){ snapStatus.textContent = 'Interpret (remote) failed: ' + (j.error || r.status); break; }
-            totalProcessed += (j.processed_count||0); totalErrors += (j.error_count||0); batches += 1;
-            snapStatus.textContent = `Interpret (remote): batches=${batches}, processed=${totalProcessed}, errors=${totalErrors}`;
-            if (!j.next_cursor){ break; }
-            cursor = j.next_cursor;
-          }
-          browseSnapshot();
-        } else {
-          // Legacy local reinterpret
-          const r = await fetch(`/api/scans/${encodeURIComponent(id)}/reinterpret`, { method: 'POST' });
-          const j = await r.json();
-          if (!r.ok){ snapStatus.textContent = 'Re-interpret failed: ' + (j.error || r.status); }
-          else {
-            const fs = (j.files_seen!==undefined)?`, files_seen=${j.files_seen}`:''; const fm = (j.files_matched!==undefined)?`, files_matched=${j.files_matched}`:'';
-            snapStatus.textContent = `Re-interpret: updated=${j.updated}, skipped_remote=${j.skipped_remote}, not_found=${j.not_found}, errors=${j.errors}${fs}${fm}`;
-            browseSnapshot();
-          }
-        }
-      }
-      catch(e){ snapStatus.textContent = 'Re-interpret failed: ' + e; }
-      finally { snapReint.disabled = false; snapReint.textContent = prev; }
     }); }
 
     // Scans dropdown and background tasks
@@ -813,19 +630,7 @@
     }
     if (refreshBtn) refreshBtn.addEventListener('click', loadScansIntoDropdown);
 
-    const scanForm = document.getElementById('bg-scan-form');
     const tasksDiv = document.getElementById('tasks-list');
-    const bgUseCurrent = document.getElementById('bg-use-current');
-    if (bgUseCurrent) {
-      bgUseCurrent.addEventListener('click', () => {
-        const provId = (provSelect && provSelect.value) || currentProv || 'local_fs';
-        const rootId = (rootSelect && rootSelect.value) || currentRoot || '/';
-        const relOrAbs = (provPathInput && provPathInput.value && provPathInput.value.trim()) || currentPath || '';
-        const full = provId === 'rclone' ? composePath(provId, rootId, relOrAbs) : (relOrAbs || rootId || '/');
-        const bgInput = document.getElementById('scan-path');
-        if (bgInput) bgInput.value = full;
-      });
-    }
     // Keep a small client-side list for local (synchronous) scans so they appear alongside server tasks
     window.scidkLocalTasks = window.scidkLocalTasks || [];
     const fmtPct = (x) => Math.round((x || 0) * 100);
@@ -892,8 +697,8 @@
       const fmtTs = (t) => { try { return t ? new Date(Math.round(t)*1000).toLocaleString() : ''; } catch(_) { return t || ''; } };
       if (!scans || scans.length === 0){ tbody.innerHTML = '<tr><td colspan="7" class="small">No scans yet.</td></tr>'; return; }
       tbody.innerHTML = scans.map(s => `<tr>
-        <td><code>${s.id}</code>${s.rescan_of?` <span class=\"badge bg-warning text-dark\">rescan</span>`:''}</td>
-        <td>${s.path}${s.rescan_of?` <span class=\"small\">(of <code>${s.rescan_of}</code>)</span>`:''}</td>
+        <td><code>${s.id}</code></td>
+        <td>${s.path}</td>
         <td>${s.file_count||0}</td>
         <td>${s.recursive?'yes':'no'}</td>
         <td>${fmtTs(s.started)}</td>
@@ -917,39 +722,20 @@
       }, 1000);
     }
     function stopPolling(){ if (poller){ clearInterval(poller); poller = null; } }
-    if (scanForm){
-      scanForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const path = document.getElementById('scan-path').value.trim();
-        const recursive = document.getElementById('scan-recursive').checked;
-        try {
-          const provId = (provSelect && provSelect.value) || currentProv || 'local_fs';
-          const rootId = (rootSelect && rootSelect.value) || currentRoot || '/';
-          const overrideIgSel = !!(document.getElementById('sel-override-ignore') && document.getElementById('sel-override-ignore').checked);
-                    const selection = { rules: selectionRules.slice(), use_ignore: true, allow_override_ignores: overrideIgSel };
-                    const payload = { type: 'scan', path, recursive, provider_id: provId, root_id: rootId, selection };
-          const r = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
-          if (r.status === 202){ startPolling(); fetchTasks(); }
-          else { const j = await r.json(); alert('Task error: ' + (j.error || r.status)); }
-        } catch(err){ alert('Task error: ' + err); }
-      });
-      // initial render
-      startPolling(); fetchTasks(); loadScansIntoDropdown(); fetchNeoStatus();
-    }
+
+    // initial render
+    startPolling(); fetchTasks(); loadScansIntoDropdown(); fetchNeoStatus();
 
     // Scans management panel
     const scansDiv = document.getElementById('scans-panel');
     function scansRow(s){
       const ts = Math.round(s.ended||s.started||0);
-      const tag = s.rescan_of ? `<span class=\"badge bg-warning text-dark\" title=\"rescan of ${s.rescan_of}\">rescan</span>` : '';
-      const of = s.rescan_of ? ` (of <code>${s.rescan_of}</code>)` : '';
-      return `<div style=\"padding:.25rem 0; border-bottom:1px solid #eee; display:flex; gap:.5rem; align-items:center; justify-content:space-between\">
-        <div class=\"small\"><code>${s.id}</code> ${tag} — ${s.path}${of} — files: ${s.file_count} — ${s.recursive?'recursive':'shallow'} — ${ts}</div>
-        <div style=\"display:flex; gap:.5rem\">
-          <a class=\"btn btn-sm btn-outline-primary\" href=\"/datasets?scan_id=${s.id}\">Open</a>
-          <button class=\"btn btn-sm btn-outline-success\" data-scan=\"${s.id}\" data-action=\"commit\">Commit to Graph</button>
-          <button class=\"btn btn-sm btn-outline-warning\" data-scan=\"${s.id}\" data-action=\"rescan\">Rescan</button>
-          <button class=\"btn btn-sm btn-outline-danger\" data-scan=\"${s.id}\" data-action=\"delete\">Delete</button>
+      return `<div style="padding:.25rem 0; border-bottom:1px solid #eee; display:flex; gap:.5rem; align-items:center; justify-content:space-between">
+        <div class="small"><code>${s.id}</code> — ${s.path} — files: ${s.file_count} — ${s.recursive?'recursive':'shallow'} — ${ts}</div>
+        <div style="display:flex; gap:.5rem">
+          <a class="btn btn-sm btn-outline-primary" href="/datasets?scan_id=${s.id}">Open</a>
+          <button class="btn btn-sm btn-outline-success" data-scan="${s.id}" data-action="commit">Commit to Graph</button>
+          <button class="btn btn-sm btn-outline-danger" data-scan="${s.id}" data-action="delete">Delete</button>
         </div>
       </div>`;
     }
@@ -975,11 +761,6 @@
             } else if (action === 'delete'){
               const r = await fetch('/api/scans/' + encodeURIComponent(id), { method: 'DELETE' });
               if (!r.ok){ const j = await r.json(); alert('Delete failed: ' + (j.error || r.status)); }
-            } else if (action === 'rescan'){
-              const r = await fetch('/api/scans/' + encodeURIComponent(id) + '/rescan', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({}) });
-              const j = await r.json();
-              if (!r.ok){ alert('Rescan failed: ' + (j.error || r.status)); }
-              else { alert('Rescan started: ' + (j.scan_id || '(ok)')); }
             }
           } catch(err){ alert('Action failed: ' + err); }
           renderScansPanel();
