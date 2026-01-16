@@ -1,7 +1,7 @@
 """
 End-to-end tests for Files page UX workflows.
 
-Validates scan functionality, selection features, and browser-to-scan integration.
+Validates the consolidated scan functionality and browser-to-scan integration.
 """
 import os
 import time

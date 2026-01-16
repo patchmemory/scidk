@@ -25,6 +25,7 @@ dev = [
   "pytest-playwright==0.4.3",
   "playwright==1.40.0",
   "requests>=2.32",
+  "beautifulsoup4>=4.12",
 ]
 
 # Optional LLM provider (only needed if you enable Graphrag LLM features)
