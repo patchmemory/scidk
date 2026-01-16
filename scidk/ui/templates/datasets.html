@@ -47,19 +47,20 @@
       </table>
     </div>
     <div id="prov-panel" style="flex: 1 1 40%; border:1px solid #eee; min-height:200px; padding:.5rem; position:sticky; top:1rem">
-      <div class="small" id="prov-panel-content">Select a provider, root, and item to see details.
-        <div style="margin-top:.5rem">
-          <form id="prov-scan-form" class="row g-2">
-            <div class="col-auto small">Scan selected folder (recursive):</div>
-            <div class="col-auto form-check">
-              <input id="prov-scan-recursive" class="form-check-input" type="checkbox" checked />
-              <label class="form-check-label small" for="prov-scan-recursive">Recursive</label>
-            </div>
-            <div class="col-auto">
-              <button type="submit" class="btn btn-sm btn-primary">Scan</button>
-            </div>
-          </form>
-          <div class="small" id="prov-scan-msg" style="margin-top:.25rem"></div>
+      <div class="small" id="prov-panel-content">
+        <div style="margin-bottom:0.5rem; padding:0.5rem; background:#f8f9fa; border-radius:0.25rem">
+          <strong>Current Location:</strong>
+          <div id="prov-current-path" class="small" style="margin-top:0.25rem; font-family:monospace">
+            No folder selected
+          </div>
+        </div>
+        <div style="margin-top:0.5rem">
+          <button id="prov-scan-btn" type="button" class="btn btn-sm btn-primary" style="width:100%" disabled>
+            🔍 Scan This Folder
+          </button>
+          <div class="small text-muted" style="margin-top:0.25rem">
+            Select a folder to enable scanning. All scans run as background tasks with progress tracking.
+          </div>
         </div>
       </div>
     </div>
@@ -236,8 +237,8 @@
     const provList = document.getElementById('prov-list');
     const provCrumb = document.getElementById('prov-crumb');
     const provPanel = document.getElementById('prov-panel-content');
-    const provScanForm = document.getElementById('prov-scan-form');
-    const provScanMsg = document.getElementById('prov-scan-msg');
+    const provScanBtn = document.getElementById('prov-scan-btn');
+    const provCurrentPath = document.getElementById('prov-current-path');
     const btnROC = document.getElementById('open-rocrate');
     const btnROCClose = document.getElementById('close-rocrate');
     const rocFrame = document.getElementById('rocrate-frame');
@@ -342,7 +343,18 @@
         }).join('');
         provList.innerHTML = rows || '<tr><td colspan="5" class="small">Empty folder.</td></tr>';
         attachProvHandlers();
-      } catch(e){ provList.innerHTML = '<tr><td colspan="5" class="small">Browse failed.</td></tr>'; }
+
+        // Update current path display and enable scan button
+        if (provCurrentPath) {
+          provCurrentPath.textContent = fullPath || '(root)';
+        }
+        if (provScanBtn) {
+          provScanBtn.disabled = false;
+        }
+      } catch(e){
+        provList.innerHTML = '<tr><td colspan="5" class="small">Browse failed.</td></tr>';
+        if (provScanBtn) provScanBtn.disabled = true;
+      }
     }
 
     function attachProvHandlers(){
@@ -433,75 +445,65 @@
       if (chkFast) chkFast.addEventListener('change', reBrowse);
       if (inpDepth) inpDepth.addEventListener('change', reBrowse);
     }
-    if (provScanForm){
-      provScanForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        // Derive values from UI at submit-time to avoid race with async init
+
+    // Unified scan button handler - uses background tasks
+    if (provScanBtn){
+      provScanBtn.addEventListener('click', async () => {
+        // Get current browse context
         const provId = (provSelect && provSelect.value) || currentProv || 'local_fs';
         const rootId = (rootSelect && rootSelect.value) || currentRoot || '/';
         const inputPath = (provPathInput && provPathInput.value && provPathInput.value.trim()) || '';
         const relOrAbs = inputPath || currentPath || '';
-        // Compose full scan target for Rclone; keep other providers untouched
+
+        // Compose full scan path
         let scanPath = relOrAbs || rootId || '/';
         if (provId === 'rclone') {
-          scanPath = composePath(provId, rootId, relOrAbs); // e.g., "dropbox:AIPT"
+          scanPath = composePath(provId, rootId, relOrAbs);
         }
-        currentProv = provId;
-        currentRoot = rootId;
-        currentPath = relOrAbs;
-        if (!provId || !scanPath){ provScanMsg.textContent = 'Select a provider and folder first.'; return; }
-        const recursive = document.getElementById('prov-scan-recursive').checked;
-        const chkFast = document.getElementById('prov-browse-fast-list');
-        const fastList = !!(chkFast && chkFast.checked);
-        const btn = provScanForm.querySelector('button[type="submit"]');
-        if (btn) { btn.disabled = true; btn.textContent = 'Scanning…'; }
-        provScanMsg.textContent = `Starting scan for ${scanPath}…`;
-        // Add a local pseudo-task so status appears with other progress bars
-        const localId = 'provscan-' + Date.now();
-        const localTask = { id: localId, type: 'scan', status: 'running', path: scanPath, processed: 0, total: null, progress: 0 };
-        try { (window.scidkLocalTasks||[]).push(localTask); } catch(_) { /* ignore */ }
-        fetchTasks(); // trigger re-render with local task
+
+        if (!provId || !scanPath){
+          alert('Please select a provider and folder first.');
+          return;
+        }
+
+        // Populate background scan form and trigger it
+        const bgPathInput = document.getElementById('scan-path');
+        const bgRecursive = document.getElementById('scan-recursive');
+        if (bgPathInput) bgPathInput.value = scanPath;
+        if (bgRecursive) bgRecursive.checked = true;
+
+        // Trigger background scan via tasks API (same as "Start Background Scan" button)
+        const recursive = true;
+        provScanBtn.disabled = true;
+        provScanBtn.textContent = 'Starting scan...';
+
         try {
-          const r = await fetch('/api/scan', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ provider_id: provId, root_id: rootId||'/', path: scanPath, recursive, fast_list: fastList }) });
-          const ctype = (r.headers && r.headers.get('content-type')) || '';
-          let j = null;
-          if (ctype.includes('application/json')){
-            try { j = await r.json(); } catch(_) { j = null; }
+          const payload = {
+            type: 'scan',
+            path: scanPath,
+            recursive,
+            provider_id: provId,
+            root_id: rootId
+          };
+          const r = await fetch('/api/tasks', {
+            method: 'POST',
+            headers: { 'Content-Type':'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          if (r.status === 202){
+            startPolling();
+            fetchTasks();
+            alert(`Background scan started for: ${scanPath}\nCheck progress in "Scans Summary" section below.`);
           } else {
-            // Non-JSON response (proxy/gateway error). Read text for clarity
-            try { const txt = await r.text(); throw new Error(`HTTP ${r.status}: ${txt}`); } catch(e){ throw e; }
-          }
-          if (r.ok && j){
-            const files = j.scanned || 0;
-            const folders = (j.folder_count !== undefined) ? j.folder_count : undefined;
-            const dur = j.duration_sec ? (Math.round(j.duration_sec*10)/10+'s') : '';
-            let msg = `Scan complete: ${j.scan_id} — files: ${files}`;
-            if (folders !== undefined) msg += `, folders: ${folders}`;
-            if (files === 0 && folders > 0 && !recursive){ msg += ' — Only folders found. Enable Recursive to include files in subfolders.'; }
-            if (dur) msg += ` (${dur})`;
-            provScanMsg.textContent = msg;
-            // Mark local task completed
-            localTask.status = 'completed';
-            localTask.processed = files;
-            localTask.total = files || localTask.processed;
-            localTask.progress = 1;
-            localTask.scan_id = j.scan_id;
-          } else {
-            const err = (j && (j.error||j.message)) || `HTTP ${r.status}`;
-            provScanMsg.textContent = `Scan error: ${err}`;
-            localTask.status = 'error';
-            localTask.error = err;
-            localTask.progress = 1;
+            const j = await r.json();
+            alert('Scan error: ' + (j.error || r.status));
           }
         } catch(err){
-          provScanMsg.textContent = 'Scan error: ' + err;
-          localTask.status = 'error';
-          localTask.error = (err && err.message) ? err.message : String(err);
-          localTask.progress = 1;
-        }
-        finally {
-          if (btn) { btn.disabled = false; btn.textContent = 'Scan'; }
-          fetchTasks(); // refresh tasks view to reflect final status
+          alert('Scan error: ' + err);
+        } finally {
+          provScanBtn.disabled = false;
+          provScanBtn.textContent = '🔍 Scan This Folder';
         }
       });
     }
