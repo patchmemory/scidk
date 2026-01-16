@@ -338,3 +338,150 @@ def apply_basic_change_history(scan_id: str, target_root: str) -> dict:
         return {"created": int(created), "modified": int(modified), "deleted": int(deleted)}
     finally:
         conn.close()
+
+
+def record_scan_items(scan_id: str, rows: Iterable[Tuple], batch_size: int = 10000) -> int:
+    """
+    Record scan items into scan_items table for caching.
+    Rows: (path, type, size, modified_time, file_extension, mime_type, etag, hash, extra_json)
+    Returns total inserted.
+    """
+    from .migrations import migrate
+    conn = connect()
+    migrate(conn)
+    total = 0
+    try:
+        cur = conn.cursor()
+        buf: List[Tuple] = []
+        for r in rows:
+            # Expand row to match scan_items schema
+            buf.append((scan_id,) + r)
+            if len(buf) >= batch_size:
+                cur.executemany(
+                    """INSERT INTO scan_items(scan_id, path, type, size, modified_time, file_extension, mime_type, etag, hash, extra_json)
+                       VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    buf,
+                )
+                conn.commit()
+                total += len(buf)
+                buf.clear()
+        if buf:
+            cur.executemany(
+                """INSERT INTO scan_items(scan_id, path, type, size, modified_time, file_extension, mime_type, etag, hash, extra_json)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                buf,
+            )
+            conn.commit()
+            total += len(buf)
+        return total
+    finally:
+        conn.close()
+
+
+def cache_directory_listing(scan_id: str, dir_path: str, children: List[str]) -> None:
+    """
+    Cache directory listing in directory_cache table.
+    children: list of child file/folder names (not full paths)
+    """
+    import json
+    import time
+    from .migrations import migrate
+    conn = connect()
+    migrate(conn)
+    try:
+        children_json = json.dumps(children)
+        created = time.time()
+        conn.execute(
+            """INSERT OR REPLACE INTO directory_cache(scan_id, path, children_json, created)
+               VALUES (?,?,?,?)""",
+            (scan_id, dir_path, children_json, created)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_cached_directory(scan_id: str, dir_path: str) -> Optional[List[str]]:
+    """
+    Retrieve cached directory listing from directory_cache.
+    Returns list of child names or None if not cached.
+    """
+    import json
+    from .migrations import migrate
+    conn = connect()
+    migrate(conn)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT children_json FROM directory_cache WHERE scan_id=? AND path=?",
+            (scan_id, dir_path)
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        try:
+            return json.loads(row[0] or "[]")
+        except Exception:
+            return None
+    finally:
+        conn.close()
+
+
+def get_previous_scan_for_path(path: str) -> Optional[str]:
+    """
+    Find the most recent scan_id that includes this path.
+    Returns scan_id or None.
+    """
+    conn = connect()
+    init_db(conn)
+    try:
+        cur = conn.cursor()
+        # Try scan_items first (more structured)
+        cur.execute(
+            "SELECT scan_id FROM scan_items WHERE path=? ORDER BY rowid DESC LIMIT 1",
+            (path,)
+        )
+        row = cur.fetchone()
+        if row:
+            return row[0]
+        # Fallback to files table
+        cur.execute(
+            "SELECT scan_id FROM files WHERE path=? ORDER BY rowid DESC LIMIT 1",
+            (path,)
+        )
+        row = cur.fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def get_scan_item(scan_id: str, path: str) -> Optional[Dict]:
+    """
+    Retrieve scan item metadata from scan_items table.
+    Returns dict with path, type, size, modified_time, hash, etc. or None.
+    """
+    from .migrations import migrate
+    conn = connect()
+    migrate(conn)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT path, type, size, modified_time, file_extension, mime_type, etag, hash
+               FROM scan_items WHERE scan_id=? AND path=?""",
+            (scan_id, path)
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            'path': row[0],
+            'type': row[1],
+            'size': row[2],
+            'modified_time': row[3],
+            'file_extension': row[4],
+            'mime_type': row[5],
+            'etag': row[6],
+            'hash': row[7],
+        }
+    finally:
+        conn.close()
