@@ -5001,6 +5001,80 @@ def create_app():
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    @api.get('/logs')
+    def api_logs():
+        """
+        Browse operational logs with pagination and filters.
+        Query params: limit, offset, level, since_ts
+        Privacy: No sensitive file paths or user data exposed.
+        """
+        try:
+            from .core import path_index_sqlite as pix
+            limit = min(int(request.args.get('limit', 100)), 1000)
+            offset = int(request.args.get('offset', 0))
+            level = request.args.get('level', '').strip().upper() or None
+            since_ts = request.args.get('since_ts', '').strip() or None
+
+            conn = pix.connect()
+            try:
+                cur = conn.cursor()
+                # Build query with filters
+                conditions = []
+                params = []
+                if level:
+                    conditions.append("level = ?")
+                    params.append(level)
+                if since_ts:
+                    try:
+                        ts_val = float(since_ts)
+                        conditions.append("ts >= ?")
+                        params.append(ts_val)
+                    except Exception:
+                        pass
+
+                where_clause = ""
+                if conditions:
+                    where_clause = " WHERE " + " AND ".join(conditions)
+
+                # Get total count
+                count_query = f"SELECT COUNT(*) FROM logs{where_clause}"
+                cur.execute(count_query, params)
+                row = cur.fetchone()
+                total = row[0] if row else 0
+
+                # Get logs (most recent first)
+                query = f"""
+                    SELECT ts, level, message, context
+                    FROM logs{where_clause}
+                    ORDER BY ts DESC
+                    LIMIT ? OFFSET ?
+                """
+                cur.execute(query, params + [limit, offset])
+                rows = cur.fetchall()
+
+                logs = []
+                for row in rows:
+                    logs.append({
+                        'ts': row[0],
+                        'level': row[1],
+                        'message': row[2],
+                        'context': row[3]
+                    })
+
+                return jsonify({
+                    'logs': logs,
+                    'total': total,
+                    'limit': limit,
+                    'offset': offset
+                }), 200
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     # Rclone interpretation settings (GET/POST)
     @api.get('/settings/rclone-interpret')
     def api_settings_rclone_interpret_get():
