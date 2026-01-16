@@ -275,11 +275,10 @@ def test_files_page_structure_consolidated():
         sections = soup.find_all('h2')
         section_titles = [s.get_text() for s in sections]
 
-        # Should have core sections: Files, Snapshot browse, Scans Summary, Background Scan
+        # Should have core sections: Files, Snapshot browse, Scans Summary
         assert 'Files' in section_titles
         assert 'Snapshot (scanned) browse' in section_titles or 'Snapshot browse' in section_titles
         assert 'Scans Summary' in section_titles
-        assert 'Start Background Scan' in section_titles
 
         # Verify old sync scan form is gone
         old_form = soup.find('form', id='prov-scan-form')

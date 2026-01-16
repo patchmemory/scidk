@@ -173,23 +173,7 @@
   </div>
 </section>
 <section>
-  <h2>Start Background Scan</h2>
-  <form id="bg-scan-form" class="row g-2">
-    <div class="col-auto">
-      <label for="scan-path" class="form-label small" style="margin-bottom:.25rem">Path</label>
-      <div class="input-group input-group-sm" style="width: 420px;">
-        <input id="scan-path" type="text" class="form-control" placeholder="/path/to/scan or remote:sub/path" />
-        <button id="bg-use-current" type="button" class="btn btn-outline-secondary">Use current folder</button>
-      </div>
-    </div>
-    <div class="col-auto form-check" style="padding-top:1.8rem">
-      <input id="scan-recursive" class="form-check-input" type="checkbox" checked />
-      <label class="form-check-label small" for="scan-recursive">Recursive</label>
-    </div>
-    <div class="col-auto" style="padding-top:1.4rem">
-      <button type="submit" class="btn btn-sm btn-primary">Start Scan</button>
-    </div>
-  </form>
+  <h2>Scans Summary</h2>
   <div id="tasks-list" style="margin-top:.75rem"></div>
 
   <div class="actions" style="margin-top:1rem; align-items: baseline; gap: .5rem;">
@@ -646,19 +630,7 @@
     }
     if (refreshBtn) refreshBtn.addEventListener('click', loadScansIntoDropdown);
 
-    const scanForm = document.getElementById('bg-scan-form');
     const tasksDiv = document.getElementById('tasks-list');
-    const bgUseCurrent = document.getElementById('bg-use-current');
-    if (bgUseCurrent) {
-      bgUseCurrent.addEventListener('click', () => {
-        const provId = (provSelect && provSelect.value) || currentProv || 'local_fs';
-        const rootId = (rootSelect && rootSelect.value) || currentRoot || '/';
-        const relOrAbs = (provPathInput && provPathInput.value && provPathInput.value.trim()) || currentPath || '';
-        const full = provId === 'rclone' ? composePath(provId, rootId, relOrAbs) : (relOrAbs || rootId || '/');
-        const bgInput = document.getElementById('scan-path');
-        if (bgInput) bgInput.value = full;
-      });
-    }
     // Keep a small client-side list for local (synchronous) scans so they appear alongside server tasks
     window.scidkLocalTasks = window.scidkLocalTasks || [];
     const fmtPct = (x) => Math.round((x || 0) * 100);
@@ -750,23 +722,9 @@
       }, 1000);
     }
     function stopPolling(){ if (poller){ clearInterval(poller); poller = null; } }
-    if (scanForm){
-      scanForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const path = document.getElementById('scan-path').value.trim();
-        const recursive = document.getElementById('scan-recursive').checked;
-        try {
-          const provId = (provSelect && provSelect.value) || currentProv || 'local_fs';
-          const rootId = (rootSelect && rootSelect.value) || currentRoot || '/';
-          const payload = { type: 'scan', path, recursive, provider_id: provId, root_id: rootId };
-          const r = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
-          if (r.status === 202){ startPolling(); fetchTasks(); }
-          else { const j = await r.json(); alert('Task error: ' + (j.error || r.status)); }
-        } catch(err){ alert('Task error: ' + err); }
-      });
-      // initial render
-      startPolling(); fetchTasks(); loadScansIntoDropdown(); fetchNeoStatus();
-    }
+
+    // initial render
+    startPolling(); fetchTasks(); loadScansIntoDropdown(); fetchNeoStatus();
 
     // Scans management panel
     const scansDiv = document.getElementById('scans-panel');
