@@ -23,8 +23,8 @@ def test_files_page_loads_successfully():
         assert b'Provider' in resp.data
 
 
-def test_scan_form_has_selection_features():
-    """Verify that the scan form includes selection features."""
+def test_scan_button_uses_background_tasks_only():
+    """Verify that the scan button uses /api/tasks, not /api/scan."""
     from scidk.app import create_app
     app = create_app()
     app.config['TESTING'] = True
@@ -33,11 +33,14 @@ def test_scan_form_has_selection_features():
         resp = client.get('/datasets')
         assert resp.status_code == 200
 
-        # Check that scan form with selection features exists
+        # Check that the template has the new unified scan button
         html = resp.data.decode('utf-8')
-        assert 'prov-scan-form' in html
-        assert 'btn-scan-with-selection' in html
-        assert 'sel-override-ignore' in html  # Selection override checkbox
+        assert 'prov-scan-btn' in html
+        assert '🔍 Scan This Folder' in html
+
+        # Check that the old sync scan form is removed
+        assert 'prov-scan-form' not in html
+        assert 'prov-scan-recursive' not in html  # old checkbox removed
 
 
 def test_browse_and_scan_integration(tmp_path: Path):
@@ -201,8 +204,8 @@ def test_snapshot_browser_after_scan(tmp_path: Path):
         assert len(snapshot_data['entries']) >= 1
 
 
-def test_scan_and_tasks_apis_both_available():
-    """Verify that both /api/scan (sync) and /api/tasks (async) are available."""
+def test_no_synchronous_scan_in_ui():
+    """Verify that synchronous /api/scan is NOT used by the Files page UI."""
     from scidk.app import create_app
     app = create_app()
     app.config['TESTING'] = True
@@ -211,15 +214,17 @@ def test_scan_and_tasks_apis_both_available():
         resp = client.get('/datasets')
         html = resp.data.decode('utf-8')
 
-        # Check that the UI uses /api/scan for direct scans with selection
-        assert "'/api/scan'" in html
+        # Check that the JavaScript does NOT call /api/scan from provider panel
+        # (it should only use /api/tasks)
+        assert "'/api/scan'" not in html or html.count("'/api/scan'") <= 1
+        # Allow one mention in comments/strings, but not active code
 
-        # And /api/tasks for background scans
+        # Verify /api/tasks is used instead
         assert "'/api/tasks'" in html
 
 
-def test_provider_panel_displays_details():
-    """Test that the provider panel displays file/folder details when browsing."""
+def test_current_location_display_updates():
+    """Test that the 'Current Location' panel updates when browsing."""
     from scidk.app import create_app
     app = create_app()
     app.config['TESTING'] = True
@@ -228,9 +233,13 @@ def test_provider_panel_displays_details():
         resp = client.get('/datasets')
         html = resp.data.decode('utf-8')
 
-        # Check that provider panel exists for displaying details
-        assert 'prov-panel' in html
-        assert 'prov-panel-content' in html
+        # Check that current location display exists
+        assert 'prov-current-path' in html
+        assert 'Current Location:' in html
+
+        # Verify scan button is present and starts disabled
+        assert 'prov-scan-btn' in html
+        assert 'disabled' in html  # Button should start disabled
 
 
 def test_scan_button_integration_with_background_form():
@@ -251,8 +260,8 @@ def test_scan_button_integration_with_background_form():
         # (Verified by manual testing and code inspection)
 
 
-def test_files_page_has_key_sections():
-    """Verify that the Files page has all key sections."""
+def test_files_page_structure_consolidated():
+    """Verify that redundant sections have been removed/consolidated."""
     from scidk.app import create_app
     app = create_app()
     app.config['TESTING'] = True
@@ -272,9 +281,9 @@ def test_files_page_has_key_sections():
         assert 'Scans Summary' in section_titles
         assert 'Start Background Scan' in section_titles
 
-        # Verify sync scan form with selection exists (current main state)
-        sync_form = soup.find('form', id='prov-scan-form')
-        assert sync_form is not None, "Sync scan form should be present"
+        # Verify old sync scan form is gone
+        old_form = soup.find('form', id='prov-scan-form')
+        assert old_form is None, "Old synchronous scan form still present"
 
 
 def test_provider_selector_and_roots_load():
