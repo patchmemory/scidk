@@ -2,7 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-import tomllib  # Python 3.11+
+import tomllib  # Python 3.11+ (built-in)
 
 DEFAULTS = {
     'include': [],  # list of glob patterns

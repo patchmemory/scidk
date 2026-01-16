@@ -35,7 +35,7 @@ Neo4j (optional; for graph projection testing only):
 
 ## 2) Starting the app
 
-- Python: 3.10+
+- Python: 3.12+
 - Install deps: pip install -r requirements.txt
 - Start: python start_scidk.py or `FLASK_APP=scidk.app:create_app flask run` (if configured).
 - Default UI: http://localhost:5000/
