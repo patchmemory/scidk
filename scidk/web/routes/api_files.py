@@ -104,7 +104,7 @@ def api_scan():
         # Delegate to ScansService (refactor): preserve payload and behavior
         try:
             from ...services.scans_service import ScansService
-            svc = ScansService(app)
+            svc = ScansService(current_app)
             result = svc.run_scan({
                 'provider_id': provider_id,
                 'root_id': root_id,
@@ -1480,3 +1480,119 @@ def api_scan_status(scan_id):
         'folder_count': s.get('folder_count'),
         'source': s.get('source'),
     }), 200
+
+@bp.get('/scans/<scan_id>/fs')
+def api_scan_fs(scan_id):
+    idx = get_or_build_scan_index(scan_id)
+    if not idx:
+        return jsonify({'error': 'scan not found'}), 404
+    from pathlib import Path as _P
+    req_path = (request.args.get('path') or '').strip()
+    folder_info = idx['folder_info']
+    children_folders = idx['children_folders']
+    children_files = idx['children_files']
+    roots = idx['roots']
+    # Virtual root listing when no path specified
+    if not req_path:
+        # Auto-enter the scan base folder for a stable, expected view
+        s = current_app.extensions['scidk'].get('scans', {}).get(scan_id) or {}
+        base_path = s.get('path') or ''
+        if base_path:
+            # Ensure base exists in folder_info for consistent naming
+            try:
+                from ...core.path_utils import parse_remote_path, parent_remote_path
+                binfo = parse_remote_path(base_path)
+                if base_path not in folder_info:
+                    if binfo.get('is_remote'):
+                        bname = (binfo.get('parts')[-1] if binfo.get('parts') else binfo.get('remote_name') or base_path)
+                        bparent = parent_remote_path(base_path)
+                    else:
+                        _bp = _P(base_path)
+                        bname = _bp.name or base_path
+                        bparent = str(_bp.parent)
+                    folder_info[base_path] = {'path': base_path, 'name': bname, 'parent': bparent}
+            except Exception:
+                pass
+            req_path = base_path
+            # Build breadcrumb and children for the base path
+            breadcrumb = [
+                {'name': '(scan base)', 'path': ''},
+                {'name': folder_info.get(req_path, {}).get('name', _P(req_path).name), 'path': req_path},
+            ]
+            sub_folders = [
+                {'name': folder_info.get(p, {}).get('name', _P(p).name), 'path': p, 'file_count': len(children_files.get(p, []))}
+                for p in children_folders.get(req_path, [])
+            ]
+            sub_folders.sort(key=lambda r: r['name'].lower())
+            files = children_files.get(req_path, [])
+            return jsonify({
+                'scan_id': scan_id,
+                'path': req_path,
+                'breadcrumb': breadcrumb,
+                'folders': sub_folders,
+                'files': files,
+                'roots': idx['roots'],
+                'folder_info': folder_info,
+                'children_folders': children_folders,
+                'children_files': children_files,
+            }), 200
+        # If no base_path, fall back to showing roots
+        folders = [{'name': _P(p).name, 'path': p, 'file_count': len(children_files.get(p, []))} for p in roots]
+        folders.sort(key=lambda r: r['name'].lower())
+        breadcrumb = [{'name': '(scan roots)', 'path': ''}]
+        return jsonify({'scan_id': scan_id, 'path': '', 'breadcrumb': breadcrumb, 'folders': folders, 'files': [], 'roots': roots, 'folder_info': folder_info, 'children_folders': children_folders, 'children_files': children_files}), 200
+    # Validate path exists in snapshot
+    if req_path not in folder_info:
+        return jsonify({'error': 'folder not found in scan'}), 404
+    # Breadcrumb from this scan's perspective
+    bc_chain = []
+    cur = req_path
+    while cur and cur in folder_info:
+        bc_chain.append(cur)
+        par = folder_info[cur].get('parent')
+        if par == cur:
+            break
+        cur = par
+    bc_chain.reverse()
+    breadcrumb = [{'name': '(scan roots)', 'path': ''}] + [{'name': _P(p).name, 'path': p} for p in bc_chain]
+    # Children
+    sub_folders = [{'name': _P(p).name, 'path': p, 'file_count': len(children_files.get(p, []))} for p in children_folders.get(req_path, [])]
+    sub_folders.sort(key=lambda r: r['name'].lower())
+    files = children_files.get(req_path, [])
+    return jsonify({'scan_id': scan_id, 'path': req_path, 'breadcrumb': breadcrumb, 'folders': sub_folders, 'files': files, 'roots': roots, 'folder_info': folder_info, 'children_folders': children_folders, 'children_files': children_files}), 200
+
+@bp.get('/scans/<scan_id>/browse')
+def api_scan_browse(scan_id):
+    """Browse direct children from the SQLite index for a scan.
+    Delegates to FSIndexService.browse_children.
+    Query params:
+      - path (optional): parent folder; defaults to scan base path
+      - page_size (optional, default 100)
+      - next_page_token (optional)
+      - extension / ext (optional)
+      - type (optional)
+    """
+    from ...services.fs_index_service import FSIndexService
+    svc = FSIndexService(current_app)
+    req_path = (request.args.get('path') or '').strip()
+    # page_size
+    try:
+        page_size = int(request.args.get('page_size') or 100)
+    except Exception:
+        page_size = 100
+    token = (request.args.get('next_page_token') or '').strip()
+    filters = {
+        'extension': (request.args.get('extension') or request.args.get('ext') or '').strip().lower(),
+        'type': (request.args.get('type') or '').strip().lower(),
+    }
+    return svc.browse_children(scan_id, req_path, page_size, token, filters)
+
+@bp.delete('/scans/<scan_id>')
+def api_scan_delete(scan_id):
+    scans = current_app.extensions['scidk'].setdefault('scans', {})
+    existed = scan_id in scans
+    # Remove from graph first
+    current_app.extensions['scidk']['graph'].delete_scan(scan_id)
+    if existed:
+        del scans[scan_id]
+    return jsonify({"status": "ok", "deleted": True, "scan_id": scan_id, "existed": existed}), 200
