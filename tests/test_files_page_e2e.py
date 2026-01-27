@@ -7,7 +7,13 @@ import os
 import time
 from pathlib import Path
 import pytest
-from bs4 import BeautifulSoup
+
+try:
+    from bs4 import BeautifulSoup
+    HAS_BS4 = True
+except ImportError:
+    HAS_BS4 = False
+    BeautifulSoup = None
 
 
 def test_files_page_loads_successfully():
@@ -260,6 +266,7 @@ def test_scan_button_integration_with_background_form():
         # (Verified by manual testing and code inspection)
 
 
+@pytest.mark.skipif(not HAS_BS4, reason="beautifulsoup4 not installed")
 def test_files_page_structure_consolidated():
     """Verify that redundant sections have been removed/consolidated."""
     from scidk.app import create_app

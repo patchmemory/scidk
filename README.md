@@ -204,6 +204,13 @@ Details:
 - RO-Crate Viewer embedding plan (Crate-O): dev/features/ui/feature-rocrate-viewer-embedding.md
 - Describo integration (product vision): dev/vision/describo-integration.md
 
+## Architecture
+SciDK uses a modular Flask blueprint architecture for web routes:
+- **9 blueprints** organize 91 routes by functional area (UI, files, tasks, graph, Neo4j, providers, chat, admin, interpreters)
+- **Reduced footprint**: app.py reduced from 5,781 to 645 lines (89% reduction)
+- **Clean separation**: Each blueprint is self-contained with proper import scoping
+- See `scidk/web/routes/README.md` for detailed blueprint documentation
+
 ## Scanning progress and background tasks (MVP)
 - Current options:
   - Synchronous: POST /api/scan runs immediately and returns when complete.
