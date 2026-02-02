@@ -6,6 +6,7 @@ class CsvInterpreter:
     id = "csv"
     name = "CSV Interpreter"
     version = "0.1.0"
+    extensions = [".csv"]
 
     def __init__(self, max_bytes: int = 10 * 1024 * 1024):
         self.max_bytes = max_bytes

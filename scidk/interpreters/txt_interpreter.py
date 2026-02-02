@@ -6,6 +6,7 @@ class TxtInterpreter:
     id = "txt"
     name = "Text File Interpreter"
     version = "0.1.0"
+    extensions = [".txt"]
 
     def __init__(self, max_bytes: int = 10 * 1024 * 1024, max_preview_bytes: int = 4096, max_preview_lines: int = 100):
         self.max_bytes = max_bytes

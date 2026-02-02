@@ -11,6 +11,7 @@ class XlsxInterpreter:
     id = "xlsx"
     name = "Excel Workbook Interpreter"
     version = "0.1.0"
+    extensions = [".xlsx", ".xlsm"]
 
     def __init__(self, max_bytes: int = 20 * 1024 * 1024):
         self.max_bytes = max_bytes

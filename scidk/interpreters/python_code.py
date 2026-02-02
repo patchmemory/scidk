@@ -6,6 +6,7 @@ class PythonCodeInterpreter:
     id = "python_code"
     name = "Python Code Analyzer"
     version = "0.1.0"
+    extensions = [".py"]
 
     def interpret(self, file_path: Path):
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:

@@ -8,14 +8,7 @@ import json
 from .core.graph import InMemoryGraph
 from .core.filesystem import FilesystemManager
 from .core.registry import InterpreterRegistry
-from .interpreters.python_code import PythonCodeInterpreter
-from .interpreters.csv_interpreter import CsvInterpreter
-from .interpreters.json_interpreter import JsonInterpreter
-from .interpreters.yaml_interpreter import YamlInterpreter
-from .interpreters.ipynb_interpreter import IpynbInterpreter
-from .interpreters.txt_interpreter import TxtInterpreter
-from .interpreters.xlsx_interpreter import XlsxInterpreter
-from .core.pattern_matcher import Rule
+from .interpreters import register_all as register_interpreters
 from .core.providers import ProviderRegistry as FsProviderRegistry, LocalFSProvider, MountedFSProvider, RcloneProvider
 from .web.helpers import commit_to_neo4j_batched
 
@@ -118,33 +111,8 @@ def create_app():
     except Exception:
         settings = None
 
-    # Register interpreters
-    py_interp = PythonCodeInterpreter()
-    csv_interp = CsvInterpreter()
-    json_interp = JsonInterpreter()
-    yaml_interp = YamlInterpreter()
-    ipynb_interp = IpynbInterpreter()
-    txt_interp = TxtInterpreter()
-    xlsx_interp = XlsxInterpreter()
-    registry.register_extension(".py", py_interp)
-    registry.register_extension(".csv", csv_interp)
-    registry.register_extension(".json", json_interp)
-    registry.register_extension(".yml", yaml_interp)
-    registry.register_extension(".yaml", yaml_interp)
-    registry.register_extension(".ipynb", ipynb_interp)
-    registry.register_extension(".txt", txt_interp)
-    registry.register_extension(".xlsx", xlsx_interp)
-    registry.register_extension(".xlsm", xlsx_interp)
-    # Register simple rules to prefer interpreters for extensions
-    registry.register_rule(Rule(id="rule.py.default", interpreter_id=py_interp.id, pattern="*.py", priority=10, conditions={"ext": ".py"}))
-    registry.register_rule(Rule(id="rule.csv.default", interpreter_id=csv_interp.id, pattern="*.csv", priority=10, conditions={"ext": ".csv"}))
-    registry.register_rule(Rule(id="rule.json.default", interpreter_id=json_interp.id, pattern="*.json", priority=10, conditions={"ext": ".json"}))
-    registry.register_rule(Rule(id="rule.yml.default", interpreter_id=yaml_interp.id, pattern="*.yml", priority=10, conditions={"ext": ".yml"}))
-    registry.register_rule(Rule(id="rule.yaml.default", interpreter_id=yaml_interp.id, pattern="*.yaml", priority=10, conditions={"ext": ".yaml"}))
-    registry.register_rule(Rule(id="rule.ipynb.default", interpreter_id=ipynb_interp.id, pattern="*.ipynb", priority=10, conditions={"ext": ".ipynb"}))
-    registry.register_rule(Rule(id="rule.txt.default", interpreter_id=txt_interp.id, pattern="*.txt", priority=10, conditions={"ext": ".txt"}))
-    registry.register_rule(Rule(id="rule.xlsx.default", interpreter_id=xlsx_interp.id, pattern="*.xlsx", priority=10, conditions={"ext": ".xlsx"}))
-    registry.register_rule(Rule(id="rule.xlsm.default", interpreter_id=xlsx_interp.id, pattern="*.xlsm", priority=10, conditions={"ext": ".xlsm"}))
+    # Register interpreters with extensions and rules
+    register_interpreters(registry)
 
     # Compute effective interpreter enablement (CLI envs > global settings > defaults)
     testing_env = bool(os.environ.get('PYTEST_CURRENT_TEST')) or bool(os.environ.get('SCIDK_DISABLE_SETTINGS'))
