@@ -282,20 +282,32 @@ class InMemoryGraph:
             'truncated': truncated,
         }
 
-    def commit_scan(self, scan: Dict):
+    def commit_scan(self, scan: Dict, rows: Optional[List[Dict]] = None, folder_rows: Optional[List[Dict]] = None) -> Dict:
         """Commit a scan session into the graph as a Scan node and SCANNED_IN edges.
         Expects scan to contain 'id' and 'checksums'.
+
+        Args:
+            scan: Scan metadata dict
+            rows: Optional file rows (not used for InMemoryGraph)
+            folder_rows: Optional folder rows (not used for InMemoryGraph)
+
+        Returns:
+            Dict with keys: {'db_scan_exists', 'db_files', 'db_folders', 'db_verified'}
         """
         if not scan or not scan.get('id'):
-            return
+            return {'db_scan_exists': False, 'db_verified': False, 'db_files': 0, 'db_folders': 0}
         sid = scan['id']
         # store a shallow copy
         self.scans[sid] = {k: scan[k] for k in scan.keys()}
         checksums = scan.get('checksums') or []
+        file_count = 0
         for ch in checksums:
             if ch in self.datasets:
                 s = self.dataset_scans.setdefault(ch, set())
                 s.add(sid)
+                file_count += 1
+        # Return in-memory stats
+        return {'db_scan_exists': True, 'db_verified': True, 'db_files': file_count, 'db_folders': 0}
 
     def delete_scan(self, scan_id: str):
         """Delete a committed scan node and unlink SCANNED_IN edges. Datasets remain intact."""

@@ -91,15 +91,27 @@ def create_app():
     if backend == 'neo4j':
         try:
             uri, user, pwd, database, auth_mode = _get_neo4j_params()
+            if not uri:
+                raise ValueError("NEO4J_URI not configured")
+            if auth_mode != 'none' and (not user or not pwd):
+                raise ValueError("NEO4J credentials incomplete (NEO4J_USER/NEO4J_PASSWORD required)")
             from .core.neo4j_graph import Neo4jGraph
             auth = None if auth_mode == 'none' else (user, pwd)
-            graph = Neo4jGraph(uri=uri, auth=auth, database=database)
-        except Exception:
+            graph = Neo4jGraph(uri=uri, auth=auth, database=database, auth_mode=auth_mode)
+            app.logger.info(f"Graph backend: neo4j (uri={uri}, database={database})")
+        except Exception as e:
             # Fallback to in-memory if neo4j params invalid
+            app.logger.warning(f"SCIDK_GRAPH_BACKEND=neo4j but env incomplete or invalid ({e}); falling back to in-memory")
             from .core.graph import InMemoryGraph as _IMG
             graph = _IMG()
+            backend = 'memory'
     else:
         graph = InMemoryGraph()
+        if backend != 'memory':
+            app.logger.warning(f"Unknown SCIDK_GRAPH_BACKEND={backend}; using in-memory")
+            backend = 'memory'
+        else:
+            app.logger.info("Graph backend: in-memory")
     registry = InterpreterRegistry()
     # Load persisted interpreter toggle settings (optional)
     try:
