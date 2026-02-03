@@ -1591,8 +1591,34 @@ def api_scan_browse(scan_id):
 def api_scan_delete(scan_id):
     scans = current_app.extensions['scidk'].setdefault('scans', {})
     existed = scan_id in scans
+
     # Remove from graph first
     current_app.extensions['scidk']['graph'].delete_scan(scan_id)
+
+    # Remove from in-memory registry
     if existed:
         del scans[scan_id]
+
+    # Also remove from SQLite when state.backend=sqlite
+    if current_app.config.get('state.backend') == 'sqlite':
+        try:
+            from ...core import path_index_sqlite as pix
+            conn = pix.connect()
+            try:
+                cur = conn.cursor()
+                # Delete related records first
+                cur.execute("DELETE FROM scan_items WHERE scan_id = ?", (scan_id,))
+                cur.execute("DELETE FROM scan_progress WHERE scan_id = ?", (scan_id,))
+                try:
+                    cur.execute("DELETE FROM scan_selection_rules WHERE scan_id = ?", (scan_id,))
+                except Exception:
+                    pass  # Table might not exist
+                # Delete the scan itself
+                cur.execute("DELETE FROM scans WHERE id = ?", (scan_id,))
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as e:
+            current_app.logger.warning(f"Failed to delete scan {scan_id} from SQLite: {e}")
+
     return jsonify({"status": "ok", "deleted": True, "scan_id": scan_id, "existed": existed}), 200
