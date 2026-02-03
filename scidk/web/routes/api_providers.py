@@ -16,11 +16,6 @@ def _get_ext():
     """Get SciDK extensions from current Flask current_app."""
     return current_app.extensions['scidk']
 
-def _feature_rclone_mounts() -> bool:
-    """Check if rclone mounts feature is enabled."""
-    val = (os.environ.get('SCIDK_RCLONE_MOUNTS') or os.environ.get('SCIDK_FEATURE_RCLONE_MOUNTS') or '').strip().lower()
-    return val in ('1', 'true', 'yes', 'y', 'on')
-
 @bp.get('/providers')
 def api_providers():
     provs = _get_ext()['providers']
@@ -49,8 +44,7 @@ def api_provider_roots():
         return jsonify({'error': str(e)}), 500
 
 
-# Rclone Mount Manager (feature-flagged)
-# These routes are only registered if SCIDK_RCLONE_MOUNTS is enabled
+# Rclone Mount Manager
 
 def _mounts_dir() -> Path:
     """Get mounts directory."""
@@ -78,7 +72,7 @@ def _rclone_exe() -> Optional[str]:
     return shutil.which('rclone')
 
 
-# Rclone mount routes (check feature flag in handlers)
+# Rclone mount routes
 @bp.get('/rclone/mounts')
 def api_rclone_mounts_list():
     mounts_mem = _get_ext().setdefault('rclone_mounts', {})

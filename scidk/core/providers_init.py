@@ -7,12 +7,11 @@ This module handles the initialization of all filesystem providers
 import os
 
 
-def initialize_fs_providers(app, rclone_mounts_enabled: bool):
+def initialize_fs_providers(app):
     """Initialize and register all filesystem providers.
 
     Args:
         app: Flask application instance
-        rclone_mounts_enabled: Whether rclone mounts feature flag is enabled
 
     Returns:
         FsProviderRegistry with all providers registered
@@ -31,9 +30,8 @@ def initialize_fs_providers(app, rclone_mounts_enabled: bool):
         if p.strip()
     ]
 
-    # If rclone mounts feature is enabled, ensure rclone provider is also enabled
-    # for listremotes validation
-    if rclone_mounts_enabled and 'rclone' not in prov_enabled:
+    # Ensure rclone provider is always available for listremotes validation
+    if 'rclone' not in prov_enabled:
         prov_enabled.append('rclone')
 
     # Create registry with enabled providers

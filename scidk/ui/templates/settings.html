@@ -14,7 +14,6 @@
   <span class="badge">Channel: {{ info.channel or 'stable' }}</span>
   <span class="badge" title="Providers">Providers: {{ info.providers }}</span>
   <span class="badge" title="Files viewer">Files viewer: {{ info.files_viewer or '(default)' }}</span>
-  <span class="badge" title="Rclone mounts flag">Rclone mounts: {{ info.rclone_mounts or 'off' }}</span>
 </div>
 
 <section style="margin-top:1rem">
@@ -206,10 +205,9 @@
   </div>
 </section>
 
-{% if rclone_mounts_feature %}
 <section style="margin-top:1rem">
   <h2>Rclone Mounts</h2>
-  <p class="small">Feature flag enabled via SCIDK_RCLONE_MOUNTS=1. Manage mounts under ./data/mounts.</p>
+  <p class="small">Manage rclone mounts under ./data/mounts.</p>
   <div class="row g-2" style="max-width:780px">
     <div class="col-12 col-md-3">
       <label class="form-label small" for="rc-remote">Remote</label>
@@ -245,7 +243,6 @@
   <pre id="rc-logs" class="small" style="max-height:200px; overflow:auto; background:#111; color:#ddd; padding:.5rem"></pre>
   <p class="small text-muted">Note: On Windows, cmount/WinFsp may be required; this UI targets Linux/macOS primarily.</p>
 </section>
-{% endif %}
 {% endblock %}
 {% block head %}
 <script>

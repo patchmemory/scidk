@@ -29,12 +29,6 @@ def _get_ext():
     return current_app.extensions['scidk']
 
 
-def _feature_rclone_mounts() -> bool:
-    """Check if rclone mounts feature is enabled."""
-    val = (os.environ.get('SCIDK_RCLONE_MOUNTS') or os.environ.get('SCIDK_FEATURE_RCLONE_MOUNTS') or '').strip().lower()
-    return val in ('1', 'true', 'yes', 'y', 'on')
-
-
 # Routes
 @bp.get('/')
 def index():
@@ -212,7 +206,6 @@ def settings():
         'interpreter_count': len(reg.by_id),
         'channel': os.environ.get('SCIDK_CHANNEL', 'stable'),
         'files_viewer': os.environ.get('SCIDK_FILES_VIEWER', ''),
-        'rclone_mounts': (os.environ.get('SCIDK_RCLONE_MOUNTS') or os.environ.get('SCIDK_FEATURE_RCLONE_MOUNTS') or ''),
         'providers': os.environ.get('SCIDK_PROVIDERS', 'local_fs,mounted_fs'),
     }
     # Provide interpreter mappings and rules, and plugin summary counts for the Settings page sections
@@ -220,9 +213,8 @@ def settings():
     rules = list(reg.rules.rules)
     ext_count = len(reg.by_extension)
     interp_count = len(reg.by_id)
-    # Feature flag for rclone mounts UI
-    rclone_mounts_feature = _feature_rclone_mounts()
-    return render_template('settings.html', info=info, mappings=mappings, rules=rules, ext_count=ext_count, interp_count=interp_count, rclone_mounts_feature=rclone_mounts_feature)
+    # Rclone mounts UI is now always enabled
+    return render_template('settings.html', info=info, mappings=mappings, rules=rules, ext_count=ext_count, interp_count=interp_count, rclone_mounts_feature=True)
 
 
 @bp.post('/scan')

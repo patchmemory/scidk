@@ -26,16 +26,6 @@ from .core.rclone_settings import load_rclone_interpretation_settings
 from .core.rclone_mounts_loader import rehydrate_rclone_mounts
 
 
-def _feature_rclone_mounts() -> bool:
-    """Check if rclone mount manager feature flag is enabled."""
-    val = (
-        os.environ.get('SCIDK_RCLONE_MOUNTS') or
-        os.environ.get('SCIDK_FEATURE_RCLONE_MOUNTS') or
-        ''
-    ).strip().lower()
-    return val in ('1', 'true', 'yes', 'y', 'on')
-
-
 def create_app():
     """Create and configure the Flask application.
 
@@ -91,8 +81,7 @@ def create_app():
     fs = FilesystemManager(graph=graph, registry=registry)
 
     # Initialize filesystem providers (local_fs, mounted_fs, rclone)
-    rclone_ff_enabled = _feature_rclone_mounts()
-    fs_providers = initialize_fs_providers(app, rclone_ff_enabled)
+    fs_providers = initialize_fs_providers(app)
 
     # Store refs on app for easy access in routes
     app.extensions['scidk'] = {
@@ -117,7 +106,7 @@ def create_app():
             'connected': False,
             'last_error': None,
         },
-        # rclone mounts runtime registry (feature-flagged API will use this)
+        # rclone mounts runtime registry
         'rclone_mounts': {},  # id/name -> { id, remote, subpath, path, read_only, started_at, pid, log_file }
         'settings': settings,
     }
@@ -131,9 +120,8 @@ def create_app():
     load_rclone_interpretation_settings(app)
 
     # Rehydrate rclone mounts metadata from SQLite on startup (no process attached)
-    if rclone_ff_enabled:
-        mounts = rehydrate_rclone_mounts()
-        app.extensions['scidk']['rclone_mounts'].update(mounts)
+    mounts = rehydrate_rclone_mounts()
+    app.extensions['scidk']['rclone_mounts'].update(mounts)
 
     # Feature flags for file indexing
     _ff_index = (os.environ.get('SCIDK_FEATURE_FILE_INDEX') or '').strip().lower() in (
