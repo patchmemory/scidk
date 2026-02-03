@@ -6,6 +6,7 @@ class JsonInterpreter:
     id = "json"
     name = "JSON Interpreter"
     version = "0.1.0"
+    extensions = [".json"]
 
     def __init__(self, max_bytes: int = 5 * 1024 * 1024):
         self.max_bytes = max_bytes

@@ -13,6 +13,7 @@ class IpynbInterpreter:
     id = "ipynb"
     name = "Jupyter Notebook Interpreter"
     version = "0.3.0"
+    extensions = [".ipynb"]
 
     def __init__(self, max_bytes: int = 5 * 1024 * 1024):
         self.max_bytes = max_bytes
