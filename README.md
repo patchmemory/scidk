@@ -146,11 +146,11 @@ Rclone provider (optional):
 - If rclone is not installed or a remote is misconfigured, API returns a clear error message with HTTP 500 and {"error": "..."}.
 - Optional FUSE mount flow with safe defaults: see docs/rclone/mount-examples.md and dev/ops/rclone/systemd/rclone-mount@.service.
 
-### Rclone Mount Manager (MVP, feature-flagged)
-- Enable the feature: set `SCIDK_RCLONE_MOUNTS=1` (or `SCIDK_FEATURE_RCLONE_MOUNTS=1`). When enabled, the rclone provider is auto-enabled for remote validation even if not listed in `SCIDK_PROVIDERS`.
-- UI: Settings → Rclone Mounts section appears. Create a mount by entering `remote`, optional `subpath`, a `name`, and submit (read-only by default).
+### Rclone Mount Manager (MVP)
+- The rclone provider is always enabled for remote validation.
+- UI: Settings → Rclone Mounts section. Create a mount by entering `remote`, optional `subpath`, a `name`, and submit (read-only by default).
 - Safety: Mountpoints are restricted under `./data/mounts/<name>`; remotes are validated against `rclone listremotes` output.
-- Endpoints (enabled only when the feature flag is set):
+- Endpoints:
   - GET `/api/rclone/mounts` — list managed mounts
   - POST `/api/rclone/mounts` with JSON `{ remote, subpath, name, read_only }` — starts `rclone mount` targeting `./data/mounts/<name>`
   - DELETE `/api/rclone/mounts/<id>` — unmounts and stops the process

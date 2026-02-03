@@ -1,5 +1,8 @@
 from typing import Dict, List, Optional
 from neo4j import GraphDatabase
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Neo4jGraph:
@@ -7,9 +10,13 @@ class Neo4jGraph:
     Implements the subset of methods used by the web layer to avoid heavy in-memory state.
     """
 
-    def __init__(self, uri: str, auth: Optional[tuple] = None, database: Optional[str] = None):
+    def __init__(self, uri: str, auth: Optional[tuple] = None, database: Optional[str] = None, auth_mode: str = "basic"):
+        self._uri = uri
+        self._auth = auth
+        self._auth_mode = auth_mode
         self._driver = GraphDatabase.driver(uri, auth=auth) if auth is not None else GraphDatabase.driver(uri)
         self._db = database
+        logger.info(f"Neo4jGraph initialized with backend=neo4j, uri={uri}, database={database}")
 
     def close(self):
         try:
@@ -40,10 +47,46 @@ class Neo4jGraph:
         return []
 
     # Scan lifecycle
-    def commit_scan(self, scan: Dict):
+    def commit_scan(self, scan: Dict, rows: Optional[List[Dict]] = None, folder_rows: Optional[List[Dict]] = None) -> Dict:
+        """Commit a scan with optional file and folder data.
+
+        If rows and folder_rows are provided, writes them to Neo4j along with the scan node.
+        Returns verification dict with counts: {'db_scan_exists', 'db_files', 'db_folders', 'db_verified'}.
+
+        Args:
+            scan: Scan metadata dict with id, path, started, ended, etc.
+            rows: Optional list of file dicts to write
+            folder_rows: Optional list of folder dicts to write
+
+        Returns:
+            Dict with verification results including counts
+        """
         if not scan or not scan.get('id'):
-            return
+            return {'db_scan_exists': False, 'db_verified': False, 'db_files': 0, 'db_folders': 0}
+
         sid = scan.get('id')
+
+        # If rows/folders provided, use full write_scan flow via Neo4jClient
+        if rows is not None or folder_rows is not None:
+            try:
+                from ..services.neo4j_client import Neo4jClient
+                client = Neo4jClient(self._uri, self._auth[0] if self._auth else None,
+                                   self._auth[1] if self._auth else None,
+                                   self._db, self._auth_mode).connect()
+                try:
+                    client.ensure_constraints()
+                    wres = client.write_scan(rows or [], folder_rows or [], scan)
+                    vres = client.verify(sid)
+                    logger.info(f"Neo4j commit completed: {wres.get('written_files', 0)} files, "
+                              f"{wres.get('written_folders', 0)} folders for scan {sid}")
+                    return vres
+                finally:
+                    client.close()
+            except Exception as e:
+                logger.error(f"Neo4j commit_scan failed: {e}")
+                return {'db_scan_exists': False, 'db_verified': False, 'db_files': 0, 'db_folders': 0, 'error': str(e)}
+
+        # Otherwise just create scan node (backward compat with old behavior)
         with self._session() as s:
             s.run(
                 "MERGE (sc:Scan {id:$id}) SET sc.started=$started, sc.ended=$ended, sc.path=$path, "
@@ -53,6 +96,8 @@ class Neo4jGraph:
                 provider_id=scan.get('provider_id'), host_type=scan.get('host_type'), host_id=scan.get('host_id'),
                 root_id=scan.get('root_id'), root_label=scan.get('root_label'), scan_source=scan.get('source')
             ).consume()
+
+        return {'db_scan_exists': True, 'db_verified': False, 'db_files': 0, 'db_folders': 0}
 
     def delete_scan(self, scan_id: str):
         if not scan_id:

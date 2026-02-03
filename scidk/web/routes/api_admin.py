@@ -204,3 +204,89 @@ def api_logs():
 
     # Rclone interpretation settings (GET/POST)
 
+
+@bp.post('/admin/cleanup-test-scans')
+def api_admin_cleanup_test_scans():
+    """Remove test scans from the database (scans with /tmp/ or /nonexistent/ paths).
+
+    This endpoint cleans up scans created during testing that accumulate over time.
+    Removes scans from both SQLite (when state.backend=sqlite) and in-memory registry.
+
+    Returns:
+        JSON with counts of deleted scans and related records
+    """
+    try:
+        from ...core import path_index_sqlite as pix
+
+        conn = pix.connect()
+        try:
+            cur = conn.cursor()
+
+            # Find test scan IDs (paths containing /tmp/ or /nonexistent/)
+            cur.execute("""
+                SELECT id FROM scans
+                WHERE root LIKE '%/tmp/%'
+                   OR root LIKE '%nonexistent%'
+                   OR root LIKE '%scidk-e2e%'
+            """)
+            test_scan_ids = [row[0] for row in cur.fetchall()]
+
+            if not test_scan_ids:
+                return jsonify({
+                    'deleted_scans': 0,
+                    'deleted_scan_items': 0,
+                    'deleted_scan_progress': 0,
+                    'message': 'No test scans found'
+                }), 200
+
+            # Delete related records first (foreign keys)
+            placeholders = ','.join(['?' for _ in test_scan_ids])
+
+            # Delete scan_items
+            cur.execute(f"DELETE FROM scan_items WHERE scan_id IN ({placeholders})", test_scan_ids)
+            deleted_items = cur.rowcount
+
+            # Delete scan_progress
+            cur.execute(f"DELETE FROM scan_progress WHERE scan_id IN ({placeholders})", test_scan_ids)
+            deleted_progress = cur.rowcount
+
+            # Delete scan_selection_rules (if exists)
+            try:
+                cur.execute(f"DELETE FROM scan_selection_rules WHERE scan_id IN ({placeholders})", test_scan_ids)
+            except Exception:
+                pass  # Table might not exist in older schemas
+
+            # Delete scans
+            cur.execute(f"DELETE FROM scans WHERE id IN ({placeholders})", test_scan_ids)
+            deleted_scans = cur.rowcount
+
+            conn.commit()
+
+            # Also clear from in-memory registry
+            ext = _get_ext()
+            scans_registry = ext.get('scans', {})
+            for scan_id in list(scans_registry.keys()):
+                scan = scans_registry.get(scan_id)
+                if scan:
+                    path = scan.get('path', '')
+                    if ('/tmp/' in path or 'nonexistent' in path or 'scidk-e2e' in path):
+                        del scans_registry[scan_id]
+
+            return jsonify({
+                'deleted_scans': deleted_scans,
+                'deleted_scan_items': deleted_items,
+                'deleted_scan_progress': deleted_progress,
+                'scan_ids': test_scan_ids[:10] + (['...'] if len(test_scan_ids) > 10 else []),
+                'total_test_scans_found': len(test_scan_ids),
+                'message': f'Successfully deleted {deleted_scans} test scans'
+            }), 200
+
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+

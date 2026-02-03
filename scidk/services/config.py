@@ -16,18 +16,15 @@ def apply_channel_defaults() -> None:
 
     # Defaults by channel (can be overridden by explicit env)
     if channel == 'dev':
-        setdefault_env('SCIDK_FEATURE_RCLONE_MOUNTS', '1')
         setdefault_env('SCIDK_FILES_VIEWER', 'rocrate')
         setdefault_env('SCIDK_FEATURE_FILE_INDEX', '1')
         setdefault_env('SCIDK_COMMIT_FROM_INDEX', '1')
         if os.environ.get('SCIDK_PROVIDERS') is None:
             os.environ['SCIDK_PROVIDERS'] = 'local_fs,mounted_fs,rclone'
     elif channel == 'beta':
-        setdefault_env('SCIDK_FEATURE_RCLONE_MOUNTS', '0')
         setdefault_env('SCIDK_COMMIT_FROM_INDEX', '1')
     else:
         # stable defaults
-        setdefault_env('SCIDK_FEATURE_RCLONE_MOUNTS', '0')
         setdefault_env('SCIDK_COMMIT_FROM_INDEX', '1')
 
     # Soft-disable rclone provider if binary missing and providers not explicitly set

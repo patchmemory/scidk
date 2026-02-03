@@ -33,13 +33,6 @@ def _apply_channel_defaults():
             os.environ[name] = value
 
     channel = (os.environ.get('SCIDK_CHANNEL') or 'stable').strip().lower()
-    # Defaults by channel (can be overridden by explicit env)
-    if channel == 'dev':
-        setdefault_env('SCIDK_FEATURE_RCLONE_MOUNTS', '1')
-    elif channel == 'beta':
-        setdefault_env('SCIDK_FEATURE_RCLONE_MOUNTS', '0')
-    else:
-        setdefault_env('SCIDK_FEATURE_RCLONE_MOUNTS', '0')
 
     # Soft-disable rclone provider if binary missing and providers not explicitly set
     providers_env_explicit = ('SCIDK_PROVIDERS' in os.environ)
@@ -113,9 +106,8 @@ def create_app():
 
     # Initialize filesystem providers (Phase 0)
     prov_enabled = [p.strip() for p in (os.environ.get('SCIDK_PROVIDERS', 'local_fs,mounted_fs').split(',')) if p.strip()]
-    # If rclone mounts feature is enabled, ensure rclone provider is also enabled for listremotes validation
-    _ff_rc = (os.environ.get('SCIDK_RCLONE_MOUNTS') or os.environ.get('SCIDK_FEATURE_RCLONE_MOUNTS') or '').strip().lower() in ('1','true','yes','y','on')
-    if _ff_rc and 'rclone' not in prov_enabled:
+    # Ensure rclone provider is always available for listremotes validation
+    if 'rclone' not in prov_enabled:
         prov_enabled.append('rclone')
     fs_providers = FsProviderRegistry(enabled=prov_enabled)
     p_local = LocalFSProvider(); p_local.initialize(app, {})
@@ -148,7 +140,7 @@ def create_app():
             'connected': False,
             'last_error': None,
         },
-        # rclone mounts runtime registry (feature-flagged API will use this)
+        # rclone mounts runtime registry
         'rclone_mounts': {},  # id/name -> { id, remote, subpath, path, read_only, started_at, pid, log_file }
     }
 
