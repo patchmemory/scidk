@@ -1,9 +1,27 @@
 # Convenience Makefile for docs/tools
 
-.PHONY: flags-index docs-check unit integration check e2e-install-browsers e2e e2e-headed e2e-parallel e2e-debug
+.PHONY: flags-index docs-check unit integration check e2e-install-browsers e2e e2e-headed e2e-parallel e2e-debug clean-test-artifacts
 
 flags-index:
 	python -m dev.tools.feature_flags_index --write
+
+# Clean up test artifacts (pytest sessions, cache, temp files)
+# Keeps the 3 most recent pytest sessions
+clean-test-artifacts:
+	@echo "Cleaning test artifacts..."
+	@# Remove pytest cache
+	@rm -rf .pytest_cache
+	@# Remove Python bytecode
+	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
+	@# Keep last 3 pytest sessions, remove older ones
+	@if [ -d "dev/test-runs/tmp/pytest-of-patch" ]; then \
+		cd dev/test-runs/tmp/pytest-of-patch && \
+		ls -t | grep '^pytest-[0-9]*$$' | tail -n +4 | xargs -r rm -rf ; \
+	fi
+	@# Remove playwright reports
+	@rm -rf playwright-report test-results
+	@echo "✓ Test artifacts cleaned (kept last 3 pytest sessions)"
 
 # docs-check: run generator and diff; non-zero exit if mismatched
 # Note: this target assumes Unix tools (diff)

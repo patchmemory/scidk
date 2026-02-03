@@ -18,6 +18,9 @@ def _pin_repo_local_test_env():
     for d in (tmp_root, pytest_tmp, db_dir):
         d.mkdir(parents=True, exist_ok=True)
 
+    # Clean up old pytest session directories (keep only 3 most recent)
+    _cleanup_old_pytest_sessions(tmp_root / "pytest-of-patch", keep_last=3)
+
     # OS temp for tempfile and libraries
     os.environ.setdefault("TMPDIR", str(tmp_root))
     os.environ.setdefault("TMP", str(tmp_root))
@@ -36,6 +39,40 @@ def _pin_repo_local_test_env():
 
     # Nothing to yield; env remains for the session
     return
+
+
+def _cleanup_old_pytest_sessions(pytest_user_dir: Path, keep_last: int = 3):
+    """Remove old pytest session directories, keeping only the N most recent.
+
+    Args:
+        pytest_user_dir: Path to pytest-of-{user} directory
+        keep_last: Number of recent sessions to keep (default: 3)
+    """
+    if not pytest_user_dir.exists():
+        return
+
+    try:
+        # Find all pytest-{num} directories
+        session_dirs = [
+            d for d in pytest_user_dir.iterdir()
+            if d.is_dir() and d.name.startswith('pytest-') and d.name[7:].isdigit()
+        ]
+
+        if len(session_dirs) <= keep_last:
+            return
+
+        # Sort by modification time (newest first)
+        session_dirs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+        # Remove old sessions
+        for old_dir in session_dirs[keep_last:]:
+            try:
+                import shutil
+                shutil.rmtree(old_dir)
+            except Exception:
+                pass  # Ignore cleanup errors
+    except Exception:
+        pass  # Don't fail tests if cleanup fails
 
 
 # --- Flask app + test client fixtures expected by unit/integration tests ---
