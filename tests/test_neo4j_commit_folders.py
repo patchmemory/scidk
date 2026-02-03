@@ -1,10 +1,10 @@
 import inspect
-import scidk.app as appmod
+import scidk.web.helpers as helpers_mod
 
 
 def test_commit_neo4j_uses_two_stage_folder_queries():
     # Ensure the function contains both upsert and link Cypher templates
-    src = inspect.getsource(appmod.commit_to_neo4j_batched)
+    src = inspect.getsource(helpers_mod.commit_to_neo4j_batched)
     assert "folders_upsert_cql" in src
     assert "folders_link_cql" in src
     # Upsert CQL must set Folder with host and attach SCANNED_IN

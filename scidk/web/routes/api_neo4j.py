@@ -8,7 +8,7 @@ import os
 import time
 
 from ..helpers import get_neo4j_params, build_commit_rows, commit_to_neo4j, get_or_build_scan_index
-from ...app import commit_to_neo4j_batched
+from ..helpers import commit_to_neo4j_batched
 bp = Blueprint('neo4j', __name__, url_prefix='/api')
 
 def _get_ext():

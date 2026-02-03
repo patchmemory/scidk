@@ -1,7 +1,7 @@
 import types
 import pytest
 
-from scidk.app import commit_to_neo4j_batched
+from scidk.web.helpers import commit_to_neo4j_batched
 
 
 class _FakeResult:
