@@ -22,15 +22,21 @@ python -m dev.tools.feature_flags_index --write
 
 #### CI Verification
 
-The CI pipeline automatically checks that the feature flags index is up-to-date. If you add or modify environment variable usage in the code, you must regenerate the index before pushing:
+**Note:** CI verification is currently disabled as the `dev/` directory is a private submodule not accessible to GitHub Actions. The verification step will be re-enabled when the submodule is made public or when feature flags documentation is moved to the main repository.
+
+For local development, you can verify the index is up-to-date:
+
+```bash
+make docs-check
+```
+
+If you add or modify environment variable usage in the code, regenerate the index before pushing:
 
 ```bash
 make flags-index
 git add dev/features/feature-flags.md
 git commit -m "docs: update feature flags index"
 ```
-
-The CI check will fail with a diff if the index is stale.
 
 #### Pre-commit Hook (Optional)
 
