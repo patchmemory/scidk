@@ -21,6 +21,9 @@ def _pin_repo_local_test_env():
     # Clean up old pytest session directories (keep only 3 most recent)
     _cleanup_old_pytest_sessions(tmp_root / "pytest-of-patch", keep_last=3)
 
+    # Clean up test scans from SQLite database
+    _cleanup_test_scans_from_db(db_dir / 'unit_integration.db')
+
     # OS temp for tempfile and libraries
     os.environ.setdefault("TMPDIR", str(tmp_root))
     os.environ.setdefault("TMP", str(tmp_root))
@@ -73,6 +76,55 @@ def _cleanup_old_pytest_sessions(pytest_user_dir: Path, keep_last: int = 3):
                 pass  # Ignore cleanup errors
     except Exception:
         pass  # Don't fail tests if cleanup fails
+
+
+def _cleanup_test_scans_from_db(db_path: Path):
+    """Remove test scans from the SQLite database before test runs.
+
+    This prevents accumulation of test scans that show up in the UI
+    when running scidk-serve after tests have run.
+
+    Args:
+        db_path: Path to the SQLite database file
+    """
+    if not db_path.exists():
+        return
+
+    try:
+        import sqlite3
+        conn = sqlite3.connect(str(db_path))
+        try:
+            cur = conn.cursor()
+
+            # Check if scans table exists
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='scans'")
+            if not cur.fetchone():
+                return
+
+            # Delete test scans (paths with /tmp/, /nonexistent/, or scidk-e2e)
+            cur.execute("""
+                DELETE FROM scans
+                WHERE root LIKE '%/tmp/%'
+                   OR root LIKE '%nonexistent%'
+                   OR root LIKE '%scidk-e2e%'
+            """)
+
+            # Also clean up orphaned scan_items and scan_progress
+            # (scans that were deleted but left dangling records)
+            cur.execute("""
+                DELETE FROM scan_items
+                WHERE scan_id NOT IN (SELECT id FROM scans)
+            """)
+            cur.execute("""
+                DELETE FROM scan_progress
+                WHERE scan_id NOT IN (SELECT id FROM scans)
+            """)
+
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass  # Silently fail; don't break test runs
 
 
 # --- Flask app + test client fixtures expected by unit/integration tests ---
