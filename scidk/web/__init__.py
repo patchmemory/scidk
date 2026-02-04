@@ -171,4 +171,8 @@ def create_app():
         # If legacy registrar is not present, assume routes are already defined elsewhere.
         pass
 
+    # Register all route blueprints
+    from .routes import register_blueprints
+    register_blueprints(app)
+
     return app
