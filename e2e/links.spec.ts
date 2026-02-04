@@ -233,7 +233,9 @@ test('can save and load link definition', async ({ page, baseURL }) => {
 
   // Cleanup: Delete the test link
   page.on('dialog', async (dialog) => await dialog.accept());
+  const deletePromise = page.waitForResponse(resp => resp.url().includes('/api/links/') && resp.request().method() === 'DELETE');
   await page.locator('#btn-delete-def').click();
+  await deletePromise;
   await page.waitForTimeout(500);
 });
 
@@ -269,8 +271,14 @@ test('can delete link definition', async ({ page, baseURL }) => {
     await dialog.accept();
   });
 
+  // Wait for the delete API call to complete
+  const deletePromise = page.waitForResponse(resp => resp.url().includes('/api/links/') && resp.request().method() === 'DELETE');
   await deleteBtn.click();
-  await page.waitForTimeout(1500);
+  await deletePromise;
+
+  // Wait for the list to reload
+  await page.waitForResponse(resp => resp.url().includes('/api/links') && resp.request().method() === 'GET');
+  await page.waitForTimeout(500);
 
   // Verify link is removed from list
   const listContent = await page.getByTestId('link-list').textContent();
