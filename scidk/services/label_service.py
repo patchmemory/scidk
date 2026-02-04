@@ -18,8 +18,11 @@ class LabelService:
 
     def __init__(self, app):
         self.app = app
+
+    def _get_conn(self):
+        """Get a database connection."""
         from ..core import path_index_sqlite as pix
-        self.conn = pix.connect()
+        return pix.connect()
 
     def list_labels(self) -> List[Dict[str, Any]]:
         """
@@ -28,27 +31,31 @@ class LabelService:
         Returns:
             List of label definition dicts with keys: name, properties, relationships, created_at, updated_at
         """
-        cursor = self.conn.cursor()
-        cursor.execute(
-            """
-            SELECT name, properties, relationships, created_at, updated_at
-            FROM label_definitions
-            ORDER BY name
-            """
-        )
-        rows = cursor.fetchall()
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT name, properties, relationships, created_at, updated_at
+                FROM label_definitions
+                ORDER BY name
+                """
+            )
+            rows = cursor.fetchall()
 
-        labels = []
-        for row in rows:
-            name, props_json, rels_json, created_at, updated_at = row
-            labels.append({
-                'name': name,
-                'properties': json.loads(props_json) if props_json else [],
-                'relationships': json.loads(rels_json) if rels_json else [],
-                'created_at': created_at,
-                'updated_at': updated_at
-            })
-        return labels
+            labels = []
+            for row in rows:
+                name, props_json, rels_json, created_at, updated_at = row
+                labels.append({
+                    'name': name,
+                    'properties': json.loads(props_json) if props_json else [],
+                    'relationships': json.loads(rels_json) if rels_json else [],
+                    'created_at': created_at,
+                    'updated_at': updated_at
+                })
+            return labels
+        finally:
+            conn.close()
 
     def get_label(self, name: str) -> Optional[Dict[str, Any]]:
         """
@@ -60,28 +67,32 @@ class LabelService:
         Returns:
             Label definition dict or None if not found
         """
-        cursor = self.conn.cursor()
-        cursor.execute(
-            """
-            SELECT name, properties, relationships, created_at, updated_at
-            FROM label_definitions
-            WHERE name = ?
-            """,
-            (name,)
-        )
-        row = cursor.fetchone()
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT name, properties, relationships, created_at, updated_at
+                FROM label_definitions
+                WHERE name = ?
+                """,
+                (name,)
+            )
+            row = cursor.fetchone()
 
-        if not row:
-            return None
+            if not row:
+                return None
 
-        name, props_json, rels_json, created_at, updated_at = row
-        return {
-            'name': name,
-            'properties': json.loads(props_json) if props_json else [],
-            'relationships': json.loads(rels_json) if rels_json else [],
-            'created_at': created_at,
-            'updated_at': updated_at
-        }
+            name, props_json, rels_json, created_at, updated_at = row
+            return {
+                'name': name,
+                'properties': json.loads(props_json) if props_json else [],
+                'relationships': json.loads(rels_json) if rels_json else [],
+                'created_at': created_at,
+                'updated_at': updated_at
+            }
+        finally:
+            conn.close()
 
     def save_label(self, definition: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -117,38 +128,42 @@ class LabelService:
         # Check if label exists
         existing = self.get_label(name)
 
-        cursor = self.conn.cursor()
-        if existing:
-            # Update
-            cursor.execute(
-                """
-                UPDATE label_definitions
-                SET properties = ?, relationships = ?, updated_at = ?
-                WHERE name = ?
-                """,
-                (props_json, rels_json, now, name)
-            )
-            created_at = existing['created_at']
-        else:
-            # Insert
-            cursor.execute(
-                """
-                INSERT INTO label_definitions (name, properties, relationships, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (name, props_json, rels_json, now, now)
-            )
-            created_at = now
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            if existing:
+                # Update
+                cursor.execute(
+                    """
+                    UPDATE label_definitions
+                    SET properties = ?, relationships = ?, updated_at = ?
+                    WHERE name = ?
+                    """,
+                    (props_json, rels_json, now, name)
+                )
+                created_at = existing['created_at']
+            else:
+                # Insert
+                cursor.execute(
+                    """
+                    INSERT INTO label_definitions (name, properties, relationships, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (name, props_json, rels_json, now, now)
+                )
+                created_at = now
 
-        self.conn.commit()
+            conn.commit()
 
-        return {
-            'name': name,
-            'properties': properties,
-            'relationships': relationships,
-            'created_at': created_at,
-            'updated_at': now
-        }
+            return {
+                'name': name,
+                'properties': properties,
+                'relationships': relationships,
+                'created_at': created_at,
+                'updated_at': now
+            }
+        finally:
+            conn.close()
 
     def delete_label(self, name: str) -> bool:
         """
@@ -160,10 +175,14 @@ class LabelService:
         Returns:
             True if deleted, False if not found
         """
-        cursor = self.conn.cursor()
-        cursor.execute("DELETE FROM label_definitions WHERE name = ?", (name,))
-        self.conn.commit()
-        return cursor.rowcount > 0
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM label_definitions WHERE name = ?", (name,))
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
 
     def push_to_neo4j(self, name: str) -> Dict[str, Any]:
         """
