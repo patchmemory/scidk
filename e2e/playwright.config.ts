@@ -9,4 +9,5 @@ export default defineConfig({
     headless: true,
   },
   globalSetup: require.resolve('./global-setup'),
+  globalTeardown: require.resolve('./global-teardown'),
 });

@@ -231,3 +231,83 @@ test('validation: cannot save label without name', async ({ page, baseURL }) => 
   const value = await labelNameInput.inputValue();
   expect(value).toBe('');
 });
+
+test('neo4j: push label to neo4j', async ({ page, baseURL, request: pageRequest }) => {
+  // Skip test if Neo4j is not configured
+  test.skip(!process.env.NEO4J_URI, 'NEO4J_URI not configured');
+
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+  await page.goto(`${base}/labels`);
+  await page.waitForLoadState('networkidle');
+
+  // Create a label first
+  await page.getByTestId('new-label-btn').click();
+  await page.getByTestId('label-name').fill('Neo4jTestLabel');
+
+  // Add a property
+  await page.getByTestId('add-property-btn').click();
+  const propertyRow = page.getByTestId('property-row').first();
+  await propertyRow.getByTestId('property-name').fill('id');
+  await propertyRow.getByTestId('property-type').selectOption('string');
+  await propertyRow.getByTestId('property-required').check();
+
+  // Save the label
+  await page.getByTestId('save-label-btn').click();
+  await page.waitForTimeout(1000);
+
+  // Verify Push to Neo4j button is visible
+  const pushBtn = page.getByTestId('push-neo4j-btn');
+  await expect(pushBtn).toBeVisible();
+
+  // Push to Neo4j
+  await pushBtn.click();
+  await page.waitForTimeout(2000);
+
+  // Wait for success toast (the push should succeed if Neo4j is connected)
+  // We can't easily check the toast content, but we can verify no errors occurred
+  // by checking that the page is still functional
+
+  // Verify label is still loadable
+  const labelItems = page.getByTestId('label-item');
+  await expect(labelItems.first()).toBeVisible();
+
+  // Cleanup: delete the test label
+  page.on('dialog', async (dialog) => await dialog.accept());
+  await labelItems.first().click();
+  await page.waitForTimeout(300);
+  await page.getByTestId('delete-label-btn').click();
+  await page.waitForTimeout(500);
+});
+
+test('neo4j: pull labels from neo4j', async ({ page, baseURL }) => {
+  // Skip test if Neo4j is not configured
+  test.skip(!process.env.NEO4J_URI, 'NEO4J_URI not configured');
+
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+  await page.goto(`${base}/labels`);
+  await page.waitForLoadState('networkidle');
+
+  // Click the "New Label" button to show the editor
+  await page.getByTestId('new-label-btn').click();
+
+  // Verify Pull from Neo4j button is visible
+  const pullBtn = page.getByTestId('pull-neo4j-btn');
+  await expect(pullBtn).toBeVisible();
+
+  // Set up dialog handler before clicking
+  page.on('dialog', async (dialog) => {
+    expect(dialog.type()).toBe('confirm');
+    expect(dialog.message()).toContain('Pull schema from Neo4j');
+    await dialog.accept();
+  });
+
+  // Click Pull from Neo4j
+  await pullBtn.click();
+  await page.waitForTimeout(2000);
+
+  // After pulling, labels should be loaded (if any exist in Neo4j)
+  // We can't guarantee any labels exist, but the operation should complete without error
+  // Verify the label list is still visible and functional
+  const labelList = page.getByTestId('label-list');
+  await expect(labelList).toBeVisible();
+});

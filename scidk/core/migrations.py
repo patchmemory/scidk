@@ -265,6 +265,47 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 5)
             version = 5
 
+        # v6: link_definitions and link_jobs for relationship creation workflows
+        if version < 6:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS link_definitions (
+                    id TEXT PRIMARY KEY,
+                    name TEXT,
+                    source_type TEXT,
+                    source_config TEXT,
+                    target_type TEXT,
+                    target_config TEXT,
+                    match_strategy TEXT,
+                    match_config TEXT,
+                    relationship_type TEXT,
+                    relationship_props TEXT,
+                    created_at REAL,
+                    updated_at REAL
+                );
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS link_jobs (
+                    id TEXT PRIMARY KEY,
+                    link_def_id TEXT,
+                    status TEXT,
+                    preview_count INTEGER,
+                    executed_count INTEGER,
+                    error TEXT,
+                    started_at REAL,
+                    completed_at REAL,
+                    FOREIGN KEY (link_def_id) REFERENCES link_definitions(id)
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_link_jobs_def ON link_jobs(link_def_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_link_jobs_status ON link_jobs(status);")
+            conn.commit()
+            _set_version(conn, 6)
+            version = 6
+
         return version
     finally:
         if own:

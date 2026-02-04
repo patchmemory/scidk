@@ -35,6 +35,7 @@ def register_blueprints(app):
     from . import api_providers
     from . import api_annotations
     from . import api_labels
+    from . import api_links
 
     # Register UI blueprint
     app.register_blueprint(ui.bp)
@@ -50,3 +51,4 @@ def register_blueprints(app):
     app.register_blueprint(api_providers.bp)
     app.register_blueprint(api_annotations.bp)
     app.register_blueprint(api_labels.bp)
+    app.register_blueprint(api_links.bp)

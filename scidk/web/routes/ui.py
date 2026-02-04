@@ -196,6 +196,12 @@ def labels():
     return render_template('labels.html')
 
 
+@bp.get('/links')
+def links():
+    """Link definitions page for relationship creation workflows."""
+    return render_template('links.html')
+
+
 @bp.get('/settings')
 def settings():
     """Basic settings from environment and current in-memory sizes."""
