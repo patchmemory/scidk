@@ -798,6 +798,9 @@ function loadPreview() {
 
   savePromise
     .then(saveResult => {
+      if (!saveResult || !saveResult.link || !saveResult.link.id) {
+        throw new Error('Failed to save link definition');
+      }
       const linkId = saveResult.link.id;
       wizardData.id = linkId;
 
