@@ -270,7 +270,12 @@ test('can delete link definition', async ({ page, baseURL }) => {
   });
 
   await deleteBtn.click();
-  await page.waitForTimeout(2000);
+
+  // Wait for wizard to hide (indicates delete completed)
+  await expect(page.locator('#link-wizard')).toBeHidden({ timeout: 5000 });
+
+  // Wait a bit more for list to update
+  await page.waitForTimeout(1000);
 
   // Verify link is removed from list - it should not appear anywhere
   const listItems = await page.locator('.link-item').all();
