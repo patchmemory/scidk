@@ -232,10 +232,16 @@ test('can save and load link definition', async ({ page, baseURL }) => {
   await expect(page.locator('#rel-type')).toHaveValue('TEST_REL');
 
   // Cleanup: Delete the test link
-  page.on('dialog', async (dialog) => await dialog.accept());
-  const deletePromise = page.waitForResponse(resp => resp.url().includes('/api/links/') && resp.request().method() === 'DELETE');
+  page.once('dialog', async (dialog) => await dialog.accept());
+  const deletePromise = page.waitForResponse(resp =>
+    resp.url().includes('/api/links/') &&
+    resp.request().method() === 'DELETE' &&
+    !resp.url().includes('/preview') &&
+    !resp.url().includes('/execute'),
+    { timeout: 5000 }
+  );
   await page.locator('#btn-delete-def').click();
-  await deletePromise;
+  await deletePromise.catch(() => {});  // Ignore timeout in cleanup
   await page.waitForTimeout(500);
 });
 
@@ -265,20 +271,27 @@ test('can delete link definition', async ({ page, baseURL }) => {
   const deleteBtn = page.locator('#btn-delete-def');
   await expect(deleteBtn).toBeVisible();
 
-  // Handle confirmation dialog
-  page.on('dialog', async (dialog) => {
+  // Handle confirmation dialog and wait for API calls
+  page.once('dialog', async (dialog) => {
     expect(dialog.type()).toBe('confirm');
     await dialog.accept();
   });
 
-  // Wait for the delete API call to complete
-  const deletePromise = page.waitForResponse(resp => resp.url().includes('/api/links/') && resp.request().method() === 'DELETE');
+  const deletePromise = page.waitForResponse(resp =>
+    resp.url().includes('/api/links/') &&
+    resp.request().method() === 'DELETE' &&
+    !resp.url().includes('/preview') &&
+    !resp.url().includes('/execute')
+  );
+  const listReloadPromise = page.waitForResponse(resp =>
+    resp.url().endsWith('/api/links') &&
+    resp.request().method() === 'GET'
+  );
+
   await deleteBtn.click();
   await deletePromise;
-
-  // Wait for the list to reload
-  await page.waitForResponse(resp => resp.url().includes('/api/links') && resp.request().method() === 'GET');
-  await page.waitForTimeout(500);
+  await listReloadPromise;
+  await page.waitForTimeout(300);
 
   // Verify link is removed from list
   const listContent = await page.getByTestId('link-list').textContent();
