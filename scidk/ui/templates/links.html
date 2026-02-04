@@ -537,6 +537,9 @@ function populateWizardFromLink(link) {
 
   // Show delete button
   document.getElementById('btn-delete-def').style.display = 'inline-block';
+
+  // Reset to step 1 when loading a link
+  navigateToStep(1);
 }
 
 function resetWizard() {
