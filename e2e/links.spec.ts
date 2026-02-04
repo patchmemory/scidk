@@ -194,9 +194,11 @@ test('can save and load link definition', async ({ page, baseURL }) => {
   await page.goto(`${base}/links`);
   await page.waitForLoadState('networkidle');
 
+  const uniqueName = `Test Save Load ${Date.now()}`;
+
   // Create a link definition
   await page.getByTestId('new-link-btn').click();
-  await page.getByTestId('link-name').fill('Test Save Load');
+  await page.getByTestId('link-name').fill(uniqueName);
   await page.locator('.source-type-btn[data-source="csv"]').click();
   await page.locator('#csv-data').fill('col1,col2\nval1,val2');
   await page.locator('#btn-next').click();
@@ -208,13 +210,13 @@ test('can save and load link definition', async ({ page, baseURL }) => {
   await page.locator('#btn-save-def').click();
   await page.waitForTimeout(1500);
 
-  // Click on the saved link to load it
-  const linkItems = page.locator('.link-item');
-  await linkItems.first().click();
+  // Click on the saved link by finding it by name
+  const linkItem = page.locator('.link-item').filter({ hasText: uniqueName });
+  await linkItem.click();
   await page.waitForTimeout(500);
 
   // Verify wizard is populated with saved data
-  await expect(page.getByTestId('link-name')).toHaveValue('Test Save Load');
+  await expect(page.getByTestId('link-name')).toHaveValue(uniqueName);
 
   // Check that CSV button is active
   await expect(page.locator('.source-type-btn[data-source="csv"]')).toHaveClass(/active/);
@@ -228,6 +230,11 @@ test('can save and load link definition', async ({ page, baseURL }) => {
   // Navigate to step 3 and verify
   await page.locator('#btn-next').click();
   await expect(page.locator('#rel-type')).toHaveValue('TEST_REL');
+
+  // Cleanup: Delete the test link
+  page.on('dialog', async (dialog) => await dialog.accept());
+  await page.locator('#btn-delete-def').click();
+  await page.waitForTimeout(500);
 });
 
 test('can delete link definition', async ({ page, baseURL }) => {
@@ -235,9 +242,11 @@ test('can delete link definition', async ({ page, baseURL }) => {
   await page.goto(`${base}/links`);
   await page.waitForLoadState('networkidle');
 
+  const uniqueName = `To Delete ${Date.now()}`;
+
   // Create a link definition
   await page.getByTestId('new-link-btn').click();
-  await page.getByTestId('link-name').fill('To Delete');
+  await page.getByTestId('link-name').fill(uniqueName);
   await page.locator('#btn-next').click();
   await page.locator('#target-label-name').fill('TestLabel');
   await page.locator('#btn-next').click();
@@ -245,9 +254,9 @@ test('can delete link definition', async ({ page, baseURL }) => {
   await page.locator('#btn-save-def').click();
   await page.waitForTimeout(1500);
 
-  // Load the link
-  const linkItems = page.locator('.link-item');
-  await linkItems.first().click();
+  // Load the link by finding it by name
+  const linkItem = page.locator('.link-item').filter({ hasText: uniqueName });
+  await linkItem.click();
   await page.waitForTimeout(500);
 
   // Delete button should be visible
@@ -265,7 +274,7 @@ test('can delete link definition', async ({ page, baseURL }) => {
 
   // Verify link is removed from list
   const listContent = await page.getByTestId('link-list').textContent();
-  expect(listContent).not.toContain('To Delete');
+  expect(listContent).not.toContain(uniqueName);
 });
 
 test('validation: cannot save without name', async ({ page, baseURL }) => {
