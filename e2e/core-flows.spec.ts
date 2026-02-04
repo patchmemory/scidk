@@ -122,3 +122,41 @@ test('browse page shows correct file listing structure', async ({ page, baseURL,
   // Cleanup
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
+
+test('navigation covers all 7 pages', async ({ page, baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+
+  // Start at home
+  await page.goto(base);
+  await page.waitForLoadState('networkidle');
+
+  // Define all pages with their nav test IDs, URLs, and expected titles
+  const pages = [
+    { testId: 'nav-files', url: '/datasets', titlePattern: /Files|Datasets/i },
+    { testId: 'nav-maps', url: '/map', titlePattern: /Map/i },
+    { testId: 'nav-chats', url: '/chat', titlePattern: /Chat/i },
+    { testId: 'nav-labels', url: '/labels', titlePattern: /Labels/i },
+    { testId: 'nav-links', url: '/links', titlePattern: /Links/i },
+    { testId: 'nav-settings', url: '/settings', titlePattern: /Settings/i },
+  ];
+
+  for (const { testId, url, titlePattern } of pages) {
+    // Verify nav link is visible
+    const navLink = page.getByTestId(testId);
+    await expect(navLink).toBeVisible();
+
+    // Navigate
+    await navLink.click();
+    await page.waitForLoadState('networkidle');
+
+    // Verify page loads correctly
+    await expect(page).toHaveURL(new RegExp(url));
+    await expect(page).toHaveTitle(titlePattern);
+  }
+
+  // Test home navigation via logo
+  await page.getByTestId('nav-home').click();
+  await page.waitForLoadState('networkidle');
+  await expect(page).toHaveURL(base);
+  await expect(page).toHaveTitle(/SciDK/i);
+});
