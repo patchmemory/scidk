@@ -1,5 +1,8 @@
 import { FullConfig } from '@playwright/test';
 
+// Import the teardown function from global-setup
+import { teardown } from './global-setup';
+
 export default async function globalTeardown(config: FullConfig) {
   // Clean up test scans before shutting down server
   const baseUrl = (process as any).env.BASE_URL;
@@ -16,6 +19,5 @@ export default async function globalTeardown(config: FullConfig) {
   }
 
   // Kill the server process
-  const { teardown } = await import('./global-setup');
   await teardown();
 }
