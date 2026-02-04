@@ -239,6 +239,12 @@ test('can save and load link definition', async ({ page, baseURL }) => {
 
 test('can delete link definition', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+
+  // Capture console logs and errors
+  const consoleLogs: string[] = [];
+  page.on('console', msg => consoleLogs.push(`[${msg.type()}] ${msg.text()}`));
+  page.on('pageerror', err => consoleLogs.push(`[ERROR] ${err.message}`));
+
   await page.goto(`${base}/links`);
   await page.waitForLoadState('networkidle');
 
@@ -272,7 +278,12 @@ test('can delete link definition', async ({ page, baseURL }) => {
   await deleteBtn.click();
 
   // Wait for wizard to hide (indicates delete completed)
-  await expect(page.locator('#link-wizard')).toBeHidden({ timeout: 5000 });
+  try {
+    await expect(page.locator('#link-wizard')).toBeHidden({ timeout: 5000 });
+  } catch (e) {
+    console.log('Console logs:', consoleLogs.join('\n'));
+    throw e;
+  }
 
   // Wait a bit more for list to update
   await page.waitForTimeout(1000);
@@ -281,6 +292,11 @@ test('can delete link definition', async ({ page, baseURL }) => {
   const listItems = await page.locator('.link-item').all();
   const listTexts = await Promise.all(listItems.map(item => item.textContent()));
   const found = listTexts.some(text => text?.includes(uniqueName));
+
+  if (found) {
+    console.log('Console logs:', consoleLogs.join('\n'));
+  }
+
   expect(found).toBe(false);
 });
 

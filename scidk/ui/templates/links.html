@@ -444,12 +444,16 @@ function loadLinkDefinitions() {
 
 function renderLinkList() {
   const container = document.getElementById('link-list');
-  if (linkDefinitions.length === 0) {
+
+  // Filter out links without IDs (data integrity issue)
+  const validLinks = linkDefinitions.filter(link => link && link.id);
+
+  if (validLinks.length === 0) {
     container.innerHTML = '<div class="empty-state small">No link definitions</div>';
     return;
   }
 
-  container.innerHTML = linkDefinitions.map(link => `
+  container.innerHTML = validLinks.map(link => `
     <div class="link-item" data-link-id="${link.id}" onclick="loadLinkDefinition('${link.id}')">
       <div style="font-weight: 500;">${link.name || 'Unnamed'}</div>
       <div class="small" style="color: #666;">

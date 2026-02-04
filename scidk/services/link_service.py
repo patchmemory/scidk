@@ -130,7 +130,10 @@ class LinkService:
         Returns:
             Updated link definition
         """
-        link_id = definition.get('id', str(uuid.uuid4()))
+        link_id = definition.get('id') or str(uuid.uuid4())
+        if not link_id or not link_id.strip():
+            link_id = str(uuid.uuid4())
+
         name = definition.get('name', '').strip()
         if not name:
             raise ValueError("Link name is required")
