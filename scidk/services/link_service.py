@@ -83,38 +83,42 @@ class LinkService:
         Returns:
             Link definition dict or None if not found
         """
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT id, name, source_type, source_config, target_type, target_config,
-                   match_strategy, match_config, relationship_type, relationship_props,
-                   created_at, updated_at
-            FROM link_definitions
-            WHERE id = ?
-            """,
-            (link_id,)
-        )
-        row = cursor.fetchone()
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, name, source_type, source_config, target_type, target_config,
+                       match_strategy, match_config, relationship_type, relationship_props,
+                       created_at, updated_at
+                FROM link_definitions
+                WHERE id = ?
+                """,
+                (link_id,)
+            )
+            row = cursor.fetchone()
 
-        if not row:
-            return None
+            if not row:
+                return None
 
-        (id, name, source_type, source_config, target_type, target_config,
-         match_strategy, match_config, rel_type, rel_props, created_at, updated_at) = row
-        return {
-            'id': id,
-            'name': name,
-            'source_type': source_type,
-            'source_config': json.loads(source_config) if source_config else {},
-            'target_type': target_type,
-            'target_config': json.loads(target_config) if target_config else {},
-            'match_strategy': match_strategy,
-            'match_config': json.loads(match_config) if match_config else {},
-            'relationship_type': rel_type,
-            'relationship_props': json.loads(rel_props) if rel_props else {},
-            'created_at': created_at,
-            'updated_at': updated_at
-        }
+            (id, name, source_type, source_config, target_type, target_config,
+             match_strategy, match_config, rel_type, rel_props, created_at, updated_at) = row
+            return {
+                'id': id,
+                'name': name,
+                'source_type': source_type,
+                'source_config': json.loads(source_config) if source_config else {},
+                'target_type': target_type,
+                'target_config': json.loads(target_config) if target_config else {},
+                'match_strategy': match_strategy,
+                'match_config': json.loads(match_config) if match_config else {},
+                'relationship_type': rel_type,
+                'relationship_props': json.loads(rel_props) if rel_props else {},
+                'created_at': created_at,
+                'updated_at': updated_at
+            }
+        finally:
+            conn.close()
 
     def save_link_definition(self, definition: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -157,52 +161,56 @@ class LinkService:
         # Check if link exists
         existing = self.get_link_definition(link_id)
 
-        cursor = conn.cursor()
-        if existing:
-            # Update
-            cursor.execute(
-                """
-                UPDATE link_definitions
-                SET name = ?, source_type = ?, source_config = ?, target_type = ?,
-                    target_config = ?, match_strategy = ?, match_config = ?,
-                    relationship_type = ?, relationship_props = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (name, source_type, source_config, target_type, target_config,
-                 match_strategy, match_config, relationship_type, relationship_props, now, link_id)
-            )
-            created_at = existing['created_at']
-        else:
-            # Insert
-            cursor.execute(
-                """
-                INSERT INTO link_definitions
-                (id, name, source_type, source_config, target_type, target_config,
-                 match_strategy, match_config, relationship_type, relationship_props,
-                 created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (link_id, name, source_type, source_config, target_type, target_config,
-                 match_strategy, match_config, relationship_type, relationship_props, now, now)
-            )
-            created_at = now
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            if existing:
+                # Update
+                cursor.execute(
+                    """
+                    UPDATE link_definitions
+                    SET name = ?, source_type = ?, source_config = ?, target_type = ?,
+                        target_config = ?, match_strategy = ?, match_config = ?,
+                        relationship_type = ?, relationship_props = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (name, source_type, source_config, target_type, target_config,
+                     match_strategy, match_config, relationship_type, relationship_props, now, link_id)
+                )
+                created_at = existing['created_at']
+            else:
+                # Insert
+                cursor.execute(
+                    """
+                    INSERT INTO link_definitions
+                    (id, name, source_type, source_config, target_type, target_config,
+                     match_strategy, match_config, relationship_type, relationship_props,
+                     created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (link_id, name, source_type, source_config, target_type, target_config,
+                     match_strategy, match_config, relationship_type, relationship_props, now, now)
+                )
+                created_at = now
 
-        conn.commit()
+            conn.commit()
 
-        return {
-            'id': link_id,
-            'name': name,
-            'source_type': source_type,
-            'source_config': json.loads(source_config),
-            'target_type': target_type,
-            'target_config': json.loads(target_config),
-            'match_strategy': match_strategy,
-            'match_config': json.loads(match_config),
-            'relationship_type': relationship_type,
-            'relationship_props': json.loads(relationship_props),
-            'created_at': created_at,
-            'updated_at': now
-        }
+            return {
+                'id': link_id,
+                'name': name,
+                'source_type': source_type,
+                'source_config': json.loads(source_config),
+                'target_type': target_type,
+                'target_config': json.loads(target_config),
+                'match_strategy': match_strategy,
+                'match_config': json.loads(match_config),
+                'relationship_type': relationship_type,
+                'relationship_props': json.loads(relationship_props),
+                'created_at': created_at,
+                'updated_at': now
+            }
+        finally:
+            conn.close()
 
     def delete_link_definition(self, link_id: str) -> bool:
         """
@@ -214,10 +222,14 @@ class LinkService:
         Returns:
             True if deleted, False if not found
         """
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM link_definitions WHERE id = ?", (link_id,))
-        conn.commit()
-        return cursor.rowcount > 0
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM link_definitions WHERE id = ?", (link_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
 
     def preview_matches(self, definition: Dict[str, Any], limit: int = 10) -> List[Dict[str, Any]]:
         """
@@ -261,34 +273,38 @@ class LinkService:
         now = time.time()
 
         # Create job record
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            INSERT INTO link_jobs
-            (id, link_def_id, status, preview_count, executed_count, started_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (job_id, link_def_id, 'pending', 0, 0, now)
-        )
-        conn.commit()
-
-        # Execute job (synchronously for MVP, could be async later)
+        conn = self._get_conn()
         try:
-            self._execute_job_impl(job_id, definition)
-        except Exception as e:
-            # Update job with error
+            cursor = conn.cursor()
             cursor.execute(
                 """
-                UPDATE link_jobs
-                SET status = ?, error = ?, completed_at = ?
-                WHERE id = ?
+                INSERT INTO link_jobs
+                (id, link_def_id, status, preview_count, executed_count, started_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                ('failed', str(e), time.time(), job_id)
+                (job_id, link_def_id, 'pending', 0, 0, now)
             )
             conn.commit()
-            raise
 
-        return job_id
+            # Execute job (synchronously for MVP, could be async later)
+            try:
+                self._execute_job_impl(job_id, definition)
+            except Exception as e:
+                # Update job with error
+                cursor.execute(
+                    """
+                    UPDATE link_jobs
+                    SET status = ?, error = ?, completed_at = ?
+                    WHERE id = ?
+                    """,
+                    ('failed', str(e), time.time(), job_id)
+                )
+                conn.commit()
+                raise
+
+            return job_id
+        finally:
+            conn.close()
 
     def get_job_status(self, job_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -300,33 +316,37 @@ class LinkService:
         Returns:
             Job status dict or None if not found
         """
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT id, link_def_id, status, preview_count, executed_count, error,
-                   started_at, completed_at
-            FROM link_jobs
-            WHERE id = ?
-            """,
-            (job_id,)
-        )
-        row = cursor.fetchone()
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, link_def_id, status, preview_count, executed_count, error,
+                       started_at, completed_at
+                FROM link_jobs
+                WHERE id = ?
+                """,
+                (job_id,)
+            )
+            row = cursor.fetchone()
 
-        if not row:
-            return None
+            if not row:
+                return None
 
-        (id, link_def_id, status, preview_count, executed_count, error,
-         started_at, completed_at) = row
-        return {
-            'id': id,
-            'link_def_id': link_def_id,
-            'status': status,
-            'preview_count': preview_count,
-            'executed_count': executed_count,
-            'error': error,
-            'started_at': started_at,
-            'completed_at': completed_at
-        }
+            (id, link_def_id, status, preview_count, executed_count, error,
+             started_at, completed_at) = row
+            return {
+                'id': id,
+                'link_def_id': link_def_id,
+                'status': status,
+                'preview_count': preview_count,
+                'executed_count': executed_count,
+                'error': error,
+                'started_at': started_at,
+                'completed_at': completed_at
+            }
+        finally:
+            conn.close()
 
     def list_jobs(self, limit: int = 20) -> List[Dict[str, Any]]:
         """
@@ -338,34 +358,38 @@ class LinkService:
         Returns:
             List of job status dicts
         """
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT id, link_def_id, status, preview_count, executed_count, error,
-                   started_at, completed_at
-            FROM link_jobs
-            ORDER BY started_at DESC
-            LIMIT ?
-            """,
-            (limit,)
-        )
-        rows = cursor.fetchall()
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, link_def_id, status, preview_count, executed_count, error,
+                       started_at, completed_at
+                FROM link_jobs
+                ORDER BY started_at DESC
+                LIMIT ?
+                """,
+                (limit,)
+            )
+            rows = cursor.fetchall()
 
-        jobs = []
-        for row in rows:
-            (id, link_def_id, status, preview_count, executed_count, error,
-             started_at, completed_at) = row
-            jobs.append({
-                'id': id,
-                'link_def_id': link_def_id,
-                'status': status,
-                'preview_count': preview_count,
-                'executed_count': executed_count,
-                'error': error,
-                'started_at': started_at,
-                'completed_at': completed_at
-            })
-        return jobs
+            jobs = []
+            for row in rows:
+                (id, link_def_id, status, preview_count, executed_count, error,
+                 started_at, completed_at) = row
+                jobs.append({
+                    'id': id,
+                    'link_def_id': link_def_id,
+                    'status': status,
+                    'preview_count': preview_count,
+                    'executed_count': executed_count,
+                    'error': error,
+                    'started_at': started_at,
+                    'completed_at': completed_at
+                })
+            return jobs
+        finally:
+            conn.close()
 
     # --- Internal helpers ---
 
@@ -539,6 +563,7 @@ class LinkService:
 
     def _execute_job_impl(self, job_id: str, definition: Dict[str, Any]):
         """Execute the link job (create relationships in Neo4j)."""
+        conn = self._get_conn()
         try:
             from .neo4j_client import get_neo4j_client
             neo4j_client = get_neo4j_client()
@@ -606,7 +631,6 @@ class LinkService:
                 ('completed', total_created, time.time(), job_id)
             )
             conn.commit()
-
         except Exception as e:
             # Update job with error
             cursor = conn.cursor()
@@ -620,6 +644,8 @@ class LinkService:
             )
             conn.commit()
             raise
+        finally:
+            conn.close()
 
 
 def get_neo4j_client():
