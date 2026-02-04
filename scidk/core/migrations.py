@@ -248,6 +248,23 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 4)
             version = 4
 
+        # v5: label_definitions for graph schema management
+        if version < 5:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS label_definitions (
+                    name TEXT PRIMARY KEY,
+                    properties TEXT,
+                    relationships TEXT,
+                    created_at REAL,
+                    updated_at REAL
+                );
+                """
+            )
+            conn.commit()
+            _set_version(conn, 5)
+            version = 5
+
         return version
     finally:
         if own:

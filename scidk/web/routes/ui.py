@@ -190,6 +190,12 @@ def rocrate_view():
     return render_template('rocrate_view.html', metadata_url=metadata_url, embed_mode=embed_mode, prov_id=prov_id, root_id=root_id, path=sel_path)
 
 
+@bp.get('/labels')
+def labels():
+    """Label definitions page for graph schema management."""
+    return render_template('labels.html')
+
+
 @bp.get('/settings')
 def settings():
     """Basic settings from environment and current in-memory sizes."""

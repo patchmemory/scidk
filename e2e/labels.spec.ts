@@ -1,0 +1,233 @@
+import { test, expect } from '@playwright/test';
+
+/**
+ * E2E tests for Labels page functionality.
+ * Tests the complete workflow: create label → add properties → add relationships → save → delete
+ */
+
+test('labels page loads and displays empty state', async ({ page, baseURL }) => {
+  const consoleMessages: { type: string; text: string }[] = [];
+  page.on('console', (msg) => {
+    consoleMessages.push({ type: msg.type(), text: msg.text() });
+  });
+
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+
+  // Navigate to Labels page
+  await page.goto(`${base}/labels`);
+  await page.waitForLoadState('networkidle');
+
+  // Verify page loads
+  await expect(page).toHaveTitle(/SciDK - Labels/i, { timeout: 10_000 });
+
+  // Check for new label button
+  await expect(page.getByTestId('new-label-btn')).toBeVisible();
+
+  // Check for label list
+  await expect(page.getByTestId('label-list')).toBeVisible();
+
+  // No console errors
+  const errors = consoleMessages.filter((m) => m.type === 'error');
+  expect(errors.length).toBe(0);
+});
+
+test('labels navigation link is visible in header', async ({ page, baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+
+  await page.goto(base);
+  await page.waitForLoadState('networkidle');
+
+  // Check that Labels link exists in navigation
+  const labelsLink = page.getByTestId('nav-labels');
+  await expect(labelsLink).toBeVisible();
+
+  // Click it and verify we navigate to labels page
+  await labelsLink.click();
+  await page.waitForLoadState('networkidle');
+  await expect(page).toHaveTitle(/SciDK - Labels/i);
+});
+
+test('complete label workflow: create → edit → delete', async ({ page, baseURL }) => {
+  const consoleMessages: { type: string; text: string }[] = [];
+  page.on('console', (msg) => {
+    consoleMessages.push({ type: msg.type(), text: msg.text() });
+  });
+
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+  await page.goto(`${base}/labels`);
+  await page.waitForLoadState('networkidle');
+
+  // Step 1: Click "New Label" button
+  await page.getByTestId('new-label-btn').click();
+
+  // Step 2: Enter label name
+  const labelNameInput = page.getByTestId('label-name');
+  await expect(labelNameInput).toBeVisible();
+  await labelNameInput.fill('E2ETestLabel');
+
+  // Step 3: Add a property
+  await page.getByTestId('add-property-btn').click();
+
+  // Fill property details
+  const propertyRows = page.getByTestId('property-row');
+  const firstPropertyRow = propertyRows.first();
+  await firstPropertyRow.getByTestId('property-name').fill('testProperty');
+  await firstPropertyRow.getByTestId('property-type').selectOption('string');
+  await firstPropertyRow.getByTestId('property-required').check();
+
+  // Step 4: Add another property
+  await page.getByTestId('add-property-btn').click();
+  const secondPropertyRow = propertyRows.nth(1);
+  await secondPropertyRow.getByTestId('property-name').fill('count');
+  await secondPropertyRow.getByTestId('property-type').selectOption('number');
+
+  // Step 5: Save the label
+  await page.getByTestId('save-label-btn').click();
+
+  // Wait for save to complete (look for toast or list update)
+  await page.waitForTimeout(1000);
+
+  // Step 6: Verify label appears in list
+  const labelItems = page.getByTestId('label-item');
+  await expect(labelItems.first()).toBeVisible();
+  const labelText = await labelItems.first().textContent();
+  expect(labelText).toContain('E2ETestLabel');
+  expect(labelText).toContain('2 properties');
+
+  // Step 7: Click on the label to edit it
+  await labelItems.first().click();
+  await page.waitForTimeout(500);
+
+  // Verify editor is populated
+  await expect(labelNameInput).toHaveValue('E2ETestLabel');
+  const editPropertyRows = page.getByTestId('property-row');
+  await expect(editPropertyRows).toHaveCount(2);
+
+  // Step 8: Delete the label
+  const deleteBtn = page.getByTestId('delete-label-btn');
+  await expect(deleteBtn).toBeVisible();
+
+  // Handle confirmation dialog
+  page.on('dialog', async (dialog) => {
+    expect(dialog.type()).toBe('confirm');
+    await dialog.accept();
+  });
+
+  await deleteBtn.click();
+  await page.waitForTimeout(1000);
+
+  // Verify label is removed from list
+  const remainingLabels = await page.getByTestId('label-item').count();
+  // Should be 0 or not include our test label
+  const listContent = await page.getByTestId('label-list').textContent();
+  expect(listContent).not.toContain('E2ETestLabel');
+
+  // No console errors
+  const errors = consoleMessages.filter((m) => m.type === 'error');
+  expect(errors.length).toBe(0);
+});
+
+test('can add and remove multiple properties', async ({ page, baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+  await page.goto(`${base}/labels`);
+  await page.waitForLoadState('networkidle');
+
+  // Create new label
+  await page.getByTestId('new-label-btn').click();
+  await page.getByTestId('label-name').fill('MultiPropLabel');
+
+  // Add 3 properties
+  for (let i = 0; i < 3; i++) {
+    await page.getByTestId('add-property-btn').click();
+    const rows = page.getByTestId('property-row');
+    const currentRow = rows.nth(i);
+    await currentRow.getByTestId('property-name').fill(`prop${i + 1}`);
+  }
+
+  // Verify 3 properties exist
+  await expect(page.getByTestId('property-row')).toHaveCount(3);
+
+  // Remove the second property
+  const removeButtons = page.getByTestId('remove-property-btn');
+  await removeButtons.nth(1).click();
+
+  // Verify only 2 properties remain
+  await expect(page.getByTestId('property-row')).toHaveCount(2);
+
+  // Save label
+  await page.getByTestId('save-label-btn').click();
+  await page.waitForTimeout(1000);
+
+  // Verify saved
+  const labelItems = page.getByTestId('label-item');
+  const labelText = await labelItems.first().textContent();
+  expect(labelText).toContain('MultiPropLabel');
+  expect(labelText).toContain('2 properties');
+
+  // Cleanup: delete the label
+  await labelItems.first().click();
+  page.on('dialog', async (dialog) => await dialog.accept());
+  await page.getByTestId('delete-label-btn').click();
+  await page.waitForTimeout(500);
+});
+
+test('can create label with relationships', async ({ page, baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+  await page.goto(`${base}/labels`);
+  await page.waitForLoadState('networkidle');
+
+  // First create a target label
+  await page.getByTestId('new-label-btn').click();
+  await page.getByTestId('label-name').fill('TargetLabel');
+  await page.getByTestId('save-label-btn').click();
+  await page.waitForTimeout(1000);
+
+  // Now create a label with relationship
+  await page.getByTestId('new-label-btn').click();
+  await page.getByTestId('label-name').fill('SourceLabel');
+
+  // Add relationship
+  await page.getByTestId('add-relationship-btn').click();
+  const relationshipRow = page.getByTestId('relationship-row').first();
+  await relationshipRow.getByTestId('relationship-type').fill('LINKS_TO');
+  await relationshipRow.getByTestId('relationship-target').selectOption('TargetLabel');
+
+  // Save
+  await page.getByTestId('save-label-btn').click();
+  await page.waitForTimeout(1000);
+
+  // Verify
+  const labelItems = page.getByTestId('label-item');
+  const sourceLabel = labelItems.filter({ hasText: 'SourceLabel' });
+  const labelText = await sourceLabel.textContent();
+  expect(labelText).toContain('1 relationship');
+
+  // Cleanup
+  page.on('dialog', async (dialog) => await dialog.accept());
+  for (const labelName of ['SourceLabel', 'TargetLabel']) {
+    const item = labelItems.filter({ hasText: labelName });
+    await item.click();
+    await page.waitForTimeout(300);
+    await page.getByTestId('delete-label-btn').click();
+    await page.waitForTimeout(500);
+  }
+});
+
+test('validation: cannot save label without name', async ({ page, baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+  await page.goto(`${base}/labels`);
+  await page.waitForLoadState('networkidle');
+
+  // Create new label but don't enter name
+  await page.getByTestId('new-label-btn').click();
+
+  // Try to save without name
+  await page.getByTestId('save-label-btn').click();
+
+  // Should see error message (implementation shows error inline)
+  // The label name input should still be visible and empty
+  const labelNameInput = page.getByTestId('label-name');
+  await expect(labelNameInput).toBeVisible();
+  const value = await labelNameInput.inputValue();
+  expect(value).toBe('');
+});
