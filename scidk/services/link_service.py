@@ -24,8 +24,11 @@ class LinkService:
 
     def __init__(self, app):
         self.app = app
+
+    def _get_conn(self):
+        """Get a database connection."""
         from ..core import path_index_sqlite as pix
-        self.conn = pix.connect()
+        return pix.connect()
 
     def list_link_definitions(self) -> List[Dict[str, Any]]:
         """
@@ -34,37 +37,41 @@ class LinkService:
         Returns:
             List of link definition dicts
         """
-        cursor = self.conn.cursor()
-        cursor.execute(
-            """
-            SELECT id, name, source_type, source_config, target_type, target_config,
-                   match_strategy, match_config, relationship_type, relationship_props,
-                   created_at, updated_at
-            FROM link_definitions
-            ORDER BY updated_at DESC
-            """
-        )
-        rows = cursor.fetchall()
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, name, source_type, source_config, target_type, target_config,
+                       match_strategy, match_config, relationship_type, relationship_props,
+                       created_at, updated_at
+                FROM link_definitions
+                ORDER BY updated_at DESC
+                """
+            )
+            rows = cursor.fetchall()
 
-        definitions = []
-        for row in rows:
-            (id, name, source_type, source_config, target_type, target_config,
-             match_strategy, match_config, rel_type, rel_props, created_at, updated_at) = row
-            definitions.append({
-                'id': id,
-                'name': name,
-                'source_type': source_type,
-                'source_config': json.loads(source_config) if source_config else {},
-                'target_type': target_type,
-                'target_config': json.loads(target_config) if target_config else {},
-                'match_strategy': match_strategy,
-                'match_config': json.loads(match_config) if match_config else {},
-                'relationship_type': rel_type,
-                'relationship_props': json.loads(rel_props) if rel_props else {},
-                'created_at': created_at,
-                'updated_at': updated_at
-            })
-        return definitions
+            definitions = []
+            for row in rows:
+                (id, name, source_type, source_config, target_type, target_config,
+                 match_strategy, match_config, rel_type, rel_props, created_at, updated_at) = row
+                definitions.append({
+                    'id': id,
+                    'name': name,
+                    'source_type': source_type,
+                    'source_config': json.loads(source_config) if source_config else {},
+                    'target_type': target_type,
+                    'target_config': json.loads(target_config) if target_config else {},
+                    'match_strategy': match_strategy,
+                    'match_config': json.loads(match_config) if match_config else {},
+                    'relationship_type': rel_type,
+                    'relationship_props': json.loads(rel_props) if rel_props else {},
+                    'created_at': created_at,
+                    'updated_at': updated_at
+                })
+            return definitions
+        finally:
+            conn.close()
 
     def get_link_definition(self, link_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -76,7 +83,7 @@ class LinkService:
         Returns:
             Link definition dict or None if not found
         """
-        cursor = self.conn.cursor()
+        cursor = conn.cursor()
         cursor.execute(
             """
             SELECT id, name, source_type, source_config, target_type, target_config,
@@ -150,7 +157,7 @@ class LinkService:
         # Check if link exists
         existing = self.get_link_definition(link_id)
 
-        cursor = self.conn.cursor()
+        cursor = conn.cursor()
         if existing:
             # Update
             cursor.execute(
@@ -180,7 +187,7 @@ class LinkService:
             )
             created_at = now
 
-        self.conn.commit()
+        conn.commit()
 
         return {
             'id': link_id,
@@ -207,9 +214,9 @@ class LinkService:
         Returns:
             True if deleted, False if not found
         """
-        cursor = self.conn.cursor()
+        cursor = conn.cursor()
         cursor.execute("DELETE FROM link_definitions WHERE id = ?", (link_id,))
-        self.conn.commit()
+        conn.commit()
         return cursor.rowcount > 0
 
     def preview_matches(self, definition: Dict[str, Any], limit: int = 10) -> List[Dict[str, Any]]:
@@ -254,7 +261,7 @@ class LinkService:
         now = time.time()
 
         # Create job record
-        cursor = self.conn.cursor()
+        cursor = conn.cursor()
         cursor.execute(
             """
             INSERT INTO link_jobs
@@ -263,7 +270,7 @@ class LinkService:
             """,
             (job_id, link_def_id, 'pending', 0, 0, now)
         )
-        self.conn.commit()
+        conn.commit()
 
         # Execute job (synchronously for MVP, could be async later)
         try:
@@ -278,7 +285,7 @@ class LinkService:
                 """,
                 ('failed', str(e), time.time(), job_id)
             )
-            self.conn.commit()
+            conn.commit()
             raise
 
         return job_id
@@ -293,7 +300,7 @@ class LinkService:
         Returns:
             Job status dict or None if not found
         """
-        cursor = self.conn.cursor()
+        cursor = conn.cursor()
         cursor.execute(
             """
             SELECT id, link_def_id, status, preview_count, executed_count, error,
@@ -331,7 +338,7 @@ class LinkService:
         Returns:
             List of job status dicts
         """
-        cursor = self.conn.cursor()
+        cursor = conn.cursor()
         cursor.execute(
             """
             SELECT id, link_def_id, status, preview_count, executed_count, error,
@@ -540,12 +547,12 @@ class LinkService:
                 raise Exception("Neo4j client not configured")
 
             # Update status to running
-            cursor = self.conn.cursor()
+            cursor = conn.cursor()
             cursor.execute(
                 "UPDATE link_jobs SET status = ? WHERE id = ?",
                 ('running', job_id)
             )
-            self.conn.commit()
+            conn.commit()
 
             # Fetch all source data
             source_data = self._fetch_source_data(definition)
@@ -598,11 +605,11 @@ class LinkService:
                 """,
                 ('completed', total_created, time.time(), job_id)
             )
-            self.conn.commit()
+            conn.commit()
 
         except Exception as e:
             # Update job with error
-            cursor = self.conn.cursor()
+            cursor = conn.cursor()
             cursor.execute(
                 """
                 UPDATE link_jobs
@@ -611,7 +618,7 @@ class LinkService:
                 """,
                 ('failed', str(e), time.time(), job_id)
             )
-            self.conn.commit()
+            conn.commit()
             raise
 
 
