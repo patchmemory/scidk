@@ -118,6 +118,10 @@ test('can import schema from arrows.app JSON', async ({ page, baseURL }) => {
 
   // Click import button
   await page.getByTestId('import-arrows-btn').click();
+
+  // Wait for modal to appear (it gets the 'show' class added by Bootstrap)
+  const modal = page.locator('#import-arrows-modal');
+  await page.waitForSelector('#import-arrows-modal.show', { timeout: 5000 });
   await page.waitForTimeout(300);
 
   // Prepare Arrows JSON
@@ -149,11 +153,19 @@ test('can import schema from arrows.app JSON', async ({ page, baseURL }) => {
     ],
   });
 
-  // Paste JSON into textarea and trigger input event
+  // Paste JSON into textarea
   const textarea = page.locator('#arrows-json-input');
+  await textarea.click();
   await textarea.fill(arrowsJson);
-  await textarea.dispatchEvent('input');
-  await page.waitForTimeout(300);
+
+  // Manually trigger input event to ensure preview updates
+  await page.evaluate(() => {
+    const el = document.getElementById('arrows-json-input');
+    if (el) {
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  });
+  await page.waitForTimeout(500);
 
   // Verify preview appears
   const preview = page.locator('#import-preview');
@@ -173,8 +185,7 @@ test('can import schema from arrows.app JSON', async ({ page, baseURL }) => {
   // Wait for modal animation and DOM update
   await page.waitForTimeout(1000);
 
-  // Verify modal is closed (check for 'show' class)
-  const modal = page.locator('#import-arrows-modal');
+  // Verify modal is closed (check for 'show' class - reuse modal variable)
   await expect(modal).not.toHaveClass(/show/);
 
   // Verify labels were imported (they should be in the label list now)
