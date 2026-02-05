@@ -234,10 +234,20 @@ test('can import schema from arrows.app JSON', async ({ page, baseURL }) => {
   expect(propertyNames).toContain('age');
 
   // Check that relationship is displayed (WORKS_FOR -> E2EArrowsCompany)
-  const relationshipsContainer = page.getByTestId('relationships-container');
-  const relationshipsText = await relationshipsContainer.textContent();
-  expect(relationshipsText).toContain('WORKS_FOR');
-  expect(relationshipsText).toContain('E2EArrowsCompany');
+  // Note: Input/select values are not in textContent, need to check elements directly
+  const relationshipTypeInputs = page.locator('[data-testid="relationship-type"]');
+  const relationshipTargetSelects = page.locator('[data-testid="relationship-target"]');
+
+  const relCount = await relationshipTypeInputs.count();
+  expect(relCount).toBeGreaterThanOrEqual(1);
+
+  // Get the relationship type value
+  const relType = await relationshipTypeInputs.first().inputValue();
+  expect(relType).toBe('WORKS_FOR');
+
+  // Get the relationship target value
+  const relTarget = await relationshipTargetSelects.first().inputValue();
+  expect(relTarget).toBe('E2EArrowsCompany');
 
   // Check console for errors
   const errors = consoleMessages.filter((m) => m.type === 'error');
