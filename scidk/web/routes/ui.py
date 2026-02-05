@@ -150,28 +150,20 @@ def workbook_view(dataset_id):
 
 @bp.get('/plugins')
 def plugins():
-    """Plugins page - show counts from registry."""
-    ext = _get_ext()
-    reg = ext['registry']
-    ext_count = len(reg.by_extension)
-    interp_count = len(reg.by_id)
-    return render_template('plugins.html', ext_count=ext_count, interp_count=interp_count)
+    """Redirect to Settings page plugins section."""
+    return redirect(url_for('ui.settings') + '#plugins')
 
 
 @bp.get('/interpreters')
 def interpreters():
-    """List registry mappings and selection rules."""
-    ext = _get_ext()
-    reg = ext['registry']
-    mappings = {ext: [getattr(i, 'id', 'unknown') for i in interps] for ext, interps in reg.by_extension.items()}
-    rules = list(reg.rules.rules)
-    return render_template('extensions.html', mappings=mappings, rules=rules)
+    """Redirect to Settings page interpreters section (backward compatibility)."""
+    return redirect(url_for('ui.settings') + '#interpreters')
 
 
 @bp.get('/extensions')
 def extensions_legacy():
-    """Backward-compatible route - redirects to interpreters."""
-    return redirect(url_for('ui.interpreters'))
+    """Backward-compatible route - redirects to settings interpreters."""
+    return redirect(url_for('ui.settings') + '#interpreters')
 
 
 @bp.get('/rocrate_view')
