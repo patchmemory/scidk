@@ -160,17 +160,19 @@ test('can import schema from arrows.app JSON', async ({ page, baseURL }) => {
   await expect(page.locator('#preview-label-count')).toHaveText('2');
   await expect(page.locator('#preview-rel-count')).toHaveText('1');
 
-  // Click import confirm button
+  // Click import confirm button and wait for API response
+  const importResponsePromise = page.waitForResponse((response) => response.url().includes('/api/labels/import/arrows'));
   await page.getByTestId('import-confirm-btn').click();
+  await importResponsePromise;
 
-  // Wait for import to complete and modal animation
-  await page.waitForTimeout(1500);
+  // Wait for modal animation and labels reload
+  await page.waitForTimeout(2000);
 
   // Verify modal is closed (check for 'show' class)
   const modal = page.locator('#import-arrows-modal');
   await expect(modal).not.toHaveClass(/show/);
 
-  // Verify labels were imported
+  // Verify labels were imported (they should be in the label list now)
   const personLabel = await findLabelByName(page, 'E2EArrowsPerson');
   expect(personLabel).not.toBeNull();
 
