@@ -43,6 +43,13 @@ playwright-report/
 test-results/
 pytest-of-patch/
 .output.txt
+
+# Coverage reports
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
 # Accidental directories from env expansion
 (pwd)/
 sqlite:/

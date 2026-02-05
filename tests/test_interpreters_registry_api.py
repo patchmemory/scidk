@@ -24,3 +24,43 @@ def test_api_interpreters_schema():
     for it in eff:
         assert 'enabled' in it
         assert 'source' in it
+
+
+def test_api_interpreters_effective_debug(client):
+    resp = client.get('/api/interpreters/effective_debug')
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert 'source' in data
+    assert 'effective_enabled' in data
+    assert 'default_enabled' in data
+    assert 'loaded_settings' in data
+    assert 'env' in data
+    assert isinstance(data['effective_enabled'], list)
+    assert isinstance(data['default_enabled'], list)
+
+
+def test_api_interpreters_toggle_enable(client):
+    # Enable an interpreter
+    resp = client.post('/api/interpreters/csv/toggle', json={'enabled': True})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['status'] == 'updated'
+    assert data['enabled'] is True
+
+
+def test_api_interpreters_toggle_disable(client):
+    # Disable an interpreter
+    resp = client.post('/api/interpreters/csv/toggle', json={'enabled': False})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['status'] == 'updated'
+    assert data['enabled'] is False
+
+
+def test_api_interpreters_toggle_default_enabled(client):
+    # Toggle without explicit enabled flag (defaults to True)
+    resp = client.post('/api/interpreters/python_code/toggle', json={})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['status'] == 'updated'
+    assert data['enabled'] is True
