@@ -43,7 +43,7 @@ package-dir = {"" = "."}
 
 [tool.setuptools.packages.find]
 include = ["scidk*"]
-exclude = ["dev*", "data*", "singularity*", "scripts*", "*.dist-info*", "*.egg-info*"]
+exclude = ["dev*", "data*", "singularity*", "scripts*", "neo4j*", "tests*", "*.dist-info*", "*.egg-info*"]
 
 [tool.pytest.ini_options]
 testpaths = [
