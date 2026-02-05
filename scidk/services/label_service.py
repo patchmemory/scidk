@@ -84,10 +84,37 @@ class LabelService:
                 return None
 
             name, props_json, rels_json, created_at, updated_at = row
+
+            # Get outgoing relationships (defined on this label)
+            relationships = json.loads(rels_json) if rels_json else []
+
+            # Find incoming relationships (from other labels to this label)
+            cursor.execute(
+                """
+                SELECT name, relationships
+                FROM label_definitions
+                WHERE name != ?
+                """,
+                (name,)
+            )
+
+            incoming_relationships = []
+            for other_name, other_rels_json in cursor.fetchall():
+                if other_rels_json:
+                    other_rels = json.loads(other_rels_json)
+                    for rel in other_rels:
+                        if rel.get('target_label') == name:
+                            incoming_relationships.append({
+                                'type': rel['type'],
+                                'source_label': other_name,
+                                'properties': rel.get('properties', [])
+                            })
+
             return {
                 'name': name,
                 'properties': json.loads(props_json) if props_json else [],
-                'relationships': json.loads(rels_json) if rels_json else [],
+                'relationships': relationships,
+                'incoming_relationships': incoming_relationships,
                 'created_at': created_at,
                 'updated_at': updated_at
             }

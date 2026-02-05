@@ -158,11 +158,18 @@
     </div>
 
     <div class="section-header">
-      <h4 class="small" style="margin: 0;">Relationships</h4>
+      <h4 class="small" style="margin: 0;">Outgoing Relationships</h4>
       <button id="btn-add-relationship" class="btn btn-sm btn-outline-primary" data-testid="add-relationship-btn">Add Relationship</button>
     </div>
     <div id="relationships-container" data-testid="relationships-container">
       <div class="empty-state small">No relationships defined</div>
+    </div>
+
+    <div class="section-header" style="margin-top: 1.5rem;">
+      <h4 class="small" style="margin: 0;">Incoming Relationships</h4>
+    </div>
+    <div id="incoming-relationships-container" data-testid="incoming-relationships-container">
+      <div class="empty-state small">No incoming relationships</div>
     </div>
 
     <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
@@ -344,6 +351,7 @@ function clearEditor() {
   document.getElementById('label-name').readOnly = false;
   document.getElementById('properties-container').innerHTML = '<div class="empty-state small">No properties defined</div>';
   document.getElementById('relationships-container').innerHTML = '<div class="empty-state small">No relationships defined</div>';
+  document.getElementById('incoming-relationships-container').innerHTML = '<div class="empty-state small">No incoming relationships</div>';
   document.getElementById('name-error').style.display = 'none';
 }
 
@@ -362,12 +370,25 @@ function populateEditor(label) {
     propsContainer.innerHTML = label.properties.map((prop, i) => createPropertyRow(prop, i)).join('');
   }
 
-  // Render relationships
+  // Render outgoing relationships
   const relsContainer = document.getElementById('relationships-container');
   if (label.relationships.length === 0) {
     relsContainer.innerHTML = '<div class="empty-state small">No relationships defined</div>';
   } else {
     relsContainer.innerHTML = label.relationships.map((rel, i) => createRelationshipRow(rel, i)).join('');
+  }
+
+  // Render incoming relationships (read-only)
+  const incomingContainer = document.getElementById('incoming-relationships-container');
+  const incomingRels = label.incoming_relationships || [];
+  if (incomingRels.length === 0) {
+    incomingContainer.innerHTML = '<div class="empty-state small">No incoming relationships</div>';
+  } else {
+    incomingContainer.innerHTML = incomingRels.map(rel =>
+      `<div class="relationship-row" style="background: #f9f9f9; padding: 0.5rem; margin-bottom: 0.25rem; border-radius: 4px;">
+        <span class="small"><strong>${rel.source_label}</strong> → [${rel.type}] → <em>this label</em></span>
+      </div>`
+    ).join('');
   }
 }
 
