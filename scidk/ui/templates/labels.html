@@ -176,6 +176,31 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-pull-neo4j').addEventListener('click', pullFromNeo4j);
   document.getElementById('btn-add-property').addEventListener('click', addProperty);
   document.getElementById('btn-add-relationship').addEventListener('click', addRelationship);
+
+  // Arrows.app Import/Export
+  document.getElementById('btn-import-arrows')?.addEventListener('click', () => {
+    const modal = new bootstrap.Modal(document.getElementById('import-arrows-modal'));
+    modal.show();
+  });
+
+  document.getElementById('btn-export-arrows')?.addEventListener('click', exportToArrows);
+
+  document.getElementById('arrows-file-input')?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        document.getElementById('arrows-json-input').value = ev.target.result;
+        document.getElementById('file-name').textContent = file.name;
+        previewArrowsImport();
+      };
+      reader.readAsText(file);
+    }
+  });
+
+  document.getElementById('arrows-json-input')?.addEventListener('input', previewArrowsImport);
+
+  document.getElementById('import-confirm-btn')?.addEventListener('click', importFromArrows);
 });
 
 function loadLabels() {
@@ -422,31 +447,6 @@ function pullFromNeo4j() {
     .catch(err => showToast('Network error: ' + err.message, 'error'));
 }
 
-// Arrows.app Import/Export
-document.getElementById('btn-import-arrows')?.addEventListener('click', () => {
-  const modal = new bootstrap.Modal(document.getElementById('import-arrows-modal'));
-  modal.show();
-});
-
-document.getElementById('btn-export-arrows')?.addEventListener('click', exportToArrows);
-
-document.getElementById('arrows-file-input')?.addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  if (file) {
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      document.getElementById('arrows-json-input').value = ev.target.result;
-      document.getElementById('file-name').textContent = file.name;
-      previewArrowsImport();
-    };
-    reader.readAsText(file);
-  }
-});
-
-document.getElementById('arrows-json-input')?.addEventListener('input', previewArrowsImport);
-
-document.getElementById('import-confirm-btn')?.addEventListener('click', importFromArrows);
-
 function previewArrowsImport() {
   const input = document.getElementById('arrows-json-input').value.trim();
   if (!input) {
@@ -490,13 +490,18 @@ async function importFromArrows() {
       showToast(msg, 'success');
 
       // Close modal
-      const modal = bootstrap.Modal.getInstance(document.getElementById('import-arrows-modal'));
-      modal.hide();
-
-      // Clear input
-      document.getElementById('arrows-json-input').value = '';
-      document.getElementById('file-name').textContent = '';
-      document.getElementById('import-preview').style.display = 'none';
+      const modalEl = document.getElementById('import-arrows-modal');
+      const modal = bootstrap.Modal.getInstance(modalEl);
+      if (modal) {
+        modal.hide();
+        // Wait for modal to fully hide before clearing
+        modalEl.addEventListener('hidden.bs.modal', () => {
+          // Clear input
+          document.getElementById('arrows-json-input').value = '';
+          document.getElementById('file-name').textContent = '';
+          document.getElementById('import-preview').style.display = 'none';
+        }, { once: true });
+      }
 
       // Reload labels
       loadLabels();

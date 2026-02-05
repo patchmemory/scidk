@@ -93,10 +93,12 @@ test('can open import modal and close it', async ({ page, baseURL }) => {
   // Close modal
   const closeBtn = modal.locator('.btn-close');
   await closeBtn.click();
-  await page.waitForTimeout(300);
 
-  // Verify modal is hidden
-  await expect(modal).not.toBeVisible();
+  // Wait for Bootstrap modal animation to complete
+  await page.waitForTimeout(500);
+
+  // Verify modal is hidden (Bootstrap adds 'show' class when visible)
+  await expect(modal).not.toHaveClass(/show/);
 });
 
 test('can import schema from arrows.app JSON', async ({ page, baseURL }) => {
@@ -160,11 +162,13 @@ test('can import schema from arrows.app JSON', async ({ page, baseURL }) => {
 
   // Click import confirm button
   await page.getByTestId('import-confirm-btn').click();
-  await page.waitForTimeout(1000);
 
-  // Verify modal is closed
+  // Wait for import to complete and modal animation
+  await page.waitForTimeout(1500);
+
+  // Verify modal is closed (check for 'show' class)
   const modal = page.locator('#import-arrows-modal');
-  await expect(modal).not.toBeVisible();
+  await expect(modal).not.toHaveClass(/show/);
 
   // Verify labels were imported
   const personLabel = await findLabelByName(page, 'E2EArrowsPerson');
