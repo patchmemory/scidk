@@ -308,14 +308,35 @@ function renderLabelList() {
     return;
   }
 
-  container.innerHTML = labels.map(label => `
-    <div class="label-item ${currentLabel && currentLabel.name === label.name ? 'active' : ''}"
-         data-label="${label.name}"
-         data-testid="label-item">
-      <strong>${label.name}</strong>
-      <div class="small">${label.properties.length} properties, ${label.relationships.length} relationships</div>
-    </div>
-  `).join('');
+  // Compute incoming relationship counts for each label
+  const incomingCounts = {};
+  labels.forEach(label => {
+    incomingCounts[label.name] = 0;
+  });
+  labels.forEach(label => {
+    (label.relationships || []).forEach(rel => {
+      if (rel.target_label && incomingCounts[rel.target_label] !== undefined) {
+        incomingCounts[rel.target_label]++;
+      }
+    });
+  });
+
+  container.innerHTML = labels.map(label => {
+    const outgoing = label.relationships.length;
+    const incoming = incomingCounts[label.name] || 0;
+    const total = outgoing + incoming;
+    const relText = total === 1 ? '1 relationship' : `${total} relationships`;
+    const detailText = incoming > 0 ? ` (${outgoing} out, ${incoming} in)` : '';
+
+    return `
+      <div class="label-item ${currentLabel && currentLabel.name === label.name ? 'active' : ''}"
+           data-label="${label.name}"
+           data-testid="label-item">
+        <strong>${label.name}</strong>
+        <div class="small">${label.properties.length} properties, ${relText}${detailText}</div>
+      </div>
+    `;
+  }).join('');
 
   // Add click handlers
   container.querySelectorAll('.label-item').forEach(item => {
