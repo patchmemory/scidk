@@ -57,6 +57,11 @@
     color: #999;
     padding: 2rem;
   }
+  /* Source label links in incoming relationships */
+  .source-label-link:hover {
+    text-decoration: underline !important;
+    cursor: pointer;
+  }
   /* Custom Modal */
   .custom-modal {
     position: fixed;
@@ -399,7 +404,7 @@ function populateEditor(label) {
     relsContainer.innerHTML = label.relationships.map((rel, i) => createRelationshipRow(rel, i)).join('');
   }
 
-  // Render incoming relationships (read-only)
+  // Render incoming relationships (read-only with clickable source labels)
   const incomingContainer = document.getElementById('incoming-relationships-container');
   const incomingRels = label.incoming_relationships || [];
   if (incomingRels.length === 0) {
@@ -407,9 +412,22 @@ function populateEditor(label) {
   } else {
     incomingContainer.innerHTML = incomingRels.map(rel =>
       `<div class="relationship-row" style="background: #f9f9f9; padding: 0.5rem; margin-bottom: 0.25rem; border-radius: 4px;">
-        <span class="small"><strong>${rel.source_label}</strong> → [${rel.type}] → <em>this label</em></span>
+        <span class="small">
+          <a href="#" class="source-label-link" data-label="${rel.source_label}" style="color: var(--accent); text-decoration: none; font-weight: bold;">
+            ${rel.source_label}
+          </a> → [${rel.type}] → <em>this label</em>
+        </span>
       </div>`
     ).join('');
+
+    // Add click handlers for source label links
+    incomingContainer.querySelectorAll('.source-label-link').forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const sourceLabelName = link.dataset.label;
+        loadLabel(sourceLabelName);
+      });
+    });
   }
 }
 
