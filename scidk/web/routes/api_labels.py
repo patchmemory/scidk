@@ -255,3 +255,100 @@ def get_neo4j_schema():
             'status': 'error',
             'error': str(e)
         }), 500
+
+
+@bp.route('/labels/import/arrows', methods=['POST'])
+def import_arrows_schema():
+    """
+    Import schema from Neo4j Arrows.app JSON format.
+
+    Request body:
+    {
+        "arrows_json": {...},  // Arrows.app JSON format
+        "mode": "merge" | "replace"  // default: merge
+    }
+
+    Returns:
+    {
+        "status": "success",
+        "imported": {
+            "labels": 5,
+            "relationships": 8
+        },
+        "labels": [...]  // Created label definitions
+    }
+    """
+    try:
+        from ...interpreters.arrows_utils import import_from_arrows
+
+        data = request.get_json(force=True, silent=True) or {}
+        arrows_json = data.get('arrows_json')
+        mode = data.get('mode', 'merge')
+
+        if not arrows_json:
+            return jsonify({'status': 'error', 'error': 'No arrows_json provided'}), 400
+
+        # Use arrows_utils to parse
+        labels_to_create = import_from_arrows(arrows_json)
+
+        # Create labels via service
+        service = _get_label_service()
+        created = []
+        skipped = []
+        for label_def in labels_to_create:
+            try:
+                result = service.save_label(label_def)
+                created.append(result)
+            except Exception as e:
+                # Skip duplicates if merge mode
+                if mode == 'merge':
+                    skipped.append(label_def['name'])
+                    continue
+                raise
+
+        total_relationships = sum(len(l.get('relationships', [])) for l in labels_to_create)
+
+        response = {
+            'status': 'success',
+            'imported': {'labels': len(created), 'relationships': total_relationships},
+            'labels': created,
+        }
+
+        if skipped:
+            response['skipped'] = skipped
+
+        return jsonify(response), 200
+
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@bp.route('/labels/export/arrows', methods=['GET'])
+def export_arrows_schema():
+    """
+    Export schema to Neo4j Arrows.app JSON format.
+
+    Query params:
+    - layout: 'grid' or 'circular' (default: 'grid')
+    - scale: position scale factor (default: 1000)
+
+    Returns Arrows-compatible JSON file.
+    """
+    try:
+        from ...interpreters.arrows_utils import export_to_arrows
+
+        service = _get_label_service()
+        labels = service.list_labels()
+
+        layout = request.args.get('layout', 'grid')
+        scale = int(request.args.get('scale', 1000))
+
+        # Use arrows_utils to generate format
+        arrows_json = export_to_arrows(labels, layout=layout, scale=scale)
+
+        response = jsonify(arrows_json)
+        response.headers['Content-Disposition'] = 'attachment; filename=scidk-schema.json'
+        return response, 200
+
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500

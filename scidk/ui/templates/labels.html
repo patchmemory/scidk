@@ -69,6 +69,10 @@
       <h3 class="small" style="margin: 0;">Labels</h3>
       <button id="btn-new-label" class="btn btn-sm btn-primary" data-testid="new-label-btn">New Label</button>
     </div>
+    <div style="display: flex; gap: 0.25rem; margin-bottom: 0.5rem; flex-wrap: wrap;">
+      <button id="btn-import-arrows" class="btn btn-sm btn-outline-info" data-testid="import-arrows-btn" style="flex: 1; font-size: 0.75rem;">Import Arrows</button>
+      <button id="btn-export-arrows" class="btn btn-sm btn-outline-info" data-testid="export-arrows-btn" style="flex: 1; font-size: 0.75rem;">Export Arrows</button>
+    </div>
     <div id="label-list" data-testid="label-list">
       <div class="empty-state small">No labels defined</div>
     </div>
@@ -100,11 +104,42 @@
       <div class="empty-state small">No relationships defined</div>
     </div>
 
-    <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem;">
+    <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
       <button id="btn-save" class="btn btn-sm btn-success" data-testid="save-label-btn">Save</button>
       <button id="btn-delete" class="btn btn-sm btn-outline-danger" data-testid="delete-label-btn" style="display: none;">Delete</button>
       <button id="btn-push-neo4j" class="btn btn-sm btn-outline-primary" data-testid="push-neo4j-btn" style="display: none;">Push to Neo4j</button>
       <button id="btn-pull-neo4j" class="btn btn-sm btn-outline-secondary" data-testid="pull-neo4j-btn">Pull from Neo4j</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import Modal -->
+<div class="modal fade" id="import-arrows-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Import Schema from Arrows.app</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small">Paste JSON exported from <a href="https://arrows.app" target="_blank" rel="noopener">arrows.app</a></p>
+        <textarea id="arrows-json-input" class="form-control font-monospace" rows="12" placeholder='{"nodes": [...], "relationships": [...]}'></textarea>
+        <div class="mt-2">
+          <label for="arrows-file-input" class="btn btn-sm btn-outline-secondary">
+            Or choose file...
+          </label>
+          <input type="file" id="arrows-file-input" accept=".json" style="display:none">
+          <span id="file-name" class="small ms-2"></span>
+        </div>
+        <div id="import-preview" class="mt-3" style="display:none">
+          <h6 class="small">Preview:</h6>
+          <p class="small"><span id="preview-label-count"></span> labels, <span id="preview-rel-count"></span> relationships</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" id="import-confirm-btn" class="btn btn-primary" data-testid="import-confirm-btn">Import</button>
+      </div>
     </div>
   </div>
 </div>
@@ -385,6 +420,102 @@ function pullFromNeo4j() {
       }
     })
     .catch(err => showToast('Network error: ' + err.message, 'error'));
+}
+
+// Arrows.app Import/Export
+document.getElementById('btn-import-arrows')?.addEventListener('click', () => {
+  const modal = new bootstrap.Modal(document.getElementById('import-arrows-modal'));
+  modal.show();
+});
+
+document.getElementById('btn-export-arrows')?.addEventListener('click', exportToArrows);
+
+document.getElementById('arrows-file-input')?.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      document.getElementById('arrows-json-input').value = ev.target.result;
+      document.getElementById('file-name').textContent = file.name;
+      previewArrowsImport();
+    };
+    reader.readAsText(file);
+  }
+});
+
+document.getElementById('arrows-json-input')?.addEventListener('input', previewArrowsImport);
+
+document.getElementById('import-confirm-btn')?.addEventListener('click', importFromArrows);
+
+function previewArrowsImport() {
+  const input = document.getElementById('arrows-json-input').value.trim();
+  if (!input) {
+    document.getElementById('import-preview').style.display = 'none';
+    return;
+  }
+
+  try {
+    const arrowsJson = JSON.parse(input);
+    const nodeCount = arrowsJson.nodes?.length || 0;
+    const relCount = arrowsJson.relationships?.length || 0;
+
+    document.getElementById('preview-label-count').textContent = nodeCount;
+    document.getElementById('preview-rel-count').textContent = relCount;
+    document.getElementById('import-preview').style.display = 'block';
+  } catch (e) {
+    document.getElementById('import-preview').style.display = 'none';
+  }
+}
+
+async function importFromArrows() {
+  const input = document.getElementById('arrows-json-input').value.trim();
+  if (!input) {
+    showToast('Please paste Arrows.app JSON', 'warning');
+    return;
+  }
+
+  try {
+    const arrowsJson = JSON.parse(input);
+    showToast('Importing schema...', 'info');
+
+    const resp = await fetch('/api/labels/import/arrows', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({arrows_json: arrowsJson, mode: 'merge'})
+    });
+
+    const result = await resp.json();
+    if (result.status === 'success') {
+      const msg = `Imported ${result.imported.labels} labels, ${result.imported.relationships} relationships`;
+      showToast(msg, 'success');
+
+      // Close modal
+      const modal = bootstrap.Modal.getInstance(document.getElementById('import-arrows-modal'));
+      modal.hide();
+
+      // Clear input
+      document.getElementById('arrows-json-input').value = '';
+      document.getElementById('file-name').textContent = '';
+      document.getElementById('import-preview').style.display = 'none';
+
+      // Reload labels
+      loadLabels();
+    } else {
+      showToast('Import failed: ' + result.error, 'error');
+    }
+  } catch (e) {
+    showToast('Import error: ' + e.message, 'error');
+  }
+}
+
+async function exportToArrows() {
+  try {
+    showToast('Exporting schema...', 'info');
+    window.location = '/api/labels/export/arrows';
+    setTimeout(() => showToast('Schema exported successfully', 'success'), 500);
+  } catch (e) {
+    showToast('Export error: ' + e.message, 'error');
+  }
 }
 </script>
 {% endblock %}

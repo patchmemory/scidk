@@ -158,6 +158,24 @@ The test suite creates temporary test data. You can reference `tests/conftest.py
 4. **Define** relationships (e.g., "HAS_FILE")
 5. **Push** schema to Neo4j
 
+#### Import/Export with Arrows.app
+
+**Import from Arrows.app:**
+1. Design schema at https://arrows.app
+2. Export JSON from Arrows (File → Export → JSON)
+3. In scidk, navigate to Labels page
+4. Click "Import from Arrows.app"
+5. Paste JSON or upload file
+6. Click "Import" to create labels
+
+**Export to Arrows.app:**
+1. Navigate to Labels page
+2. Click "Export to Arrows.app"
+3. Download JSON file
+4. Open https://arrows.app
+5. Import file (File → Import → From JSON)
+6. View/edit schema in Arrows
+
 ### Workflow 4: Link Creation
 
 1. **Navigate** to Links page
