@@ -149,10 +149,11 @@ test('can import schema from arrows.app JSON', async ({ page, baseURL }) => {
     ],
   });
 
-  // Paste JSON into textarea
+  // Paste JSON into textarea and trigger input event
   const textarea = page.locator('#arrows-json-input');
   await textarea.fill(arrowsJson);
-  await page.waitForTimeout(200);
+  await textarea.dispatchEvent('input');
+  await page.waitForTimeout(300);
 
   // Verify preview appears
   const preview = page.locator('#import-preview');
@@ -160,13 +161,17 @@ test('can import schema from arrows.app JSON', async ({ page, baseURL }) => {
   await expect(page.locator('#preview-label-count')).toHaveText('2');
   await expect(page.locator('#preview-rel-count')).toHaveText('1');
 
-  // Click import confirm button and wait for API response
+  // Click import confirm button and wait for both API responses
   const importResponsePromise = page.waitForResponse((response) => response.url().includes('/api/labels/import/arrows'));
-  await page.getByTestId('import-confirm-btn').click();
-  await importResponsePromise;
+  const labelsReloadPromise = page.waitForResponse((response) => response.url().endsWith('/api/labels') && response.request().method() === 'GET');
 
-  // Wait for modal animation and labels reload
-  await page.waitForTimeout(2000);
+  await page.getByTestId('import-confirm-btn').click();
+
+  await importResponsePromise;
+  await labelsReloadPromise;
+
+  // Wait for modal animation and DOM update
+  await page.waitForTimeout(1000);
 
   // Verify modal is closed (check for 'show' class)
   const modal = page.locator('#import-arrows-modal');
