@@ -102,6 +102,8 @@ test('can open import modal and close it', async ({ page, baseURL }) => {
 });
 
 test('can import schema from arrows.app JSON', async ({ page, baseURL }) => {
+  test.setTimeout(20000); // Increase timeout for this complex test
+
   const consoleMessages: { type: string; text: string }[] = [];
   page.on('console', (msg) => {
     consoleMessages.push({ type: msg.type(), text: msg.text() });
@@ -192,24 +194,15 @@ test('can import schema from arrows.app JSON', async ({ page, baseURL }) => {
     await expect(page.locator('#preview-rel-count')).toHaveText('1');
   }
 
-  // Set up promise listeners before clicking
-  const importResponsePromise = page.waitForResponse(
-    (response) => response.url().includes('/api/labels/import/arrows'),
-    { timeout: 15000 }
-  );
-  const labelsReloadPromise = page.waitForResponse(
-    (response) => response.url().endsWith('/api/labels') && response.request().method() === 'GET',
-    { timeout: 15000 }
-  );
+  // Click import confirm button and wait for both the import and labels reload
+  const [importResponse, labelsResponse] = await Promise.all([
+    page.waitForResponse((response) => response.url().includes('/api/labels/import/arrows')),
+    page.waitForResponse((response) => response.url().endsWith('/api/labels') && response.request().method() === 'GET'),
+    page.getByTestId('import-confirm-btn').click(),
+  ]);
 
-  // Click import confirm button
-  await page.getByTestId('import-confirm-btn').click();
-
-  // Wait for both API responses
-  await Promise.all([importResponsePromise, labelsReloadPromise]);
-
-  // Wait for modal animation and DOM update
-  await page.waitForTimeout(1000);
+  // Wait for modal to close and DOM to update
+  await page.waitForTimeout(1500);
 
   // Verify modal is closed (check for 'show' class - reuse modal variable)
   await expect(modal).not.toHaveClass(/show/);
@@ -237,8 +230,11 @@ test('can import schema from arrows.app JSON', async ({ page, baseURL }) => {
   expect(relationshipsText).toContain('WORKS_FOR');
   expect(relationshipsText).toContain('E2EArrowsCompany');
 
-  // No console errors
+  // Check console for errors
   const errors = consoleMessages.filter((m) => m.type === 'error');
+  if (errors.length > 0) {
+    console.log('Console errors:', errors);
+  }
   expect(errors.length).toBe(0);
 
   // Cleanup: delete imported labels

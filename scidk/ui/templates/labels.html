@@ -204,9 +204,14 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function loadLabels() {
+  console.log('loadLabels() executing, fetching /api/labels');
   fetch('/api/labels')
-    .then(r => r.json())
+    .then(r => {
+      console.log('loadLabels() got response');
+      return r.json();
+    })
     .then(data => {
+      console.log('loadLabels() got data:', data);
       if (data.status === 'success') {
         labels = data.labels || [];
         renderLabelList();
@@ -214,7 +219,10 @@ function loadLabels() {
         showToast('Error loading labels: ' + (data.error || 'Unknown error'), 'error');
       }
     })
-    .catch(err => showToast('Network error: ' + err.message, 'error'));
+    .catch(err => {
+      console.error('loadLabels() error:', err);
+      showToast('Network error: ' + err.message, 'error');
+    });
 }
 
 function renderLabelList() {
@@ -485,6 +493,8 @@ async function importFromArrows() {
     });
 
     const result = await resp.json();
+    console.log('Import result:', result);
+
     if (result.status === 'success') {
       const msg = `Imported ${result.imported.labels} labels, ${result.imported.relationships} relationships`;
       showToast(msg, 'success');
@@ -504,11 +514,14 @@ async function importFromArrows() {
       }
 
       // Reload labels
+      console.log('Calling loadLabels()');
       loadLabels();
+      console.log('loadLabels() called');
     } else {
       showToast('Import failed: ' + result.error, 'error');
     }
   } catch (e) {
+    console.error('Import error:', e);
     showToast('Import error: ' + e.message, 'error');
   }
 }
