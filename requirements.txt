@@ -12,3 +12,4 @@ pytest>=7.4
 pytest-playwright==0.4.3
 playwright==1.40.0
 requests>=2.32
+coverage>=7.4
