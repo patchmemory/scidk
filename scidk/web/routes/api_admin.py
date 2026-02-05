@@ -290,3 +290,80 @@ def api_admin_cleanup_test_scans():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+@bp.post('/admin/cleanup-test-labels')
+def api_admin_cleanup_test_labels():
+    """Remove test labels from the database (labels with test prefixes like E2E*, Test*, etc).
+
+    This endpoint cleans up labels created during testing that accumulate over time.
+
+    Returns:
+        JSON with counts of deleted labels
+    """
+    try:
+        from ...core import path_index_sqlite as pix
+
+        # Test label patterns to delete
+        test_patterns = [
+            'E2E%',  # E2E test labels
+            'Test%',  # TestLabel, TestNode, etc
+            'Person%',  # From arrows test
+            'Company%',  # From arrows test
+            'Project%',  # Multiple test uses
+            'Export%',  # ExportProject, ExportTask
+            'Layout%',  # LayoutTestLabel
+            'Roundtrip%',  # RoundtripAuthor, RoundtripBook
+            'Label%',  # Label1, Label2, Label3
+            'AllTypes%',  # AllTypes
+            'File%',  # File from relationship tests
+            'Directory%',  # Directory from relationship tests
+            'User%',  # User from relationship tests
+            'Update%',  # UpdateTest
+            'Delete%',  # DeleteTest
+            'Bad%',  # BadLabel
+            'Node%',  # TestNode, OtherNode, NodeA, NodeB
+        ]
+
+        conn = pix.connect()
+        try:
+            cur = conn.cursor()
+
+            # Check if labels table exists
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='labels'")
+            if not cur.fetchone():
+                return jsonify({
+                    'deleted_labels': 0,
+                    'message': 'Labels table does not exist'
+                }), 200
+
+            # Collect label names that match test patterns
+            deleted_labels = []
+            total_deleted = 0
+
+            for pattern in test_patterns:
+                cur.execute("SELECT name FROM labels WHERE name LIKE ?", (pattern,))
+                matching_labels = [row[0] for row in cur.fetchall()]
+                deleted_labels.extend(matching_labels)
+
+                # Delete matching labels
+                cur.execute("DELETE FROM labels WHERE name LIKE ?", (pattern,))
+                total_deleted += cur.rowcount
+
+            conn.commit()
+
+            return jsonify({
+                'deleted_labels': total_deleted,
+                'label_names': deleted_labels[:10] + (['...'] if len(deleted_labels) > 10 else []),
+                'total_test_labels_found': len(deleted_labels),
+                'message': f'Successfully deleted {total_deleted} test labels'
+            }), 200
+
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+

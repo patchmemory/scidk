@@ -83,22 +83,22 @@ test('can open import modal and close it', async ({ page, baseURL }) => {
   const modal = page.locator('#import-arrows-modal');
   await expect(modal).toBeVisible();
 
-  // Check modal title
-  await expect(modal.locator('.modal-title')).toHaveText(/Import Schema from Arrows\.app/i);
+  // Check modal title (using custom modal structure)
+  await expect(modal.locator('.custom-modal-header h5')).toHaveText(/Import Schema from Arrows\.app/i);
 
   // Check textarea is present
   const textarea = modal.locator('#arrows-json-input');
   await expect(textarea).toBeVisible();
 
-  // Close modal
-  const closeBtn = modal.locator('.btn-close');
+  // Close modal (using custom close button)
+  const closeBtn = modal.locator('.custom-modal-close');
   await closeBtn.click();
 
-  // Wait for Bootstrap modal animation to complete
-  await page.waitForTimeout(500);
+  // Wait for modal to close
+  await page.waitForTimeout(300);
 
-  // Verify modal is hidden (Bootstrap adds 'show' class when visible)
-  await expect(modal).not.toHaveClass(/show/);
+  // Verify modal is hidden (using display: none check)
+  await expect(modal).not.toBeVisible();
 });
 
 test('can import schema from arrows.app JSON', async ({ page, baseURL }) => {
@@ -219,10 +219,19 @@ test('can import schema from arrows.app JSON', async ({ page, baseURL }) => {
   await page.waitForTimeout(300);
 
   // Check that properties are displayed (name, age)
-  const propertiesContainer = page.getByTestId('properties-container');
-  const propertiesText = await propertiesContainer.textContent();
-  expect(propertiesText).toContain('name');
-  expect(propertiesText).toContain('age');
+  // Note: Input values are not in textContent, need to check input elements directly
+  const propertyInputs = page.locator('[data-testid="property-name"]');
+  const propertyCount = await propertyInputs.count();
+  expect(propertyCount).toBeGreaterThanOrEqual(2);
+
+  // Get all property names
+  const propertyNames = [];
+  for (let i = 0; i < propertyCount; i++) {
+    const value = await propertyInputs.nth(i).inputValue();
+    propertyNames.push(value);
+  }
+  expect(propertyNames).toContain('name');
+  expect(propertyNames).toContain('age');
 
   // Check that relationship is displayed (WORKS_FOR -> E2EArrowsCompany)
   const relationshipsContainer = page.getByTestId('relationships-container');
@@ -314,8 +323,8 @@ test('import handles invalid JSON gracefully', async ({ page, baseURL }) => {
   const modal = page.locator('#import-arrows-modal');
   await expect(modal).toBeVisible();
 
-  // Close modal
-  await modal.locator('.btn-close').click();
+  // Close modal (using custom close button)
+  await modal.locator('.custom-modal-close').click();
 });
 
 test('import with empty textarea shows warning', async ({ page, baseURL }) => {
