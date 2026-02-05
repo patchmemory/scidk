@@ -5,6 +5,22 @@ import { test, expect } from '@playwright/test';
  * Tests the complete workflow: create label → add properties → add relationships → save → delete
  */
 
+/**
+ * Helper function to find a label by name in the label list
+ * This is more resilient than using .first() which assumes order
+ */
+async function findLabelByName(page: any, labelName: string) {
+  const labelItems = page.getByTestId('label-item');
+  const count = await labelItems.count();
+  for (let i = 0; i < count; i++) {
+    const text = await labelItems.nth(i).textContent();
+    if (text?.includes(labelName)) {
+      return labelItems.nth(i);
+    }
+  }
+  return null;
+}
+
 test('labels page loads and displays empty state', async ({ page, baseURL }) => {
   const consoleMessages: { type: string; text: string }[] = [];
   page.on('console', (msg) => {
@@ -89,13 +105,17 @@ test('complete label workflow: create → edit → delete', async ({ page, baseU
 
   // Step 6: Verify label appears in list
   const labelItems = page.getByTestId('label-item');
-  await expect(labelItems.first()).toBeVisible();
-  const labelText = await labelItems.first().textContent();
+  await expect(labelItems.first()).toBeVisible(); // Wait for at least one label
+
+  // Find our specific label by name (more resilient to existing data)
+  const ourLabel = await findLabelByName(page, 'E2ETestLabel');
+  expect(ourLabel).not.toBeNull();
+  const labelText = await ourLabel!.textContent();
   expect(labelText).toContain('E2ETestLabel');
   expect(labelText).toContain('2 properties');
 
   // Step 7: Click on the label to edit it
-  await labelItems.first().click();
+  await ourLabel!.click();
   await page.waitForTimeout(500);
 
   // Verify editor is populated
@@ -158,14 +178,25 @@ test('can add and remove multiple properties', async ({ page, baseURL }) => {
   await page.getByTestId('save-label-btn').click();
   await page.waitForTimeout(1000);
 
-  // Verify saved
+  // Verify saved - find the specific label by name, not first item
   const labelItems = page.getByTestId('label-item');
-  const labelText = await labelItems.first().textContent();
-  expect(labelText).toContain('MultiPropLabel');
-  expect(labelText).toContain('2 properties');
+  await expect(labelItems).toHaveCount(await labelItems.count()); // Wait for labels to load
+
+  // Find our specific label by filtering text content
+  let foundLabel = null;
+  const count = await labelItems.count();
+  for (let i = 0; i < count; i++) {
+    const text = await labelItems.nth(i).textContent();
+    if (text?.includes('MultiPropLabel')) {
+      foundLabel = labelItems.nth(i);
+      expect(text).toContain('2 properties');
+      break;
+    }
+  }
+  expect(foundLabel).not.toBeNull();
 
   // Cleanup: delete the label
-  await labelItems.first().click();
+  await foundLabel!.click();
   page.on('dialog', async (dialog) => await dialog.accept());
   await page.getByTestId('delete-label-btn').click();
   await page.waitForTimeout(500);
@@ -271,9 +302,12 @@ test('neo4j: push label to neo4j', async ({ page, baseURL, request: pageRequest 
   const labelItems = page.getByTestId('label-item');
   await expect(labelItems.first()).toBeVisible();
 
-  // Cleanup: delete the test label
+  // Cleanup: delete the test label by finding it by name
+  const ourLabel = await findLabelByName(page, 'Neo4jTestLabel');
+  expect(ourLabel).not.toBeNull();
+
   page.on('dialog', async (dialog) => await dialog.accept());
-  await labelItems.first().click();
+  await ourLabel!.click();
   await page.waitForTimeout(300);
   await page.getByTestId('delete-label-btn').click();
   await page.waitForTimeout(500);
