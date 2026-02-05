@@ -402,6 +402,17 @@ function populateEditor(label) {
     relsContainer.innerHTML = '<div class="empty-state small">No relationships defined</div>';
   } else {
     relsContainer.innerHTML = label.relationships.map((rel, i) => createRelationshipRow(rel, i)).join('');
+
+    // Add click handlers for navigation buttons
+    relsContainer.querySelectorAll('.target-label-nav').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const targetLabel = btn.dataset.target;
+        if (targetLabel) {
+          loadLabel(targetLabel);
+        }
+      });
+    });
   }
 
   // Render incoming relationships (read-only with clickable source labels)
@@ -473,6 +484,13 @@ function createRelationshipRow(rel, index) {
   const labelOptions = labels.map(l =>
     `<option value="${l.name}" ${rel.target_label === l.name ? 'selected' : ''}>${l.name}</option>`
   ).join('\n        ');
+
+  // Add navigation button if target label is selected
+  const hasTarget = rel.target_label && rel.target_label !== '';
+  const navButton = hasTarget
+    ? `<button class="btn btn-sm btn-outline-primary target-label-nav" data-target="${rel.target_label}" title="Go to ${rel.target_label}" style="flex: 0 0 auto;">→</button>`
+    : '';
+
   return `
     <div class="relationship-row" data-index="${index || ''}" data-testid="relationship-row">
       <input type="text" class="form-control form-control-sm" placeholder="Type (e.g., HAS_FILE)"
@@ -481,6 +499,7 @@ function createRelationshipRow(rel, index) {
         <option value="">-- Select target label --</option>
         ${labelOptions}
       </select>
+      ${navButton}
       <button class="btn btn-sm btn-outline-danger" onclick="this.parentElement.remove()" data-testid="remove-relationship-btn">×</button>
     </div>
   `;
