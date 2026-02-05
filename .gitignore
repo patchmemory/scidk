@@ -17,7 +17,13 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Neo4j data directory
 data/neo4j/
+
+# Neo4j test stub (should not interfere with runtime)
+# Note: This is a test stub that can shadow the real neo4j package
+# Keep it out of sys.path during normal runs
+neo4j/__pycache__/
 
 # Ignore all contents under data/ (keep directory itself tracked)
 data/*

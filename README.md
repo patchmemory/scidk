@@ -60,7 +60,14 @@ Note: The scanner prefers NCDU for fast filesystem enumeration when available. I
 ## Branching & CI Policy
 To keep CI reliable and PRs easy to review, we follow a simple workflow: one active feature branch per contributor, open small PRs early, and let CI be the gate before merge. See docs/branching-and-ci.md for details and a PR checklist.
 
-## End-to-End (E2E) tests
+## Testing & Demo
+
+### Manual UX Testing
+For comprehensive page-by-page testing before demos:
+- **Quick Start**: See `DEMO_SETUP.md` for running the app and creating test data
+- **Testing Checklist**: See `dev/ux-testing-checklist.md` for systematic testing of all pages
+
+### End-to-End (E2E) Tests
 
 These tests run in a real browser using Playwright and pytest.
 
