@@ -148,8 +148,8 @@ def _cleanup_test_labels_from_db(db_path: Path):
         try:
             cur = conn.cursor()
 
-            # Check if labels table exists
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='labels'")
+            # Check if label_definitions table exists
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='label_definitions'")
             if not cur.fetchone():
                 return
 
@@ -176,7 +176,7 @@ def _cleanup_test_labels_from_db(db_path: Path):
 
             # Delete test labels
             for pattern in test_patterns:
-                cur.execute("DELETE FROM labels WHERE name LIKE ?", (pattern,))
+                cur.execute("DELETE FROM label_definitions WHERE name LIKE ?", (pattern,))
 
             conn.commit()
         finally:

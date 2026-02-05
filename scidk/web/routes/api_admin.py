@@ -328,12 +328,12 @@ def api_admin_cleanup_test_labels():
         try:
             cur = conn.cursor()
 
-            # Check if labels table exists
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='labels'")
+            # Check if label_definitions table exists
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='label_definitions'")
             if not cur.fetchone():
                 return jsonify({
                     'deleted_labels': 0,
-                    'message': 'Labels table does not exist'
+                    'message': 'Label definitions table does not exist'
                 }), 200
 
             # Collect label names that match test patterns
@@ -341,12 +341,12 @@ def api_admin_cleanup_test_labels():
             total_deleted = 0
 
             for pattern in test_patterns:
-                cur.execute("SELECT name FROM labels WHERE name LIKE ?", (pattern,))
+                cur.execute("SELECT name FROM label_definitions WHERE name LIKE ?", (pattern,))
                 matching_labels = [row[0] for row in cur.fetchall()]
                 deleted_labels.extend(matching_labels)
 
                 # Delete matching labels
-                cur.execute("DELETE FROM labels WHERE name LIKE ?", (pattern,))
+                cur.execute("DELETE FROM label_definitions WHERE name LIKE ?", (pattern,))
                 total_deleted += cur.rowcount
 
             conn.commit()

@@ -431,7 +431,9 @@ function addRelationship() {
 }
 
 function createRelationshipRow(rel, index) {
-  const labelOptions = labels.map(l => `<option value="${l.name}" ${rel.target_label === l.name ? 'selected' : ''}>${l.name}</option>`).join('');
+  const labelOptions = labels.map(l =>
+    `<option value="${l.name}" ${rel.target_label === l.name ? 'selected' : ''}>${l.name}</option>`
+  ).join('\n        ');
   return `
     <div class="relationship-row" data-index="${index || ''}" data-testid="relationship-row">
       <input type="text" class="form-control form-control-sm" placeholder="Type (e.g., HAS_FILE)"
