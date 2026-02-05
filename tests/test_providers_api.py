@@ -71,14 +71,18 @@ def test_rclone_mounts_create_missing_rclone(client, monkeypatch):
     assert 'rclone not installed' in data['error']
 
 
-def test_rclone_mounts_create_missing_remote(client):
+def test_rclone_mounts_create_missing_remote(client, monkeypatch):
+    # Mock rclone available so we can test validation logic
+    monkeypatch.setattr('scidk.web.routes.api_providers.shutil.which', lambda x: '/usr/bin/rclone')
     resp = client.post('/api/rclone/mounts', json={'name': 'testmount'})
     assert resp.status_code == 400
     data = resp.get_json()
     assert 'remote required' in data['error']
 
 
-def test_rclone_mounts_create_missing_name(client):
+def test_rclone_mounts_create_missing_name(client, monkeypatch):
+    # Mock rclone available so we can test validation logic
+    monkeypatch.setattr('scidk.web.routes.api_providers.shutil.which', lambda x: '/usr/bin/rclone')
     resp = client.post('/api/rclone/mounts', json={'remote': 'test:'})
     assert resp.status_code == 400
     data = resp.get_json()
