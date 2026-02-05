@@ -60,8 +60,8 @@
 </section>
 
 <section style="margin-top:1rem">
-  <h2>Interpreters</h2>
-  <p class="small">Registered interpreter mappings and selection rules. See full page at <a href="/interpreters">/interpreters</a>.</p>
+  <h2 id="interpreters">Interpreters</h2>
+  <p class="small">Registered interpreter mappings and selection rules.</p>
   <h3 class="small">Mappings (extension → interpreter ids)</h3>
   <ul>
     {% for ext, ids in (mappings or {}).items() %}
@@ -178,8 +178,8 @@
 </section>
 
 <section style="margin-top:1rem">
-  <h2>Plugins</h2>
-  <p class="small">Plugin registry summary. See full page at <a href="/plugins">/plugins</a>.</p>
+  <h2 id="plugins">Plugins</h2>
+  <p class="small">Plugin registry summary.</p>
   <ul>
     <li class="small">Registered interpreter count: {{ interp_count or 0 }}</li>
     <li class="small">Extensions mapped: {{ ext_count or 0 }}</li>
