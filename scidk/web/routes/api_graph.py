@@ -24,6 +24,214 @@ def api_graph_schema():
         return jsonify(data), 200
 
 
+@bp.get('/graph/schema/combined')
+def api_graph_schema_combined():
+    """
+    Unified schema endpoint combining local Labels, Neo4j schema, and in-memory graph.
+
+    Query params:
+    - source: 'labels' | 'neo4j' | 'graph' | 'all' (default: 'all')
+    - include_properties: 'true' | 'false' (default: 'false')
+
+    Returns:
+    {
+        "nodes": [{"label": "...", "count": 0, "source": "labels", "properties": [...]}],
+        "edges": [{"start_label": "...", "rel_type": "...", "end_label": "...", "count": 0, "source": "labels"}],
+        "sources": {"labels": {"count": N, "enabled": true}, ...}
+    }
+    """
+    source = (request.args.get('source') or 'all').strip().lower()
+    include_props = (request.args.get('include_properties') or 'false').strip().lower() == 'true'
+
+    result = {'nodes': [], 'edges': [], 'sources': {}}
+
+    # Track unique nodes/edges to avoid duplicates (key by label/triple)
+    seen_nodes = {}
+    seen_edges = {}
+
+    # 1. Get local Labels definitions
+    if source in ('labels', 'all'):
+        try:
+            from ...services.label_service import LabelService
+            label_service = LabelService(current_app)
+            labels = label_service.list_labels()
+
+            for label in labels:
+                label_name = label.get('name')
+                if label_name and label_name not in seen_nodes:
+                    node = {
+                        'label': label_name,
+                        'count': 0,  # No instances yet (definition only)
+                        'source': 'labels'
+                    }
+                    if include_props:
+                        node['properties'] = label.get('properties', [])
+                    result['nodes'].append(node)
+                    seen_nodes[label_name] = 'labels'
+
+                # Add relationships
+                for rel in label.get('relationships', []):
+                    edge_key = (label_name, rel.get('type'), rel.get('target_label'))
+                    if edge_key not in seen_edges:
+                        result['edges'].append({
+                            'start_label': label_name,
+                            'rel_type': rel.get('type'),
+                            'end_label': rel.get('target_label'),
+                            'count': 0,
+                            'source': 'labels'
+                        })
+                        seen_edges[edge_key] = 'labels'
+
+            result['sources']['labels'] = {'count': len(labels), 'enabled': True}
+        except Exception as e:
+            result['sources']['labels'] = {'count': 0, 'enabled': False, 'error': str(e)}
+
+    # 2. Get Neo4j schema (if connected and requested)
+    if source in ('neo4j', 'all'):
+        try:
+            uri, user, pwd, database, auth_mode = get_neo4j_params()
+            if uri:
+                from neo4j import GraphDatabase
+                driver = None
+                try:
+                    driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
+                    with driver.session(database=database) as sess:
+                        # Get node label counts
+                        q_nodes = "MATCH (n) WITH head(labels(n)) AS l, count(*) AS c RETURN l AS label, c ORDER BY c DESC"
+                        neo4j_nodes = [dict(record) for record in sess.run(q_nodes)]
+
+                        # Get relationship triples counts
+                        q_edges = (
+                            "MATCH (s)-[r]->(t) "
+                            "WITH head(labels(s)) AS sl, type(r) AS rt, head(labels(t)) AS tl, count(*) AS c "
+                            "RETURN sl AS start_label, rt AS rel_type, tl AS end_label, c ORDER BY c DESC"
+                        )
+                        neo4j_edges = [dict(record) for record in sess.run(q_edges)]
+
+                        # Add nodes from Neo4j (prefer Neo4j counts if already seen from labels)
+                        for n in neo4j_nodes:
+                            label_name = n.get('label')
+                            if label_name:
+                                if label_name in seen_nodes:
+                                    # Update existing node with Neo4j count
+                                    for node in result['nodes']:
+                                        if node['label'] == label_name:
+                                            node['count'] = n.get('c', 0)
+                                            node['source'] = 'neo4j+labels' if node['source'] == 'labels' else 'neo4j'
+                                            break
+                                    seen_nodes[label_name] = 'neo4j'
+                                else:
+                                    result['nodes'].append({
+                                        'label': label_name,
+                                        'count': n.get('c', 0),
+                                        'source': 'neo4j'
+                                    })
+                                    seen_nodes[label_name] = 'neo4j'
+
+                        # Add edges from Neo4j
+                        for e in neo4j_edges:
+                            edge_key = (e.get('start_label'), e.get('rel_type'), e.get('end_label'))
+                            if edge_key in seen_edges:
+                                # Update existing edge with Neo4j count
+                                for edge in result['edges']:
+                                    if (edge['start_label'], edge['rel_type'], edge['end_label']) == edge_key:
+                                        edge['count'] = e.get('c', 0)
+                                        edge['source'] = 'neo4j+labels' if edge['source'] == 'labels' else 'neo4j'
+                                        break
+                            else:
+                                result['edges'].append({
+                                    'start_label': e.get('start_label'),
+                                    'rel_type': e.get('rel_type'),
+                                    'end_label': e.get('end_label'),
+                                    'count': e.get('c', 0),
+                                    'source': 'neo4j'
+                                })
+                                seen_edges[edge_key] = 'neo4j'
+
+                        result['sources']['neo4j'] = {
+                            'count': len(neo4j_nodes),
+                            'enabled': True,
+                            'connected': True
+                        }
+                finally:
+                    if driver:
+                        driver.close()
+            else:
+                result['sources']['neo4j'] = {'count': 0, 'enabled': False, 'connected': False}
+        except Exception as e:
+            result['sources']['neo4j'] = {
+                'count': 0,
+                'enabled': False,
+                'connected': False,
+                'error': str(e)
+            }
+
+    # 3. Get in-memory graph schema
+    if source in ('graph', 'all'):
+        try:
+            graph_schema = _get_ext()['graph'].schema_triples(limit=500)
+
+            for node in graph_schema.get('nodes', []):
+                label_name = node.get('label')
+                if label_name:
+                    if label_name in seen_nodes:
+                        # Update count for existing node
+                        for n in result['nodes']:
+                            if n['label'] == label_name:
+                                n['count'] = node.get('count', 0)
+                                if n['source'] == 'labels':
+                                    n['source'] = 'graph+labels'
+                                elif n['source'] == 'neo4j':
+                                    n['source'] = 'graph+neo4j'
+                                elif n['source'] == 'neo4j+labels':
+                                    n['source'] = 'all'
+                                else:
+                                    n['source'] = 'graph'
+                                break
+                    else:
+                        result['nodes'].append({
+                            'label': label_name,
+                            'count': node.get('count', 0),
+                            'source': 'graph'
+                        })
+                        seen_nodes[label_name] = 'graph'
+
+            for edge in graph_schema.get('edges', []):
+                edge_key = (edge.get('start_label'), edge.get('rel_type'), edge.get('end_label'))
+                if edge_key in seen_edges:
+                    # Update count for existing edge
+                    for e in result['edges']:
+                        if (e['start_label'], e['rel_type'], e['end_label']) == edge_key:
+                            e['count'] = edge.get('count', 0)
+                            if e['source'] == 'labels':
+                                e['source'] = 'graph+labels'
+                            elif e['source'] == 'neo4j':
+                                e['source'] = 'graph+neo4j'
+                            elif e['source'] == 'neo4j+labels':
+                                e['source'] = 'all'
+                            else:
+                                e['source'] = 'graph'
+                            break
+                else:
+                    result['edges'].append({
+                        'start_label': edge.get('start_label'),
+                        'rel_type': edge.get('rel_type'),
+                        'end_label': edge.get('end_label'),
+                        'count': edge.get('count', 0),
+                        'source': 'graph'
+                    })
+                    seen_edges[edge_key] = 'graph'
+
+            result['sources']['graph'] = {
+                'count': len(graph_schema.get('nodes', [])),
+                'enabled': True
+            }
+        except Exception as e:
+            result['sources']['graph'] = {'count': 0, 'enabled': False, 'error': str(e)}
+
+    return jsonify(result), 200
+
+
 @bp.get('/graph/schema.csv')
 def api_graph_schema_csv():
         # Build a simple CSV with two sections: NodeLabels and RelationshipTypes

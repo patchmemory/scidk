@@ -5,22 +5,24 @@
   <h2>Schema Graph (Interactive)</h2>
   <div class="row g-2" style="margin-bottom:.5rem">
     <div class="col-auto">
+      <label for="schema-source" class="form-label small" style="margin-bottom:.25rem">Source</label>
+      <select id="schema-source" class="form-select form-select-sm" data-testid="schema-source-selector">
+        <option value="all" selected>All Sources</option>
+        <option value="labels">Local Labels</option>
+        <option value="neo4j">Neo4j Schema</option>
+        <option value="graph">In-Memory Graph</option>
+      </select>
+    </div>
+    <div class="col-auto">
       <label for="filter-labels" class="form-label small" style="margin-bottom:.25rem">Labels</label>
-      <select id="filter-labels" class="form-select form-select-sm">
+      <select id="filter-labels" class="form-select form-select-sm" data-testid="filter-labels">
         <option value="">All</option>
-        <option value="File">File</option>
-        <option value="Folder">Folder</option>
-        <option value="Scan">Scan</option>
-        <option value="ResearchObject">ResearchObject</option>
       </select>
     </div>
     <div class="col-auto">
       <label for="filter-reltypes" class="form-label small" style="margin-bottom:.25rem">Relationship Types</label>
-      <select id="filter-reltypes" class="form-select form-select-sm">
+      <select id="filter-reltypes" class="form-select form-select-sm" data-testid="filter-reltypes">
         <option value="">All</option>
-        <option value="INTERPRETED_AS">INTERPRETED_AS</option>
-        <option value="CONTAINS">CONTAINS</option>
-        <option value="SCANNED_IN">SCANNED_IN</option>
       </select>
     </div>
     <div class="col-auto">
@@ -138,15 +140,60 @@
     for (const [k,v] of Object.entries(params)) if (v) u.set(k, v);
     return u.toString();
   }
+  // Source color mapping
+  const sourceColors = {
+    'labels': '#e15759',        // Red - defined but not instantiated
+    'neo4j': '#59a14f',          // Green - from Neo4j
+    'graph': '#4e79a7',          // Blue - in-memory (current default)
+    'neo4j+labels': '#f28e2c',   // Orange - Neo4j + Labels
+    'graph+labels': '#af7aa1',   // Purple - Graph + Labels
+    'graph+neo4j': '#76b7b2',    // Teal - Graph + Neo4j
+    'all': '#edc949'             // Yellow - All three sources
+  };
   async function fetchSchema(params) {
     try {
-      const q = params ? ('?' + qs(params)) : '';
-      const url = params ? ('/api/graph/subschema' + q) : '/api/graph/schema';
+      const source = document.getElementById('schema-source')?.value || 'all';
+      params = params || {};
+      params.source = source;
+
+      const q = qs(params);
+      const url = '/api/graph/schema/combined' + (q ? '?' + q : '');
       const res = await fetch(url);
       return await res.json();
     } catch (e) {
       console.error('Schema fetch failed', e);
-      return { nodes: [], edges: [] };
+      return { nodes: [], edges: [], sources: {} };
+    }
+  }
+  // Update filter dropdowns dynamically based on schema
+  function updateFilters(schema) {
+    const labelSelect = document.getElementById('filter-labels');
+    const relSelect = document.getElementById('filter-reltypes');
+
+    if (labelSelect) {
+      // Preserve current selection
+      const currentLabel = labelSelect.value;
+      // Get unique labels from schema
+      const labels = [...new Set(schema.nodes?.map(n => n.label) || [])].sort();
+      labelSelect.innerHTML = '<option value="">All</option>' +
+        labels.map(l => `<option value="${l}">${l}</option>`).join('');
+      // Restore selection if still valid
+      if (currentLabel && labels.includes(currentLabel)) {
+        labelSelect.value = currentLabel;
+      }
+    }
+
+    if (relSelect) {
+      // Preserve current selection
+      const currentRel = relSelect.value;
+      // Get unique relationship types from schema
+      const rels = [...new Set(schema.edges?.map(e => e.rel_type) || [])].sort();
+      relSelect.innerHTML = '<option value="">All</option>' +
+        rels.map(r => `<option value="${r}">${r}</option>`).join('');
+      // Restore selection if still valid
+      if (currentRel && rels.includes(currentRel)) {
+        relSelect.value = currentRel;
+      }
     }
   }
   let nodeMul = 1.0;
@@ -158,29 +205,58 @@
   function toElements(data){
     const nodes = new Map();
     for (const n of (data.nodes||[])) {
-      nodes.set(n.label, { data: { id: n.label, label: n.label, count: n.count } });
+      nodes.set(n.label, {
+        data: {
+          id: n.label,
+          label: n.label,
+          count: n.count,
+          source: n.source || 'graph'
+        }
+      });
     }
     const edges = [];
     for (const e of (data.edges||[])) {
       const id = `${e.start_label}|${e.rel_type}|${e.end_label}`;
-      if (!nodes.has(e.start_label)) nodes.set(e.start_label, { data: { id: e.start_label, label: e.start_label, count: 1 } });
-      if (!nodes.has(e.end_label)) nodes.set(e.end_label, { data: { id: e.end_label, label: e.end_label, count: 1 } });
-      edges.push({ data: { id, source: e.start_label, target: e.end_label, type: e.rel_type, count: e.count } });
+      if (!nodes.has(e.start_label)) {
+        nodes.set(e.start_label, {
+          data: { id: e.start_label, label: e.start_label, count: 1, source: e.source || 'graph' }
+        });
+      }
+      if (!nodes.has(e.end_label)) {
+        nodes.set(e.end_label, {
+          data: { id: e.end_label, label: e.end_label, count: 1, source: e.source || 'graph' }
+        });
+      }
+      edges.push({
+        data: {
+          id,
+          source: e.start_label,
+          target: e.end_label,
+          type: e.rel_type,
+          count: e.count,
+          edgeSource: e.source || 'graph'
+        }
+      });
     }
     return [...nodes.values(), ...edges];
   }
   let data = await fetchSchema();
+  updateFilters(data);  // Initialize filter dropdowns
   const cy = cytoscape({
     container: document.getElementById('schema-graph'),
     elements: toElements(data),
     style: [
       { selector: 'node', style: {
           'label': 'data(label)', 'text-valign': 'center', 'text-halign': 'center',
-          'background-color': '#4e79a7', 'color': '#fff', 'font-size': 10,
+          'background-color': ele => sourceColors[ele.data('source')] || sourceColors['graph'],
+          'color': '#fff', 'font-size': 10,
           'width': ele => scale(ele.data('count')), 'height': ele => scale(ele.data('count'))
       }},
       { selector: 'edge', style: {
-          'curve-style': 'bezier', 'line-color': '#999', 'target-arrow-color': '#999', 'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier',
+          'line-color': ele => sourceColors[ele.data('edgeSource')] || '#999',
+          'target-arrow-color': ele => sourceColors[ele.data('edgeSource')] || '#999',
+          'target-arrow-shape': 'triangle',
           'width': ele => Math.max(1, Math.log(1 + (ele.data('count')||1))) * edgeMul,
           'label': 'data(type)', 'font-size': () => labelFont, 'color': '#555', 'text-rotation': 'autorotate', 'text-margin-x': 2, 'text-margin-y': 2, 'text-outline-color': () => (highContrast ? '#fff' : 'transparent'), 'text-outline-width': () => (highContrast ? 3 : 0)
       }}
@@ -193,10 +269,12 @@
   }
   function render(newData){
     data = newData;
+    updateFilters(data);  // Update filter dropdowns with new schema
     cy.json({ elements: toElements(data) });
     const mode = (document.getElementById('layout-mode')||{}).value || 'cose';
     runLayout(mode);
   }
+  const sourceSel = document.getElementById('schema-source');
   const lbl = document.getElementById('filter-labels');
   const rlt = document.getElementById('filter-reltypes');
   const layoutSel = document.getElementById('layout-mode');
@@ -222,12 +300,42 @@
   async function onFilter(){
     const labels = lbl && lbl.value ? lbl.value : '';
     const rel_types = rlt && rlt.value ? rlt.value : '';
-    const params = {};
-    if (labels) params.labels = labels;
-    if (rel_types) params.rel_types = rel_types;
-    const nd = await fetchSchema(Object.keys(params).length ? params : null);
+
+    // For combined schema endpoint, we filter on client-side for now
+    // (server-side filtering can be added later if needed)
+    const fullData = await fetchSchema();
+
+    let filteredNodes = fullData.nodes || [];
+    let filteredEdges = fullData.edges || [];
+
+    if (labels) {
+      // Filter nodes by label
+      filteredNodes = filteredNodes.filter(n => n.label === labels);
+      // Filter edges that connect to this label
+      filteredEdges = filteredEdges.filter(e =>
+        e.start_label === labels || e.end_label === labels
+      );
+    }
+
+    if (rel_types) {
+      // Filter edges by relationship type
+      filteredEdges = filteredEdges.filter(e => e.rel_type === rel_types);
+    }
+
+    const filteredData = {
+      nodes: filteredNodes,
+      edges: filteredEdges,
+      sources: fullData.sources
+    };
+
+    render(filteredData);
+  }
+  async function onSourceChange(){
+    // When source changes, reload full schema
+    const nd = await fetchSchema();
     render(nd);
   }
+  if (sourceSel) sourceSel.onchange = onSourceChange;
   if (lbl) lbl.onchange = onFilter;
   if (rlt) rlt.onchange = onFilter;
   if (layoutSel) layoutSel.onchange = () => runLayout(layoutSel.value);

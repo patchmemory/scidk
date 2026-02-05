@@ -370,3 +370,200 @@ test('graph position load retrieves from localStorage', async ({ page, baseURL }
 
   expect(savedPositions).not.toBeNull();
 });
+
+/**
+ * Tests for Labels + Neo4j schema integration with Map page
+ */
+
+test('map schema source selector is visible and functional', async ({ page, baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+
+  // Check for source selector
+  const sourceSelector = page.getByTestId('schema-source-selector');
+  await expect(sourceSelector).toBeVisible();
+
+  // Verify options are present
+  await expect(sourceSelector).toHaveValue('all');
+
+  // Test switching sources
+  await sourceSelector.selectOption('labels');
+  await expect(sourceSelector).toHaveValue('labels');
+
+  await sourceSelector.selectOption('neo4j');
+  await expect(sourceSelector).toHaveValue('neo4j');
+
+  await sourceSelector.selectOption('graph');
+  await expect(sourceSelector).toHaveValue('graph');
+
+  await sourceSelector.selectOption('all');
+  await expect(sourceSelector).toHaveValue('all');
+});
+
+test('map uses combined schema endpoint', async ({ page, baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+
+  // Track API calls to verify combined endpoint is being used
+  const apiCalls: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/api/graph/schema')) {
+      apiCalls.push(request.url());
+    }
+  });
+
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+
+  // Wait for graph to load
+  await page.waitForTimeout(1000);
+
+  // Verify the combined schema endpoint was called
+  const combinedCalls = apiCalls.filter(url => url.includes('/api/graph/schema/combined'));
+  expect(combinedCalls.length).toBeGreaterThan(0);
+});
+
+test('map filter dropdowns populate dynamically from schema', async ({ page, baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+
+  // Wait for schema to load
+  await page.waitForTimeout(1000);
+
+  // Check that filter dropdowns have options
+  const labelsFilter = page.getByTestId('filter-labels');
+  const reltypesFilter = page.getByTestId('filter-reltypes');
+
+  await expect(labelsFilter).toBeVisible();
+  await expect(reltypesFilter).toBeVisible();
+
+  // Get options (should be more than just "All")
+  const labelOptions = await labelsFilter.locator('option').count();
+  const relOptions = await reltypesFilter.locator('option').count();
+
+  // Both should have at least "All" option
+  expect(labelOptions).toBeGreaterThanOrEqual(1);
+  expect(relOptions).toBeGreaterThanOrEqual(1);
+
+  // Verify "All" option exists
+  await expect(labelsFilter.locator('option[value=""]')).toHaveText('All');
+  await expect(reltypesFilter.locator('option[value=""]')).toHaveText('All');
+});
+
+test('map source selector triggers schema reload', async ({ page, baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+
+  // Track schema API calls
+  const schemaApiCalls: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/api/graph/schema/combined')) {
+      schemaApiCalls.push(request.url());
+    }
+  });
+
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(1000);
+
+  const initialCalls = schemaApiCalls.length;
+  expect(initialCalls).toBeGreaterThan(0);
+
+  // Change source selector
+  const sourceSelector = page.getByTestId('schema-source-selector');
+  await sourceSelector.selectOption('labels');
+  await page.waitForTimeout(1000);
+
+  // Verify additional API call was made with correct source parameter
+  expect(schemaApiCalls.length).toBeGreaterThan(initialCalls);
+  const latestCall = schemaApiCalls[schemaApiCalls.length - 1];
+  expect(latestCall).toContain('source=labels');
+});
+
+test('map displays labels from Labels page in visualization', async ({ page, baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+
+  // First, create a label on the Labels page
+  await page.goto(`${base}/labels`);
+  await page.waitForLoadState('networkidle');
+
+  // Create a new label
+  const newLabelBtn = page.getByTestId('new-label-btn');
+  if (await newLabelBtn.isVisible()) {
+    await newLabelBtn.click();
+    await page.waitForTimeout(500);
+
+    const labelNameInput = page.getByTestId('label-name');
+    await labelNameInput.fill('E2EMapTest');
+
+    const saveLabelBtn = page.getByTestId('save-label-btn');
+    await saveLabelBtn.click();
+    await page.waitForTimeout(1000);
+  }
+
+  // Navigate to Map page
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(1000);
+
+  // Select "Local Labels" or "All Sources" to see the label
+  const sourceSelector = page.getByTestId('schema-source-selector');
+  await sourceSelector.selectOption('labels');
+  await page.waitForTimeout(1000);
+
+  // Check that the label appears in the filter dropdown
+  const labelsFilter = page.getByTestId('filter-labels');
+  const optionsText = await labelsFilter.locator('option').allTextContents();
+
+  // Verify E2EMapTest label is in the dropdown
+  const hasTestLabel = optionsText.some(text => text.includes('E2EMapTest'));
+  expect(hasTestLabel).toBe(true);
+
+  // Clean up: delete the test label
+  await page.goto(`${base}/labels`);
+  await page.waitForLoadState('networkidle');
+
+  // Find and delete the label (implementation depends on Labels page UI)
+  // This is a best-effort cleanup
+  const deleteBtn = page.locator('button').filter({ hasText: /delete/i }).first();
+  if (await deleteBtn.isVisible()) {
+    await deleteBtn.click();
+    await page.waitForTimeout(500);
+    // Confirm deletion if there's a confirmation dialog
+    const confirmBtn = page.locator('button').filter({ hasText: /confirm|yes|delete/i }).first();
+    if (await confirmBtn.isVisible()) {
+      await confirmBtn.click();
+    }
+  }
+});
+
+test('map filter dropdowns update when source changes', async ({ page, baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(1000);
+
+  const sourceSelector = page.getByTestId('schema-source-selector');
+  const labelsFilter = page.getByTestId('filter-labels');
+
+  // Get initial options with "all" source
+  await sourceSelector.selectOption('all');
+  await page.waitForTimeout(1000);
+  const allSourceOptions = await labelsFilter.locator('option').count();
+
+  // Switch to "labels" source
+  await sourceSelector.selectOption('labels');
+  await page.waitForTimeout(1000);
+  const labelsSourceOptions = await labelsFilter.locator('option').count();
+
+  // Switch to "graph" source
+  await sourceSelector.selectOption('graph');
+  await page.waitForTimeout(1000);
+  const graphSourceOptions = await labelsFilter.locator('option').count();
+
+  // At least one of these should have options (or all should have "All" option)
+  // Exact counts will vary based on data, but all should be >= 1
+  expect(allSourceOptions).toBeGreaterThanOrEqual(1);
+  expect(labelsSourceOptions).toBeGreaterThanOrEqual(1);
+  expect(graphSourceOptions).toBeGreaterThanOrEqual(1);
+});

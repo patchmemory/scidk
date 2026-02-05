@@ -116,12 +116,39 @@ The test suite creates temporary test data. You can reference `tests/conftest.py
 
 ### Workflow 2: Graph Visualization
 
+#### Option A: Using Local Labels
+1. **Navigate** to Labels page (`/labels`)
+2. **Create** a new label (e.g., "Project")
+3. **Add** properties (e.g., name: string, budget: number)
+4. **Define** relationships (e.g., "HAS_FILE" → File)
+5. **Save** the label
+6. **Navigate** to Map page (`/map`)
+7. **Select** "Local Labels" from Source dropdown
+8. **View** schema visualization (nodes appear in red = definition only, no instances)
+9. **Observe** relationships shown as edges
+
+#### Option B: Using Neo4j Schema
+1. **Navigate** to Settings (`/settings`)
+2. **Connect** to Neo4j (configure URI, username, password)
+3. **Test** connection to verify it works
+4. **Navigate** to Labels page (`/labels`)
+5. **Click** "Pull from Neo4j" to sync schema
+6. **Navigate** to Map page (`/map`)
+7. **Select** "Neo4j Schema" from Source dropdown
+8. **View** schema pulled from database (nodes in green)
+
+#### Option C: Combined View (Default)
 1. **Scan** files and commit to Neo4j (Files page)
-2. **Navigate** to Map page
-3. **View** graph layout
-4. **Filter** by labels/relationships
-5. **Adjust** layout and appearance
-6. **Interact** with nodes (click, drag)
+2. **Navigate** to Map page (`/map`)
+3. **Source** defaults to "All Sources"
+4. **View** combined graph with color-coded nodes:
+   - **Blue**: In-memory graph (actual scanned data)
+   - **Red**: Local labels (definitions only, no instances)
+   - **Green**: Neo4j schema (pulled from database)
+   - **Orange/Purple/Teal/Yellow**: Mixed sources
+5. **Filter** by labels/relationships (dropdowns populate dynamically)
+6. **Adjust** layout and appearance
+7. **Interact** with nodes (click, drag)
 
 ### Workflow 3: Schema Management
 
