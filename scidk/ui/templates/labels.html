@@ -141,6 +141,13 @@
     background: #f9f9f9;
     border-radius: 4px;
     border-left: 3px solid #2196f3;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .readonly-property:focus {
+    outline: 2px solid #2196f3;
+    outline-offset: 2px;
+    background: #e3f2fd;
   }
   .readonly-relationship {
     padding: 0.5rem;
@@ -148,6 +155,13 @@
     background: #f0f8ff;
     border-radius: 4px;
     border-left: 3px solid #4caf50;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .readonly-relationship:focus {
+    outline: 2px solid #4caf50;
+    outline-offset: 2px;
+    background: #e8f5e9;
   }
   .badge-type {
     display: inline-block;
@@ -1445,8 +1459,8 @@ function populateEditor(label) {
   if (label.properties.length === 0) {
     readonlyPropsContainer.innerHTML = '<div class="empty-state small">No properties defined</div>';
   } else {
-    readonlyPropsContainer.innerHTML = label.properties.map(prop => `
-      <div class="readonly-property">
+    readonlyPropsContainer.innerHTML = label.properties.map((prop, idx) => `
+      <div class="readonly-property" tabindex="0" data-nav-group="property" data-nav-index="${idx}">
         <strong>${prop.name}</strong>
         <span class="badge-type">${prop.type}</span>
         ${prop.required ? '<span class="badge-type badge-required">required</span>' : ''}
@@ -1458,8 +1472,8 @@ function populateEditor(label) {
   if (label.relationships.length === 0) {
     readonlyRelsContainer.innerHTML = '<div class="empty-state small">No relationships defined</div>';
   } else {
-    readonlyRelsContainer.innerHTML = label.relationships.map(rel => `
-      <div class="readonly-relationship">
+    readonlyRelsContainer.innerHTML = label.relationships.map((rel, idx) => `
+      <div class="readonly-relationship" tabindex="0" data-nav-group="outgoing-rel" data-nav-index="${idx}">
         <em>${label.name}</em> —[<strong>${rel.type}</strong>]→ <a href="#" class="target-label-link" data-label="${rel.target_label}" style="color: var(--accent); text-decoration: none; font-weight: bold;">${rel.target_label}</a>
       </div>
     `).join('');
@@ -1470,8 +1484,8 @@ function populateEditor(label) {
   if (incomingRels.length === 0) {
     readonlyIncomingContainer.innerHTML = '<div class="empty-state small">No incoming relationships</div>';
   } else {
-    readonlyIncomingContainer.innerHTML = incomingRels.map(rel => `
-      <div class="readonly-relationship">
+    readonlyIncomingContainer.innerHTML = incomingRels.map((rel, idx) => `
+      <div class="readonly-relationship" tabindex="0" data-nav-group="incoming-rel" data-nav-index="${idx}">
         <a href="#" class="source-label-link" data-label="${rel.source_label}" style="color: var(--accent); text-decoration: none; font-weight: bold;">${rel.source_label}</a> —[<strong>${rel.type}</strong>]→ <em>${label.name}</em>
       </div>
     `).join('');
@@ -1553,6 +1567,66 @@ function populateEditor(label) {
       loadLabel(targetLabel);
     });
   });
+
+  // Add keyboard navigation for properties and relationships in read-only mode
+  document.querySelectorAll('.readonly-property, .readonly-relationship').forEach(item => {
+    item.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+
+        const currentGroup = item.dataset.navGroup;
+        const currentIndex = parseInt(item.dataset.navIndex);
+
+        // Get all items in the same group
+        const groupItems = Array.from(document.querySelectorAll(`[data-nav-group="${currentGroup}"]`));
+
+        let targetIndex;
+        if (e.key === 'ArrowDown') {
+          targetIndex = currentIndex + 1;
+          // If at end of current group, move to first item of next group
+          if (targetIndex >= groupItems.length) {
+            const nextGroup = getNextNavGroup(currentGroup);
+            if (nextGroup) {
+              const nextGroupItems = document.querySelectorAll(`[data-nav-group="${nextGroup}"]`);
+              if (nextGroupItems.length > 0) {
+                nextGroupItems[0].focus();
+              }
+            }
+            return;
+          }
+        } else {
+          targetIndex = currentIndex - 1;
+          // If at start of current group, move to last item of previous group
+          if (targetIndex < 0) {
+            const prevGroup = getPrevNavGroup(currentGroup);
+            if (prevGroup) {
+              const prevGroupItems = document.querySelectorAll(`[data-nav-group="${prevGroup}"]`);
+              if (prevGroupItems.length > 0) {
+                prevGroupItems[prevGroupItems.length - 1].focus();
+              }
+            }
+            return;
+          }
+        }
+
+        if (groupItems[targetIndex]) {
+          groupItems[targetIndex].focus();
+        }
+      }
+    });
+  });
+}
+
+function getNextNavGroup(currentGroup) {
+  const groups = ['property', 'outgoing-rel', 'incoming-rel'];
+  const currentIdx = groups.indexOf(currentGroup);
+  return currentIdx < groups.length - 1 ? groups[currentIdx + 1] : null;
+}
+
+function getPrevNavGroup(currentGroup) {
+  const groups = ['property', 'outgoing-rel', 'incoming-rel'];
+  const currentIdx = groups.indexOf(currentGroup);
+  return currentIdx > 0 ? groups[currentIdx - 1] : null;
 }
 
 function addProperty() {
