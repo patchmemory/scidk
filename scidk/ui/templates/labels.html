@@ -18,15 +18,54 @@
     height: calc(100vh - 200px);
     position: relative;
   }
+
+  /* Left Panel: Labels List */
   .labels-list {
-    width: 30%;
+    width: 25%;
     min-width: 200px;
     max-width: 50%;
     border: 1px solid #eee;
     border-radius: 4px;
     padding: 0.5rem;
     overflow-y: auto;
+    transition: width 0.3s ease, min-width 0.3s ease;
   }
+  .labels-list.collapsed {
+    width: 40px;
+    min-width: 40px;
+    padding: 0.25rem;
+  }
+
+  /* Center Panel: Editor + Instance Browser */
+  .labels-editor {
+    flex: 1;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    padding: 1rem;
+    overflow-y: auto;
+    min-width: 300px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Right Panel: Statistics */
+  .labels-statistics {
+    width: 25%;
+    min-width: 200px;
+    max-width: 40%;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    padding: 1rem;
+    overflow-y: auto;
+    transition: width 0.3s ease, min-width 0.3s ease;
+  }
+  .labels-statistics.collapsed {
+    width: 40px;
+    min-width: 40px;
+    padding: 0.25rem;
+  }
+
+  /* Resizers */
   .resizer {
     width: 8px;
     cursor: col-resize;
@@ -49,13 +88,32 @@
   .resizer.resizing {
     background: #2196f3;
   }
-  .labels-editor {
-    flex: 1;
-    border: 1px solid #eee;
+
+  /* Collapse/Expand Buttons */
+  .collapse-btn {
+    position: absolute;
+    top: 0.5rem;
+    background: #f0f0f0;
+    border: 1px solid #ddd;
     border-radius: 4px;
-    padding: 1rem;
-    overflow-y: auto;
-    min-width: 300px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 12px;
+    z-index: 10;
+    transition: background 0.2s;
+  }
+  .collapse-btn:hover {
+    background: #e0e0e0;
+  }
+  .collapse-btn-left {
+    right: 0.5rem;
+  }
+  .collapse-btn-right {
+    left: 0.5rem;
   }
   .label-item {
     padding: 0.5rem;
@@ -179,6 +237,7 @@
 <div class="labels-container">
   <!-- Left Panel: Label List -->
   <div class="labels-list" id="labels-list">
+    <button class="collapse-btn collapse-btn-left" id="collapse-left-btn" title="Collapse panel">◀</button>
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
       <h3 class="small" style="margin: 0;">Labels</h3>
     </div>
@@ -202,10 +261,10 @@
     </div>
   </div>
 
-  <!-- Resizer -->
-  <div class="resizer" id="resizer"></div>
+  <!-- Resizer (Left to Center) -->
+  <div class="resizer" id="resizer-left"></div>
 
-  <!-- Right Panel: Label Editor -->
+  <!-- Center Panel: Label Editor -->
   <div class="labels-editor" id="label-editor" style="display: none;">
     <h3 id="editor-title">New Label</h3>
 
@@ -242,6 +301,19 @@
       <button id="btn-save" class="btn btn-sm btn-success" data-testid="save-label-btn">Save</button>
       <button id="btn-delete" class="btn btn-sm btn-outline-danger" data-testid="delete-label-btn" style="display: none;">Delete</button>
       <button id="btn-pull-neo4j" class="btn btn-sm btn-outline-secondary" data-testid="pull-neo4j-btn" style="display: none;">Pull</button>
+    </div>
+  </div>
+
+  <!-- Resizer (Center to Right) -->
+  <div class="resizer" id="resizer-right"></div>
+
+  <!-- Right Panel: Statistics -->
+  <div class="labels-statistics" id="labels-statistics" style="display: none;">
+    <button class="collapse-btn collapse-btn-right" id="collapse-right-btn" title="Collapse panel">▶</button>
+    <h3 class="small">Statistics</h3>
+
+    <div id="statistics-content">
+      <div class="empty-state small">Select a label to view statistics</div>
     </div>
   </div>
 </div>
@@ -471,37 +543,78 @@ document.addEventListener('DOMContentLoaded', () => {
   // Keyboard navigation
   document.addEventListener('keydown', handleGlobalKeydown);
 
-  // Resizer functionality
-  const resizer = document.getElementById('resizer');
+  // Collapse/Expand functionality
+  const collapseLeftBtn = document.getElementById('collapse-left-btn');
+  const collapseRightBtn = document.getElementById('collapse-right-btn');
   const leftPanel = document.getElementById('labels-list');
+  const rightPanel = document.getElementById('labels-statistics');
+
+  collapseLeftBtn.addEventListener('click', () => {
+    leftPanel.classList.toggle('collapsed');
+    collapseLeftBtn.textContent = leftPanel.classList.contains('collapsed') ? '▶' : '◀';
+    collapseLeftBtn.title = leftPanel.classList.contains('collapsed') ? 'Expand panel' : 'Collapse panel';
+  });
+
+  collapseRightBtn.addEventListener('click', () => {
+    rightPanel.classList.toggle('collapsed');
+    collapseRightBtn.textContent = rightPanel.classList.contains('collapsed') ? '◀' : '▶';
+    collapseRightBtn.title = rightPanel.classList.contains('collapsed') ? 'Expand panel' : 'Collapse panel';
+  });
+
+  // Resizer functionality for both dividers
+  const resizerLeft = document.getElementById('resizer-left');
+  const resizerRight = document.getElementById('resizer-right');
   const container = document.querySelector('.labels-container');
 
-  let isResizing = false;
+  let activeResizer = null;
 
-  resizer.addEventListener('mousedown', (e) => {
-    isResizing = true;
+  function startResize(resizer) {
+    activeResizer = resizer;
     resizer.classList.add('resizing');
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
+  }
+
+  resizerLeft.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    startResize(resizerLeft);
+  });
+
+  resizerRight.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    startResize(resizerRight);
   });
 
   document.addEventListener('mousemove', (e) => {
-    if (!isResizing) return;
+    if (!activeResizer) return;
 
     const containerRect = container.getBoundingClientRect();
-    const newWidth = e.clientX - containerRect.left;
-    const minWidth = 200;
-    const maxWidth = containerRect.width * 0.5;
 
-    if (newWidth >= minWidth && newWidth <= maxWidth) {
-      leftPanel.style.width = `${newWidth}px`;
+    if (activeResizer === resizerLeft) {
+      // Resize left panel
+      const newWidth = e.clientX - containerRect.left;
+      const minWidth = leftPanel.classList.contains('collapsed') ? 40 : 200;
+      const maxWidth = containerRect.width * 0.5;
+
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        leftPanel.style.width = `${newWidth}px`;
+      }
+    } else if (activeResizer === resizerRight) {
+      // Resize right panel
+      const newWidth = containerRect.right - e.clientX;
+      const minWidth = rightPanel.classList.contains('collapsed') ? 40 : 200;
+      const maxWidth = containerRect.width * 0.4;
+
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        rightPanel.style.width = `${newWidth}px`;
+      }
     }
   });
 
   document.addEventListener('mouseup', () => {
-    if (isResizing) {
-      isResizing = false;
-      resizer.classList.remove('resizing');
+    if (activeResizer) {
+      activeResizer.classList.remove('resizing');
+      activeResizer = null;
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     }
@@ -1036,7 +1149,8 @@ function loadLabel(name) {
 }
 
 function showEditor() {
-  document.getElementById('label-editor').style.display = 'block';
+  document.getElementById('label-editor').style.display = 'flex';
+  document.getElementById('labels-statistics').style.display = 'block';
 }
 
 function clearEditor() {
@@ -1054,6 +1168,9 @@ function populateEditor(label) {
   document.getElementById('label-name').readOnly = true;
   document.getElementById('btn-delete').style.display = 'inline-block';
   document.getElementById('btn-pull-neo4j').style.display = 'inline-block';
+
+  // Populate statistics panel
+  populateStatistics(label);
 
   // Render properties
   const propsContainer = document.getElementById('properties-container');
@@ -1416,12 +1533,94 @@ async function batchDelete() {
       clearSelection();
       currentLabel = null;
       document.getElementById('label-editor').style.display = 'none';
+      document.getElementById('labels-statistics').style.display = 'none';
       loadLabels();
     } else {
       showToast('Batch delete error: ' + (result.error || 'Unknown error'), 'error');
     }
   } catch (e) {
     showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+function populateStatistics(label) {
+  const container = document.getElementById('statistics-content');
+
+  // Calculate statistics
+  const propertyCount = label.properties.length;
+  const requiredCount = label.properties.filter(p => p.required).length;
+  const optionalCount = propertyCount - requiredCount;
+  const outgoingRels = label.relationships.length;
+  const incomingRels = (label.incoming_relationships || []).length;
+  const totalRels = outgoingRels + incomingRels;
+
+  // Property type distribution
+  const typeDistribution = {};
+  label.properties.forEach(prop => {
+    typeDistribution[prop.type] = (typeDistribution[prop.type] || 0) + 1;
+  });
+
+  const typeDistHtml = Object.entries(typeDistribution).map(([type, count]) =>
+    `<div class="small" style="margin-left: 1rem;">• ${type}: ${count}</div>`
+  ).join('');
+
+  // Relationship details
+  const outgoingRelsHtml = label.relationships.map(rel =>
+    `<div class="small" style="margin-left: 1rem;">• [${rel.type}] → ${rel.target_label}</div>`
+  ).join('') || '<div class="small" style="margin-left: 1rem; color: #999;">None</div>';
+
+  const incomingRelsHtml = (label.incoming_relationships || []).map(rel =>
+    `<div class="small" style="margin-left: 1rem;">• ${rel.source_label} → [${rel.type}]</div>`
+  ).join('') || '<div class="small" style="margin-left: 1rem; color: #999;">None</div>';
+
+  container.innerHTML = `
+    <div style="margin-bottom: 1.5rem;">
+      <h4 class="small" style="font-weight: bold; margin-bottom: 0.5rem;">Properties</h4>
+      <div class="small">Total: <strong>${propertyCount}</strong></div>
+      <div class="small">Required: <strong>${requiredCount}</strong></div>
+      <div class="small">Optional: <strong>${optionalCount}</strong></div>
+      ${typeDistHtml ? '<div class="small" style="margin-top: 0.5rem; font-weight: bold;">Type Distribution:</div>' + typeDistHtml : ''}
+    </div>
+
+    <div style="margin-bottom: 1.5rem;">
+      <h4 class="small" style="font-weight: bold; margin-bottom: 0.5rem;">Relationships</h4>
+      <div class="small">Total: <strong>${totalRels}</strong></div>
+      <div class="small">Outgoing: <strong>${outgoingRels}</strong></div>
+      ${outgoingRelsHtml}
+      <div class="small" style="margin-top: 0.5rem;">Incoming: <strong>${incomingRels}</strong></div>
+      ${incomingRelsHtml}
+    </div>
+
+    <div style="margin-bottom: 1.5rem;">
+      <h4 class="small" style="font-weight: bold; margin-bottom: 0.5rem;">Instances</h4>
+      <div class="small" style="color: #999;">Instance count requires Neo4j connection</div>
+      <div class="small" style="margin-top: 0.5rem;">
+        <button class="btn btn-sm btn-outline-primary" onclick="loadInstanceCount('${label.name}')" style="font-size: 0.75rem;">
+          Check Neo4j
+        </button>
+      </div>
+      <div id="instance-count-${label.name}" style="margin-top: 0.5rem;"></div>
+    </div>
+  `;
+}
+
+async function loadInstanceCount(labelName) {
+  const countDiv = document.getElementById(`instance-count-${labelName}`);
+  countDiv.innerHTML = '<div class="small" style="color: #666;">Loading...</div>';
+
+  try {
+    // This endpoint doesn't exist yet, we'll implement it in Phase 3
+    const resp = await fetch(`/api/labels/${labelName}/instance-count`);
+    const result = await resp.json();
+
+    if (result.status === 'success') {
+      const count = result.count || 0;
+      countDiv.innerHTML = `<div class="small"><strong>${count}</strong> instance${count !== 1 ? 's' : ''} in Neo4j</div>`;
+    } else {
+      countDiv.innerHTML = `<div class="small" style="color: #b00020;">${result.error || 'Error loading count'}</div>`;
+    }
+  } catch (e) {
+    countDiv.innerHTML = `<div class="small" style="color: #b00020;">Error: ${e.message}</div>`;
   }
 }
 </script>
