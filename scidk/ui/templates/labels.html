@@ -1460,7 +1460,7 @@ function populateEditor(label) {
   } else {
     readonlyRelsContainer.innerHTML = label.relationships.map(rel => `
       <div class="readonly-relationship">
-        <strong>${label.name}</strong> -[${rel.type}]→ <a href="#" class="target-label-link" data-label="${rel.target_label}" style="color: var(--accent); text-decoration: none; font-weight: bold;">${rel.target_label}</a>
+        <em>${label.name}</em> —[<strong>${rel.type}</strong>]→ <a href="#" class="target-label-link" data-label="${rel.target_label}" style="color: var(--accent); text-decoration: none; font-weight: bold;">${rel.target_label}</a>
       </div>
     `).join('');
   }
@@ -1472,7 +1472,7 @@ function populateEditor(label) {
   } else {
     readonlyIncomingContainer.innerHTML = incomingRels.map(rel => `
       <div class="readonly-relationship">
-        <a href="#" class="source-label-link" data-label="${rel.source_label}" style="color: var(--accent); text-decoration: none; font-weight: bold;">${rel.source_label}</a> -[${rel.type}]→ <strong>${label.name}</strong>
+        <a href="#" class="source-label-link" data-label="${rel.source_label}" style="color: var(--accent); text-decoration: none; font-weight: bold;">${rel.source_label}</a> —[<strong>${rel.type}</strong>]→ <em>${label.name}</em>
       </div>
     `).join('');
   }
