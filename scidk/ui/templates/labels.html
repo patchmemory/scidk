@@ -181,8 +181,7 @@
     <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
       <button id="btn-save" class="btn btn-sm btn-success" data-testid="save-label-btn">Save</button>
       <button id="btn-delete" class="btn btn-sm btn-outline-danger" data-testid="delete-label-btn" style="display: none;">Delete</button>
-      <button id="btn-push-neo4j" class="btn btn-sm btn-outline-primary" data-testid="push-neo4j-btn" style="display: none;">Push to Neo4j</button>
-      <button id="btn-pull-neo4j" class="btn btn-sm btn-outline-secondary" data-testid="pull-neo4j-btn" style="display: none;">Pull Properties</button>
+      <button id="btn-pull-neo4j" class="btn btn-sm btn-outline-secondary" data-testid="pull-neo4j-btn" style="display: none;">Pull</button>
     </div>
   </div>
 </div>
@@ -253,13 +252,11 @@ document.addEventListener('DOMContentLoaded', () => {
     clearEditor();
     document.getElementById('editor-title').textContent = 'New Label';
     document.getElementById('btn-delete').style.display = 'none';
-    document.getElementById('btn-push-neo4j').style.display = 'none';
     document.getElementById('btn-pull-neo4j').style.display = 'none';
   });
 
   document.getElementById('btn-save').addEventListener('click', saveLabel);
   document.getElementById('btn-delete').addEventListener('click', deleteLabel);
-  document.getElementById('btn-push-neo4j').addEventListener('click', pushToNeo4j);
   document.getElementById('btn-pull-neo4j').addEventListener('click', pullFromNeo4j);
   document.getElementById('btn-pull-all-neo4j').addEventListener('click', pullAllFromNeo4j);
   document.getElementById('btn-add-property').addEventListener('click', addProperty);
@@ -389,7 +386,6 @@ function populateEditor(label) {
   document.getElementById('label-name').value = label.name;
   document.getElementById('label-name').readOnly = true;
   document.getElementById('btn-delete').style.display = 'inline-block';
-  document.getElementById('btn-push-neo4j').style.display = 'inline-block';
   document.getElementById('btn-pull-neo4j').style.display = 'inline-block';
 
   // Render properties
@@ -573,38 +569,31 @@ function deleteLabel() {
     .catch(err => showToast('Network error: ' + err.message, 'error'));
 }
 
-function pushToNeo4j() {
-  if (!currentLabel) return;
-
-  showToast('Pushing to Neo4j...', 'info');
-
-  fetch(`/api/labels/${currentLabel.name}/push`, { method: 'POST' })
-    .then(r => r.json())
-    .then(data => {
-      if (data.status === 'success') {
-        const msg = `Pushed to Neo4j. Constraints: ${data.constraints_created.length}`;
-        showToast(msg, 'success');
-      } else {
-        showToast('Error pushing to Neo4j: ' + (data.error || 'Unknown error'), 'error');
-      }
-    })
-    .catch(err => showToast('Network error: ' + err.message, 'error'));
-}
-
 function pullFromNeo4j() {
   if (!currentLabel) return;
 
-  if (!confirm(`Pull properties for "${currentLabel.name}" from Neo4j? This will add any missing properties from the Neo4j schema.`)) return;
+  if (!confirm(`Pull schema for "${currentLabel.name}" from Neo4j? This will add any missing properties and relationships from the Neo4j schema.`)) return;
 
-  showToast('Pulling properties from Neo4j...', 'info');
+  showToast('Pulling from Neo4j...', 'info');
 
   fetch(`/api/labels/${currentLabel.name}/pull`, { method: 'POST' })
     .then(r => r.json())
     .then(data => {
       if (data.status === 'success') {
-        const msg = data.new_properties_count > 0
-          ? `Added ${data.new_properties_count} new properties from Neo4j`
-          : 'No new properties found in Neo4j';
+        const propCount = data.new_properties_count || 0;
+        const relCount = data.new_relationships_count || 0;
+        const total = propCount + relCount;
+
+        let msg = '';
+        if (total === 0) {
+          msg = 'No new schema found in Neo4j';
+        } else {
+          const parts = [];
+          if (propCount > 0) parts.push(`${propCount} property${propCount > 1 ? 'ies' : ''}`);
+          if (relCount > 0) parts.push(`${relCount} relationship${relCount > 1 ? 's' : ''}`);
+          msg = `Added ${parts.join(' and ')} from Neo4j`;
+        }
+
         showToast(msg, 'success');
         loadLabel(currentLabel.name);
       } else {

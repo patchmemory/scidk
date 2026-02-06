@@ -269,7 +269,7 @@ class LabelService:
 
     def pull_label_properties_from_neo4j(self, name: str) -> Dict[str, Any]:
         """
-        Pull properties for a specific label from Neo4j and merge with existing definition.
+        Pull properties and relationships for a specific label from Neo4j and merge with existing definition.
 
         Args:
             name: Label name
@@ -289,21 +289,21 @@ class LabelService:
                 raise Exception("Neo4j client not configured")
 
             # Query for properties of this specific label
-            query = """
+            props_query = """
             CALL db.schema.nodeTypeProperties()
             YIELD nodeType, propertyName, propertyTypes
             WHERE nodeType = $nodeType
             RETURN propertyName, propertyTypes
             """
 
-            results = neo4j_client.execute_read(query, {'nodeType': f':{name}'})
+            props_results = neo4j_client.execute_read(props_query, {'nodeType': f':{name}'})
 
             # Get existing property names to avoid duplicates
             existing_props = {p['name'] for p in label_def.get('properties', [])}
 
             # Map properties from Neo4j
             new_properties = []
-            for record in results:
+            for record in props_results:
                 prop_name = record.get('propertyName')
                 prop_types = record.get('propertyTypes', [])
 
@@ -330,20 +330,57 @@ class LabelService:
                     'required': False  # Can't determine from schema introspection
                 })
 
-            # Merge with existing properties
+            # Query for relationships originating from this label
+            rels_query = """
+            CALL db.schema.relTypeProperties()
+            YIELD sourceNodeType, relType, targetNodeType, propertyName, propertyTypes
+            WHERE sourceNodeType = $nodeType
+            RETURN DISTINCT relType, targetNodeType
+            """
+
+            rels_results = neo4j_client.execute_read(rels_query, {'nodeType': f':{name}'})
+
+            # Get existing relationships to avoid duplicates (by type + target combination)
+            existing_rels = {(r['type'], r['target_label']) for r in label_def.get('relationships', [])}
+
+            # Map relationships from Neo4j
+            new_relationships = []
+            for record in rels_results:
+                rel_type = record.get('relType')
+                target_type = record.get('targetNodeType')
+
+                # Clean target label (remove leading : and backticks)
+                if target_type and target_type.startswith(':'):
+                    target_label = target_type[1:].strip('`')
+                else:
+                    continue
+
+                # Skip if already exists
+                if (rel_type, target_label) in existing_rels:
+                    continue
+
+                new_relationships.append({
+                    'type': rel_type,
+                    'target_label': target_label,
+                    'properties': []
+                })
+
+            # Merge with existing properties and relationships
             all_properties = label_def.get('properties', []) + new_properties
+            all_relationships = label_def.get('relationships', []) + new_relationships
 
             # Update label
             updated_label = self.save_label({
                 'name': name,
                 'properties': all_properties,
-                'relationships': label_def.get('relationships', [])
+                'relationships': all_relationships
             })
 
             return {
                 'status': 'success',
                 'label': updated_label,
-                'new_properties_count': len(new_properties)
+                'new_properties_count': len(new_properties),
+                'new_relationships_count': len(new_relationships)
             }
         except Exception as e:
             return {
