@@ -1157,23 +1157,35 @@ function clearLabelNavigationState() {
 
 function loadLabels() {
   console.log('loadLabels() executing, fetching /api/labels');
+  const container = document.getElementById('label-list');
+  container.innerHTML = '<div class="empty-state small" style="padding: 2rem; text-align: center;">Loading labels...</div>';
+
   fetch('/api/labels')
     .then(r => {
-      console.log('loadLabels() got response');
+      console.log('loadLabels() got response, status:', r.status);
+      if (!r.ok) {
+        throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+      }
       return r.json();
     })
     .then(data => {
-      console.log('loadLabels() got data:', data);
+      console.log('loadLabels() got data, count:', (data.labels || []).length);
       if (data.status === 'success') {
         labels = data.labels || [];
         renderLabelList();
+        if (labels.length === 0) {
+          console.log('No labels found. Try clicking "Pull All" to import from Neo4j.');
+        }
       } else {
+        console.error('API returned error:', data.error);
         showToast('Error loading labels: ' + (data.error || 'Unknown error'), 'error');
+        container.innerHTML = '<div class="empty-state small">Error loading labels. Check console.</div>';
       }
     })
     .catch(err => {
       console.error('loadLabels() error:', err);
       showToast('Network error: ' + err.message, 'error');
+      container.innerHTML = '<div class="empty-state small">Network error. Check console.</div>';
     });
 }
 
