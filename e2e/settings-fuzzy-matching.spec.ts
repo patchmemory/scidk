@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test.describe('Settings - Fuzzy Matching', () => {
   test.beforeEach(async ({ page, baseURL }) => {
     const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
-    await page.goto(`${base}/settings#links`);
+    await page.goto(`${base}/settings#integrations`);
     await page.waitForLoadState('domcontentloaded');
     await page.waitForSelector('[data-testid="fuzzy-algorithm"]');
     await page.waitForLoadState('networkidle');

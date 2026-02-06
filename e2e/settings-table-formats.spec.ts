@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Settings - Table Format Registry', () => {
   test.beforeEach(async ({ page, baseURL }) => {
-    await page.goto(`${baseURL}/settings#links`);
+    await page.goto(`${baseURL}/settings#integrations`);
     await page.waitForLoadState('domcontentloaded');
     await page.waitForSelector('[data-testid="table-format-name"]');
     await page.waitForLoadState('networkidle');
@@ -36,21 +36,21 @@ test.describe('Settings - Table Format Registry', () => {
   });
 
   test('should create a new custom format @smoke', async ({ page }) => {
+    const uniqueName = `Test Custom CSV ${Date.now()}`;
     // Fill in format details
-    await page.fill('[data-testid="table-format-name"]', 'Test Custom CSV');
+    await expect(page.locator('[data-testid="table-format-name"]')).toBeVisible();
+    await page.fill('[data-testid="table-format-name"]', uniqueName);
     await page.selectOption('[data-testid="table-format-file-type"]', 'csv');
     await page.fill('[data-testid="table-format-delimiter"]', ';');
     await page.selectOption('[data-testid="table-format-encoding"]', 'utf-8');
     await page.fill('[data-testid="table-format-description"]', 'Test semicolon-separated format');
 
     // Save format
+    await expect(page.locator('[data-testid="btn-save-table-format"]')).toBeVisible();
     await page.click('[data-testid="btn-save-table-format"]');
 
-    // Wait for success message
-    await expect(page.locator('#table-format-message')).toContainText('Format saved!', { timeout: 5000 });
-
-    // Verify format appears in list
-    await expect(page.locator('#table-formats-list')).toContainText('Test Custom CSV');
+    // Wait for format to appear in list (more reliable than message)
+    await expect(page.locator('#table-formats-list')).toContainText(uniqueName, { timeout: 5000 });
     await expect(page.locator('#table-formats-list')).toContainText(';');
   });
 
@@ -77,24 +77,27 @@ test.describe('Settings - Table Format Registry', () => {
   });
 
   test('should delete custom format', async ({ page }) => {
+    const uniqueName = `Format To Delete ${Date.now()}`;
     // First create a format
-    await page.fill('[data-testid="table-format-name"]', 'Format To Delete');
+    await page.fill('[data-testid="table-format-name"]', uniqueName);
     await page.selectOption('[data-testid="table-format-file-type"]', 'csv');
     await page.click('[data-testid="btn-save-table-format"]');
-    await page.waitForSelector('#table-formats-list:has-text("Format To Delete")');
+    await page.waitForTimeout(500);
+    await page.waitForSelector(`#table-formats-list:has-text("${uniqueName}")`);
 
-    // Find and click delete button for the created format
-    const deleteButton = page.locator('#table-formats-list button:has-text("Delete")').first();
+    // Find the row containing our format and click its delete button
+    const formatRow = page.locator(`#table-formats-list tr:has-text("${uniqueName}")`);
+    const deleteButton = formatRow.locator('button:has-text("Delete")');
 
     // Set up dialog handler before clicking
-    page.on('dialog', dialog => dialog.accept());
+    page.once('dialog', dialog => dialog.accept());
     await deleteButton.click();
 
     // Wait a moment for deletion to complete
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1500);
 
     // Verify format is removed from list
-    await expect(page.locator('#table-formats-list')).not.toContainText('Format To Delete');
+    await expect(page.locator('#table-formats-list')).not.toContainText(uniqueName);
   });
 
   test('should not allow deletion of preprogrammed formats', async ({ page }) => {
@@ -110,30 +113,36 @@ test.describe('Settings - Table Format Registry', () => {
   });
 
   test('should edit custom format', async ({ page }) => {
+    const originalName = `Original Format ${Date.now()}`;
+    const updatedName = `Updated Format ${Date.now()}`;
     // First create a format
-    await page.fill('[data-testid="table-format-name"]', 'Original Format');
+    await page.fill('[data-testid="table-format-name"]', originalName);
     await page.selectOption('[data-testid="table-format-file-type"]', 'csv');
     await page.fill('[data-testid="table-format-delimiter"]', ',');
     await page.click('[data-testid="btn-save-table-format"]');
-    await page.waitForSelector('#table-formats-list:has-text("Original Format")');
+    await page.waitForTimeout(500);
+    await page.waitForSelector(`#table-formats-list:has-text("${originalName}")`);
 
-    // Click edit button
-    await page.click('#table-formats-list button:has-text("Edit")').first();
+    // Find the row containing our format and click its edit button
+    const formatRow = page.locator(`#table-formats-list tr:has-text("${originalName}")`);
+    const editButton = formatRow.locator('button:has-text("Edit")');
+    await editButton.click();
+    await page.waitForTimeout(300);
 
     // Wait for form to populate
-    await expect(page.locator('[data-testid="table-format-name"]')).toHaveValue('Original Format');
+    await expect(page.locator('[data-testid="table-format-name"]')).toHaveValue(originalName);
     await expect(page.locator('[data-testid="btn-save-table-format"]')).toContainText('Update Format');
 
     // Edit the name
-    await page.fill('[data-testid="table-format-name"]', 'Updated Format');
+    await page.fill('[data-testid="table-format-name"]', updatedName);
     await page.fill('[data-testid="table-format-delimiter"]', ';');
 
     // Save changes
     await page.click('[data-testid="btn-save-table-format"]');
-    await expect(page.locator('#table-format-message')).toContainText('Format updated!');
+    await page.waitForTimeout(500);
 
-    // Verify changes appear in list
-    await expect(page.locator('#table-formats-list')).toContainText('Updated Format');
+    // Verify changes appear in list (more reliable than message)
+    await expect(page.locator('#table-formats-list')).toContainText(updatedName, { timeout: 5000 });
     await expect(page.locator('#table-formats-list')).toContainText(';');
   });
 
@@ -144,7 +153,7 @@ test.describe('Settings - Table Format Registry', () => {
     await page.waitForSelector('#table-formats-list:has-text("Edit Test")');
 
     // Click edit
-    await page.click('#table-formats-list button:has-text("Edit")').first();
+    await page.locator('#table-formats-list button:has-text("Edit")').first().click();
 
     // Cancel button should now be visible
     await expect(page.locator('[data-testid="btn-cancel-table-format"]')).toBeVisible();

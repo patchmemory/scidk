@@ -983,6 +983,13 @@ function handleGlobalKeydown(e) {
   // Don't handle other keys if user is typing
   if (isTyping) return;
 
+  // Don't handle side panel navigation if focus is in the editor
+  const isInEditor = activeElement && activeElement.closest('#label-editor');
+  if (isInEditor && (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'Home' || e.key === 'End')) {
+    // Focus is in editor, don't trigger side panel navigation
+    return;
+  }
+
   // Check if shift is held for range selection
   const shiftHeld = e.shiftKey;
 

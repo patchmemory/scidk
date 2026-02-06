@@ -14,17 +14,17 @@ test('links page loads and displays empty state', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
 
   // Navigate to Links page
-  await page.goto(`${base}/links`);
+  await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
 
   // Verify page loads
-  await expect(page).toHaveTitle(/SciDK - Links/i, { timeout: 10_000 });
+  await expect(page).toHaveTitle(/-SciDK-> Integrations/i, { timeout: 10_000 });
 
   // Check for new link button
-  await expect(page.getByTestId('new-link-btn')).toBeVisible();
+  await expect(page.getByTestId('new-integration-btn')).toBeVisible();
 
   // Check for link list
-  await expect(page.getByTestId('link-list')).toBeVisible();
+  await expect(page.getByTestId('integration-list')).toBeVisible();
 
   // No console errors
   const errors = consoleMessages.filter((m) => m.type === 'error');
@@ -38,22 +38,23 @@ test('links navigation link is visible in header', async ({ page, baseURL }) => 
   await page.waitForLoadState('networkidle');
 
   // Check that Links link exists in navigation
-  const linksLink = page.getByTestId('nav-links');
+  const linksLink = page.getByTestId('nav-integrate');
   await expect(linksLink).toBeVisible();
 
   // Click it and verify we navigate to links page
   await linksLink.click();
   await page.waitForLoadState('networkidle');
-  await expect(page).toHaveTitle(/SciDK - Links/i);
+  await expect(page).toHaveTitle(/-SciDK-> Integrations/i);
 });
 
 test('wizard navigation: can navigate through all 3 steps (Label→Label refactor)', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
-  await page.goto(`${base}/links`);
+  await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
 
   // Click "New Link" button
-  await page.getByTestId('new-link-btn').click();
+  await page.getByTestId('new-integration-btn').click();
+  await expect(page.locator('#link-wizard')).toBeVisible();
 
   // Verify wizard is visible
   await expect(page.locator('#link-wizard')).toBeVisible();
@@ -62,7 +63,7 @@ test('wizard navigation: can navigate through all 3 steps (Label→Label refacto
   await expect(page.locator('.wizard-step[data-step="1"]')).toHaveClass(/active/);
 
   // Enter link name and select source label
-  await page.getByTestId('link-name').fill('Test Link');
+  await page.getByTestId('integration-name').fill('Test Link');
   await page.getByTestId('source-label-select').selectOption({ index: 1 }); // Select first label
 
   // Click Next to go to step 2 (Match Strategy)
@@ -110,30 +111,37 @@ test('can create table import link definition (Label→Label refactor)', async (
   await page.waitForTimeout(500);
 
   // Now go to Links page
-  await page.goto(`${base}/links`);
+  await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
 
   // Click "New Link" button
-  await page.getByTestId('new-link-btn').click();
+  await page.getByTestId('new-integration-btn').click();
+  await expect(page.locator('#link-wizard')).toBeVisible();
 
   // Step 1: Select Source Label
-  await page.getByTestId('link-name').fill('Import Authors to Files');
+  await page.getByTestId('integration-name').fill('Import Authors to Files');
   await page.getByTestId('source-label-select').selectOption('Author');
 
   // Go to Step 2
   await page.locator('#btn-next').click();
+  await page.waitForTimeout(300);
 
   // Step 2: Configure Match Strategy (table_import)
+  await expect(page.locator('.match-strategy-btn[data-strategy="table_import"]')).toBeVisible();
   await page.locator('.match-strategy-btn[data-strategy="table_import"]').click();
+  await page.waitForTimeout(300);
 
   // Enter table data
   const csvData = 'name,email,file_path\nAlice,alice@ex.com,file1.txt\nBob,bob@ex.com,file2.txt';
+  await expect(page.locator('#table-data')).toBeVisible();
   await page.locator('#table-data').fill(csvData);
 
   // Go to Step 3
   await page.locator('#btn-next').click();
+  await page.waitForTimeout(300);
 
   // Step 3: Target Label & Relationship
+  await expect(page.getByTestId('target-label-select')).toBeVisible();
   await page.getByTestId('target-label-select').selectOption('File');
   await page.getByTestId('rel-type').fill('AUTHORED');
 
@@ -145,6 +153,7 @@ test('can create table import link definition (Label→Label refactor)', async (
   await propRows.locator('[data-prop-value]').fill('2024-01-15');
 
   // Save the definition
+  await expect(page.locator('#btn-save-def')).toBeVisible();
   await page.locator('#btn-save-def').click();
   await page.waitForTimeout(1500); // Wait for save
 
@@ -182,14 +191,15 @@ test('can create Label to Label link definition with property matching', async (
   await page.waitForTimeout(500);
 
   // Now go to Links page
-  await page.goto(`${base}/links`);
+  await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
 
   // Click "New Link" button
-  await page.getByTestId('new-link-btn').click();
+  await page.getByTestId('new-integration-btn').click();
+  await expect(page.locator('#link-wizard')).toBeVisible();
 
   // Step 1: Select Source Label
-  await page.getByTestId('link-name').fill('Person to Document Link');
+  await page.getByTestId('integration-name').fill('Person to Document Link');
   await page.getByTestId('source-label-select').selectOption('Person');
 
   // Go to Step 2
@@ -207,6 +217,7 @@ test('can create Label to Label link definition with property matching', async (
   await page.getByTestId('rel-type').fill('AUTHORED');
 
   // Save the definition
+  await expect(page.locator('#btn-save-def')).toBeVisible();
   await page.locator('#btn-save-def').click();
   await page.waitForTimeout(1500);
 
@@ -239,12 +250,13 @@ test('can save and load link definition', async ({ page, baseURL }) => {
   await page.waitForTimeout(500);
 
   // Now go to Links
-  await page.goto(`${base}/links`);
+  await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
 
   // Create a link definition
-  await page.getByTestId('new-link-btn').click();
-  await page.getByTestId('link-name').fill(uniqueName);
+  await page.getByTestId('new-integration-btn').click();
+  await expect(page.locator('#link-wizard')).toBeVisible();
+  await page.getByTestId('integration-name').fill(uniqueName);
   await page.getByTestId('source-label-select').selectOption('SaveLoadSource');
   await page.locator('#btn-next').click();
   await page.locator('.match-strategy-btn[data-strategy="property"]').click();
@@ -253,6 +265,7 @@ test('can save and load link definition', async ({ page, baseURL }) => {
   await page.locator('#btn-next').click();
   await page.getByTestId('target-label-select').selectOption('SaveLoadTarget');
   await page.getByTestId('rel-type').fill('TEST_REL');
+  await expect(page.locator('#btn-save-def')).toBeVisible();
   await page.locator('#btn-save-def').click();
   await page.waitForTimeout(1500);
 
@@ -262,7 +275,7 @@ test('can save and load link definition', async ({ page, baseURL }) => {
   await page.waitForTimeout(500);
 
   // Verify wizard is populated with saved data
-  await expect(page.getByTestId('link-name')).toHaveValue(uniqueName);
+  await expect(page.getByTestId('integration-name')).toHaveValue(uniqueName);
 
   // Check that source label is selected
   await expect(page.getByTestId('source-label-select')).toHaveValue('SaveLoadSource');
@@ -291,7 +304,7 @@ test('can delete link definition', async ({ page, baseURL }) => {
   page.on('console', msg => consoleLogs.push(`[${msg.type()}] ${msg.text()}`));
   page.on('pageerror', err => consoleLogs.push(`[ERROR] ${err.message}`));
 
-  await page.goto(`${base}/links`);
+  await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
 
   const uniqueName = `To Delete ${Date.now()}`;
@@ -305,15 +318,17 @@ test('can delete link definition', async ({ page, baseURL }) => {
   await page.waitForTimeout(500);
 
   // Now create a link definition
-  await page.goto(`${base}/links`);
+  await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
-  await page.getByTestId('new-link-btn').click();
-  await page.getByTestId('link-name').fill(uniqueName);
+  await page.getByTestId('new-integration-btn').click();
+  await expect(page.locator('#link-wizard')).toBeVisible();
+  await page.getByTestId('integration-name').fill(uniqueName);
   await page.getByTestId('source-label-select').selectOption('DeleteTest');
   await page.locator('#btn-next').click();
   await page.locator('#btn-next').click();
   await page.getByTestId('target-label-select').selectOption('DeleteTest');
   await page.getByTestId('rel-type').fill('DELETE_ME');
+  await expect(page.locator('#btn-save-def')).toBeVisible();
   await page.locator('#btn-save-def').click();
   await page.waitForTimeout(1500);
 
@@ -359,30 +374,33 @@ test('can delete link definition', async ({ page, baseURL }) => {
 
 test('validation: cannot save without name', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
-  await page.goto(`${base}/links`);
+  await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
 
   // Create new link but don't enter name
-  await page.getByTestId('new-link-btn').click();
+  await page.getByTestId('new-integration-btn').click();
+  await expect(page.locator('#link-wizard')).toBeVisible();
 
   // Try to save without name
+  await expect(page.locator('#btn-save-def')).toBeVisible();
   await page.locator('#btn-save-def').click();
   await page.waitForTimeout(500);
 
   // Should still be on wizard (not saved)
-  await expect(page.getByTestId('link-name')).toBeVisible();
-  const value = await page.getByTestId('link-name').inputValue();
+  await expect(page.getByTestId('integration-name')).toBeVisible();
+  const value = await page.getByTestId('integration-name').inputValue();
   expect(value).toBe('');
 });
 
 test('validation: cannot save without relationship type', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
-  await page.goto(`${base}/links`);
+  await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
 
   // Create new link with name but no relationship type
-  await page.getByTestId('new-link-btn').click();
-  await page.getByTestId('link-name').fill('No Rel Type');
+  await page.getByTestId('new-integration-btn').click();
+  await expect(page.locator('#link-wizard')).toBeVisible();
+  await page.getByTestId('integration-name').fill('No Rel Type');
 
   // Navigate to step 3
   await page.locator('#btn-next').click();
@@ -391,6 +409,7 @@ test('validation: cannot save without relationship type', async ({ page, baseURL
   // Don't enter relationship type
 
   // Try to save
+  await expect(page.locator('#btn-save-def')).toBeVisible();
   await page.locator('#btn-save-def').click();
   await page.waitForTimeout(500);
 
@@ -402,10 +421,11 @@ test('validation: cannot save without relationship type', async ({ page, baseURL
 
 test('Label→Label: source and target are label dropdowns', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
-  await page.goto(`${base}/links`);
+  await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
 
-  await page.getByTestId('new-link-btn').click();
+  await page.getByTestId('new-integration-btn').click();
+  await expect(page.locator('#link-wizard')).toBeVisible();
 
   // Step 1: Source label dropdown should be visible
   await expect(page.getByTestId('source-label-select')).toBeVisible();
@@ -420,10 +440,11 @@ test('Label→Label: source and target are label dropdowns', async ({ page, base
 
 test('can switch between match strategies (Label→Label refactor)', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
-  await page.goto(`${base}/links`);
+  await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
 
-  await page.getByTestId('new-link-btn').click();
+  await page.getByTestId('new-integration-btn').click();
+  await expect(page.locator('#link-wizard')).toBeVisible();
 
   // Navigate to step 2 (Match Strategy)
   await page.locator('#btn-next').click();
@@ -457,10 +478,11 @@ test('can switch between match strategies (Label→Label refactor)', async ({ pa
 
 test('can add and remove relationship properties', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
-  await page.goto(`${base}/links`);
+  await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
 
-  await page.getByTestId('new-link-btn').click();
+  await page.getByTestId('new-integration-btn').click();
+  await expect(page.locator('#link-wizard')).toBeVisible();
 
   // Navigate to step 3
   await page.locator('#btn-next').click();
@@ -489,7 +511,7 @@ test('can add and remove relationship properties', async ({ page, baseURL }) => 
 
 test('wizard visual summary: step circles show summaries for completed steps', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
-  await page.goto(`${base}/links`);
+  await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
 
   // Create test labels first
@@ -509,16 +531,17 @@ test('wizard visual summary: step circles show summaries for completed steps', a
   await page.waitForTimeout(500);
 
   // Go back to Links
-  await page.goto(`${base}/links`);
+  await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
-  await page.getByTestId('new-link-btn').click();
+  await page.getByTestId('new-integration-btn').click();
+  await expect(page.locator('#link-wizard')).toBeVisible();
 
   // Step 1: Initial state should show "1"
   let step1Circle = page.getByTestId('step-1-circle');
   await expect(step1Circle).toHaveText('1');
 
   // Fill out Step 1
-  await page.getByTestId('link-name').fill('Test Visual Summary');
+  await page.getByTestId('integration-name').fill('Test Visual Summary');
   await page.getByTestId('source-label-select').selectOption('Person');
 
   // Navigate to Step 2

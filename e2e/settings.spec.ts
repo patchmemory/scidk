@@ -18,7 +18,7 @@ test('settings page loads and displays system information', async ({ page, baseU
   await page.waitForLoadState('networkidle');
 
   // Verify page loads
-  await expect(page).toHaveTitle(/SciDK - Settings/i, { timeout: 10_000 });
+  await expect(page).toHaveTitle(/-SciDK-> Settings/i, { timeout: 10_000 });
 
   // Check for sidebar navigation
   await expect(page.locator('.settings-sidebar')).toBeVisible();
@@ -57,7 +57,7 @@ test('settings navigation link is visible in header', async ({ page, baseURL }) 
   // Click it and verify we navigate to settings page
   await settingsLink.click();
   await page.waitForLoadState('networkidle');
-  await expect(page).toHaveTitle(/SciDK - Settings/i);
+  await expect(page).toHaveTitle(/-SciDK-> Settings/i);
 });
 
 test('neo4j connection form has all required inputs', async ({ page, baseURL }) => {
@@ -437,7 +437,7 @@ test('settings page sidebar navigation works', async ({ page, baseURL }) => {
   await page.waitForLoadState('networkidle');
 
   // Verify we're at settings page
-  await expect(page).toHaveTitle(/SciDK - Settings/i);
+  await expect(page).toHaveTitle(/-SciDK-> Settings/i);
 
   // General section should be active by default
   const generalSection = page.locator('#general-section');

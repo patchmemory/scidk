@@ -7,45 +7,52 @@ import { test, expect } from '@playwright/test';
 
 test('links page api source inputs are functional', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
-  await page.goto(`${base}/links`);
+  await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
 
   // Wait for labels to load (Links page needs labels for dropdowns)
   await page.waitForTimeout(2000);
 
   // Create new link
-  await page.getByTestId('new-link-btn').click();
+  await page.getByTestId('new-integration-btn').click();
 
-  // Switch to API source type
-  const apiSourceButton = page.locator('button').filter({ hasText: /^API$/i });
-  if (await apiSourceButton.count() > 0) {
-    await apiSourceButton.click();
-    await page.waitForTimeout(300);
+  // Wait for wizard to appear
+  await expect(page.locator('#link-wizard')).toBeVisible();
 
-    // Test API URL input
-    const apiUrlInput = page.locator('#api-url');
-    await expect(apiUrlInput).toBeVisible();
-    await apiUrlInput.fill('https://api.example.com/data');
-    await expect(apiUrlInput).toHaveValue('https://api.example.com/data');
+  // Navigate to Step 2 (Match Strategy) where API option is
+  await page.locator('#btn-next').click();
+  await page.waitForTimeout(300);
 
-    // Test JSONPath input
-    const jsonPathInput = page.locator('#api-jsonpath');
-    await expect(jsonPathInput).toBeVisible();
-    await jsonPathInput.fill('$.data[*]');
-    await expect(jsonPathInput).toHaveValue('$.data[*]');
-  }
+  // Switch to API match strategy (button has emoji: "🔌 API")
+  const apiStrategyButton = page.locator('.match-strategy-btn[data-strategy="api_endpoint"]');
+  await expect(apiStrategyButton).toBeVisible();
+  await apiStrategyButton.click();
+  await page.waitForTimeout(300);
+
+  // Test API URL input
+  const apiUrlInput = page.locator('#api-url');
+  await expect(apiUrlInput).toBeVisible();
+  await apiUrlInput.fill('https://api.example.com/data');
+  await expect(apiUrlInput).toHaveValue('https://api.example.com/data');
+
+  // Test JSONPath input
+  const jsonPathInput = page.locator('#api-jsonpath');
+  await expect(jsonPathInput).toBeVisible();
+  await jsonPathInput.fill('$.data[*]');
+  await expect(jsonPathInput).toHaveValue('$.data[*]');
 });
 
 test('links page target graph label input is functional', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
-  await page.goto(`${base}/links`);
+  await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
 
   // Wait for labels to load (Links page needs labels for dropdowns)
   await page.waitForTimeout(2000);
 
   // Create new link
-  await page.getByTestId('new-link-btn').click();
+  await page.getByTestId('new-integration-btn').click();
+  await expect(page.locator('#link-wizard')).toBeVisible();
 
   // Navigate to target step (wizard has: source -> target -> matching -> relationship)
   const nextButton = page.locator('#btn-next');
@@ -78,14 +85,15 @@ test('links page target graph label input is functional', async ({ page, baseURL
 
 test('links page cypher matching query input is functional', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
-  await page.goto(`${base}/links`);
+  await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
 
   // Wait for labels to load (Links page needs labels for dropdowns)
   await page.waitForTimeout(2000);
 
   // Create new link
-  await page.getByTestId('new-link-btn').click();
+  await page.getByTestId('new-integration-btn').click();
+  await expect(page.locator('#link-wizard')).toBeVisible();
 
   // Navigate through wizard to matching step (4 steps to reach matching)
   const nextButton = page.locator('#btn-next');
@@ -118,14 +126,15 @@ test('links page cypher matching query input is functional', async ({ page, base
 
 test('links page preview button is present', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
-  await page.goto(`${base}/links`);
+  await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
 
   // Wait for labels to load (Links page needs labels for dropdowns)
   await page.waitForTimeout(2000);
 
   // Create new link
-  await page.getByTestId('new-link-btn').click();
+  await page.getByTestId('new-integration-btn').click();
+  await expect(page.locator('#link-wizard')).toBeVisible();
 
   // Navigate through wizard
   const nextButton = page.locator('#btn-next');
@@ -155,7 +164,7 @@ test('links page preview button is present', async ({ page, baseURL }) => {
 
 test('links page execute button is present and functional', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
-  await page.goto(`${base}/links`);
+  await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
 
   // Wait for labels to load (Links page needs labels for dropdowns)
@@ -174,7 +183,7 @@ test('links page execute button is present and functional', async ({ page, baseU
       await expect(executeButton).toBeVisible();
 
       // Mock API to prevent actual execution
-      await page.route('**/api/links/*/execute', async (route) => {
+      await page.route('**/api/integrate/*/execute', async (route) => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -191,7 +200,7 @@ test('links page execute button is present and functional', async ({ page, baseU
     }
   } else {
     // Create a new link and save it first
-    await page.getByTestId('new-link-btn').click();
+    await page.getByTestId('new-integration-btn').click();
 
     // Fill in minimal link data
     await page.locator('#link-name').fill('Test Execute Link');

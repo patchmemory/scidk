@@ -136,7 +136,7 @@ test('navigation covers all 7 pages', async ({ page, baseURL }) => {
     { testId: 'nav-maps', url: '/map', titlePattern: /Map/i },
     { testId: 'nav-chats', url: '/chat', titlePattern: /Chat/i },
     { testId: 'nav-labels', url: '/labels', titlePattern: /Labels/i },
-    { testId: 'nav-links', url: '/links', titlePattern: /Links/i },
+    { testId: 'nav-integrate', url: '/integrate', titlePattern: /-SciDK-> Integrations/i },
     { testId: 'nav-settings', url: '/settings', titlePattern: /Settings/i },
   ];
 

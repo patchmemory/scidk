@@ -34,7 +34,7 @@ test('labels page loads and displays empty state', async ({ page, baseURL }) => 
   await page.waitForLoadState('networkidle');
 
   // Verify page loads
-  await expect(page).toHaveTitle(/SciDK - Labels/i, { timeout: 10_000 });
+  await expect(page).toHaveTitle(/-SciDK-> Labels/i, { timeout: 10_000 });
 
   // Check for new label button
   await expect(page.getByTestId('new-label-btn')).toBeVisible();
@@ -60,7 +60,7 @@ test('labels navigation link is visible in header', async ({ page, baseURL }) =>
   // Click it and verify we navigate to labels page
   await labelsLink.click();
   await page.waitForLoadState('networkidle');
-  await expect(page).toHaveTitle(/SciDK - Labels/i);
+  await expect(page).toHaveTitle(/-SciDK-> Labels/i);
 });
 
 test('complete label workflow: create → edit → delete', async ({ page, baseURL }) => {
@@ -123,8 +123,8 @@ test('complete label workflow: create → edit → delete', async ({ page, baseU
   const editPropertyRows = page.getByTestId('property-row');
   await expect(editPropertyRows).toHaveCount(2);
 
-  // Step 8: Delete the label
-  const deleteBtn = page.getByTestId('delete-label-btn');
+  // Step 8: Delete the label (use readonly button since we're in read-only mode)
+  const deleteBtn = page.getByTestId('delete-label-readonly-btn');
   await expect(deleteBtn).toBeVisible();
 
   // Handle confirmation dialog
@@ -198,7 +198,7 @@ test('can add and remove multiple properties', async ({ page, baseURL }) => {
   // Cleanup: delete the label
   await foundLabel!.click();
   page.on('dialog', async (dialog) => await dialog.accept());
-  await page.getByTestId('delete-label-btn').click();
+  await page.getByTestId('delete-label-readonly-btn').click();
   await page.waitForTimeout(500);
 });
 
@@ -239,7 +239,7 @@ test('can create label with relationships', async ({ page, baseURL }) => {
     const item = labelItems.filter({ hasText: labelName });
     await item.click();
     await page.waitForTimeout(300);
-    await page.getByTestId('delete-label-btn').click();
+    await page.getByTestId('delete-label-readonly-btn').click();
     await page.waitForTimeout(500);
   }
 });
@@ -309,7 +309,7 @@ test('neo4j: push label to neo4j', async ({ page, baseURL, request: pageRequest 
   page.on('dialog', async (dialog) => await dialog.accept());
   await ourLabel!.click();
   await page.waitForTimeout(300);
-  await page.getByTestId('delete-label-btn').click();
+  await page.getByTestId('delete-label-readonly-btn').click();
   await page.waitForTimeout(500);
 });
 

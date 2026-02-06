@@ -6,7 +6,7 @@ test.describe('Settings - API Endpoints', () => {
     const response = await fetch(`${baseURL}/api/admin/cleanup-test-endpoints`, { method: 'POST' });
     await response.json(); // Wait for cleanup to complete
 
-    await page.goto(`${baseURL}/settings#links`);
+    await page.goto(`${baseURL}/settings#integrations`);
     await page.waitForLoadState('domcontentloaded'); // Wait for DOM to be ready
     await page.waitForSelector('[data-testid="api-endpoint-name"]');
     await page.waitForLoadState('networkidle'); // Then wait for all API calls to complete

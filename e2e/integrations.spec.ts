@@ -18,7 +18,7 @@ test('links page loads and displays empty state', async ({ page, baseURL }) => {
   await page.waitForLoadState('networkidle');
 
   // Verify page loads
-  await expect(page).toHaveTitle(/SciDK - Integrations/i, { timeout: 10_000 });
+  await expect(page).toHaveTitle(/-SciDK-> Integrations/i, { timeout: 10_000 });
 
   // Check for new link button
   await expect(page.getByTestId('new-integration-btn')).toBeVisible();
@@ -38,13 +38,13 @@ test('links navigation link is visible in header', async ({ page, baseURL }) => 
   await page.waitForLoadState('networkidle');
 
   // Check that Links link exists in navigation
-  const linksLink = page.getByTestId('nav-links');
+  const linksLink = page.getByTestId('nav-integrate');
   await expect(linksLink).toBeVisible();
 
   // Click it and verify we navigate to links page
   await linksLink.click();
   await page.waitForLoadState('networkidle');
-  await expect(page).toHaveTitle(/SciDK - Integrations/i);
+  await expect(page).toHaveTitle(/-SciDK-> Integrations/i);
 });
 
 test('wizard navigation: can navigate through all 3 steps (Label→Label refactor)', async ({ page, baseURL }) => {
