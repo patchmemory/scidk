@@ -1,5 +1,14 @@
 {% extends 'base.html' %}
 {% block title %}SciDK - Labels{% endblock %}
+{% block head %}
+<style>
+  /* Override base.html main width constraint for labels page */
+  main {
+    max-width: 100% !important;
+    padding: 1rem 0.5rem !important;
+  }
+</style>
+{% endblock %}
 {% block content %}
 <style>
   .labels-container {
@@ -172,13 +181,13 @@
   <div class="labels-list" id="labels-list">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
       <h3 class="small" style="margin: 0;">Labels</h3>
-      <button id="btn-new-label" class="btn btn-sm btn-primary" data-testid="new-label-btn" style="font-weight: bold;">+ Label</button>
     </div>
     <div style="display: flex; gap: 0.25rem; margin-bottom: 0.5rem; flex-wrap: wrap;">
       <button id="btn-pull-all-neo4j" class="btn btn-sm btn-outline-info" data-testid="pull-all-neo4j-btn" title="Pull all labels from Neo4j" style="flex: 1; font-size: 0.75rem;">Pull All</button>
       <button id="btn-import-arrows" class="btn btn-sm btn-outline-info" data-testid="import-arrows-btn" style="flex: 1; font-size: 0.75rem;">Import</button>
       <button id="btn-export-arrows" class="btn btn-sm btn-outline-info" data-testid="export-arrows-btn" style="flex: 1; font-size: 0.75rem;">Export</button>
     </div>
+    <button id="btn-new-label" class="btn btn-sm" data-testid="new-label-btn" style="width: 100%; font-weight: bold; background: #e0e0e0; color: #555; border: 1px solid #ccc; margin-bottom: 0.5rem;">+ Label</button>
     <!-- Batch action buttons (shown when multiple labels selected) -->
     <div id="batch-actions" style="display: none; margin-bottom: 0.5rem; padding: 0.5rem; background: #f0f8ff; border-radius: 4px; border: 1px solid #b3d9ff;">
       <div class="small" style="margin-bottom: 0.25rem;"><strong id="selection-count">0</strong> selected</div>
@@ -392,9 +401,95 @@ function handleGlobalKeydown(e) {
     activeElement.tagName === 'SELECT'
   );
 
-  // Let buttons handle Enter/Space themselves (don't prevent default)
-  if (activeElement && activeElement.tagName === 'BUTTON' && (e.key === 'Enter' || e.key === ' ')) {
+  // Let buttons and links handle Enter/Space themselves, UNLESS we're actively navigating labels
+  if (activeElement && (activeElement.tagName === 'BUTTON' || activeElement.tagName === 'A') && (e.key === 'Enter' || e.key === ' ')) {
+    // If we're navigating in the label list (lastClickedIndex is set), prioritize that
+    if (e.key === 'Enter' && lastClickedIndex >= 0 && lastClickedIndex < labels.length) {
+      // Check if we're still in the label navigation context (not tabbed away)
+      const focusIsInSidePanel = activeElement.closest('#labels-list');
+      if (focusIsInSidePanel) {
+        e.preventDefault();
+        loadLabel(labels[lastClickedIndex].name);
+        return;
+      }
+    }
+    // Button/link is focused and we're not in side panel navigation - let it work normally
     return;
+  }
+
+  // Handle up/down navigation within editor fields (properties and relationships)
+  if (isTyping && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    const isInEditor = activeElement.closest('#label-editor');
+    if (isInEditor) {
+      // For SELECT elements, only allow up/down if dropdown is already open
+      if (activeElement.tagName === 'SELECT') {
+        // Check if select is expanded (we'll prevent default unless Enter was pressed)
+        if (!activeElement.dataset.dropdownOpen) {
+          e.preventDefault();
+          navigateEditorFields(e.key === 'ArrowUp' ? -1 : 1);
+          return;
+        }
+        // If dropdown is open, allow normal behavior
+        return;
+      }
+
+      // For INPUT fields, allow up/down to navigate between rows
+      if (activeElement.tagName === 'INPUT') {
+        e.preventDefault();
+        navigateEditorFields(e.key === 'ArrowUp' ? -1 : 1);
+        return;
+      }
+    }
+  }
+
+  // Handle up/down navigation for buttons within editor rows (delete, nav buttons)
+  if (!isTyping && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    const isInEditorRow = activeElement && activeElement.closest('.property-row, .relationship-row');
+    if (isInEditorRow && activeElement.tagName === 'BUTTON') {
+      e.preventDefault();
+      navigateEditorFields(e.key === 'ArrowUp' ? -1 : 1);
+      return;
+    }
+  }
+
+  // For SELECT elements in editor: Enter/Space opens dropdown, letter keys search, Escape closes it
+  if (activeElement && activeElement.tagName === 'SELECT' && activeElement.closest('#label-editor')) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      activeElement.dataset.dropdownOpen = 'true';
+      return; // Allow default behavior
+    } else if (e.key === 'Escape') {
+      // If dropdown is open, close it; otherwise return focus to side panel
+      if (activeElement.dataset.dropdownOpen) {
+        activeElement.dataset.dropdownOpen = '';
+        activeElement.blur();
+        return;
+      }
+      // If dropdown not open, fall through to general Escape handling
+    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      // Letter/number key: open dropdown and allow search
+      activeElement.dataset.dropdownOpen = 'true';
+      return; // Allow default behavior for letter search
+    }
+  }
+
+  // Escape key in editor: return focus to side panel
+  if (e.key === 'Escape' && !isTyping) {
+    const isInEditor = activeElement && activeElement.closest('#label-editor');
+    if (isInEditor && lastClickedIndex >= 0 && lastClickedIndex < labels.length) {
+      e.preventDefault();
+      returnFocusToSidePanel();
+      return;
+    }
+  }
+
+  // Escape key while typing in editor: return focus to side panel
+  if (e.key === 'Escape' && isTyping) {
+    const isInEditor = activeElement && activeElement.closest('#label-editor');
+    if (isInEditor) {
+      e.preventDefault();
+      returnFocusToSidePanel();
+      return;
+    }
   }
 
   // Handle Ctrl+A (select all labels) - works even when not typing
@@ -402,6 +497,34 @@ function handleGlobalKeydown(e) {
     e.preventDefault();
     selectAllLabels();
     return;
+  }
+
+  // Escape key in side panel: move focus to top buttons
+  if (e.key === 'Escape' && !isTyping) {
+    const isInSidePanel = activeElement && activeElement.closest('#labels-list');
+    if (isInSidePanel) {
+      e.preventDefault();
+      returnFocusToTopButtons();
+      return;
+    }
+  }
+
+  // Tab key in side panel: check if we're navigating out to top buttons
+  if (e.key === 'Tab' && !isTyping && !e.shiftKey) {
+    const isInLabelList = activeElement && activeElement.classList.contains('label-item');
+    if (isInLabelList) {
+      // Clear label selection state when tabbing out
+      clearLabelNavigationState();
+    }
+  }
+
+  // Shift+Tab into side panel from editor: set up navigation state
+  if (e.key === 'Tab' && !isTyping && e.shiftKey) {
+    const isInEditor = activeElement && activeElement.closest('#label-editor');
+    if (isInEditor && currentLabel) {
+      // User is shift-tabbing from editor, might go back to side panel
+      // We'll handle this after the focus change
+    }
   }
 
   // Don't handle other keys if user is typing
@@ -437,9 +560,14 @@ function handleGlobalKeydown(e) {
       navigateLabels(10, shiftHeld);
       break;
     case 'Enter':
-      e.preventDefault();
+      // Only handle Enter for label loading if we're not focused on an interactive element
       if (lastClickedIndex >= 0 && lastClickedIndex < labels.length) {
-        loadLabel(labels[lastClickedIndex].name);
+        // Don't interfere if focus is in the editor
+        const focusInEditor = document.activeElement && document.activeElement.closest('#label-editor');
+        if (!focusInEditor) {
+          e.preventDefault();
+          loadLabel(labels[lastClickedIndex].name);
+        }
       }
       break;
     case 'Delete':
@@ -530,6 +658,105 @@ function selectAllLabels() {
   selectedLabels.clear();
   labels.forEach(label => selectedLabels.add(label.name));
   renderLabelList();
+}
+
+// Navigate between editor fields (properties and relationships) with up/down arrows
+// Navigates within the same column (e.g., property names, types, checkboxes)
+function navigateEditorFields(direction) {
+  const activeElement = document.activeElement;
+  if (!activeElement) return;
+
+  const currentRow = activeElement.closest('.property-row, .relationship-row');
+  if (!currentRow) return;
+
+  // Determine which column we're in based on the active element
+  let fieldType = activeElement.dataset.field;
+
+  if (!fieldType) {
+    if (activeElement.type === 'checkbox') {
+      fieldType = 'checkbox';
+    } else if (activeElement.classList.contains('btn-outline-danger') ||
+               activeElement.textContent === '×') {
+      fieldType = 'delete-btn';
+    } else if (activeElement.classList.contains('target-label-nav')) {
+      fieldType = 'nav-btn';
+    } else {
+      // Unrecognized field type, don't navigate
+      return;
+    }
+  }
+
+  // Get the container (properties or relationships)
+  const container = currentRow.parentElement;
+  const rows = Array.from(container.querySelectorAll('.property-row, .relationship-row'));
+  const currentRowIndex = rows.indexOf(currentRow);
+
+  // Calculate target row
+  let targetRowIndex = currentRowIndex + direction;
+
+  // Wrap around
+  if (targetRowIndex < 0) targetRowIndex = rows.length - 1;
+  if (targetRowIndex >= rows.length) targetRowIndex = 0;
+
+  const targetRow = rows[targetRowIndex];
+  if (!targetRow) return;
+
+  // Find the same field type in the target row
+  let targetField;
+  if (fieldType === 'checkbox') {
+    targetField = targetRow.querySelector('input[type="checkbox"]');
+  } else if (fieldType === 'delete-btn') {
+    targetField = targetRow.querySelector('.btn-outline-danger');
+  } else if (fieldType === 'nav-btn') {
+    targetField = targetRow.querySelector('.target-label-nav');
+  } else {
+    targetField = targetRow.querySelector(`[data-field="${fieldType}"]`);
+  }
+
+  if (targetField) {
+    targetField.focus();
+
+    // For text inputs, select all text
+    if (targetField.tagName === 'INPUT' && targetField.type === 'text') {
+      targetField.select();
+    }
+  }
+}
+
+// Attach event handlers to SELECT elements to track dropdown state
+function attachSelectHandlers(container) {
+  container.querySelectorAll('select').forEach(select => {
+    // Clear dropdown state on change or blur
+    select.addEventListener('change', () => {
+      select.dataset.dropdownOpen = '';
+    });
+    select.addEventListener('blur', () => {
+      select.dataset.dropdownOpen = '';
+    });
+  });
+}
+
+// Return focus to the side panel (currently selected label)
+function returnFocusToSidePanel() {
+  const container = document.getElementById('label-list');
+  const items = container.querySelectorAll('.label-item');
+  if (lastClickedIndex >= 0 && lastClickedIndex < items.length) {
+    items[lastClickedIndex].focus();
+  }
+}
+
+// Return focus to top buttons (Pull All, Import, Export, + Label)
+function returnFocusToTopButtons() {
+  const firstButton = document.getElementById('btn-pull-all-neo4j');
+  if (firstButton) {
+    firstButton.focus();
+  }
+}
+
+// Clear label navigation state when tabbing out of side panel
+function clearLabelNavigationState() {
+  lastClickedIndex = -1;
+  selectionAnchor = -1;
 }
 
 function loadLabels() {
@@ -675,6 +902,15 @@ function loadLabel(name) {
         showEditor();
         populateEditor(currentLabel);
         renderLabelList(); // Update active state
+
+        // Keep focus in the side panel after loading
+        setTimeout(() => {
+          const container = document.getElementById('label-list');
+          const items = container.querySelectorAll('.label-item');
+          if (lastClickedIndex >= 0 && lastClickedIndex < items.length) {
+            items[lastClickedIndex].focus();
+          }
+        }, 0);
       } else {
         showToast('Error loading label: ' + (data.error || 'Unknown error'), 'error');
       }
@@ -708,6 +944,7 @@ function populateEditor(label) {
     propsContainer.innerHTML = '<div class="empty-state small">No properties defined</div>';
   } else {
     propsContainer.innerHTML = label.properties.map((prop, i) => createPropertyRow(prop, i)).join('');
+    attachSelectHandlers(propsContainer);
   }
 
   // Render outgoing relationships
@@ -727,6 +964,8 @@ function populateEditor(label) {
         }
       });
     });
+
+    attachSelectHandlers(relsContainer);
   }
 
   // Render incoming relationships (read-only with clickable source labels)
@@ -762,6 +1001,7 @@ function addProperty() {
     container.innerHTML = '';
   }
   container.insertAdjacentHTML('beforeend', createPropertyRow({name: '', type: 'string', required: false}));
+  attachSelectHandlers(container);
 }
 
 function createPropertyRow(prop, index) {
@@ -792,6 +1032,7 @@ function addRelationship() {
     container.innerHTML = '';
   }
   container.insertAdjacentHTML('beforeend', createRelationshipRow({type: '', target_label: '', properties: []}));
+  attachSelectHandlers(container);
 }
 
 function createRelationshipRow(rel, index) {
