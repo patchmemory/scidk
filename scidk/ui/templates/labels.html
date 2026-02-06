@@ -29,6 +29,7 @@
     border-radius: 4px;
     border: 1px solid transparent;
     user-select: none; /* Prevent text selection during multi-select */
+    outline: none; /* Remove default focus outline, we'll use custom styling */
   }
   .label-item:hover {
     background: #f3f3f3;
@@ -44,6 +45,9 @@
   .label-item.selected.active {
     background: #ffe69c;
     border-color: #ff9800;
+  }
+  .label-item.focused {
+    box-shadow: 0 0 0 2px #2196f3;
   }
   .property-row, .relationship-row {
     display: flex;
@@ -307,7 +311,135 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('arrows-json-input')?.addEventListener('input', previewArrowsImport);
 
   document.getElementById('import-confirm-btn')?.addEventListener('click', importFromArrows);
+
+  // Keyboard navigation
+  document.addEventListener('keydown', handleGlobalKeydown);
 });
+
+// Global keyboard navigation handler
+function handleGlobalKeydown(e) {
+  // Don't intercept if user is typing in an input/textarea/select
+  const activeElement = document.activeElement;
+  const isTyping = activeElement && (
+    activeElement.tagName === 'INPUT' ||
+    activeElement.tagName === 'TEXTAREA' ||
+    activeElement.tagName === 'SELECT'
+  );
+
+  // Handle Ctrl+A (select all labels) - works even when typing
+  if ((e.ctrlKey || e.metaKey) && e.key === 'a' && !isTyping) {
+    e.preventDefault();
+    selectAllLabels();
+    return;
+  }
+
+  // Don't handle other keys if user is typing
+  if (isTyping) return;
+
+  // Handle navigation keys
+  switch(e.key) {
+    case 'ArrowUp':
+      e.preventDefault();
+      navigateLabels(-1);
+      break;
+    case 'ArrowDown':
+      e.preventDefault();
+      navigateLabels(1);
+      break;
+    case 'Home':
+      e.preventDefault();
+      navigateToLabel(0);
+      break;
+    case 'End':
+      e.preventDefault();
+      navigateToLabel(labels.length - 1);
+      break;
+    case 'PageUp':
+      e.preventDefault();
+      navigateLabels(-10);
+      break;
+    case 'PageDown':
+      e.preventDefault();
+      navigateLabels(10);
+      break;
+    case 'Enter':
+      e.preventDefault();
+      if (lastClickedIndex >= 0 && lastClickedIndex < labels.length) {
+        loadLabel(labels[lastClickedIndex].name);
+      }
+      break;
+    case 'Delete':
+      if (selectedLabels.size > 0) {
+        e.preventDefault();
+        batchDelete();
+      }
+      break;
+    case 'p':
+    case 'P':
+      if (selectedLabels.size > 0) {
+        e.preventDefault();
+        batchPull();
+      }
+      break;
+    case 'd':
+    case 'D':
+      if (selectedLabels.size > 0) {
+        e.preventDefault();
+        batchDelete();
+      }
+      break;
+    case 'c':
+    case 'C':
+      if (selectedLabels.size > 0) {
+        e.preventDefault();
+        clearSelection();
+      }
+      break;
+  }
+}
+
+function navigateLabels(delta) {
+  if (labels.length === 0) return;
+
+  let newIndex;
+  if (lastClickedIndex === -1) {
+    // No label selected yet, start at beginning
+    newIndex = delta > 0 ? 0 : labels.length - 1;
+  } else {
+    newIndex = lastClickedIndex + delta;
+  }
+
+  // Clamp to valid range
+  newIndex = Math.max(0, Math.min(labels.length - 1, newIndex));
+
+  navigateToLabel(newIndex);
+}
+
+function navigateToLabel(index) {
+  if (index < 0 || index >= labels.length) return;
+
+  lastClickedIndex = index;
+  const labelName = labels[index].name;
+
+  // Clear selection and highlight the navigated label
+  clearSelection();
+
+  // Visual highlight by making it "active"
+  renderLabelList();
+
+  // Scroll into view
+  const container = document.getElementById('label-list');
+  const items = container.querySelectorAll('.label-item');
+  if (items[index]) {
+    items[index].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+}
+
+function selectAllLabels() {
+  selectedLabels.clear();
+  labels.forEach(label => selectedLabels.add(label.name));
+  renderLabelList();
+}
 
 function loadLabels() {
   console.log('loadLabels() executing, fetching /api/labels');
@@ -361,13 +493,15 @@ function renderLabelList() {
 
     const isActive = currentLabel && currentLabel.name === label.name;
     const isSelected = selectedLabels.has(label.name);
-    const classes = ['label-item', isActive && 'active', isSelected && 'selected'].filter(Boolean).join(' ');
+    const isFocused = lastClickedIndex === index;
+    const classes = ['label-item', isActive && 'active', isSelected && 'selected', isFocused && 'focused'].filter(Boolean).join(' ');
 
     return `
       <div class="${classes}"
            data-label="${label.name}"
            data-index="${index}"
-           data-testid="label-item">
+           data-testid="label-item"
+           tabindex="${isFocused ? '0' : '-1'}">
         <strong>${label.name}</strong>
         <div class="small">${label.properties.length} properties, ${relText}${detailText}</div>
       </div>
