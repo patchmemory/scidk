@@ -242,6 +242,7 @@ let currentLabel = null;
 let labels = [];
 let selectedLabels = new Set(); // Track selected label names
 let lastClickedIndex = -1; // For shift+click range selection
+let selectionAnchor = -1; // Anchor point for shift+navigation selection
 
 // Toast function
 function showToast(message, type = 'info') {
@@ -427,16 +428,24 @@ function navigateToLabel(index, shiftHeld = false) {
   if (index < 0 || index >= labels.length) return;
 
   if (shiftHeld) {
-    // Shift+navigation: extend selection from lastClickedIndex to new index
-    if (lastClickedIndex !== -1) {
-      selectLabelRange(lastClickedIndex, index);
-    } else {
-      // No previous selection, just select the current item
-      selectedLabels.add(labels[index].name);
+    // Set anchor if this is the first shift+navigation
+    if (selectionAnchor === -1) {
+      selectionAnchor = lastClickedIndex !== -1 ? lastClickedIndex : index;
+    }
+
+    // Clear current selection and reselect from anchor to new position
+    selectedLabels.clear();
+    const start = Math.min(selectionAnchor, index);
+    const end = Math.max(selectionAnchor, index);
+    for (let i = start; i <= end; i++) {
+      if (i < labels.length) {
+        selectedLabels.add(labels[i].name);
+      }
     }
   } else {
-    // Normal navigation: clear selection
+    // Normal navigation: clear selection and reset anchor
     clearSelection();
+    selectionAnchor = -1;
   }
 
   lastClickedIndex = index;
@@ -535,6 +544,7 @@ function renderLabelList() {
         // Ctrl/Cmd+Click: Toggle selection
         toggleLabelSelection(labelName);
         lastClickedIndex = index;
+        selectionAnchor = -1; // Reset anchor on ctrl-click
       } else if (e.shiftKey && lastClickedIndex !== -1) {
         // Shift+Click: Range selection
         selectLabelRange(lastClickedIndex, index);
@@ -543,6 +553,7 @@ function renderLabelList() {
         clearSelection();
         loadLabel(labelName);
         lastClickedIndex = index;
+        selectionAnchor = -1; // Reset anchor on regular click
       }
     });
   });
@@ -574,6 +585,7 @@ function selectLabelRange(startIndex, endIndex) {
 
 function clearSelection() {
   selectedLabels.clear();
+  selectionAnchor = -1; // Reset anchor when clearing selection
   renderLabelList();
 }
 
