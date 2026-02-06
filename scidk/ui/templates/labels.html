@@ -4,16 +4,41 @@
 <style>
   .labels-container {
     display: flex;
-    gap: 1rem;
+    gap: 0;
     margin-top: 1rem;
     height: calc(100vh - 200px);
+    position: relative;
   }
   .labels-list {
-    flex: 0 0 30%;
+    width: 30%;
+    min-width: 200px;
+    max-width: 50%;
     border: 1px solid #eee;
     border-radius: 4px;
     padding: 0.5rem;
     overflow-y: auto;
+  }
+  .resizer {
+    width: 8px;
+    cursor: col-resize;
+    background: transparent;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .resizer:hover {
+    background: #e0e0e0;
+  }
+  .resizer::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 3px;
+    width: 2px;
+    background: #ddd;
+  }
+  .resizer.resizing {
+    background: #2196f3;
   }
   .labels-editor {
     flex: 1;
@@ -21,6 +46,7 @@
     border-radius: 4px;
     padding: 1rem;
     overflow-y: auto;
+    min-width: 300px;
   }
   .label-item {
     padding: 0.5rem;
@@ -143,7 +169,7 @@
 
 <div class="labels-container">
   <!-- Left Panel: Label List -->
-  <div class="labels-list">
+  <div class="labels-list" id="labels-list">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
       <h3 class="small" style="margin: 0;">Labels</h3>
       <button id="btn-new-label" class="btn btn-sm btn-primary" data-testid="new-label-btn" style="font-weight: bold;">+ Label</button>
@@ -166,6 +192,9 @@
       <div class="empty-state small">No labels defined</div>
     </div>
   </div>
+
+  <!-- Resizer -->
+  <div class="resizer" id="resizer"></div>
 
   <!-- Right Panel: Label Editor -->
   <div class="labels-editor" id="label-editor" style="display: none;">
@@ -315,6 +344,42 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Keyboard navigation
   document.addEventListener('keydown', handleGlobalKeydown);
+
+  // Resizer functionality
+  const resizer = document.getElementById('resizer');
+  const leftPanel = document.getElementById('labels-list');
+  const container = document.querySelector('.labels-container');
+
+  let isResizing = false;
+
+  resizer.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    resizer.classList.add('resizing');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const newWidth = e.clientX - containerRect.left;
+    const minWidth = 200;
+    const maxWidth = containerRect.width * 0.5;
+
+    if (newWidth >= minWidth && newWidth <= maxWidth) {
+      leftPanel.style.width = `${newWidth}px`;
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (isResizing) {
+      isResizing = false;
+      resizer.classList.remove('resizing');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+  });
 });
 
 // Global keyboard navigation handler
