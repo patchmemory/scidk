@@ -346,32 +346,61 @@ test('neo4j: pull labels from neo4j', async ({ page, baseURL }) => {
   await expect(labelList).toBeVisible();
 });
 
-test('can see import EDA button', async ({ page, baseURL }) => {
+test('import modal has EDA option', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/labels`);
   await page.waitForLoadState('networkidle');
 
-  // Verify Import EDA button is visible
-  const edaBtn = page.getByTestId('import-eda-btn');
-  await expect(edaBtn).toBeVisible();
-  await expect(edaBtn).toContainText('Import EDA');
+  // Click Import button to open modal
+  const importBtn = page.getByTestId('import-arrows-btn');
+  await importBtn.click();
 
-  // Verify file input exists (though hidden)
-  const fileInput = page.getByTestId('eda-file-input');
-  await expect(fileInput).toBeAttached();
+  // Wait for modal to be visible
+  await page.waitForTimeout(200);
+
+  // Verify both import type radio buttons exist
+  const arrowsRadio = page.getByTestId('import-type-arrows');
+  const edaRadio = page.getByTestId('import-type-eda');
+
+  await expect(arrowsRadio).toBeVisible();
+  await expect(edaRadio).toBeVisible();
+
+  // Verify Arrows is selected by default
+  await expect(arrowsRadio).toBeChecked();
+
+  // Verify EDA file input exists
+  const edaFileInput = page.getByTestId('eda-file-input');
+  await expect(edaFileInput).toBeAttached();
 });
 
-test('import EDA button triggers file input', async ({ page, baseURL }) => {
+test('import modal switches between import types', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/labels`);
   await page.waitForLoadState('networkidle');
 
-  // Click Import EDA button
-  const edaBtn = page.getByTestId('import-eda-btn');
-  await edaBtn.click();
+  // Open import modal
+  await page.getByTestId('import-arrows-btn').click();
+  await page.waitForTimeout(200);
 
-  // This would trigger the file input, but we can't easily test file upload in E2E
-  // without actual files. The button click behavior is tested here.
-  // For full integration testing, use Python pytest with actual EDA files.
+  // Initially Arrows section should be visible
+  const arrowsSection = page.locator('#arrows-import-section');
+  const edaSection = page.locator('#eda-import-section');
+
+  await expect(arrowsSection).toBeVisible();
+  await expect(edaSection).not.toBeVisible();
+
+  // Click EDA radio button
+  await page.getByTestId('import-type-eda').click();
   await page.waitForTimeout(100);
+
+  // Now EDA section should be visible
+  await expect(arrowsSection).not.toBeVisible();
+  await expect(edaSection).toBeVisible();
+
+  // Switch back to Arrows
+  await page.getByTestId('import-type-arrows').click();
+  await page.waitForTimeout(100);
+
+  await expect(arrowsSection).toBeVisible();
+  await expect(edaSection).not.toBeVisible();
 });

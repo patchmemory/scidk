@@ -187,10 +187,6 @@
       <button id="btn-import-arrows" class="btn btn-sm btn-outline-info" data-testid="import-arrows-btn" style="flex: 1; font-size: 0.75rem;">Import</button>
       <button id="btn-export-arrows" class="btn btn-sm btn-outline-info" data-testid="export-arrows-btn" style="flex: 1; font-size: 0.75rem;">Export</button>
     </div>
-    <div style="display: flex; gap: 0.25rem; margin-bottom: 0.5rem;">
-      <button id="btn-import-eda" class="btn btn-sm btn-outline-success" data-testid="import-eda-btn" title="Import NC3Rs EDA experimental design file" style="flex: 1; font-size: 0.75rem;">Import EDA</button>
-    </div>
-    <input type="file" id="eda-file-input" accept=".eda" style="display:none" data-testid="eda-file-input">
     <button id="btn-new-label" class="btn btn-sm" data-testid="new-label-btn" style="width: 100%; font-weight: bold; background: #e0e0e0; color: #555; border: 1px solid #ccc; margin-bottom: 0.5rem;">+ Label</button>
     <!-- Batch action buttons (shown when multiple labels selected) -->
     <div id="batch-actions" style="display: none; margin-bottom: 0.5rem; padding: 0.5rem; background: #f0f8ff; border-radius: 4px; border: 1px solid #b3d9ff;">
@@ -255,26 +251,59 @@
   <div class="custom-modal-overlay"></div>
   <div class="custom-modal-content">
     <div class="custom-modal-header">
-      <h5>Import Schema from Arrows.app</h5>
+      <h5>Import Schema</h5>
       <button type="button" class="custom-modal-close" onclick="closeImportModal()">&times;</button>
     </div>
     <div class="custom-modal-body">
-      <p class="small">Paste JSON exported from <a href="https://arrows.app" target="_blank" rel="noopener">arrows.app</a></p>
-      <textarea id="arrows-json-input" class="form-control font-monospace" rows="12" placeholder='{"nodes": [...], "relationships": [...]}'></textarea>
-      <div style="margin-top: 0.5rem;">
-        <label for="arrows-file-input" class="btn btn-sm btn-outline-secondary">
-          Or choose file...
-        </label>
-        <input type="file" id="arrows-file-input" accept=".json" style="display:none">
-        <span id="file-name" class="small" style="margin-left: 0.5rem;"></span>
+      <!-- Import Type Selection -->
+      <div style="margin-bottom: 1rem; padding: 0.75rem; background: #f9f9f9; border-radius: 4px;">
+        <div style="margin-bottom: 0.5rem;"><strong class="small">Import Type:</strong></div>
+        <div style="display: flex; gap: 1rem;">
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.25rem;">
+            <input type="radio" name="import-type" value="arrows" checked data-testid="import-type-arrows">
+            <span class="small">Arrows.app JSON</span>
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.25rem;">
+            <input type="radio" name="import-type" value="eda" data-testid="import-type-eda">
+            <span class="small">NC3Rs EDA File</span>
+          </label>
+        </div>
       </div>
-      <div id="import-preview" style="display:none; margin-top: 1rem; padding: 0.75rem; background: #f9f9f9; border-radius: 4px;">
-        <div class="small"><strong>Preview:</strong> <span id="preview-label-count">0</span> labels, <span id="preview-rel-count">0</span> relationships</div>
+
+      <!-- Arrows Import Section -->
+      <div id="arrows-import-section">
+        <p class="small">Paste JSON exported from <a href="https://arrows.app" target="_blank" rel="noopener">arrows.app</a></p>
+        <textarea id="arrows-json-input" class="form-control font-monospace" rows="12" placeholder='{"nodes": [...], "relationships": [...]}'></textarea>
+        <div style="margin-top: 0.5rem;">
+          <label for="arrows-file-input" class="btn btn-sm btn-outline-secondary">
+            Or choose JSON file...
+          </label>
+          <input type="file" id="arrows-file-input" accept=".json" style="display:none">
+          <span id="arrows-file-name" class="small" style="margin-left: 0.5rem;"></span>
+        </div>
+        <div id="import-preview" style="display:none; margin-top: 1rem; padding: 0.75rem; background: #f9f9f9; border-radius: 4px;">
+          <div class="small"><strong>Preview:</strong> <span id="preview-label-count">0</span> labels, <span id="preview-rel-count">0</span> relationships</div>
+        </div>
+      </div>
+
+      <!-- EDA Import Section -->
+      <div id="eda-import-section" style="display: none;">
+        <p class="small">Import experimental design from <a href="https://nc3rs.org.uk/eda" target="_blank" rel="noopener">NC3Rs EDA</a> (.eda file)</p>
+        <div style="margin-top: 0.5rem;">
+          <label for="eda-file-input" class="btn btn-sm btn-outline-success">
+            Choose .eda file...
+          </label>
+          <input type="file" id="eda-file-input" accept=".eda" style="display:none" data-testid="eda-file-input">
+          <span id="eda-file-name" class="small" style="margin-left: 0.5rem;"></span>
+        </div>
+        <div class="small" style="margin-top: 1rem; padding: 0.75rem; background: #f0f8ff; border-radius: 4px; border-left: 3px solid #2196f3;">
+          <strong>EDA Files:</strong> ZIP archives containing experimental designs with node types like Treatment, Subject, Measurement, etc.
+        </div>
       </div>
     </div>
     <div class="custom-modal-footer">
       <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeImportModal()">Cancel</button>
-      <button type="button" id="import-confirm-btn" class="btn btn-sm btn-success" data-testid="import-confirm-btn" onclick="importFromArrows()">Import</button>
+      <button type="button" id="import-confirm-btn" class="btn btn-sm btn-success" data-testid="import-confirm-btn">Import</button>
     </div>
   </div>
 </div>
@@ -298,15 +327,35 @@ function showToast(message, type = 'info') {
 // Modal functions
 function openImportModal() {
   document.getElementById('import-arrows-modal').style.display = 'block';
+  // Reset to Arrows import by default
+  document.querySelector('input[name="import-type"][value="arrows"]').checked = true;
+  switchImportType('arrows');
 }
 
 function closeImportModal() {
   const modal = document.getElementById('import-arrows-modal');
   modal.style.display = 'none';
-  // Clear input
+  // Clear all inputs
   document.getElementById('arrows-json-input').value = '';
-  document.getElementById('file-name').textContent = '';
+  document.getElementById('arrows-file-name').textContent = '';
+  document.getElementById('eda-file-name').textContent = '';
   document.getElementById('import-preview').style.display = 'none';
+  // Reset file inputs
+  document.getElementById('arrows-file-input').value = '';
+  document.getElementById('eda-file-input').value = '';
+}
+
+function switchImportType(type) {
+  const arrowsSection = document.getElementById('arrows-import-section');
+  const edaSection = document.getElementById('eda-import-section');
+
+  if (type === 'arrows') {
+    arrowsSection.style.display = 'block';
+    edaSection.style.display = 'none';
+  } else if (type === 'eda') {
+    arrowsSection.style.display = 'none';
+    edaSection.style.display = 'block';
+  }
 }
 
 // Initialize
@@ -338,13 +387,21 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-import-arrows')?.addEventListener('click', openImportModal);
   document.getElementById('btn-export-arrows')?.addEventListener('click', exportToArrows);
 
+  // Import type radio button handling
+  document.querySelectorAll('input[name="import-type"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      switchImportType(e.target.value);
+    });
+  });
+
+  // Arrows file input
   document.getElementById('arrows-file-input')?.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = (ev) => {
         document.getElementById('arrows-json-input').value = ev.target.result;
-        document.getElementById('file-name').textContent = file.name;
+        document.getElementById('arrows-file-name').textContent = file.name;
         previewArrowsImport();
       };
       reader.readAsText(file);
@@ -353,50 +410,62 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('arrows-json-input')?.addEventListener('input', previewArrowsImport);
 
-  document.getElementById('import-confirm-btn')?.addEventListener('click', importFromArrows);
-
-  // EDA File Import
-  document.getElementById('btn-import-eda')?.addEventListener('click', () => {
-    document.getElementById('eda-file-input').click();
+  // EDA file input
+  document.getElementById('eda-file-input')?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      document.getElementById('eda-file-name').textContent = file.name;
+    } else {
+      document.getElementById('eda-file-name').textContent = '';
+    }
   });
 
-  document.getElementById('eda-file-input')?.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  // Unified import confirm button
+  document.getElementById('import-confirm-btn')?.addEventListener('click', async () => {
+    const selectedType = document.querySelector('input[name="import-type"]:checked').value;
 
-    if (!file.name.endsWith('.eda')) {
-      alert('Please select an .eda file');
-      e.target.value = '';
-      return;
-    }
+    if (selectedType === 'arrows') {
+      importFromArrows();
+    } else if (selectedType === 'eda') {
+      const fileInput = document.getElementById('eda-file-input');
+      const file = fileInput.files[0];
 
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      const resp = await fetch('/api/labels/import/eda', {
-        method: 'POST',
-        body: formData
-      });
-
-      const result = await resp.json();
-      if (result.status === 'success') {
-        const msg = `Successfully imported ${result.imported.labels} labels and ${result.imported.relationships} relationships from ${file.name}`;
-        if (result.skipped && result.skipped.length > 0) {
-          alert(msg + `\n\nSkipped ${result.skipped.length} existing labels: ${result.skipped.join(', ')}`);
-        } else {
-          alert(msg);
-        }
-        loadLabels();  // Refresh label list
-      } else {
-        alert('Import failed: ' + result.error);
+      if (!file) {
+        alert('Please select an .eda file');
+        return;
       }
-    } catch (err) {
-      alert('Import error: ' + err.message);
-    }
 
-    // Reset input
-    e.target.value = '';
+      if (!file.name.endsWith('.eda')) {
+        alert('File must be .eda format');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const resp = await fetch('/api/labels/import/eda', {
+          method: 'POST',
+          body: formData
+        });
+
+        const result = await resp.json();
+        if (result.status === 'success') {
+          const msg = `Successfully imported ${result.imported.labels} labels and ${result.imported.relationships} relationships from ${file.name}`;
+          if (result.skipped && result.skipped.length > 0) {
+            alert(msg + `\n\nSkipped ${result.skipped.length} existing labels: ${result.skipped.join(', ')}`);
+          } else {
+            alert(msg);
+          }
+          loadLabels();  // Refresh label list
+          closeImportModal();
+        } else {
+          alert('Import failed: ' + result.error);
+        }
+      } catch (err) {
+        alert('Import error: ' + err.message);
+      }
+    }
   });
 
   // Keyboard navigation
