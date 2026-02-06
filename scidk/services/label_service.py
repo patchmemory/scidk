@@ -447,15 +447,14 @@ class LabelService:
                     'required': False  # Can't determine from schema introspection
                 })
 
-            # Query for relationships using schema visualization
+            # Query for all relationships by sampling actual relationships from the graph
             rels_query = """
-            CALL db.schema.visualization()
-            YIELD nodes, relationships
-            UNWIND relationships AS rel
-            RETURN DISTINCT
-                [label IN labels(startNode(rel)) | label][0] AS sourceLabel,
+            MATCH (source)-[rel]->(target)
+            WITH DISTINCT
+                [label IN labels(source) | label][0] AS sourceLabel,
                 type(rel) AS relType,
-                [label IN labels(endNode(rel)) | label][0] AS targetLabel
+                [label IN labels(target) | label][0] AS targetLabel
+            RETURN sourceLabel, relType, targetLabel
             """
 
             rels_results = neo4j_client.execute_read(rels_query)
