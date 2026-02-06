@@ -85,6 +85,36 @@ class Neo4jClient:
             return self._driver.session(database=self._database)
         return self._driver.session()
 
+    # --- Query Operations ---
+    def execute_read(self, query: str, parameters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Execute a read query and return results as list of dicts.
+
+        Args:
+            query: Cypher query string
+            parameters: Optional query parameters
+
+        Returns:
+            List of records as dictionaries
+        """
+        with self._session() as session:
+            result = session.run(query, parameters or {})
+            return [dict(record) for record in result]
+
+    def execute_write(self, query: str, parameters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Execute a write query and return results as list of dicts.
+
+        Args:
+            query: Cypher query string
+            parameters: Optional query parameters
+
+        Returns:
+            List of records as dictionaries
+        """
+        with self._session() as session:
+            result = session.run(query, parameters or {})
+            records = [dict(record) for record in result]
+            return records
+
     # --- Operations ---
     def ensure_constraints(self) -> None:
         try:
