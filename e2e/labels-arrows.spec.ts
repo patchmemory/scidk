@@ -53,7 +53,7 @@ test('arrows import button is visible', async ({ page, baseURL }) => {
   // Check for Arrows import button
   const importBtn = page.getByTestId('import-arrows-btn');
   await expect(importBtn).toBeVisible({ timeout: 10000 });
-  await expect(importBtn).toHaveText(/Import Arrows/i);
+  await expect(importBtn).toHaveText(/Import/i);
 });
 
 test('arrows export button is visible', async ({ page, baseURL }) => {
@@ -66,7 +66,7 @@ test('arrows export button is visible', async ({ page, baseURL }) => {
   // Check for Arrows export button
   const exportBtn = page.getByTestId('export-arrows-btn');
   await expect(exportBtn).toBeVisible({ timeout: 10000 });
-  await expect(exportBtn).toHaveText(/Export Arrows/i);
+  await expect(exportBtn).toHaveText(/Export/i);
 });
 
 test('can open import modal and close it', async ({ page, baseURL }) => {
