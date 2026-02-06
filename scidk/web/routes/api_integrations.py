@@ -1,20 +1,14 @@
 """
-Blueprint for Links API routes (DEPRECATED).
-
-**DEPRECATED**: This module is kept for backward compatibility only.
-Use api_integrations.py instead. All /api/links/* endpoints redirect to /api/integrations/*
+Blueprint for Integrations API routes.
 
 Provides REST endpoints for:
-- Link definitions CRUD (deprecated, use integrations)
-- Preview and execution of link jobs (deprecated, use integrations)
-- Job status tracking (deprecated, use integrations)
+- Integration definitions CRUD
+- Preview and execution of integration jobs
+- Job status tracking
 """
-from flask import Blueprint, jsonify, request, current_app, redirect, url_for
-import logging
+from flask import Blueprint, jsonify, request, current_app
 
-logger = logging.getLogger(__name__)
-
-bp = Blueprint('links', __name__, url_prefix='/api')
+bp = Blueprint('integrations', __name__, url_prefix='/api')
 
 
 def _get_link_service():
@@ -27,12 +21,10 @@ def _get_link_service():
     return current_app.extensions['scidk']['link_service']
 
 
-@bp.route('/links', methods=['GET'])
+@bp.route('/integrations', methods=['GET'])
 def list_links():
     """
     Get all link definitions.
-
-    **DEPRECATED**: Use /api/integrations instead.
 
     Returns:
     {
@@ -50,7 +42,6 @@ def list_links():
         ]
     }
     """
-    logger.warning("DEPRECATED: /api/links endpoint called. Use /api/integrations instead.")
     try:
         service = _get_link_service()
         links = service.list_link_definitions()
@@ -65,7 +56,7 @@ def list_links():
         }), 500
 
 
-@bp.route('/links/<link_id>', methods=['GET'])
+@bp.route('/integrations/<link_id>', methods=['GET'])
 def get_link(link_id):
     """
     Get a specific link definition by ID.
@@ -97,7 +88,7 @@ def get_link(link_id):
         }), 500
 
 
-@bp.route('/links', methods=['POST'])
+@bp.route('/integrations', methods=['POST'])
 def create_or_update_link():
     """
     Create or update a link definition.
@@ -159,7 +150,7 @@ def create_or_update_link():
         }), 500
 
 
-@bp.route('/links/<link_id>', methods=['DELETE'])
+@bp.route('/integrations/<link_id>', methods=['DELETE'])
 def delete_link(link_id):
     """
     Delete a link definition.
@@ -191,7 +182,7 @@ def delete_link(link_id):
         }), 500
 
 
-@bp.route('/links/<link_id>/preview', methods=['POST'])
+@bp.route('/integrations/<link_id>/preview', methods=['POST'])
 def preview_link(link_id):
     """
     Preview link matches (dry-run).
@@ -240,7 +231,7 @@ def preview_link(link_id):
         }), 500
 
 
-@bp.route('/links/<link_id>/execute', methods=['POST'])
+@bp.route('/integrations/<link_id>/execute', methods=['POST'])
 def execute_link(link_id):
     """
     Execute link job (create relationships in Neo4j).
@@ -271,7 +262,7 @@ def execute_link(link_id):
         }), 500
 
 
-@bp.route('/links/jobs/<job_id>', methods=['GET'])
+@bp.route('/integrations/jobs/<job_id>', methods=['GET'])
 def get_job_status(job_id):
     """
     Get job status and progress.
@@ -312,7 +303,7 @@ def get_job_status(job_id):
         }), 500
 
 
-@bp.route('/links/jobs', methods=['GET'])
+@bp.route('/integrations/jobs', methods=['GET'])
 def list_jobs():
     """
     List recent link jobs.
@@ -342,7 +333,7 @@ def list_jobs():
         }), 500
 
 
-@bp.route('/links/available-labels', methods=['GET'])
+@bp.route('/integrations/available-labels', methods=['GET'])
 def get_available_labels():
     """
     Get list of available labels for dropdown population.
@@ -372,7 +363,7 @@ def get_available_labels():
         }), 500
 
 
-@bp.route('/links/migrate', methods=['POST'])
+@bp.route('/integrations/migrate', methods=['POST'])
 def migrate_links():
     """
     Migrate existing link definitions to Label→Label model.
