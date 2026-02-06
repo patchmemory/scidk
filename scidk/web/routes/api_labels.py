@@ -384,3 +384,102 @@ def export_arrows_schema():
 
     except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@bp.route('/labels/batch/pull', methods=['POST'])
+def batch_pull_labels():
+    """
+    Pull schema from Neo4j for multiple labels.
+
+    Request body:
+    {
+        "label_names": ["Label1", "Label2", ...]
+    }
+
+    Returns:
+    {
+        "status": "success",
+        "results": [...],
+        "total_new_properties": 10,
+        "total_new_relationships": 5
+    }
+    """
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        label_names = data.get('label_names', [])
+
+        if not label_names:
+            return jsonify({'status': 'error', 'error': 'No label names provided'}), 400
+
+        service = _get_label_service()
+        results = []
+        total_new_properties = 0
+        total_new_relationships = 0
+
+        for name in label_names:
+            try:
+                result = service.pull_label_properties_from_neo4j(name)
+                results.append({'label': name, 'result': result})
+
+                if result.get('status') == 'success':
+                    total_new_properties += result.get('new_properties_count', 0)
+                    total_new_relationships += result.get('new_relationships_count', 0)
+            except Exception as e:
+                results.append({'label': name, 'result': {'status': 'error', 'error': str(e)}})
+
+        return jsonify({
+            'status': 'success',
+            'results': results,
+            'total_new_properties': total_new_properties,
+            'total_new_relationships': total_new_relationships
+        }), 200
+
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@bp.route('/labels/batch/delete', methods=['POST'])
+def batch_delete_labels():
+    """
+    Delete multiple labels.
+
+    Request body:
+    {
+        "label_names": ["Label1", "Label2", ...]
+    }
+
+    Returns:
+    {
+        "status": "success",
+        "deleted_count": 2,
+        "results": [...]
+    }
+    """
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        label_names = data.get('label_names', [])
+
+        if not label_names:
+            return jsonify({'status': 'error', 'error': 'No label names provided'}), 400
+
+        service = _get_label_service()
+        results = []
+        deleted_count = 0
+
+        for name in label_names:
+            try:
+                deleted = service.delete_label(name)
+                results.append({'label': name, 'deleted': deleted})
+                if deleted:
+                    deleted_count += 1
+            except Exception as e:
+                results.append({'label': name, 'error': str(e)})
+
+        return jsonify({
+            'status': 'success',
+            'deleted_count': deleted_count,
+            'results': results
+        }), 200
+
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
