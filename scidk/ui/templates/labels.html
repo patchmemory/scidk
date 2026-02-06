@@ -115,6 +115,42 @@
   .collapse-btn-right {
     left: 0.5rem;
   }
+
+  /* Read-only mode styles */
+  .editor-mode-toggle {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    align-items: center;
+  }
+  .readonly-property {
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+    background: #f9f9f9;
+    border-radius: 4px;
+    border-left: 3px solid #2196f3;
+  }
+  .readonly-relationship {
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+    background: #f0f8ff;
+    border-radius: 4px;
+    border-left: 3px solid #4caf50;
+  }
+  .badge-type {
+    display: inline-block;
+    padding: 0.15rem 0.4rem;
+    font-size: 0.7rem;
+    border-radius: 3px;
+    background: #e0e0e0;
+    color: #333;
+    margin-left: 0.5rem;
+  }
+  .badge-required {
+    background: #ffebee;
+    color: #c62828;
+  }
+
   .label-item {
     padding: 0.5rem;
     margin-bottom: 0.25rem;
@@ -266,41 +302,84 @@
 
   <!-- Center Panel: Label Editor -->
   <div class="labels-editor" id="label-editor" style="display: none;">
-    <h3 id="editor-title">New Label</h3>
-
-    <div style="margin-bottom: 1rem;">
-      <label class="form-label small" for="label-name">Name</label>
-      <input id="label-name" type="text" class="form-control form-control-sm" placeholder="e.g., Project" data-testid="label-name" />
-      <div id="name-error" class="small" style="color: #b00020; display: none;"></div>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <h3 id="editor-title" style="margin: 0;">New Label</h3>
+      <div class="editor-mode-toggle">
+        <button id="btn-toggle-mode" class="btn btn-sm btn-outline-primary" data-testid="toggle-edit-mode" style="display: none;">Edit</button>
+        <button id="btn-cancel-edit" class="btn btn-sm btn-outline-secondary" data-testid="cancel-edit" style="display: none;">Cancel</button>
+      </div>
     </div>
 
-    <div class="section-header">
-      <h4 class="small" style="margin: 0;">Properties</h4>
-      <button id="btn-add-property" class="btn btn-sm btn-outline-primary" data-testid="add-property-btn">Add Property</button>
-    </div>
-    <div id="properties-container" data-testid="properties-container">
-      <div class="empty-state small">No properties defined</div>
+    <!-- Read-only view -->
+    <div id="readonly-view" style="display: none;">
+      <div style="margin-bottom: 1rem;">
+        <label class="form-label small">Name</label>
+        <div id="readonly-name" style="padding: 0.5rem; background: #f5f5f5; border-radius: 4px; font-weight: bold;"></div>
+      </div>
+
+      <div class="section-header">
+        <h4 class="small" style="margin: 0;">Properties</h4>
+      </div>
+      <div id="readonly-properties-container">
+        <div class="empty-state small">No properties defined</div>
+      </div>
+
+      <div class="section-header">
+        <h4 class="small" style="margin: 0;">Outgoing Relationships</h4>
+      </div>
+      <div id="readonly-relationships-container">
+        <div class="empty-state small">No relationships defined</div>
+      </div>
+
+      <div class="section-header" style="margin-top: 1.5rem;">
+        <h4 class="small" style="margin: 0;">Incoming Relationships</h4>
+      </div>
+      <div id="readonly-incoming-relationships-container">
+        <div class="empty-state small">No incoming relationships</div>
+      </div>
+
+      <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <button id="btn-delete-readonly" class="btn btn-sm btn-outline-danger" data-testid="delete-label-readonly-btn">Delete</button>
+        <button id="btn-pull-neo4j-readonly" class="btn btn-sm btn-outline-secondary" data-testid="pull-neo4j-readonly-btn">Pull from Neo4j</button>
+      </div>
     </div>
 
-    <div class="section-header">
-      <h4 class="small" style="margin: 0;">Outgoing Relationships</h4>
-      <button id="btn-add-relationship" class="btn btn-sm btn-outline-primary" data-testid="add-relationship-btn">Add Relationship</button>
-    </div>
-    <div id="relationships-container" data-testid="relationships-container">
-      <div class="empty-state small">No relationships defined</div>
-    </div>
+    <!-- Edit view -->
+    <div id="edit-view" style="display: none;">
+      <div style="margin-bottom: 1rem;">
+        <label class="form-label small" for="label-name">Name</label>
+        <input id="label-name" type="text" class="form-control form-control-sm" placeholder="e.g., Project" data-testid="label-name" />
+        <div id="name-error" class="small" style="color: #b00020; display: none;"></div>
+      </div>
 
-    <div class="section-header" style="margin-top: 1.5rem;">
-      <h4 class="small" style="margin: 0;">Incoming Relationships</h4>
-    </div>
-    <div id="incoming-relationships-container" data-testid="incoming-relationships-container">
-      <div class="empty-state small">No incoming relationships</div>
-    </div>
+      <div class="section-header">
+        <h4 class="small" style="margin: 0;">Properties</h4>
+        <button id="btn-add-property" class="btn btn-sm btn-outline-primary" data-testid="add-property-btn">Add Property</button>
+      </div>
+      <div id="properties-container" data-testid="properties-container">
+        <div class="empty-state small">No properties defined</div>
+      </div>
 
-    <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
-      <button id="btn-save" class="btn btn-sm btn-success" data-testid="save-label-btn">Save</button>
-      <button id="btn-delete" class="btn btn-sm btn-outline-danger" data-testid="delete-label-btn" style="display: none;">Delete</button>
-      <button id="btn-pull-neo4j" class="btn btn-sm btn-outline-secondary" data-testid="pull-neo4j-btn" style="display: none;">Pull</button>
+      <div class="section-header">
+        <h4 class="small" style="margin: 0;">Outgoing Relationships</h4>
+        <button id="btn-add-relationship" class="btn btn-sm btn-outline-primary" data-testid="add-relationship-btn">Add Relationship</button>
+      </div>
+      <div id="relationships-container" data-testid="relationships-container">
+        <div class="empty-state small">No relationships defined</div>
+      </div>
+
+      <div class="section-header" style="margin-top: 1.5rem;">
+        <h4 class="small" style="margin: 0;">Incoming Relationships</h4>
+      </div>
+      <div id="incoming-relationships-container" data-testid="incoming-relationships-container">
+        <div class="empty-state small">No incoming relationships</div>
+      </div>
+
+      <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <button id="btn-save" class="btn btn-sm btn-success" data-testid="save-label-btn">Save</button>
+        <button id="btn-delete" class="btn btn-sm btn-outline-danger" data-testid="delete-label-btn" style="display: none;">Delete</button>
+        <button id="btn-pull-neo4j" class="btn btn-sm btn-outline-secondary" data-testid="pull-neo4j-btn" style="display: none;">Pull</button>
+      </div>
     </div>
   </div>
 
@@ -441,6 +520,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('editor-title').textContent = 'New Label';
     document.getElementById('btn-delete').style.display = 'none';
     document.getElementById('btn-pull-neo4j').style.display = 'none';
+    // For new labels, start in edit mode
+    isEditMode = true;
+    updateEditorView();
   });
 
   document.getElementById('btn-save').addEventListener('click', saveLabel);
@@ -449,6 +531,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-pull-all-neo4j').addEventListener('click', pullAllFromNeo4j);
   document.getElementById('btn-add-property').addEventListener('click', addProperty);
   document.getElementById('btn-add-relationship').addEventListener('click', addRelationship);
+
+  // Mode toggle buttons
+  document.getElementById('btn-toggle-mode').addEventListener('click', toggleEditMode);
+  document.getElementById('btn-cancel-edit').addEventListener('click', cancelEdit);
+  document.getElementById('btn-delete-readonly').addEventListener('click', deleteLabel);
+  document.getElementById('btn-pull-neo4j-readonly').addEventListener('click', pullFromNeo4j);
 
   // Batch action buttons
   document.getElementById('btn-batch-pull').addEventListener('click', batchPull);
@@ -1153,6 +1241,8 @@ function showEditor() {
   document.getElementById('labels-statistics').style.display = 'block';
 }
 
+let isEditMode = false;
+
 function clearEditor() {
   document.getElementById('label-name').value = '';
   document.getElementById('label-name').readOnly = false;
@@ -1160,10 +1250,93 @@ function clearEditor() {
   document.getElementById('relationships-container').innerHTML = '<div class="empty-state small">No relationships defined</div>';
   document.getElementById('incoming-relationships-container').innerHTML = '<div class="empty-state small">No incoming relationships</div>';
   document.getElementById('name-error').style.display = 'none';
+
+  // Also clear read-only view
+  document.getElementById('readonly-name').textContent = '';
+  document.getElementById('readonly-properties-container').innerHTML = '<div class="empty-state small">No properties defined</div>';
+  document.getElementById('readonly-relationships-container').innerHTML = '<div class="empty-state small">No relationships defined</div>';
+  document.getElementById('readonly-incoming-relationships-container').innerHTML = '<div class="empty-state small">No incoming relationships</div>';
+}
+
+function toggleEditMode() {
+  isEditMode = !isEditMode;
+  updateEditorView();
+}
+
+function cancelEdit() {
+  isEditMode = false;
+  // Reload current label to discard changes
+  if (currentLabel) {
+    populateEditor(currentLabel);
+  }
+  updateEditorView();
+}
+
+function updateEditorView() {
+  const readonlyView = document.getElementById('readonly-view');
+  const editView = document.getElementById('edit-view');
+  const toggleBtn = document.getElementById('btn-toggle-mode');
+  const cancelBtn = document.getElementById('btn-cancel-edit');
+
+  if (isEditMode) {
+    readonlyView.style.display = 'none';
+    editView.style.display = 'block';
+    toggleBtn.style.display = 'none';
+    cancelBtn.style.display = 'inline-block';
+  } else {
+    readonlyView.style.display = 'block';
+    editView.style.display = 'none';
+    toggleBtn.style.display = 'inline-block';
+    cancelBtn.style.display = 'none';
+  }
 }
 
 function populateEditor(label) {
-  document.getElementById('editor-title').textContent = `Edit Label: ${label.name}`;
+  document.getElementById('editor-title').textContent = label.name;
+
+  // Start in read-only mode
+  isEditMode = false;
+
+  // Populate read-only view
+  document.getElementById('readonly-name').textContent = label.name;
+
+  const readonlyPropsContainer = document.getElementById('readonly-properties-container');
+  if (label.properties.length === 0) {
+    readonlyPropsContainer.innerHTML = '<div class="empty-state small">No properties defined</div>';
+  } else {
+    readonlyPropsContainer.innerHTML = label.properties.map(prop => `
+      <div class="readonly-property">
+        <strong>${prop.name}</strong>
+        <span class="badge-type">${prop.type}</span>
+        ${prop.required ? '<span class="badge-type badge-required">required</span>' : ''}
+      </div>
+    `).join('');
+  }
+
+  const readonlyRelsContainer = document.getElementById('readonly-relationships-container');
+  if (label.relationships.length === 0) {
+    readonlyRelsContainer.innerHTML = '<div class="empty-state small">No relationships defined</div>';
+  } else {
+    readonlyRelsContainer.innerHTML = label.relationships.map(rel => `
+      <div class="readonly-relationship">
+        <strong>[${rel.type}]</strong> → ${rel.target_label}
+      </div>
+    `).join('');
+  }
+
+  const readonlyIncomingContainer = document.getElementById('readonly-incoming-relationships-container');
+  const incomingRels = label.incoming_relationships || [];
+  if (incomingRels.length === 0) {
+    readonlyIncomingContainer.innerHTML = '<div class="empty-state small">No incoming relationships</div>';
+  } else {
+    readonlyIncomingContainer.innerHTML = incomingRels.map(rel => `
+      <div class="readonly-relationship">
+        <strong>${rel.source_label}</strong> → [${rel.type}]
+      </div>
+    `).join('');
+  }
+
+  // Populate edit view (same as before)
   document.getElementById('label-name').value = label.name;
   document.getElementById('label-name').readOnly = true;
   document.getElementById('btn-delete').style.display = 'inline-block';
@@ -1172,7 +1345,7 @@ function populateEditor(label) {
   // Populate statistics panel
   populateStatistics(label);
 
-  // Render properties
+  // Render properties (edit view)
   const propsContainer = document.getElementById('properties-container');
   if (label.properties.length === 0) {
     propsContainer.innerHTML = '<div class="empty-state small">No properties defined</div>';
@@ -1227,6 +1400,9 @@ function populateEditor(label) {
       });
     });
   }
+
+  // Set to read-only mode
+  updateEditorView();
 }
 
 function addProperty() {
@@ -1331,6 +1507,9 @@ function saveLabel() {
         currentLabel = data.label;
         loadLabels();
         populateEditor(currentLabel);
+        // Switch back to read-only mode after save
+        isEditMode = false;
+        updateEditorView();
       } else {
         showToast('Error saving label: ' + (data.error || 'Unknown error'), 'error');
       }
