@@ -190,6 +190,10 @@
     background: #fff;
     outline: 2px solid #2196f3;
   }
+  .instance-cell-changed {
+    background: #fff3cd !important;
+    border-left: 3px solid #ffc107;
+  }
   .instance-pagination {
     display: flex;
     justify-content: space-between;
@@ -1957,7 +1961,60 @@ async function pullInstances() {
 }
 
 async function pushInstances() {
-  showToast('Push instances feature coming soon', 'info');
+  if (!currentLabel) return;
+
+  const changeCount = Object.keys(instanceChanges).length;
+  if (changeCount === 0) {
+    showToast('No changes to push', 'info');
+    return;
+  }
+
+  if (!confirm(`Push ${changeCount} changed instance(s) to Neo4j?`)) return;
+
+  showToast(`Pushing ${changeCount} changes...`, 'info');
+
+  let successCount = 0;
+  let errorCount = 0;
+
+  for (const [instanceId, changes] of Object.entries(instanceChanges)) {
+    for (const [prop, value] of Object.entries(changes)) {
+      try {
+        const resp = await fetch(`/api/labels/${currentLabel.name}/instances/${instanceId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ property: prop, value: value })
+        });
+
+        const result = await resp.json();
+
+        if (result.status === 'success') {
+          successCount++;
+          // Update instanceData with new value
+          const instance = instanceData.find(i => i.id === instanceId);
+          if (instance) {
+            instance.properties[prop] = value;
+          }
+        } else {
+          errorCount++;
+          console.error('Error updating instance:', result.error);
+        }
+      } catch (e) {
+        errorCount++;
+        console.error('Network error updating instance:', e);
+      }
+    }
+  }
+
+  // Clear changes and re-render
+  instanceChanges = {};
+  renderInstanceTable();
+  document.getElementById('btn-push-instances').style.display = 'none';
+
+  if (errorCount === 0) {
+    showToast(`Successfully pushed ${successCount} changes`, 'success');
+  } else {
+    showToast(`Pushed ${successCount} changes, ${errorCount} failed`, 'error');
+  }
 }
 
 async function refreshInstances() {
@@ -1995,7 +2052,10 @@ function renderInstanceTable() {
     html += `<td style="font-family: monospace; font-size: 0.75rem;">${instance.id.substring(0, 8)}...</td>`;
     properties.forEach(prop => {
       const value = instance.properties[prop] || '';
-      html += `<td><div class="instance-cell-editable" data-id="${instance.id}" data-prop="${prop}">${value}</div></td>`;
+      const hasChange = instanceChanges[instance.id] && instanceChanges[instance.id][prop] !== undefined;
+      const displayValue = hasChange ? instanceChanges[instance.id][prop] : value;
+      const changeClass = hasChange ? ' instance-cell-changed' : '';
+      html += `<td><div class="instance-cell-editable${changeClass}" data-id="${instance.id}" data-prop="${prop}" contenteditable="true">${displayValue}</div></td>`;
     });
     html += '</tr>';
   });
@@ -2007,7 +2067,67 @@ function renderInstanceTable() {
   document.getElementById('instance-pagination').style.display = 'flex';
   document.getElementById('instance-page-info').textContent = `Page ${instancePage + 1} (${instanceData.length} instances)`;
 
-  // TODO: Add cell editing logic in next phase
+  // Attach cell editing listeners
+  document.querySelectorAll('.instance-cell-editable').forEach(cell => {
+    cell.addEventListener('focus', (e) => {
+      e.target.classList.add('instance-cell-editing');
+    });
+
+    cell.addEventListener('blur', (e) => {
+      e.target.classList.remove('instance-cell-editing');
+      const instanceId = e.target.dataset.id;
+      const prop = e.target.dataset.prop;
+      const newValue = e.target.textContent.trim();
+
+      // Find original value
+      const instance = instanceData.find(i => i.id === instanceId);
+      const originalValue = instance ? instance.properties[prop] || '' : '';
+
+      // Track change if different
+      if (newValue !== originalValue) {
+        if (!instanceChanges[instanceId]) {
+          instanceChanges[instanceId] = {};
+        }
+        instanceChanges[instanceId][prop] = newValue;
+        e.target.classList.add('instance-cell-changed');
+
+        // Show push button if there are changes
+        if (Object.keys(instanceChanges).length > 0) {
+          document.getElementById('btn-push-instances').style.display = 'inline-block';
+        }
+      } else {
+        // Remove change if reverted to original
+        if (instanceChanges[instanceId]) {
+          delete instanceChanges[instanceId][prop];
+          if (Object.keys(instanceChanges[instanceId]).length === 0) {
+            delete instanceChanges[instanceId];
+          }
+        }
+        e.target.classList.remove('instance-cell-changed');
+
+        // Hide push button if no changes
+        if (Object.keys(instanceChanges).length === 0) {
+          document.getElementById('btn-push-instances').style.display = 'none';
+        }
+      }
+    });
+
+    cell.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        e.target.blur();
+      }
+      if (e.key === 'Escape') {
+        // Revert to original value
+        const instanceId = e.target.dataset.id;
+        const prop = e.target.dataset.prop;
+        const instance = instanceData.find(i => i.id === instanceId);
+        const originalValue = instance ? instance.properties[prop] || '' : '';
+        e.target.textContent = originalValue;
+        e.target.blur();
+      }
+    });
+  });
 }
 </script>
 {% endblock %}
