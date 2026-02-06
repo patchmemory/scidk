@@ -483,3 +483,87 @@ def batch_delete_labels():
 
     except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@bp.route('/labels/import/eda', methods=['POST'])
+def import_eda_file():
+    """
+    Import experimental design from NC3Rs EDA file.
+
+    Expects multipart/form-data with 'file' field containing .eda file.
+
+    Returns:
+    {
+        "status": "success",
+        "imported": {
+            "labels": 3,
+            "relationships": 5
+        },
+        "labels": [...]
+    }
+    """
+    import tempfile
+    import os
+    from werkzeug.utils import secure_filename
+    from ...interpreters.eda_interpreter import parse_eda_file, eda_to_labels
+
+    try:
+        # Check if file present
+        if 'file' not in request.files:
+            return jsonify({'status': 'error', 'error': 'No file provided'}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'status': 'error', 'error': 'Empty filename'}), 400
+
+        if not file.filename.endswith('.eda'):
+            return jsonify({'status': 'error', 'error': 'File must be .eda format'}), 400
+
+        # Save to temporary file
+        filename = secure_filename(file.filename)
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.eda') as tmp:
+            file.save(tmp.name)
+            tmp_path = tmp.name
+
+        try:
+            # Parse EDA file
+            eda_nodes, eda_edges = parse_eda_file(tmp_path)
+            labels_to_create = eda_to_labels(eda_nodes, eda_edges)
+
+            # Create labels
+            service = _get_label_service()
+            created = []
+            skipped = []
+
+            for label_def in labels_to_create:
+                try:
+                    result = service.save_label(label_def)
+                    created.append(result)
+                except Exception as e:
+                    # Skip duplicates
+                    skipped.append(label_def['name'])
+                    continue
+
+            total_relationships = sum(len(l.get('relationships', [])) for l in labels_to_create)
+
+            response = {
+                'status': 'success',
+                'imported': {
+                    'labels': len(created),
+                    'relationships': total_relationships
+                },
+                'labels': created
+            }
+
+            if skipped:
+                response['skipped'] = skipped
+
+            return jsonify(response), 200
+
+        finally:
+            # Clean up temp file
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
