@@ -92,28 +92,40 @@
   /* Collapse/Expand Buttons */
   .collapse-btn {
     position: absolute;
-    top: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
     background: #f0f0f0;
     border: 1px solid #ddd;
     border-radius: 4px;
     width: 24px;
-    height: 24px;
+    height: 60px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 14px;
     z-index: 10;
-    transition: background 0.2s;
+    transition: all 0.2s;
   }
   .collapse-btn:hover {
     background: #e0e0e0;
+    width: 28px;
   }
   .collapse-btn-left {
-    right: 0.5rem;
+    right: -12px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
   }
   .collapse-btn-right {
-    left: 0.5rem;
+    left: -12px;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  .labels-list.collapsed .collapse-btn-left {
+    right: -24px;
+  }
+  .labels-statistics.collapsed .collapse-btn-right {
+    left: -24px;
   }
 
   /* Read-only mode styles */
@@ -1448,7 +1460,7 @@ function populateEditor(label) {
   } else {
     readonlyRelsContainer.innerHTML = label.relationships.map(rel => `
       <div class="readonly-relationship">
-        <strong>[${rel.type}]</strong> → ${rel.target_label}
+        -[${rel.type}]-&gt; <a href="#" class="target-label-link" data-label="${rel.target_label}" style="color: var(--accent); text-decoration: none; font-weight: bold;">${rel.target_label}</a>
       </div>
     `).join('');
   }
@@ -1460,7 +1472,7 @@ function populateEditor(label) {
   } else {
     readonlyIncomingContainer.innerHTML = incomingRels.map(rel => `
       <div class="readonly-relationship">
-        <strong>${rel.source_label}</strong> → [${rel.type}]
+        <a href="#" class="source-label-link" data-label="${rel.source_label}" style="color: var(--accent); text-decoration: none; font-weight: bold;">${rel.source_label}</a> &lt;-[${rel.type}]-
       </div>
     `).join('');
   }
@@ -1532,6 +1544,15 @@ function populateEditor(label) {
 
   // Set to read-only mode
   updateEditorView();
+
+  // Add click handlers for label links in read-only mode
+  document.querySelectorAll('.target-label-link, .source-label-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const targetLabel = e.target.dataset.label;
+      loadLabel(targetLabel);
+    });
+  });
 }
 
 function addProperty() {
@@ -2113,18 +2134,58 @@ function renderInstanceTable() {
     });
 
     cell.addEventListener('keydown', (e) => {
+      // Save on Enter
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         e.target.blur();
+        return;
       }
+
+      // Cancel on Escape
       if (e.key === 'Escape') {
-        // Revert to original value
         const instanceId = e.target.dataset.id;
         const prop = e.target.dataset.prop;
         const instance = instanceData.find(i => i.id === instanceId);
         const originalValue = instance ? instance.properties[prop] || '' : '';
         e.target.textContent = originalValue;
         e.target.blur();
+        return;
+      }
+
+      // Arrow key navigation
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        // Only navigate if not editing
+        if (document.activeElement !== e.target) return;
+
+        e.preventDefault();
+        const currentCell = e.target;
+        const currentRow = currentCell.closest('tr');
+        const cells = Array.from(currentRow.querySelectorAll('.instance-cell-editable'));
+        const currentIndex = cells.indexOf(currentCell);
+
+        let targetCell = null;
+
+        if (e.key === 'ArrowLeft' && currentIndex > 0) {
+          targetCell = cells[currentIndex - 1];
+        } else if (e.key === 'ArrowRight' && currentIndex < cells.length - 1) {
+          targetCell = cells[currentIndex + 1];
+        } else if (e.key === 'ArrowUp') {
+          const prevRow = currentRow.previousElementSibling;
+          if (prevRow) {
+            const prevCells = Array.from(prevRow.querySelectorAll('.instance-cell-editable'));
+            targetCell = prevCells[currentIndex];
+          }
+        } else if (e.key === 'ArrowDown') {
+          const nextRow = currentRow.nextElementSibling;
+          if (nextRow) {
+            const nextCells = Array.from(nextRow.querySelectorAll('.instance-cell-editable'));
+            targetCell = nextCells[currentIndex];
+          }
+        }
+
+        if (targetCell) {
+          targetCell.focus();
+        }
       }
     });
   });
