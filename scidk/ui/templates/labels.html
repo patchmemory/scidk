@@ -187,6 +187,10 @@
       <button id="btn-import-arrows" class="btn btn-sm btn-outline-info" data-testid="import-arrows-btn" style="flex: 1; font-size: 0.75rem;">Import</button>
       <button id="btn-export-arrows" class="btn btn-sm btn-outline-info" data-testid="export-arrows-btn" style="flex: 1; font-size: 0.75rem;">Export</button>
     </div>
+    <div style="display: flex; gap: 0.25rem; margin-bottom: 0.5rem;">
+      <button id="btn-import-eda" class="btn btn-sm btn-outline-success" data-testid="import-eda-btn" title="Import NC3Rs EDA experimental design file" style="flex: 1; font-size: 0.75rem;">Import EDA</button>
+    </div>
+    <input type="file" id="eda-file-input" accept=".eda" style="display:none" data-testid="eda-file-input">
     <button id="btn-new-label" class="btn btn-sm" data-testid="new-label-btn" style="width: 100%; font-weight: bold; background: #e0e0e0; color: #555; border: 1px solid #ccc; margin-bottom: 0.5rem;">+ Label</button>
     <!-- Batch action buttons (shown when multiple labels selected) -->
     <div id="batch-actions" style="display: none; margin-bottom: 0.5rem; padding: 0.5rem; background: #f0f8ff; border-radius: 4px; border: 1px solid #b3d9ff;">
@@ -350,6 +354,50 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('arrows-json-input')?.addEventListener('input', previewArrowsImport);
 
   document.getElementById('import-confirm-btn')?.addEventListener('click', importFromArrows);
+
+  // EDA File Import
+  document.getElementById('btn-import-eda')?.addEventListener('click', () => {
+    document.getElementById('eda-file-input').click();
+  });
+
+  document.getElementById('eda-file-input')?.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.eda')) {
+      alert('Please select an .eda file');
+      e.target.value = '';
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const resp = await fetch('/api/labels/import/eda', {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await resp.json();
+      if (result.status === 'success') {
+        const msg = `Successfully imported ${result.imported.labels} labels and ${result.imported.relationships} relationships from ${file.name}`;
+        if (result.skipped && result.skipped.length > 0) {
+          alert(msg + `\n\nSkipped ${result.skipped.length} existing labels: ${result.skipped.join(', ')}`);
+        } else {
+          alert(msg);
+        }
+        loadLabels();  // Refresh label list
+      } else {
+        alert('Import failed: ' + result.error);
+      }
+    } catch (err) {
+      alert('Import error: ' + err.message);
+    }
+
+    // Reset input
+    e.target.value = '';
+  });
 
   // Keyboard navigation
   document.addEventListener('keydown', handleGlobalKeydown);
