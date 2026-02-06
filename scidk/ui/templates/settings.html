@@ -643,7 +643,7 @@
   });
 
   // API Endpoint Management
-  (function() {
+  function initAPIEndpoints() {
     let editingEndpointId = null;
     const nameInput = document.getElementById('api-endpoint-name');
     const urlInput = document.getElementById('api-endpoint-url');
@@ -956,6 +956,13 @@
     // Load labels and endpoints on page load
     loadLabels();
     loadEndpoints();
-  })();
+  }
+
+  // Initialize immediately if DOM is ready, otherwise wait for DOMContentLoaded
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initAPIEndpoints);
+  } else {
+    initAPIEndpoints();
+  }
 </script>
 {% endblock %}

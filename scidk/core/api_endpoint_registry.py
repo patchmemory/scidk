@@ -8,7 +8,7 @@ Supports authentication, field mappings, and test connections.
 import sqlite3
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from cryptography.fernet import Fernet
 import os
@@ -100,7 +100,7 @@ class APIEndpointRegistry:
             raise ValueError(f"Endpoint with name '{endpoint_data['name']}' already exists")
 
         endpoint_id = str(uuid.uuid4())
-        now = datetime.utcnow().timestamp()
+        now = datetime.now(timezone.utc).timestamp()
 
         # Encrypt auth value if present
         auth_value = endpoint_data.get('auth_value', '')
@@ -244,7 +244,7 @@ class APIEndpointRegistry:
             return endpoint
 
         set_clauses.append("updated_at = ?")
-        values.append(datetime.utcnow().timestamp())
+        values.append(datetime.now(timezone.utc).timestamp())
 
         values.append(endpoint_id)
 

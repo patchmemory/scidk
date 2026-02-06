@@ -25,13 +25,11 @@
     <div class="col-auto">
       <label for="filter-labels" class="form-label small" style="margin-bottom:.25rem">Labels</label>
       <select id="filter-labels" class="form-select form-select-sm" data-testid="filter-labels">
-        <option value="">All</option>
       </select>
     </div>
     <div class="col-auto">
       <label for="filter-reltypes" class="form-label small" style="margin-bottom:.25rem">Relationship Types</label>
       <select id="filter-reltypes" class="form-select form-select-sm" data-testid="filter-reltypes">
-        <option value="">All</option>
       </select>
     </div>
     <div class="col-auto">
@@ -182,8 +180,8 @@
     if (labelSelect) {
       // Preserve current selection
       const currentLabel = labelSelect.value;
-      // Get unique labels from schema
-      const labels = [...new Set(schema.nodes?.map(n => n.label) || [])].sort();
+      // Get unique labels from schema, filtering out empty/null values
+      const labels = [...new Set(schema.nodes?.map(n => n.label).filter(l => l) || [])].sort();
       labelSelect.innerHTML = '<option value="">All</option>' +
         labels.map(l => `<option value="${l}">${l}</option>`).join('');
       // Restore selection if still valid
@@ -195,8 +193,8 @@
     if (relSelect) {
       // Preserve current selection
       const currentRel = relSelect.value;
-      // Get unique relationship types from schema
-      const rels = [...new Set(schema.edges?.map(e => e.rel_type) || [])].sort();
+      // Get unique relationship types from schema, filtering out empty/null values
+      const rels = [...new Set(schema.edges?.map(e => e.rel_type).filter(r => r) || [])].sort();
       relSelect.innerHTML = '<option value="">All</option>' +
         rels.map(r => `<option value="${r}">${r}</option>`).join('');
       // Restore selection if still valid

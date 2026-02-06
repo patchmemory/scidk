@@ -48,6 +48,16 @@ export default async function globalSetup(config: FullConfig) {
   (process as any).env.BASE_URL = baseUrl;
 
   await waitForReady(baseUrl);
+
+  // Clean up any leftover test data from previous runs
+  try {
+    await fetch(`${baseUrl}/api/admin/cleanup-test-scans`, { method: 'POST' });
+    await fetch(`${baseUrl}/api/admin/cleanup-test-labels`, { method: 'POST' });
+    await fetch(`${baseUrl}/api/admin/cleanup-test-endpoints`, { method: 'POST' });
+    console.log('[setup] Test data cleaned up');
+  } catch (error) {
+    console.error('[setup] Failed to cleanup test data:', error);
+  }
 }
 
 export async function teardown() {
