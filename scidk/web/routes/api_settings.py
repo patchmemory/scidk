@@ -331,3 +331,240 @@ def test_api_endpoint(endpoint_id):
             'status': 'error',
             'error': str(e)
         }), 500
+
+
+def _get_table_format_registry():
+    """Get or create TableFormatRegistry instance."""
+    from ...core.table_format_registry import TableFormatRegistry
+
+    if 'table_format_registry' not in current_app.extensions.get('scidk', {}):
+        if 'scidk' not in current_app.extensions:
+            current_app.extensions['scidk'] = {}
+
+        # Get settings DB path
+        settings_db = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+
+        current_app.extensions['scidk']['table_format_registry'] = TableFormatRegistry(
+            db_path=settings_db
+        )
+
+    return current_app.extensions['scidk']['table_format_registry']
+
+
+@bp.route('/settings/table-formats', methods=['GET'])
+def list_table_formats():
+    """
+    Get all registered table format configurations.
+
+    Query params:
+        - include_preprogrammed: Include pre-programmed formats (default: true)
+
+    Returns:
+    {
+        "status": "success",
+        "formats": [...]
+    }
+    """
+    try:
+        include_preprogrammed = request.args.get('include_preprogrammed', 'true').lower() == 'true'
+        registry = _get_table_format_registry()
+        formats = registry.list_formats(include_preprogrammed=include_preprogrammed)
+        return jsonify({
+            'status': 'success',
+            'formats': formats
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/table-formats/<format_id>', methods=['GET'])
+def get_table_format(format_id):
+    """Get a specific table format by ID."""
+    try:
+        registry = _get_table_format_registry()
+        format_config = registry.get_format(format_id)
+
+        if not format_config:
+            return jsonify({
+                'status': 'error',
+                'error': f'Format "{format_id}" not found'
+            }), 404
+
+        return jsonify({
+            'status': 'success',
+            'format': format_config
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/table-formats', methods=['POST'])
+def create_table_format():
+    """Create a new table format configuration."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'error': 'Request body must be JSON'
+            }), 400
+
+        registry = _get_table_format_registry()
+        format_config = registry.create_format(data)
+
+        return jsonify({
+            'status': 'success',
+            'format': format_config
+        }), 201
+    except ValueError as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 400
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/table-formats/<format_id>', methods=['PUT', 'PATCH'])
+def update_table_format(format_id):
+    """Update an existing table format."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'error': 'Request body must be JSON'
+            }), 400
+
+        registry = _get_table_format_registry()
+        format_config = registry.update_format(format_id, data)
+
+        return jsonify({
+            'status': 'success',
+            'format': format_config
+        }), 200
+    except ValueError as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 400
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/table-formats/<format_id>', methods=['DELETE'])
+def delete_table_format(format_id):
+    """Delete a table format."""
+    try:
+        registry = _get_table_format_registry()
+        deleted = registry.delete_format(format_id)
+
+        if not deleted:
+            return jsonify({
+                'status': 'error',
+                'error': f'Format "{format_id}" not found'
+            }), 404
+
+        return jsonify({
+            'status': 'success'
+        }), 200
+    except ValueError as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 400
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/table-formats/detect', methods=['POST'])
+def detect_table_format():
+    """Auto-detect table format from uploaded file."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({
+                'status': 'error',
+                'error': 'No file provided'
+            }), 400
+
+        file = request.files['file']
+        if not file or not file.filename:
+            return jsonify({
+                'status': 'error',
+                'error': 'Invalid file'
+            }), 400
+
+        file_content = file.read()
+        registry = _get_table_format_registry()
+        detected = registry.detect_format(file_content, filename=file.filename)
+
+        if 'error' in detected:
+            return jsonify({
+                'status': 'error',
+                'error': detected['error']
+            }), 400
+
+        return jsonify({
+            'status': 'success',
+            'detected': detected
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/table-formats/<format_id>/preview', methods=['POST'])
+def preview_table_data(format_id):
+    """Preview table data using a format configuration."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({
+                'status': 'error',
+                'error': 'No file provided'
+            }), 400
+
+        file = request.files['file']
+        if not file or not file.filename:
+            return jsonify({
+                'status': 'error',
+                'error': 'Invalid file'
+            }), 400
+
+        file_content = file.read()
+        num_rows = int(request.args.get('num_rows', 5))
+
+        registry = _get_table_format_registry()
+        preview = registry.preview_data(file_content, format_id, num_rows=num_rows)
+
+        if 'error' in preview:
+            return jsonify({
+                'status': 'error',
+                'error': preview['error']
+            }), 400
+
+        return jsonify({
+            'status': 'success',
+            'preview': preview
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500

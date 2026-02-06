@@ -392,9 +392,75 @@
   </div>
 
   <h2 style="margin-top: 1.5rem;">Table Format Registry</h2>
-  <p class="small">Pre-programmed table formats for importing data as link sources.</p>
-  <div style="padding: 2rem; text-align: center; color: #999; background: #f9f9f9; border: 1px dashed #ddd; border-radius: 4px;">
-    <em>Coming soon: Manage CSV, TSV, Excel, and custom table formats</em>
+  <p class="small">Manage table formats for importing CSV, TSV, Excel, and Parquet files as link sources.</p>
+
+  <!-- Add Format Form -->
+  <div style="margin-bottom: 1.5rem; padding: 1rem; background: #f9f9f9; border-radius: 4px;">
+    <h3 style="margin-top: 0;">Add Custom Format</h3>
+    <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem;">
+      <div>
+        <label for="table-format-name">Name:</label>
+        <input type="text" id="table-format-name" class="form-control" placeholder="My CSV Format" data-testid="table-format-name">
+      </div>
+      <div>
+        <label for="table-format-file-type">File Type:</label>
+        <select id="table-format-file-type" class="form-control" data-testid="table-format-file-type">
+          <option value="csv">CSV</option>
+          <option value="tsv">TSV</option>
+          <option value="excel">Excel</option>
+          <option value="parquet">Parquet</option>
+        </select>
+      </div>
+      <div>
+        <label for="table-format-delimiter">Delimiter:</label>
+        <input type="text" id="table-format-delimiter" class="form-control" placeholder="," maxlength="1" data-testid="table-format-delimiter">
+      </div>
+      <div>
+        <label for="table-format-encoding">Encoding:</label>
+        <select id="table-format-encoding" class="form-control" data-testid="table-format-encoding">
+          <option value="utf-8">UTF-8</option>
+          <option value="latin-1">Latin-1</option>
+          <option value="utf-16">UTF-16</option>
+        </select>
+      </div>
+      <div>
+        <label for="table-format-target-label">Target Label (optional):</label>
+        <select id="table-format-target-label" class="form-control" data-testid="table-format-target-label">
+          <option value="">-- Select Label --</option>
+        </select>
+      </div>
+      <div style="display: flex; align-items: end; gap: 0.5rem;">
+        <div class="form-check">
+          <input id="table-format-has-header" class="form-check-input" type="checkbox" checked data-testid="table-format-has-header">
+          <label for="table-format-has-header" class="form-check-label small">Has Header Row</label>
+        </div>
+      </div>
+    </div>
+    <div>
+      <label for="table-format-description">Description (optional):</label>
+      <input type="text" id="table-format-description" class="form-control" placeholder="Custom format for..." data-testid="table-format-description">
+    </div>
+    <div style="display: flex; gap: 0.5rem; margin-top: 0.75rem;">
+      <button id="btn-save-table-format" class="btn btn-sm btn-primary" data-testid="btn-save-table-format">Save Format</button>
+      <button id="btn-cancel-table-format" class="btn btn-sm btn-outline-secondary" style="display: none;" data-testid="btn-cancel-table-format">Cancel</button>
+      <label class="btn btn-sm btn-outline-secondary" for="table-format-upload-sample">
+        <input type="file" id="table-format-upload-sample" style="display: none;" accept=".csv,.tsv,.txt,.xlsx,.xls,.parquet" data-testid="table-format-upload-sample">
+        Upload Sample & Detect
+      </label>
+    </div>
+    <div id="table-format-message" class="small" style="margin-top: 0.5rem; color: var(--accent);"></div>
+
+    <!-- Preview Section -->
+    <div id="table-format-preview" style="display: none; margin-top: 1rem; padding: 1rem; background: #fff; border: 1px solid #ddd; border-radius: 4px;">
+      <h4>Data Preview</h4>
+      <div id="table-format-preview-content"></div>
+    </div>
+  </div>
+
+  <!-- Formats List -->
+  <h3>Registered Formats</h3>
+  <div id="table-formats-list">
+    <p class="small" style="color: #999;"><em>Loading formats...</em></p>
   </div>
 
   <h2 style="margin-top: 1.5rem;">Fuzzy Matching Options</h2>
@@ -963,6 +1029,312 @@
     document.addEventListener('DOMContentLoaded', initAPIEndpoints);
   } else {
     initAPIEndpoints();
+  }
+
+  // Table Format Registry Management
+  function initTableFormats() {
+    let editingFormatId = null;
+    const nameInput = document.getElementById('table-format-name');
+    const fileTypeSelect = document.getElementById('table-format-file-type');
+    const delimiterInput = document.getElementById('table-format-delimiter');
+    const encodingSelect = document.getElementById('table-format-encoding');
+    const targetLabelSelect = document.getElementById('table-format-target-label');
+    const hasHeaderCheck = document.getElementById('table-format-has-header');
+    const descriptionInput = document.getElementById('table-format-description');
+    const btnSave = document.getElementById('btn-save-table-format');
+    const btnCancel = document.getElementById('btn-cancel-table-format');
+    const uploadSample = document.getElementById('table-format-upload-sample');
+    const messageDiv = document.getElementById('table-format-message');
+    const formatsList = document.getElementById('table-formats-list');
+    const previewDiv = document.getElementById('table-format-preview');
+    const previewContent = document.getElementById('table-format-preview-content');
+
+    // Update delimiter placeholder based on file type
+    fileTypeSelect.addEventListener('change', () => {
+      const fileType = fileTypeSelect.value;
+      if (fileType === 'csv') {
+        delimiterInput.value = ',';
+        delimiterInput.disabled = false;
+      } else if (fileType === 'tsv') {
+        delimiterInput.value = '\t';
+        delimiterInput.disabled = false;
+      } else {
+        delimiterInput.value = '';
+        delimiterInput.disabled = true;
+      }
+    });
+
+    async function loadLabels() {
+      try {
+        const response = await fetch('/api/labels');
+        const data = await response.json();
+        if (data.status === 'success' && data.labels) {
+          targetLabelSelect.innerHTML = '<option value="">-- Select Label --</option>';
+          data.labels.forEach(label => {
+            const option = document.createElement('option');
+            option.value = label.name;
+            option.textContent = label.name;
+            targetLabelSelect.appendChild(option);
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load labels:', err);
+      }
+    }
+
+    async function loadFormats() {
+      try {
+        const response = await fetch('/api/settings/table-formats');
+        const data = await response.json();
+
+        if (data.status === 'success' && data.formats && data.formats.length > 0) {
+          formatsList.innerHTML = `
+            <table class="table table-sm" style="width: 100%;">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Delimiter</th>
+                  <th>Encoding</th>
+                  <th>Target Label</th>
+                  <th style="width: 180px;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="formats-table-body">
+              </tbody>
+            </table>
+          `;
+
+          const tbody = document.getElementById('formats-table-body');
+          data.formats.forEach(format => {
+            const row = document.createElement('tr');
+            const badge = format.is_preprogrammed ? '<span class="badge" style="background: #19c37d; color: white; margin-left: 0.25rem;">Preprogrammed</span>' : '';
+            row.innerHTML = `
+              <td>${escapeHtml(format.name)}${badge}</td>
+              <td><span class="badge">${format.file_type.toUpperCase()}</span></td>
+              <td><span class="small text-muted">${format.delimiter || '—'}</span></td>
+              <td><span class="small text-muted">${format.encoding}</span></td>
+              <td>${format.target_label ? escapeHtml(format.target_label) : '<span class="text-muted">—</span>'}</td>
+              <td>
+                ${!format.is_preprogrammed ? `
+                  <button class="btn btn-xs btn-outline-secondary" onclick="tableFormatsEdit('${format.id}')">Edit</button>
+                  <button class="btn btn-xs btn-outline-danger" onclick="tableFormatsDelete('${format.id}')">Delete</button>
+                ` : '<span class="small text-muted">Read-only</span>'}
+              </td>
+            `;
+            tbody.appendChild(row);
+          });
+        } else {
+          formatsList.innerHTML = '<p class="small" style="color: #999;"><em>No formats registered yet</em></p>';
+        }
+      } catch (err) {
+        messageDiv.textContent = 'Failed to load formats: ' + err.message;
+        messageDiv.style.color = 'red';
+      }
+    }
+
+    function resetForm() {
+      editingFormatId = null;
+      nameInput.value = '';
+      fileTypeSelect.value = 'csv';
+      delimiterInput.value = ',';
+      delimiterInput.disabled = false;
+      encodingSelect.value = 'utf-8';
+      targetLabelSelect.value = '';
+      hasHeaderCheck.checked = true;
+      descriptionInput.value = '';
+      btnSave.textContent = 'Save Format';
+      btnCancel.style.display = 'none';
+      messageDiv.textContent = '';
+      previewDiv.style.display = 'none';
+    }
+
+    async function saveFormat() {
+      const name = nameInput.value.trim();
+      const fileType = fileTypeSelect.value;
+
+      if (!name) {
+        messageDiv.textContent = 'Name is required';
+        messageDiv.style.color = 'red';
+        return;
+      }
+
+      const formatData = {
+        name: name,
+        file_type: fileType,
+        delimiter: delimiterInput.value || null,
+        encoding: encodingSelect.value,
+        has_header: hasHeaderCheck.checked,
+        header_row: hasHeaderCheck.checked ? 0 : null,
+        target_label: targetLabelSelect.value || null,
+        description: descriptionInput.value.trim() || null
+      };
+
+      try {
+        let response;
+        if (editingFormatId) {
+          response = await fetch(`/api/settings/table-formats/${editingFormatId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formatData)
+          });
+        } else {
+          response = await fetch('/api/settings/table-formats', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formatData)
+          });
+        }
+
+        const data = await response.json();
+
+        if (data.status === 'success') {
+          messageDiv.textContent = editingFormatId ? 'Format updated!' : 'Format saved!';
+          messageDiv.style.color = 'green';
+          resetForm();
+          await loadFormats();
+          setTimeout(() => { messageDiv.textContent = ''; }, 3000);
+        } else {
+          messageDiv.textContent = 'Error: ' + (data.error || 'Unknown error');
+          messageDiv.style.color = 'red';
+        }
+      } catch (err) {
+        messageDiv.textContent = 'Save failed: ' + err.message;
+        messageDiv.style.color = 'red';
+      }
+    }
+
+    // Handle file upload for auto-detect
+    uploadSample.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      messageDiv.textContent = 'Detecting format...';
+      messageDiv.style.color = '#666';
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const response = await fetch('/api/settings/table-formats/detect', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await response.json();
+
+        if (data.status === 'success' && data.detected) {
+          const detected = data.detected;
+
+          // Update form fields
+          if (!nameInput.value) {
+            nameInput.value = file.name.split('.')[0] + ' Format';
+          }
+          fileTypeSelect.value = detected.file_type;
+          fileTypeSelect.dispatchEvent(new Event('change'));
+          if (detected.delimiter) {
+            delimiterInput.value = detected.delimiter;
+          }
+          encodingSelect.value = detected.encoding;
+          hasHeaderCheck.checked = detected.has_header;
+
+          // Show detected columns
+          if (detected.sample_columns && detected.sample_columns.length > 0) {
+            previewContent.innerHTML = `
+              <p class="small"><strong>Detected columns:</strong> ${detected.sample_columns.join(', ')}</p>
+            `;
+            previewDiv.style.display = 'block';
+          }
+
+          messageDiv.textContent = '✓ Format detected! Review and save.';
+          messageDiv.style.color = 'green';
+        } else {
+          messageDiv.textContent = '✗ Detection failed: ' + (data.error || 'Unknown error');
+          messageDiv.style.color = 'red';
+        }
+      } catch (err) {
+        messageDiv.textContent = '✗ Detection failed: ' + err.message;
+        messageDiv.style.color = 'red';
+      }
+
+      // Reset file input
+      e.target.value = '';
+    });
+
+    // Global functions for onclick handlers
+    window.tableFormatsEdit = async function(id) {
+      try {
+        const response = await fetch(`/api/settings/table-formats/${id}`);
+        const data = await response.json();
+
+        if (data.status === 'success' && data.format) {
+          const format = data.format;
+          editingFormatId = id;
+          nameInput.value = format.name;
+          fileTypeSelect.value = format.file_type;
+          delimiterInput.value = format.delimiter || '';
+          encodingSelect.value = format.encoding;
+          targetLabelSelect.value = format.target_label || '';
+          hasHeaderCheck.checked = format.has_header;
+          descriptionInput.value = format.description || '';
+          btnSave.textContent = 'Update Format';
+          btnCancel.style.display = 'inline-block';
+          messageDiv.textContent = 'Editing: ' + format.name;
+          messageDiv.style.color = '#666';
+
+          // Scroll to form
+          nameInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      } catch (err) {
+        alert('Failed to load format: ' + err.message);
+      }
+    };
+
+    window.tableFormatsDelete = async function(id) {
+      if (!confirm('Are you sure you want to delete this format?')) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/settings/table-formats/${id}`, {
+          method: 'DELETE'
+        });
+        const data = await response.json();
+
+        if (data.status === 'success') {
+          await loadFormats();
+          messageDiv.textContent = 'Format deleted';
+          messageDiv.style.color = 'green';
+          setTimeout(() => { messageDiv.textContent = ''; }, 2000);
+        } else {
+          alert('Delete failed: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('Delete failed: ' + err.message);
+      }
+    };
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    if (btnSave) btnSave.addEventListener('click', saveFormat);
+    if (btnCancel) btnCancel.addEventListener('click', resetForm);
+
+    // Initialize delimiter on page load
+    fileTypeSelect.dispatchEvent(new Event('change'));
+
+    // Load labels and formats
+    loadLabels();
+    loadFormats();
+  }
+
+  // Initialize table formats immediately if DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initTableFormats);
+  } else {
+    initTableFormats();
   }
 </script>
 {% endblock %}

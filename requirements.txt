@@ -8,6 +8,7 @@ psutil>=5.9
 python-dateutil>=2.8
 cryptography>=41.0
 jsonpath-ng>=1.6
+pandas>=2.0
 
 # Dev/test dependencies (same as pyproject.toml [project.optional-dependencies].dev)
 pytest>=7.4
