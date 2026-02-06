@@ -464,9 +464,111 @@
   </div>
 
   <h2 style="margin-top: 1.5rem;">Fuzzy Matching Options</h2>
-  <p class="small">Configure matching tolerance and equivalence options for link mappings.</p>
-  <div style="padding: 2rem; text-align: center; color: #999; background: #f9f9f9; border: 1px dashed #ddd; border-radius: 4px;">
-    <em>Coming soon: Levenshtein distance, phonetic matching, case sensitivity settings</em>
+  <p class="small">Configure fuzzy matching algorithms for entity resolution in link creation.</p>
+
+  <!-- Fuzzy Matching Settings Form -->
+  <div style="margin-bottom: 1.5rem; padding: 1rem; background: #f9f9f9; border-radius: 4px; max-width: 800px;">
+    <h3 style="margin-top: 0;">Global Fuzzy Matching Settings</h3>
+
+    <!-- Primary Settings -->
+    <div class="row g-2" style="margin-bottom: 1rem;">
+      <div class="col-12 col-md-6">
+        <label class="form-label small" for="fuzzy-algorithm">Matching Algorithm:</label>
+        <select id="fuzzy-algorithm" class="form-control form-control-sm" data-testid="fuzzy-algorithm">
+          <option value="exact">Exact Match</option>
+          <option value="levenshtein">Levenshtein Distance</option>
+          <option value="jaro_winkler">Jaro-Winkler Distance</option>
+          <option value="phonetic">Phonetic (Soundex/Metaphone)</option>
+        </select>
+        <div class="small text-muted">Levenshtein: general fuzzy matching | Jaro-Winkler: names | Phonetic: sound-alike</div>
+      </div>
+      <div class="col-12 col-md-6">
+        <label class="form-label small" for="fuzzy-threshold">Similarity Threshold: <span id="fuzzy-threshold-value">80</span>%</label>
+        <input id="fuzzy-threshold" type="range" class="form-range" min="0" max="100" value="80" data-testid="fuzzy-threshold">
+        <div class="small text-muted">Minimum similarity score (0-100%) to consider a match</div>
+      </div>
+    </div>
+
+    <!-- Normalization Options -->
+    <div class="row g-2" style="margin-bottom: 1rem;">
+      <div class="col-12 col-md-4">
+        <div class="form-check">
+          <input id="fuzzy-case-sensitive" class="form-check-input" type="checkbox" data-testid="fuzzy-case-sensitive">
+          <label class="form-check-label small" for="fuzzy-case-sensitive">Case Sensitive</label>
+        </div>
+      </div>
+      <div class="col-12 col-md-4">
+        <div class="form-check">
+          <input id="fuzzy-normalize-whitespace" class="form-check-input" type="checkbox" checked data-testid="fuzzy-normalize-whitespace">
+          <label class="form-check-label small" for="fuzzy-normalize-whitespace">Normalize Whitespace</label>
+        </div>
+      </div>
+      <div class="col-12 col-md-4">
+        <div class="form-check">
+          <input id="fuzzy-strip-punctuation" class="form-check-input" type="checkbox" checked data-testid="fuzzy-strip-punctuation">
+          <label class="form-check-label small" for="fuzzy-strip-punctuation">Strip Punctuation</label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phonetic Settings (shown when algorithm is phonetic) -->
+    <div id="fuzzy-phonetic-settings" style="display: none; margin-bottom: 1rem;">
+      <div class="row g-2">
+        <div class="col-12 col-md-6">
+          <div class="form-check">
+            <input id="fuzzy-phonetic-enabled" class="form-check-input" type="checkbox" data-testid="fuzzy-phonetic-enabled">
+            <label class="form-check-label small" for="fuzzy-phonetic-enabled">Enable Phonetic Matching</label>
+          </div>
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label small" for="fuzzy-phonetic-algorithm">Phonetic Algorithm:</label>
+          <select id="fuzzy-phonetic-algorithm" class="form-control form-control-sm" data-testid="fuzzy-phonetic-algorithm">
+            <option value="soundex">Soundex</option>
+            <option value="metaphone">Metaphone (Better)</option>
+            <option value="double_metaphone">Double Metaphone</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Advanced Settings (Collapsible) -->
+    <details style="margin-bottom: 1rem;">
+      <summary class="small" style="cursor: pointer;">Advanced Options</summary>
+      <div class="row g-2" style="margin-top: 0.5rem;">
+        <div class="col-12 col-md-4">
+          <label class="form-label small" for="fuzzy-min-length">Min String Length:</label>
+          <input id="fuzzy-min-length" type="number" class="form-control form-control-sm" min="1" max="10" value="3" data-testid="fuzzy-min-length">
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label small" for="fuzzy-max-comparisons">Max Comparisons:</label>
+          <input id="fuzzy-max-comparisons" type="number" class="form-control form-control-sm" min="100" max="100000" step="100" value="10000" data-testid="fuzzy-max-comparisons">
+        </div>
+        <div class="col-12 col-md-4" style="display: flex; align-items: end;">
+          <div class="form-check">
+            <input id="fuzzy-show-confidence" class="form-check-input" type="checkbox" checked data-testid="fuzzy-show-confidence">
+            <label class="form-check-label small" for="fuzzy-show-confidence">Show Confidence Scores</label>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- Action Buttons -->
+    <div style="display: flex; gap: 0.5rem;">
+      <button id="btn-save-fuzzy-settings" class="btn btn-sm btn-primary" data-testid="btn-save-fuzzy-settings">Save Settings</button>
+      <button id="btn-reset-fuzzy-settings" class="btn btn-sm btn-outline-secondary" data-testid="btn-reset-fuzzy-settings">Reset to Defaults</button>
+    </div>
+    <div id="fuzzy-settings-message" class="small" style="margin-top: 0.5rem; color: var(--accent);"></div>
+  </div>
+
+  <!-- Architecture Info -->
+  <div style="padding: 1rem; background: #f0f8ff; border-left: 3px solid #19c37d; margin-bottom: 1rem; max-width: 800px;">
+    <h4 class="small" style="margin-top: 0;">Hybrid Matching Architecture</h4>
+    <p class="small" style="margin-bottom: 0.5rem;">
+      <strong>Phase 1 (Client-Side):</strong> Pre-import matching using rapidfuzz - match external API/CSV data before pushing to Neo4j.
+    </p>
+    <p class="small" style="margin: 0;">
+      <strong>Phase 2 (Server-Side):</strong> Post-import matching using Neo4j APOC functions - ultra-fast in-database entity resolution for existing nodes.
+    </p>
   </div>
     </section>
   </div>
@@ -1335,6 +1437,162 @@
     document.addEventListener('DOMContentLoaded', initTableFormats);
   } else {
     initTableFormats();
+  }
+
+  // Fuzzy Matching Settings Management
+  function initFuzzyMatching() {
+    const algorithmSelect = document.getElementById('fuzzy-algorithm');
+    const thresholdInput = document.getElementById('fuzzy-threshold');
+    const thresholdValue = document.getElementById('fuzzy-threshold-value');
+    const caseSensitiveCheck = document.getElementById('fuzzy-case-sensitive');
+    const normalizeWhitespaceCheck = document.getElementById('fuzzy-normalize-whitespace');
+    const stripPunctuationCheck = document.getElementById('fuzzy-strip-punctuation');
+    const phoneticSettings = document.getElementById('fuzzy-phonetic-settings');
+    const phoneticEnabledCheck = document.getElementById('fuzzy-phonetic-enabled');
+    const phoneticAlgorithmSelect = document.getElementById('fuzzy-phonetic-algorithm');
+    const minLengthInput = document.getElementById('fuzzy-min-length');
+    const maxComparisonsInput = document.getElementById('fuzzy-max-comparisons');
+    const showConfidenceCheck = document.getElementById('fuzzy-show-confidence');
+    const btnSave = document.getElementById('btn-save-fuzzy-settings');
+    const btnReset = document.getElementById('btn-reset-fuzzy-settings');
+    const messageDiv = document.getElementById('fuzzy-settings-message');
+
+    // Update threshold value display
+    thresholdInput.addEventListener('input', () => {
+      thresholdValue.textContent = thresholdInput.value;
+    });
+
+    // Show/hide phonetic settings based on algorithm
+    algorithmSelect.addEventListener('change', () => {
+      if (algorithmSelect.value === 'phonetic') {
+        phoneticSettings.style.display = 'block';
+        phoneticEnabledCheck.checked = true;
+      } else {
+        phoneticSettings.style.display = 'none';
+      }
+    });
+
+    async function loadSettings() {
+      try {
+        const response = await fetch('/api/settings/fuzzy-matching');
+        const data = await response.json();
+
+        if (data.status === 'success' && data.settings) {
+          const settings = data.settings;
+
+          algorithmSelect.value = settings.algorithm;
+          thresholdInput.value = Math.round(settings.threshold * 100);
+          thresholdValue.textContent = Math.round(settings.threshold * 100);
+          caseSensitiveCheck.checked = settings.case_sensitive;
+          normalizeWhitespaceCheck.checked = settings.normalize_whitespace;
+          stripPunctuationCheck.checked = settings.strip_punctuation;
+          phoneticEnabledCheck.checked = settings.phonetic_enabled;
+          phoneticAlgorithmSelect.value = settings.phonetic_algorithm;
+          minLengthInput.value = settings.min_string_length;
+          maxComparisonsInput.value = settings.max_comparisons;
+          showConfidenceCheck.checked = settings.show_confidence_scores;
+
+          // Update phonetic settings visibility
+          if (settings.algorithm === 'phonetic') {
+            phoneticSettings.style.display = 'block';
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load fuzzy matching settings:', err);
+        messageDiv.textContent = 'Failed to load settings: ' + err.message;
+        messageDiv.style.color = 'red';
+      }
+    }
+
+    async function saveSettings() {
+      const settingsData = {
+        algorithm: algorithmSelect.value,
+        threshold: parseFloat(thresholdInput.value) / 100.0,
+        case_sensitive: caseSensitiveCheck.checked,
+        normalize_whitespace: normalizeWhitespaceCheck.checked,
+        strip_punctuation: stripPunctuationCheck.checked,
+        phonetic_enabled: phoneticEnabledCheck.checked,
+        phonetic_algorithm: phoneticAlgorithmSelect.value,
+        min_string_length: parseInt(minLengthInput.value),
+        max_comparisons: parseInt(maxComparisonsInput.value),
+        show_confidence_scores: showConfidenceCheck.checked
+      };
+
+      try {
+        const response = await fetch('/api/settings/fuzzy-matching', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(settingsData)
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'success') {
+          messageDiv.textContent = 'Settings saved successfully!';
+          messageDiv.style.color = 'green';
+          setTimeout(() => { messageDiv.textContent = ''; }, 3000);
+        } else {
+          messageDiv.textContent = 'Error: ' + (data.error || 'Unknown error');
+          messageDiv.style.color = 'red';
+        }
+      } catch (err) {
+        messageDiv.textContent = 'Save failed: ' + err.message;
+        messageDiv.style.color = 'red';
+      }
+    }
+
+    async function resetSettings() {
+      if (!confirm('Reset to default fuzzy matching settings?')) {
+        return;
+      }
+
+      // Reset to defaults
+      const defaults = {
+        algorithm: 'levenshtein',
+        threshold: 0.80,
+        case_sensitive: false,
+        normalize_whitespace: true,
+        strip_punctuation: true,
+        phonetic_enabled: false,
+        phonetic_algorithm: 'metaphone',
+        min_string_length: 3,
+        max_comparisons: 10000,
+        show_confidence_scores: true
+      };
+
+      try {
+        const response = await fetch('/api/settings/fuzzy-matching', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(defaults)
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'success') {
+          await loadSettings(); // Reload to reflect changes
+          messageDiv.textContent = 'Reset to defaults!';
+          messageDiv.style.color = 'green';
+          setTimeout(() => { messageDiv.textContent = ''; }, 3000);
+        }
+      } catch (err) {
+        messageDiv.textContent = 'Reset failed: ' + err.message;
+        messageDiv.style.color = 'red';
+      }
+    }
+
+    if (btnSave) btnSave.addEventListener('click', saveSettings);
+    if (btnReset) btnReset.addEventListener('click', resetSettings);
+
+    // Load settings on page load
+    loadSettings();
+  }
+
+  // Initialize fuzzy matching immediately if DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initFuzzyMatching);
+  } else {
+    initFuzzyMatching();
   }
 </script>
 {% endblock %}

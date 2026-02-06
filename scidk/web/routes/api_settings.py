@@ -568,3 +568,180 @@ def preview_table_data(format_id):
             'status': 'error',
             'error': str(e)
         }), 500
+
+
+def _get_fuzzy_matching_service():
+    """Get or create FuzzyMatchingService instance."""
+    from ...core.fuzzy_matching import FuzzyMatchingService
+
+    if 'fuzzy_matching_service' not in current_app.extensions.get('scidk', {}):
+        if 'scidk' not in current_app.extensions:
+            current_app.extensions['scidk'] = {}
+
+        # Get settings DB path
+        settings_db = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+
+        current_app.extensions['scidk']['fuzzy_matching_service'] = FuzzyMatchingService(
+            db_path=settings_db
+        )
+
+    return current_app.extensions['scidk']['fuzzy_matching_service']
+
+
+@bp.route('/settings/fuzzy-matching', methods=['GET'])
+def get_fuzzy_matching_settings():
+    """
+    Get global fuzzy matching settings.
+
+    Returns:
+    {
+        "status": "success",
+        "settings": {
+            "algorithm": "levenshtein",
+            "threshold": 0.80,
+            "case_sensitive": false,
+            ...
+        }
+    }
+    """
+    try:
+        service = _get_fuzzy_matching_service()
+        settings = service.get_global_settings()
+
+        return jsonify({
+            'status': 'success',
+            'settings': settings.to_dict()
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/fuzzy-matching', methods=['POST', 'PUT'])
+def update_fuzzy_matching_settings():
+    """
+    Update global fuzzy matching settings.
+
+    Request body:
+    {
+        "algorithm": "levenshtein",
+        "threshold": 0.75,
+        "case_sensitive": false,
+        "normalize_whitespace": true,
+        "strip_punctuation": true,
+        "phonetic_enabled": false,
+        "phonetic_algorithm": "metaphone",
+        "min_string_length": 3,
+        "max_comparisons": 10000,
+        "show_confidence_scores": true
+    }
+
+    Returns:
+    {
+        "status": "success",
+        "settings": {...}
+    }
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'error': 'Request body must be JSON'
+            }), 400
+
+        service = _get_fuzzy_matching_service()
+        settings = service.update_global_settings(data)
+
+        return jsonify({
+            'status': 'success',
+            'settings': settings.to_dict()
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/fuzzy-matching/preview', methods=['POST'])
+def preview_fuzzy_matching():
+    """
+    Preview fuzzy matching results for external data.
+
+    Request body:
+    {
+        "external_records": [
+            {"name": "Jon Smith", "email": "jon@example.com"},
+            ...
+        ],
+        "existing_nodes": [
+            {"name": "John Smith", "email": "john@example.com"},
+            ...
+        ],
+        "match_key": "name",
+        "settings": {  // Optional override
+            "algorithm": "levenshtein",
+            "threshold": 0.75
+        }
+    }
+
+    Returns:
+    {
+        "status": "success",
+        "matches": [
+            {
+                "external_record": {...},
+                "matched_node": {...} or null,
+                "confidence": 0.85,
+                "is_match": true
+            }
+        ]
+    }
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'error': 'Request body must be JSON'
+            }), 400
+
+        external_records = data.get('external_records', [])
+        existing_nodes = data.get('existing_nodes', [])
+        match_key = data.get('match_key')
+
+        if not match_key:
+            return jsonify({
+                'status': 'error',
+                'error': 'match_key is required'
+            }), 400
+
+        service = _get_fuzzy_matching_service()
+
+        # Parse settings override if provided
+        settings = None
+        if 'settings' in data and data['settings']:
+            from ...core.fuzzy_matching import FuzzyMatchSettings
+            settings = FuzzyMatchSettings.from_dict(data['settings'])
+
+        matches = service.match_external_data(
+            external_records,
+            existing_nodes,
+            match_key,
+            settings
+        )
+
+        return jsonify({
+            'status': 'success',
+            'matches': matches,
+            'total_external': len(external_records),
+            'total_matched': sum(1 for m in matches if m['is_match'])
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
