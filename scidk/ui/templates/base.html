@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>{% block title %}SciDK{% endblock %}</title>
+  <title>{% block title %}-SciDK->{% endblock %}</title>
   <style>
     :root { --fg:#222; --muted:#666; --bg:#fff; --accent:#0a6; }
     * { box-sizing: border-box; }
@@ -29,7 +29,7 @@
 </head>
 <body>
 <header data-testid="header">
-  <h1><a href="/" style="text-decoration:none;color:inherit" data-testid="nav-home">SciDK</a></h1>
+  <h1><a href="/" style="text-decoration:none;color:inherit;font-family:monospace;letter-spacing:0.02em" data-testid="nav-home">-SciDK-></a></h1>
   <nav data-testid="nav">
     <!-- Home link removed; use SciDK logo as Home -->
     <a href="/datasets" data-testid="nav-files">Files</a>
