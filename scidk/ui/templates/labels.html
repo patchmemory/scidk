@@ -151,6 +151,53 @@
     color: #c62828;
   }
 
+  /* Instance Browser */
+  .instance-browser {
+    margin-top: 2rem;
+    border-top: 2px solid #e0e0e0;
+    padding-top: 1rem;
+  }
+  .instance-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+  .instance-table th {
+    background: #f5f5f5;
+    padding: 0.5rem;
+    text-align: left;
+    border-bottom: 2px solid #ddd;
+    font-weight: 600;
+  }
+  .instance-table td {
+    padding: 0.5rem;
+    border-bottom: 1px solid #eee;
+  }
+  .instance-table tr:hover {
+    background: #f9f9f9;
+  }
+  .instance-cell-editable {
+    cursor: text;
+    min-height: 1.5rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+  }
+  .instance-cell-editable:hover {
+    background: #fff8e1;
+    outline: 1px dashed #ffc107;
+  }
+  .instance-cell-editing {
+    background: #fff;
+    outline: 2px solid #2196f3;
+  }
+  .instance-pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1rem;
+    font-size: 0.875rem;
+  }
+
   .label-item {
     padding: 0.5rem;
     margin-bottom: 0.25rem;
@@ -381,6 +428,30 @@
         <button id="btn-pull-neo4j" class="btn btn-sm btn-outline-secondary" data-testid="pull-neo4j-btn" style="display: none;">Pull</button>
       </div>
     </div>
+
+    <!-- Instance Browser Section -->
+    <div class="instance-browser" id="instance-browser" style="display: none;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h4 class="small" style="margin: 0;">Instances</h4>
+        <div style="display: flex; gap: 0.5rem;">
+          <button id="btn-pull-instances" class="btn btn-sm btn-outline-primary" data-testid="pull-instances-btn">Pull from Neo4j</button>
+          <button id="btn-push-instances" class="btn btn-sm btn-success" data-testid="push-instances-btn" style="display: none;">Push Changes</button>
+          <button id="btn-refresh-instances" class="btn btn-sm btn-outline-secondary" data-testid="refresh-instances-btn">Refresh</button>
+        </div>
+      </div>
+
+      <div id="instance-table-container">
+        <div class="empty-state small">Click "Pull from Neo4j" to load instances</div>
+      </div>
+
+      <div class="instance-pagination" id="instance-pagination" style="display: none;">
+        <div class="small" id="instance-page-info">Page 1 of 1 (0 instances)</div>
+        <div style="display: flex; gap: 0.5rem;">
+          <button id="btn-instance-prev" class="btn btn-sm btn-outline-secondary" disabled>Previous</button>
+          <button id="btn-instance-next" class="btn btn-sm btn-outline-secondary" disabled>Next</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Resizer (Center to Right) -->
@@ -537,6 +608,13 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-cancel-edit').addEventListener('click', cancelEdit);
   document.getElementById('btn-delete-readonly').addEventListener('click', deleteLabel);
   document.getElementById('btn-pull-neo4j-readonly').addEventListener('click', pullFromNeo4j);
+
+  // Instance browser buttons
+  document.getElementById('btn-pull-instances').addEventListener('click', pullInstances);
+  document.getElementById('btn-push-instances').addEventListener('click', pushInstances);
+  document.getElementById('btn-refresh-instances').addEventListener('click', refreshInstances);
+  document.getElementById('btn-instance-prev').addEventListener('click', () => navigateInstances(-1));
+  document.getElementById('btn-instance-next').addEventListener('click', () => navigateInstances(1));
 
   // Batch action buttons
   document.getElementById('btn-batch-pull').addEventListener('click', batchPull);
@@ -1286,7 +1364,12 @@ function updateEditorView() {
   } else {
     readonlyView.style.display = 'block';
     editView.style.display = 'none';
-    toggleBtn.style.display = 'inline-block';
+    // Only show toggle button if we have a current label (not for new labels)
+    if (currentLabel) {
+      toggleBtn.style.display = 'inline-block';
+    } else {
+      toggleBtn.style.display = 'none';
+    }
     cancelBtn.style.display = 'none';
   }
 }
@@ -1294,8 +1377,11 @@ function updateEditorView() {
 function populateEditor(label) {
   document.getElementById('editor-title').textContent = label.name;
 
-  // Start in read-only mode
+  // Start in read-only mode for existing labels
   isEditMode = false;
+
+  // Show instance browser
+  document.getElementById('instance-browser').style.display = 'block';
 
   // Populate read-only view
   document.getElementById('readonly-name').textContent = label.name;
@@ -1788,7 +1874,6 @@ async function loadInstanceCount(labelName) {
   countDiv.innerHTML = '<div class="small" style="color: #666;">Loading...</div>';
 
   try {
-    // This endpoint doesn't exist yet, we'll implement it in Phase 3
     const resp = await fetch(`/api/labels/${labelName}/instance-count`);
     const result = await resp.json();
 
@@ -1801,6 +1886,89 @@ async function loadInstanceCount(labelName) {
   } catch (e) {
     countDiv.innerHTML = `<div class="small" style="color: #b00020;">Error: ${e.message}</div>`;
   }
+}
+
+// Instance browser functions
+let instanceData = [];
+let instancePage = 0;
+let instanceLimit = 50;
+let instanceChanges = {};
+
+async function pullInstances() {
+  if (!currentLabel) return;
+
+  showToast('Pulling instances from Neo4j...', 'info');
+
+  try {
+    const resp = await fetch(`/api/labels/${currentLabel.name}/instances?limit=${instanceLimit}&offset=${instancePage * instanceLimit}`);
+    const result = await resp.json();
+
+    if (result.status === 'success') {
+      instanceData = result.instances || [];
+      instanceChanges = {};
+      renderInstanceTable();
+      showToast(`Loaded ${instanceData.length} instances`, 'success');
+      document.getElementById('btn-push-instances').style.display = 'none';
+    } else {
+      showToast('Error loading instances: ' + (result.error || 'Unknown error'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+async function pushInstances() {
+  showToast('Push instances feature coming soon', 'info');
+}
+
+async function refreshInstances() {
+  instancePage = 0;
+  await pullInstances();
+}
+
+function navigateInstances(delta) {
+  instancePage = Math.max(0, instancePage + delta);
+  pullInstances();
+}
+
+function renderInstanceTable() {
+  const container = document.getElementById('instance-table-container');
+
+  if (instanceData.length === 0) {
+    container.innerHTML = '<div class="empty-state small">No instances found</div>';
+    document.getElementById('instance-pagination').style.display = 'none';
+    return;
+  }
+
+  // Get property names from current label
+  const properties = currentLabel.properties.map(p => p.name);
+
+  // Build table
+  let html = '<table class="instance-table"><thead><tr>';
+  html += '<th>ID</th>';
+  properties.forEach(prop => {
+    html += `<th>${prop}</th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  instanceData.forEach(instance => {
+    html += '<tr>';
+    html += `<td style="font-family: monospace; font-size: 0.75rem;">${instance.id.substring(0, 8)}...</td>`;
+    properties.forEach(prop => {
+      const value = instance.properties[prop] || '';
+      html += `<td><div class="instance-cell-editable" data-id="${instance.id}" data-prop="${prop}">${value}</div></td>`;
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  container.innerHTML = html;
+
+  // Show pagination
+  document.getElementById('instance-pagination').style.display = 'flex';
+  document.getElementById('instance-page-info').textContent = `Page ${instancePage + 1} (${instanceData.length} instances)`;
+
+  // TODO: Add cell editing logic in next phase
 }
 </script>
 {% endblock %}

@@ -485,6 +485,131 @@ def batch_delete_labels():
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
+@bp.route('/labels/<name>/instances', methods=['GET'])
+def get_label_instances(name):
+    """
+    Get instances of a label from Neo4j.
+
+    Query params:
+    - limit: max number of instances (default: 100)
+    - offset: pagination offset (default: 0)
+
+    Returns:
+    {
+        "status": "success",
+        "instances": [
+            {"id": "...", "properties": {"name": "John", "age": 30}},
+            ...
+        ],
+        "total": 150,
+        "limit": 100,
+        "offset": 0
+    }
+    """
+    try:
+        service = _get_label_service()
+        limit = int(request.args.get('limit', 100))
+        offset = int(request.args.get('offset', 0))
+
+        result = service.get_label_instances(name, limit=limit, offset=offset)
+
+        if result.get('status') == 'error':
+            return jsonify(result), 500
+
+        return jsonify(result), 200
+
+    except ValueError as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 404
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/labels/<name>/instance-count', methods=['GET'])
+def get_label_instance_count(name):
+    """
+    Get count of instances for a label from Neo4j.
+
+    Returns:
+    {
+        "status": "success",
+        "count": 42
+    }
+    """
+    try:
+        service = _get_label_service()
+        result = service.get_label_instance_count(name)
+
+        if result.get('status') == 'error':
+            return jsonify(result), 500
+
+        return jsonify(result), 200
+
+    except ValueError as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 404
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/labels/<name>/instances/<instance_id>', methods=['PATCH'])
+def update_label_instance(name, instance_id):
+    """
+    Update a single property of a label instance in Neo4j.
+
+    Request body:
+    {
+        "property": "name",
+        "value": "New Value"
+    }
+
+    Returns:
+    {
+        "status": "success",
+        "instance": {...}
+    }
+    """
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        property_name = data.get('property')
+        property_value = data.get('value')
+
+        if not property_name:
+            return jsonify({
+                'status': 'error',
+                'error': 'Property name is required'
+            }), 400
+
+        service = _get_label_service()
+        result = service.update_label_instance(name, instance_id, property_name, property_value)
+
+        if result.get('status') == 'error':
+            return jsonify(result), 500
+
+        return jsonify(result), 200
+
+    except ValueError as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 404
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
 @bp.route('/labels/import/eda', methods=['POST'])
 def import_eda_file():
     """
