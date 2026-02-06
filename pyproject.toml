@@ -17,6 +17,8 @@ dependencies = [
   "neo4j>=5.14",
   "psutil>=5.9",
   "python-dateutil>=2.8",
+  "cryptography>=41.0",
+  "jsonpath-ng>=1.6",
 ]
 
 [project.optional-dependencies]

@@ -341,8 +341,54 @@
 
   <h2 style="margin-top: 1.5rem;">API Endpoint Mappings</h2>
   <p class="small">Define API endpoints that map to Label types in SciDK.</p>
-  <div style="padding: 2rem; text-align: center; color: #999; background: #f9f9f9; border: 1px dashed #ddd; border-radius: 4px;">
-    <em>Coming soon: Configure API endpoint → Label mappings</em>
+
+  <!-- Add Endpoint Form -->
+  <div style="margin-bottom: 1.5rem; padding: 1rem; background: #f9f9f9; border-radius: 4px;">
+    <h3 style="margin-top: 0;">Add New Endpoint</h3>
+    <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem;">
+      <div>
+        <label for="api-endpoint-name">Name:</label>
+        <input type="text" id="api-endpoint-name" class="form-control" placeholder="Users API" data-testid="api-endpoint-name">
+      </div>
+      <div>
+        <label for="api-endpoint-url">URL:</label>
+        <input type="text" id="api-endpoint-url" class="form-control" placeholder="https://api.example.com/users" data-testid="api-endpoint-url">
+      </div>
+      <div>
+        <label for="api-endpoint-auth-method">Auth Method:</label>
+        <select id="api-endpoint-auth-method" class="form-control" data-testid="api-endpoint-auth-method">
+          <option value="none">None</option>
+          <option value="bearer">Bearer Token</option>
+          <option value="api_key">API Key</option>
+        </select>
+      </div>
+      <div>
+        <label for="api-endpoint-auth-value">Auth Value:</label>
+        <input type="password" id="api-endpoint-auth-value" class="form-control" placeholder="Optional" data-testid="api-endpoint-auth-value">
+      </div>
+      <div>
+        <label for="api-endpoint-json-path">JSONPath (optional):</label>
+        <input type="text" id="api-endpoint-json-path" class="form-control" placeholder="$.data[*]" data-testid="api-endpoint-json-path">
+      </div>
+      <div>
+        <label for="api-endpoint-target-label">Maps to Label (optional):</label>
+        <select id="api-endpoint-target-label" class="form-control" data-testid="api-endpoint-target-label">
+          <option value="">-- Select Label --</option>
+        </select>
+      </div>
+    </div>
+    <div style="display: flex; gap: 0.5rem;">
+      <button id="btn-test-api-endpoint" class="btn btn-sm btn-outline-primary" data-testid="btn-test-api-endpoint">Test Connection</button>
+      <button id="btn-save-api-endpoint" class="btn btn-sm btn-primary" data-testid="btn-save-api-endpoint">Save Endpoint</button>
+      <button id="btn-cancel-api-endpoint" class="btn btn-sm btn-outline-secondary" style="display: none;" data-testid="btn-cancel-api-endpoint">Cancel</button>
+    </div>
+    <div id="api-endpoint-message" class="small" style="margin-top: 0.5rem; color: var(--accent);"></div>
+  </div>
+
+  <!-- Endpoints List -->
+  <h3>Registered Endpoints</h3>
+  <div id="api-endpoints-list">
+    <p class="small" style="color: #999;"><em>No endpoints registered yet</em></p>
   </div>
 
   <h2 style="margin-top: 1.5rem;">Table Format Registry</h2>
@@ -595,5 +641,321 @@
 
     loadCfg();
   });
+
+  // API Endpoint Management
+  (function() {
+    let editingEndpointId = null;
+    const nameInput = document.getElementById('api-endpoint-name');
+    const urlInput = document.getElementById('api-endpoint-url');
+    const authMethodSelect = document.getElementById('api-endpoint-auth-method');
+    const authValueInput = document.getElementById('api-endpoint-auth-value');
+    const jsonPathInput = document.getElementById('api-endpoint-json-path');
+    const targetLabelSelect = document.getElementById('api-endpoint-target-label');
+    const btnTest = document.getElementById('btn-test-api-endpoint');
+    const btnSave = document.getElementById('btn-save-api-endpoint');
+    const btnCancel = document.getElementById('btn-cancel-api-endpoint');
+    const messageDiv = document.getElementById('api-endpoint-message');
+    const endpointsList = document.getElementById('api-endpoints-list');
+
+    async function loadLabels() {
+      try {
+        const response = await fetch('/api/labels');
+        const data = await response.json();
+        if (data.status === 'success' && data.labels) {
+          targetLabelSelect.innerHTML = '<option value="">-- Select Label --</option>';
+          data.labels.forEach(label => {
+            const option = document.createElement('option');
+            option.value = label.name;
+            option.textContent = label.name;
+            targetLabelSelect.appendChild(option);
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load labels:', err);
+      }
+    }
+
+    async function loadEndpoints() {
+      try {
+        const response = await fetch('/api/settings/api-endpoints');
+        const data = await response.json();
+
+        if (data.status === 'success' && data.endpoints && data.endpoints.length > 0) {
+          endpointsList.innerHTML = `
+            <table class="table table-sm" style="width: 100%;">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>URL</th>
+                  <th>Auth</th>
+                  <th>Label</th>
+                  <th style="width: 180px;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="endpoints-table-body">
+              </tbody>
+            </table>
+          `;
+
+          const tbody = document.getElementById('endpoints-table-body');
+          data.endpoints.forEach(endpoint => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+              <td>${escapeHtml(endpoint.name)}</td>
+              <td><span class="small text-muted">${escapeHtml(endpoint.url.substring(0, 40))}${endpoint.url.length > 40 ? '...' : ''}</span></td>
+              <td><span class="badge">${endpoint.auth_method}</span></td>
+              <td>${endpoint.target_label ? escapeHtml(endpoint.target_label) : '<span class="text-muted">—</span>'}</td>
+              <td>
+                <button class="btn btn-xs btn-outline-primary" onclick="apiEndpointsTestById('${endpoint.id}')">Test</button>
+                <button class="btn btn-xs btn-outline-secondary" onclick="apiEndpointsEdit('${endpoint.id}')">Edit</button>
+                <button class="btn btn-xs btn-outline-danger" onclick="apiEndpointsDelete('${endpoint.id}')">Delete</button>
+              </td>
+            `;
+            tbody.appendChild(row);
+          });
+        } else {
+          endpointsList.innerHTML = '<p class="small" style="color: #999;"><em>No endpoints registered yet</em></p>';
+        }
+      } catch (err) {
+        messageDiv.textContent = 'Failed to load endpoints: ' + err.message;
+        messageDiv.style.color = 'red';
+      }
+    }
+
+    function resetForm() {
+      editingEndpointId = null;
+      nameInput.value = '';
+      urlInput.value = '';
+      authMethodSelect.value = 'none';
+      authValueInput.value = '';
+      jsonPathInput.value = '';
+      targetLabelSelect.value = '';
+      btnSave.textContent = 'Save Endpoint';
+      btnCancel.style.display = 'none';
+      messageDiv.textContent = '';
+    }
+
+    async function testEndpoint() {
+      const name = nameInput.value.trim();
+      const url = urlInput.value.trim();
+
+      if (!name || !url) {
+        messageDiv.textContent = 'Name and URL are required';
+        messageDiv.style.color = 'red';
+        return;
+      }
+
+      // Create temporary endpoint for testing
+      const tempData = {
+        name: name + '_test_' + Date.now(),
+        url: url,
+        auth_method: authMethodSelect.value,
+        auth_value: authValueInput.value.trim(),
+        json_path: jsonPathInput.value.trim()
+      };
+
+      try {
+        messageDiv.textContent = 'Creating test endpoint...';
+        messageDiv.style.color = '#666';
+
+        // Create temporary endpoint
+        const createResp = await fetch('/api/settings/api-endpoints', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(tempData)
+        });
+
+        if (!createResp.ok) {
+          const errorData = await createResp.json();
+          throw new Error(errorData.error || 'Failed to create test endpoint');
+        }
+
+        const createData = await createResp.json();
+        const tempId = createData.endpoint.id;
+
+        // Test the endpoint
+        messageDiv.textContent = 'Testing connection...';
+        const testResp = await fetch(`/api/settings/api-endpoints/${tempId}/test`, {
+          method: 'POST'
+        });
+
+        const testData = await testResp.json();
+
+        // Delete temporary endpoint
+        await fetch(`/api/settings/api-endpoints/${tempId}`, { method: 'DELETE' });
+
+        if (testData.status === 'success' && testData.test_result) {
+          const result = testData.test_result;
+          if (result.success) {
+            messageDiv.textContent = `✓ Connection successful! Found ${result.total_records} records. Sample: ${JSON.stringify(result.sample_data[0] || {}).substring(0, 100)}...`;
+            messageDiv.style.color = 'green';
+          } else {
+            messageDiv.textContent = `✗ Test failed: ${result.error}`;
+            messageDiv.style.color = 'red';
+          }
+        } else {
+          throw new Error('Invalid test response');
+        }
+      } catch (err) {
+        messageDiv.textContent = '✗ Test failed: ' + err.message;
+        messageDiv.style.color = 'red';
+      }
+    }
+
+    async function saveEndpoint() {
+      const name = nameInput.value.trim();
+      const url = urlInput.value.trim();
+
+      if (!name || !url) {
+        messageDiv.textContent = 'Name and URL are required';
+        messageDiv.style.color = 'red';
+        return;
+      }
+
+      const endpointData = {
+        name: name,
+        url: url,
+        auth_method: authMethodSelect.value,
+        auth_value: authValueInput.value.trim(),
+        json_path: jsonPathInput.value.trim(),
+        target_label: targetLabelSelect.value
+      };
+
+      try {
+        let response;
+        if (editingEndpointId) {
+          // Update existing
+          response = await fetch(`/api/settings/api-endpoints/${editingEndpointId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(endpointData)
+          });
+        } else {
+          // Create new
+          response = await fetch('/api/settings/api-endpoints', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(endpointData)
+          });
+        }
+
+        const data = await response.json();
+
+        if (data.status === 'success') {
+          messageDiv.textContent = editingEndpointId ? 'Endpoint updated!' : 'Endpoint saved!';
+          messageDiv.style.color = 'green';
+          resetForm();
+          await loadEndpoints();
+          setTimeout(() => { messageDiv.textContent = ''; }, 3000);
+        } else {
+          messageDiv.textContent = 'Error: ' + (data.error || 'Unknown error');
+          messageDiv.style.color = 'red';
+        }
+      } catch (err) {
+        messageDiv.textContent = 'Save failed: ' + err.message;
+        messageDiv.style.color = 'red';
+      }
+    }
+
+    // Global functions for onclick handlers
+    window.apiEndpointsEdit = async function(id) {
+      try {
+        const response = await fetch(`/api/settings/api-endpoints/${id}`);
+        const data = await response.json();
+
+        if (data.status === 'success' && data.endpoint) {
+          const endpoint = data.endpoint;
+          editingEndpointId = id;
+          nameInput.value = endpoint.name;
+          urlInput.value = endpoint.url;
+          authMethodSelect.value = endpoint.auth_method;
+          // Note: auth_value is not returned for security
+          authValueInput.value = '';
+          authValueInput.placeholder = 'Enter new value or leave empty to keep existing';
+          jsonPathInput.value = endpoint.json_path || '';
+          targetLabelSelect.value = endpoint.target_label || '';
+          btnSave.textContent = 'Update Endpoint';
+          btnCancel.style.display = 'inline-block';
+          messageDiv.textContent = 'Editing: ' + endpoint.name;
+          messageDiv.style.color = '#666';
+
+          // Scroll to form
+          nameInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      } catch (err) {
+        alert('Failed to load endpoint: ' + err.message);
+      }
+    };
+
+    window.apiEndpointsDelete = async function(id) {
+      if (!confirm('Are you sure you want to delete this endpoint?')) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/settings/api-endpoints/${id}`, {
+          method: 'DELETE'
+        });
+        const data = await response.json();
+
+        if (data.status === 'success') {
+          await loadEndpoints();
+          messageDiv.textContent = 'Endpoint deleted';
+          messageDiv.style.color = 'green';
+          setTimeout(() => { messageDiv.textContent = ''; }, 2000);
+        } else {
+          alert('Delete failed: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('Delete failed: ' + err.message);
+      }
+    };
+
+    window.apiEndpointsTestById = async function(id) {
+      try {
+        messageDiv.textContent = 'Testing connection...';
+        messageDiv.style.color = '#666';
+
+        const response = await fetch(`/api/settings/api-endpoints/${id}/test`, {
+          method: 'POST'
+        });
+        const data = await response.json();
+
+        if (data.status === 'success' && data.test_result) {
+          const result = data.test_result;
+          if (result.success) {
+            messageDiv.textContent = `✓ Connection successful! Found ${result.total_records} records.`;
+            messageDiv.style.color = 'green';
+          } else {
+            messageDiv.textContent = `✗ Test failed: ${result.error}`;
+            messageDiv.style.color = 'red';
+          }
+        } else {
+          messageDiv.textContent = '✗ Test failed: ' + (data.error || 'Unknown error');
+          messageDiv.style.color = 'red';
+        }
+
+        setTimeout(() => { messageDiv.textContent = ''; }, 5000);
+      } catch (err) {
+        messageDiv.textContent = '✗ Test failed: ' + err.message;
+        messageDiv.style.color = 'red';
+        setTimeout(() => { messageDiv.textContent = ''; }, 5000);
+      }
+    };
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    if (btnTest) btnTest.addEventListener('click', testEndpoint);
+    if (btnSave) btnSave.addEventListener('click', saveEndpoint);
+    if (btnCancel) btnCancel.addEventListener('click', resetForm);
+
+    // Load labels and endpoints on page load
+    loadLabels();
+    loadEndpoints();
+  })();
 </script>
 {% endblock %}
