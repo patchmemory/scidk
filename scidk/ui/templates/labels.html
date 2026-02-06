@@ -582,39 +582,66 @@ function switchImportType(type) {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
-  loadLabels();
+  console.log('DOMContentLoaded - initializing labels page');
 
-  document.getElementById('btn-new-label').addEventListener('click', () => {
-    currentLabel = null;
-    showEditor();
-    clearEditor();
-    document.getElementById('editor-title').textContent = 'New Label';
-    document.getElementById('btn-delete').style.display = 'none';
-    document.getElementById('btn-pull-neo4j').style.display = 'none';
-    // For new labels, start in edit mode
-    isEditMode = true;
-    updateEditorView();
-  });
+  try {
+    loadLabels();
+    console.log('loadLabels() called successfully');
+  } catch (e) {
+    console.error('Error calling loadLabels():', e);
+  }
 
-  document.getElementById('btn-save').addEventListener('click', saveLabel);
-  document.getElementById('btn-delete').addEventListener('click', deleteLabel);
-  document.getElementById('btn-pull-neo4j').addEventListener('click', pullFromNeo4j);
-  document.getElementById('btn-pull-all-neo4j').addEventListener('click', pullAllFromNeo4j);
-  document.getElementById('btn-add-property').addEventListener('click', addProperty);
-  document.getElementById('btn-add-relationship').addEventListener('click', addRelationship);
+  try {
+    document.getElementById('btn-new-label').addEventListener('click', () => {
+      currentLabel = null;
+      showEditor();
+      clearEditor();
+      document.getElementById('editor-title').textContent = 'New Label';
+      document.getElementById('btn-delete').style.display = 'none';
+      document.getElementById('btn-pull-neo4j').style.display = 'none';
+      // For new labels, start in edit mode
+      isEditMode = true;
+      updateEditorView();
+    });
+    console.log('btn-new-label listener attached');
+  } catch (e) {
+    console.error('Error attaching btn-new-label listener:', e);
+  }
 
-  // Mode toggle buttons
-  document.getElementById('btn-toggle-mode').addEventListener('click', toggleEditMode);
-  document.getElementById('btn-cancel-edit').addEventListener('click', cancelEdit);
-  document.getElementById('btn-delete-readonly').addEventListener('click', deleteLabel);
-  document.getElementById('btn-pull-neo4j-readonly').addEventListener('click', pullFromNeo4j);
+  try {
+    document.getElementById('btn-save').addEventListener('click', saveLabel);
+    document.getElementById('btn-delete').addEventListener('click', deleteLabel);
+    document.getElementById('btn-pull-neo4j').addEventListener('click', pullFromNeo4j);
+    document.getElementById('btn-pull-all-neo4j').addEventListener('click', pullAllFromNeo4j);
+    document.getElementById('btn-add-property').addEventListener('click', addProperty);
+    document.getElementById('btn-add-relationship').addEventListener('click', addRelationship);
+    console.log('Main editor button listeners attached');
+  } catch (e) {
+    console.error('Error attaching main editor listeners:', e);
+  }
 
-  // Instance browser buttons
-  document.getElementById('btn-pull-instances').addEventListener('click', pullInstances);
-  document.getElementById('btn-push-instances').addEventListener('click', pushInstances);
-  document.getElementById('btn-refresh-instances').addEventListener('click', refreshInstances);
-  document.getElementById('btn-instance-prev').addEventListener('click', () => navigateInstances(-1));
-  document.getElementById('btn-instance-next').addEventListener('click', () => navigateInstances(1));
+  try {
+    // Mode toggle buttons
+    document.getElementById('btn-toggle-mode').addEventListener('click', toggleEditMode);
+    document.getElementById('btn-cancel-edit').addEventListener('click', cancelEdit);
+    document.getElementById('btn-delete-readonly').addEventListener('click', deleteLabel);
+    document.getElementById('btn-pull-neo4j-readonly').addEventListener('click', pullFromNeo4j);
+    console.log('Mode toggle listeners attached');
+  } catch (e) {
+    console.error('Error attaching mode toggle listeners:', e);
+  }
+
+  try {
+    // Instance browser buttons
+    document.getElementById('btn-pull-instances').addEventListener('click', pullInstances);
+    document.getElementById('btn-push-instances').addEventListener('click', pushInstances);
+    document.getElementById('btn-refresh-instances').addEventListener('click', refreshInstances);
+    document.getElementById('btn-instance-prev').addEventListener('click', () => navigateInstances(-1));
+    document.getElementById('btn-instance-next').addEventListener('click', () => navigateInstances(1));
+    console.log('Instance browser listeners attached');
+  } catch (e) {
+    console.error('Error attaching instance browser listeners:', e);
+  }
 
   // Batch action buttons
   document.getElementById('btn-batch-pull').addEventListener('click', batchPull);
