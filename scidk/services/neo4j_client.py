@@ -180,3 +180,19 @@ class Neo4jClient:
                 'db_folders': folders_cnt,
                 'db_verified': bool(scan_exists and (files_cnt > 0 or folders_cnt > 0)),
             }
+
+
+def get_neo4j_client():
+    """Get or create Neo4j client instance.
+
+    Returns:
+        Neo4jClient instance if connection parameters are available, None otherwise
+    """
+    uri, user, pwd, database, auth_mode = get_neo4j_params()
+
+    if not uri:
+        return None
+
+    client = Neo4jClient(uri, user, pwd, database, auth_mode)
+    client.connect()
+    return client
