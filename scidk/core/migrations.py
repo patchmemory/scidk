@@ -306,6 +306,14 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 6)
             version = 6
 
+        # v7: Add source_label and target_label columns to link_definitions for Label→Label refactor
+        if version < 7:
+            cur.execute("ALTER TABLE link_definitions ADD COLUMN source_label TEXT;")
+            cur.execute("ALTER TABLE link_definitions ADD COLUMN target_label TEXT;")
+            conn.commit()
+            _set_version(conn, 7)
+            version = 7
+
         return version
     finally:
         if own:

@@ -1,5 +1,14 @@
 {% extends 'base.html' %}
 {% block title %}SciDK - Maps{% endblock %}
+{% block head %}
+<style>
+  /* Override base.html main width constraint for map page */
+  main {
+    max-width: 100% !important;
+    padding: 1rem 2rem !important;
+  }
+</style>
+{% endblock %}
 {% block content %}
 <section>
   <h2>Schema Graph (Interactive)</h2>

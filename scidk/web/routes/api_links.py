@@ -331,3 +331,67 @@ def list_jobs():
             'status': 'error',
             'error': str(e)
         }), 500
+
+
+@bp.route('/links/available-labels', methods=['GET'])
+def get_available_labels():
+    """
+    Get list of available labels for dropdown population.
+
+    Returns:
+    {
+        "status": "success",
+        "labels": [
+            {"name": "Person", "properties": [...]},
+            {"name": "File", "properties": [...]}
+        ]
+    }
+    """
+    try:
+        from ...services.label_service import LabelService
+        label_service = LabelService(current_app)
+        labels = label_service.list_labels()
+
+        return jsonify({
+            'status': 'success',
+            'labels': labels
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/links/migrate', methods=['POST'])
+def migrate_links():
+    """
+    Migrate existing link definitions to Label→Label model.
+
+    Returns:
+    {
+        "status": "success",
+        "report": {
+            "migrated": [...],
+            "skipped": [...],
+            "errors": [...]
+        }
+    }
+    """
+    try:
+        from ...services.link_migration import migrate_all_links, generate_migration_report
+        service = _get_link_service()
+
+        results = migrate_all_links(service)
+        report_text = generate_migration_report(results)
+
+        return jsonify({
+            'status': 'success',
+            'results': results,
+            'report': report_text
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500

@@ -1,23 +1,109 @@
 {% extends 'base.html' %}
 {% block title %}SciDK - Settings{% endblock %}
-{% block content %}
-<h1>Settings</h1>
-<p class="small">Basic runtime information and counts.</p>
-<ul>
-  <li>Host: {{ info.host }}</li>
-  <li>Port: {{ info.port }}</li>
-  <li>Debug: {{ info.debug }}</li>
-  <li>Datasets: {{ info.dataset_count }}</li>
-  <li>Interpreters: {{ info.interpreter_count }}</li>
-</ul>
-<div class="small" style="margin:.5rem 0;">
-  <span class="badge">Channel: {{ info.channel or 'stable' }}</span>
-  <span class="badge" title="Providers">Providers: {{ info.providers }}</span>
-  <span class="badge" title="Files viewer">Files viewer: {{ info.files_viewer or '(default)' }}</span>
-</div>
+{% block head %}
+<style>
+  /* Override base.html main width constraint for settings page */
+  main {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
 
-<section style="margin-top:1rem">
-  <h2>Neo4j Connection</h2>
+  .settings-container {
+    display: flex;
+    height: calc(100vh - 60px);
+    gap: 0;
+  }
+
+  .settings-sidebar {
+    width: 220px;
+    min-width: 220px;
+    background: #f9f9f9;
+    border-right: 1px solid #e0e0e0;
+    overflow-y: auto;
+    padding: 1rem 0;
+  }
+
+  .settings-sidebar-item {
+    padding: 0.75rem 1.5rem;
+    cursor: pointer;
+    color: var(--fg);
+    text-decoration: none;
+    display: block;
+    border-left: 3px solid transparent;
+    transition: all 0.15s ease;
+  }
+
+  .settings-sidebar-item:hover {
+    background: #f0f0f0;
+  }
+
+  .settings-sidebar-item.active {
+    background: #fff;
+    border-left-color: var(--accent);
+    font-weight: 600;
+  }
+
+  .settings-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 2rem;
+    max-width: 1100px;
+  }
+
+  .settings-section {
+    display: none;
+  }
+
+  .settings-section.active {
+    display: block;
+  }
+
+  .settings-section h1 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+  }
+
+  .settings-section > p.small {
+    margin-bottom: 1.5rem;
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="settings-container">
+  <!-- Sidebar Navigation -->
+  <nav class="settings-sidebar">
+    <a href="#general" class="settings-sidebar-item active" data-section="general">General</a>
+    <a href="#neo4j" class="settings-sidebar-item" data-section="neo4j">Neo4j</a>
+    <a href="#interpreters" class="settings-sidebar-item" data-section="interpreters">Interpreters</a>
+    <a href="#plugins" class="settings-sidebar-item" data-section="plugins">Plugins</a>
+    <a href="#rclone" class="settings-sidebar-item" data-section="rclone">Rclone</a>
+    <a href="#links" class="settings-sidebar-item" data-section="links">Links</a>
+  </nav>
+
+  <!-- Content Area -->
+  <div class="settings-content">
+    <!-- General Section -->
+    <section id="general-section" class="settings-section active">
+      <h1>General</h1>
+      <p class="small">Basic runtime information and counts.</p>
+      <ul>
+        <li>Host: {{ info.host }}</li>
+        <li>Port: {{ info.port }}</li>
+        <li>Debug: {{ info.debug }}</li>
+        <li>Datasets: {{ info.dataset_count }}</li>
+        <li>Interpreters: {{ info.interpreter_count }}</li>
+      </ul>
+      <div class="small" style="margin:.5rem 0;">
+        <span class="badge">Channel: {{ info.channel or 'stable' }}</span>
+        <span class="badge" title="Providers">Providers: {{ info.providers }}</span>
+        <span class="badge" title="Files viewer">Files viewer: {{ info.files_viewer or '(default)' }}</span>
+      </div>
+    </section>
+
+    <!-- Neo4j Section -->
+    <section id="neo4j-section" class="settings-section">
+  <h1>Neo4j Connection</h1>
+  <p class="small">Configure Neo4j database connection and settings.</p>
   <div class="row g-2" style="max-width:720px">
     <div class="col-12 col-md-6">
       <label class="form-label small" for="neo4j-uri">URI</label>
@@ -57,10 +143,11 @@
     <p class="small">You can also set env vars: NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, SCIDK_NEO4J_DATABASE</p>
     <p class="small" style="margin:.25rem 0 0 0;">If your Neo4j has authentication disabled, set environment variable <code>NEO4J_AUTH=none</code> before starting the app.</p>
   </details>
-</section>
+    </section>
 
-<section style="margin-top:1rem">
-  <h2 id="interpreters">Interpreters</h2>
+    <!-- Interpreters Section -->
+    <section id="interpreters-section" class="settings-section">
+  <h1>Interpreters</h1>
   <p class="small">Registered interpreter mappings and selection rules.</p>
   <h3 class="small">Mappings (extension → interpreter ids)</h3>
   <ul>
@@ -175,19 +262,24 @@
       fetchEffective().then(render);
     })();
   </script>
-</section>
+    </section>
 
-<section style="margin-top:1rem">
-  <h2 id="plugins">Plugins</h2>
+    <!-- Plugins Section -->
+    <section id="plugins-section" class="settings-section">
+  <h1>Plugins</h1>
   <p class="small">Plugin registry summary.</p>
   <ul>
     <li class="small">Registered interpreter count: {{ interp_count or 0 }}</li>
     <li class="small">Extensions mapped: {{ ext_count or 0 }}</li>
   </ul>
-</section>
+    </section>
 
-<section style="margin-top:1rem">
-  <h2>Rclone Interpretation</h2>
+    <!-- Rclone Section -->
+    <section id="rclone-section" class="settings-section">
+  <h1>Rclone</h1>
+  <p class="small">Configure rclone settings for interpretation and mounts.</p>
+
+  <h2 style="margin-top: 1.5rem;">Interpretation</h2>
   <p class="small">Tune streaming-based interpretation from rclone remotes. For very large scans, consider mounting the remote.</p>
   <div class="row g-2" style="max-width:640px">
     <div class="col-12 col-md-6">
@@ -203,10 +295,8 @@
       <span id="rc-msg" class="small"></span>
     </div>
   </div>
-</section>
 
-<section style="margin-top:1rem">
-  <h2>Rclone Mounts</h2>
+  <h2 style="margin-top: 1.5rem;">Mounts</h2>
   <p class="small">Manage rclone mounts under ./data/mounts.</p>
   <div class="row g-2" style="max-width:780px">
     <div class="col-12 col-md-3">
@@ -242,9 +332,68 @@
   </table>
   <pre id="rc-logs" class="small" style="max-height:200px; overflow:auto; background:#111; color:#ddd; padding:.5rem"></pre>
   <p class="small text-muted">Note: On Windows, cmount/WinFsp may be required; this UI targets Linux/macOS primarily.</p>
-</section>
-{% endblock %}
-{% block head %}
+    </section>
+
+    <!-- Links Section -->
+    <section id="links-section" class="settings-section">
+  <h1>Links</h1>
+  <p class="small">Configure link mappings, API endpoints, and matching options.</p>
+
+  <h2 style="margin-top: 1.5rem;">API Endpoint Mappings</h2>
+  <p class="small">Define API endpoints that map to Label types in SciDK.</p>
+  <div style="padding: 2rem; text-align: center; color: #999; background: #f9f9f9; border: 1px dashed #ddd; border-radius: 4px;">
+    <em>Coming soon: Configure API endpoint → Label mappings</em>
+  </div>
+
+  <h2 style="margin-top: 1.5rem;">Table Format Registry</h2>
+  <p class="small">Pre-programmed table formats for importing data as link sources.</p>
+  <div style="padding: 2rem; text-align: center; color: #999; background: #f9f9f9; border: 1px dashed #ddd; border-radius: 4px;">
+    <em>Coming soon: Manage CSV, TSV, Excel, and custom table formats</em>
+  </div>
+
+  <h2 style="margin-top: 1.5rem;">Fuzzy Matching Options</h2>
+  <p class="small">Configure matching tolerance and equivalence options for link mappings.</p>
+  <div style="padding: 2rem; text-align: center; color: #999; background: #f9f9f9; border: 1px dashed #ddd; border-radius: 4px;">
+    <em>Coming soon: Levenshtein distance, phonetic matching, case sensitivity settings</em>
+  </div>
+    </section>
+  </div>
+</div>
+
+<script>
+  // Settings navigation
+  document.addEventListener('DOMContentLoaded', () => {
+    const navItems = document.querySelectorAll('.settings-sidebar-item');
+    const sections = document.querySelectorAll('.settings-section');
+
+    navItems.forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.preventDefault();
+
+        // Update active nav item
+        navItems.forEach(nav => nav.classList.remove('active'));
+        item.classList.add('active');
+
+        // Show corresponding section
+        const sectionId = item.dataset.section + '-section';
+        sections.forEach(section => section.classList.remove('active'));
+        document.getElementById(sectionId).classList.add('active');
+
+        // Update URL hash without scrolling
+        history.replaceState(null, null, '#' + item.dataset.section);
+      });
+    });
+
+    // Handle initial hash navigation
+    const hash = window.location.hash.slice(1);
+    if (hash) {
+      const targetNav = document.querySelector(`[data-section="${hash}"]`);
+      if (targetNav) {
+        targetNav.click();
+      }
+    }
+  });
+</script>
 <script>
   window.addEventListener('DOMContentLoaded', () => {
     const btn = document.getElementById('btn-test-graph');

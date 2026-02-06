@@ -1,19 +1,53 @@
 {% extends 'base.html' %}
 {% block title %}SciDK - Links{% endblock %}
+{% block head %}
+<style>
+  /* Override base.html main width constraint for links page */
+  main {
+    max-width: 100% !important;
+    padding: 1rem 2rem !important;
+  }
+</style>
+{% endblock %}
 {% block content %}
 <style>
   .links-container {
     display: flex;
-    gap: 1rem;
+    gap: 0;
     margin-top: 1rem;
     height: calc(100vh - 200px);
+    position: relative;
   }
   .links-list {
-    flex: 0 0 25%;
+    width: 30%;
+    min-width: 200px;
+    max-width: 50%;
     border: 1px solid #eee;
     border-radius: 4px;
     padding: 0.5rem;
     overflow-y: auto;
+  }
+  .resizer {
+    width: 8px;
+    cursor: col-resize;
+    background: transparent;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .resizer:hover {
+    background: #e0e0e0;
+  }
+  .resizer::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 3px;
+    width: 2px;
+    background: #ddd;
+  }
+  .resizer.resizing {
+    background: #2196f3;
   }
   .links-wizard {
     flex: 1;
@@ -21,6 +55,7 @@
     border-radius: 4px;
     padding: 1rem;
     overflow-y: auto;
+    min-width: 300px;
   }
   .link-item {
     padding: 0.5rem;
@@ -28,6 +63,8 @@
     cursor: pointer;
     border-radius: 4px;
     border: 1px solid transparent;
+    user-select: none; /* Prevent text selection during navigation */
+    outline: none; /* Remove default focus outline, we'll use custom styling */
   }
   .link-item:hover {
     background: #f3f3f3;
@@ -35,6 +72,9 @@
   .link-item.active {
     background: #e3f2fd;
     border-color: #2196f3;
+  }
+  .link-item.focused {
+    box-shadow: 0 0 0 2px #2196f3;
   }
   .wizard-steps {
     display: flex;
@@ -69,6 +109,8 @@
     justify-content: center;
     margin: 0 auto 0.5rem;
     font-weight: bold;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
   }
   .wizard-step.active .wizard-step-circle {
     background: #2196f3;
@@ -77,6 +119,11 @@
   .wizard-step.completed .wizard-step-circle {
     background: #4caf50;
     color: white;
+    font-size: 0.7rem;
+    padding: 0 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .wizard-step-label {
     font-size: 0.75rem;
@@ -85,6 +132,33 @@
   .wizard-step.active .wizard-step-label {
     color: #2196f3;
     font-weight: bold;
+  }
+  .wizard-step-tooltip {
+    display: none;
+    position: absolute;
+    top: 45px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #333;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    z-index: 1000;
+    pointer-events: none;
+  }
+  .wizard-step-tooltip::before {
+    content: '';
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-bottom-color: #333;
+  }
+  .wizard-step.completed:hover .wizard-step-tooltip {
+    display: block;
   }
   .wizard-content {
     min-height: 400px;
@@ -151,7 +225,7 @@
 
 <div class="links-container">
   <!-- Left Panel: Link Definitions List -->
-  <div class="links-list">
+  <div class="links-list" id="links-list">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
       <h3 class="small" style="margin: 0;">Definitions</h3>
       <button id="btn-new-link" class="btn btn-sm btn-primary" data-testid="new-link-btn">New Link</button>
@@ -161,122 +235,68 @@
     </div>
   </div>
 
+  <!-- Resizer -->
+  <div class="resizer" id="resizer"></div>
+
   <!-- Right Panel: Wizard -->
   <div class="links-wizard" id="link-wizard" style="display: none;">
     <h3 id="wizard-title">New Link Definition</h3>
 
-    <!-- Wizard Steps Indicator -->
+    <!-- Wizard Steps Indicator (3-step: Source Label → Match Strategy → Target Label) -->
     <div class="wizard-steps">
       <div class="wizard-step active" data-step="1">
-        <div class="wizard-step-circle">1</div>
-        <div class="wizard-step-label">Source</div>
+        <div class="wizard-step-circle" data-testid="step-1-circle">1</div>
+        <div class="wizard-step-label">Source Label</div>
+        <div class="wizard-step-tooltip" data-testid="step-1-tooltip"></div>
       </div>
       <div class="wizard-step" data-step="2">
-        <div class="wizard-step-circle">2</div>
-        <div class="wizard-step-label">Target</div>
+        <div class="wizard-step-circle" data-testid="step-2-circle">2</div>
+        <div class="wizard-step-label">Match Strategy</div>
+        <div class="wizard-step-tooltip" data-testid="step-2-tooltip"></div>
       </div>
       <div class="wizard-step" data-step="3">
-        <div class="wizard-step-circle">3</div>
-        <div class="wizard-step-label">Relationship</div>
-      </div>
-      <div class="wizard-step" data-step="4">
-        <div class="wizard-step-circle">4</div>
-        <div class="wizard-step-label">Preview</div>
+        <div class="wizard-step-circle" data-testid="step-3-circle">3</div>
+        <div class="wizard-step-label">Target & Relationship</div>
+        <div class="wizard-step-tooltip" data-testid="step-3-tooltip"></div>
       </div>
     </div>
 
-    <!-- Wizard Content -->
+    <!-- Wizard Content (Label→Label refactor: 3 steps) -->
     <div class="wizard-content">
-      <!-- Step 1: Configure Source -->
+      <!-- Step 1: Select Source Label -->
       <div id="step-1" class="wizard-step-content active">
-        <h4>Configure Source</h4>
+        <h4>Select Source Label</h4>
 
         <div class="form-group">
           <label class="form-label small" for="link-name">Link Name</label>
-          <input id="link-name" type="text" class="form-control form-control-sm" placeholder="e.g., Authors to Files" data-testid="link-name" />
+          <input id="link-name" type="text" class="form-control form-control-sm" placeholder="e.g., Person to File via email" data-testid="link-name" />
         </div>
 
         <div class="form-group">
-          <label class="form-label small">Source Type</label>
-          <div style="display: flex; gap: 0.5rem;">
-            <button class="btn btn-sm btn-outline-primary source-type-btn active" data-source="graph">Graph</button>
-            <button class="btn btn-sm btn-outline-primary source-type-btn" data-source="csv">CSV</button>
-            <button class="btn btn-sm btn-outline-primary source-type-btn" data-source="api">API</button>
-          </div>
-        </div>
-
-        <!-- Graph Source -->
-        <div id="source-graph" class="source-config">
-          <div class="form-group">
-            <label class="form-label small" for="source-label">Label</label>
-            <input id="source-label" type="text" class="form-control form-control-sm" placeholder="e.g., Person" />
-          </div>
-          <div class="form-group">
-            <label class="form-label small" for="source-where">WHERE Clause (optional)</label>
-            <input id="source-where" type="text" class="form-control form-control-sm" placeholder="e.g., p.role = 'author'" />
-          </div>
-        </div>
-
-        <!-- CSV Source -->
-        <div id="source-csv" class="source-config" style="display: none;">
-          <div class="form-group">
-            <label class="form-label small" for="csv-data">CSV Data</label>
-            <textarea id="csv-data" class="form-control form-control-sm" rows="8" placeholder="name,email,file_path&#10;Alice,alice@ex.com,file1.txt&#10;Bob,bob@ex.com,file2.txt"></textarea>
-            <small class="small text-muted">Paste CSV data with headers in first row</small>
-          </div>
-        </div>
-
-        <!-- API Source -->
-        <div id="source-api" class="source-config" style="display: none;">
-          <div class="form-group">
-            <label class="form-label small" for="api-url">API URL</label>
-            <input id="api-url" type="text" class="form-control form-control-sm" placeholder="https://api.example.com/users" />
-          </div>
-          <div class="form-group">
-            <label class="form-label small" for="api-jsonpath">JSONPath (optional)</label>
-            <input id="api-jsonpath" type="text" class="form-control form-control-sm" placeholder="$.users[*]" />
-          </div>
+          <label class="form-label small" for="source-label-select">Source Label</label>
+          <select id="source-label-select" class="form-control form-control-sm" data-testid="source-label-select">
+            <option value="">Select a label...</option>
+          </select>
+          <small class="small text-muted">Choose which Label will be the source of the relationship</small>
         </div>
       </div>
 
-      <!-- Step 2: Configure Target -->
+      <!-- Step 2: Configure Match Strategy -->
       <div id="step-2" class="wizard-step-content">
-        <h4>Configure Target</h4>
-
-        <div class="form-group">
-          <label class="form-label small">Target Type</label>
-          <div style="display: flex; gap: 0.5rem;">
-            <button class="btn btn-sm btn-outline-primary target-type-btn active" data-target="label">Label</button>
-            <button class="btn btn-sm btn-outline-primary target-type-btn" data-target="graph">Graph Query</button>
-          </div>
-        </div>
-
-        <!-- Label Target -->
-        <div id="target-label" class="target-config">
-          <div class="form-group">
-            <label class="form-label small" for="target-label-name">Label</label>
-            <input id="target-label-name" type="text" class="form-control form-control-sm" placeholder="e.g., File" />
-          </div>
-        </div>
-
-        <!-- Graph Target -->
-        <div id="target-graph" class="target-config" style="display: none;">
-          <div class="form-group">
-            <label class="form-label small" for="target-graph-label">Label</label>
-            <input id="target-graph-label" type="text" class="form-control form-control-sm" placeholder="e.g., Document" />
-          </div>
-        </div>
+        <h4>Configure Match Strategy</h4>
+        <p class="small text-muted">How should instances be matched between source and target labels?</p>
 
         <div class="form-group">
           <label class="form-label small">Match Strategy</label>
-          <div style="display: flex; gap: 0.5rem;">
-            <button class="btn btn-sm btn-outline-primary match-strategy-btn active" data-strategy="property">Property</button>
-            <button class="btn btn-sm btn-outline-primary match-strategy-btn" data-strategy="id">ID</button>
-            <button class="btn btn-sm btn-outline-primary match-strategy-btn" data-strategy="cypher">Cypher</button>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button class="btn btn-sm btn-outline-primary match-strategy-btn active" data-strategy="property" title="Match by property values">= Property</button>
+            <button class="btn btn-sm btn-outline-primary match-strategy-btn" data-strategy="fuzzy" title="Fuzzy string matching">~ Fuzzy</button>
+            <button class="btn btn-sm btn-outline-primary match-strategy-btn" data-strategy="table_import" title="Import from CSV/Excel">📊 Table</button>
+            <button class="btn btn-sm btn-outline-primary match-strategy-btn" data-strategy="api_endpoint" title="Fetch from API">🔌 API</button>
           </div>
         </div>
 
-        <!-- Property Match -->
+        <!-- Property Match Config -->
         <div id="match-property" class="match-config">
           <div class="form-group">
             <label class="form-label small" for="match-source-field">Source Field</label>
@@ -288,47 +308,76 @@
           </div>
         </div>
 
-        <!-- ID Match -->
-        <div id="match-id" class="match-config" style="display: none;">
-          <small class="small text-muted">Match by direct node ID (source must contain 'target_id' field)</small>
+        <!-- Fuzzy Match Config -->
+        <div id="match-fuzzy" class="match-config" style="display: none;">
+          <div class="form-group">
+            <label class="form-label small" for="fuzzy-source-field">Source Field</label>
+            <input id="fuzzy-source-field" type="text" class="form-control form-control-sm" placeholder="e.g., name" />
+          </div>
+          <div class="form-group">
+            <label class="form-label small" for="fuzzy-target-field">Target Field</label>
+            <input id="fuzzy-target-field" type="text" class="form-control form-control-sm" placeholder="e.g., author_name" />
+          </div>
+          <div class="form-group">
+            <label class="form-label small" for="fuzzy-threshold">Similarity Threshold (%)</label>
+            <input id="fuzzy-threshold" type="number" class="form-control form-control-sm" value="80" min="0" max="100" />
+          </div>
+          <small class="small text-muted">Note: Fuzzy matching requires configuration in Settings > Links</small>
         </div>
 
-        <!-- Cypher Match -->
-        <div id="match-cypher" class="match-config" style="display: none;">
+        <!-- Table Import Config -->
+        <div id="match-table-import" class="match-config" style="display: none;">
           <div class="form-group">
-            <label class="form-label small" for="match-cypher-query">Cypher Match Clause</label>
-            <textarea id="match-cypher-query" class="form-control form-control-sm" rows="4" placeholder="MATCH (t:Target) WHERE t.prop = $source_field"></textarea>
+            <label class="form-label small" for="table-data">CSV/TSV Data</label>
+            <textarea id="table-data" class="form-control form-control-sm" rows="8" placeholder="name,email,role&#10;Alice,alice@ex.com,author&#10;Bob,bob@ex.com,reviewer"></textarea>
+            <small class="small text-muted">Paste table data with headers in first row. Instances will be created from rows.</small>
           </div>
+        </div>
+
+        <!-- API Endpoint Config -->
+        <div id="match-api-endpoint" class="match-config" style="display: none;">
+          <div class="form-group">
+            <label class="form-label small" for="api-url">API URL</label>
+            <input id="api-url" type="text" class="form-control form-control-sm" placeholder="https://api.example.com/users" />
+          </div>
+          <div class="form-group">
+            <label class="form-label small" for="api-jsonpath">JSONPath (optional)</label>
+            <input id="api-jsonpath" type="text" class="form-control form-control-sm" placeholder="$.data.users[*]" />
+          </div>
+          <small class="small text-muted">Note: Advanced API endpoints can be configured in Settings > Links</small>
         </div>
       </div>
 
-      <!-- Step 3: Define Relationship -->
+      <!-- Step 3: Target Label & Relationship -->
       <div id="step-3" class="wizard-step-content">
-        <h4>Define Relationship</h4>
+        <h4>Target Label & Relationship</h4>
+
+        <div class="form-group">
+          <label class="form-label small" for="target-label-select">Target Label</label>
+          <select id="target-label-select" class="form-control form-control-sm" data-testid="target-label-select">
+            <option value="">Select a label...</option>
+          </select>
+          <small class="small text-muted">Choose which Label will be the target of the relationship</small>
+        </div>
 
         <div class="form-group">
           <label class="form-label small" for="rel-type">Relationship Type</label>
-          <input id="rel-type" type="text" class="form-control form-control-sm" placeholder="e.g., AUTHORED" />
+          <input id="rel-type" type="text" class="form-control form-control-sm" placeholder="e.g., AUTHORED, REVIEWED, CONTAINS" data-testid="rel-type" />
         </div>
 
         <div class="form-group">
-          <label class="form-label small">Properties (optional)</label>
+          <label class="form-label small">Relationship Properties (optional)</label>
           <div id="rel-props-container" data-testid="rel-props-container"></div>
           <button id="btn-add-rel-prop" class="btn btn-sm btn-outline-primary" style="margin-top: 0.5rem;">Add Property</button>
         </div>
-      </div>
 
-      <!-- Step 4: Preview & Execute -->
-      <div id="step-4" class="wizard-step-content">
-        <h4>Preview & Execute</h4>
-
-        <div style="margin-bottom: 1rem;">
+        <div style="margin-top: 1.5rem; padding: 1rem; background: #f8f8f8; border-radius: 4px;">
+          <h5 class="small" style="font-weight: bold; margin-bottom: 0.5rem;">Preview & Execute</h5>
           <button id="btn-load-preview" class="btn btn-sm btn-primary" data-testid="load-preview-btn">Load Preview</button>
           <span id="preview-loading" style="margin-left: 0.5rem; display: none;">Loading...</span>
-        </div>
-
-        <div id="preview-container">
-          <div class="empty-state small">Click "Load Preview" to see sample matches</div>
+          <div id="preview-container" style="margin-top: 1rem;">
+            <div class="empty-state small">Click "Load Preview" to see sample matches</div>
+          </div>
         </div>
       </div>
     </div>
@@ -347,18 +396,22 @@
 </div>
 
 <script>
-// State management
+// State management (Label→Label refactor)
 let currentLink = null;
 let currentStep = 1;
 let linkDefinitions = [];
+let availableLabels = [];
+let lastFocusedIndex = -1; // For keyboard navigation
 let wizardData = {
   id: null,
   name: '',
-  source_type: 'graph',
+  source_label: '',  // NEW: Label name (required)
+  target_label: '',  // NEW: Label name (required)
+  source_type: 'label',  // Always 'label' now
   source_config: {},
-  target_type: 'label',
+  target_type: 'label',  // Always 'label' now
   target_config: {},
-  match_strategy: 'property',
+  match_strategy: 'property',  // Now includes: property, fuzzy, table_import, api_endpoint
   match_config: {},
   relationship_type: '',
   relationship_props: {}
@@ -375,9 +428,73 @@ function showToast(message, type = 'info') {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+  loadAvailableLabels();
   loadLinkDefinitions();
   initializeEventListeners();
+
+  // Global keyboard navigation handler
+  document.addEventListener('keydown', handleGlobalKeydown);
+
+  // Resizer functionality
+  const resizer = document.getElementById('resizer');
+  const leftPanel = document.getElementById('links-list');
+  const container = document.querySelector('.links-container');
+
+  let isResizing = false;
+
+  resizer.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    resizer.classList.add('resizing');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const newWidth = e.clientX - containerRect.left;
+    const minWidth = 200;
+    const maxWidth = containerRect.width * 0.5;
+
+    if (newWidth >= minWidth && newWidth <= maxWidth) {
+      leftPanel.style.width = `${newWidth}px`;
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (isResizing) {
+      isResizing = false;
+      resizer.classList.remove('resizing');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+  });
 });
+
+function loadAvailableLabels() {
+  fetch('/api/links/available-labels')
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'success') {
+        availableLabels = data.labels || [];
+        populateLabelDropdowns();
+      }
+    })
+    .catch(err => showToast('Failed to load labels', 'error'));
+}
+
+function populateLabelDropdowns() {
+  const sourceSelect = document.getElementById('source-label-select');
+  const targetSelect = document.getElementById('target-label-select');
+
+  const options = availableLabels.map(label =>
+    `<option value="${label.name}">${label.name}</option>`
+  ).join('');
+
+  sourceSelect.innerHTML = '<option value="">Select a label...</option>' + options;
+  targetSelect.innerHTML = '<option value="">Select a label...</option>' + options;
+}
 
 function initializeEventListeners() {
   // New link button
@@ -393,24 +510,13 @@ function initializeEventListeners() {
   document.getElementById('btn-save-def').addEventListener('click', saveLinkDefinition);
   document.getElementById('btn-delete-def').addEventListener('click', deleteLinkDefinition);
 
-  // Source type buttons
-  document.querySelectorAll('.source-type-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      document.querySelectorAll('.source-type-btn').forEach(b => b.classList.remove('active'));
-      e.target.classList.add('active');
-      wizardData.source_type = e.target.dataset.source;
-      showSourceConfig(wizardData.source_type);
-    });
+  // Label selection dropdowns
+  document.getElementById('source-label-select').addEventListener('change', (e) => {
+    wizardData.source_label = e.target.value;
   });
 
-  // Target type buttons
-  document.querySelectorAll('.target-type-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      document.querySelectorAll('.target-type-btn').forEach(b => b.classList.remove('active'));
-      e.target.classList.add('active');
-      wizardData.target_type = e.target.dataset.target;
-      showTargetConfig(wizardData.target_type);
-    });
+  document.getElementById('target-label-select').addEventListener('change', (e) => {
+    wizardData.target_label = e.target.value;
   });
 
   // Match strategy buttons
@@ -453,14 +559,36 @@ function renderLinkList() {
     return;
   }
 
-  container.innerHTML = validLinks.map(link => `
-    <div class="link-item" data-link-id="${link.id}" onclick="loadLinkDefinition('${link.id}')">
-      <div style="font-weight: 500;">${link.name || 'Unnamed'}</div>
-      <div class="small" style="color: #666;">
-        ${link.source_type} → ${link.target_type} (${link.relationship_type})
+  container.innerHTML = validLinks.map((link, index) => {
+    const sourceDisplay = link.source_label || link.source_type || 'Unknown';
+    const targetDisplay = link.target_label || link.target_type || 'Unknown';
+    const isActive = currentLink && currentLink.id === link.id;
+    const isFocused = lastFocusedIndex === index;
+    const classes = ['link-item', isActive && 'active', isFocused && 'focused'].filter(Boolean).join(' ');
+
+    return `
+      <div class="${classes}"
+           data-link-id="${link.id}"
+           data-index="${index}"
+           data-testid="link-item"
+           tabindex="${isFocused ? '0' : '-1'}">
+        <div style="font-weight: 500;">${link.name || 'Unnamed'}</div>
+        <div class="small" style="color: #666;">
+          ${sourceDisplay} → ${targetDisplay} (${link.relationship_type || 'RELATED'})
+        </div>
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
+
+  // Add click handlers
+  container.querySelectorAll('.link-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const linkId = item.dataset.linkId;
+      const index = parseInt(item.dataset.index);
+      lastFocusedIndex = index;
+      loadLinkDefinition(linkId);
+    });
+  });
 }
 
 function loadLinkDefinition(linkId) {
@@ -480,9 +608,11 @@ function populateWizardFromLink(link) {
   wizardData = {
     id: link.id,
     name: link.name,
-    source_type: link.source_type,
+    source_label: link.source_label || '',
+    target_label: link.target_label || '',
+    source_type: link.source_type || 'label',
     source_config: link.source_config || {},
-    target_type: link.target_type,
+    target_type: link.target_type || 'label',
     target_config: link.target_config || {},
     match_strategy: link.match_strategy,
     match_config: link.match_config || {},
@@ -490,35 +620,11 @@ function populateWizardFromLink(link) {
     relationship_props: link.relationship_props || {}
   };
 
-  // Populate Step 1
+  // Populate Step 1: Source Label
   document.getElementById('link-name').value = link.name || '';
-  document.querySelectorAll('.source-type-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.source === link.source_type);
-  });
-  showSourceConfig(link.source_type);
+  document.getElementById('source-label-select').value = link.source_label || '';
 
-  if (link.source_type === 'graph') {
-    document.getElementById('source-label').value = link.source_config.label || '';
-    document.getElementById('source-where').value = link.source_config.where_clause || '';
-  } else if (link.source_type === 'csv') {
-    document.getElementById('csv-data').value = link.source_config.csv_data || '';
-  } else if (link.source_type === 'api') {
-    document.getElementById('api-url').value = link.source_config.url || '';
-    document.getElementById('api-jsonpath').value = link.source_config.json_path || '';
-  }
-
-  // Populate Step 2
-  document.querySelectorAll('.target-type-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.target === link.target_type);
-  });
-  showTargetConfig(link.target_type);
-
-  if (link.target_type === 'label') {
-    document.getElementById('target-label-name').value = link.target_config.label || '';
-  } else if (link.target_type === 'graph') {
-    document.getElementById('target-graph-label').value = link.target_config.label || '';
-  }
-
+  // Populate Step 2: Match Strategy
   document.querySelectorAll('.match-strategy-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.strategy === link.match_strategy);
   });
@@ -527,11 +633,19 @@ function populateWizardFromLink(link) {
   if (link.match_strategy === 'property') {
     document.getElementById('match-source-field').value = link.match_config.source_field || '';
     document.getElementById('match-target-field').value = link.match_config.target_field || '';
-  } else if (link.match_strategy === 'cypher') {
-    document.getElementById('match-cypher-query').value = link.match_config.cypher || '';
+  } else if (link.match_strategy === 'fuzzy') {
+    document.getElementById('fuzzy-source-field').value = link.match_config.source_field || '';
+    document.getElementById('fuzzy-target-field').value = link.match_config.target_field || '';
+    document.getElementById('fuzzy-threshold').value = link.match_config.threshold || 80;
+  } else if (link.match_strategy === 'table_import') {
+    document.getElementById('table-data').value = link.match_config.table_data || link.source_config.csv_data || '';
+  } else if (link.match_strategy === 'api_endpoint') {
+    document.getElementById('api-url').value = link.match_config.url || link.source_config.url || '';
+    document.getElementById('api-jsonpath').value = link.match_config.json_path || link.source_config.json_path || '';
   }
 
-  // Populate Step 3
+  // Populate Step 3: Target Label & Relationship
+  document.getElementById('target-label-select').value = link.target_label || '';
   document.getElementById('rel-type').value = link.relationship_type || '';
   renderRelationshipProps();
 
@@ -548,7 +662,9 @@ function resetWizard() {
   wizardData = {
     id: null,
     name: '',
-    source_type: 'graph',
+    source_label: '',
+    target_label: '',
+    source_type: 'label',
     source_config: {},
     target_type: 'label',
     target_config: {},
@@ -560,33 +676,33 @@ function resetWizard() {
 
   // Reset form fields
   document.getElementById('link-name').value = '';
-  document.getElementById('source-label').value = '';
-  document.getElementById('source-where').value = '';
-  document.getElementById('csv-data').value = '';
-  document.getElementById('api-url').value = '';
-  document.getElementById('api-jsonpath').value = '';
-  document.getElementById('target-label-name').value = '';
-  document.getElementById('target-graph-label').value = '';
+  document.getElementById('source-label-select').value = '';
+  document.getElementById('target-label-select').value = '';
   document.getElementById('match-source-field').value = '';
   document.getElementById('match-target-field').value = '';
-  document.getElementById('match-cypher-query').value = '';
+  document.getElementById('fuzzy-source-field').value = '';
+  document.getElementById('fuzzy-target-field').value = '';
+  document.getElementById('fuzzy-threshold').value = '80';
+  document.getElementById('table-data').value = '';
+  document.getElementById('api-url').value = '';
+  document.getElementById('api-jsonpath').value = '';
   document.getElementById('rel-type').value = '';
+
+  // Reset step circles and tooltips
+  document.querySelectorAll('.wizard-step-circle').forEach((circle, idx) => {
+    circle.textContent = idx + 1;
+  });
+  document.querySelectorAll('.wizard-step-tooltip').forEach(tooltip => {
+    tooltip.textContent = '';
+  });
   document.getElementById('rel-props-container').innerHTML = '';
   document.getElementById('preview-container').innerHTML = '<div class="empty-state small">Click "Load Preview" to see sample matches</div>';
 
-  // Reset button states
-  document.querySelectorAll('.source-type-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.source === 'graph');
-  });
-  document.querySelectorAll('.target-type-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.target === 'label');
-  });
+  // Reset match strategy buttons
   document.querySelectorAll('.match-strategy-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.strategy === 'property');
   });
 
-  showSourceConfig('graph');
-  showTargetConfig('label');
   showMatchConfig('property');
 
   document.getElementById('btn-delete-def').style.display = 'none';
@@ -614,6 +730,8 @@ function navigateToStep(step) {
     el.classList.remove('active', 'completed');
     if (stepNum < step) {
       el.classList.add('completed');
+      // Update step circle with visual summary
+      updateStepSummary(stepNum);
     } else if (stepNum === step) {
       el.classList.add('active');
     }
@@ -624,25 +742,59 @@ function navigateToStep(step) {
     el.classList.toggle('active', idx + 1 === step);
   });
 
-  // Update navigation buttons
+  // Update navigation buttons (3-step wizard)
   document.getElementById('btn-prev').style.display = step > 1 ? 'inline-block' : 'none';
-  document.getElementById('btn-next').style.display = step < 4 ? 'inline-block' : 'none';
-  document.getElementById('btn-execute').style.display = step === 4 ? 'inline-block' : 'none';
+  document.getElementById('btn-next').style.display = step < 3 ? 'inline-block' : 'none';
+  document.getElementById('btn-execute').style.display = step === 3 ? 'inline-block' : 'none';
 }
 
-function showSourceConfig(type) {
-  document.querySelectorAll('.source-config').forEach(el => el.style.display = 'none');
-  document.getElementById(`source-${type}`).style.display = 'block';
-}
+function updateStepSummary(stepNum) {
+  const circle = document.querySelector(`[data-step="${stepNum}"] .wizard-step-circle`);
+  const tooltip = document.querySelector(`[data-step="${stepNum}"] .wizard-step-tooltip`);
 
-function showTargetConfig(type) {
-  document.querySelectorAll('.target-config').forEach(el => el.style.display = 'none');
-  document.getElementById(`target-${type}`).style.display = 'block';
+  if (stepNum === 1) {
+    // Step 1: Show source label name
+    const sourceLabel = document.getElementById('source-label-select').value;
+    if (sourceLabel) {
+      circle.textContent = sourceLabel;
+      tooltip.textContent = `Source: ${sourceLabel}`;
+    }
+  } else if (stepNum === 2) {
+    // Step 2: Show match strategy icon
+    const strategy = document.querySelector('.match-strategy-btn.active')?.dataset.strategy;
+    const strategyIcons = {
+      'property': '=',
+      'fuzzy': '~',
+      'table_import': '📊',
+      'api_endpoint': '🔌'
+    };
+    const strategyNames = {
+      'property': 'Property Match',
+      'fuzzy': 'Fuzzy Match',
+      'table_import': 'Table Import',
+      'api_endpoint': 'API Endpoint'
+    };
+    if (strategy) {
+      circle.textContent = strategyIcons[strategy] || strategy;
+      tooltip.textContent = `Match: ${strategyNames[strategy] || strategy}`;
+    }
+  } else if (stepNum === 3) {
+    // Step 3: Show relationship type
+    const relType = document.getElementById('rel-type').value;
+    if (relType) {
+      circle.textContent = relType.substring(0, 8);
+      const targetLabel = document.getElementById('target-label-select').value;
+      tooltip.textContent = `${relType}${targetLabel ? ' → ' + targetLabel : ''}`;
+    }
+  }
 }
 
 function showMatchConfig(strategy) {
   document.querySelectorAll('.match-config').forEach(el => el.style.display = 'none');
-  document.getElementById(`match-${strategy}`).style.display = 'block';
+  const matchEl = document.getElementById(`match-${strategy.replace('_', '-')}`);
+  if (matchEl) {
+    matchEl.style.display = 'block';
+  }
 }
 
 function addRelationshipProperty() {
@@ -673,50 +825,35 @@ function renderRelationshipProps() {
 }
 
 function collectWizardData() {
-  // Step 1: Source
+  // Step 1: Source Label
   wizardData.name = document.getElementById('link-name').value.trim();
+  wizardData.source_label = document.getElementById('source-label-select').value.trim();
 
-  if (wizardData.source_type === 'graph') {
-    wizardData.source_config = {
-      label: document.getElementById('source-label').value.trim(),
-      where_clause: document.getElementById('source-where').value.trim()
-    };
-  } else if (wizardData.source_type === 'csv') {
-    wizardData.source_config = {
-      csv_data: document.getElementById('csv-data').value.trim()
-    };
-  } else if (wizardData.source_type === 'api') {
-    wizardData.source_config = {
-      url: document.getElementById('api-url').value.trim(),
-      json_path: document.getElementById('api-jsonpath').value.trim()
-    };
-  }
-
-  // Step 2: Target
-  if (wizardData.target_type === 'label') {
-    wizardData.target_config = {
-      label: document.getElementById('target-label-name').value.trim()
-    };
-  } else if (wizardData.target_type === 'graph') {
-    wizardData.target_config = {
-      label: document.getElementById('target-graph-label').value.trim()
-    };
-  }
-
+  // Step 2: Match Strategy
   if (wizardData.match_strategy === 'property') {
     wizardData.match_config = {
       source_field: document.getElementById('match-source-field').value.trim(),
       target_field: document.getElementById('match-target-field').value.trim()
     };
-  } else if (wizardData.match_strategy === 'cypher') {
+  } else if (wizardData.match_strategy === 'fuzzy') {
     wizardData.match_config = {
-      cypher: document.getElementById('match-cypher-query').value.trim()
+      source_field: document.getElementById('fuzzy-source-field').value.trim(),
+      target_field: document.getElementById('fuzzy-target-field').value.trim(),
+      threshold: parseInt(document.getElementById('fuzzy-threshold').value) || 80
     };
-  } else if (wizardData.match_strategy === 'id') {
-    wizardData.match_config = {};
+  } else if (wizardData.match_strategy === 'table_import') {
+    wizardData.match_config = {
+      table_data: document.getElementById('table-data').value.trim()
+    };
+  } else if (wizardData.match_strategy === 'api_endpoint') {
+    wizardData.match_config = {
+      url: document.getElementById('api-url').value.trim(),
+      json_path: document.getElementById('api-jsonpath').value.trim()
+    };
   }
 
-  // Step 3: Relationship
+  // Step 3: Target Label & Relationship
+  wizardData.target_label = document.getElementById('target-label-select').value.trim();
   wizardData.relationship_type = document.getElementById('rel-type').value.trim();
 
   const props = {};
@@ -908,6 +1045,134 @@ function pollJobStatus(jobId) {
         showToast('Failed to poll job status', 'error');
       });
   }, 2000);
+}
+
+// Global keyboard navigation handler
+function handleGlobalKeydown(e) {
+  // Don't intercept if user is typing in an input/textarea/select
+  const activeElement = document.activeElement;
+  const isTyping = activeElement && (
+    activeElement.tagName === 'INPUT' ||
+    activeElement.tagName === 'TEXTAREA' ||
+    activeElement.tagName === 'SELECT'
+  );
+
+  // Let buttons and links handle Enter/Space themselves, UNLESS we're actively navigating links
+  if (activeElement && (activeElement.tagName === 'BUTTON' || activeElement.tagName === 'A') && (e.key === 'Enter' || e.key === ' ')) {
+    if (e.key === 'Enter' && lastFocusedIndex >= 0 && lastFocusedIndex < linkDefinitions.length) {
+      const focusIsInSidePanel = activeElement.closest('#link-list');
+      if (focusIsInSidePanel) {
+        e.preventDefault();
+        const validLinks = linkDefinitions.filter(link => link && link.id);
+        if (lastFocusedIndex < validLinks.length) {
+          loadLinkDefinition(validLinks[lastFocusedIndex].id);
+        }
+        return;
+      }
+    }
+    return;
+  }
+
+  // Escape key in wizard: return focus to side panel
+  if (e.key === 'Escape' && !isTyping) {
+    const isInWizard = activeElement && activeElement.closest('#link-wizard');
+    if (isInWizard && lastFocusedIndex >= 0 && lastFocusedIndex < linkDefinitions.length) {
+      e.preventDefault();
+      returnFocusToSidePanel();
+      return;
+    }
+  }
+
+  // Escape key while typing in wizard: return focus to side panel
+  if (e.key === 'Escape' && isTyping) {
+    const isInWizard = activeElement && activeElement.closest('#link-wizard');
+    if (isInWizard) {
+      e.preventDefault();
+      returnFocusToSidePanel();
+      return;
+    }
+  }
+
+  // Don't handle other keys if user is typing
+  if (isTyping) return;
+
+  // Handle navigation keys
+  const validLinks = linkDefinitions.filter(link => link && link.id);
+
+  switch(e.key) {
+    case 'ArrowUp':
+      e.preventDefault();
+      navigateLinks(-1);
+      break;
+    case 'ArrowDown':
+      e.preventDefault();
+      navigateLinks(1);
+      break;
+    case 'Home':
+      e.preventDefault();
+      navigateToLink(0);
+      break;
+    case 'End':
+      e.preventDefault();
+      navigateToLink(validLinks.length - 1);
+      break;
+    case 'PageUp':
+      e.preventDefault();
+      navigateLinks(-10);
+      break;
+    case 'PageDown':
+      e.preventDefault();
+      navigateLinks(10);
+      break;
+    case 'Enter':
+      if (lastFocusedIndex >= 0 && lastFocusedIndex < validLinks.length) {
+        const focusInWizard = document.activeElement && document.activeElement.closest('#link-wizard');
+        if (!focusInWizard) {
+          e.preventDefault();
+          loadLinkDefinition(validLinks[lastFocusedIndex].id);
+        }
+      }
+      break;
+  }
+}
+
+function navigateLinks(delta) {
+  const validLinks = linkDefinitions.filter(link => link && link.id);
+  if (validLinks.length === 0) return;
+
+  let newIndex;
+  if (lastFocusedIndex === -1) {
+    newIndex = delta > 0 ? 0 : validLinks.length - 1;
+  } else {
+    newIndex = lastFocusedIndex + delta;
+  }
+
+  newIndex = Math.max(0, Math.min(validLinks.length - 1, newIndex));
+  navigateToLink(newIndex);
+}
+
+function navigateToLink(index) {
+  const validLinks = linkDefinitions.filter(link => link && link.id);
+  if (index < 0 || index >= validLinks.length) return;
+
+  lastFocusedIndex = index;
+  renderLinkList();
+
+  // Scroll into view
+  const container = document.getElementById('link-list');
+  const items = container.querySelectorAll('.link-item');
+  if (items[index]) {
+    items[index].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    items[index].focus();
+  }
+}
+
+function returnFocusToSidePanel() {
+  const container = document.getElementById('link-list');
+  const items = container.querySelectorAll('.link-item');
+  if (lastFocusedIndex >= 0 && lastFocusedIndex < items.length) {
+    items[lastFocusedIndex].focus();
+  }
 }
 </script>
 {% endblock %}

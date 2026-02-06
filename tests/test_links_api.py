@@ -10,6 +10,8 @@ Tests cover:
 - POST /api/links/<id>/execute - execute link job
 - GET /api/links/jobs/<job_id> - get job status
 - GET /api/links/jobs - list jobs
+- GET /api/links/available-labels - get available labels for dropdowns
+- POST /api/links/migrate - migrate existing links to Label→Label model
 """
 import json
 import pytest
@@ -26,21 +28,26 @@ def test_list_links_empty(client):
 
 
 def test_create_link_success(client):
-    """Test creating a link definition with all required fields."""
+    """Test creating a link definition with all required fields (Label→Label model)."""
+    # Create labels first
+    client.post('/api/labels', json={
+        'name': 'Author',
+        'properties': [{'name': 'email', 'type': 'string'}],
+        'relationships': []
+    })
+    client.post('/api/labels', json={
+        'name': 'File',
+        'properties': [{'name': 'path', 'type': 'string'}],
+        'relationships': []
+    })
+
     payload = {
         'name': 'Authors to Files',
-        'source_type': 'csv',
-        'source_config': {
-            'csv_data': 'name,email,file_path\nAlice,alice@ex.com,file1.txt'
-        },
-        'target_type': 'label',
-        'target_config': {
-            'label': 'File'
-        },
-        'match_strategy': 'property',
+        'source_label': 'Author',
+        'target_label': 'File',
+        'match_strategy': 'table_import',
         'match_config': {
-            'source_field': 'file_path',
-            'target_field': 'path'
+            'table_data': 'name,email,file_path\nAlice,alice@ex.com,file1.txt'
         },
         'relationship_type': 'AUTHORED',
         'relationship_props': {
@@ -54,9 +61,9 @@ def test_create_link_success(client):
     assert data['status'] == 'success'
     assert 'link' in data
     assert data['link']['name'] == 'Authors to Files'
-    assert data['link']['source_type'] == 'csv'
-    assert data['link']['target_type'] == 'label'
-    assert data['link']['match_strategy'] == 'property'
+    assert data['link']['source_label'] == 'Author'
+    assert data['link']['target_label'] == 'File'
+    assert data['link']['match_strategy'] == 'table_import'
     assert data['link']['relationship_type'] == 'AUTHORED'
     assert 'id' in data['link']
 
@@ -78,11 +85,10 @@ def test_create_link_missing_name(client):
 
 
 def test_create_link_invalid_source_type(client):
-    """Test creating link with invalid source_type fails."""
+    """Test creating link without source_label fails (Label→Label model)."""
     payload = {
         'name': 'Bad Link',
-        'source_type': 'invalid',
-        'target_type': 'label',
+        'target_label': 'File',
         'match_strategy': 'property',
         'relationship_type': 'RELATED'
     }
@@ -91,15 +97,14 @@ def test_create_link_invalid_source_type(client):
     assert response.status_code == 400
     data = response.get_json()
     assert data['status'] == 'error'
-    assert 'source_type' in data['error'].lower()
+    assert 'source_label' in data['error'].lower()
 
 
 def test_create_link_invalid_target_type(client):
-    """Test creating link with invalid target_type fails."""
+    """Test creating link without target_label fails (Label→Label model)."""
     payload = {
         'name': 'Bad Link',
-        'source_type': 'graph',
-        'target_type': 'invalid',
+        'source_label': 'Person',
         'match_strategy': 'property',
         'relationship_type': 'RELATED'
     }
@@ -108,15 +113,22 @@ def test_create_link_invalid_target_type(client):
     assert response.status_code == 400
     data = response.get_json()
     assert data['status'] == 'error'
-    assert 'target_type' in data['error'].lower()
+    assert 'target_label' in data['error'].lower()
 
 
 def test_create_link_invalid_match_strategy(client):
     """Test creating link with invalid match_strategy fails."""
+    # Create labels first
+    client.post('/api/labels', json={
+        'name': 'TestLabel',
+        'properties': [],
+        'relationships': []
+    })
+
     payload = {
         'name': 'Bad Link',
-        'source_type': 'graph',
-        'target_type': 'label',
+        'source_label': 'TestLabel',
+        'target_label': 'TestLabel',
         'match_strategy': 'invalid',
         'relationship_type': 'RELATED'
     }
@@ -130,10 +142,17 @@ def test_create_link_invalid_match_strategy(client):
 
 def test_create_link_missing_relationship_type(client):
     """Test creating link without relationship_type fails."""
+    # Create labels first
+    client.post('/api/labels', json={
+        'name': 'Person',
+        'properties': [],
+        'relationships': []
+    })
+
     payload = {
         'name': 'Bad Link',
-        'source_type': 'graph',
-        'target_type': 'label',
+        'source_label': 'Person',
+        'target_label': 'Person',
         'match_strategy': 'property'
     }
 
@@ -146,13 +165,23 @@ def test_create_link_missing_relationship_type(client):
 
 def test_get_link_success(client):
     """Test retrieving an existing link definition."""
-    # First create a link
+    # Create labels first
+    client.post('/api/labels', json={
+        'name': 'Person',
+        'properties': [{'name': 'email', 'type': 'string'}],
+        'relationships': []
+    })
+    client.post('/api/labels', json={
+        'name': 'File',
+        'properties': [{'name': 'path', 'type': 'string'}],
+        'relationships': []
+    })
+
+    # Create a link
     payload = {
         'name': 'Test Link',
-        'source_type': 'graph',
-        'source_config': {'label': 'Person'},
-        'target_type': 'label',
-        'target_config': {'label': 'File'},
+        'source_label': 'Person',
+        'target_label': 'File',
         'match_strategy': 'property',
         'match_config': {'source_field': 'email', 'target_field': 'author'},
         'relationship_type': 'AUTHORED',
@@ -180,13 +209,23 @@ def test_get_link_not_found(client):
 
 def test_update_link_success(client):
     """Test updating an existing link definition."""
+    # Create labels first
+    client.post('/api/labels', json={
+        'name': 'Person',
+        'properties': [{'name': 'email', 'type': 'string'}],
+        'relationships': []
+    })
+    client.post('/api/labels', json={
+        'name': 'File',
+        'properties': [{'name': 'path', 'type': 'string'}],
+        'relationships': []
+    })
+
     # Create a link
     payload = {
         'name': 'Original Name',
-        'source_type': 'graph',
-        'source_config': {'label': 'Person'},
-        'target_type': 'label',
-        'target_config': {'label': 'File'},
+        'source_label': 'Person',
+        'target_label': 'File',
         'match_strategy': 'property',
         'match_config': {'source_field': 'email', 'target_field': 'author'},
         'relationship_type': 'AUTHORED',
@@ -210,13 +249,23 @@ def test_update_link_success(client):
 
 def test_delete_link_success(client):
     """Test deleting a link definition."""
+    # Create labels first
+    client.post('/api/labels', json={
+        'name': 'Person',
+        'properties': [{'name': 'email', 'type': 'string'}],
+        'relationships': []
+    })
+    client.post('/api/labels', json={
+        'name': 'File',
+        'properties': [{'name': 'path', 'type': 'string'}],
+        'relationships': []
+    })
+
     # Create a link
     payload = {
         'name': 'To Delete',
-        'source_type': 'graph',
-        'source_config': {'label': 'Person'},
-        'target_type': 'label',
-        'target_config': {'label': 'File'},
+        'source_label': 'Person',
+        'target_label': 'File',
         'match_strategy': 'property',
         'match_config': {'source_field': 'email', 'target_field': 'author'},
         'relationship_type': 'AUTHORED',
@@ -246,6 +295,18 @@ def test_delete_link_not_found(client):
 
 def test_list_links_after_create(client):
     """Test that created links appear in list."""
+    # Create labels first
+    client.post('/api/labels', json={
+        'name': 'Person',
+        'properties': [{'name': 'email', 'type': 'string'}],
+        'relationships': []
+    })
+    client.post('/api/labels', json={
+        'name': 'File',
+        'properties': [{'name': 'path', 'type': 'string'}],
+        'relationships': []
+    })
+
     # Get initial count
     initial_response = client.get('/api/links')
     initial_count = len(initial_response.get_json()['links'])
@@ -255,10 +316,8 @@ def test_list_links_after_create(client):
     for i in range(3):
         payload = {
             'name': f'Link {i}',
-            'source_type': 'graph',
-            'source_config': {'label': 'Person'},
-            'target_type': 'label',
-            'target_config': {'label': 'File'},
+            'source_label': 'Person',
+            'target_label': 'File',
             'match_strategy': 'property',
             'match_config': {'source_field': 'email', 'target_field': 'author'},
             'relationship_type': f'REL_{i}',
@@ -312,3 +371,203 @@ def test_get_job_status_not_found(client):
     assert response.status_code == 404
     data = response.get_json()
     assert data['status'] == 'error'
+
+
+# ===  Label→Label Refactor Tests ===
+
+
+def test_create_link_with_labels(client):
+    """Test creating a link with source_label and target_label (new model)."""
+    # First, create labels
+    client.post('/api/labels', json={
+        'name': 'Person',
+        'properties': [{'name': 'email', 'type': 'string'}],
+        'relationships': []
+    })
+    client.post('/api/labels', json={
+        'name': 'File',
+        'properties': [{'name': 'path', 'type': 'string'}],
+        'relationships': []
+    })
+
+    payload = {
+        'name': 'Person to File',
+        'source_label': 'Person',
+        'target_label': 'File',
+        'match_strategy': 'property',
+        'match_config': {
+            'source_field': 'email',
+            'target_field': 'author_email'
+        },
+        'relationship_type': 'AUTHORED'
+    }
+
+    response = client.post('/api/links', json=payload)
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['status'] == 'success'
+    assert data['link']['source_label'] == 'Person'
+    assert data['link']['target_label'] == 'File'
+    assert data['link']['match_strategy'] == 'property'
+
+
+def test_create_link_missing_source_label(client):
+    """Test that source_label is required."""
+    payload = {
+        'name': 'Bad Link',
+        'target_label': 'File',
+        'match_strategy': 'property',
+        'relationship_type': 'RELATED'
+    }
+
+    response = client.post('/api/links', json=payload)
+    assert response.status_code == 400
+    data = response.get_json()
+    assert data['status'] == 'error'
+    assert 'source_label' in data['error'].lower()
+
+
+def test_create_link_missing_target_label(client):
+    """Test that target_label is required."""
+    payload = {
+        'name': 'Bad Link',
+        'source_label': 'Person',
+        'match_strategy': 'property',
+        'relationship_type': 'RELATED'
+    }
+
+    response = client.post('/api/links', json=payload)
+    assert response.status_code == 400
+    data = response.get_json()
+    assert data['status'] == 'error'
+    assert 'target_label' in data['error'].lower()
+
+
+def test_create_link_nonexistent_label(client):
+    """Test that labels must exist in registry."""
+    payload = {
+        'name': 'Bad Link',
+        'source_label': 'NonexistentLabel',
+        'target_label': 'AlsoDoesNotExist',
+        'match_strategy': 'property',
+        'relationship_type': 'RELATED'
+    }
+
+    response = client.post('/api/links', json=payload)
+    assert response.status_code == 400
+    data = response.get_json()
+    assert data['status'] == 'error'
+
+
+def test_create_link_fuzzy_match_strategy(client):
+    """Test creating link with fuzzy match strategy."""
+    # Create labels first
+    client.post('/api/labels', json={
+        'name': 'Author',
+        'properties': [{'name': 'name', 'type': 'string'}],
+        'relationships': []
+    })
+    client.post('/api/labels', json={
+        'name': 'Document',
+        'properties': [{'name': 'author_name', 'type': 'string'}],
+        'relationships': []
+    })
+
+    payload = {
+        'name': 'Author to Document (Fuzzy)',
+        'source_label': 'Author',
+        'target_label': 'Document',
+        'match_strategy': 'fuzzy',
+        'match_config': {
+            'source_field': 'name',
+            'target_field': 'author_name',
+            'threshold': 85
+        },
+        'relationship_type': 'AUTHORED'
+    }
+
+    response = client.post('/api/links', json=payload)
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['status'] == 'success'
+    assert data['link']['match_strategy'] == 'fuzzy'
+
+
+def test_create_link_table_import_strategy(client):
+    """Test creating link with table_import match strategy."""
+    # Create labels
+    client.post('/api/labels', json={
+        'name': 'Project',
+        'properties': [{'name': 'name', 'type': 'string'}],
+        'relationships': []
+    })
+
+    payload = {
+        'name': 'Import Projects from CSV',
+        'source_label': 'Project',
+        'target_label': 'Project',
+        'match_strategy': 'table_import',
+        'match_config': {
+            'table_data': 'name,budget\nProject A,100000\nProject B,200000'
+        },
+        'relationship_type': 'RELATED_TO'
+    }
+
+    response = client.post('/api/links', json=payload)
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['status'] == 'success'
+    assert data['link']['match_strategy'] == 'table_import'
+
+
+def test_create_link_api_endpoint_strategy(client):
+    """Test creating link with api_endpoint match strategy."""
+    # Create labels
+    client.post('/api/labels', json={
+        'name': 'User',
+        'properties': [{'name': 'id', 'type': 'number'}],
+        'relationships': []
+    })
+
+    payload = {
+        'name': 'Fetch Users from API',
+        'source_label': 'User',
+        'target_label': 'User',
+        'match_strategy': 'api_endpoint',
+        'match_config': {
+            'url': 'https://api.example.com/users',
+            'json_path': '$.data.users[*]'
+        },
+        'relationship_type': 'RELATED_TO'
+    }
+
+    response = client.post('/api/links', json=payload)
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['status'] == 'success'
+    assert data['link']['match_strategy'] == 'api_endpoint'
+
+
+def test_get_available_labels(client):
+    """Test getting available labels for dropdown population."""
+    # Create some labels
+    client.post('/api/labels', json={
+        'name': 'Person',
+        'properties': [{'name': 'name', 'type': 'string'}],
+        'relationships': []
+    })
+    client.post('/api/labels', json={
+        'name': 'File',
+        'properties': [{'name': 'path', 'type': 'string'}],
+        'relationships': []
+    })
+
+    response = client.get('/api/links/available-labels')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['status'] == 'success'
+    assert 'labels' in data
+    assert len(data['labels']) >= 2
+    label_names = [l['name'] for l in data['labels']]
+    assert 'Person' in label_names
+    assert 'File' in label_names

@@ -20,20 +20,24 @@ test('settings page loads and displays system information', async ({ page, baseU
   // Verify page loads
   await expect(page).toHaveTitle(/SciDK - Settings/i, { timeout: 10_000 });
 
-  // Check for main sections
-  await expect(page.locator('main h1')).toContainText('Settings');
-  await expect(page.locator('h2').filter({ hasText: 'Neo4j Connection' })).toBeVisible();
-  await expect(page.locator('h2').filter({ hasText: 'Interpreters' })).toBeVisible();
-  await expect(page.locator('h2').filter({ hasText: 'Plugins' })).toBeVisible();
-  await expect(page.locator('h2').filter({ hasText: 'Rclone Interpretation' })).toBeVisible();
+  // Check for sidebar navigation
+  await expect(page.locator('.settings-sidebar')).toBeVisible();
+  await expect(page.locator('.settings-sidebar-item[data-section="general"]')).toBeVisible();
+  await expect(page.locator('.settings-sidebar-item[data-section="neo4j"]')).toBeVisible();
+  await expect(page.locator('.settings-sidebar-item[data-section="interpreters"]')).toBeVisible();
+
+  // Check that General section is active by default
+  const generalSection = page.locator('#general-section');
+  await expect(generalSection).toBeVisible();
+  await expect(generalSection.locator('h1')).toHaveText('General');
 
   // Check for system info badges
-  const badges = page.locator('.badge');
+  const badges = generalSection.locator('.badge');
   await expect(badges.first()).toBeVisible();
 
   // Check for unexpected console errors (allow API 404s for interpreters)
-  const errors = consoleMessages.filter((m) => 
-    m.type === 'error' && 
+  const errors = consoleMessages.filter((m) =>
+    m.type === 'error' &&
     !m.text.includes('Failed to load resource') &&
     !m.text.includes('404')
   );
@@ -60,6 +64,10 @@ test('neo4j connection form has all required inputs', async ({ page, baseURL }) 
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/settings`);
   await page.waitForLoadState('networkidle');
+
+  // Navigate to Neo4j section
+  await page.locator('.settings-sidebar-item[data-section="neo4j"]').click();
+  await page.waitForTimeout(200);
 
   // Check Neo4j form inputs
   const uriInput = page.locator('#neo4j-uri');
@@ -94,6 +102,10 @@ test('neo4j password visibility toggle works', async ({ page, baseURL }) => {
   await page.goto(`${base}/settings`);
   await page.waitForLoadState('networkidle');
 
+  // Navigate to Neo4j section
+  await page.locator('.settings-sidebar-item[data-section="neo4j"]').click();
+  await page.waitForTimeout(200);
+
   const passInput = page.locator('#neo4j-pass');
   const showCheckbox = page.locator('#neo4j-pass-show');
 
@@ -115,6 +127,10 @@ test('neo4j form can accept input', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/settings`);
   await page.waitForLoadState('networkidle');
+
+  // Navigate to Neo4j section
+  await page.locator('.settings-sidebar-item[data-section="neo4j"]').click();
+  await page.waitForTimeout(200);
 
   const uriInput = page.locator('#neo4j-uri');
   const userInput = page.locator('#neo4j-user');
@@ -138,6 +154,10 @@ test('neo4j save button sends POST request', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/settings`);
   await page.waitForLoadState('networkidle');
+
+  // Navigate to Neo4j section
+  await page.locator('.settings-sidebar-item[data-section="neo4j"]').click();
+  await page.waitForTimeout(200);
 
   // Mock the save API
   await page.route('**/api/settings/neo4j', async (route) => {
@@ -172,6 +192,10 @@ test('neo4j test connection button works', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/settings`);
   await page.waitForLoadState('networkidle');
+
+  // Navigate to Neo4j section
+  await page.locator('.settings-sidebar-item[data-section="neo4j"]').click();
+  await page.waitForTimeout(200);
 
   // Expand advanced section
   const advancedDetails = page.locator('details').filter({ hasText: 'Advanced / Health' });
@@ -237,6 +261,10 @@ test('interpreters table loads and displays data', async ({ page, baseURL }) => 
   await page.goto(`${base}/settings`);
   await page.waitForLoadState('networkidle');
 
+  // Navigate to Interpreters section
+  await page.locator('.settings-sidebar-item[data-section="interpreters"]').click();
+  await page.waitForTimeout(200);
+
   // Wait for table to be populated
   await page.waitForTimeout(1000);
 
@@ -294,6 +322,10 @@ test('interpreter toggle sends API request', async ({ page, baseURL }) => {
   await page.goto(`${base}/settings`);
   await page.waitForLoadState('networkidle');
 
+  // Navigate to Interpreters section
+  await page.locator('.settings-sidebar-item[data-section="interpreters"]').click();
+  await page.waitForTimeout(200);
+
   // Wait for table to be populated
   await page.waitForTimeout(1000);
 
@@ -334,6 +366,10 @@ test('rclone interpretation settings can be updated', async ({ page, baseURL }) 
   await page.goto(`${base}/settings`);
   await page.waitForLoadState('networkidle');
 
+  // Navigate to Rclone section
+  await page.locator('.settings-sidebar-item[data-section="rclone"]').click();
+  await page.waitForTimeout(200);
+
   // Wait for settings to load
   await page.waitForTimeout(1000);
 
@@ -365,57 +401,71 @@ test('rclone interpretation settings can be updated', async ({ page, baseURL }) 
   await expect(msgSpan).toContainText('Saved');
 });
 
-test('rclone mounts section displays when feature is enabled', async ({ page, baseURL }) => {
+test('rclone section displays interpretation settings', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
 
   await page.goto(`${base}/settings`);
   await page.waitForLoadState('networkidle');
 
-  // Check for Rclone Mounts section
-  const mountsSection = page.locator('h2').filter({ hasText: 'Rclone Mounts' });
-  await expect(mountsSection).toBeVisible();
+  // Navigate to Rclone section
+  await page.locator('.settings-sidebar-item[data-section="rclone"]').click();
+  await page.waitForTimeout(200);
 
-  // Check for mount form inputs
-  const remoteInput = page.locator('#rc-remote');
-  const subpathInput = page.locator('#rc-subpath');
-  const nameInput = page.locator('#rc-name');
-  const roCheckbox = page.locator('#rc-ro');
-  const createButton = page.locator('#rc-create');
+  // Check for Rclone section header
+  const rcloneSection = page.locator('#rclone-section');
+  await expect(rcloneSection).toBeVisible();
+  await expect(rcloneSection.locator('h1')).toHaveText('Rclone');
 
-  await expect(remoteInput).toBeVisible();
-  await expect(subpathInput).toBeVisible();
-  await expect(nameInput).toBeVisible();
-  await expect(roCheckbox).toBeVisible();
-  await expect(createButton).toBeVisible();
+  // Check for Interpretation subsection
+  const interpretSection = rcloneSection.locator('h2').filter({ hasText: 'Interpretation' });
+  await expect(interpretSection).toBeVisible();
 
-  // Check for refresh button
-  const refreshButton = page.locator('#rc-refresh');
-  await expect(refreshButton).toBeVisible();
+  // Check for interpretation form inputs
+  const suggestInput = page.locator('#rc-suggest');
+  const batchInput = page.locator('#rc-batch');
+  const saveButton = page.locator('#rc-save');
 
-  // Check for mounts table
-  const mountsTable = page.locator('#rc-table-body');
-  await expect(mountsTable).toBeVisible();
+  await expect(suggestInput).toBeVisible();
+  await expect(batchInput).toBeVisible();
+  await expect(saveButton).toBeVisible();
 });
 
-test('settings page anchor links work for section navigation', async ({ page, baseURL }) => {
+test('settings page sidebar navigation works', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
 
-  // Navigate to interpreters section via anchor
-  await page.goto(`${base}/settings#interpreters`);
+  await page.goto(`${base}/settings`);
   await page.waitForLoadState('networkidle');
 
   // Verify we're at settings page
   await expect(page).toHaveTitle(/SciDK - Settings/i);
 
-  // Verify interpreters section is visible
-  const interpretersHeading = page.locator('#interpreters');
-  await expect(interpretersHeading).toBeVisible();
+  // General section should be active by default
+  const generalSection = page.locator('#general-section');
+  await expect(generalSection).toBeVisible();
+  await expect(generalSection).toHaveClass(/active/);
 
-  // Navigate to plugins section via anchor
-  await page.goto(`${base}/settings#plugins`);
-  await page.waitForLoadState('networkidle');
+  // Click on Interpreters sidebar item
+  const interpretersSidebarItem = page.locator('.settings-sidebar-item[data-section="interpreters"]');
+  await interpretersSidebarItem.click();
+  await page.waitForTimeout(200);
 
-  // Verify plugins section is visible
-  const pluginsHeading = page.locator('#plugins');
-  await expect(pluginsHeading).toBeVisible();
+  // Verify interpreters section is now visible and active
+  const interpretersSection = page.locator('#interpreters-section');
+  await expect(interpretersSection).toBeVisible();
+  await expect(interpretersSection).toHaveClass(/active/);
+  await expect(interpretersSidebarItem).toHaveClass(/active/);
+
+  // Click on Plugins sidebar item
+  const pluginsSidebarItem = page.locator('.settings-sidebar-item[data-section="plugins"]');
+  await pluginsSidebarItem.click();
+  await page.waitForTimeout(200);
+
+  // Verify plugins section is now visible and active
+  const pluginsSection = page.locator('#plugins-section');
+  await expect(pluginsSection).toBeVisible();
+  await expect(pluginsSection).toHaveClass(/active/);
+  await expect(pluginsSidebarItem).toHaveClass(/active/);
+
+  // Verify interpreters section is no longer active
+  await expect(interpretersSection).not.toHaveClass(/active/);
 });
