@@ -1500,13 +1500,13 @@ function populateEditor(label) {
     attachSelectHandlers(relsContainer);
   }
 
-  // Render incoming relationships (read-only with clickable source labels)
+  // Render incoming relationships (edit view - with clickable source labels)
   const incomingContainer = document.getElementById('incoming-relationships-container');
-  const incomingRels = label.incoming_relationships || [];
-  if (incomingRels.length === 0) {
+  const incomingRelsEdit = label.incoming_relationships || [];
+  if (incomingRelsEdit.length === 0) {
     incomingContainer.innerHTML = '<div class="empty-state small">No incoming relationships</div>';
   } else {
-    incomingContainer.innerHTML = incomingRels.map(rel =>
+    incomingContainer.innerHTML = incomingRelsEdit.map(rel =>
       `<div class="relationship-row" style="background: #f9f9f9; padding: 0.5rem; margin-bottom: 0.25rem; border-radius: 4px;">
         <span class="small">
           <a href="#" class="source-label-link" data-label="${rel.source_label}" style="color: var(--accent); text-decoration: none; font-weight: bold;">
