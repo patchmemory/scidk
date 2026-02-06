@@ -559,3 +559,157 @@ class LabelService:
                 'status': 'error',
                 'error': str(e)
             }
+
+    def get_label_instances(self, name: str, limit: int = 100, offset: int = 0) -> Dict[str, Any]:
+        """
+        Get instances of a label from Neo4j.
+
+        Args:
+            name: Label name
+            limit: Maximum number of instances to return
+            offset: Pagination offset
+
+        Returns:
+            Dict with status, instances list, and pagination info
+        """
+        label_def = self.get_label(name)
+        if not label_def:
+            raise ValueError(f"Label '{name}' not found")
+
+        try:
+            from .neo4j_client import get_neo4j_client
+            neo4j_client = get_neo4j_client()
+
+            if not neo4j_client:
+                raise Exception("Neo4j client not configured")
+
+            # Query for instances of this label
+            query = f"""
+            MATCH (n:{name})
+            RETURN elementId(n) as id, properties(n) as properties
+            SKIP $offset
+            LIMIT $limit
+            """
+
+            results = neo4j_client.execute_read(query, {'offset': offset, 'limit': limit})
+
+            instances = []
+            for r in results:
+                instances.append({
+                    'id': r.get('id'),
+                    'properties': r.get('properties', {})
+                })
+
+            # Get total count
+            count_query = f"MATCH (n:{name}) RETURN count(n) as total"
+            count_results = neo4j_client.execute_read(count_query)
+            total = count_results[0].get('total', 0) if count_results else 0
+
+            return {
+                'status': 'success',
+                'instances': instances,
+                'total': total,
+                'limit': limit,
+                'offset': offset
+            }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'error': str(e)
+            }
+
+    def get_label_instance_count(self, name: str) -> Dict[str, Any]:
+        """
+        Get count of instances for a label from Neo4j.
+
+        Args:
+            name: Label name
+
+        Returns:
+            Dict with status and count
+        """
+        label_def = self.get_label(name)
+        if not label_def:
+            raise ValueError(f"Label '{name}' not found")
+
+        try:
+            from .neo4j_client import get_neo4j_client
+            neo4j_client = get_neo4j_client()
+
+            if not neo4j_client:
+                raise Exception("Neo4j client not configured")
+
+            # Query for count
+            query = f"MATCH (n:{name}) RETURN count(n) as count"
+            results = neo4j_client.execute_read(query)
+            count = results[0].get('count', 0) if results else 0
+
+            return {
+                'status': 'success',
+                'count': count
+            }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'error': str(e)
+            }
+
+    def update_label_instance(self, name: str, instance_id: str, property_name: str, property_value: Any) -> Dict[str, Any]:
+        """
+        Update a single property of a label instance in Neo4j.
+
+        Args:
+            name: Label name
+            instance_id: Neo4j element ID
+            property_name: Property to update
+            property_value: New value
+
+        Returns:
+            Dict with status and updated instance
+        """
+        label_def = self.get_label(name)
+        if not label_def:
+            raise ValueError(f"Label '{name}' not found")
+
+        # Verify property exists in label definition
+        prop_names = [p.get('name') for p in label_def.get('properties', [])]
+        if property_name not in prop_names:
+            raise ValueError(f"Property '{property_name}' not defined for label '{name}'")
+
+        try:
+            from .neo4j_client import get_neo4j_client
+            neo4j_client = get_neo4j_client()
+
+            if not neo4j_client:
+                raise Exception("Neo4j client not configured")
+
+            # Update the property
+            query = f"""
+            MATCH (n:{name})
+            WHERE elementId(n) = $instance_id
+            SET n.{property_name} = $value
+            RETURN elementId(n) as id, properties(n) as properties
+            """
+
+            results = neo4j_client.execute_write(query, {
+                'instance_id': instance_id,
+                'value': property_value
+            })
+
+            if not results:
+                raise Exception(f"Instance with ID '{instance_id}' not found")
+
+            instance = {
+                'id': results[0].get('id'),
+                'properties': results[0].get('properties', {})
+            }
+
+            return {
+                'status': 'success',
+                'instance': instance
+            }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'error': str(e)
+            }
