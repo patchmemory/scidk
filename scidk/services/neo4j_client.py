@@ -85,6 +85,36 @@ class Neo4jClient:
             return self._driver.session(database=self._database)
         return self._driver.session()
 
+    # --- Query Operations ---
+    def execute_read(self, query: str, parameters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Execute a read query and return results as list of dicts.
+
+        Args:
+            query: Cypher query string
+            parameters: Optional query parameters
+
+        Returns:
+            List of records as dictionaries
+        """
+        with self._session() as session:
+            result = session.run(query, parameters or {})
+            return [dict(record) for record in result]
+
+    def execute_write(self, query: str, parameters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Execute a write query and return results as list of dicts.
+
+        Args:
+            query: Cypher query string
+            parameters: Optional query parameters
+
+        Returns:
+            List of records as dictionaries
+        """
+        with self._session() as session:
+            result = session.run(query, parameters or {})
+            records = [dict(record) for record in result]
+            return records
+
     # --- Operations ---
     def ensure_constraints(self) -> None:
         try:
@@ -180,3 +210,19 @@ class Neo4jClient:
                 'db_folders': folders_cnt,
                 'db_verified': bool(scan_exists and (files_cnt > 0 or folders_cnt > 0)),
             }
+
+
+def get_neo4j_client():
+    """Get or create Neo4j client instance.
+
+    Returns:
+        Neo4jClient instance if connection parameters are available, None otherwise
+    """
+    uri, user, pwd, database, auth_mode = get_neo4j_params()
+
+    if not uri:
+        return None
+
+    client = Neo4jClient(uri, user, pwd, database, auth_mode)
+    client.connect()
+    return client

@@ -84,10 +84,37 @@ class LabelService:
                 return None
 
             name, props_json, rels_json, created_at, updated_at = row
+
+            # Get outgoing relationships (defined on this label)
+            relationships = json.loads(rels_json) if rels_json else []
+
+            # Find incoming relationships (from other labels to this label)
+            cursor.execute(
+                """
+                SELECT name, relationships
+                FROM label_definitions
+                WHERE name != ?
+                """,
+                (name,)
+            )
+
+            incoming_relationships = []
+            for other_name, other_rels_json in cursor.fetchall():
+                if other_rels_json:
+                    other_rels = json.loads(other_rels_json)
+                    for rel in other_rels:
+                        if rel.get('target_label') == name:
+                            incoming_relationships.append({
+                                'type': rel['type'],
+                                'source_label': other_name,
+                                'properties': rel.get('properties', [])
+                            })
+
             return {
                 'name': name,
                 'properties': json.loads(props_json) if props_json else [],
-                'relationships': json.loads(rels_json) if rels_json else [],
+                'relationships': relationships,
+                'incoming_relationships': incoming_relationships,
                 'created_at': created_at,
                 'updated_at': updated_at
             }
@@ -240,13 +267,20 @@ class LabelService:
                 'error': str(e)
             }
 
-    def pull_from_neo4j(self) -> Dict[str, Any]:
+    def pull_label_properties_from_neo4j(self, name: str) -> Dict[str, Any]:
         """
-        Pull label schema from Neo4j and import as label definitions.
+        Pull properties and relationships for a specific label from Neo4j and merge with existing definition.
+
+        Args:
+            name: Label name
 
         Returns:
-            Dict with status and imported labels
+            Dict with status and updated label
         """
+        label_def = self.get_label(name)
+        if not label_def:
+            raise ValueError(f"Label '{name}' not found")
+
         try:
             from .neo4j_client import get_neo4j_client
             neo4j_client = get_neo4j_client()
@@ -254,28 +288,28 @@ class LabelService:
             if not neo4j_client:
                 raise Exception("Neo4j client not configured")
 
-            # Query for node labels and their properties
-            query = """
+            # Query for properties of this specific label
+            props_query = """
             CALL db.schema.nodeTypeProperties()
             YIELD nodeType, propertyName, propertyTypes
-            RETURN nodeType, propertyName, propertyTypes
+            WHERE nodeType = $nodeType
+            RETURN propertyName, propertyTypes
             """
 
-            results = neo4j_client.execute_read(query)
+            props_results = neo4j_client.execute_read(props_query, {'nodeType': f':{name}'})
 
-            # Group by label
-            labels_map = {}
-            for record in results:
-                node_type = record.get('nodeType')
-                if not node_type or not node_type.startswith(':'):
-                    continue
+            # Get existing property names to avoid duplicates
+            existing_props = {p['name'] for p in label_def.get('properties', [])}
 
-                label_name = node_type[1:]  # Remove leading ':'
+            # Map properties from Neo4j
+            new_properties = []
+            for record in props_results:
                 prop_name = record.get('propertyName')
                 prop_types = record.get('propertyTypes', [])
 
-                if label_name not in labels_map:
-                    labels_map[label_name] = []
+                # Skip if already exists
+                if prop_name in existing_props:
+                    continue
 
                 # Map Neo4j types to our property types
                 prop_type = 'string'
@@ -290,20 +324,178 @@ class LabelService:
                     elif 'datetime' in first_type or 'localdatetime' in first_type:
                         prop_type = 'datetime'
 
-                labels_map[label_name].append({
+                new_properties.append({
                     'name': prop_name,
                     'type': prop_type,
                     'required': False  # Can't determine from schema introspection
                 })
 
-            # Save imported labels
+            # Query for relationships originating from this label
+            # Sample actual relationships from the graph
+            rels_query = """
+            MATCH (source)-[rel]->(target)
+            WHERE $labelName IN labels(source)
+            WITH DISTINCT type(rel) AS relType, [label IN labels(target) | label][0] AS targetLabel
+            RETURN relType, targetLabel
+            """
+
+            rels_results = neo4j_client.execute_read(rels_query, {'labelName': name})
+
+            # Get existing relationships to avoid duplicates (by type + target combination)
+            existing_rels = {(r['type'], r['target_label']) for r in label_def.get('relationships', [])}
+
+            # Map relationships from Neo4j
+            new_relationships = []
+            for record in rels_results:
+                rel_type = record.get('relType')
+                target_label = record.get('targetLabel')
+
+                # Skip if missing or already exists
+                if not rel_type or not target_label:
+                    continue
+
+                # Clean label (strip backticks)
+                target_label = target_label.strip('`')
+
+                # Skip if already exists
+                if (rel_type, target_label) in existing_rels:
+                    continue
+
+                new_relationships.append({
+                    'type': rel_type,
+                    'target_label': target_label,
+                    'properties': []
+                })
+
+            # Merge with existing properties and relationships
+            all_properties = label_def.get('properties', []) + new_properties
+            all_relationships = label_def.get('relationships', []) + new_relationships
+
+            # Update label
+            updated_label = self.save_label({
+                'name': name,
+                'properties': all_properties,
+                'relationships': all_relationships
+            })
+
+            return {
+                'status': 'success',
+                'label': updated_label,
+                'new_properties_count': len(new_properties),
+                'new_relationships_count': len(new_relationships)
+            }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'error': str(e)
+            }
+
+    def pull_from_neo4j(self) -> Dict[str, Any]:
+        """
+        Pull label schema (properties and relationships) from Neo4j and import as label definitions.
+
+        Returns:
+            Dict with status and imported labels
+        """
+        try:
+            from .neo4j_client import get_neo4j_client
+            neo4j_client = get_neo4j_client()
+
+            if not neo4j_client:
+                raise Exception("Neo4j client not configured")
+
+            # Query for node labels and their properties
+            props_query = """
+            CALL db.schema.nodeTypeProperties()
+            YIELD nodeType, propertyName, propertyTypes
+            RETURN nodeType, propertyName, propertyTypes
+            """
+
+            props_results = neo4j_client.execute_read(props_query)
+
+            # Group properties by label
+            labels_map = {}
+            for record in props_results:
+                node_type = record.get('nodeType')
+                if not node_type or not node_type.startswith(':'):
+                    continue
+
+                # Remove leading ':' and any backticks
+                label_name = node_type[1:].strip('`')
+                prop_name = record.get('propertyName')
+                prop_types = record.get('propertyTypes', [])
+
+                if label_name not in labels_map:
+                    labels_map[label_name] = {'properties': [], 'relationships': []}
+
+                # Map Neo4j types to our property types
+                prop_type = 'string'
+                if prop_types:
+                    first_type = prop_types[0].lower()
+                    if 'int' in first_type or 'long' in first_type:
+                        prop_type = 'number'
+                    elif 'bool' in first_type:
+                        prop_type = 'boolean'
+                    elif 'date' in first_type:
+                        prop_type = 'date'
+                    elif 'datetime' in first_type or 'localdatetime' in first_type:
+                        prop_type = 'datetime'
+
+                labels_map[label_name]['properties'].append({
+                    'name': prop_name,
+                    'type': prop_type,
+                    'required': False  # Can't determine from schema introspection
+                })
+
+            # Query for all relationships by sampling actual relationships from the graph
+            rels_query = """
+            MATCH (source)-[rel]->(target)
+            WITH DISTINCT
+                [label IN labels(source) | label][0] AS sourceLabel,
+                type(rel) AS relType,
+                [label IN labels(target) | label][0] AS targetLabel
+            RETURN sourceLabel, relType, targetLabel
+            """
+
+            rels_results = neo4j_client.execute_read(rels_query)
+
+            # Group relationships by source label
+            for record in rels_results:
+                source_label = record.get('sourceLabel')
+                rel_type = record.get('relType')
+                target_label = record.get('targetLabel')
+
+                # Skip if any field is missing
+                if not source_label or not rel_type or not target_label:
+                    continue
+
+                # Clean labels (strip backticks)
+                source_label = source_label.strip('`')
+                target_label = target_label.strip('`')
+
+                # Ensure source label exists in map
+                if source_label not in labels_map:
+                    labels_map[source_label] = {'properties': [], 'relationships': []}
+
+                # Add relationship (deduplicate by type+target combination)
+                rel_key = (rel_type, target_label)
+                existing_rels = {(r['type'], r['target_label']) for r in labels_map[source_label]['relationships']}
+
+                if rel_key not in existing_rels:
+                    labels_map[source_label]['relationships'].append({
+                        'type': rel_type,
+                        'target_label': target_label,
+                        'properties': []
+                    })
+
+            # Save imported labels with properties and relationships
             imported = []
-            for label_name, properties in labels_map.items():
+            for label_name, schema in labels_map.items():
                 try:
                     self.save_label({
                         'name': label_name,
-                        'properties': properties,
-                        'relationships': []
+                        'properties': schema['properties'],
+                        'relationships': schema['relationships']
                     })
                     imported.append(label_name)
                 except Exception as e:

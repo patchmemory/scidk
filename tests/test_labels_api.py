@@ -247,3 +247,194 @@ def test_get_neo4j_schema(client):
     assert response.status_code in [200, 500]
     data = response.get_json()
     assert 'status' in data
+
+
+def test_pull_all_labels_from_neo4j(client):
+    """Test pulling all labels from Neo4j."""
+    response = client.post('/api/labels/pull')
+    # Either success (if Neo4j configured) or error (if not)
+    assert response.status_code in [200, 500]
+    data = response.get_json()
+    assert 'status' in data
+
+    # If successful, should have imported_labels and count
+    if response.status_code == 200:
+        assert 'imported_labels' in data or 'count' in data
+
+
+def test_pull_single_label_not_found(client):
+    """Test pulling non-existent label from Neo4j."""
+    response = client.post('/api/labels/NonExistent/pull')
+    # Should return 404 since label doesn't exist
+    assert response.status_code == 404
+    data = response.get_json()
+    assert data['status'] == 'error'
+
+
+def test_pull_single_label_from_neo4j(client):
+    """Test pulling single label properties from Neo4j."""
+    # First create a label
+    payload = {
+        'name': 'PullTest',
+        'properties': [{'name': 'initial_prop', 'type': 'string', 'required': False}],
+        'relationships': []
+    }
+    client.post('/api/labels', json=payload)
+
+    # Try to pull from Neo4j
+    response = client.post('/api/labels/PullTest/pull')
+    # Either success (if Neo4j configured) or error (if not)
+    assert response.status_code in [200, 500]
+    data = response.get_json()
+    assert 'status' in data
+
+    # If successful, should have label and new_properties_count
+    if response.status_code == 200:
+        assert 'label' in data
+        assert 'new_properties_count' in data
+
+
+def test_batch_pull_labels_success(client):
+    """Test batch pulling multiple labels from Neo4j."""
+    # Create test labels
+    for name in ['BatchPull1', 'BatchPull2']:
+        payload = {
+            'name': name,
+            'properties': [{'name': 'test', 'type': 'string', 'required': False}],
+            'relationships': []
+        }
+        client.post('/api/labels', json=payload)
+
+    # Batch pull
+    response = client.post('/api/labels/batch/pull', json={
+        'label_names': ['BatchPull1', 'BatchPull2']
+    })
+
+    # Either success (if Neo4j configured) or error (if not)
+    assert response.status_code in [200, 500]
+    data = response.get_json()
+    assert 'status' in data
+
+    # If successful, should have results
+    if response.status_code == 200:
+        assert 'results' in data
+        assert 'total_new_properties' in data
+        assert 'total_new_relationships' in data
+        assert len(data['results']) == 2
+
+
+def test_batch_pull_labels_empty_list(client):
+    """Test batch pull with empty label list."""
+    response = client.post('/api/labels/batch/pull', json={
+        'label_names': []
+    })
+    assert response.status_code == 400
+    data = response.get_json()
+    assert data['status'] == 'error'
+    assert 'no label names' in data['error'].lower()
+
+
+def test_batch_pull_labels_missing_field(client):
+    """Test batch pull without label_names field."""
+    response = client.post('/api/labels/batch/pull', json={})
+    assert response.status_code == 400
+    data = response.get_json()
+    assert data['status'] == 'error'
+
+
+def test_push_label_to_neo4j(client):
+    """Test pushing label to Neo4j."""
+    # Create a label
+    payload = {
+        'name': 'PushTest',
+        'properties': [
+            {'name': 'name', 'type': 'string', 'required': True},
+            {'name': 'age', 'type': 'number', 'required': False}
+        ],
+        'relationships': []
+    }
+    client.post('/api/labels', json=payload)
+
+    # Push to Neo4j
+    response = client.post('/api/labels/PushTest/push')
+    # Either success (if Neo4j configured) or error (if not)
+    assert response.status_code in [200, 500]
+    data = response.get_json()
+    assert 'status' in data
+
+    # If successful, should have constraints/indexes info
+    if response.status_code == 200:
+        assert 'label' in data
+        assert data['label'] == 'PushTest'
+
+
+def test_batch_delete_labels_success(client):
+    """Test batch deleting multiple labels."""
+    # Create test labels
+    for name in ['DeleteBatch1', 'DeleteBatch2', 'DeleteBatch3']:
+        payload = {
+            'name': name,
+            'properties': [],
+            'relationships': []
+        }
+        client.post('/api/labels', json=payload)
+
+    # Batch delete
+    response = client.post('/api/labels/batch/delete', json={
+        'label_names': ['DeleteBatch1', 'DeleteBatch2', 'DeleteBatch3']
+    })
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['status'] == 'success'
+    assert 'deleted_count' in data
+    assert data['deleted_count'] == 3
+    assert 'results' in data
+
+    # Verify labels are deleted
+    for name in ['DeleteBatch1', 'DeleteBatch2', 'DeleteBatch3']:
+        get_response = client.get(f'/api/labels/{name}')
+        assert get_response.status_code == 404
+
+
+def test_batch_delete_labels_empty_list(client):
+    """Test batch delete with empty label list."""
+    response = client.post('/api/labels/batch/delete', json={
+        'label_names': []
+    })
+    assert response.status_code == 400
+    data = response.get_json()
+    assert data['status'] == 'error'
+    assert 'no label names' in data['error'].lower()
+
+
+def test_batch_delete_labels_missing_field(client):
+    """Test batch delete without label_names field."""
+    response = client.post('/api/labels/batch/delete', json={})
+    assert response.status_code == 400
+    data = response.get_json()
+    assert data['status'] == 'error'
+
+
+def test_batch_delete_labels_partial_success(client):
+    """Test batch delete with some non-existent labels."""
+    # Create only one label
+    payload = {
+        'name': 'DeleteExists',
+        'properties': [],
+        'relationships': []
+    }
+    client.post('/api/labels', json=payload)
+
+    # Try to delete both existing and non-existent
+    response = client.post('/api/labels/batch/delete', json={
+        'label_names': ['DeleteExists', 'NonExistent']
+    })
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['status'] == 'success'
+    assert 'results' in data
+    assert len(data['results']) == 2
+
+    # Verify the existing label was deleted
+    get_response = client.get('/api/labels/DeleteExists')
+    assert get_response.status_code == 404

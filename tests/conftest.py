@@ -24,6 +24,9 @@ def _pin_repo_local_test_env():
     # Clean up test scans from SQLite database
     _cleanup_test_scans_from_db(db_dir / 'unit_integration.db')
 
+    # Clean up test labels from SQLite database
+    _cleanup_test_labels_from_db(db_dir / 'unit_integration.db')
+
     # OS temp for tempfile and libraries
     os.environ.setdefault("TMPDIR", str(tmp_root))
     os.environ.setdefault("TMP", str(tmp_root))
@@ -119,6 +122,61 @@ def _cleanup_test_scans_from_db(db_path: Path):
                 DELETE FROM scan_progress
                 WHERE scan_id NOT IN (SELECT id FROM scans)
             """)
+
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass  # Silently fail; don't break test runs
+
+
+def _cleanup_test_labels_from_db(db_path: Path):
+    """Remove test labels from the SQLite database before test runs.
+
+    This prevents accumulation of test labels that show up in the UI
+    when running scidk-serve after tests have run.
+
+    Args:
+        db_path: Path to the SQLite database file
+    """
+    if not db_path.exists():
+        return
+
+    try:
+        import sqlite3
+        conn = sqlite3.connect(str(db_path))
+        try:
+            cur = conn.cursor()
+
+            # Check if label_definitions table exists
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='label_definitions'")
+            if not cur.fetchone():
+                return
+
+            # List of test label patterns to delete
+            test_patterns = [
+                'E2E%',  # E2E test labels
+                'Test%',  # TestLabel, TestNode, etc
+                'Person%',  # From arrows test
+                'Company%',  # From arrows test
+                'Project%',  # Multiple test uses
+                'Export%',  # ExportProject, ExportTask
+                'Layout%',  # LayoutTestLabel
+                'Roundtrip%',  # RoundtripAuthor, RoundtripBook
+                'Label%',  # Label1, Label2, Label3
+                'AllTypes%',  # AllTypes
+                'File%',  # File from relationship tests
+                'Directory%',  # Directory from relationship tests
+                'User%',  # User from relationship tests
+                'Update%',  # UpdateTest
+                'Delete%',  # DeleteTest
+                'Bad%',  # BadLabel
+                'Node%',  # TestNode, OtherNode, NodeA, NodeB
+            ]
+
+            # Delete test labels
+            for pattern in test_patterns:
+                cur.execute("DELETE FROM label_definitions WHERE name LIKE ?", (pattern,))
 
             conn.commit()
         finally:

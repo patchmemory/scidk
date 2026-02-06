@@ -1,19 +1,53 @@
 {% extends 'base.html' %}
 {% block title %}SciDK - Labels{% endblock %}
+{% block head %}
+<style>
+  /* Override base.html main width constraint for labels page */
+  main {
+    max-width: 100% !important;
+    padding: 1rem 0.5rem !important;
+  }
+</style>
+{% endblock %}
 {% block content %}
 <style>
   .labels-container {
     display: flex;
-    gap: 1rem;
+    gap: 0;
     margin-top: 1rem;
     height: calc(100vh - 200px);
+    position: relative;
   }
   .labels-list {
-    flex: 0 0 30%;
+    width: 30%;
+    min-width: 200px;
+    max-width: 50%;
     border: 1px solid #eee;
     border-radius: 4px;
     padding: 0.5rem;
     overflow-y: auto;
+  }
+  .resizer {
+    width: 8px;
+    cursor: col-resize;
+    background: transparent;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .resizer:hover {
+    background: #e0e0e0;
+  }
+  .resizer::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 3px;
+    width: 2px;
+    background: #ddd;
+  }
+  .resizer.resizing {
+    background: #2196f3;
   }
   .labels-editor {
     flex: 1;
@@ -21,6 +55,7 @@
     border-radius: 4px;
     padding: 1rem;
     overflow-y: auto;
+    min-width: 300px;
   }
   .label-item {
     padding: 0.5rem;
@@ -28,6 +63,8 @@
     cursor: pointer;
     border-radius: 4px;
     border: 1px solid transparent;
+    user-select: none; /* Prevent text selection during multi-select */
+    outline: none; /* Remove default focus outline, we'll use custom styling */
   }
   .label-item:hover {
     background: #f3f3f3;
@@ -35,6 +72,17 @@
   .label-item.active {
     background: #e3f2fd;
     border-color: #2196f3;
+  }
+  .label-item.selected {
+    background: #fff3cd;
+    border-color: #ffc107;
+  }
+  .label-item.selected.active {
+    background: #ffe69c;
+    border-color: #ff9800;
+  }
+  .label-item.focused {
+    box-shadow: 0 0 0 2px #2196f3;
   }
   .property-row, .relationship-row {
     display: flex;
@@ -57,6 +105,72 @@
     color: #999;
     padding: 2rem;
   }
+  /* Source label links in incoming relationships */
+  .source-label-link:hover {
+    text-decoration: underline !important;
+    cursor: pointer;
+  }
+  /* Custom Modal */
+  .custom-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1000;
+  }
+  .custom-modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+  }
+  .custom-modal-content {
+    position: relative;
+    background: white;
+    max-width: 700px;
+    margin: 50px auto;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    z-index: 1001;
+  }
+  .custom-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #eee;
+  }
+  .custom-modal-header h5 {
+    margin: 0;
+    font-size: 1.1rem;
+  }
+  .custom-modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    line-height: 1;
+    color: #666;
+  }
+  .custom-modal-close:hover {
+    color: #000;
+  }
+  .custom-modal-body {
+    padding: 1.5rem;
+  }
+  .custom-modal-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #eee;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
 </style>
 
 <h1>Labels</h1>
@@ -64,15 +178,32 @@
 
 <div class="labels-container">
   <!-- Left Panel: Label List -->
-  <div class="labels-list">
+  <div class="labels-list" id="labels-list">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
       <h3 class="small" style="margin: 0;">Labels</h3>
-      <button id="btn-new-label" class="btn btn-sm btn-primary" data-testid="new-label-btn">New Label</button>
+    </div>
+    <div style="display: flex; gap: 0.25rem; margin-bottom: 0.5rem; flex-wrap: wrap;">
+      <button id="btn-pull-all-neo4j" class="btn btn-sm btn-outline-info" data-testid="pull-all-neo4j-btn" title="Pull all labels from Neo4j" style="flex: 1; font-size: 0.75rem;">Pull All</button>
+      <button id="btn-import-arrows" class="btn btn-sm btn-outline-info" data-testid="import-arrows-btn" style="flex: 1; font-size: 0.75rem;">Import</button>
+      <button id="btn-export-arrows" class="btn btn-sm btn-outline-info" data-testid="export-arrows-btn" style="flex: 1; font-size: 0.75rem;">Export</button>
+    </div>
+    <button id="btn-new-label" class="btn btn-sm" data-testid="new-label-btn" style="width: 100%; font-weight: bold; background: #e0e0e0; color: #555; border: 1px solid #ccc; margin-bottom: 0.5rem;">+ Label</button>
+    <!-- Batch action buttons (shown when multiple labels selected) -->
+    <div id="batch-actions" style="display: none; margin-bottom: 0.5rem; padding: 0.5rem; background: #f0f8ff; border-radius: 4px; border: 1px solid #b3d9ff;">
+      <div class="small" style="margin-bottom: 0.25rem;"><strong id="selection-count">0</strong> selected</div>
+      <div style="display: flex; gap: 0.25rem; flex-wrap: wrap;">
+        <button id="btn-batch-pull" class="btn btn-sm btn-outline-primary" style="flex: 1; font-size: 0.75rem;">Batch Pull</button>
+        <button id="btn-batch-delete" class="btn btn-sm btn-outline-danger" style="flex: 1; font-size: 0.75rem;">Batch Delete</button>
+        <button id="btn-clear-selection" class="btn btn-sm btn-outline-secondary" style="flex: 1; font-size: 0.75rem;">Clear</button>
+      </div>
     </div>
     <div id="label-list" data-testid="label-list">
       <div class="empty-state small">No labels defined</div>
     </div>
   </div>
+
+  <!-- Resizer -->
+  <div class="resizer" id="resizer"></div>
 
   <!-- Right Panel: Label Editor -->
   <div class="labels-editor" id="label-editor" style="display: none;">
@@ -93,18 +224,53 @@
     </div>
 
     <div class="section-header">
-      <h4 class="small" style="margin: 0;">Relationships</h4>
+      <h4 class="small" style="margin: 0;">Outgoing Relationships</h4>
       <button id="btn-add-relationship" class="btn btn-sm btn-outline-primary" data-testid="add-relationship-btn">Add Relationship</button>
     </div>
     <div id="relationships-container" data-testid="relationships-container">
       <div class="empty-state small">No relationships defined</div>
     </div>
 
-    <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem;">
+    <div class="section-header" style="margin-top: 1.5rem;">
+      <h4 class="small" style="margin: 0;">Incoming Relationships</h4>
+    </div>
+    <div id="incoming-relationships-container" data-testid="incoming-relationships-container">
+      <div class="empty-state small">No incoming relationships</div>
+    </div>
+
+    <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
       <button id="btn-save" class="btn btn-sm btn-success" data-testid="save-label-btn">Save</button>
       <button id="btn-delete" class="btn btn-sm btn-outline-danger" data-testid="delete-label-btn" style="display: none;">Delete</button>
-      <button id="btn-push-neo4j" class="btn btn-sm btn-outline-primary" data-testid="push-neo4j-btn" style="display: none;">Push to Neo4j</button>
-      <button id="btn-pull-neo4j" class="btn btn-sm btn-outline-secondary" data-testid="pull-neo4j-btn">Pull from Neo4j</button>
+      <button id="btn-pull-neo4j" class="btn btn-sm btn-outline-secondary" data-testid="pull-neo4j-btn" style="display: none;">Pull</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import Modal -->
+<div id="import-arrows-modal" class="custom-modal" style="display: none;">
+  <div class="custom-modal-overlay"></div>
+  <div class="custom-modal-content">
+    <div class="custom-modal-header">
+      <h5>Import Schema from Arrows.app</h5>
+      <button type="button" class="custom-modal-close" onclick="closeImportModal()">&times;</button>
+    </div>
+    <div class="custom-modal-body">
+      <p class="small">Paste JSON exported from <a href="https://arrows.app" target="_blank" rel="noopener">arrows.app</a></p>
+      <textarea id="arrows-json-input" class="form-control font-monospace" rows="12" placeholder='{"nodes": [...], "relationships": [...]}'></textarea>
+      <div style="margin-top: 0.5rem;">
+        <label for="arrows-file-input" class="btn btn-sm btn-outline-secondary">
+          Or choose file...
+        </label>
+        <input type="file" id="arrows-file-input" accept=".json" style="display:none">
+        <span id="file-name" class="small" style="margin-left: 0.5rem;"></span>
+      </div>
+      <div id="import-preview" style="display:none; margin-top: 1rem; padding: 0.75rem; background: #f9f9f9; border-radius: 4px;">
+        <div class="small"><strong>Preview:</strong> <span id="preview-label-count">0</span> labels, <span id="preview-rel-count">0</span> relationships</div>
+      </div>
+    </div>
+    <div class="custom-modal-footer">
+      <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeImportModal()">Cancel</button>
+      <button type="button" id="import-confirm-btn" class="btn btn-sm btn-success" data-testid="import-confirm-btn" onclick="importFromArrows()">Import</button>
     </div>
   </div>
 </div>
@@ -112,6 +278,9 @@
 <script>
 let currentLabel = null;
 let labels = [];
+let selectedLabels = new Set(); // Track selected label names
+let lastClickedIndex = -1; // For shift+click range selection
+let selectionAnchor = -1; // Anchor point for shift+navigation selection
 
 // Toast function
 function showToast(message, type = 'info') {
@@ -120,6 +289,20 @@ function showToast(message, type = 'info') {
   } else {
     console.log(`[${type}] ${message}`);
   }
+}
+
+// Modal functions
+function openImportModal() {
+  document.getElementById('import-arrows-modal').style.display = 'block';
+}
+
+function closeImportModal() {
+  const modal = document.getElementById('import-arrows-modal');
+  modal.style.display = 'none';
+  // Clear input
+  document.getElementById('arrows-json-input').value = '';
+  document.getElementById('file-name').textContent = '';
+  document.getElementById('import-preview').style.display = 'none';
 }
 
 // Initialize
@@ -132,21 +315,459 @@ document.addEventListener('DOMContentLoaded', () => {
     clearEditor();
     document.getElementById('editor-title').textContent = 'New Label';
     document.getElementById('btn-delete').style.display = 'none';
-    document.getElementById('btn-push-neo4j').style.display = 'none';
+    document.getElementById('btn-pull-neo4j').style.display = 'none';
   });
 
   document.getElementById('btn-save').addEventListener('click', saveLabel);
   document.getElementById('btn-delete').addEventListener('click', deleteLabel);
-  document.getElementById('btn-push-neo4j').addEventListener('click', pushToNeo4j);
   document.getElementById('btn-pull-neo4j').addEventListener('click', pullFromNeo4j);
+  document.getElementById('btn-pull-all-neo4j').addEventListener('click', pullAllFromNeo4j);
   document.getElementById('btn-add-property').addEventListener('click', addProperty);
   document.getElementById('btn-add-relationship').addEventListener('click', addRelationship);
+
+  // Batch action buttons
+  document.getElementById('btn-batch-pull').addEventListener('click', batchPull);
+  document.getElementById('btn-batch-delete').addEventListener('click', batchDelete);
+  document.getElementById('btn-clear-selection').addEventListener('click', clearSelection);
+
+  // Arrows.app Import/Export
+  document.getElementById('btn-import-arrows')?.addEventListener('click', openImportModal);
+  document.getElementById('btn-export-arrows')?.addEventListener('click', exportToArrows);
+
+  document.getElementById('arrows-file-input')?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        document.getElementById('arrows-json-input').value = ev.target.result;
+        document.getElementById('file-name').textContent = file.name;
+        previewArrowsImport();
+      };
+      reader.readAsText(file);
+    }
+  });
+
+  document.getElementById('arrows-json-input')?.addEventListener('input', previewArrowsImport);
+
+  document.getElementById('import-confirm-btn')?.addEventListener('click', importFromArrows);
+
+  // Keyboard navigation
+  document.addEventListener('keydown', handleGlobalKeydown);
+
+  // Resizer functionality
+  const resizer = document.getElementById('resizer');
+  const leftPanel = document.getElementById('labels-list');
+  const container = document.querySelector('.labels-container');
+
+  let isResizing = false;
+
+  resizer.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    resizer.classList.add('resizing');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const newWidth = e.clientX - containerRect.left;
+    const minWidth = 200;
+    const maxWidth = containerRect.width * 0.5;
+
+    if (newWidth >= minWidth && newWidth <= maxWidth) {
+      leftPanel.style.width = `${newWidth}px`;
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (isResizing) {
+      isResizing = false;
+      resizer.classList.remove('resizing');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+  });
 });
 
+// Global keyboard navigation handler
+function handleGlobalKeydown(e) {
+  // Don't intercept if user is typing in an input/textarea/select
+  const activeElement = document.activeElement;
+  const isTyping = activeElement && (
+    activeElement.tagName === 'INPUT' ||
+    activeElement.tagName === 'TEXTAREA' ||
+    activeElement.tagName === 'SELECT'
+  );
+
+  // Let buttons and links handle Enter/Space themselves, UNLESS we're actively navigating labels
+  if (activeElement && (activeElement.tagName === 'BUTTON' || activeElement.tagName === 'A') && (e.key === 'Enter' || e.key === ' ')) {
+    // If we're navigating in the label list (lastClickedIndex is set), prioritize that
+    if (e.key === 'Enter' && lastClickedIndex >= 0 && lastClickedIndex < labels.length) {
+      // Check if we're still in the label navigation context (not tabbed away)
+      const focusIsInSidePanel = activeElement.closest('#labels-list');
+      if (focusIsInSidePanel) {
+        e.preventDefault();
+        loadLabel(labels[lastClickedIndex].name);
+        return;
+      }
+    }
+    // Button/link is focused and we're not in side panel navigation - let it work normally
+    return;
+  }
+
+  // Handle up/down navigation within editor fields (properties and relationships)
+  if (isTyping && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    const isInEditor = activeElement.closest('#label-editor');
+    if (isInEditor) {
+      // For SELECT elements, only allow up/down if dropdown is already open
+      if (activeElement.tagName === 'SELECT') {
+        // Check if select is expanded (we'll prevent default unless Enter was pressed)
+        if (!activeElement.dataset.dropdownOpen) {
+          e.preventDefault();
+          navigateEditorFields(e.key === 'ArrowUp' ? -1 : 1);
+          return;
+        }
+        // If dropdown is open, allow normal behavior
+        return;
+      }
+
+      // For INPUT fields, allow up/down to navigate between rows
+      if (activeElement.tagName === 'INPUT') {
+        e.preventDefault();
+        navigateEditorFields(e.key === 'ArrowUp' ? -1 : 1);
+        return;
+      }
+    }
+  }
+
+  // Handle up/down navigation for buttons within editor rows (delete, nav buttons)
+  if (!isTyping && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    const isInEditorRow = activeElement && activeElement.closest('.property-row, .relationship-row');
+    if (isInEditorRow && activeElement.tagName === 'BUTTON') {
+      e.preventDefault();
+      navigateEditorFields(e.key === 'ArrowUp' ? -1 : 1);
+      return;
+    }
+  }
+
+  // For SELECT elements in editor: Enter/Space opens dropdown, letter keys search, Escape closes it
+  if (activeElement && activeElement.tagName === 'SELECT' && activeElement.closest('#label-editor')) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      activeElement.dataset.dropdownOpen = 'true';
+      return; // Allow default behavior
+    } else if (e.key === 'Escape') {
+      // If dropdown is open, close it; otherwise return focus to side panel
+      if (activeElement.dataset.dropdownOpen) {
+        activeElement.dataset.dropdownOpen = '';
+        activeElement.blur();
+        return;
+      }
+      // If dropdown not open, fall through to general Escape handling
+    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      // Letter/number key: open dropdown and allow search
+      activeElement.dataset.dropdownOpen = 'true';
+      return; // Allow default behavior for letter search
+    }
+  }
+
+  // Escape key in editor: return focus to side panel
+  if (e.key === 'Escape' && !isTyping) {
+    const isInEditor = activeElement && activeElement.closest('#label-editor');
+    if (isInEditor && lastClickedIndex >= 0 && lastClickedIndex < labels.length) {
+      e.preventDefault();
+      returnFocusToSidePanel();
+      return;
+    }
+  }
+
+  // Escape key while typing in editor: return focus to side panel
+  if (e.key === 'Escape' && isTyping) {
+    const isInEditor = activeElement && activeElement.closest('#label-editor');
+    if (isInEditor) {
+      e.preventDefault();
+      returnFocusToSidePanel();
+      return;
+    }
+  }
+
+  // Handle Ctrl+A (select all labels) - works even when not typing
+  if ((e.ctrlKey || e.metaKey) && e.key === 'a' && !isTyping) {
+    e.preventDefault();
+    selectAllLabels();
+    return;
+  }
+
+  // Escape key in side panel: move focus to top buttons
+  if (e.key === 'Escape' && !isTyping) {
+    const isInSidePanel = activeElement && activeElement.closest('#labels-list');
+    if (isInSidePanel) {
+      e.preventDefault();
+      returnFocusToTopButtons();
+      return;
+    }
+  }
+
+  // Tab key in side panel: check if we're navigating out to top buttons
+  if (e.key === 'Tab' && !isTyping && !e.shiftKey) {
+    const isInLabelList = activeElement && activeElement.classList.contains('label-item');
+    if (isInLabelList) {
+      // Clear label selection state when tabbing out
+      clearLabelNavigationState();
+    }
+  }
+
+  // Shift+Tab into side panel from editor: set up navigation state
+  if (e.key === 'Tab' && !isTyping && e.shiftKey) {
+    const isInEditor = activeElement && activeElement.closest('#label-editor');
+    if (isInEditor && currentLabel) {
+      // User is shift-tabbing from editor, might go back to side panel
+      // We'll handle this after the focus change
+    }
+  }
+
+  // Don't handle other keys if user is typing
+  if (isTyping) return;
+
+  // Check if shift is held for range selection
+  const shiftHeld = e.shiftKey;
+
+  // Handle navigation keys
+  switch(e.key) {
+    case 'ArrowUp':
+      e.preventDefault();
+      navigateLabels(-1, shiftHeld);
+      break;
+    case 'ArrowDown':
+      e.preventDefault();
+      navigateLabels(1, shiftHeld);
+      break;
+    case 'Home':
+      e.preventDefault();
+      navigateToLabel(0, shiftHeld);
+      break;
+    case 'End':
+      e.preventDefault();
+      navigateToLabel(labels.length - 1, shiftHeld);
+      break;
+    case 'PageUp':
+      e.preventDefault();
+      navigateLabels(-10, shiftHeld);
+      break;
+    case 'PageDown':
+      e.preventDefault();
+      navigateLabels(10, shiftHeld);
+      break;
+    case 'Enter':
+      // Only handle Enter for label loading if we're not focused on an interactive element
+      if (lastClickedIndex >= 0 && lastClickedIndex < labels.length) {
+        // Don't interfere if focus is in the editor
+        const focusInEditor = document.activeElement && document.activeElement.closest('#label-editor');
+        if (!focusInEditor) {
+          e.preventDefault();
+          loadLabel(labels[lastClickedIndex].name);
+        }
+      }
+      break;
+    case 'Delete':
+      if (selectedLabels.size > 0) {
+        e.preventDefault();
+        batchDelete();
+      }
+      break;
+    case 'p':
+    case 'P':
+      if (selectedLabels.size > 0) {
+        e.preventDefault();
+        batchPull();
+      }
+      break;
+    case 'd':
+    case 'D':
+      if (selectedLabels.size > 0) {
+        e.preventDefault();
+        batchDelete();
+      }
+      break;
+    case 'c':
+    case 'C':
+      if (selectedLabels.size > 0) {
+        e.preventDefault();
+        clearSelection();
+      }
+      break;
+  }
+}
+
+function navigateLabels(delta, shiftHeld = false) {
+  if (labels.length === 0) return;
+
+  let newIndex;
+  if (lastClickedIndex === -1) {
+    // No label selected yet, start at beginning
+    newIndex = delta > 0 ? 0 : labels.length - 1;
+  } else {
+    newIndex = lastClickedIndex + delta;
+  }
+
+  // Clamp to valid range
+  newIndex = Math.max(0, Math.min(labels.length - 1, newIndex));
+
+  navigateToLabel(newIndex, shiftHeld);
+}
+
+function navigateToLabel(index, shiftHeld = false) {
+  if (index < 0 || index >= labels.length) return;
+
+  if (shiftHeld) {
+    // Set anchor if this is the first shift+navigation
+    if (selectionAnchor === -1) {
+      selectionAnchor = lastClickedIndex !== -1 ? lastClickedIndex : index;
+    }
+
+    // Clear current selection and reselect from anchor to new position
+    selectedLabels.clear();
+    const start = Math.min(selectionAnchor, index);
+    const end = Math.max(selectionAnchor, index);
+    for (let i = start; i <= end; i++) {
+      if (i < labels.length) {
+        selectedLabels.add(labels[i].name);
+      }
+    }
+  } else {
+    // Normal navigation: clear selection and reset anchor
+    clearSelection();
+    selectionAnchor = -1;
+  }
+
+  lastClickedIndex = index;
+
+  // Visual highlight by making it "active"
+  renderLabelList();
+
+  // Scroll into view
+  const container = document.getElementById('label-list');
+  const items = container.querySelectorAll('.label-item');
+  if (items[index]) {
+    items[index].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+}
+
+function selectAllLabels() {
+  selectedLabels.clear();
+  labels.forEach(label => selectedLabels.add(label.name));
+  renderLabelList();
+}
+
+// Navigate between editor fields (properties and relationships) with up/down arrows
+// Navigates within the same column (e.g., property names, types, checkboxes)
+function navigateEditorFields(direction) {
+  const activeElement = document.activeElement;
+  if (!activeElement) return;
+
+  const currentRow = activeElement.closest('.property-row, .relationship-row');
+  if (!currentRow) return;
+
+  // Determine which column we're in based on the active element
+  let fieldType = activeElement.dataset.field;
+
+  if (!fieldType) {
+    if (activeElement.type === 'checkbox') {
+      fieldType = 'checkbox';
+    } else if (activeElement.classList.contains('btn-outline-danger') ||
+               activeElement.textContent === '×') {
+      fieldType = 'delete-btn';
+    } else if (activeElement.classList.contains('target-label-nav')) {
+      fieldType = 'nav-btn';
+    } else {
+      // Unrecognized field type, don't navigate
+      return;
+    }
+  }
+
+  // Get the container (properties or relationships)
+  const container = currentRow.parentElement;
+  const rows = Array.from(container.querySelectorAll('.property-row, .relationship-row'));
+  const currentRowIndex = rows.indexOf(currentRow);
+
+  // Calculate target row
+  let targetRowIndex = currentRowIndex + direction;
+
+  // Wrap around
+  if (targetRowIndex < 0) targetRowIndex = rows.length - 1;
+  if (targetRowIndex >= rows.length) targetRowIndex = 0;
+
+  const targetRow = rows[targetRowIndex];
+  if (!targetRow) return;
+
+  // Find the same field type in the target row
+  let targetField;
+  if (fieldType === 'checkbox') {
+    targetField = targetRow.querySelector('input[type="checkbox"]');
+  } else if (fieldType === 'delete-btn') {
+    targetField = targetRow.querySelector('.btn-outline-danger');
+  } else if (fieldType === 'nav-btn') {
+    targetField = targetRow.querySelector('.target-label-nav');
+  } else {
+    targetField = targetRow.querySelector(`[data-field="${fieldType}"]`);
+  }
+
+  if (targetField) {
+    targetField.focus();
+
+    // For text inputs, select all text
+    if (targetField.tagName === 'INPUT' && targetField.type === 'text') {
+      targetField.select();
+    }
+  }
+}
+
+// Attach event handlers to SELECT elements to track dropdown state
+function attachSelectHandlers(container) {
+  container.querySelectorAll('select').forEach(select => {
+    // Clear dropdown state on change or blur
+    select.addEventListener('change', () => {
+      select.dataset.dropdownOpen = '';
+    });
+    select.addEventListener('blur', () => {
+      select.dataset.dropdownOpen = '';
+    });
+  });
+}
+
+// Return focus to the side panel (currently selected label)
+function returnFocusToSidePanel() {
+  const container = document.getElementById('label-list');
+  const items = container.querySelectorAll('.label-item');
+  if (lastClickedIndex >= 0 && lastClickedIndex < items.length) {
+    items[lastClickedIndex].focus();
+  }
+}
+
+// Return focus to top buttons (Pull All, Import, Export, + Label)
+function returnFocusToTopButtons() {
+  const firstButton = document.getElementById('btn-pull-all-neo4j');
+  if (firstButton) {
+    firstButton.focus();
+  }
+}
+
+// Clear label navigation state when tabbing out of side panel
+function clearLabelNavigationState() {
+  lastClickedIndex = -1;
+  selectionAnchor = -1;
+}
+
 function loadLabels() {
+  console.log('loadLabels() executing, fetching /api/labels');
   fetch('/api/labels')
-    .then(r => r.json())
+    .then(r => {
+      console.log('loadLabels() got response');
+      return r.json();
+    })
     .then(data => {
+      console.log('loadLabels() got data:', data);
       if (data.status === 'success') {
         labels = data.labels || [];
         renderLabelList();
@@ -154,32 +775,122 @@ function loadLabels() {
         showToast('Error loading labels: ' + (data.error || 'Unknown error'), 'error');
       }
     })
-    .catch(err => showToast('Network error: ' + err.message, 'error'));
+    .catch(err => {
+      console.error('loadLabels() error:', err);
+      showToast('Network error: ' + err.message, 'error');
+    });
 }
 
 function renderLabelList() {
   const container = document.getElementById('label-list');
   if (labels.length === 0) {
     container.innerHTML = '<div class="empty-state small">No labels defined</div>';
+    updateBatchActionsVisibility();
     return;
   }
 
-  container.innerHTML = labels.map(label => `
-    <div class="label-item ${currentLabel && currentLabel.name === label.name ? 'active' : ''}"
-         data-label="${label.name}"
-         data-testid="label-item">
-      <strong>${label.name}</strong>
-      <div class="small">${label.properties.length} properties, ${label.relationships.length} relationships</div>
-    </div>
-  `).join('');
-
-  // Add click handlers
-  container.querySelectorAll('.label-item').forEach(item => {
-    item.addEventListener('click', () => {
-      const labelName = item.dataset.label;
-      loadLabel(labelName);
+  // Compute incoming relationship counts for each label
+  const incomingCounts = {};
+  labels.forEach(label => {
+    incomingCounts[label.name] = 0;
+  });
+  labels.forEach(label => {
+    (label.relationships || []).forEach(rel => {
+      if (rel.target_label && incomingCounts[rel.target_label] !== undefined) {
+        incomingCounts[rel.target_label]++;
+      }
     });
   });
+
+  container.innerHTML = labels.map((label, index) => {
+    const outgoing = label.relationships.length;
+    const incoming = incomingCounts[label.name] || 0;
+    const total = outgoing + incoming;
+    const relText = total === 1 ? '1 relationship' : `${total} relationships`;
+    const detailText = incoming > 0 ? ` (${outgoing} out, ${incoming} in)` : '';
+
+    const isActive = currentLabel && currentLabel.name === label.name;
+    const isSelected = selectedLabels.has(label.name);
+    const isFocused = lastClickedIndex === index;
+    const classes = ['label-item', isActive && 'active', isSelected && 'selected', isFocused && 'focused'].filter(Boolean).join(' ');
+
+    return `
+      <div class="${classes}"
+           data-label="${label.name}"
+           data-index="${index}"
+           data-testid="label-item"
+           tabindex="${isFocused ? '0' : '-1'}">
+        <strong>${label.name}</strong>
+        <div class="small">${label.properties.length} properties, ${relText}${detailText}</div>
+      </div>
+    `;
+  }).join('');
+
+  // Add click handlers with multi-select support
+  container.querySelectorAll('.label-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      const labelName = item.dataset.label;
+      const index = parseInt(item.dataset.index);
+
+      if (e.ctrlKey || e.metaKey) {
+        // Ctrl/Cmd+Click: Toggle selection
+        toggleLabelSelection(labelName);
+        lastClickedIndex = index;
+        selectionAnchor = -1; // Reset anchor on ctrl-click
+      } else if (e.shiftKey && lastClickedIndex !== -1) {
+        // Shift+Click: Range selection
+        selectLabelRange(lastClickedIndex, index);
+      } else {
+        // Regular click: Clear selection and load label
+        clearSelection();
+        loadLabel(labelName);
+        lastClickedIndex = index;
+        selectionAnchor = -1; // Reset anchor on regular click
+      }
+    });
+  });
+
+  updateBatchActionsVisibility();
+}
+
+function toggleLabelSelection(labelName) {
+  if (selectedLabels.has(labelName)) {
+    selectedLabels.delete(labelName);
+  } else {
+    selectedLabels.add(labelName);
+  }
+  renderLabelList();
+}
+
+function selectLabelRange(startIndex, endIndex) {
+  const start = Math.min(startIndex, endIndex);
+  const end = Math.max(startIndex, endIndex);
+
+  for (let i = start; i <= end; i++) {
+    if (i < labels.length) {
+      selectedLabels.add(labels[i].name);
+    }
+  }
+
+  renderLabelList();
+}
+
+function clearSelection() {
+  selectedLabels.clear();
+  selectionAnchor = -1; // Reset anchor when clearing selection
+  renderLabelList();
+}
+
+function updateBatchActionsVisibility() {
+  const batchActions = document.getElementById('batch-actions');
+  const selectionCount = document.getElementById('selection-count');
+
+  if (selectedLabels.size > 0) {
+    batchActions.style.display = 'block';
+    selectionCount.textContent = selectedLabels.size;
+  } else {
+    batchActions.style.display = 'none';
+  }
 }
 
 function loadLabel(name) {
@@ -191,6 +902,15 @@ function loadLabel(name) {
         showEditor();
         populateEditor(currentLabel);
         renderLabelList(); // Update active state
+
+        // Keep focus in the side panel after loading
+        setTimeout(() => {
+          const container = document.getElementById('label-list');
+          const items = container.querySelectorAll('.label-item');
+          if (lastClickedIndex >= 0 && lastClickedIndex < items.length) {
+            items[lastClickedIndex].focus();
+          }
+        }, 0);
       } else {
         showToast('Error loading label: ' + (data.error || 'Unknown error'), 'error');
       }
@@ -207,6 +927,7 @@ function clearEditor() {
   document.getElementById('label-name').readOnly = false;
   document.getElementById('properties-container').innerHTML = '<div class="empty-state small">No properties defined</div>';
   document.getElementById('relationships-container').innerHTML = '<div class="empty-state small">No relationships defined</div>';
+  document.getElementById('incoming-relationships-container').innerHTML = '<div class="empty-state small">No incoming relationships</div>';
   document.getElementById('name-error').style.display = 'none';
 }
 
@@ -215,7 +936,7 @@ function populateEditor(label) {
   document.getElementById('label-name').value = label.name;
   document.getElementById('label-name').readOnly = true;
   document.getElementById('btn-delete').style.display = 'inline-block';
-  document.getElementById('btn-push-neo4j').style.display = 'inline-block';
+  document.getElementById('btn-pull-neo4j').style.display = 'inline-block';
 
   // Render properties
   const propsContainer = document.getElementById('properties-container');
@@ -223,14 +944,54 @@ function populateEditor(label) {
     propsContainer.innerHTML = '<div class="empty-state small">No properties defined</div>';
   } else {
     propsContainer.innerHTML = label.properties.map((prop, i) => createPropertyRow(prop, i)).join('');
+    attachSelectHandlers(propsContainer);
   }
 
-  // Render relationships
+  // Render outgoing relationships
   const relsContainer = document.getElementById('relationships-container');
   if (label.relationships.length === 0) {
     relsContainer.innerHTML = '<div class="empty-state small">No relationships defined</div>';
   } else {
     relsContainer.innerHTML = label.relationships.map((rel, i) => createRelationshipRow(rel, i)).join('');
+
+    // Add click handlers for navigation buttons
+    relsContainer.querySelectorAll('.target-label-nav').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const targetLabel = btn.dataset.target;
+        if (targetLabel) {
+          loadLabel(targetLabel);
+        }
+      });
+    });
+
+    attachSelectHandlers(relsContainer);
+  }
+
+  // Render incoming relationships (read-only with clickable source labels)
+  const incomingContainer = document.getElementById('incoming-relationships-container');
+  const incomingRels = label.incoming_relationships || [];
+  if (incomingRels.length === 0) {
+    incomingContainer.innerHTML = '<div class="empty-state small">No incoming relationships</div>';
+  } else {
+    incomingContainer.innerHTML = incomingRels.map(rel =>
+      `<div class="relationship-row" style="background: #f9f9f9; padding: 0.5rem; margin-bottom: 0.25rem; border-radius: 4px;">
+        <span class="small">
+          <a href="#" class="source-label-link" data-label="${rel.source_label}" style="color: var(--accent); text-decoration: none; font-weight: bold;">
+            ${rel.source_label}
+          </a> → [${rel.type}] → <em>this label</em>
+        </span>
+      </div>`
+    ).join('');
+
+    // Add click handlers for source label links
+    incomingContainer.querySelectorAll('.source-label-link').forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const sourceLabelName = link.dataset.label;
+        loadLabel(sourceLabelName);
+      });
+    });
   }
 }
 
@@ -240,6 +1001,7 @@ function addProperty() {
     container.innerHTML = '';
   }
   container.insertAdjacentHTML('beforeend', createPropertyRow({name: '', type: 'string', required: false}));
+  attachSelectHandlers(container);
 }
 
 function createPropertyRow(prop, index) {
@@ -270,10 +1032,20 @@ function addRelationship() {
     container.innerHTML = '';
   }
   container.insertAdjacentHTML('beforeend', createRelationshipRow({type: '', target_label: '', properties: []}));
+  attachSelectHandlers(container);
 }
 
 function createRelationshipRow(rel, index) {
-  const labelOptions = labels.map(l => `<option value="${l.name}" ${rel.target_label === l.name ? 'selected' : ''}>${l.name}</option>`).join('');
+  const labelOptions = labels.map(l =>
+    `<option value="${l.name}" ${rel.target_label === l.name ? 'selected' : ''}>${l.name}</option>`
+  ).join('\n        ');
+
+  // Add navigation button if target label is selected
+  const hasTarget = rel.target_label && rel.target_label !== '';
+  const navButton = hasTarget
+    ? `<button class="btn btn-sm btn-outline-primary target-label-nav" data-target="${rel.target_label}" title="Go to ${rel.target_label}" style="flex: 0 0 auto;">→</button>`
+    : '';
+
   return `
     <div class="relationship-row" data-index="${index || ''}" data-testid="relationship-row">
       <input type="text" class="form-control form-control-sm" placeholder="Type (e.g., HAS_FILE)"
@@ -282,6 +1054,7 @@ function createRelationshipRow(rel, index) {
         <option value="">-- Select target label --</option>
         ${labelOptions}
       </select>
+      ${navButton}
       <button class="btn btn-sm btn-outline-danger" onclick="this.parentElement.remove()" data-testid="remove-relationship-btn">×</button>
     </div>
   `;
@@ -351,28 +1124,44 @@ function deleteLabel() {
     .catch(err => showToast('Network error: ' + err.message, 'error'));
 }
 
-function pushToNeo4j() {
+function pullFromNeo4j() {
   if (!currentLabel) return;
 
-  showToast('Pushing to Neo4j...', 'info');
+  if (!confirm(`Pull schema for "${currentLabel.name}" from Neo4j? This will add any missing properties and relationships from the Neo4j schema.`)) return;
 
-  fetch(`/api/labels/${currentLabel.name}/push`, { method: 'POST' })
+  showToast('Pulling from Neo4j...', 'info');
+
+  fetch(`/api/labels/${currentLabel.name}/pull`, { method: 'POST' })
     .then(r => r.json())
     .then(data => {
       if (data.status === 'success') {
-        const msg = `Pushed to Neo4j. Constraints: ${data.constraints_created.length}`;
+        const propCount = data.new_properties_count || 0;
+        const relCount = data.new_relationships_count || 0;
+        const total = propCount + relCount;
+
+        let msg = '';
+        if (total === 0) {
+          msg = 'No new schema found in Neo4j';
+        } else {
+          const parts = [];
+          if (propCount > 0) parts.push(`${propCount} property${propCount > 1 ? 'ies' : ''}`);
+          if (relCount > 0) parts.push(`${relCount} relationship${relCount > 1 ? 's' : ''}`);
+          msg = `Added ${parts.join(' and ')} from Neo4j`;
+        }
+
         showToast(msg, 'success');
+        loadLabel(currentLabel.name);
       } else {
-        showToast('Error pushing to Neo4j: ' + (data.error || 'Unknown error'), 'error');
+        showToast('Error pulling from Neo4j: ' + (data.error || 'Unknown error'), 'error');
       }
     })
     .catch(err => showToast('Network error: ' + err.message, 'error'));
 }
 
-function pullFromNeo4j() {
-  if (!confirm('Pull schema from Neo4j? This will import labels and may overwrite local definitions.')) return;
+function pullAllFromNeo4j() {
+  if (!confirm('Pull all labels from Neo4j? This will import all labels and may overwrite local definitions.')) return;
 
-  showToast('Pulling from Neo4j...', 'info');
+  showToast('Pulling all labels from Neo4j...', 'info');
 
   fetch('/api/labels/pull', { method: 'POST' })
     .then(r => r.json())
@@ -385,6 +1174,138 @@ function pullFromNeo4j() {
       }
     })
     .catch(err => showToast('Network error: ' + err.message, 'error'));
+}
+
+function previewArrowsImport() {
+  const input = document.getElementById('arrows-json-input').value.trim();
+  if (!input) {
+    document.getElementById('import-preview').style.display = 'none';
+    return;
+  }
+
+  try {
+    const arrowsJson = JSON.parse(input);
+    const nodeCount = arrowsJson.nodes?.length || 0;
+    const relCount = arrowsJson.relationships?.length || 0;
+
+    document.getElementById('preview-label-count').textContent = nodeCount;
+    document.getElementById('preview-rel-count').textContent = relCount;
+    document.getElementById('import-preview').style.display = 'block';
+  } catch (e) {
+    document.getElementById('import-preview').style.display = 'none';
+  }
+}
+
+async function importFromArrows() {
+  const input = document.getElementById('arrows-json-input').value.trim();
+  if (!input) {
+    showToast('Please paste Arrows.app JSON', 'warning');
+    return;
+  }
+
+  try {
+    const arrowsJson = JSON.parse(input);
+    showToast('Importing schema...', 'info');
+
+    const resp = await fetch('/api/labels/import/arrows', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({arrows_json: arrowsJson, mode: 'merge'})
+    });
+
+    const result = await resp.json();
+    console.log('Import result:', result);
+
+    if (result.status === 'success') {
+      const msg = `Imported ${result.imported.labels} labels, ${result.imported.relationships} relationships`;
+      showToast(msg, 'success');
+
+      // Close modal
+      closeImportModal();
+
+      // Reload labels
+      loadLabels();
+    } else {
+      showToast('Import failed: ' + result.error, 'error');
+    }
+  } catch (e) {
+    console.error('Import error:', e);
+    showToast('Import error: ' + e.message, 'error');
+  }
+}
+
+async function exportToArrows() {
+  try {
+    showToast('Exporting schema...', 'info');
+    window.location = '/api/labels/export/arrows';
+    setTimeout(() => showToast('Schema exported successfully', 'success'), 500);
+  } catch (e) {
+    showToast('Export error: ' + e.message, 'error');
+  }
+}
+
+// Batch operations
+async function batchPull() {
+  if (selectedLabels.size === 0) return;
+
+  const labelNames = Array.from(selectedLabels);
+  if (!confirm(`Pull schema for ${labelNames.length} selected labels from Neo4j?`)) return;
+
+  showToast(`Pulling schema for ${labelNames.length} labels...`, 'info');
+
+  try {
+    const resp = await fetch('/api/labels/batch/pull', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ label_names: labelNames })
+    });
+
+    const result = await resp.json();
+
+    if (result.status === 'success') {
+      const totalProps = result.total_new_properties || 0;
+      const totalRels = result.total_new_relationships || 0;
+      const msg = `Batch pull complete: ${totalProps} properties, ${totalRels} relationships added`;
+      showToast(msg, 'success');
+      clearSelection();
+      loadLabels();
+    } else {
+      showToast('Batch pull error: ' + (result.error || 'Unknown error'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+async function batchDelete() {
+  if (selectedLabels.size === 0) return;
+
+  const labelNames = Array.from(selectedLabels);
+  if (!confirm(`Delete ${labelNames.length} selected labels?\n\n${labelNames.join(', ')}\n\nThis cannot be undone.`)) return;
+
+  showToast(`Deleting ${labelNames.length} labels...`, 'info');
+
+  try {
+    const resp = await fetch('/api/labels/batch/delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ label_names: labelNames })
+    });
+
+    const result = await resp.json();
+
+    if (result.status === 'success') {
+      showToast(`Deleted ${result.deleted_count} labels`, 'success');
+      clearSelection();
+      currentLabel = null;
+      document.getElementById('label-editor').style.display = 'none';
+      loadLabels();
+    } else {
+      showToast('Batch delete error: ' + (result.error || 'Unknown error'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
 }
 </script>
 {% endblock %}

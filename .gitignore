@@ -61,3 +61,8 @@ coverage.xml
 sqlite:/
 sqlite:/home
 sqlite:/tmp
+
+# Dev submodule code imports (should be handled by dev/.gitignore)
+# Added here as safety net to prevent leaking into main repo
+dev/code-imports/nc3rsEDA/
+!dev/code-imports/nc3rsEDA/README.md
