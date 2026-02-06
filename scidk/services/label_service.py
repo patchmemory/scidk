@@ -331,14 +331,15 @@ class LabelService:
                 })
 
             # Query for relationships originating from this label
+            # Sample actual relationships from the graph
             rels_query = """
-            CALL db.schema.relTypeProperties()
-            YIELD sourceNodeType, relType, targetNodeType, propertyName, propertyTypes
-            WHERE sourceNodeType = $nodeType
-            RETURN DISTINCT relType, targetNodeType
+            MATCH (source)-[rel]->(target)
+            WHERE $labelName IN labels(source)
+            WITH DISTINCT type(rel) AS relType, [label IN labels(target) | label][0] AS targetLabel
+            RETURN relType, targetLabel
             """
 
-            rels_results = neo4j_client.execute_read(rels_query, {'nodeType': f':{name}'})
+            rels_results = neo4j_client.execute_read(rels_query, {'labelName': name})
 
             # Get existing relationships to avoid duplicates (by type + target combination)
             existing_rels = {(r['type'], r['target_label']) for r in label_def.get('relationships', [])}
@@ -347,13 +348,14 @@ class LabelService:
             new_relationships = []
             for record in rels_results:
                 rel_type = record.get('relType')
-                target_type = record.get('targetNodeType')
+                target_label = record.get('targetLabel')
 
-                # Clean target label (remove leading : and backticks)
-                if target_type and target_type.startswith(':'):
-                    target_label = target_type[1:].strip('`')
-                else:
+                # Skip if missing or already exists
+                if not rel_type or not target_label:
                     continue
+
+                # Clean label (strip backticks)
+                target_label = target_label.strip('`')
 
                 # Skip if already exists
                 if (rel_type, target_label) in existing_rels:
@@ -445,32 +447,32 @@ class LabelService:
                     'required': False  # Can't determine from schema introspection
                 })
 
-            # Query for relationships
+            # Query for relationships using schema visualization
             rels_query = """
-            CALL db.schema.relTypeProperties()
-            YIELD sourceNodeType, relType, targetNodeType, propertyName, propertyTypes
-            RETURN DISTINCT sourceNodeType, relType, targetNodeType
+            CALL db.schema.visualization()
+            YIELD nodes, relationships
+            UNWIND relationships AS rel
+            RETURN DISTINCT
+                [label IN labels(startNode(rel)) | label][0] AS sourceLabel,
+                type(rel) AS relType,
+                [label IN labels(endNode(rel)) | label][0] AS targetLabel
             """
 
             rels_results = neo4j_client.execute_read(rels_query)
 
             # Group relationships by source label
             for record in rels_results:
-                source_type = record.get('sourceNodeType')
+                source_label = record.get('sourceLabel')
                 rel_type = record.get('relType')
-                target_type = record.get('targetNodeType')
+                target_label = record.get('targetLabel')
 
-                # Clean source label (remove leading : and backticks)
-                if source_type and source_type.startswith(':'):
-                    source_label = source_type[1:].strip('`')
-                else:
+                # Skip if any field is missing
+                if not source_label or not rel_type or not target_label:
                     continue
 
-                # Clean target label (remove leading : and backticks)
-                if target_type and target_type.startswith(':'):
-                    target_label = target_type[1:].strip('`')
-                else:
-                    continue
+                # Clean labels (strip backticks)
+                source_label = source_label.strip('`')
+                target_label = target_label.strip('`')
 
                 # Ensure source label exists in map
                 if source_label not in labels_map:
