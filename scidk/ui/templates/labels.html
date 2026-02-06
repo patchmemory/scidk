@@ -326,7 +326,12 @@ function handleGlobalKeydown(e) {
     activeElement.tagName === 'SELECT'
   );
 
-  // Handle Ctrl+A (select all labels) - works even when typing
+  // Let buttons handle Enter/Space themselves (don't prevent default)
+  if (activeElement && activeElement.tagName === 'BUTTON' && (e.key === 'Enter' || e.key === ' ')) {
+    return;
+  }
+
+  // Handle Ctrl+A (select all labels) - works even when not typing
   if ((e.ctrlKey || e.metaKey) && e.key === 'a' && !isTyping) {
     e.preventDefault();
     selectAllLabels();
@@ -336,31 +341,34 @@ function handleGlobalKeydown(e) {
   // Don't handle other keys if user is typing
   if (isTyping) return;
 
+  // Check if shift is held for range selection
+  const shiftHeld = e.shiftKey;
+
   // Handle navigation keys
   switch(e.key) {
     case 'ArrowUp':
       e.preventDefault();
-      navigateLabels(-1);
+      navigateLabels(-1, shiftHeld);
       break;
     case 'ArrowDown':
       e.preventDefault();
-      navigateLabels(1);
+      navigateLabels(1, shiftHeld);
       break;
     case 'Home':
       e.preventDefault();
-      navigateToLabel(0);
+      navigateToLabel(0, shiftHeld);
       break;
     case 'End':
       e.preventDefault();
-      navigateToLabel(labels.length - 1);
+      navigateToLabel(labels.length - 1, shiftHeld);
       break;
     case 'PageUp':
       e.preventDefault();
-      navigateLabels(-10);
+      navigateLabels(-10, shiftHeld);
       break;
     case 'PageDown':
       e.preventDefault();
-      navigateLabels(10);
+      navigateLabels(10, shiftHeld);
       break;
     case 'Enter':
       e.preventDefault();
@@ -398,7 +406,7 @@ function handleGlobalKeydown(e) {
   }
 }
 
-function navigateLabels(delta) {
+function navigateLabels(delta, shiftHeld = false) {
   if (labels.length === 0) return;
 
   let newIndex;
@@ -412,17 +420,26 @@ function navigateLabels(delta) {
   // Clamp to valid range
   newIndex = Math.max(0, Math.min(labels.length - 1, newIndex));
 
-  navigateToLabel(newIndex);
+  navigateToLabel(newIndex, shiftHeld);
 }
 
-function navigateToLabel(index) {
+function navigateToLabel(index, shiftHeld = false) {
   if (index < 0 || index >= labels.length) return;
 
-  lastClickedIndex = index;
-  const labelName = labels[index].name;
+  if (shiftHeld) {
+    // Shift+navigation: extend selection from lastClickedIndex to new index
+    if (lastClickedIndex !== -1) {
+      selectLabelRange(lastClickedIndex, index);
+    } else {
+      // No previous selection, just select the current item
+      selectedLabels.add(labels[index].name);
+    }
+  } else {
+    // Normal navigation: clear selection
+    clearSelection();
+  }
 
-  // Clear selection and highlight the navigated label
-  clearSelection();
+  lastClickedIndex = index;
 
   // Visual highlight by making it "active"
   renderLabelList();
