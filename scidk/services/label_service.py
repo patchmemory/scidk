@@ -267,6 +267,90 @@ class LabelService:
                 'error': str(e)
             }
 
+    def pull_label_properties_from_neo4j(self, name: str) -> Dict[str, Any]:
+        """
+        Pull properties for a specific label from Neo4j and merge with existing definition.
+
+        Args:
+            name: Label name
+
+        Returns:
+            Dict with status and updated label
+        """
+        label_def = self.get_label(name)
+        if not label_def:
+            raise ValueError(f"Label '{name}' not found")
+
+        try:
+            from .neo4j_client import get_neo4j_client
+            neo4j_client = get_neo4j_client()
+
+            if not neo4j_client:
+                raise Exception("Neo4j client not configured")
+
+            # Query for properties of this specific label
+            query = """
+            CALL db.schema.nodeTypeProperties()
+            YIELD nodeType, propertyName, propertyTypes
+            WHERE nodeType = $nodeType
+            RETURN propertyName, propertyTypes
+            """
+
+            results = neo4j_client.execute_read(query, {'nodeType': f':{name}'})
+
+            # Get existing property names to avoid duplicates
+            existing_props = {p['name'] for p in label_def.get('properties', [])}
+
+            # Map properties from Neo4j
+            new_properties = []
+            for record in results:
+                prop_name = record.get('propertyName')
+                prop_types = record.get('propertyTypes', [])
+
+                # Skip if already exists
+                if prop_name in existing_props:
+                    continue
+
+                # Map Neo4j types to our property types
+                prop_type = 'string'
+                if prop_types:
+                    first_type = prop_types[0].lower()
+                    if 'int' in first_type or 'long' in first_type:
+                        prop_type = 'number'
+                    elif 'bool' in first_type:
+                        prop_type = 'boolean'
+                    elif 'date' in first_type:
+                        prop_type = 'date'
+                    elif 'datetime' in first_type or 'localdatetime' in first_type:
+                        prop_type = 'datetime'
+
+                new_properties.append({
+                    'name': prop_name,
+                    'type': prop_type,
+                    'required': False  # Can't determine from schema introspection
+                })
+
+            # Merge with existing properties
+            all_properties = label_def.get('properties', []) + new_properties
+
+            # Update label
+            updated_label = self.save_label({
+                'name': name,
+                'properties': all_properties,
+                'relationships': label_def.get('relationships', [])
+            })
+
+            return {
+                'status': 'success',
+                'label': updated_label,
+                'new_properties_count': len(new_properties)
+            }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'error': str(e)
+            }
+
     def pull_from_neo4j(self) -> Dict[str, Any]:
         """
         Pull label schema from Neo4j and import as label definitions.
@@ -297,7 +381,8 @@ class LabelService:
                 if not node_type or not node_type.startswith(':'):
                     continue
 
-                label_name = node_type[1:]  # Remove leading ':'
+                # Remove leading ':' and any backticks
+                label_name = node_type[1:].strip('`')
                 prop_name = record.get('propertyName')
                 prop_types = record.get('propertyTypes', [])
 

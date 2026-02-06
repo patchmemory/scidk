@@ -202,6 +202,38 @@ def push_label_to_neo4j(name):
         }), 500
 
 
+@bp.route('/labels/<name>/pull', methods=['POST'])
+def pull_label_from_neo4j(name):
+    """
+    Pull properties for a specific label from Neo4j.
+
+    Returns:
+    {
+        "status": "success",
+        "label": {...},
+        "new_properties_count": 3
+    }
+    """
+    try:
+        service = _get_label_service()
+        result = service.pull_label_properties_from_neo4j(name)
+
+        if result.get('status') == 'error':
+            return jsonify(result), 500
+
+        return jsonify(result), 200
+    except ValueError as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 404
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
 @bp.route('/labels/pull', methods=['POST'])
 def pull_labels_from_neo4j():
     """

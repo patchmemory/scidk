@@ -136,8 +136,9 @@
       <button id="btn-new-label" class="btn btn-sm btn-primary" data-testid="new-label-btn">New Label</button>
     </div>
     <div style="display: flex; gap: 0.25rem; margin-bottom: 0.5rem; flex-wrap: wrap;">
-      <button id="btn-import-arrows" class="btn btn-sm btn-outline-info" data-testid="import-arrows-btn" style="flex: 1; font-size: 0.75rem;">Import Arrows</button>
-      <button id="btn-export-arrows" class="btn btn-sm btn-outline-info" data-testid="export-arrows-btn" style="flex: 1; font-size: 0.75rem;">Export Arrows</button>
+      <button id="btn-pull-all-neo4j" class="btn btn-sm btn-outline-info" data-testid="pull-all-neo4j-btn" title="Pull all labels from Neo4j" style="flex: 1; font-size: 0.75rem;">Pull All</button>
+      <button id="btn-import-arrows" class="btn btn-sm btn-outline-info" data-testid="import-arrows-btn" style="flex: 1; font-size: 0.75rem;">Import</button>
+      <button id="btn-export-arrows" class="btn btn-sm btn-outline-info" data-testid="export-arrows-btn" style="flex: 1; font-size: 0.75rem;">Export</button>
     </div>
     <div id="label-list" data-testid="label-list">
       <div class="empty-state small">No labels defined</div>
@@ -181,7 +182,7 @@
       <button id="btn-save" class="btn btn-sm btn-success" data-testid="save-label-btn">Save</button>
       <button id="btn-delete" class="btn btn-sm btn-outline-danger" data-testid="delete-label-btn" style="display: none;">Delete</button>
       <button id="btn-push-neo4j" class="btn btn-sm btn-outline-primary" data-testid="push-neo4j-btn" style="display: none;">Push to Neo4j</button>
-      <button id="btn-pull-neo4j" class="btn btn-sm btn-outline-secondary" data-testid="pull-neo4j-btn">Pull from Neo4j</button>
+      <button id="btn-pull-neo4j" class="btn btn-sm btn-outline-secondary" data-testid="pull-neo4j-btn" style="display: none;">Pull Properties</button>
     </div>
   </div>
 </div>
@@ -253,12 +254,14 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('editor-title').textContent = 'New Label';
     document.getElementById('btn-delete').style.display = 'none';
     document.getElementById('btn-push-neo4j').style.display = 'none';
+    document.getElementById('btn-pull-neo4j').style.display = 'none';
   });
 
   document.getElementById('btn-save').addEventListener('click', saveLabel);
   document.getElementById('btn-delete').addEventListener('click', deleteLabel);
   document.getElementById('btn-push-neo4j').addEventListener('click', pushToNeo4j);
   document.getElementById('btn-pull-neo4j').addEventListener('click', pullFromNeo4j);
+  document.getElementById('btn-pull-all-neo4j').addEventListener('click', pullAllFromNeo4j);
   document.getElementById('btn-add-property').addEventListener('click', addProperty);
   document.getElementById('btn-add-relationship').addEventListener('click', addRelationship);
 
@@ -387,6 +390,7 @@ function populateEditor(label) {
   document.getElementById('label-name').readOnly = true;
   document.getElementById('btn-delete').style.display = 'inline-block';
   document.getElementById('btn-push-neo4j').style.display = 'inline-block';
+  document.getElementById('btn-pull-neo4j').style.display = 'inline-block';
 
   // Render properties
   const propsContainer = document.getElementById('properties-container');
@@ -588,9 +592,32 @@ function pushToNeo4j() {
 }
 
 function pullFromNeo4j() {
-  if (!confirm('Pull schema from Neo4j? This will import labels and may overwrite local definitions.')) return;
+  if (!currentLabel) return;
 
-  showToast('Pulling from Neo4j...', 'info');
+  if (!confirm(`Pull properties for "${currentLabel.name}" from Neo4j? This will add any missing properties from the Neo4j schema.`)) return;
+
+  showToast('Pulling properties from Neo4j...', 'info');
+
+  fetch(`/api/labels/${currentLabel.name}/pull`, { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'success') {
+        const msg = data.new_properties_count > 0
+          ? `Added ${data.new_properties_count} new properties from Neo4j`
+          : 'No new properties found in Neo4j';
+        showToast(msg, 'success');
+        loadLabel(currentLabel.name);
+      } else {
+        showToast('Error pulling from Neo4j: ' + (data.error || 'Unknown error'), 'error');
+      }
+    })
+    .catch(err => showToast('Network error: ' + err.message, 'error'));
+}
+
+function pullAllFromNeo4j() {
+  if (!confirm('Pull all labels from Neo4j? This will import all labels and may overwrite local definitions.')) return;
+
+  showToast('Pulling all labels from Neo4j...', 'info');
 
   fetch('/api/labels/pull', { method: 'POST' })
     .then(r => r.json())
