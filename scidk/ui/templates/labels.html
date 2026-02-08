@@ -1692,9 +1692,36 @@ function addProperty() {
   attachSelectHandlers(container);
 }
 
+function handlePropertyRemoval(button) {
+  // Get the property name before removal
+  const propertyRow = button.closest('.property-row');
+  const propertyName = propertyRow.dataset.propName;
+
+  // Remove the property row
+  propertyRow.remove();
+
+  // Clean up any instance changes for this property
+  if (propertyName && currentLabel && instanceData.length > 0) {
+    Object.keys(instanceChanges).forEach(instanceId => {
+      if (instanceChanges[instanceId] && instanceChanges[instanceId][propertyName] !== undefined) {
+        delete instanceChanges[instanceId][propertyName];
+        // Remove instance from changes if no properties left
+        if (Object.keys(instanceChanges[instanceId]).length === 0) {
+          delete instanceChanges[instanceId];
+        }
+      }
+    });
+
+    // Hide push button if no changes left
+    if (Object.keys(instanceChanges).length === 0) {
+      document.getElementById('btn-push-instances').style.display = 'none';
+    }
+  }
+}
+
 function createPropertyRow(prop, index) {
   return `
-    <div class="property-row" data-index="${index || ''}" data-testid="property-row">
+    <div class="property-row" data-index="${index || ''}" data-testid="property-row" data-prop-name="${prop.name || ''}">
       <input type="text" class="form-control form-control-sm" placeholder="Property name"
              value="${prop.name || ''}" data-field="name" data-testid="property-name" />
       <select class="form-select form-select-sm" data-field="type" data-testid="property-type">
@@ -1709,7 +1736,7 @@ function createPropertyRow(prop, index) {
                data-field="required" data-testid="property-required" />
         <label class="form-check-label small" style="margin-left: 0.25rem;">Required</label>
       </div>
-      <button class="btn btn-sm btn-outline-danger" onclick="this.parentElement.remove()" data-testid="remove-property-btn">×</button>
+      <button class="btn btn-sm btn-outline-danger" onclick="handlePropertyRemoval(this)" data-testid="remove-property-btn">×</button>
     </div>
   `;
 }
@@ -1788,6 +1815,10 @@ function saveLabel() {
         // Switch back to read-only mode after save
         isEditMode = false;
         updateEditorView();
+        // Refresh instance table if instances are loaded (removes columns for deleted properties)
+        if (instanceData.length > 0) {
+          renderInstanceTable();
+        }
       } else {
         showToast('Error saving label: ' + (data.error || 'Unknown error'), 'error');
       }
@@ -2183,7 +2214,7 @@ async function pullInstances() {
   }
 }
 
-async function pushInstances() {
+async function pushInstances(mode = 'merge') {
   if (!currentLabel) return;
 
   const changeCount = Object.keys(instanceChanges).length;
@@ -2192,30 +2223,44 @@ async function pushInstances() {
     return;
   }
 
-  if (!confirm(`Push ${changeCount} changed instance(s) to Neo4j?`)) return;
-
-  showToast(`Pushing ${changeCount} changes...`, 'info');
+  closeConfirmModal();
+  showToast(`Pushing ${changeCount} changes (${mode} mode)...`, 'info');
 
   let successCount = 0;
   let errorCount = 0;
 
-  for (const [instanceId, changes] of Object.entries(instanceChanges)) {
-    for (const [prop, value] of Object.entries(changes)) {
+  // In overwrite mode, we need to send all properties from the schema
+  if (mode === 'overwrite') {
+    // Build complete property sets for each changed instance
+    for (const [instanceId, changes] of Object.entries(instanceChanges)) {
+      const instance = instanceData.find(i => i.id === instanceId);
+      if (!instance) continue;
+
+      // Merge original properties with changes, but only include schema properties
+      const completeProperties = {};
+      currentLabel.properties.forEach(prop => {
+        const propName = prop.name;
+        if (changes[propName] !== undefined) {
+          completeProperties[propName] = changes[propName];
+        } else if (instance.properties[propName] !== undefined) {
+          completeProperties[propName] = instance.properties[propName];
+        }
+      });
+
       try {
         const resp = await fetch(`/api/labels/${currentLabel.name}/instances/${instanceId}`, {
-          method: 'PATCH',
+          method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ property: prop, value: value })
+          body: JSON.stringify({ properties: completeProperties, mode: 'overwrite' })
         });
 
         const result = await resp.json();
 
         if (result.status === 'success') {
           successCount++;
-          // Update instanceData with new value
-          const instance = instanceData.find(i => i.id === instanceId);
+          // Update instanceData with complete properties
           if (instance) {
-            instance.properties[prop] = value;
+            instance.properties = completeProperties;
           }
         } else {
           errorCount++;
@@ -2224,6 +2269,36 @@ async function pushInstances() {
       } catch (e) {
         errorCount++;
         console.error('Network error updating instance:', e);
+      }
+    }
+  } else {
+    // Merge mode - only update changed properties
+    for (const [instanceId, changes] of Object.entries(instanceChanges)) {
+      for (const [prop, value] of Object.entries(changes)) {
+        try {
+          const resp = await fetch(`/api/labels/${currentLabel.name}/instances/${instanceId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ property: prop, value: value })
+          });
+
+          const result = await resp.json();
+
+          if (result.status === 'success') {
+            successCount++;
+            // Update instanceData with new value
+            const instance = instanceData.find(i => i.id === instanceId);
+            if (instance) {
+              instance.properties[prop] = value;
+            }
+          } else {
+            errorCount++;
+            console.error('Error updating instance:', result.error);
+          }
+        } catch (e) {
+          errorCount++;
+          console.error('Network error updating instance:', e);
+        }
       }
     }
   }
@@ -2248,6 +2323,72 @@ async function refreshInstances() {
 function navigateInstances(delta) {
   instancePage = Math.max(0, instancePage + delta);
   pullInstances();
+}
+
+// Copy/Paste handler for Excel-like multi-cell paste
+function handleCellPaste(startCell, pastedText) {
+  const instanceId = startCell.dataset.id;
+  const startProp = startCell.dataset.prop;
+
+  // Split by lines (rows) and tabs (columns)
+  const rows = pastedText.split('\n').filter(r => r.trim());
+
+  if (rows.length === 0) return;
+
+  // Parse first row to see if it's multi-column
+  const firstRowCells = rows[0].split('\t');
+
+  if (rows.length === 1 && firstRowCells.length === 1) {
+    // Single cell paste
+    startCell.textContent = firstRowCells[0].trim();
+    startCell.dispatchEvent(new Event('blur'));
+    return;
+  }
+
+  // Multi-cell paste
+  const properties = currentLabel.properties.map(p => p.name);
+  const startPropIndex = properties.indexOf(startProp);
+
+  if (startPropIndex === -1) return;
+
+  // Get current instance and subsequent instances
+  const startInstanceIndex = instanceData.findIndex(i => i.id === instanceId);
+  if (startInstanceIndex === -1) return;
+
+  let changesCount = 0;
+
+  rows.forEach((row, rowOffset) => {
+    const targetInstanceIndex = startInstanceIndex + rowOffset;
+    if (targetInstanceIndex >= instanceData.length) return;
+
+    const targetInstance = instanceData[targetInstanceIndex];
+    const cells = row.split('\t');
+
+    cells.forEach((cellValue, colOffset) => {
+      const targetPropIndex = startPropIndex + colOffset;
+      if (targetPropIndex >= properties.length) return;
+
+      const targetProp = properties[targetPropIndex];
+      const trimmedValue = cellValue.trim();
+
+      // Record change
+      if (!instanceChanges[targetInstance.id]) {
+        instanceChanges[targetInstance.id] = {};
+      }
+      instanceChanges[targetInstance.id][targetProp] = trimmedValue;
+      changesCount++;
+    });
+  });
+
+  // Re-render table to show changes
+  renderInstanceTable();
+
+  // Show push button
+  if (Object.keys(instanceChanges).length > 0) {
+    document.getElementById('btn-push-instances').style.display = 'inline-block';
+  }
+
+  showToast(`Pasted ${changesCount} cell(s)`, 'success', 1500);
 }
 
 // CSV Export/Import functions
@@ -2450,9 +2591,15 @@ function pushInstancesWithPreview() {
     [
       `Update ${updateCount} existing instance(s)`,
       createCount > 0 ? `Create ${createCount} new instance(s)` : null,
-      'Push changes to Neo4j'
+      '<strong>Push Mode:</strong>',
+      '<label style="display: block; margin-left: 1rem; cursor: pointer;"><input type="radio" name="push-mode" value="merge" checked style="margin-right: 0.5rem;">Merge (update only changed properties)</label>',
+      '<label style="display: block; margin-left: 1rem; cursor: pointer;"><input type="radio" name="push-mode" value="overwrite" style="margin-right: 0.5rem;">Overwrite (remove properties not in schema)</label>',
+      '<div style="margin-left: 2rem; margin-top: 0.5rem; font-size: 0.85rem; color: #666;">⚠️ Overwrite mode will delete any properties from Neo4j nodes that are not defined in the label schema</div>'
     ].filter(Boolean),
-    () => pushInstances()
+    () => {
+      const selectedMode = document.querySelector('input[name="push-mode"]:checked')?.value || 'merge';
+      pushInstances(selectedMode);
+    }
   );
 
   // Show change details immediately
@@ -2547,6 +2694,30 @@ function renderInstanceTable() {
     });
 
     cell.addEventListener('keydown', (e) => {
+      // Copy (Ctrl+C or Cmd+C)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && !e.target.classList.contains('instance-cell-editing')) {
+        e.preventDefault();
+        const text = e.target.textContent;
+        navigator.clipboard.writeText(text).then(() => {
+          showToast('Copied to clipboard', 'success', 1000);
+        }).catch(err => {
+          console.error('Copy failed:', err);
+        });
+        return;
+      }
+
+      // Paste (Ctrl+V or Cmd+V)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        e.preventDefault();
+        navigator.clipboard.readText().then(text => {
+          handleCellPaste(e.target, text);
+        }).catch(err => {
+          console.error('Paste failed:', err);
+          showToast('Paste failed - clipboard access denied', 'error');
+        });
+        return;
+      }
+
       // Save on Enter
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
