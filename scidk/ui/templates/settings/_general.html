@@ -1,0 +1,989 @@
+    <!-- General Section -->
+    <section id="general-section" class="settings-section active">
+      <h1>General</h1>
+      <p class="small">Basic runtime information and counts.</p>
+      <ul>
+        <li>Host: {{ info.host }}</li>
+        <li>Port: {{ info.port }}</li>
+        <li>Debug: {{ info.debug }}</li>
+        <li>Datasets: {{ info.dataset_count }}</li>
+        <li>Interpreters: {{ info.interpreter_count }}</li>
+      </ul>
+      <div class="small" style="margin:.5rem 0;">
+        <span class="badge">Channel: {{ info.channel or 'stable' }}</span>
+        <span class="badge" title="Providers">Providers: {{ info.providers }}</span>
+        <span class="badge" title="Files viewer">Files viewer: {{ info.files_viewer or '(default)' }}</span>
+      </div>
+
+      <h3 style="margin-top:2rem">Configuration Management</h3>
+      <p class="small">Export and import your complete SciDK configuration for backup or migration.</p>
+      <div style="display:flex; gap:.75rem; align-items:center; margin:.75rem 0;">
+        <button id="btn-export-config" class="btn btn-sm btn-primary" data-testid="export-config-button">Export Configuration</button>
+        <button id="btn-import-config" class="btn btn-sm btn-outline-secondary" data-testid="import-config-button">Import Configuration</button>
+        <button id="btn-view-backups" class="btn btn-sm btn-outline-secondary" data-testid="view-backups-button">View Backups</button>
+      </div>
+      <input type="file" id="config-file-input" accept=".zip" style="display:none;" />
+      <div id="config-status" class="alert alert-info small" style="display:none; max-width:720px; margin-top:1rem;"></div>
+      <p class="small" style="margin-top:0.5rem; color:#666">Exports all settings including Neo4j connection, interpreters, plugins, rclone mounts, and integration endpoints.</p>
+
+      <h3 style="margin-top:2rem">Security</h3>
+      <p class="small">Configure authentication and access control for this SciDK instance.</p>
+
+      <!-- Current User Info (shown when logged in) -->
+      <div id="current-user-info" style="display:none; background:#e7f3ff; border:1px solid #b3d9ff; border-radius:4px; padding:0.75rem; max-width:720px; margin-bottom:1rem">
+        <div style="display:flex; align-items:center; gap:0.5rem">
+          <span style="font-size:0.9em; font-weight:500">Logged in as:</span>
+          <span id="current-username" style="font-size:0.9em"></span>
+          <span id="current-role-badge" class="badge" style="background:#ffc107; color:#000"></span>
+        </div>
+      </div>
+
+      <!-- Legacy auth setup form (shown only when no users exist yet) -->
+      <div id="security-legacy-setup" style="background:#f9f9f9; border:1px solid #e0e0e0; border-radius:4px; padding:1rem; max-width:720px">
+        <div style="margin-bottom:1rem">
+          <label style="display:block; font-size:0.9em; margin-bottom:0.25rem; font-weight:500">Enable Authentication</label>
+          <div style="display:flex; align-items:center; gap:0.5rem">
+            <input type="checkbox" id="security-auth-enabled" style="width:18px; height:18px" />
+            <label for="security-auth-enabled" class="small">Require login to access SciDK</label>
+          </div>
+        </div>
+        <div id="security-auth-settings" style="display:none">
+          <div style="margin-bottom:1rem">
+            <label for="security-username" style="display:block; font-size:0.9em; margin-bottom:0.25rem; font-weight:500">Username</label>
+            <input id="security-username" type="text" placeholder="admin" style="width:100%; padding:0.5rem; border:1px solid #ccc; border-radius:4px" />
+          </div>
+          <div style="margin-bottom:1rem">
+            <label for="security-password" style="display:block; font-size:0.9em; margin-bottom:0.25rem; font-weight:500">Password</label>
+            <div style="display:flex; gap:.5rem; align-items:center">
+              <input id="security-password" type="password" placeholder="••••••" style="flex:1; padding:0.5rem; border:1px solid #ccc; border-radius:4px" />
+              <div style="display:flex; align-items:center; gap:0.25rem">
+                <input id="security-password-show" type="checkbox" style="width:18px; height:18px" />
+                <label for="security-password-show" class="small">Show</label>
+              </div>
+            </div>
+          </div>
+        </div>
+        <button id="btn-save-security" data-testid="save-security-btn" style="padding:0.5rem 1rem; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer; margin-top:0.5rem">Save Security Settings</button>
+        <p id="security-status" class="small" style="margin-top:0.75rem; color:#666"></p>
+      </div>
+
+      <!-- Message for regular users -->
+      <div id="security-user-message" style="display:none; background:#f9f9f9; border:1px solid #e0e0e0; border-radius:4px; padding:1rem; max-width:720px">
+        <p class="small" style="margin:0; color:#666">
+          <strong>Your Account</strong><br>
+          You are logged in with a regular user account. Contact an administrator to manage users or change security settings.
+        </p>
+      </div>
+
+      <!-- Message for admins when multi-user is active -->
+      <div id="security-admin-message" style="display:none; background:#f9f9f9; border:1px solid #e0e0e0; border-radius:4px; padding:1rem; max-width:720px">
+        <p class="small" style="margin:0; color:#666">
+          <strong>Authentication Active</strong><br>
+          Multi-user authentication is enabled. Use the "Users" section below to manage user accounts and permissions.
+        </p>
+      </div>
+
+      <!-- User Management (Admin Only) -->
+      <div id="users-section-container" style="display:none; margin-top:2rem">
+        <h3>Users</h3>
+        <p class="small">Manage user accounts and permissions. <span class="badge" style="background:#ffc107; color:#000">Admin Only</span></p>
+        <div style="background:#f9f9f9; border:1px solid #e0e0e0; border-radius:4px; padding:1rem; max-width:900px">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem">
+            <h4 style="margin:0">User List</h4>
+            <button id="btn-add-user" style="padding:0.5rem 1rem; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer">+ Add User</button>
+          </div>
+          <div id="users-list-container">
+            <p class="small" style="color:#666">Loading users...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Audit Log (Admin Only) -->
+      <div id="audit-section-container" style="display:none; margin-top:2rem">
+        <h3>Audit Log</h3>
+        <p class="small">Security and user action logs. <span class="badge" style="background:#ffc107; color:#000">Admin Only</span></p>
+        <div style="background:#f9f9f9; border:1px solid #e0e0e0; border-radius:4px; padding:1rem; max-width:900px">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem">
+            <h4 style="margin:0">Recent Activity</h4>
+            <button id="btn-refresh-audit" style="padding:0.5rem 1rem; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer">Refresh</button>
+          </div>
+          <div id="audit-log-container">
+            <p class="small" style="color:#666">Loading audit log...</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+<script>
+  function initConfigExport() {
+    const btnExportConfig = document.getElementById('btn-export-config');
+    const btnImportConfig = document.getElementById('btn-import-config');
+    const btnViewBackups = document.getElementById('btn-view-backups');
+    const configFileInput = document.getElementById('config-file-input');
+    const configStatus = document.getElementById('config-status');
+
+    // Export configuration
+    if (btnExportConfig) {
+      btnExportConfig.addEventListener('click', async () => {
+        try {
+          btnExportConfig.disabled = true;
+          btnExportConfig.textContent = 'Exporting...';
+
+          const resp = await fetch('/api/settings/export', {
+            credentials: 'same-origin'
+          });
+
+          if (!resp.ok) {
+            // Try to parse error as JSON
+            const errorData = await resp.text();
+            try {
+              const json = JSON.parse(errorData);
+              throw new Error(json.error || `Export failed (${resp.status})`);
+            } catch (parseErr) {
+              // If we can't parse JSON, throw the original error
+              throw new Error(`Export failed (${resp.status})`);
+            }
+          }
+
+          // Get the filename from Content-Disposition header or generate one
+          const disposition = resp.headers.get('Content-Disposition');
+          let filename = 'scidk-backup.zip';
+          if (disposition && disposition.includes('filename=')) {
+            filename = disposition.split('filename=')[1].replace(/["']/g, '');
+          }
+
+          // Download the zip file
+          const blob = await resp.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+
+          configStatus.className = 'alert alert-success small';
+          configStatus.textContent = `Backup created successfully: ${filename}`;
+          configStatus.style.display = 'block';
+          setTimeout(() => { configStatus.style.display = 'none'; }, 5000);
+        } catch (err) {
+          configStatus.className = 'alert alert-danger small';
+          configStatus.textContent = `Export failed: ${err.message}`;
+          configStatus.style.display = 'block';
+        } finally {
+          btnExportConfig.disabled = false;
+          btnExportConfig.textContent = 'Export Configuration';
+        }
+      });
+    }
+
+    // Import configuration
+    if (btnImportConfig && configFileInput) {
+      btnImportConfig.addEventListener('click', () => {
+        configFileInput.click();
+      });
+
+      configFileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        // Confirm before restoring
+        if (!confirm(`Restore from backup: ${file.name}?\n\nThis will:\n- Create a backup of current state\n- Replace all databases and settings\n- Require a page reload\n\nContinue?`)) {
+          configFileInput.value = '';  // Reset file input
+          return;
+        }
+
+        try {
+          btnImportConfig.disabled = true;
+          btnImportConfig.textContent = 'Restoring...';
+
+          // Upload the backup zip file
+          const formData = new FormData();
+          formData.append('backup_file', file);
+
+          const importResp = await fetch('/api/settings/import', {
+            method: 'POST',
+            body: formData,
+            credentials: 'same-origin'
+          });
+
+          const importData = await importResp.json();
+
+          if (importData.status === 'success' && importData.report && importData.report.success) {
+            configStatus.className = 'alert alert-success small';
+            configStatus.textContent = `Backup restored successfully! ${importData.report.files_restored} files restored.`;
+            if (importData.report.pre_restore_backup) {
+              configStatus.textContent += ` Backup created: ${importData.report.pre_restore_backup.substring(0, 8)}`;
+            }
+            configStatus.style.display = 'block';
+
+            // Suggest page reload
+            setTimeout(() => {
+              if (confirm('Backup restored. Reload page now?')) {
+                location.reload();
+              }
+            }, 1000);
+          } else {
+            const error = (importData.report && importData.report.error) || importData.error || 'Unknown error';
+            throw new Error(error);
+          }
+        } catch (err) {
+          configStatus.className = 'alert alert-danger small';
+          configStatus.textContent = `Import failed: ${err.message}`;
+          configStatus.style.display = 'block';
+        } finally {
+          btnImportConfig.disabled = false;
+          btnImportConfig.textContent = 'Import Configuration';
+          configFileInput.value = ''; // Reset file input
+        }
+      });
+    }
+
+    // View backups - show modal with table
+    if (btnViewBackups) {
+      btnViewBackups.addEventListener('click', async () => {
+        try {
+          const resp = await fetch('/api/settings/backups?limit=20', {
+            credentials: 'same-origin'
+          });
+
+          const data = await resp.json();
+
+          if (!resp.ok) {
+            throw new Error(data.error || `Failed to fetch backups (${resp.status})`);
+          }
+
+          if (data.status === 'success') {
+            if (data.backups.length === 0) {
+              alert('No backups found. Click "Export Configuration" to create your first backup.');
+              return;
+            }
+
+            // Show modal with backups table
+            showBackupsModal(data.backups);
+          } else {
+            throw new Error(data.error || 'Failed to list backups');
+          }
+        } catch (err) {
+          alert(`Failed to view backups: ${err.message}`);
+        }
+      });
+    }
+
+    // Show backups in a modal
+    function showBackupsModal(backups) {
+      // Create modal overlay
+      const modal = document.createElement('div');
+      modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:10000;';
+
+      // Create modal content
+      const content = document.createElement('div');
+      content.style.cssText = 'background:white;border-radius:8px;padding:2rem;max-width:900px;max-height:80vh;overflow:auto;box-shadow:0 4px 20px rgba(0,0,0,0.3);';
+
+      content.innerHTML = `
+        <h2 style="margin-top:0;">Configuration Backups</h2>
+        <p class="small" style="color:#666;margin-bottom:1.5rem;">Click a backup to download it, or use the Restore button to restore your configuration.</p>
+        <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+          <thead>
+            <tr style="border-bottom:2px solid #e0e0e0;">
+              <th style="text-align:left;padding:0.75rem 0.5rem;">Date</th>
+              <th style="text-align:left;padding:0.75rem 0.5rem;">Filename</th>
+              <th style="text-align:left;padding:0.75rem 0.5rem;">Size</th>
+              <th style="text-align:left;padding:0.75rem 0.5rem;">Reason</th>
+              <th style="text-align:left;padding:0.75rem 0.5rem;">By</th>
+              <th style="text-align:right;padding:0.75rem 0.5rem;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="backups-table-body"></tbody>
+        </table>
+        <div style="margin-top:1.5rem;text-align:right;">
+          <button id="close-backups-modal" class="btn btn-sm btn-secondary">Close</button>
+        </div>
+      `;
+
+      modal.appendChild(content);
+      document.body.appendChild(modal);
+
+      // Populate table
+      const tbody = document.getElementById('backups-table-body');
+      backups.forEach(backup => {
+        const row = document.createElement('tr');
+        row.style.cssText = 'border-bottom:1px solid #f0f0f0;';
+        row.innerHTML = `
+          <td style="padding:0.75rem 0.5rem;">${new Date(backup.timestamp).toLocaleString()}</td>
+          <td style="padding:0.75rem 0.5rem;">
+            <a href="#" class="download-backup" data-filename="${backup.filename}" style="color:#007bff;text-decoration:none;">
+              ${backup.filename}
+            </a>
+          </td>
+          <td style="padding:0.75rem 0.5rem;">${backup.size_human}</td>
+          <td style="padding:0.75rem 0.5rem;">${backup.reason}</td>
+          <td style="padding:0.75rem 0.5rem;">${backup.created_by}</td>
+          <td style="padding:0.75rem 0.5rem;text-align:right;">
+            <button class="restore-backup btn btn-sm btn-outline-primary" data-filename="${backup.filename}" style="margin-right:0.5rem;">
+              Restore
+            </button>
+            <button class="delete-backup btn btn-sm btn-outline-danger" data-filename="${backup.filename}">
+              Delete
+            </button>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+
+      // Close modal
+      document.getElementById('close-backups-modal').addEventListener('click', () => {
+        document.body.removeChild(modal);
+      });
+
+      // Close on background click
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          document.body.removeChild(modal);
+        }
+      });
+
+      // Download backup
+      document.querySelectorAll('.download-backup').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          const filename = btn.dataset.filename;
+
+          // Create a hidden link to download from backups directory
+          const a = document.createElement('a');
+          a.href = `/backups/${filename}`;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        });
+      });
+
+      // Restore backup
+      document.querySelectorAll('.restore-backup').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const filename = btn.dataset.filename;
+
+          if (!confirm(`Restore from: ${filename}?\n\nThis will:\n- Create a backup of current state\n- Replace all databases and settings\n- Require a page reload\n\nContinue?`)) {
+            return;
+          }
+
+          try {
+            btn.disabled = true;
+            btn.textContent = 'Restoring...';
+
+            // Fetch the backup file and restore it
+            const backupResp = await fetch(`/backups/${filename}`);
+            const backupBlob = await backupResp.blob();
+
+            const formData = new FormData();
+            formData.append('backup_file', backupBlob, filename);
+
+            const restoreResp = await fetch('/api/settings/import', {
+              method: 'POST',
+              body: formData,
+              credentials: 'same-origin'
+            });
+
+            const result = await restoreResp.json();
+
+            if (result.status === 'success' && result.report && result.report.success) {
+              alert(`Backup restored successfully!\n${result.report.files_restored} files restored.`);
+              document.body.removeChild(modal);
+
+              setTimeout(() => {
+                if (confirm('Backup restored. Reload page now?')) {
+                  location.reload();
+                }
+              }, 500);
+            } else {
+              throw new Error(result.error || result.report?.error || 'Restore failed');
+            }
+          } catch (err) {
+            alert(`Restore failed: ${err.message}`);
+            btn.disabled = false;
+            btn.textContent = 'Restore';
+          }
+        });
+      });
+
+      // Delete backup
+      document.querySelectorAll('.delete-backup').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const filename = btn.dataset.filename;
+
+          if (!confirm(`Delete backup: ${filename}?\n\nThis cannot be undone.`)) {
+            return;
+          }
+
+          try {
+            const resp = await fetch(`/api/settings/backups/${filename}`, {
+              method: 'DELETE',
+              credentials: 'same-origin'
+            });
+
+            const result = await resp.json();
+
+            if (result.status === 'success') {
+              alert('Backup deleted successfully.');
+              // Refresh the modal
+              document.body.removeChild(modal);
+              btnViewBackups.click();
+            } else {
+              throw new Error(result.error || 'Delete failed');
+            }
+          } catch (err) {
+            alert(`Delete failed: ${err.message}`);
+          }
+        });
+      });
+    }
+  }
+
+  function initSecuritySettings() {
+    const authEnabledCheck = document.getElementById('security-auth-enabled');
+    const authSettingsDiv = document.getElementById('security-auth-settings');
+    const usernameInput = document.getElementById('security-username');
+    const passwordInput = document.getElementById('security-password');
+    const passwordShowCheck = document.getElementById('security-password-show');
+    const lockEnabledCheck = document.getElementById('security-lock-enabled');
+    const lockTimeoutContainer = document.getElementById('security-lock-timeout-container');
+    const saveSecurityBtn = document.getElementById('btn-save-security');
+    const statusP = document.getElementById('security-status');
+
+    if (!authEnabledCheck) return;
+
+    // Load current auth config
+    async function loadAuthConfig() {
+      try {
+        const response = await fetch('/api/settings/security/auth');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.status === 'success' && data.config) {
+            authEnabledCheck.checked = data.config.enabled || false;
+            usernameInput.value = data.config.username || '';
+            authSettingsDiv.style.display = data.config.enabled ? 'block' : 'none';
+
+            if (data.config.has_password) {
+              passwordInput.placeholder = '••••••••';
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load auth config:', error);
+      }
+    }
+
+    // Toggle auth settings visibility
+    authEnabledCheck.addEventListener('change', () => {
+      authSettingsDiv.style.display = authEnabledCheck.checked ? 'block' : 'none';
+    });
+
+    // Toggle password visibility
+    if (passwordShowCheck && passwordInput) {
+      passwordShowCheck.addEventListener('change', () => {
+        passwordInput.type = passwordShowCheck.checked ? 'text' : 'password';
+      });
+    }
+
+    // Toggle lock timeout input (not yet implemented - future task)
+    if (lockEnabledCheck && lockTimeoutContainer) {
+      lockEnabledCheck.addEventListener('change', () => {
+        lockTimeoutContainer.style.display = lockEnabledCheck.checked ? 'block' : 'none';
+      });
+    }
+
+    // Save security settings
+    if (saveSecurityBtn) {
+      saveSecurityBtn.addEventListener('click', async () => {
+        const enabled = authEnabledCheck.checked;
+        const username = usernameInput.value.trim();
+        const password = passwordInput.value.trim();
+
+        // Validation
+        if (enabled && !username) {
+          toast('Username is required when enabling authentication', 'error');
+          return;
+        }
+
+        // Password is required only if enabling for first time or changing it
+        if (enabled && !password && passwordInput.placeholder !== '••••••••') {
+          toast('Password is required when enabling authentication', 'error');
+          return;
+        }
+
+        // Disable button during save
+        saveSecurityBtn.disabled = true;
+        saveSecurityBtn.textContent = 'Saving...';
+        statusP.textContent = '';
+
+        try {
+          const payload = { enabled, username };
+          if (password) {
+            payload.password = password;
+          }
+
+          const response = await fetch('/api/settings/security/auth', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+          });
+
+          const data = await response.json();
+
+          if (response.ok && data.status === 'success') {
+            toast('Security settings saved successfully', 'success');
+            statusP.textContent = enabled ?
+              '✅ Authentication is enabled. Users will need to log in to access SciDK.' :
+              'Authentication is disabled. SciDK is accessible without login.';
+            statusP.style.color = '#0a6';
+
+            // Clear password field after successful save
+            passwordInput.value = '';
+            passwordInput.placeholder = '••••••••';
+
+            // If auth was enabled, redirect to login after a short delay
+            if (enabled) {
+              setTimeout(() => {
+                window.location.href = '/login';
+              }, 2000);
+            }
+          } else {
+            toast(data.error || 'Failed to save security settings', 'error');
+            statusP.textContent = '❌ ' + (data.error || 'Failed to save');
+            statusP.style.color = '#b00';
+          }
+        } catch (error) {
+          toast('Connection error. Please try again.', 'error');
+          statusP.textContent = '❌ Connection error';
+          statusP.style.color = '#b00';
+        } finally {
+          saveSecurityBtn.disabled = false;
+          saveSecurityBtn.textContent = 'Save Security Settings';
+        }
+      });
+    }
+
+    // Load initial config
+    loadAuthConfig();
+
+    // Check if current user is admin and show user management/audit sections
+    checkAdminAccess();
+  }
+
+  // User Management (Admin Only)
+  async function checkAdminAccess() {
+    try {
+      const response = await fetch('/api/auth/status');
+      if (response.ok) {
+        const data = await response.json();
+
+        const legacySetup = document.getElementById('security-legacy-setup');
+        const userMessage = document.getElementById('security-user-message');
+        const adminMessage = document.getElementById('security-admin-message');
+
+        // Show current user info if authenticated
+        if (data.authenticated && data.username) {
+          const currentUserInfo = document.getElementById('current-user-info');
+          const currentUsername = document.getElementById('current-username');
+          const currentRoleBadge = document.getElementById('current-role-badge');
+
+          if (currentUserInfo && currentUsername && currentRoleBadge) {
+            currentUsername.textContent = data.username;
+            currentRoleBadge.textContent = data.role || 'user';
+
+            // Color code the role badge
+            if (data.role === 'admin') {
+              currentRoleBadge.style.background = '#ffc107';
+              currentRoleBadge.style.color = '#000';
+            } else {
+              currentRoleBadge.style.background = '#6c757d';
+              currentRoleBadge.style.color = '#fff';
+            }
+
+            currentUserInfo.style.display = 'block';
+          }
+
+          // Hide legacy setup form and show appropriate message
+          if (legacySetup) legacySetup.style.display = 'none';
+
+          if (data.role === 'admin') {
+            // Show message for admin
+            if (adminMessage) adminMessage.style.display = 'block';
+            if (userMessage) userMessage.style.display = 'none';
+          } else {
+            // Show message for regular user
+            if (userMessage) userMessage.style.display = 'block';
+            if (adminMessage) adminMessage.style.display = 'none';
+          }
+        } else {
+          // Not logged in - show legacy setup form if it exists
+          if (legacySetup) legacySetup.style.display = 'block';
+          if (userMessage) userMessage.style.display = 'none';
+          if (adminMessage) adminMessage.style.display = 'none';
+        }
+
+        // Only show admin sections if user is admin
+        if (data.authenticated && data.role === 'admin') {
+          // Show admin-only sections
+          const usersSection = document.getElementById('users-section-container');
+          const auditSection = document.getElementById('audit-section-container');
+          if (usersSection) usersSection.style.display = 'block';
+          if (auditSection) auditSection.style.display = 'block';
+
+          // Initialize user management and audit log
+          initUserManagement();
+          initAuditLog();
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check admin access:', error);
+    }
+  }
+
+  function initUserManagement() {
+    const addUserBtn = document.getElementById('btn-add-user');
+    const usersListContainer = document.getElementById('users-list-container');
+
+    if (!usersListContainer) return;
+
+    // Load users list
+    async function loadUsers() {
+      try {
+        const response = await fetch('/api/users?include_disabled=true');
+        if (response.ok) {
+          const data = await response.json();
+          renderUsersList(data.users || []);
+        } else if (response.status === 403) {
+          usersListContainer.innerHTML = '<p class="small" style="color:#b00">Access denied. Admin role required.</p>';
+        } else {
+          usersListContainer.innerHTML = '<p class="small" style="color:#b00">Failed to load users.</p>';
+        }
+      } catch (error) {
+        console.error('Failed to load users:', error);
+        usersListContainer.innerHTML = '<p class="small" style="color:#b00">Connection error.</p>';
+      }
+    }
+
+    // Render users list
+    function renderUsersList(users) {
+      if (users.length === 0) {
+        usersListContainer.innerHTML = '<p class="small" style="color:#666">No users found.</p>';
+        return;
+      }
+
+      const table = document.createElement('table');
+      table.style.cssText = 'width:100%; border-collapse:collapse';
+      table.innerHTML = `
+        <thead>
+          <tr style="border-bottom:2px solid #ddd; text-align:left">
+            <th style="padding:0.5rem; font-size:0.9em">Username</th>
+            <th style="padding:0.5rem; font-size:0.9em">Role</th>
+            <th style="padding:0.5rem; font-size:0.9em">Status</th>
+            <th style="padding:0.5rem; font-size:0.9em">Last Login</th>
+            <th style="padding:0.5rem; font-size:0.9em">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${users.map(user => `
+            <tr style="border-bottom:1px solid #eee">
+              <td style="padding:0.5rem; font-size:0.9em">${escapeHtml(user.username)}</td>
+              <td style="padding:0.5rem; font-size:0.9em">
+                <span class="badge" style="background:${user.role === 'admin' ? '#ffc107' : '#6c757d'}; color:${user.role === 'admin' ? '#000' : '#fff'}">${user.role}</span>
+              </td>
+              <td style="padding:0.5rem; font-size:0.9em">
+                <span class="badge" style="background:${user.enabled ? '#28a745' : '#dc3545'}; color:#fff">${user.enabled ? 'Active' : 'Disabled'}</span>
+              </td>
+              <td style="padding:0.5rem; font-size:0.9em">${user.last_login ? new Date(user.last_login * 1000).toLocaleString() : 'Never'}</td>
+              <td style="padding:0.5rem; font-size:0.9em">
+                <button class="btn-edit-user" data-user-id="${user.id}" style="padding:0.25rem 0.5rem; border:1px solid #ccc; border-radius:3px; background:#fff; cursor:pointer; font-size:0.85em; margin-right:0.25rem">Edit</button>
+                <button class="btn-delete-user" data-user-id="${user.id}" data-username="${escapeHtml(user.username)}" style="padding:0.25rem 0.5rem; border:1px solid #dc3545; border-radius:3px; background:#fff; color:#dc3545; cursor:pointer; font-size:0.85em">Delete</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      `;
+
+      usersListContainer.innerHTML = '';
+      usersListContainer.appendChild(table);
+
+      // Add event listeners for edit/delete buttons
+      table.querySelectorAll('.btn-edit-user').forEach(btn => {
+        btn.addEventListener('click', () => editUser(btn.dataset.userId));
+      });
+
+      table.querySelectorAll('.btn-delete-user').forEach(btn => {
+        btn.addEventListener('click', () => deleteUser(btn.dataset.userId, btn.dataset.username));
+      });
+    }
+
+    // Add user
+    if (addUserBtn) {
+      addUserBtn.addEventListener('click', () => {
+        showAddUserDialog();
+      });
+    }
+
+    // Show add user dialog
+    function showAddUserDialog() {
+      // Create modal dialog
+      const dialog = document.createElement('div');
+      dialog.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:9999';
+
+      dialog.innerHTML = `
+        <div style="background:#fff; border-radius:8px; padding:2rem; max-width:500px; width:90%">
+          <h3 style="margin-top:0">Add New User</h3>
+
+          <div style="margin-bottom:1rem">
+            <label style="display:block; font-size:0.9em; margin-bottom:0.25rem; font-weight:500">Username</label>
+            <input id="new-user-username" type="text" placeholder="username" style="width:100%; padding:0.5rem; border:1px solid #ccc; border-radius:4px" />
+          </div>
+
+          <div style="margin-bottom:1rem">
+            <label style="display:block; font-size:0.9em; margin-bottom:0.25rem; font-weight:500">Password</label>
+            <input id="new-user-password" type="password" placeholder="••••••••" style="width:100%; padding:0.5rem; border:1px solid #ccc; border-radius:4px" />
+          </div>
+
+          <div style="margin-bottom:1.5rem">
+            <label style="display:block; font-size:0.9em; margin-bottom:0.5rem; font-weight:500">Role</label>
+            <div style="display:flex; gap:1rem">
+              <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; padding:0.5rem; border:1px solid #ddd; border-radius:4px; flex:1">
+                <input type="radio" name="new-user-role" value="user" checked style="cursor:pointer" />
+                <span style="flex:1">
+                  <div style="font-weight:500">
+                    <span class="badge" style="background:#6c757d; color:#fff">User</span>
+                  </div>
+                  <div style="font-size:0.8em; color:#666; margin-top:0.25rem">Regular access</div>
+                </span>
+              </label>
+              <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; padding:0.5rem; border:1px solid #ddd; border-radius:4px; flex:1">
+                <input type="radio" name="new-user-role" value="admin" style="cursor:pointer" />
+                <span style="flex:1">
+                  <div style="font-weight:500">
+                    <span class="badge" style="background:#ffc107; color:#000">Admin</span>
+                  </div>
+                  <div style="font-size:0.8em; color:#666; margin-top:0.25rem">Full control</div>
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <div style="display:flex; gap:0.5rem; justify-content:flex-end">
+            <button id="cancel-add-user" style="padding:0.5rem 1rem; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer">Cancel</button>
+            <button id="confirm-add-user" style="padding:0.5rem 1rem; border:none; border-radius:4px; background:#007bff; color:#fff; cursor:pointer">Add User</button>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(dialog);
+
+      // Focus username field
+      const usernameInput = document.getElementById('new-user-username');
+      setTimeout(() => usernameInput.focus(), 100);
+
+      // Cancel button
+      document.getElementById('cancel-add-user').addEventListener('click', () => {
+        document.body.removeChild(dialog);
+      });
+
+      // Confirm button
+      document.getElementById('confirm-add-user').addEventListener('click', () => {
+        const username = document.getElementById('new-user-username').value.trim();
+        const password = document.getElementById('new-user-password').value;
+        const role = document.querySelector('input[name="new-user-role"]:checked').value;
+
+        if (!username) {
+          toast('Username is required', 'error');
+          return;
+        }
+
+        if (!password) {
+          toast('Password is required', 'error');
+          return;
+        }
+
+        document.body.removeChild(dialog);
+        createUser(username, password, role);
+      });
+
+      // Close on background click
+      dialog.addEventListener('click', (e) => {
+        if (e.target === dialog) {
+          document.body.removeChild(dialog);
+        }
+      });
+
+      // Close on Escape key
+      const escapeHandler = (e) => {
+        if (e.key === 'Escape') {
+          document.body.removeChild(dialog);
+          document.removeEventListener('keydown', escapeHandler);
+        }
+      };
+      document.addEventListener('keydown', escapeHandler);
+    }
+
+    async function createUser(username, password, role) {
+      try {
+        const response = await fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password, role }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          toast(`User "${username}" created successfully`, 'success');
+          loadUsers();
+        } else {
+          toast(data.error || 'Failed to create user', 'error');
+        }
+      } catch (error) {
+        toast('Connection error', 'error');
+      }
+    }
+
+    // Edit user
+    async function editUser(userId) {
+      // Simple implementation - just toggle enabled/disabled
+      const action = confirm('Enable or disable this user?\n\nOK = Enable, Cancel = Disable');
+
+      try {
+        const response = await fetch(`/api/users/${userId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: action }),
+        });
+
+        if (response.ok) {
+          toast('User updated successfully', 'success');
+          loadUsers();
+        } else {
+          const data = await response.json();
+          toast(data.error || 'Failed to update user', 'error');
+        }
+      } catch (error) {
+        toast('Connection error', 'error');
+      }
+    }
+
+    // Delete user
+    async function deleteUser(userId, username) {
+      if (!confirm(`Are you sure you want to delete user "${username}"?\n\nThis action cannot be undone.`)) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/users/${userId}`, {
+          method: 'DELETE',
+        });
+
+        if (response.ok) {
+          toast(`User "${username}" deleted successfully`, 'success');
+          loadUsers();
+        } else {
+          const data = await response.json();
+          toast(data.error || 'Failed to delete user', 'error');
+        }
+      } catch (error) {
+        toast('Connection error', 'error');
+      }
+    }
+
+    // Load initial users
+    loadUsers();
+  }
+
+  function initAuditLog() {
+    const refreshBtn = document.getElementById('btn-refresh-audit');
+    const auditLogContainer = document.getElementById('audit-log-container');
+
+    if (!auditLogContainer) return;
+
+    // Load audit log
+    async function loadAuditLog() {
+      try {
+        const response = await fetch('/api/audit-log?limit=50');
+        if (response.ok) {
+          const data = await response.json();
+          renderAuditLog(data.entries || []);
+        } else if (response.status === 403) {
+          auditLogContainer.innerHTML = '<p class="small" style="color:#b00">Access denied. Admin role required.</p>';
+        } else {
+          auditLogContainer.innerHTML = '<p class="small" style="color:#b00">Failed to load audit log.</p>';
+        }
+      } catch (error) {
+        console.error('Failed to load audit log:', error);
+        auditLogContainer.innerHTML = '<p class="small" style="color:#b00">Connection error.</p>';
+      }
+    }
+
+    // Render audit log
+    function renderAuditLog(entries) {
+      if (entries.length === 0) {
+        auditLogContainer.innerHTML = '<p class="small" style="color:#666">No audit entries found.</p>';
+        return;
+      }
+
+      const table = document.createElement('table');
+      table.style.cssText = 'width:100%; border-collapse:collapse';
+      table.innerHTML = `
+        <thead>
+          <tr style="border-bottom:2px solid #ddd; text-align:left">
+            <th style="padding:0.5rem; font-size:0.9em">Timestamp</th>
+            <th style="padding:0.5rem; font-size:0.9em">User</th>
+            <th style="padding:0.5rem; font-size:0.9em">Action</th>
+            <th style="padding:0.5rem; font-size:0.9em">Details</th>
+            <th style="padding:0.5rem; font-size:0.9em">IP Address</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${entries.map(entry => `
+            <tr style="border-bottom:1px solid #eee">
+              <td style="padding:0.5rem; font-size:0.85em">${new Date(entry.timestamp * 1000).toLocaleString()}</td>
+              <td style="padding:0.5rem; font-size:0.85em">${escapeHtml(entry.username)}</td>
+              <td style="padding:0.5rem; font-size:0.85em">
+                <code style="background:#f5f5f5; padding:0.1rem 0.3rem; border-radius:3px">${escapeHtml(entry.action)}</code>
+              </td>
+              <td style="padding:0.5rem; font-size:0.85em">${escapeHtml(entry.details || '')}</td>
+              <td style="padding:0.5rem; font-size:0.85em">${escapeHtml(entry.ip_address || '')}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      `;
+
+      auditLogContainer.innerHTML = '';
+      auditLogContainer.appendChild(table);
+    }
+
+    // Refresh button
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', loadAuditLog);
+    }
+
+    // Load initial audit log
+    loadAuditLog();
+  }
+
+  // Helper function to escape HTML
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Initialize on DOMContentLoaded or immediately if already loaded
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      initConfigExport();
+      initSecuritySettings();
+    });
+  } else {
+    initConfigExport();
+    initSecuritySettings();
+  }
+</script>

@@ -1,5 +1,8 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test';
 
+// TODO: Update tests after settings modularization (task:ui/settings/modularization)
+// Integrations section now in settings/_integrations.html
+
 test.describe('Settings - API Endpoints', () => {
   test.beforeEach(async ({ page, baseURL }) => {
     // Disable auth before each test

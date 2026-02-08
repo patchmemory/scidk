@@ -3,6 +3,9 @@ import { test, expect } from '@playwright/test';
 /**
  * E2E tests for additional Settings page features.
  * Tests disconnect button and interpreter checkbox interactions.
+ *
+ * TODO: Update tests after settings modularization (task:ui/settings/modularization)
+ * Settings sections now split across multiple partial templates in settings/ directory
  */
 
 test('neo4j disconnect button appears when connected', async ({ page, baseURL }) => {

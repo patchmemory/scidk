@@ -1,5 +1,8 @@
 import { test, expect } from '@playwright/test';
 
+// TODO: Update tests after settings modularization (task:ui/settings/modularization)
+// Table formats section now in settings/_integrations.html
+
 test.describe('Settings - Table Format Registry', () => {
   test.beforeEach(async ({ page, baseURL }) => {
     await page.goto(`${baseURL}/#integrations`);

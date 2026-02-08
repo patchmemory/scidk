@@ -1,0 +1,118 @@
+    <!-- Interpreters Section -->
+    <section id="interpreters-section" class="settings-section">
+  <h1>Interpreters</h1>
+  <p class="small">Registered interpreter mappings and selection rules.</p>
+  <h3 class="small">Mappings (extension → interpreter ids)</h3>
+  <ul>
+    {% for ext, ids in (mappings or {}).items() %}
+      <li><code>{{ ext }}</code> → {{ ids }}</li>
+    {% else %}
+      <li class="small">No mappings.</li>
+    {% endfor %}
+  </ul>
+  <h3 class="small">Rules</h3>
+  <ul>
+    {% for r in (rules or []) %}
+      <li><code>{{ r.id }}</code> → interpreter_id={{ r.interpreter_id }}, pattern={{ r.pattern }}, priority={{ r.priority }}</li>
+    {% else %}
+      <li class="small">No rules.</li>
+    {% endfor %}
+  </ul>
+
+  <h3 style="margin-top:1rem">Interpreter toggles</h3>
+  <p class="small">Enable or disable interpreters globally. Changes persist to settings when possible. If CLI env overrides are set (SCIDK_ENABLE_INTERPRETERS/SCIDK_DISABLE_INTERPRETERS), those take precedence and are shown as source=cli.</p>
+  <div id="interp-alert" class="small" style="margin:.25rem 0; color:#b00020; display:none">
+    Effective view is controlled by CLI env overrides; toggle effects may be masked.
+    Unset SCIDK_ENABLE_INTERPRETERS/SCIDK_DISABLE_INTERPRETERS to allow GUI control.
+    <div id="interp-env" class="small" style="margin-top:.25rem"></div>
+  </div>
+  <div style="overflow:auto; max-width: 100%">
+    <table id="interp-table">
+      <thead>
+        <tr>
+          <th style="min-width:160px">Interpreter</th>
+          <th>Extensions</th>
+          <th>Enabled</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <script>
+    (function(){
+      async function fetchEffective(){
+        const r = await fetch('/api/interpreters?view=effective');
+        if(!r.ok){ toast('Failed to load interpreters', 'error'); return []; }
+        return await r.json();
+      }
+      function render(rows){
+        const tb = document.querySelector('#interp-table tbody');
+        tb.innerHTML='';
+        let src = null;
+        rows.forEach(it => {
+          if (!src && it.source) src = it.source;
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td><strong>${it.name || it.id}</strong><div class="small">${it.id}</div></td>
+            <td class="small">${(it.globs||[]).join(', ')}</td>
+            <td>
+              <label class="form-check">
+                <input type="checkbox" class="form-check-input" ${it.enabled ? 'checked' : ''} data-iid="${it.id}" />
+              </label>
+            </td>
+            <td><span class="badge">${it.source || ''}</span></td>
+          `;
+          tb.appendChild(tr);
+        });
+        const alertEl = document.getElementById('interp-alert');
+        const envEl = document.getElementById('interp-env');
+        if (src === 'cli') {
+          alertEl.style.display = 'block';
+          // Fetch debug info to show env values
+          try {
+            fetch('/api/interpreters/effective_debug').then(r => r.json()).then(info => {
+              const en = ((info.env || {}).enable_raw || []).join(', ');
+              const dis = ((info.env || {}).disable_raw || []).join(', ');
+              const unkEn = (((info.env || {}).unknown || {}).enable || []).join(', ');
+              const unkDis = (((info.env || {}).unknown || {}).disable || []).join(', ');
+              let extra = '';
+              if (en || dis) {
+                extra += `Env ENABLE=[${en||'none'}], DISABLE=[${dis||'none'}]. `;
+              }
+              if (unkEn || unkDis) {
+                extra += `Unknown ids ignored → enable:[${unkEn||'none'}], disable:[${unkDis||'none'}].`;
+              }
+              envEl.textContent = extra;
+            });
+          } catch(e) { /* ignore */ }
+        } else {
+          alertEl.style.display = 'none';
+          envEl.textContent = '';
+        }
+        // Wire change handlers
+        tb.querySelectorAll('input[type=checkbox][data-iid]').forEach(chk => {
+          chk.addEventListener('change', async (e) => {
+            const iid = e.target.getAttribute('data-iid');
+            const enabled = e.target.checked;
+            try {
+              const resp = await fetch(`/api/interpreters/${encodeURIComponent(iid)}/toggle`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled })
+              });
+              if (!resp.ok) throw new Error('HTTP ' + resp.status);
+              // Refresh to reflect effective state/source
+              const eff = await fetchEffective();
+              render(eff);
+              toast(`Updated ${iid}: ${enabled ? 'enabled' : 'disabled'}`, 'success', 1500);
+            } catch (err){
+              toast('Failed to update ' + iid + ': ' + err, 'error');
+              // revert checkbox
+              e.target.checked = !enabled;
+            }
+          });
+        });
+      }
+      fetchEffective().then(render);
+    })();
+  </script>
+    </section>
