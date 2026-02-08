@@ -1584,19 +1584,24 @@ function populateEditor(label) {
     attachSelectHandlers(relsContainer);
   }
 
-  // Render incoming relationships (edit view - with clickable source labels)
+  // Render incoming relationships (edit view - with clickable source labels and delete buttons)
   const incomingContainer = document.getElementById('incoming-relationships-container');
   const incomingRelsEdit = label.incoming_relationships || [];
   if (incomingRelsEdit.length === 0) {
     incomingContainer.innerHTML = '<div class="empty-state small">No incoming relationships</div>';
   } else {
     incomingContainer.innerHTML = incomingRelsEdit.map(rel =>
-      `<div class="relationship-row" style="background: #f9f9f9; padding: 0.5rem; margin-bottom: 0.25rem; border-radius: 4px;">
-        <span class="small">
+      `<div class="relationship-row" style="background: #f9f9f9; padding: 0.5rem; margin-bottom: 0.25rem; border-radius: 4px; display: flex; align-items: center; gap: 0.5rem;">
+        <span class="small" style="flex: 1;">
           <a href="#" class="source-label-link" data-label="${rel.source_label}" style="color: var(--accent); text-decoration: none; font-weight: bold;">
             ${rel.source_label}
           </a> → [${rel.type}] → <em>this label</em>
         </span>
+        <button class="btn btn-sm btn-outline-danger delete-incoming-rel"
+                data-source="${rel.source_label}"
+                data-type="${rel.type}"
+                data-target="${label.name}"
+                title="Delete this relationship">×</button>
       </div>`
     ).join('');
 
@@ -1606,6 +1611,17 @@ function populateEditor(label) {
         e.preventDefault();
         const sourceLabelName = link.dataset.label;
         loadLabel(sourceLabelName);
+      });
+    });
+
+    // Add click handlers for delete buttons
+    incomingContainer.querySelectorAll('.delete-incoming-rel').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const sourceLabel = btn.dataset.source;
+        const relType = btn.dataset.type;
+        const targetLabel = btn.dataset.target;
+        deleteIncomingRelationship(sourceLabel, relType, targetLabel);
       });
     });
   }
@@ -1873,6 +1889,81 @@ function deleteLabel() {
       }
     })
     .catch(err => showToast('Network error: ' + err.message, 'error'));
+}
+
+async function deleteIncomingRelationship(sourceLabel, relType, targetLabel) {
+  // Show confirmation modal
+  const modalElements = showConfirmModal(
+    `Delete relationship?`,
+    `This will remove the relationship from "${sourceLabel}".`,
+    [
+      `Source: ${sourceLabel}`,
+      `Relationship: [${relType}]`,
+      `Target: ${targetLabel}`,
+      '',
+      '⚠️ This action cannot be undone.'
+    ],
+    async () => {
+      closeConfirmModal();
+      showToast('Deleting relationship...', 'info');
+
+      try {
+        // Fetch the source label
+        const resp = await fetch(`/api/labels/${sourceLabel}`);
+        const data = await resp.json();
+
+        if (data.status !== 'success') {
+          showToast('Error fetching source label: ' + (data.error || 'Unknown error'), 'error');
+          return;
+        }
+
+        const sourceLabelDef = data.label;
+
+        // Remove the relationship from source label's relationships array
+        const updatedRelationships = sourceLabelDef.relationships.filter(rel => {
+          return !(rel.type === relType && rel.target_label === targetLabel);
+        });
+
+        // Save the updated source label
+        const saveResp = await fetch('/api/labels', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: sourceLabelDef.name,
+            properties: sourceLabelDef.properties,
+            relationships: updatedRelationships
+          })
+        });
+
+        const saveData = await saveResp.json();
+
+        if (saveData.status === 'success') {
+          showToast(`Removed relationship from ${sourceLabel}`, 'success');
+
+          // Reload current label to update incoming relationships display
+          const refreshResp = await fetch(`/api/labels/${targetLabel}`);
+          const refreshData = await refreshResp.json();
+
+          if (refreshData.status === 'success') {
+            currentLabel = refreshData.label;
+            populateEditor(currentLabel);
+            // Stay in read-only mode
+            isEditMode = false;
+            updateEditorView();
+          }
+        } else {
+          showToast('Error saving changes: ' + (saveData.error || 'Unknown error'), 'error');
+        }
+      } catch (err) {
+        console.error('Error deleting relationship:', err);
+        showToast('Network error: ' + err.message, 'error');
+      }
+    }
+  );
+
+  // Show details immediately
+  modalElements.loadingEl.style.display = 'none';
+  modalElements.detailsEl.style.display = 'block';
 }
 
 // Modal helper functions
