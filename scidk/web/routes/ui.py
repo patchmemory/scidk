@@ -30,6 +30,12 @@ def _get_ext():
 
 
 # Routes
+@bp.get('/login')
+def login():
+    """Login page for authentication."""
+    return render_template('login.html')
+
+
 @bp.get('/')
 def index():
     """Settings page (landing page)."""

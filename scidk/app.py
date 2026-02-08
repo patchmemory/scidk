@@ -132,6 +132,10 @@ def create_app():
     from .web.routes import register_blueprints
     register_blueprints(app)
 
+    # Initialize authentication middleware
+    from .web.auth_middleware import init_auth_middleware
+    init_auth_middleware(app)
+
     return app
 
 

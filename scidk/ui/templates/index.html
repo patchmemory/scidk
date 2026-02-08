@@ -156,8 +156,8 @@
             </div>
           </div>
         </div>
-        <button id="btn-save-security" style="padding:0.5rem 1rem; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer; margin-top:0.5rem">Save Security Settings</button>
-        <p class="small" style="margin-top:0.75rem; color:#999; font-style:italic">⚠️ Wireframe only - Security features not yet implemented. See task queue for implementation tasks.</p>
+        <button id="btn-save-security" data-testid="save-security-btn" style="padding:0.5rem 1rem; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer; margin-top:0.5rem">Save Security Settings</button>
+        <p id="security-status" class="small" style="margin-top:0.75rem; color:#666"></p>
       </div>
     </section>
 
@@ -1963,17 +1963,40 @@
     });
   }
 
-  // Security Settings (wireframe)
+  // Security Settings
   function initSecuritySettings() {
     const authEnabledCheck = document.getElementById('security-auth-enabled');
     const authSettingsDiv = document.getElementById('security-auth-settings');
+    const usernameInput = document.getElementById('security-username');
     const passwordInput = document.getElementById('security-password');
     const passwordShowCheck = document.getElementById('security-password-show');
     const lockEnabledCheck = document.getElementById('security-lock-enabled');
     const lockTimeoutContainer = document.getElementById('security-lock-timeout-container');
     const saveSecurityBtn = document.getElementById('btn-save-security');
+    const statusP = document.getElementById('security-status');
 
     if (!authEnabledCheck) return;
+
+    // Load current auth config
+    async function loadAuthConfig() {
+      try {
+        const response = await fetch('/api/settings/security/auth');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.status === 'success' && data.config) {
+            authEnabledCheck.checked = data.config.enabled || false;
+            usernameInput.value = data.config.username || '';
+            authSettingsDiv.style.display = data.config.enabled ? 'block' : 'none';
+
+            if (data.config.has_password) {
+              passwordInput.placeholder = '••••••••';
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load auth config:', error);
+      }
+    }
 
     // Toggle auth settings visibility
     authEnabledCheck.addEventListener('change', () => {
@@ -1987,30 +2010,88 @@
       });
     }
 
-    // Toggle lock timeout input
+    // Toggle lock timeout input (not yet implemented - future task)
     if (lockEnabledCheck && lockTimeoutContainer) {
       lockEnabledCheck.addEventListener('change', () => {
         lockTimeoutContainer.style.display = lockEnabledCheck.checked ? 'block' : 'none';
       });
     }
 
-    // Save security settings (wireframe - shows toast but doesn't persist)
+    // Save security settings
     if (saveSecurityBtn) {
-      saveSecurityBtn.addEventListener('click', () => {
-        if (authEnabledCheck.checked) {
-          const username = document.getElementById('security-username').value.trim();
-          const password = document.getElementById('security-password').value.trim();
+      saveSecurityBtn.addEventListener('click', async () => {
+        const enabled = authEnabledCheck.checked;
+        const username = usernameInput.value.trim();
+        const password = passwordInput.value.trim();
 
-          if (!username || !password) {
-            toast('Please provide both username and password', 'error');
-            return;
-          }
+        // Validation
+        if (enabled && !username) {
+          toast('Username is required when enabling authentication', 'error');
+          return;
         }
 
-        // In real implementation, would call /api/settings/security
-        toast('⚠️ Wireframe only - Security settings not saved. See task queue for implementation.', 'error');
+        // Password is required only if enabling for first time or changing it
+        if (enabled && !password && passwordInput.placeholder !== '••••••••') {
+          toast('Password is required when enabling authentication', 'error');
+          return;
+        }
+
+        // Disable button during save
+        saveSecurityBtn.disabled = true;
+        saveSecurityBtn.textContent = 'Saving...';
+        statusP.textContent = '';
+
+        try {
+          const payload = { enabled, username };
+          if (password) {
+            payload.password = password;
+          }
+
+          const response = await fetch('/api/settings/security/auth', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+          });
+
+          const data = await response.json();
+
+          if (response.ok && data.status === 'success') {
+            toast('Security settings saved successfully', 'success');
+            statusP.textContent = enabled ?
+              '✅ Authentication is enabled. Users will need to log in to access SciDK.' :
+              'Authentication is disabled. SciDK is accessible without login.';
+            statusP.style.color = '#0a6';
+
+            // Clear password field after successful save
+            passwordInput.value = '';
+            passwordInput.placeholder = '••••••••';
+
+            // If auth was enabled, redirect to login after a short delay
+            if (enabled) {
+              setTimeout(() => {
+                window.location.href = '/login';
+              }, 2000);
+            }
+          } else {
+            toast(data.error || 'Failed to save security settings', 'error');
+            statusP.textContent = '❌ ' + (data.error || 'Failed to save');
+            statusP.style.color = '#b00';
+          }
+        } catch (error) {
+          toast('Connection error. Please try again.', 'error');
+          statusP.textContent = '❌ Connection error';
+          statusP.style.color = '#b00';
+        } finally {
+          saveSecurityBtn.disabled = false;
+          saveSecurityBtn.textContent = 'Save Security Settings';
+        }
       });
     }
+
+    // Load initial config
+    loadAuthConfig();
   }
 
   // Initialize new General section features

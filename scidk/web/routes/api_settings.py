@@ -745,3 +745,122 @@ def preview_fuzzy_matching():
             'status': 'error',
             'error': str(e)
         }), 500
+
+
+def _get_auth_manager():
+    """Get or create AuthManager instance."""
+    from ...core.auth import get_auth_manager
+
+    if 'auth_manager' not in current_app.extensions.get('scidk', {}):
+        if 'scidk' not in current_app.extensions:
+            current_app.extensions['scidk'] = {}
+
+        # Get settings DB path
+        settings_db = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+        current_app.extensions['scidk']['auth_manager'] = get_auth_manager(db_path=settings_db)
+
+    return current_app.extensions['scidk']['auth_manager']
+
+
+@bp.route('/settings/security/auth', methods=['GET'])
+def get_security_auth_config():
+    """
+    Get current authentication configuration.
+
+    Returns:
+    {
+        "status": "success",
+        "config": {
+            "enabled": true,
+            "username": "admin",
+            "has_password": true
+        }
+    }
+    """
+    try:
+        auth = _get_auth_manager()
+        config = auth.get_config()
+
+        return jsonify({
+            'status': 'success',
+            'config': config
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/security/auth', methods=['POST', 'PUT'])
+def update_security_auth_config():
+    """
+    Update authentication configuration.
+
+    Request body:
+    {
+        "enabled": true,
+        "username": "admin",
+        "password": "password123"  // optional if keeping existing
+    }
+
+    Returns:
+    {
+        "status": "success",
+        "config": {
+            "enabled": true,
+            "username": "admin",
+            "has_password": true
+        }
+    }
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'error': 'Request body must be JSON'
+            }), 400
+
+        enabled = data.get('enabled', False)
+        username = data.get('username')
+        password = data.get('password')
+
+        # Validation
+        if enabled and not username:
+            return jsonify({
+                'status': 'error',
+                'error': 'Username is required when enabling authentication'
+            }), 400
+
+        # Check if password is required
+        auth = _get_auth_manager()
+        existing_config = auth.get_config()
+
+        if enabled and not password and not existing_config.get('has_password'):
+            return jsonify({
+                'status': 'error',
+                'error': 'Password is required when enabling authentication for the first time'
+            }), 400
+
+        # Update config
+        success = auth.set_config(enabled=enabled, username=username, password=password)
+
+        if not success:
+            return jsonify({
+                'status': 'error',
+                'error': 'Failed to update authentication configuration'
+            }), 500
+
+        # Return updated config
+        config = auth.get_config()
+
+        return jsonify({
+            'status': 'success',
+            'config': config
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
