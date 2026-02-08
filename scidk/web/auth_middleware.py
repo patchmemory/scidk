@@ -58,10 +58,15 @@ def check_auth():
         'pytest' in sys.modules or
         os.environ.get('SCIDK_E2E_TEST')
     )
-    if is_testing:
-        # Only enforce auth in tests that explicitly enable it
-        if not os.environ.get('PYTEST_TEST_AUTH'):
+    if is_testing and not os.environ.get('PYTEST_TEST_AUTH'):
+        # In test mode, but check if auth has been explicitly enabled via API
+        # If auth is enabled, we need to enforce it (for auth E2E tests)
+        db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+        auth = get_auth_manager(db_path=db_path)
+        if not auth.is_enabled():
+            # Auth is disabled, skip auth check for tests
             return None
+        # Auth is explicitly enabled - continue with normal auth flow below
 
     # Skip auth check for public routes
     if is_public_route(request.path):
