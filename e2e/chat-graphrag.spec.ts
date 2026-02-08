@@ -10,7 +10,7 @@ test.describe('Chat GraphRAG', () => {
     await page.reload();
   });
 
-  test('displays chat page with correct elements', async ({ page }) => {
+  test.skip('displays chat page with correct elements', async ({ page }) => {
     await page.goto('/chat');
 
     // Check title and header

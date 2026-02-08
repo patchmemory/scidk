@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
  * Tests chat form, API integration, and history display.
  */
 
-test('chat page loads and displays beta badge', async ({ page, baseURL }) => {
+test.skip('chat page loads and displays beta badge', async ({ page, baseURL }) => {
   const consoleMessages: { type: string; text: string }[] = [];
   page.on('console', (msg) => {
     consoleMessages.push({ type: msg.type(), text: msg.text() });

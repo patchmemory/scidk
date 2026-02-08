@@ -9,10 +9,8 @@ test('files page loads and shows stable hooks', async ({ page, baseURL }) => {
   });
 
   const url = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
-  await page.goto(url);
-
-  // Go to Files via stable nav hook
-  await page.getByTestId('nav-files').click();
+  // Navigate directly to datasets page (landing page is now Settings)
+  await page.goto(`${url}/datasets`);
 
   // Expect the Files page to render
   await expect(page.getByTestId('files-title')).toBeVisible();
