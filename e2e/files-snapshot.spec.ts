@@ -8,7 +8,8 @@ import { test, expect } from '@playwright/test';
 test('snapshot browse controls are present', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#snapshot-scan').waitFor({ state: 'visible', timeout: 10000 });
 
   // Check snapshot scan selector
   const scanSelect = page.locator('#snapshot-scan');
@@ -38,7 +39,8 @@ test('snapshot browse controls are present', async ({ page, baseURL }) => {
 test('snapshot path input accepts values', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#snapshot-scan').waitFor({ state: 'visible', timeout: 10000 });
 
   const snapPath = page.locator('#snap-path');
 
@@ -50,7 +52,8 @@ test('snapshot path input accepts values', async ({ page, baseURL }) => {
 test('snapshot type filter can be changed', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#snapshot-scan').waitFor({ state: 'visible', timeout: 10000 });
 
   const typeFilter = page.locator('#snap-type');
 
@@ -69,7 +72,8 @@ test('snapshot type filter can be changed', async ({ page, baseURL }) => {
 test('snapshot extension filter accepts input', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#snapshot-scan').waitFor({ state: 'visible', timeout: 10000 });
 
   const extFilter = page.locator('#snap-ext');
 
@@ -85,7 +89,8 @@ test('snapshot extension filter accepts input', async ({ page, baseURL }) => {
 test('snapshot page size input accepts numeric values', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#snapshot-scan').waitFor({ state: 'visible', timeout: 10000 });
 
   const pageSize = page.locator('#snap-page-size');
 
@@ -101,7 +106,8 @@ test('snapshot page size input accepts numeric values', async ({ page, baseURL }
 test('snapshot pagination controls are present', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#snapshot-scan').waitFor({ state: 'visible', timeout: 10000 });
 
   // Check prev button
   const prevButton = page.locator('#snap-prev');
@@ -115,7 +121,8 @@ test('snapshot pagination controls are present', async ({ page, baseURL }) => {
 test('snapshot use live path button is present', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#snapshot-scan').waitFor({ state: 'visible', timeout: 10000 });
 
   const useLiveButton = page.locator('#snap-use-live');
   await expect(useLiveButton).toBeVisible();
@@ -124,7 +131,8 @@ test('snapshot use live path button is present', async ({ page, baseURL }) => {
 test('snapshot commit button is present', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#snapshot-scan').waitFor({ state: 'visible', timeout: 10000 });
 
   const commitButton = page.locator('#snap-commit');
   await expect(commitButton).toBeVisible();
@@ -133,7 +141,8 @@ test('snapshot commit button is present', async ({ page, baseURL }) => {
 test('snapshot search controls are present', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#snapshot-scan').waitFor({ state: 'visible', timeout: 10000 });
 
   // Check search query input
   const searchQuery = page.locator('#snap-search-q');
@@ -155,7 +164,8 @@ test('snapshot search controls are present', async ({ page, baseURL }) => {
 test('snapshot search query input accepts text', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#snapshot-scan').waitFor({ state: 'visible', timeout: 10000 });
 
   const searchQuery = page.locator('#snap-search-q');
 
@@ -167,7 +177,8 @@ test('snapshot search query input accepts text', async ({ page, baseURL }) => {
 test('snapshot search extension filter accepts input', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#snapshot-scan').waitFor({ state: 'visible', timeout: 10000 });
 
   const searchExt = page.locator('#snap-search-ext');
 
@@ -179,7 +190,8 @@ test('snapshot search extension filter accepts input', async ({ page, baseURL })
 test('snapshot search prefix filter accepts input', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#snapshot-scan').waitFor({ state: 'visible', timeout: 10000 });
 
   const searchPrefix = page.locator('#snap-search-prefix');
 
@@ -191,7 +203,8 @@ test('snapshot search prefix filter accepts input', async ({ page, baseURL }) =>
 test('snapshot search button is clickable', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#snapshot-scan').waitFor({ state: 'visible', timeout: 10000 });
 
   const searchButton = page.locator('#snap-search-go');
 
@@ -211,7 +224,8 @@ test('snapshot search button is clickable', async ({ page, baseURL }) => {
 test('snapshot browse button triggers browse action', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#snapshot-scan').waitFor({ state: 'visible', timeout: 10000 });
 
   const browseButton = page.locator('#snap-go');
 
@@ -228,7 +242,8 @@ test('snapshot browse button triggers browse action', async ({ page, baseURL }) 
 test('snapshot pagination buttons are clickable', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#snapshot-scan').waitFor({ state: 'visible', timeout: 10000 });
 
   const prevButton = page.locator('#snap-prev');
   const nextButton = page.locator('#snap-next');
@@ -248,7 +263,8 @@ test('snapshot pagination buttons are clickable', async ({ page, baseURL }) => {
 test('use live path button copies path between sections', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#snapshot-scan').waitFor({ state: 'visible', timeout: 10000 });
 
   // Set a value in live path
   const provPath = page.locator('#prov-path');
