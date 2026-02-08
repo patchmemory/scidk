@@ -201,14 +201,14 @@ Stable hooks are provided via `data-testid` attributes on key elements:
 - Header/nav/main in `scidk/ui/templates/base.html`:
   - `data-testid="header"` - Main header element
   - `data-testid="nav"` - Navigation container
-  - `data-testid="nav-home"` - Home link
+  - `data-testid="nav-home"` - Home/Settings link (landing page)
   - `data-testid="nav-files"` - Files link
   - `data-testid="nav-maps"` - Maps link
   - `data-testid="nav-chats"` - Chats link
   - `data-testid="nav-settings"` - Settings link
   - `data-testid="main"` - Main content area
-- Home page in `scidk/ui/templates/index.html`:
-  - `data-testid="home-recent-scans"` - Recent scans section
+- Settings page (landing page) in `scidk/ui/templates/index.html`:
+  - Settings sections with various configuration options
 - Files page in `scidk/ui/templates/datasets.html`:
   - `data-testid="files-root"` - Root container
   - `data-testid="files-title"` - Page title
@@ -272,7 +272,7 @@ New API contracts added under `tests/contracts/test_api_contracts.py`:
 
 New Playwright specs:
 - `e2e/browse.spec.ts`: navigates to Files and verifies stable hooks, no console errors
-- `e2e/scan.spec.ts`: posts `/api/scan` for a temp directory and verifies the Home page lists it
+- `e2e/scan.spec.ts`: posts `/api/scan` for a temp directory and verifies scan completion
 
 ### How to Run New Tests
 
