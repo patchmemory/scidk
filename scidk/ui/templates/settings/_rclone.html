@@ -1,0 +1,146 @@
+<section id="rclone-section" class="settings-section">
+  <h1>Rclone</h1>
+  <p class="small">Configure rclone settings for interpretation and mounts.</p>
+
+  <h2 style="margin-top: 1.5rem;">Interpretation</h2>
+  <p class="small">Tune streaming-based interpretation from rclone remotes. For very large scans, consider mounting the remote.</p>
+  <div class="row g-2" style="max-width:640px">
+    <div class="col-12 col-md-6">
+      <label class="form-label small" for="rc-suggest">Suggest-mount threshold (files)</label>
+      <input id="rc-suggest" type="number" min="0" step="50" class="form-control form-control-sm" placeholder="400" />
+    </div>
+    <div class="col-12 col-md-6">
+      <label class="form-label small" for="rc-batch">Max files per batch</label>
+      <input id="rc-batch" type="number" min="100" max="2000" step="50" class="form-control form-control-sm" placeholder="1000" />
+    </div>
+    <div class="col-12" style="display:flex; gap:.5rem; align-items:end">
+      <button id="rc-save" class="btn btn-sm btn-primary">Save</button>
+      <span id="rc-msg" class="small"></span>
+    </div>
+  </div>
+
+  <h2 style="margin-top: 1.5rem;">Mounts</h2>
+  <p class="small">Manage rclone mounts under ./data/mounts.</p>
+  <div class="row g-2" style="max-width:780px">
+    <div class="col-12 col-md-3">
+      <label class="form-label small" for="rc-remote">Remote</label>
+      <input id="rc-remote" type="text" class="form-control form-control-sm" placeholder="gdrive:" />
+    </div>
+    <div class="col-12 col-md-4">
+      <label class="form-label small" for="rc-subpath">Subpath (optional)</label>
+      <input id="rc-subpath" type="text" class="form-control form-control-sm" placeholder="folder/path" />
+    </div>
+    <div class="col-8 col-md-3">
+      <label class="form-label small" for="rc-name">Name</label>
+      <input id="rc-name" type="text" class="form-control form-control-sm" placeholder="my_mount" />
+    </div>
+    <div class="col-4 col-md-2" style="display:flex; align-items:end; gap:.5rem">
+      <div class="form-check">
+        <input id="rc-ro" class="form-check-input" type="checkbox" checked />
+        <label for="rc-ro" class="form-check-label small">Read-only</label>
+      </div>
+      <button id="rc-create" class="btn btn-sm btn-primary">Create</button>
+    </div>
+  </div>
+  <div style="margin-top:.5rem">
+    <button id="rc-refresh" class="btn btn-sm btn-outline-secondary">Refresh</button>
+  </div>
+  <table class="table table-sm" style="margin-top:.5rem">
+    <thead>
+      <tr><th>Name</th><th>Target</th><th>Path</th><th>Status</th><th>Actions</th></tr>
+    </thead>
+    <tbody id="rc-table-body">
+      <tr><td colspan="5" class="small">No mounts.</td></tr>
+    </tbody>
+  </table>
+  <pre id="rc-logs" class="small" style="max-height:200px; overflow:auto; background:#111; color:#ddd; padding:.5rem"></pre>
+  <p class="small text-muted">Note: On Windows, cmount/WinFsp may be required; this UI targets Linux/macOS primarily.</p>
+</section>
+
+<script>
+  function initRcloneSettings() {
+    // Rclone Interpretation settings
+    const rcSuggest = document.getElementById('rc-suggest');
+    const rcBatch = document.getElementById('rc-batch');
+    const rcSave = document.getElementById('rc-save');
+    const rcMsg = document.getElementById('rc-msg');
+    async function loadRcloneInterp(){
+      try { const r = await fetch('/api/settings/rclone-interpret'); const j = await r.json(); if (rcSuggest) rcSuggest.value = (j.suggest_mount_threshold ?? 400); if (rcBatch) rcBatch.value = (j.max_files_per_batch ?? 1000); }
+      catch(e){ if (rcMsg) rcMsg.textContent = 'Failed to load: ' + e; }
+    }
+    async function saveRcloneInterp(){
+      const payload = { suggest_mount_threshold: Number(rcSuggest && rcSuggest.value || 400), max_files_per_batch: Number(rcBatch && rcBatch.value || 1000) };
+      try { const r = await fetch('/api/settings/rclone-interpret', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }); const j = await r.json(); if (!r.ok) { rcMsg.textContent = 'Save failed: ' + (j.error || r.status); } else { rcMsg.textContent = 'Saved.'; setTimeout(()=>{rcMsg.textContent='';},1500); } }
+      catch(e){ rcMsg.textContent = 'Save failed: ' + e; }
+    }
+    if (rcSave) rcSave.addEventListener('click', async (e) => { e.preventDefault(); await saveRcloneInterp(); });
+    loadRcloneInterp();
+
+    // Rclone mounts UI bindings
+    const rcEnabled = {{ 'true' if rclone_mounts_feature else 'false' }};
+    const elRemote = document.getElementById('rc-remote');
+    const elSub = document.getElementById('rc-subpath');
+    const elName = document.getElementById('rc-name');
+    const elRO = document.getElementById('rc-ro');
+    const btnCreate = document.getElementById('rc-create');
+    const btnRefresh = document.getElementById('rc-refresh');
+    const tblBody = document.getElementById('rc-table-body');
+    const logsBox = document.getElementById('rc-logs');
+
+    async function refreshMounts(){
+      if (!rcEnabled || !tblBody) return;
+      try {
+        const r = await fetch('/api/rclone/mounts');
+        const j = await r.json();
+        tblBody.innerHTML = '';
+        if (!Array.isArray(j) || j.length === 0){
+          tblBody.innerHTML = '<tr><td colspan="5" class="small">No mounts.</td></tr>';
+          return;
+        }
+        for (const m of j){
+          const tr = document.createElement('tr');
+          const target = (m.remote || '') + (m.subpath || '');
+          tr.innerHTML = `<td>${m.name||m.id}</td><td>${target}</td><td>${m.path||''}</td><td>${m.status||''}</td>`;
+          const tdAct = document.createElement('td');
+          const btnLogs = document.createElement('button'); btnLogs.textContent = 'Logs'; btnLogs.className = 'btn btn-sm btn-outline-secondary';
+          btnLogs.addEventListener('click', async () => {
+            logsBox.textContent = 'Loading logs...';
+            const r2 = await fetch(`/api/rclone/mounts/${encodeURIComponent(m.id)}/logs?tail=200`);
+            const j2 = await r2.json();
+            logsBox.textContent = (j2.lines||[]).join('\n');
+          });
+          const btnDel = document.createElement('button'); btnDel.textContent = 'Unmount'; btnDel.className = 'btn btn-sm btn-outline-danger'; btnDel.style.marginLeft = '.25rem';
+          btnDel.addEventListener('click', async () => {
+            if (!confirm('Unmount ' + (m.name||m.id) + '?')) return;
+            const r3 = await fetch(`/api/rclone/mounts/${encodeURIComponent(m.id)}`, { method:'DELETE' });
+            await refreshMounts();
+          });
+          tdAct.appendChild(btnLogs); tdAct.appendChild(btnDel);
+          tr.appendChild(tdAct);
+          tblBody.appendChild(tr);
+        }
+      } catch(e){ /* ignore */ }
+    }
+    async function createMount(){
+      if (!rcEnabled || !btnCreate) return;
+      try {
+        const payload = { remote: (elRemote && elRemote.value)||'', subpath: (elSub && elSub.value)||'', name: (elName && elName.value)||'', read_only: elRO && elRO.checked };
+        const r = await fetch('/api/rclone/mounts', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        const j = await r.json();
+        if (!r.ok){ alert('Create failed: ' + (j.error || r.status)); return; }
+        elName && (elName.value = '');
+        await refreshMounts();
+      } catch(e) { alert('Create failed: ' + e); }
+    }
+    if (btnCreate) btnCreate.addEventListener('click', async (e) => { e.preventDefault(); await createMount(); });
+    if (btnRefresh) btnRefresh.addEventListener('click', async (e) => { e.preventDefault(); await refreshMounts(); });
+    refreshMounts();
+  }
+
+  // Initialize on DOMContentLoaded or immediately if already loaded
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initRcloneSettings);
+  } else {
+    initRcloneSettings();
+  }
+</script>

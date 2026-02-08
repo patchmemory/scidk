@@ -1,5 +1,8 @@
 import { test, expect } from '@playwright/test';
 
+// TODO: Update tests after settings modularization (task:ui/settings/modularization)
+// Fuzzy matching section now in settings/_integrations.html
+
 test.describe('Settings - Fuzzy Matching', () => {
   test.beforeEach(async ({ page, baseURL }) => {
     const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';

@@ -3,6 +3,12 @@ import { test, expect } from '@playwright/test';
 /**
  * E2E tests for Settings page functionality.
  * Tests Neo4j connection, interpreter toggles, and rclone settings.
+ *
+ * TODO: Update tests after settings modularization (task:ui/settings/modularization)
+ * Settings sections have been extracted into separate partial templates:
+ * - settings/_general.html, _neo4j.html, _chat.html, _interpreters.html,
+ *   _plugins.html, _rclone.html, _integrations.html
+ * The main index.html now uses {% include %} directives to compose the page.
  */
 
 test('settings page loads and displays system information', async ({ page, baseURL }) => {
