@@ -14,7 +14,7 @@ test('settings page loads and displays system information', async ({ page, baseU
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
 
   // Navigate to Settings page
-  await page.goto(`${base}/settings`);
+  await page.goto(`${base}/`);
   await page.waitForLoadState('networkidle');
 
   // Verify page loads
@@ -62,7 +62,7 @@ test('settings navigation link is visible in header', async ({ page, baseURL }) 
 
 test('neo4j connection form has all required inputs', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
-  await page.goto(`${base}/settings`);
+  await page.goto(`${base}/`);
   await page.waitForLoadState('networkidle');
 
   // Navigate to Neo4j section
@@ -99,7 +99,7 @@ test('neo4j connection form has all required inputs', async ({ page, baseURL }) 
 
 test('neo4j password visibility toggle works', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
-  await page.goto(`${base}/settings`);
+  await page.goto(`${base}/`);
   await page.waitForLoadState('networkidle');
 
   // Navigate to Neo4j section
@@ -125,7 +125,7 @@ test('neo4j password visibility toggle works', async ({ page, baseURL }) => {
 
 test('neo4j form can accept input', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
-  await page.goto(`${base}/settings`);
+  await page.goto(`${base}/`);
   await page.waitForLoadState('networkidle');
 
   // Navigate to Neo4j section
@@ -152,7 +152,7 @@ test('neo4j form can accept input', async ({ page, baseURL }) => {
 
 test('neo4j save button sends POST request', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
-  await page.goto(`${base}/settings`);
+  await page.goto(`${base}/`);
   await page.waitForLoadState('networkidle');
 
   // Navigate to Neo4j section
@@ -160,7 +160,7 @@ test('neo4j save button sends POST request', async ({ page, baseURL }) => {
   await page.waitForTimeout(200);
 
   // Mock the save API
-  await page.route('**/api/settings/neo4j', async (route) => {
+  await page.route('**/api//neo4j', async (route) => {
     if (route.request().method() === 'POST') {
       await route.fulfill({
         status: 200,
@@ -190,7 +190,7 @@ test('neo4j save button sends POST request', async ({ page, baseURL }) => {
 
 test('neo4j test connection button works', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
-  await page.goto(`${base}/settings`);
+  await page.goto(`${base}/`);
   await page.waitForLoadState('networkidle');
 
   // Navigate to Neo4j section
@@ -258,7 +258,7 @@ test('interpreters table loads and displays data', async ({ page, baseURL }) => 
     });
   });
 
-  await page.goto(`${base}/settings`);
+  await page.goto(`${base}/`);
   await page.waitForLoadState('networkidle');
 
   // Navigate to Interpreters section
@@ -319,7 +319,7 @@ test('interpreter toggle sends API request', async ({ page, baseURL }) => {
     });
   });
 
-  await page.goto(`${base}/settings`);
+  await page.goto(`${base}/`);
   await page.waitForLoadState('networkidle');
 
   // Navigate to Interpreters section
@@ -344,7 +344,7 @@ test('rclone interpretation settings can be updated', async ({ page, baseURL }) 
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
 
   // Mock the load API
-  await page.route('**/api/settings/rclone-interpret', async (route) => {
+  await page.route('**/api//rclone-interpret', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
         status: 200,
@@ -363,7 +363,7 @@ test('rclone interpretation settings can be updated', async ({ page, baseURL }) 
     }
   });
 
-  await page.goto(`${base}/settings`);
+  await page.goto(`${base}/`);
   await page.waitForLoadState('networkidle');
 
   // Navigate to Rclone section
@@ -404,7 +404,7 @@ test('rclone interpretation settings can be updated', async ({ page, baseURL }) 
 test('rclone section displays interpretation settings', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
 
-  await page.goto(`${base}/settings`);
+  await page.goto(`${base}/`);
   await page.waitForLoadState('networkidle');
 
   // Navigate to Rclone section
@@ -433,7 +433,7 @@ test('rclone section displays interpretation settings', async ({ page, baseURL }
 test('settings page sidebar navigation works', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
 
-  await page.goto(`${base}/settings`);
+  await page.goto(`${base}/`);
   await page.waitForLoadState('networkidle');
 
   // Verify we're at settings page

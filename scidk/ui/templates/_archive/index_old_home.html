@@ -1,0 +1,230 @@
+{% extends 'base.html' %}
+{% block title %}-SciDK-> Home{% endblock %}
+{% block content %}
+<section data-testid="home-recent-scans">
+  <h2>Recent Scans</h2>
+  <p class="small">Scan sessions recorded in this server session. Open a specific run in Files.</p>
+  {% if scans and scans|length > 0 %}
+    <ul>
+      {% for s in scans %}
+        <li>
+          <a href="/datasets?scan_id={{ s.id }}">{{ s.path }}</a>
+          <span class="small">— files: {{ s.file_count }}, recursive: {{ s.recursive }}, time: {{ '%.0f'|format((s.ended or s.started) or 0) }}{% if s.source %} — <span class="badge">{{ s.source }}</span>{% endif %}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="small">No scans yet. Go to <a href="/datasets">Files</a> to run a scan.</p>
+  {% endif %}
+  {% if directories and directories|length > 0 %}
+    <details style="margin-top:.5rem;">
+      <summary class="small">Scanned Sources</summary>
+      <div id="scanned-sources-filters" class="small" style="margin:.5rem 0;">
+        <form id="source-filter-form" class="inline">
+          <label>Provider:
+            <select id="filter-provider">
+              <option value="">Any</option>
+            </select>
+          </label>
+          <label style="margin-left:.5rem;">Path contains:
+            <input type="text" id="filter-path" placeholder="substring" />
+          </label>
+          <label style="margin-left:.5rem;">Recursive:
+            <select id="filter-recursive">
+              <option value="">Any</option>
+              <option value="true">Recursive only</option>
+              <option value="false">Non-recursive only</option>
+            </select>
+          </label>
+          <button type="submit" style="margin-left:.5rem;">Apply</button>
+          <button type="button" id="filter-reset" style="margin-left:.25rem;">Reset</button>
+        </form>
+      </div>
+      <ul id="scanned-sources-list">
+        {% for d in directories %}
+          <li data-provider="{{ d.provider_id or '' }}" data-path="{{ d.path }}" data-recursive="{{ 'true' if d.recursive else 'false' }}">
+            {% if d.provider_id %}<span class="badge" title="Provider">{{ d.provider_id }}</span> {% endif %}
+            <code>{{ d.path }}</code> — files: {{ d.scanned }}, recursive: {{ d.recursive }}
+            {% if d.source %} — <span class="badge" title="Scanner">{{ d.source }}</span>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </details>
+  {% endif %}
+</section>
+{% if config.get('feature.selectiveDryRun') %}
+<section>
+  <p class="small">Preview which files would be scanned using include/exclude rules and .scidkignore. Use the Files page for full scans.</p>
+  <a class="btn btn-sm btn-outline-secondary" href="/datasets">Open Files</a>
+</section>
+{% endif %}
+
+<section>
+  <h2>Summary</h2>
+  <p class="small">Saved filesystem scans summary (from SQLite and in-memory).</p>
+  <ul>
+    <li>Total datasets: {{ datasets|length }}</li>
+    <li>Unique extensions: {{ by_ext|length }}</li>
+    {% if scan_count is not none %}
+      <li>Total scans in SQLite: {{ scan_count }}</li>
+    {% endif %}
+  </ul>
+  <details>
+    <summary class="small">By extension</summary>
+    <ul>
+      {% for ext, count in by_ext.items() %}
+        <li><code>{{ ext or '(none)' }}</code>: {{ count }}</li>
+      {% else %}
+        <li class="small">No data.</li>
+      {% endfor %}
+    </ul>
+  </details>
+
+  <details open>
+    <summary class="small">Last Scan Telemetry</summary>
+    {% if telemetry and telemetry.last_scan %}
+      <ul>
+        <li>Path: <code>{{ telemetry.last_scan.path }}</code></li>
+        <li>Recursive: {{ telemetry.last_scan.recursive }}</li>
+        <li>Files scanned: {{ telemetry.last_scan.scanned }}</li>
+        <li>Duration (sec): {{ '%.4f'|format(telemetry.last_scan.duration_sec) }}</li>
+        <li>Started: {{ telemetry.last_scan.started }}</li>
+        <li>Ended: {{ telemetry.last_scan.ended }}</li>
+        {% if telemetry.last_scan.source %}<li>Source: <span class="badge">{{ telemetry.last_scan.source }}</span></li>{% endif %}
+      </ul>
+    {% else %}
+      <p class="small">No scan run yet in this session.</p>
+    {% endif %}
+  </details>
+</section>
+
+<section>
+  <h2>Chat</h2>
+  <form id="chat-form-home">
+    <input id="chat-input-home" type="text" placeholder="Ask something..." style="width: 70%" />
+    <button type="submit">Send</button>
+  </form>
+  <div id="chat-history-home" class="small" style="margin-top:0.5rem"></div>
+</section>
+
+<section>
+  <h2>Search</h2>
+  <form id="search-form">
+    <input id="search-input" type="text" placeholder="Search by filename or interpreter id (e.g., python_code, csv)" style="width: 70%" />
+    <button type="submit">Search</button>
+  </form>
+  <div id="search-results" style="margin-top:0.5rem"></div>
+</section>
+
+<section>
+  <h2>Background Scans</h2>
+  <p class="small">Manage scans on the <a href="/datasets">Files</a> page. This Home page shows a recent scans summary only.</p>
+</section>
+
+{% endblock %}
+{% block head %}
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    // Chat
+    const chatForm = document.getElementById('chat-form-home');
+    if (chatForm) {
+      const input = document.getElementById('chat-input-home');
+      const history = document.getElementById('chat-history-home');
+      chatForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const message = input.value.trim();
+        if (!message) return;
+        try {
+          const resp = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message })
+          });
+          const data = await resp.json();
+          if (data && data.history) {
+            history.innerHTML = data.history.map(m => `<div><strong>${m.role}:</strong> ${m.content}</div>`).join('');
+          }
+        } catch (err) {
+          if (window.toast) { toast('Chat error: ' + err, 'error'); } else { alert('Chat error: ' + err); }
+        } finally {
+          input.value = '';
+          input.focus();
+        }
+      });
+    }
+
+    // Search
+    const searchForm = document.getElementById('search-form');
+    if (searchForm) {
+      const searchInput = document.getElementById('search-input');
+      const resultsDiv = document.getElementById('search-results');
+      const render = (items) => {
+        if (!items || items.length === 0) { resultsDiv.innerHTML = '<p class="small">No results.</p>'; return; }
+        resultsDiv.innerHTML = '<ul>' + items.map(r => {
+          const mo = (r.matched_on || []).join(', ');
+          return `<li><a href="/datasets/${r.id}">${r.filename || r.path}</a> <span class="small">(${r.extension || ''}; matched: ${mo})</span></li>`;
+        }).join('') + '</ul>';
+      };
+      searchForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const q = searchInput.value.trim();
+        if (!q) { resultsDiv.innerHTML = ''; return; }
+        try {
+          const resp = await fetch('/api/search?q=' + encodeURIComponent(q));
+          const data = await resp.json();
+          render(data);
+        } catch (err) {
+          if (window.toast) { toast('Search error: ' + err, 'error'); } else { alert('Search error: ' + err); }
+        }
+      });
+    }
+
+    // Scanned Sources Filters
+    const list = document.getElementById('scanned-sources-list');
+    const form = document.getElementById('source-filter-form');
+    const selProv = document.getElementById('filter-provider');
+    const inpPath = document.getElementById('filter-path');
+    const selRec = document.getElementById('filter-recursive');
+    const btnReset = document.getElementById('filter-reset');
+    if (list && form && selProv && inpPath && selRec) {
+      // Populate provider options from existing list items (unique values)
+      const items = Array.from(list.querySelectorAll('li'));
+      const providers = Array.from(new Set(items.map(li => li.getAttribute('data-provider') || '').filter(v => v)));
+      providers.sort();
+      for (const p of providers) {
+        const opt = document.createElement('option');
+        opt.value = p;
+        opt.textContent = p;
+        selProv.appendChild(opt);
+      }
+      const apply = () => {
+        const p = selProv.value;
+        const sub = (inpPath.value || '').toLowerCase();
+        const r = selRec.value; // '' | 'true' | 'false'
+        items.forEach(li => {
+          const lp = (li.getAttribute('data-provider') || '');
+          const lpath = (li.getAttribute('data-path') || '').toLowerCase();
+          const lr = (li.getAttribute('data-recursive') || '');
+          let ok = true;
+          if (p && lp !== p) ok = false;
+          if (sub && !lpath.includes(sub)) ok = false;
+          if (r && lr !== r) ok = false;
+          li.style.display = ok ? '' : 'none';
+        });
+      };
+      form.addEventListener('submit', (e) => { e.preventDefault(); apply(); });
+      selProv.addEventListener('change', apply);
+      selRec.addEventListener('change', apply);
+      inpPath.addEventListener('input', (e) => { if (!inpPath.value) apply(); });
+      if (btnReset) {
+        btnReset.addEventListener('click', () => {
+          selProv.value = '';
+          inpPath.value = '';
+          selRec.value = '';
+          apply();
+        });
+      }
+    }
+  });
+</script>
+{% endblock %}

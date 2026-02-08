@@ -9,7 +9,7 @@ test('neo4j disconnect button appears when connected', async ({ page, baseURL })
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
 
   // Mock the initial settings load to show connected state
-  await page.route('**/api/settings/neo4j', async (route) => {
+  await page.route('**/api//neo4j', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
         status: 200,
@@ -26,7 +26,7 @@ test('neo4j disconnect button appears when connected', async ({ page, baseURL })
     }
   });
 
-  await page.goto(`${base}/settings`);
+  await page.goto(`${base}/`);
   await page.waitForLoadState('networkidle');
 
   // Wait for connection status to load
@@ -40,7 +40,7 @@ test('neo4j disconnect button appears when connected', async ({ page, baseURL })
     await expect(disconnectButton).toBeVisible();
 
     // Mock the disconnect API
-    await page.route('**/api/settings/neo4j/disconnect', async (route) => {
+    await page.route('**/api//neo4j/disconnect', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -93,7 +93,7 @@ test('interpreter checkboxes can be toggled', async ({ page, baseURL }) => {
     });
   });
 
-  await page.goto(`${base}/settings`);
+  await page.goto(`${base}/`);
   await page.waitForLoadState('networkidle');
 
   // Navigate to Interpreters section
@@ -145,7 +145,7 @@ test('interpreter checkbox has data-iid attribute', async ({ page, baseURL }) =>
     });
   });
 
-  await page.goto(`${base}/settings`);
+  await page.goto(`${base}/`);
   await page.waitForLoadState('networkidle');
 
   // Navigate to Interpreters section
