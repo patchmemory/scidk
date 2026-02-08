@@ -1,5 +1,6 @@
 import os
 from scidk.app import create_app
+from tests.conftest import authenticate_test_client
 
 
 def test_effective_default_and_scan_config(monkeypatch, tmp_path):
@@ -8,7 +9,7 @@ def test_effective_default_and_scan_config(monkeypatch, tmp_path):
     monkeypatch.delenv('SCIDK_DISABLE_INTERPRETERS', raising=False)
 
     app = create_app(); app.config.update({"TESTING": True})
-    client = app.test_client()
+    client = authenticate_test_client(app.test_client(), app)
     # Effective default
     r = client.get('/api/interpreters?view=effective')
     assert r.status_code == 200
@@ -41,7 +42,7 @@ def test_effective_env_cli_overrides(monkeypatch):
     monkeypatch.setenv('SCIDK_ENABLE_INTERPRETERS', 'csv')
     monkeypatch.setenv('SCIDK_DISABLE_INTERPRETERS', 'python_code')
     app = create_app(); app.config.update({"TESTING": True})
-    client = app.test_client()
+    client = authenticate_test_client(app.test_client(), app)
     r = client.get('/api/interpreters?view=effective')
     assert r.status_code == 200
     items = r.get_json()

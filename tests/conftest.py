@@ -282,10 +282,59 @@ def app():
         ctx.pop()
 
 
+def authenticate_test_client(test_client, app):
+    """Helper to authenticate a test client if auth is enabled.
+
+    This function can be imported by tests that create their own app/client
+    instead of using the fixture. Usage:
+
+        from tests.conftest import authenticate_test_client
+        app = create_app()
+        client = authenticate_test_client(app.test_client(), app)
+
+    Args:
+        test_client: Flask test client
+        app: Flask app instance
+
+    Returns:
+        Authenticated test client
+    """
+    from scidk.core.auth import get_auth_manager
+    db_path = app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+    auth = get_auth_manager(db_path=db_path)
+
+    if auth.is_enabled():
+        # Get any admin user or create a test user
+        users = auth.list_users()
+        admin_users = [u for u in users if u.get('role') == 'admin']
+
+        if admin_users:
+            # Use first admin user - create session directly
+            session_token = auth.create_user_session(admin_users[0]['id'], '127.0.0.1')
+            if session_token:
+                test_client.set_cookie('scidk_session', session_token)
+        else:
+            # Create a test admin user if none exists
+            test_username = 'test_admin'
+            test_password = 'test_password'
+            user_id = auth.create_user(test_username, test_password, role='admin', created_by='system')
+            if user_id:
+                session_token = auth.create_user_session(user_id, '127.0.0.1')
+                if session_token:
+                    test_client.set_cookie('scidk_session', session_token)
+
+    return test_client
+
+
 @pytest.fixture()
 def client(app):
-    """Flask test client used by many unit tests."""
-    return app.test_client()
+    """Flask test client used by many unit tests.
+
+    This client automatically authenticates if auth is enabled,
+    so tests don't need to manually handle authentication.
+    """
+    test_client = app.test_client()
+    return authenticate_test_client(test_client, app)
 
 
 # --- File fixtures used by interpreter/filesystem tests ---

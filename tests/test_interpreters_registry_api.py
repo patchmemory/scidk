@@ -1,9 +1,7 @@
 import json
 from scidk.app import create_app
 
-def test_api_interpreters_schema():
-    app = create_app(); app.config.update({"TESTING": True})
-    client = app.test_client()
+def test_api_interpreters_schema(client):
     resp = client.get('/api/interpreters')
     assert resp.status_code == 200
     data = resp.get_json()
