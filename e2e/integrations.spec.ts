@@ -49,6 +49,21 @@ test('links navigation link is visible in header', async ({ page, baseURL }) => 
 
 test('wizard navigation: can navigate through all 3 steps (Label→Label refactor)', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+
+  // Create labels needed for this test
+  await page.goto(`${base}/labels`);
+  await page.waitForLoadState('networkidle');
+
+  await page.getByTestId('new-label-btn').click();
+  await page.getByTestId('label-name').fill('WizTestLabel1');
+  await page.getByTestId('save-label-btn').click();
+  await page.waitForTimeout(500);
+
+  await page.getByTestId('new-label-btn').click();
+  await page.getByTestId('label-name').fill('WizTestLabel2');
+  await page.getByTestId('save-label-btn').click();
+  await page.waitForTimeout(500);
+
   await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
 
