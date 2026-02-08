@@ -379,6 +379,36 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 9)
             version = 9
 
+        # v10: Add permissions/sharing for chat sessions
+        if version < 10:
+            # Add owner and visibility columns to chat_sessions
+            cur.execute("ALTER TABLE chat_sessions ADD COLUMN owner TEXT DEFAULT 'system'")
+            cur.execute("ALTER TABLE chat_sessions ADD COLUMN visibility TEXT DEFAULT 'private'")
+            # visibility: 'private' (owner only), 'shared' (specific users), 'public' (all users)
+
+            # Chat session permissions table for shared access
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS chat_session_permissions (
+                    session_id TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    permission TEXT NOT NULL,
+                    granted_at REAL NOT NULL,
+                    granted_by TEXT,
+                    PRIMARY KEY (session_id, username),
+                    FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+                );
+                """
+            )
+            # permission: 'view' (read-only), 'edit' (can add messages), 'admin' (can manage permissions)
+
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_perms_session ON chat_session_permissions(session_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_perms_user ON chat_session_permissions(username);")
+
+            conn.commit()
+            _set_version(conn, 10)
+            version = 10
+
         return version
     finally:
         if own:

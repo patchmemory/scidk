@@ -827,6 +827,19 @@
           queryInfoText.textContent = `Query executed successfully - ${data.result_count || 0} results in ${data.execution_time_ms || 0}ms`;
           queryInfoText.style.color = '#28a745';
 
+          // Add query execution to chat history
+          const resultSummary = data.result_count === 0
+            ? 'Query executed but returned no results.'
+            : `Query returned ${data.result_count} result${data.result_count !== 1 ? 's' : ''} in ${data.execution_time_ms}ms.`;
+
+          appendMessage('assistant', resultSummary, {
+            cypher_query: query,
+            raw_results: data.results,
+            execution_time_ms: data.execution_time_ms,
+            result_count: data.result_count,
+            query_source: 'manual_query_editor'
+          });
+
           // Display results in the Results tab
           const resultsOutput = document.getElementById('results-output');
           const resultsEmpty = document.querySelector('#results-tab .empty-state');
@@ -866,7 +879,7 @@
       }
     });
 
-    saveQueryBtn.addEventListener('click', () => {
+    saveQueryBtn.addEventListener('click', async () => {
       const query = queryEditor.value.trim();
       if (!query) {
         alert('Please enter a query to save');
@@ -876,80 +889,137 @@
       const name = prompt('Enter a name for this query:');
       if (!name) return;
 
-      // Get saved queries from localStorage
-      const savedQueries = JSON.parse(localStorage.getItem('cypher_queries') || '[]');
-      savedQueries.push({ name, query, timestamp: Date.now() });
-      localStorage.setItem('cypher_queries', JSON.stringify(savedQueries));
+      const description = prompt('Description (optional):') || '';
+      const tagsInput = prompt('Tags (comma-separated, optional):') || '';
+      const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
 
-      queryInfoText.textContent = `Query saved as "${name}"`;
-      queryInfoText.style.color = '#28a745';
-      setTimeout(() => {
-        queryInfoText.textContent = 'Ready';
-        queryInfoText.style.color = '#666';
-      }, 2000);
+      try {
+        // Save to database via API
+        const resp = await fetch('/api/queries', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            query,
+            description: description || undefined,
+            tags: tags.length > 0 ? tags : undefined,
+            metadata: {
+              source_session_id: currentSessionId,
+              saved_from: 'query_editor'
+            }
+          })
+        });
+
+        if (resp.ok) {
+          queryInfoText.textContent = `Query saved as "${name}"`;
+          queryInfoText.style.color = '#28a745';
+          setTimeout(() => {
+            queryInfoText.textContent = 'Ready';
+            queryInfoText.style.color = '#666';
+          }, 2000);
+        } else {
+          const data = await resp.json();
+          alert(`Failed to save query: ${data.error || 'Unknown error'}`);
+        }
+      } catch (err) {
+        alert(`Failed to save query: ${err.message}`);
+      }
     });
 
-    loadQueryBtn.addEventListener('click', () => {
-      const savedQueries = JSON.parse(localStorage.getItem('cypher_queries') || '[]');
+    loadQueryBtn.addEventListener('click', async () => {
+      try {
+        // Load queries from database
+        const resp = await fetch('/api/queries?sort_by=last_used_at');
+        const data = await resp.json();
 
-      if (savedQueries.length === 0) {
-        alert('No saved queries found');
-        return;
-      }
+        if (!resp.ok || !data.queries || data.queries.length === 0) {
+          alert('No saved queries found');
+          return;
+        }
 
-      // Create a simple query library modal
-      const libraryHtml = savedQueries.map((q, idx) =>
-        `<div style="margin-bottom:1rem; padding:0.75rem; border:1px solid #ddd; border-radius:4px;">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <strong>${escapeHtml(q.name)}</strong>
-            <div>
-              <button class="btn btn-sm btn-outline-primary" onclick="loadQueryByIndex(${idx})">Load</button>
-              <button class="btn btn-sm btn-outline-danger" onclick="deleteQueryByIndex(${idx})">Delete</button>
+        // Create query library modal
+        const libraryHtml = data.queries.map(q =>
+          `<div style="margin-bottom:1rem; padding:0.75rem; border:1px solid #ddd; border-radius:4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <strong>${escapeHtml(q.name)}</strong>
+                ${q.tags && q.tags.length > 0 ? `<div class="small">${q.tags.map(t => `<span class="badge" style="background:#6c757d;margin-right:0.25rem">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+                ${q.description ? `<div class="small text-muted">${escapeHtml(q.description)}</div>` : ''}
+              </div>
+              <div>
+                <button class="btn btn-sm btn-outline-primary" onclick="loadQueryById('${q.id}', '${escapeHtml(q.name).replace(/'/g, "\\'")}')">Load</button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteQueryById('${q.id}')">Delete</button>
+              </div>
             </div>
-          </div>
-          <pre style="margin-top:0.5rem; font-size:0.85em; background:#f8f9fa; padding:0.5rem; border-radius:3px; max-height:100px; overflow:auto;">${escapeHtml(q.query)}</pre>
-          <div class="small text-muted">${new Date(q.timestamp).toLocaleString()}</div>
-        </div>`
-      ).join('');
+            <pre style="margin-top:0.5rem; font-size:0.85em; background:#f8f9fa; padding:0.5rem; border-radius:3px; max-height:100px; overflow:auto;">${escapeHtml(q.query)}</pre>
+            <div class="small text-muted">
+              Created: ${new Date(q.created_at * 1000).toLocaleString()}
+              ${q.use_count > 0 ? ` · Used ${q.use_count} time${q.use_count !== 1 ? 's' : ''}` : ''}
+              ${q.last_used_at ? ` · Last used: ${new Date(q.last_used_at * 1000).toLocaleString()}` : ''}
+            </div>
+          </div>`
+        ).join('');
 
-      // Show in a simple modal-like overlay
-      const overlay = document.createElement('div');
-      overlay.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center;';
-      overlay.innerHTML = `<div style="background:#fff; padding:2rem; border-radius:8px; max-width:800px; max-height:80vh; overflow:auto; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-          <h3 style="margin:0;">Query Library</h3>
-          <button class="btn btn-sm btn-secondary" onclick="this.closest('[style*=fixed]').remove()">Close</button>
-        </div>
-        ${libraryHtml}
-      </div>`;
-      document.body.appendChild(overlay);
-      overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) overlay.remove();
-      });
+        // Show modal
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center;';
+        overlay.innerHTML = `<div style="background:#fff; padding:2rem; border-radius:8px; max-width:800px; max-height:80vh; overflow:auto; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <h3 style="margin:0;">Query Library (${data.queries.length})</h3>
+            <button class="btn btn-sm btn-secondary" onclick="this.closest('[style*=fixed]').remove()">Close</button>
+          </div>
+          ${libraryHtml}
+        </div>`;
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) overlay.remove();
+        });
+      } catch (err) {
+        alert(`Failed to load query library: ${err.message}`);
+      }
     });
 
     // Global functions for query library
-    window.loadQueryByIndex = (idx) => {
-      const savedQueries = JSON.parse(localStorage.getItem('cypher_queries') || '[]');
-      if (savedQueries[idx]) {
-        queryEditor.value = savedQueries[idx].query;
-        queryInfoText.textContent = `Loaded "${savedQueries[idx].name}"`;
-        queryInfoText.style.color = '#28a745';
-        document.querySelector('[style*="fixed"]')?.remove();
-        setTimeout(() => {
-          queryInfoText.textContent = 'Ready';
-          queryInfoText.style.color = '#666';
-        }, 2000);
+    window.loadQueryById = async (queryId, queryName) => {
+      try {
+        const resp = await fetch(`/api/queries/${queryId}`);
+        const data = await resp.json();
+
+        if (resp.ok && data.query) {
+          queryEditor.value = data.query.query;
+          queryInfoText.textContent = `Loaded "${queryName}"`;
+          queryInfoText.style.color = '#28a745';
+          document.querySelector('[style*="fixed"]')?.remove();
+
+          // Record usage
+          fetch(`/api/queries/${queryId}/use`, { method: 'POST' }).catch(() => {});
+
+          setTimeout(() => {
+            queryInfoText.textContent = 'Ready';
+            queryInfoText.style.color = '#666';
+          }, 2000);
+        }
+      } catch (err) {
+        alert(`Failed to load query: ${err.message}`);
       }
     };
 
-    window.deleteQueryByIndex = (idx) => {
-      if (!confirm('Delete this query?')) return;
-      const savedQueries = JSON.parse(localStorage.getItem('cypher_queries') || '[]');
-      savedQueries.splice(idx, 1);
-      localStorage.setItem('cypher_queries', JSON.stringify(savedQueries));
-      document.querySelector('[style*="fixed"]')?.remove();
-      loadQueryBtn.click(); // Refresh the library view
+    window.deleteQueryById = async (queryId) => {
+      if (!confirm('Delete this query from the library?')) return;
+
+      try {
+        const resp = await fetch(`/api/queries/${queryId}`, { method: 'DELETE' });
+
+        if (resp.ok) {
+          document.querySelector('[style*="fixed"]')?.remove();
+          loadQueryBtn.click(); // Refresh the library view
+        } else {
+          const data = await resp.json();
+          alert(`Failed to delete: ${data.error}`);
+        }
+      } catch (err) {
+        alert(`Failed to delete: ${err.message}`);
+      }
     };
 
     clearQueryBtn.addEventListener('click', () => {
