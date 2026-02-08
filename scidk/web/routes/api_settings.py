@@ -886,6 +886,181 @@ def update_security_auth_config():
         }), 500
 
 
+@bp.route('/settings/security/auto-lock', methods=['GET'])
+def get_auto_lock_config():
+    """
+    Get auto-lock configuration.
+
+    Returns:
+    {
+        "status": "success",
+        "config": {
+            "enabled": false,
+            "timeout_minutes": 5
+        }
+    }
+    """
+    try:
+        settings_db = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+        import sqlite3
+        conn = sqlite3.connect(settings_db)
+        cur = conn.execute(
+            """
+            SELECT value FROM settings
+            WHERE key IN ('auto_lock_enabled', 'auto_lock_timeout_minutes')
+            """
+        )
+        rows = cur.fetchall()
+        conn.close()
+
+        config = {
+            'enabled': False,
+            'timeout_minutes': 5,  # Default 5 minutes
+        }
+
+        # Parse settings (stored as key-value pairs)
+        settings_dict = {}
+        conn = sqlite3.connect(settings_db)
+        cur = conn.execute("SELECT key, value FROM settings")
+        for row in cur.fetchall():
+            settings_dict[row[0]] = row[1]
+        conn.close()
+
+        if 'auto_lock_enabled' in settings_dict:
+            config['enabled'] = settings_dict['auto_lock_enabled'] == 'true'
+
+        if 'auto_lock_timeout_minutes' in settings_dict:
+            try:
+                config['timeout_minutes'] = int(settings_dict['auto_lock_timeout_minutes'])
+            except (ValueError, TypeError):
+                config['timeout_minutes'] = 5
+
+        return jsonify({
+            'status': 'success',
+            'config': config
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/security/auto-lock', methods=['POST', 'PUT'])
+def update_auto_lock_config():
+    """
+    Update auto-lock configuration.
+
+    Request body:
+    {
+        "enabled": true,
+        "timeout_minutes": 5
+    }
+
+    Returns:
+    {
+        "status": "success",
+        "config": {
+            "enabled": true,
+            "timeout_minutes": 5
+        }
+    }
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'error': 'Request body must be JSON'
+            }), 400
+
+        enabled = data.get('enabled', False)
+        timeout_minutes = data.get('timeout_minutes', 5)
+
+        # Validation
+        if not isinstance(enabled, bool):
+            return jsonify({
+                'status': 'error',
+                'error': 'enabled must be a boolean'
+            }), 400
+
+        try:
+            timeout_minutes = int(timeout_minutes)
+        except (ValueError, TypeError):
+            return jsonify({
+                'status': 'error',
+                'error': 'timeout_minutes must be an integer'
+            }), 400
+
+        if timeout_minutes < 1 or timeout_minutes > 120:
+            return jsonify({
+                'status': 'error',
+                'error': 'timeout_minutes must be between 1 and 120'
+            }), 400
+
+        # Save settings
+        settings_db = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+        import sqlite3
+        conn = sqlite3.connect(settings_db)
+
+        # Create settings table if it doesn't exist
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                updated_at REAL
+            )
+            """
+        )
+
+        import time
+        now = time.time()
+
+        # Upsert settings
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO settings (key, value, updated_at)
+            VALUES ('auto_lock_enabled', ?, ?)
+            """,
+            ('true' if enabled else 'false', now)
+        )
+
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO settings (key, value, updated_at)
+            VALUES ('auto_lock_timeout_minutes', ?, ?)
+            """,
+            (str(timeout_minutes), now)
+        )
+
+        conn.commit()
+        conn.close()
+
+        # Log audit event
+        auth = _get_auth_manager()
+        username = getattr(g, 'scidk_user', 'system')
+        auth.log_audit(
+            username,
+            'auto_lock_configured',
+            f'Auto-lock {"enabled" if enabled else "disabled"}, timeout: {timeout_minutes} minutes',
+            request.remote_addr
+        )
+
+        return jsonify({
+            'status': 'success',
+            'config': {
+                'enabled': enabled,
+                'timeout_minutes': timeout_minutes,
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
 def _get_backup_manager():
     """Get or create BackupManager instance."""
     from ...core.backup_manager import get_backup_manager

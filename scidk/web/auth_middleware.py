@@ -13,6 +13,8 @@ PUBLIC_ROUTES = {
     '/login',
     '/api/auth/login',
     '/api/auth/status',
+    '/api/auth/lock',  # Lock session (requires valid session, but allows locking)
+    '/api/auth/unlock',  # Unlock session (requires password, checked by endpoint)
     '/api/settings/security/auth',  # Allow disabling/checking auth config
     '/api/health',  # Health check endpoint (legitimately needs to be public)
     '/static',  # Prefix for static files
@@ -99,6 +101,24 @@ def check_auth():
             user = {'username': username, 'role': 'admin'}
 
     if user:
+        # Check if session is locked (only for non-lock-related routes)
+        if not is_public_route(request.path):
+            is_locked = auth.is_session_locked(token)
+            if is_locked:
+                # Session is locked - return 423 (Locked) status
+                if request.path.startswith('/api/'):
+                    from flask import jsonify
+                    lock_info = auth.get_session_lock_info(token)
+                    return jsonify({
+                        'error': 'Session locked',
+                        'locked': True,
+                        'locked_at': lock_info['locked_at'] if lock_info else None,
+                        'username': lock_info['username'] if lock_info else None,
+                    }), 423
+                else:
+                    # UI requests - this will be handled by JavaScript lock screen
+                    pass
+
         # Authentication successful - store user info in Flask g for access in routes
         from flask import g
         g.scidk_user = user['username']
