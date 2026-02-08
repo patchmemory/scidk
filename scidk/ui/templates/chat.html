@@ -16,6 +16,7 @@
         <select id="session-selector" class="form-select form-select-sm" style="max-width: 180px; margin-right: 0.5rem;" title="Chat Session">
           <option value="current">Current Session</option>
         </select>
+        <button id="manage-sessions" class="btn btn-sm btn-outline-secondary" title="Manage Sessions">📂</button>
         <label style="font-size: 0.85em; margin-right: 0.5rem;">
           <input type="checkbox" id="verbose-mode" />
           Verbose
@@ -510,10 +511,296 @@
       }
     });
 
-    // Save session (placeholder for future implementation)
-    saveSessionBtn.addEventListener('click', () => {
-      alert('Chat session persistence coming soon! Currently using browser localStorage.');
+    // Session management
+    const sessionSelector = document.getElementById('session-selector');
+    const manageSessionsBtn = document.getElementById('manage-sessions');
+    let currentSessionId = null;
+
+    // Load saved sessions into dropdown
+    async function loadSessions() {
+      try {
+        const resp = await fetch('/api/chat/sessions');
+        const data = await resp.json();
+
+        // Keep "Current Session" option
+        sessionSelector.innerHTML = '<option value="current">Current Session</option>';
+
+        if (data.sessions && data.sessions.length > 0) {
+          data.sessions.forEach(session => {
+            const option = document.createElement('option');
+            option.value = session.id;
+            option.textContent = `${session.name} (${session.message_count} msgs)`;
+            sessionSelector.appendChild(option);
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load sessions:', err);
+      }
+    }
+
+    // Load initial sessions list
+    loadSessions();
+
+    // Save current session to database
+    saveSessionBtn.addEventListener('click', async () => {
+      const messages = JSON.parse(localStorage.getItem('chat_messages') || '[]');
+
+      if (messages.length === 0) {
+        alert('No messages to save');
+        return;
+      }
+
+      const sessionName = prompt('Enter a name for this session:', `Chat ${new Date().toLocaleDateString()}`);
+      if (!sessionName) return;
+
+      try {
+        // Create session
+        const sessionResp = await fetch('/api/chat/sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: sessionName })
+        });
+        const sessionData = await sessionResp.json();
+
+        if (!sessionResp.ok) {
+          alert(`Failed to create session: ${sessionData.error}`);
+          return;
+        }
+
+        const sessionId = sessionData.session.id;
+
+        // Save all messages
+        for (const msg of messages) {
+          await fetch(`/api/chat/sessions/${sessionId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              role: msg.role,
+              content: msg.content,
+              metadata: msg.metadata || {}
+            })
+          });
+        }
+
+        alert(`Session "${sessionName}" saved successfully!`);
+        await loadSessions();
+      } catch (err) {
+        alert(`Failed to save session: ${err.message}`);
+      }
     });
+
+    // Load session when selected
+    sessionSelector.addEventListener('change', async () => {
+      const sessionId = sessionSelector.value;
+
+      if (sessionId === 'current') {
+        // Load from localStorage
+        currentSessionId = null;
+        renderHistory();
+        return;
+      }
+
+      try {
+        const resp = await fetch(`/api/chat/sessions/${sessionId}`);
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          alert(`Failed to load session: ${data.error}`);
+          return;
+        }
+
+        // Convert to localStorage format and display
+        const messages = data.messages.map(msg => ({
+          role: msg.role,
+          content: msg.content,
+          metadata: msg.metadata,
+          timestamp: msg.timestamp * 1000 // Convert to ms
+        }));
+
+        localStorage.setItem('chat_messages', JSON.stringify(messages));
+        currentSessionId = sessionId;
+        renderHistory();
+      } catch (err) {
+        alert(`Failed to load session: ${err.message}`);
+      }
+    });
+
+    // Manage sessions modal
+    manageSessionsBtn.addEventListener('click', () => {
+      showSessionManager();
+    });
+
+    async function showSessionManager() {
+      try {
+        const resp = await fetch('/api/chat/sessions');
+        const data = await resp.json();
+
+        const sessions = data.sessions || [];
+
+        if (sessions.length === 0) {
+          alert('No saved sessions yet. Save your current chat to create one!');
+          return;
+        }
+
+        const sessionRows = sessions.map(session => `
+          <div style="margin-bottom:1rem; padding:0.75rem; border:1px solid #ddd; border-radius:4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <strong>${escapeHtml(session.name)}</strong>
+                <div class="small text-muted">
+                  ${session.message_count} messages · Created ${new Date(session.created_at * 1000).toLocaleString()}
+                </div>
+              </div>
+              <div style="display:flex; gap:0.5rem;">
+                <button class="btn btn-sm btn-outline-primary" onclick="loadSessionById('${session.id}')">Load</button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="renameSessionById('${session.id}', '${escapeHtml(session.name).replace(/'/g, "\\'")}')">Rename</button>
+                <button class="btn btn-sm btn-outline-success" onclick="exportSessionById('${session.id}')">Export</button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteSessionById('${session.id}')">Delete</button>
+              </div>
+            </div>
+          </div>
+        `).join('');
+
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center;';
+        overlay.innerHTML = `
+          <div style="background:#fff; padding:2rem; border-radius:8px; max-width:800px; max-height:80vh; overflow:auto; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+              <h3 style="margin:0;">Chat Sessions</h3>
+              <div style="display:flex; gap:0.5rem;">
+                <button class="btn btn-sm btn-outline-secondary" onclick="showImportSession()">Import</button>
+                <button class="btn btn-sm btn-secondary" onclick="this.closest('[style*=fixed]').remove()">Close</button>
+              </div>
+            </div>
+            ${sessionRows}
+          </div>
+        `;
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) overlay.remove();
+        });
+      } catch (err) {
+        alert(`Failed to load sessions: ${err.message}`);
+      }
+    }
+
+    // Global functions for session management
+    window.loadSessionById = async (sessionId) => {
+      sessionSelector.value = sessionId;
+      await sessionSelector.dispatchEvent(new Event('change'));
+      document.querySelector('[style*="fixed"]')?.remove();
+    };
+
+    window.renameSessionById = async (sessionId, currentName) => {
+      const newName = prompt('Enter new name:', currentName);
+      if (!newName || newName === currentName) return;
+
+      try {
+        const resp = await fetch(`/api/chat/sessions/${sessionId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newName })
+        });
+
+        if (resp.ok) {
+          alert('Session renamed successfully');
+          document.querySelector('[style*="fixed"]')?.remove();
+          await loadSessions();
+          showSessionManager();
+        } else {
+          const data = await resp.json();
+          alert(`Failed to rename: ${data.error}`);
+        }
+      } catch (err) {
+        alert(`Failed to rename: ${err.message}`);
+      }
+    };
+
+    window.exportSessionById = async (sessionId) => {
+      try {
+        const resp = await fetch(`/api/chat/sessions/${sessionId}/export`);
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          alert(`Failed to export: ${data.error}`);
+          return;
+        }
+
+        // Download as JSON file
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `chat-session-${data.session.name.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        alert(`Failed to export: ${err.message}`);
+      }
+    };
+
+    window.deleteSessionById = async (sessionId) => {
+      if (!confirm('Delete this session permanently?')) return;
+
+      try {
+        const resp = await fetch(`/api/chat/sessions/${sessionId}`, {
+          method: 'DELETE'
+        });
+
+        if (resp.ok) {
+          alert('Session deleted successfully');
+          document.querySelector('[style*="fixed"]')?.remove();
+          await loadSessions();
+          showSessionManager();
+        } else {
+          const data = await resp.json();
+          alert(`Failed to delete: ${data.error}`);
+        }
+      } catch (err) {
+        alert(`Failed to delete: ${err.message}`);
+      }
+    };
+
+    window.showImportSession = () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'application/json,.json';
+      input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        try {
+          const text = await file.text();
+          const data = JSON.parse(text);
+
+          const newName = prompt('Enter a name for the imported session (leave blank to keep original):', data.session?.name || '');
+
+          const resp = await fetch('/api/chat/sessions/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              data,
+              new_name: newName || undefined
+            })
+          });
+
+          if (resp.ok) {
+            alert('Session imported successfully');
+            document.querySelector('[style*="fixed"]')?.remove();
+            await loadSessions();
+            showSessionManager();
+          } else {
+            const result = await resp.json();
+            alert(`Failed to import: ${result.error}`);
+          }
+        } catch (err) {
+          alert(`Failed to import: ${err.message}`);
+        }
+      };
+      input.click();
+    };
 
     // Query Editor Functions
     runQueryBtn.addEventListener('click', async () => {

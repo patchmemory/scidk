@@ -84,3 +84,388 @@ def test_api_chat_observability_graphrag(client):
     assert 'schema' in data
     assert 'audit' in data
     assert isinstance(data['audit'], list)
+
+
+# ========== Chat Session Persistence Tests ==========
+
+def test_create_chat_session(client):
+    """Test creating a new chat session."""
+    resp = client.post('/api/chat/sessions', json={
+        'name': 'Test Session',
+        'metadata': {'tags': ['test']}
+    })
+    assert resp.status_code == 201
+    data = resp.get_json()
+    assert 'session' in data
+    assert data['session']['name'] == 'Test Session'
+    assert data['session']['message_count'] == 0
+    assert data['session']['metadata']['tags'] == ['test']
+    assert 'id' in data['session']
+    assert 'created_at' in data['session']
+
+
+def test_create_session_missing_name(client):
+    """Test creating session without name fails."""
+    resp = client.post('/api/chat/sessions', json={})
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert 'error' in data
+    assert 'name' in data['error'].lower()
+
+
+def test_list_chat_sessions(client):
+    """Test listing all chat sessions."""
+    # Create a few sessions
+    client.post('/api/chat/sessions', json={'name': 'Session 1'})
+    client.post('/api/chat/sessions', json={'name': 'Session 2'})
+
+    # List sessions
+    resp = client.get('/api/chat/sessions')
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert 'sessions' in data
+    assert len(data['sessions']) >= 2
+
+    # Check ordering (most recent first)
+    sessions = data['sessions']
+    assert sessions[0]['name'] == 'Session 2'
+    assert sessions[1]['name'] == 'Session 1'
+
+
+def test_list_sessions_with_pagination(client):
+    """Test pagination for session listing."""
+    # Create several sessions
+    for i in range(5):
+        client.post('/api/chat/sessions', json={'name': f'Session {i}'})
+
+    # Test limit
+    resp = client.get('/api/chat/sessions?limit=2')
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert len(data['sessions']) == 2
+
+    # Test offset
+    resp = client.get('/api/chat/sessions?limit=2&offset=2')
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert len(data['sessions']) == 2
+
+
+def test_get_chat_session(client):
+    """Test getting a specific session with its messages."""
+    # Create session
+    create_resp = client.post('/api/chat/sessions', json={'name': 'Test Session'})
+    session_id = create_resp.get_json()['session']['id']
+
+    # Add messages
+    client.post(f'/api/chat/sessions/{session_id}/messages', json={
+        'role': 'user',
+        'content': 'Hello'
+    })
+    client.post(f'/api/chat/sessions/{session_id}/messages', json={
+        'role': 'assistant',
+        'content': 'Hi there!'
+    })
+
+    # Get session
+    resp = client.get(f'/api/chat/sessions/{session_id}')
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['session']['id'] == session_id
+    assert data['session']['message_count'] == 2
+    assert len(data['messages']) == 2
+    assert data['messages'][0]['role'] == 'user'
+    assert data['messages'][0]['content'] == 'Hello'
+    assert data['messages'][1]['role'] == 'assistant'
+    assert data['messages'][1]['content'] == 'Hi there!'
+
+
+def test_get_nonexistent_session(client):
+    """Test getting a session that doesn't exist."""
+    resp = client.get('/api/chat/sessions/nonexistent-uuid')
+    assert resp.status_code == 404
+    data = resp.get_json()
+    assert 'error' in data
+
+
+def test_update_chat_session(client):
+    """Test updating session metadata."""
+    # Create session
+    create_resp = client.post('/api/chat/sessions', json={'name': 'Original Name'})
+    session_id = create_resp.get_json()['session']['id']
+
+    # Update name
+    resp = client.put(f'/api/chat/sessions/{session_id}', json={
+        'name': 'Updated Name'
+    })
+    assert resp.status_code == 200
+
+    # Verify update
+    get_resp = client.get(f'/api/chat/sessions/{session_id}')
+    data = get_resp.get_json()
+    assert data['session']['name'] == 'Updated Name'
+
+
+def test_update_session_metadata(client):
+    """Test updating session metadata."""
+    # Create session
+    create_resp = client.post('/api/chat/sessions', json={'name': 'Test'})
+    session_id = create_resp.get_json()['session']['id']
+
+    # Update metadata
+    resp = client.put(f'/api/chat/sessions/{session_id}', json={
+        'metadata': {'tags': ['important'], 'color': 'blue'}
+    })
+    assert resp.status_code == 200
+
+    # Verify update
+    get_resp = client.get(f'/api/chat/sessions/{session_id}')
+    data = get_resp.get_json()
+    assert data['session']['metadata']['tags'] == ['important']
+    assert data['session']['metadata']['color'] == 'blue'
+
+
+def test_update_nonexistent_session(client):
+    """Test updating a session that doesn't exist."""
+    resp = client.put('/api/chat/sessions/nonexistent-uuid', json={'name': 'New Name'})
+    assert resp.status_code == 404
+
+
+def test_delete_chat_session(client):
+    """Test deleting a session and its messages."""
+    # Create session with messages
+    create_resp = client.post('/api/chat/sessions', json={'name': 'To Delete'})
+    session_id = create_resp.get_json()['session']['id']
+
+    client.post(f'/api/chat/sessions/{session_id}/messages', json={
+        'role': 'user',
+        'content': 'Test message'
+    })
+
+    # Delete session
+    resp = client.delete(f'/api/chat/sessions/{session_id}')
+    assert resp.status_code == 200
+
+    # Verify deletion
+    get_resp = client.get(f'/api/chat/sessions/{session_id}')
+    assert get_resp.status_code == 404
+
+
+def test_delete_nonexistent_session(client):
+    """Test deleting a session that doesn't exist."""
+    resp = client.delete('/api/chat/sessions/nonexistent-uuid')
+    assert resp.status_code == 404
+
+
+def test_add_message_to_session(client):
+    """Test adding messages to a session."""
+    # Create session
+    create_resp = client.post('/api/chat/sessions', json={'name': 'Test'})
+    session_id = create_resp.get_json()['session']['id']
+
+    # Add user message
+    resp = client.post(f'/api/chat/sessions/{session_id}/messages', json={
+        'role': 'user',
+        'content': 'What is 2+2?',
+        'metadata': {'context': 'math'}
+    })
+    assert resp.status_code == 201
+    data = resp.get_json()
+    assert data['message']['role'] == 'user'
+    assert data['message']['content'] == 'What is 2+2?'
+    assert data['message']['metadata']['context'] == 'math'
+    assert 'timestamp' in data['message']
+
+    # Add assistant message
+    resp = client.post(f'/api/chat/sessions/{session_id}/messages', json={
+        'role': 'assistant',
+        'content': '2+2 equals 4'
+    })
+    assert resp.status_code == 201
+
+    # Verify session message count updated
+    get_resp = client.get(f'/api/chat/sessions/{session_id}')
+    data = get_resp.get_json()
+    assert data['session']['message_count'] == 2
+
+
+def test_add_message_invalid_role(client):
+    """Test adding message with invalid role."""
+    create_resp = client.post('/api/chat/sessions', json={'name': 'Test'})
+    session_id = create_resp.get_json()['session']['id']
+
+    resp = client.post(f'/api/chat/sessions/{session_id}/messages', json={
+        'role': 'invalid',
+        'content': 'Test'
+    })
+    assert resp.status_code == 400
+
+
+def test_add_message_missing_content(client):
+    """Test adding message without content."""
+    create_resp = client.post('/api/chat/sessions', json={'name': 'Test'})
+    session_id = create_resp.get_json()['session']['id']
+
+    resp = client.post(f'/api/chat/sessions/{session_id}/messages', json={
+        'role': 'user'
+    })
+    assert resp.status_code == 400
+
+
+def test_add_message_to_nonexistent_session(client):
+    """Test adding message to non-existent session."""
+    resp = client.post('/api/chat/sessions/nonexistent/messages', json={
+        'role': 'user',
+        'content': 'Test'
+    })
+    assert resp.status_code == 404
+
+
+def test_export_chat_session(client):
+    """Test exporting a session as JSON."""
+    # Create session with messages
+    create_resp = client.post('/api/chat/sessions', json={
+        'name': 'Export Test',
+        'metadata': {'tags': ['export']}
+    })
+    session_id = create_resp.get_json()['session']['id']
+
+    client.post(f'/api/chat/sessions/{session_id}/messages', json={
+        'role': 'user',
+        'content': 'Question'
+    })
+    client.post(f'/api/chat/sessions/{session_id}/messages', json={
+        'role': 'assistant',
+        'content': 'Answer'
+    })
+
+    # Export session
+    resp = client.get(f'/api/chat/sessions/{session_id}/export')
+    assert resp.status_code == 200
+    data = resp.get_json()
+
+    # Verify export structure
+    assert 'session' in data
+    assert 'messages' in data
+    assert data['session']['name'] == 'Export Test'
+    assert data['session']['metadata']['tags'] == ['export']
+    assert len(data['messages']) == 2
+    assert data['messages'][0]['role'] == 'user'
+    assert data['messages'][1]['role'] == 'assistant'
+
+
+def test_export_nonexistent_session(client):
+    """Test exporting a session that doesn't exist."""
+    resp = client.get('/api/chat/sessions/nonexistent/export')
+    assert resp.status_code == 404
+
+
+def test_import_chat_session(client):
+    """Test importing a session from JSON."""
+    # Prepare import data
+    import_data = {
+        'session': {
+            'id': 'old-uuid',
+            'name': 'Imported Session',
+            'metadata': {'imported': True},
+            'created_at': 1234567890.0,
+            'updated_at': 1234567890.0,
+            'message_count': 2
+        },
+        'messages': [
+            {
+                'id': 'msg1',
+                'session_id': 'old-uuid',
+                'role': 'user',
+                'content': 'Imported question',
+                'timestamp': 1234567890.0,
+                'metadata': {}
+            },
+            {
+                'id': 'msg2',
+                'session_id': 'old-uuid',
+                'role': 'assistant',
+                'content': 'Imported answer',
+                'timestamp': 1234567891.0,
+                'metadata': {}
+            }
+        ]
+    }
+
+    # Import session
+    resp = client.post('/api/chat/sessions/import', json={
+        'data': import_data
+    })
+    assert resp.status_code == 201
+    data = resp.get_json()
+
+    # Verify import (should have new UUID)
+    assert data['session']['name'] == 'Imported Session'
+    assert data['session']['id'] != 'old-uuid'  # New UUID assigned
+    assert data['session']['message_count'] == 2
+
+    # Verify messages were imported
+    session_id = data['session']['id']
+    get_resp = client.get(f'/api/chat/sessions/{session_id}')
+    get_data = get_resp.get_json()
+    assert len(get_data['messages']) == 2
+    assert get_data['messages'][0]['content'] == 'Imported question'
+    assert get_data['messages'][1]['content'] == 'Imported answer'
+
+
+def test_import_session_with_new_name(client):
+    """Test importing a session with a custom name."""
+    import_data = {
+        'session': {
+            'id': 'old-uuid',
+            'name': 'Original Name',
+            'metadata': {},
+            'created_at': 1234567890.0,
+            'updated_at': 1234567890.0,
+            'message_count': 0
+        },
+        'messages': []
+    }
+
+    resp = client.post('/api/chat/sessions/import', json={
+        'data': import_data,
+        'new_name': 'Custom Import Name'
+    })
+    assert resp.status_code == 201
+    data = resp.get_json()
+    assert data['session']['name'] == 'Custom Import Name'
+
+
+def test_import_invalid_data(client):
+    """Test importing with invalid data."""
+    resp = client.post('/api/chat/sessions/import', json={
+        'data': {'invalid': 'structure'}
+    })
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert 'error' in data
+
+
+def test_session_cascade_delete(client):
+    """Test that deleting a session cascades to messages."""
+    # Create session with multiple messages
+    create_resp = client.post('/api/chat/sessions', json={'name': 'Cascade Test'})
+    session_id = create_resp.get_json()['session']['id']
+
+    # Add several messages
+    for i in range(5):
+        client.post(f'/api/chat/sessions/{session_id}/messages', json={
+            'role': 'user' if i % 2 == 0 else 'assistant',
+            'content': f'Message {i}'
+        })
+
+    # Verify messages exist
+    get_resp = client.get(f'/api/chat/sessions/{session_id}')
+    assert len(get_resp.get_json()['messages']) == 5
+
+    # Delete session
+    client.delete(f'/api/chat/sessions/{session_id}')
+
+    # Verify session and messages are gone
+    get_resp = client.get(f'/api/chat/sessions/{session_id}')
+    assert get_resp.status_code == 404

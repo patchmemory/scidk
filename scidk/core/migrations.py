@@ -314,6 +314,44 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 7)
             version = 7
 
+        # v8: Add chat_sessions and chat_messages tables for persistent chat history
+        if version < 8:
+            # Chat sessions table - stores metadata about conversation sessions
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS chat_sessions (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    message_count INTEGER DEFAULT 0,
+                    metadata TEXT
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated ON chat_sessions(updated_at DESC);")
+
+            # Chat messages table - stores individual messages within sessions
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    metadata TEXT,
+                    timestamp REAL NOT NULL,
+                    FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_timestamp ON chat_messages(timestamp);")
+
+            conn.commit()
+            _set_version(conn, 8)
+            version = 8
+
         return version
     finally:
         if own:
