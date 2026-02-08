@@ -352,6 +352,33 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 8)
             version = 8
 
+        # v9: Add saved_queries table for query library
+        if version < 9:
+            # Saved queries table - stores user's saved Cypher queries
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS saved_queries (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    query TEXT NOT NULL,
+                    description TEXT,
+                    tags TEXT,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    last_used_at REAL,
+                    use_count INTEGER DEFAULT 0,
+                    metadata TEXT
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_saved_queries_name ON saved_queries(name);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_saved_queries_updated ON saved_queries(updated_at DESC);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_saved_queries_last_used ON saved_queries(last_used_at DESC);")
+
+            conn.commit()
+            _set_version(conn, 9)
+            version = 9
+
         return version
     finally:
         if own:

@@ -543,3 +543,21 @@ def import_session():
         }), 201
     except Exception as e:
         return jsonify({'error': f'Import failed: {str(e)}'}), 400
+
+
+@bp.delete('/chat/sessions/test-cleanup')
+def cleanup_test_sessions():
+    """Delete test sessions for e2e test cleanup.
+
+    Query params:
+        test_id (optional): Delete only sessions with this test_id
+
+    Returns:
+        200: {"deleted_count": 5}
+    """
+    chat_service = _get_chat_service()
+
+    test_id = request.args.get('test_id')
+    deleted_count = chat_service.delete_test_sessions(test_id=test_id)
+
+    return jsonify({'deleted_count': deleted_count}), 200

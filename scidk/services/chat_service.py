@@ -279,6 +279,41 @@ class ChatService:
         finally:
             conn.close()
 
+    def delete_test_sessions(self, test_id: Optional[str] = None) -> int:
+        """Delete all test sessions (for e2e test cleanup).
+
+        Args:
+            test_id: Optional test run identifier. If provided, only delete sessions
+                    with matching test_id in metadata. If None, delete all sessions
+                    marked as test_session=true.
+
+        Returns:
+            Number of sessions deleted
+        """
+        conn = self._get_conn()
+        try:
+            if test_id:
+                # Delete sessions with specific test_id
+                cur = conn.execute(
+                    """
+                    DELETE FROM chat_sessions
+                    WHERE json_extract(metadata, '$.test_id') = ?
+                    """,
+                    (test_id,)
+                )
+            else:
+                # Delete all test sessions
+                cur = conn.execute(
+                    """
+                    DELETE FROM chat_sessions
+                    WHERE json_extract(metadata, '$.test_session') = 1
+                    """
+                )
+            conn.commit()
+            return cur.rowcount
+        finally:
+            conn.close()
+
     # ========== Message Management ==========
 
     def add_message(self, session_id: str, role: str, content: str,

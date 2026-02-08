@@ -92,7 +92,7 @@ def test_create_chat_session(client):
     """Test creating a new chat session."""
     resp = client.post('/api/chat/sessions', json={
         'name': 'Test Session',
-        'metadata': {'tags': ['test']}
+        'metadata': {'tags': ['test'], 'test_session': True}
     })
     assert resp.status_code == 201
     data = resp.get_json()
@@ -449,7 +449,7 @@ def test_import_invalid_data(client):
 def test_session_cascade_delete(client):
     """Test that deleting a session cascades to messages."""
     # Create session with multiple messages
-    create_resp = client.post('/api/chat/sessions', json={'name': 'Cascade Test'})
+    create_resp = client.post('/api/chat/sessions', json={'name': 'Cascade Test', 'metadata': {'test_session': True}})
     session_id = create_resp.get_json()['session']['id']
 
     # Add several messages
@@ -469,3 +469,71 @@ def test_session_cascade_delete(client):
     # Verify session and messages are gone
     get_resp = client.get(f'/api/chat/sessions/{session_id}')
     assert get_resp.status_code == 404
+
+
+def test_cleanup_test_sessions(client):
+    """Test bulk cleanup of test sessions."""
+    import uuid
+    test_run_id = str(uuid.uuid4())
+
+    # Create mix of test sessions with different test_ids
+    client.post('/api/chat/sessions', json={
+        'name': 'Test Run 1',
+        'metadata': {'test_session': True, 'test_id': test_run_id}
+    })
+    client.post('/api/chat/sessions', json={
+        'name': 'Test Run 2',
+        'metadata': {'test_session': True, 'test_id': test_run_id}
+    })
+    client.post('/api/chat/sessions', json={
+        'name': 'Other Test',
+        'metadata': {'test_session': True, 'test_id': 'other-id'}
+    })
+    client.post('/api/chat/sessions', json={
+        'name': 'Real Session',
+        'metadata': {'user_created': True}
+    })
+
+    # Cleanup specific test run
+    resp = client.delete(f'/api/chat/sessions/test-cleanup?test_id={test_run_id}')
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['deleted_count'] == 2
+
+    # Verify correct sessions deleted
+    sessions_resp = client.get('/api/chat/sessions')
+    sessions = sessions_resp.get_json()['sessions']
+    session_names = [s['name'] for s in sessions]
+    assert 'Test Run 1' not in session_names
+    assert 'Test Run 2' not in session_names
+    assert 'Other Test' in session_names  # Different test_id
+    assert 'Real Session' in session_names  # Not a test session
+
+
+def test_cleanup_all_test_sessions(client):
+    """Test cleanup of all test sessions."""
+    # Create test and real sessions
+    client.post('/api/chat/sessions', json={
+        'name': 'Test A',
+        'metadata': {'test_session': True}
+    })
+    client.post('/api/chat/sessions', json={
+        'name': 'Test B',
+        'metadata': {'test_session': True}
+    })
+    client.post('/api/chat/sessions', json={
+        'name': 'Real User Session',
+        'metadata': {}
+    })
+
+    # Cleanup all test sessions
+    resp = client.delete('/api/chat/sessions/test-cleanup')
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['deleted_count'] >= 2  # At least our 2 test sessions
+
+    # Verify real session still exists
+    sessions_resp = client.get('/api/chat/sessions')
+    sessions = sessions_resp.get_json()['sessions']
+    session_names = [s['name'] for s in sessions]
+    assert 'Real User Session' in session_names
