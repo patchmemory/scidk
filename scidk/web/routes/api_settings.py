@@ -885,106 +885,55 @@ def update_security_auth_config():
         }), 500
 
 
-def _get_config_manager():
-    """Get or create ConfigManager instance."""
-    from ...core.config_manager import ConfigManager
-    from ...core.api_endpoint_registry import get_encryption_key
+def _get_backup_manager():
+    """Get or create BackupManager instance."""
+    from ...core.backup_manager import get_backup_manager
 
-    if 'config_manager' not in current_app.extensions.get('scidk', {}):
+    if 'backup_manager' not in current_app.extensions.get('scidk', {}):
         if 'scidk' not in current_app.extensions:
             current_app.extensions['scidk'] = {}
 
-        # Get settings DB path
-        settings_db = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
-        encryption_key = get_encryption_key()
+        current_app.extensions['scidk']['backup_manager'] = get_backup_manager()
 
-        current_app.extensions['scidk']['config_manager'] = ConfigManager(
-            db_path=settings_db,
-            encryption_key=encryption_key
-        )
-
-    return current_app.extensions['scidk']['config_manager']
+    return current_app.extensions['scidk']['backup_manager']
 
 
 @bp.route('/settings/export', methods=['GET'])
 def export_configuration():
     """
-    Export complete configuration as JSON.
+    Export complete configuration as a zip file backup.
 
     Query params:
-        - include_sensitive: Include passwords/API keys (default: false)
-        - sections: Comma-separated list of sections to export (default: all)
+        - include_data: Include data files (default: false)
 
-    Returns:
-    {
-        "status": "success",
-        "config": {...},
-        "filename": "scidk-config-2026-02-08.json"
-    }
+    Returns: Zip file download
     """
     try:
-        include_sensitive = request.args.get('include_sensitive', 'false').lower() == 'true'
-        sections_param = request.args.get('sections', '')
-        sections = [s.strip() for s in sections_param.split(',') if s.strip()] if sections_param else None
+        include_data = request.args.get('include_data', 'false').lower() == 'true'
 
-        config_manager = _get_config_manager()
-        config = config_manager.export_config(include_sensitive=include_sensitive, sections=sections)
+        backup_manager = _get_backup_manager()
+        result = backup_manager.create_backup(
+            reason='manual_export',
+            created_by=getattr(g, 'current_user', {}).get('username', 'system'),
+            notes='Manual export via UI',
+            include_data=include_data
+        )
 
-        # Generate filename with timestamp
-        from datetime import datetime
-        filename = f"scidk-config-{datetime.now().strftime('%Y-%m-%d-%H%M%S')}.json"
-
-        return jsonify({
-            'status': 'success',
-            'config': config,
-            'filename': filename
-        }), 200
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'error': str(e)
-        }), 500
-
-
-@bp.route('/settings/import/preview', methods=['POST'])
-def preview_import():
-    """
-    Preview changes that would be made by importing config.
-
-    Request body:
-    {
-        "config": {...}  // Config data from export
-    }
-
-    Returns:
-    {
-        "status": "success",
-        "diff": {
-            "sections": {
-                "neo4j": {
-                    "changed": [{"key": "uri", "old_value": "...", "new_value": "..."}],
-                    "added": [...],
-                    "removed": [...]
-                }
-            }
-        }
-    }
-    """
-    try:
-        data = request.get_json()
-        if not data or 'config' not in data:
+        if not result['success']:
             return jsonify({
                 'status': 'error',
-                'error': 'Request body must include "config" field'
-            }), 400
+                'error': result.get('error', 'Backup failed')
+            }), 500
 
-        config_manager = _get_config_manager()
-        diff = config_manager.preview_import_diff(data['config'])
+        # Send the zip file as download
+        from flask import send_file
+        return send_file(
+            result['path'],
+            as_attachment=True,
+            download_name=result['filename'],
+            mimetype='application/zip'
+        )
 
-        return jsonify({
-            'status': 'success',
-            'diff': diff
-        }), 200
     except Exception as e:
         return jsonify({
             'status': 'error',
@@ -995,54 +944,65 @@ def preview_import():
 @bp.route('/settings/import', methods=['POST'])
 def import_configuration():
     """
-    Import configuration from uploaded JSON.
+    Import configuration from uploaded zip file.
 
-    Request body:
-    {
-        "config": {...},
-        "create_backup": true,  // optional, default: true
-        "sections": ["neo4j", "chat"],  // optional, default: all
-        "created_by": "username"  // optional, default: "system"
-    }
+    Expects multipart/form-data with a 'backup_file' field.
 
     Returns:
     {
         "status": "success",
         "report": {
             "success": true,
-            "backup_id": "uuid",
-            "sections_imported": ["neo4j", "chat"],
-            "sections_failed": [],
-            "errors": []
+            "files_restored": 2,
+            "pre_restore_backup": "backup_id"
         }
     }
     """
     try:
-        data = request.get_json()
-        if not data or 'config' not in data:
+        # Check if file was uploaded
+        if 'backup_file' not in request.files:
             return jsonify({
                 'status': 'error',
-                'error': 'Request body must include "config" field'
+                'error': 'No backup file uploaded'
             }), 400
 
-        create_backup = data.get('create_backup', True)
-        sections = data.get('sections')
-        created_by = data.get('created_by', 'system')
+        file = request.files['backup_file']
 
-        config_manager = _get_config_manager()
-        report = config_manager.import_config(
-            data['config'],
-            create_backup=create_backup,
-            sections=sections,
-            created_by=created_by
-        )
+        if file.filename == '':
+            return jsonify({
+                'status': 'error',
+                'error': 'No file selected'
+            }), 400
 
-        status_code = 200 if report['success'] else 400
+        # Save uploaded file temporarily
+        import tempfile
+        fd, temp_path = tempfile.mkstemp(suffix='.zip')
+        os.close(fd)
 
-        return jsonify({
-            'status': 'success' if report['success'] else 'error',
-            'report': report
-        }), status_code
+        try:
+            file.save(temp_path)
+
+            # Restore from backup
+            backup_manager = _get_backup_manager()
+            report = backup_manager.restore_backup(
+                temp_path,
+                create_backup_first=True
+            )
+
+            status_code = 200 if report['success'] else 400
+
+            return jsonify({
+                'status': 'success' if report['success'] else 'error',
+                'report': report
+            }), status_code
+
+        finally:
+            # Clean up temp file
+            try:
+                os.unlink(temp_path)
+            except Exception:
+                pass
+
     except Exception as e:
         return jsonify({
             'status': 'error',
@@ -1061,23 +1021,14 @@ def list_backups():
     Returns:
     {
         "status": "success",
-        "backups": [
-            {
-                "id": "uuid",
-                "timestamp": 1234567890.123,
-                "timestamp_iso": "2026-02-08T10:30:00+00:00",
-                "reason": "pre_import",
-                "created_by": "admin",
-                "notes": ""
-            }
-        ]
+        "backups": [...]
     }
     """
     try:
         limit = int(request.args.get('limit', 50))
 
-        config_manager = _get_config_manager()
-        backups = config_manager.list_backups(limit=limit)
+        backup_manager = _get_backup_manager()
+        backups = backup_manager.list_backups(limit=limit)
 
         return jsonify({
             'status': 'success',
@@ -1154,16 +1105,24 @@ def create_backup():
         created_by = data.get('created_by', 'system')
         notes = data.get('notes', '')
 
-        config_manager = _get_config_manager()
-        backup_id = config_manager.create_backup(
+        backup_manager = _get_backup_manager()
+        result = backup_manager.create_backup(
             reason=reason,
             created_by=created_by,
             notes=notes
         )
 
+        if not result['success']:
+            return jsonify({
+                'status': 'error',
+                'error': result.get('error')
+            }), 500
+
         return jsonify({
             'status': 'success',
-            'backup_id': backup_id
+            'backup_id': result['backup_id'],
+            'filename': result['filename'],
+            'size': result['size_human']
         }), 201
     except Exception as e:
         return jsonify({
@@ -1219,8 +1178,8 @@ def delete_backup(backup_id):
     }
     """
     try:
-        config_manager = _get_config_manager()
-        deleted = config_manager.delete_backup(backup_id)
+        backup_manager = _get_backup_manager()
+        deleted = backup_manager.delete_backup(backup_id)
 
         if not deleted:
             return jsonify({

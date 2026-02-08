@@ -566,8 +566,15 @@ class ConfigManager:
                 table_formats.append({
                     'id': row['id'],
                     'name': row['name'],
-                    'file_extension': row['file_extension'],
-                    'config': json.loads(row['config']) if row['config'] else {}
+                    'file_type': row['file_type'],
+                    'delimiter': row['delimiter'],
+                    'encoding': row['encoding'],
+                    'has_header': bool(row['has_header']),
+                    'header_row': row['header_row'],
+                    'sheet_name': row['sheet_name'],
+                    'target_label': row['target_label'],
+                    'column_mappings': row['column_mappings'],
+                    'description': row['description']
                 })
             integrations['table_formats'] = table_formats
         except sqlite3.OperationalError:

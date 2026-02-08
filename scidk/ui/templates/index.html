@@ -118,7 +118,7 @@
         <button id="btn-import-config" class="btn btn-sm btn-outline-secondary" data-testid="import-config-button">Import Configuration</button>
         <button id="btn-view-backups" class="btn btn-sm btn-outline-secondary" data-testid="view-backups-button">View Backups</button>
       </div>
-      <input type="file" id="config-file-input" accept=".json" style="display:none;" />
+      <input type="file" id="config-file-input" accept=".zip" style="display:none;" />
       <div id="config-status" class="alert alert-info small" style="display:none; max-width:720px; margin-top:1rem;"></div>
       <p class="small" style="margin-top:0.5rem; color:#666">Exports all settings including Neo4j connection, interpreters, plugins, rclone mounts, and integration endpoints.</p>
 
@@ -1989,31 +1989,39 @@
             credentials: 'same-origin'
           });
 
-          const data = await resp.json();
-
           if (!resp.ok) {
-            throw new Error(data.error || `Export failed (${resp.status})`);
+            // Try to parse error as JSON
+            const errorData = await resp.text();
+            try {
+              const json = JSON.parse(errorData);
+              throw new Error(json.error || `Export failed (${resp.status})`);
+            } catch {
+              throw new Error(`Export failed (${resp.status})`);
+            }
           }
 
-          if (data.status === 'success') {
-            // Download as JSON file
-            const blob = new Blob([JSON.stringify(data.config, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = data.filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-
-            configStatus.className = 'alert alert-success small';
-            configStatus.textContent = `Configuration exported successfully: ${data.filename}`;
-            configStatus.style.display = 'block';
-            setTimeout(() => { configStatus.style.display = 'none'; }, 5000);
-          } else {
-            throw new Error(data.error || 'Export failed');
+          // Get the filename from Content-Disposition header or generate one
+          const disposition = resp.headers.get('Content-Disposition');
+          let filename = 'scidk-backup.zip';
+          if (disposition && disposition.includes('filename=')) {
+            filename = disposition.split('filename=')[1].replace(/["']/g, '');
           }
+
+          // Download the zip file
+          const blob = await resp.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+
+          configStatus.className = 'alert alert-success small';
+          configStatus.textContent = `Backup created successfully: ${filename}`;
+          configStatus.style.display = 'block';
+          setTimeout(() => { configStatus.style.display = 'none'; }, 5000);
         } catch (err) {
           configStatus.className = 'alert alert-danger small';
           configStatus.textContent = `Export failed: ${err.message}`;
@@ -2035,83 +2043,45 @@
         const file = e.target.files[0];
         if (!file) return;
 
+        // Confirm before restoring
+        if (!confirm(`Restore from backup: ${file.name}?\n\nThis will:\n- Create a backup of current state\n- Replace all databases and settings\n- Require a page reload\n\nContinue?`)) {
+          configFileInput.value = '';  // Reset file input
+          return;
+        }
+
         try {
-          const text = await file.text();
-          const config = JSON.parse(text);
-
-          // Preview changes first
-          const previewResp = await fetch('/api/settings/import/preview', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ config }),
-            credentials: 'same-origin'
-          });
-
-          const previewData = await previewResp.json();
-
-          if (!previewResp.ok || previewData.status !== 'success') {
-            throw new Error(previewData.error || `Preview failed (${previewResp.status})`);
-          }
-
-          // Show confirmation modal with preview
-          const diff = previewData.diff;
-          const hasChanges = Object.keys(diff.sections || {}).length > 0;
-
-          if (!hasChanges) {
-            configStatus.className = 'alert alert-info small';
-            configStatus.textContent = 'No changes detected in the imported configuration.';
-            configStatus.style.display = 'block';
-            setTimeout(() => { configStatus.style.display = 'none'; }, 5000);
-            return;
-          }
-
-          // Build preview message
-          let previewMsg = 'The following sections will be updated:\n\n';
-          for (const [section, changes] of Object.entries(diff.sections)) {
-            previewMsg += `${section}:\n`;
-            if (changes.changed.length > 0) {
-              previewMsg += `  • ${changes.changed.length} changed value(s)\n`;
-            }
-            if (changes.added.length > 0) {
-              previewMsg += `  • ${changes.added.length} new value(s)\n`;
-            }
-            if (changes.removed.length > 0) {
-              previewMsg += `  • ${changes.removed.length} removed value(s)\n`;
-            }
-          }
-          previewMsg += '\nA backup will be created automatically. Continue?';
-
-          if (!confirm(previewMsg)) {
-            return;
-          }
-
-          // Perform import
           btnImportConfig.disabled = true;
-          btnImportConfig.textContent = 'Importing...';
+          btnImportConfig.textContent = 'Restoring...';
+
+          // Upload the backup zip file
+          const formData = new FormData();
+          formData.append('backup_file', file);
 
           const importResp = await fetch('/api/settings/import', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ config, create_backup: true }),
+            body: formData,
             credentials: 'same-origin'
           });
 
           const importData = await importResp.json();
 
-          if (importData.report && importData.report.success) {
+          if (importData.status === 'success' && importData.report && importData.report.success) {
             configStatus.className = 'alert alert-success small';
-            configStatus.textContent = `Configuration imported successfully! Backup ID: ${importData.report.backup_id}`;
+            configStatus.textContent = `Backup restored successfully! ${importData.report.files_restored} files restored.`;
+            if (importData.report.pre_restore_backup) {
+              configStatus.textContent += ` Backup created: ${importData.report.pre_restore_backup.substring(0, 8)}`;
+            }
             configStatus.style.display = 'block';
 
             // Suggest page reload
             setTimeout(() => {
-              if (confirm('Configuration imported. Reload page to see changes?')) {
+              if (confirm('Backup restored. Reload page now?')) {
                 location.reload();
               }
             }, 1000);
           } else {
-            const errors = (importData.report && importData.report.errors) ? importData.report.errors.join(', ') : importData.error || 'Unknown error';
-            throw new Error(errors);
+            const error = (importData.report && importData.report.error) || importData.error || 'Unknown error';
+            throw new Error(error);
           }
         } catch (err) {
           configStatus.className = 'alert alert-danger small';
