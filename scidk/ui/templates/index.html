@@ -66,6 +66,17 @@
   .settings-section > p.small {
     margin-bottom: 1.5rem;
   }
+
+  .badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.85em;
+    font-weight: 500;
+    border-radius: 4px;
+    background: #e9ecef;
+    color: #495057;
+    margin-right: 0.25rem;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -98,6 +109,55 @@
         <span class="badge">Channel: {{ info.channel or 'stable' }}</span>
         <span class="badge" title="Providers">Providers: {{ info.providers }}</span>
         <span class="badge" title="Files viewer">Files viewer: {{ info.files_viewer or '(default)' }}</span>
+      </div>
+
+      <h3 style="margin-top:2rem">Configuration Export</h3>
+      <p class="small">Export current configuration as a snapshot image for backup or sharing.</p>
+      <div style="display:flex; gap:.5rem; align-items:center; margin:.5rem 0;">
+        <button id="btn-export-config" style="padding:0.5rem 1rem; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer">Export Configuration</button>
+        <span id="export-config-status" class="small"></span>
+      </div>
+      <p class="small" style="margin-top:0.25rem; color:#666">Exports all settings including Neo4j connection, interpreters, plugins, rclone mounts, and integration endpoints.</p>
+
+      <h3 style="margin-top:2rem">Security</h3>
+      <p class="small">Configure authentication and access control for this SciDK instance.</p>
+      <div style="background:#f9f9f9; border:1px solid #e0e0e0; border-radius:4px; padding:1rem; max-width:720px">
+        <div style="margin-bottom:1rem">
+          <label style="display:block; font-size:0.9em; margin-bottom:0.25rem; font-weight:500">Enable Authentication</label>
+          <div style="display:flex; align-items:center; gap:0.5rem">
+            <input type="checkbox" id="security-auth-enabled" style="width:18px; height:18px" />
+            <label for="security-auth-enabled" class="small">Require login to access SciDK</label>
+          </div>
+        </div>
+        <div id="security-auth-settings" style="display:none">
+          <div style="margin-bottom:1rem">
+            <label for="security-username" style="display:block; font-size:0.9em; margin-bottom:0.25rem; font-weight:500">Username</label>
+            <input id="security-username" type="text" placeholder="admin" style="width:100%; padding:0.5rem; border:1px solid #ccc; border-radius:4px" />
+          </div>
+          <div style="margin-bottom:1rem">
+            <label for="security-password" style="display:block; font-size:0.9em; margin-bottom:0.25rem; font-weight:500">Password</label>
+            <div style="display:flex; gap:.5rem; align-items:center">
+              <input id="security-password" type="password" placeholder="••••••" style="flex:1; padding:0.5rem; border:1px solid #ccc; border-radius:4px" />
+              <div style="display:flex; align-items:center; gap:0.25rem">
+                <input id="security-password-show" type="checkbox" style="width:18px; height:18px" />
+                <label for="security-password-show" class="small">Show</label>
+              </div>
+            </div>
+          </div>
+          <div style="margin-bottom:1rem">
+            <label style="display:block; font-size:0.9em; margin-bottom:0.25rem; font-weight:500">Lock Page After Inactivity</label>
+            <div style="display:flex; align-items:center; gap:0.5rem">
+              <input type="checkbox" id="security-lock-enabled" style="width:18px; height:18px" />
+              <label for="security-lock-enabled" class="small">Enable auto-lock</label>
+            </div>
+            <div id="security-lock-timeout-container" style="display:none; margin-top:0.5rem">
+              <label for="security-lock-timeout" class="small">Lock after (minutes):</label>
+              <input id="security-lock-timeout" type="number" min="1" max="120" value="15" style="width:80px; padding:0.25rem 0.5rem; border:1px solid #ccc; border-radius:4px; margin-left:0.5rem" />
+            </div>
+          </div>
+        </div>
+        <button id="btn-save-security" style="padding:0.5rem 1rem; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer; margin-top:0.5rem">Save Security Settings</button>
+        <p class="small" style="margin-top:0.75rem; color:#999; font-style:italic">⚠️ Wireframe only - Security features not yet implemented. See task queue for implementation tasks.</p>
       </div>
     </section>
 
@@ -1850,6 +1910,118 @@
     document.addEventListener('DOMContentLoaded', initChatSettings);
   } else {
     initChatSettings();
+  }
+
+  // Configuration Export (wireframe)
+  function initConfigExport() {
+    const exportBtn = document.getElementById('btn-export-config');
+    const statusSpan = document.getElementById('export-config-status');
+
+    if (!exportBtn) return;
+
+    exportBtn.addEventListener('click', async () => {
+      statusSpan.textContent = 'Exporting...';
+      statusSpan.style.color = '#666';
+
+      // Simulated export - in real implementation, would call /api/settings/export
+      try {
+        // Mock delay to simulate API call
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Create mock configuration object
+        const config = {
+          timestamp: new Date().toISOString(),
+          version: '1.0',
+          settings: {
+            general: {
+              host: '{{ info.host }}',
+              port: '{{ info.port }}',
+              channel: '{{ info.channel }}'
+            },
+            // Would include all other settings in real implementation
+          }
+        };
+
+        // Download as JSON file
+        const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `scidk-config-${Date.now()}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        statusSpan.textContent = '✓ Exported successfully';
+        statusSpan.style.color = 'green';
+        setTimeout(() => { statusSpan.textContent = ''; }, 3000);
+      } catch (err) {
+        statusSpan.textContent = '✗ Export failed';
+        statusSpan.style.color = 'red';
+      }
+    });
+  }
+
+  // Security Settings (wireframe)
+  function initSecuritySettings() {
+    const authEnabledCheck = document.getElementById('security-auth-enabled');
+    const authSettingsDiv = document.getElementById('security-auth-settings');
+    const passwordInput = document.getElementById('security-password');
+    const passwordShowCheck = document.getElementById('security-password-show');
+    const lockEnabledCheck = document.getElementById('security-lock-enabled');
+    const lockTimeoutContainer = document.getElementById('security-lock-timeout-container');
+    const saveSecurityBtn = document.getElementById('btn-save-security');
+
+    if (!authEnabledCheck) return;
+
+    // Toggle auth settings visibility
+    authEnabledCheck.addEventListener('change', () => {
+      authSettingsDiv.style.display = authEnabledCheck.checked ? 'block' : 'none';
+    });
+
+    // Toggle password visibility
+    if (passwordShowCheck && passwordInput) {
+      passwordShowCheck.addEventListener('change', () => {
+        passwordInput.type = passwordShowCheck.checked ? 'text' : 'password';
+      });
+    }
+
+    // Toggle lock timeout input
+    if (lockEnabledCheck && lockTimeoutContainer) {
+      lockEnabledCheck.addEventListener('change', () => {
+        lockTimeoutContainer.style.display = lockEnabledCheck.checked ? 'block' : 'none';
+      });
+    }
+
+    // Save security settings (wireframe - shows toast but doesn't persist)
+    if (saveSecurityBtn) {
+      saveSecurityBtn.addEventListener('click', () => {
+        if (authEnabledCheck.checked) {
+          const username = document.getElementById('security-username').value.trim();
+          const password = document.getElementById('security-password').value.trim();
+
+          if (!username || !password) {
+            toast('Please provide both username and password', 'error');
+            return;
+          }
+        }
+
+        // In real implementation, would call /api/settings/security
+        toast('⚠️ Wireframe only - Security settings not saved. See task queue for implementation.', 'error');
+      });
+    }
+  }
+
+  // Initialize new General section features
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      initConfigExport();
+      initSecuritySettings();
+    });
+  } else {
+    initConfigExport();
+    initSecuritySettings();
   }
 </script>
 {% endblock %}
