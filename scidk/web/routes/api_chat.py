@@ -561,3 +561,151 @@ def cleanup_test_sessions():
     deleted_count = chat_service.delete_test_sessions(test_id=test_id)
 
     return jsonify({'deleted_count': deleted_count}), 200
+
+
+# ========== Permissions & Sharing ==========
+
+@bp.get('/chat/sessions/<session_id>/permissions')
+def get_session_permissions(session_id):
+    """Get all permissions for a session.
+
+    Requires: Admin permission on the session
+
+    Returns:
+        200: {
+            "permissions": [
+                {
+                    "username": "alice",
+                    "permission": "edit",
+                    "granted_at": 1234567890.0,
+                    "granted_by": "bob"
+                },
+                ...
+            ]
+        }
+        403: {"error": "Insufficient permissions"}
+    """
+    from flask import g
+
+    chat_service = _get_chat_service()
+
+    # Get current user from Flask g (set by auth middleware)
+    username = getattr(g, 'scidk_username', None)
+    if not username:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    permissions = chat_service.list_permissions(session_id, username)
+    if permissions is None:
+        return jsonify({'error': 'Insufficient permissions'}), 403
+
+    return jsonify({'permissions': permissions}), 200
+
+
+@bp.post('/chat/sessions/<session_id>/permissions')
+def grant_session_permission(session_id):
+    """Grant permission to a user for a session.
+
+    Requires: Admin permission on the session
+
+    Request body:
+        {
+            "username": "alice",
+            "permission": "view" | "edit" | "admin"
+        }
+
+    Returns:
+        200: {"success": true}
+        400: {"error": "Invalid request"}
+        403: {"error": "Insufficient permissions"}
+    """
+    from flask import g
+
+    chat_service = _get_chat_service()
+
+    # Get current user
+    current_user = getattr(g, 'scidk_username', None)
+    if not current_user:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    data = request.get_json() or {}
+    target_username = data.get('username', '').strip()
+    permission = data.get('permission', '').strip()
+
+    if not target_username or not permission:
+        return jsonify({'error': 'Missing username or permission'}), 400
+
+    if permission not in ('view', 'edit', 'admin'):
+        return jsonify({'error': 'Invalid permission level'}), 400
+
+    success = chat_service.grant_permission(session_id, target_username, permission, current_user)
+
+    if not success:
+        return jsonify({'error': 'Insufficient permissions or session not found'}), 403
+
+    return jsonify({'success': True}), 200
+
+
+@bp.delete('/chat/sessions/<session_id>/permissions/<username>')
+def revoke_session_permission(session_id, username):
+    """Revoke a user's permission for a session.
+
+    Requires: Admin permission on the session
+
+    Returns:
+        200: {"success": true}
+        403: {"error": "Insufficient permissions"}
+    """
+    from flask import g
+
+    chat_service = _get_chat_service()
+
+    # Get current user
+    current_user = getattr(g, 'scidk_username', None)
+    if not current_user:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    success = chat_service.revoke_permission(session_id, username, current_user)
+
+    if not success:
+        return jsonify({'error': 'Insufficient permissions or permission not found'}), 403
+
+    return jsonify({'success': True}), 200
+
+
+@bp.put('/chat/sessions/<session_id>/visibility')
+def set_session_visibility(session_id):
+    """Set session visibility.
+
+    Requires: Admin permission on the session
+
+    Request body:
+        {
+            "visibility": "private" | "shared" | "public"
+        }
+
+    Returns:
+        200: {"success": true}
+        400: {"error": "Invalid visibility"}
+        403: {"error": "Insufficient permissions"}
+    """
+    from flask import g
+
+    chat_service = _get_chat_service()
+
+    # Get current user
+    username = getattr(g, 'scidk_username', None)
+    if not username:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    data = request.get_json() or {}
+    visibility = data.get('visibility', '').strip()
+
+    if visibility not in ('private', 'shared', 'public'):
+        return jsonify({'error': 'Invalid visibility. Must be: private, shared, or public'}), 400
+
+    success = chat_service.set_visibility(session_id, visibility, username)
+
+    if not success:
+        return jsonify({'error': 'Insufficient permissions or session not found'}), 403
+
+    return jsonify({'success': True}), 200

@@ -466,6 +466,227 @@ class ChatService:
         # Refresh session to get updated message count
         return self.get_session(session.id)
 
+    # ========== Permissions & Sharing ==========
+
+    def check_permission(self, session_id: str, username: str, required_permission: str = 'view') -> bool:
+        """Check if a user has permission to access a session.
+
+        Args:
+            session_id: Session UUID
+            username: Username to check
+            required_permission: Required permission level ('view', 'edit', 'admin')
+
+        Returns:
+            True if user has permission, False otherwise
+        """
+        if not username:
+            return False
+
+        conn = self._get_conn()
+        try:
+            # Check if user is the owner
+            cur = conn.execute(
+                "SELECT owner, visibility FROM chat_sessions WHERE id = ?",
+                (session_id,)
+            )
+            row = cur.fetchone()
+            if not row:
+                return False
+
+            owner = row['owner']
+            visibility = row['visibility']
+
+            # Owner has full access
+            if owner == username:
+                return True
+
+            # Public sessions - everyone can view
+            if visibility == 'public' and required_permission == 'view':
+                return True
+
+            # Check explicit permissions
+            cur = conn.execute(
+                "SELECT permission FROM chat_session_permissions WHERE session_id = ? AND username = ?",
+                (session_id, username)
+            )
+            perm_row = cur.fetchone()
+            if not perm_row:
+                return False
+
+            user_permission = perm_row['permission']
+
+            # Permission hierarchy: admin > edit > view
+            perm_levels = {'view': 1, 'edit': 2, 'admin': 3}
+            return perm_levels.get(user_permission, 0) >= perm_levels.get(required_permission, 0)
+        finally:
+            conn.close()
+
+    def grant_permission(self, session_id: str, username: str, permission: str, granted_by: str) -> bool:
+        """Grant permission to a user for a session.
+
+        Args:
+            session_id: Session UUID
+            username: Username to grant permission to
+            permission: Permission level ('view', 'edit', 'admin')
+            granted_by: Username of person granting permission
+
+        Returns:
+            True if granted successfully
+        """
+        if permission not in ('view', 'edit', 'admin'):
+            return False
+
+        conn = self._get_conn()
+        try:
+            # Verify session exists and grantor has admin permission
+            if not self.check_permission(session_id, granted_by, 'admin'):
+                return False
+
+            # Insert or update permission
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO chat_session_permissions
+                (session_id, username, permission, granted_at, granted_by)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (session_id, username, permission, time.time(), granted_by)
+            )
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+
+    def revoke_permission(self, session_id: str, username: str, revoked_by: str) -> bool:
+        """Revoke a user's permission for a session.
+
+        Args:
+            session_id: Session UUID
+            username: Username to revoke permission from
+            revoked_by: Username of person revoking permission
+
+        Returns:
+            True if revoked successfully
+        """
+        conn = self._get_conn()
+        try:
+            # Verify revoker has admin permission
+            if not self.check_permission(session_id, revoked_by, 'admin'):
+                return False
+
+            cur = conn.execute(
+                "DELETE FROM chat_session_permissions WHERE session_id = ? AND username = ?",
+                (session_id, username)
+            )
+            conn.commit()
+            return cur.rowcount > 0
+        finally:
+            conn.close()
+
+    def list_permissions(self, session_id: str, requesting_user: str) -> Optional[List[Dict[str, Any]]]:
+        """List all permissions for a session.
+
+        Args:
+            session_id: Session UUID
+            requesting_user: Username requesting the list (must have admin permission)
+
+        Returns:
+            List of permission dictionaries, or None if no access
+        """
+        conn = self._get_conn()
+        try:
+            # Verify user has admin permission
+            if not self.check_permission(session_id, requesting_user, 'admin'):
+                return None
+
+            cur = conn.execute(
+                """
+                SELECT username, permission, granted_at, granted_by
+                FROM chat_session_permissions
+                WHERE session_id = ?
+                ORDER BY granted_at DESC
+                """,
+                (session_id,)
+            )
+
+            return [{
+                'username': row['username'],
+                'permission': row['permission'],
+                'granted_at': row['granted_at'],
+                'granted_by': row['granted_by']
+            } for row in cur.fetchall()]
+        finally:
+            conn.close()
+
+    def set_visibility(self, session_id: str, visibility: str, username: str) -> bool:
+        """Set session visibility (private/shared/public).
+
+        Args:
+            session_id: Session UUID
+            visibility: Visibility level ('private', 'shared', 'public')
+            username: Username making the change (must be owner or admin)
+
+        Returns:
+            True if updated successfully
+        """
+        if visibility not in ('private', 'shared', 'public'):
+            return False
+
+        conn = self._get_conn()
+        try:
+            # Verify user has admin permission
+            if not self.check_permission(session_id, username, 'admin'):
+                return False
+
+            cur = conn.execute(
+                "UPDATE chat_sessions SET visibility = ?, updated_at = ? WHERE id = ?",
+                (visibility, time.time(), session_id)
+            )
+            conn.commit()
+            return cur.rowcount > 0
+        finally:
+            conn.close()
+
+    def list_accessible_sessions(self, username: str, limit: int = 100, offset: int = 0) -> List[ChatSession]:
+        """List all sessions accessible to a user (owned, shared, or public).
+
+        Args:
+            username: Username to check
+            limit: Maximum number of sessions
+            offset: Number to skip
+
+        Returns:
+            List of accessible ChatSession objects
+        """
+        conn = self._get_conn()
+        try:
+            cur = conn.execute(
+                """
+                SELECT DISTINCT s.* FROM chat_sessions s
+                LEFT JOIN chat_session_permissions p ON s.id = p.session_id
+                WHERE s.owner = ?
+                   OR s.visibility = 'public'
+                   OR (p.username = ? AND s.visibility = 'shared')
+                ORDER BY s.updated_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                (username, username, limit, offset)
+            )
+
+            sessions = []
+            for row in cur.fetchall():
+                metadata = json.loads(row['metadata']) if row['metadata'] else None
+                sessions.append(ChatSession(
+                    id=row['id'],
+                    name=row['name'],
+                    created_at=row['created_at'],
+                    updated_at=row['updated_at'],
+                    message_count=row['message_count'],
+                    metadata=metadata
+                ))
+            return sessions
+        finally:
+            conn.close()
+
 
 def get_chat_service(db_path: Optional[str] = None) -> ChatService:
     """Factory function to get ChatService instance.
