@@ -1785,20 +1785,43 @@ function saveLabel() {
   document.getElementById('name-error').style.display = 'none';
 
   // Gather properties
-  const properties = Array.from(document.querySelectorAll('.property-row')).map(row => ({
-    name: row.querySelector('[data-field="name"]').value.trim(),
-    type: row.querySelector('[data-field="type"]').value,
-    required: row.querySelector('[data-field="required"]').checked
-  })).filter(p => p.name);
+  const properties = Array.from(document.querySelectorAll('.property-row')).map(row => {
+    const nameInput = row.querySelector('[data-field="name"]');
+    const typeSelect = row.querySelector('[data-field="type"]');
+    const requiredCheckbox = row.querySelector('[data-field="required"]');
+
+    if (!nameInput || !typeSelect || !requiredCheckbox) {
+      console.error('Missing field in property row:', row);
+      return null;
+    }
+
+    return {
+      name: nameInput.value.trim(),
+      type: typeSelect.value,
+      required: requiredCheckbox.checked
+    };
+  }).filter(p => p && p.name);
 
   // Gather relationships
-  const relationships = Array.from(document.querySelectorAll('.relationship-row')).map(row => ({
-    type: row.querySelector('[data-field="type"]').value.trim(),
-    target_label: row.querySelector('[data-field="target_label"]').value,
-    properties: []
-  })).filter(r => r.type && r.target_label);
+  const relationships = Array.from(document.querySelectorAll('.relationship-row')).map(row => {
+    const typeInput = row.querySelector('[data-field="type"]');
+    const targetSelect = row.querySelector('[data-field="target_label"]');
+
+    if (!typeInput || !targetSelect) {
+      console.error('Missing field in relationship row:', row);
+      return null;
+    }
+
+    return {
+      type: typeInput.value.trim(),
+      target_label: targetSelect.value,
+      properties: []
+    };
+  }).filter(r => r && r.type && r.target_label);
 
   const payload = { name, properties, relationships };
+
+  console.log('Saving label with payload:', payload);
 
   fetch('/api/labels', {
     method: 'POST',
@@ -1807,6 +1830,7 @@ function saveLabel() {
   })
     .then(r => r.json())
     .then(data => {
+      console.log('Save response:', data);
       if (data.status === 'success') {
         showToast('Label saved successfully', 'success');
         currentLabel = data.label;
@@ -1820,10 +1844,14 @@ function saveLabel() {
           renderInstanceTable();
         }
       } else {
+        console.error('Error saving label:', data);
         showToast('Error saving label: ' + (data.error || 'Unknown error'), 'error');
       }
     })
-    .catch(err => showToast('Network error: ' + err.message, 'error'));
+    .catch(err => {
+      console.error('Network error saving label:', err);
+      showToast('Network error: ' + err.message, 'error');
+    });
 }
 
 function deleteLabel() {
@@ -2254,7 +2282,7 @@ async function pushInstances(mode = 'merge') {
           body: JSON.stringify({ properties: completeProperties, mode: 'overwrite' })
         });
 
-        const result = await resp.json();
+          const result = await resp.json();
 
         if (result.status === 'success') {
           successCount++;
