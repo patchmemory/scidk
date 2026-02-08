@@ -883,3 +883,356 @@ def update_security_auth_config():
             'status': 'error',
             'error': str(e)
         }), 500
+
+
+def _get_config_manager():
+    """Get or create ConfigManager instance."""
+    from ...core.config_manager import ConfigManager
+    from ...core.api_endpoint_registry import get_encryption_key
+
+    if 'config_manager' not in current_app.extensions.get('scidk', {}):
+        if 'scidk' not in current_app.extensions:
+            current_app.extensions['scidk'] = {}
+
+        # Get settings DB path
+        settings_db = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+        encryption_key = get_encryption_key()
+
+        current_app.extensions['scidk']['config_manager'] = ConfigManager(
+            db_path=settings_db,
+            encryption_key=encryption_key
+        )
+
+    return current_app.extensions['scidk']['config_manager']
+
+
+@bp.route('/settings/export', methods=['GET'])
+def export_configuration():
+    """
+    Export complete configuration as JSON.
+
+    Query params:
+        - include_sensitive: Include passwords/API keys (default: false)
+        - sections: Comma-separated list of sections to export (default: all)
+
+    Returns:
+    {
+        "status": "success",
+        "config": {...},
+        "filename": "scidk-config-2026-02-08.json"
+    }
+    """
+    try:
+        include_sensitive = request.args.get('include_sensitive', 'false').lower() == 'true'
+        sections_param = request.args.get('sections', '')
+        sections = [s.strip() for s in sections_param.split(',') if s.strip()] if sections_param else None
+
+        config_manager = _get_config_manager()
+        config = config_manager.export_config(include_sensitive=include_sensitive, sections=sections)
+
+        # Generate filename with timestamp
+        from datetime import datetime
+        filename = f"scidk-config-{datetime.now().strftime('%Y-%m-%d-%H%M%S')}.json"
+
+        return jsonify({
+            'status': 'success',
+            'config': config,
+            'filename': filename
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/import/preview', methods=['POST'])
+def preview_import():
+    """
+    Preview changes that would be made by importing config.
+
+    Request body:
+    {
+        "config": {...}  // Config data from export
+    }
+
+    Returns:
+    {
+        "status": "success",
+        "diff": {
+            "sections": {
+                "neo4j": {
+                    "changed": [{"key": "uri", "old_value": "...", "new_value": "..."}],
+                    "added": [...],
+                    "removed": [...]
+                }
+            }
+        }
+    }
+    """
+    try:
+        data = request.get_json()
+        if not data or 'config' not in data:
+            return jsonify({
+                'status': 'error',
+                'error': 'Request body must include "config" field'
+            }), 400
+
+        config_manager = _get_config_manager()
+        diff = config_manager.preview_import_diff(data['config'])
+
+        return jsonify({
+            'status': 'success',
+            'diff': diff
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/import', methods=['POST'])
+def import_configuration():
+    """
+    Import configuration from uploaded JSON.
+
+    Request body:
+    {
+        "config": {...},
+        "create_backup": true,  // optional, default: true
+        "sections": ["neo4j", "chat"],  // optional, default: all
+        "created_by": "username"  // optional, default: "system"
+    }
+
+    Returns:
+    {
+        "status": "success",
+        "report": {
+            "success": true,
+            "backup_id": "uuid",
+            "sections_imported": ["neo4j", "chat"],
+            "sections_failed": [],
+            "errors": []
+        }
+    }
+    """
+    try:
+        data = request.get_json()
+        if not data or 'config' not in data:
+            return jsonify({
+                'status': 'error',
+                'error': 'Request body must include "config" field'
+            }), 400
+
+        create_backup = data.get('create_backup', True)
+        sections = data.get('sections')
+        created_by = data.get('created_by', 'system')
+
+        config_manager = _get_config_manager()
+        report = config_manager.import_config(
+            data['config'],
+            create_backup=create_backup,
+            sections=sections,
+            created_by=created_by
+        )
+
+        status_code = 200 if report['success'] else 400
+
+        return jsonify({
+            'status': 'success' if report['success'] else 'error',
+            'report': report
+        }), status_code
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/backups', methods=['GET'])
+def list_backups():
+    """
+    List configuration backups.
+
+    Query params:
+        - limit: Maximum number of backups to return (default: 50)
+
+    Returns:
+    {
+        "status": "success",
+        "backups": [
+            {
+                "id": "uuid",
+                "timestamp": 1234567890.123,
+                "timestamp_iso": "2026-02-08T10:30:00+00:00",
+                "reason": "pre_import",
+                "created_by": "admin",
+                "notes": ""
+            }
+        ]
+    }
+    """
+    try:
+        limit = int(request.args.get('limit', 50))
+
+        config_manager = _get_config_manager()
+        backups = config_manager.list_backups(limit=limit)
+
+        return jsonify({
+            'status': 'success',
+            'backups': backups
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/backups/<backup_id>', methods=['GET'])
+def get_backup(backup_id):
+    """
+    Get a specific backup by ID.
+
+    Returns:
+    {
+        "status": "success",
+        "backup": {
+            "id": "uuid",
+            "timestamp": 1234567890.123,
+            "timestamp_iso": "2026-02-08T10:30:00+00:00",
+            "config": {...},
+            "reason": "pre_import",
+            "created_by": "admin",
+            "notes": ""
+        }
+    }
+    """
+    try:
+        config_manager = _get_config_manager()
+        backup = config_manager.get_backup(backup_id)
+
+        if not backup:
+            return jsonify({
+                'status': 'error',
+                'error': f'Backup {backup_id} not found'
+            }), 404
+
+        return jsonify({
+            'status': 'success',
+            'backup': backup
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/backups', methods=['POST'])
+def create_backup():
+    """
+    Create a manual backup of current configuration.
+
+    Request body:
+    {
+        "reason": "manual",  // optional, default: "manual"
+        "created_by": "username",  // optional, default: "system"
+        "notes": "Before major changes"  // optional
+    }
+
+    Returns:
+    {
+        "status": "success",
+        "backup_id": "uuid"
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        reason = data.get('reason', 'manual')
+        created_by = data.get('created_by', 'system')
+        notes = data.get('notes', '')
+
+        config_manager = _get_config_manager()
+        backup_id = config_manager.create_backup(
+            reason=reason,
+            created_by=created_by,
+            notes=notes
+        )
+
+        return jsonify({
+            'status': 'success',
+            'backup_id': backup_id
+        }), 201
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/backups/<backup_id>/restore', methods=['POST'])
+def restore_backup(backup_id):
+    """
+    Restore configuration from a backup.
+
+    Request body:
+    {
+        "created_by": "username"  // optional, default: "system"
+    }
+
+    Returns:
+    {
+        "status": "success",
+        "report": {...}  // Same as import report
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        created_by = data.get('created_by', 'system')
+
+        config_manager = _get_config_manager()
+        report = config_manager.restore_backup(backup_id, created_by=created_by)
+
+        status_code = 200 if report['success'] else 400
+
+        return jsonify({
+            'status': 'success' if report['success'] else 'error',
+            'report': report
+        }), status_code
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/backups/<backup_id>', methods=['DELETE'])
+def delete_backup(backup_id):
+    """
+    Delete a backup.
+
+    Returns:
+    {
+        "status": "success"
+    }
+    """
+    try:
+        config_manager = _get_config_manager()
+        deleted = config_manager.delete_backup(backup_id)
+
+        if not deleted:
+            return jsonify({
+                'status': 'error',
+                'error': f'Backup {backup_id} not found'
+            }), 404
+
+        return jsonify({
+            'status': 'success'
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
