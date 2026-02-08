@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
  * Tests provider selection, path browsing, and live navigation.
  */
 
-test.skip('files page provider browser controls are present', async ({ page, baseURL }) => {
+test('files page provider browser controls are present', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -44,6 +44,8 @@ test.skip('files page provider browser controls are present', async ({ page, bas
   await expect(scanButton).toBeVisible();
 });
 
+// TODO: This test fails because #prov-select element is not visible on the page
+// Needs investigation - possible UI change or element ID update
 test.skip('provider selector can change providers', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
@@ -68,6 +70,8 @@ test.skip('provider selector can change providers', async ({ page, baseURL }) =>
   expect(newValue).toBeTruthy();
 });
 
+// TODO: This test fails because #prov-select element is not visible on the page
+// Needs investigation - possible UI change or element ID update
 test.skip('root selector updates when provider changes', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
@@ -83,6 +87,7 @@ test.skip('root selector updates when provider changes', async ({ page, baseURL 
   expect(options.length).toBeGreaterThan(0);
 });
 
+// TODO: Same issue - #prov-select element not visible
 test.skip('path input accepts user input', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
@@ -100,6 +105,7 @@ test.skip('path input accepts user input', async ({ page, baseURL }) => {
   await expect(provPath).toHaveValue('another/path');
 });
 
+// TODO: Same issue - #prov-select element not visible
 test.skip('recursive browse checkbox toggles', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
@@ -120,6 +126,7 @@ test.skip('recursive browse checkbox toggles', async ({ page, baseURL }) => {
   await expect(recursiveCheckbox).not.toBeChecked();
 });
 
+// TODO: Same issue - #prov-select element not visible
 test.skip('fast-list checkbox toggles', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
@@ -136,6 +143,7 @@ test.skip('fast-list checkbox toggles', async ({ page, baseURL }) => {
   expect(newState).toBe(!initialState);
 });
 
+// TODO: Same issue - #prov-select element not visible
 test.skip('max depth input accepts numeric values', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
@@ -153,6 +161,7 @@ test.skip('max depth input accepts numeric values', async ({ page, baseURL }) =>
   await expect(maxDepthInput).toHaveValue('5');
 });
 
+// TODO: Same issue - #prov-select element not visible
 test.skip('go button triggers browse action', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
@@ -177,6 +186,7 @@ test.skip('go button triggers browse action', async ({ page, baseURL }) => {
   expect(true).toBe(true);
 });
 
+// TODO: FLAKY - Intermittent timing issues
 test.skip('rocrate viewer buttons exist if feature is enabled', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
@@ -200,7 +210,7 @@ test.skip('rocrate viewer buttons exist if feature is enabled', async ({ page, b
   }
 });
 
-test.skip('recent scans selector and controls are present', async ({ page, baseURL }) => {
+test('recent scans selector and controls are present', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -219,6 +229,7 @@ test.skip('recent scans selector and controls are present', async ({ page, baseU
   await expect(refreshButton).toBeVisible();
 });
 
+// TODO: FLAKY - Intermittent timing issues
 test.skip('refresh scans button is functional', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);

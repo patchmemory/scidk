@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
  * Tests snapshot selection, filtering, pagination, and search.
  */
 
-test.skip('snapshot browse controls are present', async ({ page, baseURL }) => {
+test('snapshot browse controls are present', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -36,6 +36,7 @@ test.skip('snapshot browse controls are present', async ({ page, baseURL }) => {
   await expect(browseButton).toBeVisible();
 });
 
+// TODO: Same issue - #snapshot-scan element not visible
 test.skip('snapshot path input accepts values', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
@@ -49,6 +50,8 @@ test.skip('snapshot path input accepts values', async ({ page, baseURL }) => {
   await expect(snapPath).toHaveValue('test/snapshot/path');
 });
 
+// TODO: This test fails because #snapshot-scan element is not visible on the page
+// Needs investigation - possible UI change, element ID update, or requires scan data
 test.skip('snapshot type filter can be changed', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
@@ -69,7 +72,7 @@ test.skip('snapshot type filter can be changed', async ({ page, baseURL }) => {
   expect(value).toBeDefined();
 });
 
-test.skip('snapshot extension filter accepts input', async ({ page, baseURL }) => {
+test('snapshot extension filter accepts input', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -86,6 +89,7 @@ test.skip('snapshot extension filter accepts input', async ({ page, baseURL }) =
   await expect(extFilter).toHaveValue('.json');
 });
 
+// TODO: FLAKY - Same issue, #snapshot-scan not always visible
 test.skip('snapshot page size input accepts numeric values', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
@@ -103,6 +107,7 @@ test.skip('snapshot page size input accepts numeric values', async ({ page, base
   await expect(pageSize).toHaveValue('100');
 });
 
+// TODO: FLAKY - Same issue
 test.skip('snapshot pagination controls are present', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
@@ -118,6 +123,7 @@ test.skip('snapshot pagination controls are present', async ({ page, baseURL }) 
   await expect(nextButton).toBeVisible();
 });
 
+// TODO: FLAKY - Same issue
 test.skip('snapshot use live path button is present', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
@@ -128,7 +134,7 @@ test.skip('snapshot use live path button is present', async ({ page, baseURL }) 
   await expect(useLiveButton).toBeVisible();
 });
 
-test.skip('snapshot commit button is present', async ({ page, baseURL }) => {
+test('snapshot commit button is present', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -138,7 +144,7 @@ test.skip('snapshot commit button is present', async ({ page, baseURL }) => {
   await expect(commitButton).toBeVisible();
 });
 
-test.skip('snapshot search controls are present', async ({ page, baseURL }) => {
+test('snapshot search controls are present', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -161,7 +167,7 @@ test.skip('snapshot search controls are present', async ({ page, baseURL }) => {
   await expect(searchButton).toBeVisible();
 });
 
-test.skip('snapshot search query input accepts text', async ({ page, baseURL }) => {
+test('snapshot search query input accepts text', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -174,7 +180,7 @@ test.skip('snapshot search query input accepts text', async ({ page, baseURL }) 
   await expect(searchQuery).toHaveValue('test file');
 });
 
-test.skip('snapshot search extension filter accepts input', async ({ page, baseURL }) => {
+test('snapshot search extension filter accepts input', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -187,7 +193,7 @@ test.skip('snapshot search extension filter accepts input', async ({ page, baseU
   await expect(searchExt).toHaveValue('.xlsx');
 });
 
-test.skip('snapshot search prefix filter accepts input', async ({ page, baseURL }) => {
+test('snapshot search prefix filter accepts input', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -200,7 +206,7 @@ test.skip('snapshot search prefix filter accepts input', async ({ page, baseURL 
   await expect(searchPrefix).toHaveValue('data/');
 });
 
-test.skip('snapshot search button is clickable', async ({ page, baseURL }) => {
+test('snapshot search button is clickable', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -221,7 +227,7 @@ test.skip('snapshot search button is clickable', async ({ page, baseURL }) => {
   expect(true).toBe(true);
 });
 
-test.skip('snapshot browse button triggers browse action', async ({ page, baseURL }) => {
+test('snapshot browse button triggers browse action', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -239,7 +245,7 @@ test.skip('snapshot browse button triggers browse action', async ({ page, baseUR
   expect(true).toBe(true);
 });
 
-test.skip('snapshot pagination buttons are clickable', async ({ page, baseURL }) => {
+test('snapshot pagination buttons are clickable', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -260,6 +266,7 @@ test.skip('snapshot pagination buttons are clickable', async ({ page, baseURL })
   expect(true).toBe(true);
 });
 
+// TODO: FLAKY - Path not copying correctly, gets "/" instead of expected value
 test.skip('use live path button copies path between sections', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);

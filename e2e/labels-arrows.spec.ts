@@ -118,9 +118,12 @@ test('can import schema from arrows.app JSON', async ({ page, baseURL }) => {
   await deleteLabelIfExists(page, 'E2EArrowsPerson');
   await deleteLabelIfExists(page, 'E2EArrowsCompany');
 
-  // Debug: Check if button exists and is clickable
+  // Wait for labels page to fully load
+  await page.waitForTimeout(1000);
+
+  // Check if button exists and is clickable
   const importBtn = page.getByTestId('import-arrows-btn');
-  await expect(importBtn).toBeVisible();
+  await expect(importBtn).toBeVisible({ timeout: 10_000 });
 
   // Click import button
   await importBtn.click();

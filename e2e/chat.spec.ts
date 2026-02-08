@@ -1,11 +1,21 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, request as playwrightRequest } from '@playwright/test';
 
 /**
  * E2E tests for Chat page functionality.
  * Tests chat form, API integration, and history display.
  */
 
-test.skip('chat page loads and displays beta badge', async ({ page, baseURL }) => {
+// Disable auth before all tests in this file
+test.beforeEach(async ({ baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+  const api = await playwrightRequest.newContext();
+  await api.post(`${base}/api/settings/security/auth`, {
+    headers: { 'Content-Type': 'application/json' },
+    data: { enabled: false },
+  });
+});
+
+test('chat page loads and displays beta badge', async ({ page, baseURL }) => {
   const consoleMessages: { type: string; text: string }[] = [];
   page.on('console', (msg) => {
     consoleMessages.push({ type: msg.type(), text: msg.text() });
@@ -44,15 +54,15 @@ test.skip('chat page loads and displays beta badge', async ({ page, baseURL }) =
   expect(errors.length).toBe(0);
 });
 
-test.skip('chat navigation link is visible in header', async ({ page, baseURL }) => {
+test('chat navigation link is visible in header', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
 
   await page.goto(base);
   await page.waitForLoadState('networkidle');
 
-  // Check that Chats link exists in navigation
+  // Check that Chats link exists in navigation (it's in base.html so should be on all pages)
   const chatsLink = page.getByTestId('nav-chats');
-  await expect(chatsLink).toBeVisible();
+  await expect(chatsLink).toBeVisible({ timeout: 10_000 });
 
   // Click it and verify we navigate to chat page
   await chatsLink.click();
@@ -60,7 +70,7 @@ test.skip('chat navigation link is visible in header', async ({ page, baseURL })
   await expect(page).toHaveTitle(/-SciDK-> Chat/i);
 });
 
-test.skip('chat form can accept input', async ({ page, baseURL }) => {
+test('chat form can accept input', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/chat`);
   await page.waitForLoadState('networkidle');
@@ -75,7 +85,7 @@ test.skip('chat form can accept input', async ({ page, baseURL }) => {
   await expect(chatInput).toHaveValue(testMessage);
 });
 
-test.skip('chat form submits to /api/chat endpoint', async ({ page, baseURL }) => {
+test('chat form submits to /api/chat endpoint', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/chat`);
   await page.waitForLoadState('networkidle');
@@ -120,7 +130,7 @@ test.skip('chat form submits to /api/chat endpoint', async ({ page, baseURL }) =
   expect(postData).toHaveProperty('message', 'What are my datasets?');
 });
 
-test.skip('chat form displays history after response', async ({ page, baseURL }) => {
+test('chat form displays history after response', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/chat`);
   await page.waitForLoadState('networkidle');
@@ -164,7 +174,7 @@ test.skip('chat form displays history after response', async ({ page, baseURL })
   await expect(chatInput).toHaveValue('');
 });
 
-test.skip('chat form handles API errors gracefully', async ({ page, baseURL }) => {
+test('chat form handles API errors gracefully', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/chat`);
   await page.waitForLoadState('networkidle');
@@ -194,7 +204,7 @@ test.skip('chat form handles API errors gracefully', async ({ page, baseURL }) =
   await expect(chatInput).toHaveValue('');
 });
 
-test.skip('chat form does not submit empty messages', async ({ page, baseURL }) => {
+test('chat form does not submit empty messages', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/chat`);
   await page.waitForLoadState('networkidle');

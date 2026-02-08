@@ -1,7 +1,15 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, request as playwrightRequest } from '@playwright/test';
 
 test.describe('Chat GraphRAG', () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, baseURL }) => {
+    // Disable auth before each test
+    const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+    const api = await playwrightRequest.newContext();
+    await api.post(`${base}/api/settings/security/auth`, {
+      headers: { 'Content-Type': 'application/json' },
+      data: { enabled: false },
+    });
+
     // Clear localStorage before each test
     await page.goto('/chat');
     await page.evaluate(() => {
@@ -10,7 +18,7 @@ test.describe('Chat GraphRAG', () => {
     await page.reload();
   });
 
-  test.skip('displays chat page with correct elements', async ({ page }) => {
+  test('displays chat page with correct elements', async ({ page }) => {
     await page.goto('/chat');
 
     // Check title and header
@@ -29,6 +37,7 @@ test.describe('Chat GraphRAG', () => {
     await expect(page.getByTestId('chat-history')).toBeVisible();
   });
 
+  // TODO: FLAKY - chat-history element sometimes not found
   test.skip('shows empty state message initially', async ({ page }) => {
     await page.goto('/chat');
 
@@ -36,8 +45,9 @@ test.describe('Chat GraphRAG', () => {
     await expect(history).toContainText('No messages yet');
   });
 
-  test.skip('can send a message and receive response', async ({ page }) => {
+  test('can send a message and receive response', async ({ page }) => {
     await page.goto('/chat');
+    await page.waitForLoadState('domcontentloaded');
 
     // Type and send message
     await page.getByTestId('chat-input').fill('How many files are there?');
@@ -55,7 +65,7 @@ test.describe('Chat GraphRAG', () => {
     await expect(assistantMessage).not.toBeEmpty();
   });
 
-  test.skip('input is cleared after sending', async ({ page }) => {
+  test('input is cleared after sending', async ({ page }) => {
     await page.goto('/chat');
 
     const input = page.getByTestId('chat-input');
@@ -66,7 +76,7 @@ test.describe('Chat GraphRAG', () => {
     await expect(input).toHaveValue('');
   });
 
-  test.skip('verbose mode shows metadata', async ({ page }) => {
+  test('verbose mode shows metadata', async ({ page }) => {
     await page.goto('/chat');
 
     // Enable verbose mode
@@ -89,7 +99,7 @@ test.describe('Chat GraphRAG', () => {
     // Metadata section appears when there's data to show
   });
 
-  test.skip('can clear history', async ({ page }) => {
+  test('can clear history', async ({ page }) => {
     await page.goto('/chat');
 
     // Send a message
@@ -108,7 +118,7 @@ test.describe('Chat GraphRAG', () => {
     await expect(history).toContainText('History cleared');
   });
 
-  test.skip('history persists across page reloads', async ({ page }) => {
+  test('history persists across page reloads', async ({ page }) => {
     await page.goto('/chat');
 
     // Send a message
@@ -126,7 +136,7 @@ test.describe('Chat GraphRAG', () => {
     await expect(page.getByTestId('chat-message-user')).toContainText(testMessage);
   });
 
-  test.skip('verbose preference persists', async ({ page }) => {
+  test('verbose preference persists', async ({ page }) => {
     await page.goto('/chat');
 
     // Enable verbose mode
@@ -141,7 +151,7 @@ test.describe('Chat GraphRAG', () => {
     await expect(verboseCheckbox).toBeChecked();
   });
 
-  test.skip('displays user and assistant messages with different styles', async ({ page }) => {
+  test('displays user and assistant messages with different styles', async ({ page }) => {
     await page.goto('/chat');
 
     // Send a message
@@ -165,7 +175,7 @@ test.describe('Chat GraphRAG', () => {
     await expect(assistantMessage).toHaveClass(/assistant/);
   });
 
-  test.skip('prevents sending empty messages', async ({ page }) => {
+  test('prevents sending empty messages', async ({ page }) => {
     await page.goto('/chat');
 
     // Try to send empty message
@@ -176,7 +186,7 @@ test.describe('Chat GraphRAG', () => {
     await expect(userMessages).toHaveCount(0);
   });
 
-  test.skip('handles error responses gracefully', async ({ page }) => {
+  test('handles error responses gracefully', async ({ page }) => {
     await page.goto('/chat');
 
     // Mock a failing API response
@@ -197,7 +207,7 @@ test.describe('Chat GraphRAG', () => {
     await expect(page.getByTestId('chat-message-assistant')).toContainText('Error');
   });
 
-  test.skip('displays execution time in verbose mode', async ({ page }) => {
+  test('displays execution time in verbose mode', async ({ page }) => {
     await page.goto('/chat');
 
     // Enable verbose mode
@@ -234,7 +244,7 @@ test.describe('Chat GraphRAG', () => {
     await expect(assistantMessage).toContainText('3 results');
   });
 
-  test.skip('displays entity badges in verbose mode', async ({ page }) => {
+  test('displays entity badges in verbose mode', async ({ page }) => {
     await page.goto('/chat');
 
     // Enable verbose mode
@@ -278,7 +288,7 @@ test.describe('Chat GraphRAG', () => {
     await expect(assistantMessage).toContainText('name: test.txt');
   });
 
-  test.skip('multiple messages display in chronological order', async ({ page }) => {
+  test('multiple messages display in chronological order', async ({ page }) => {
     await page.goto('/chat');
 
     // Send first message
