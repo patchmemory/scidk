@@ -6,8 +6,9 @@ Provides REST endpoints for:
 - Endpoint connection testing
 - Settings persistence
 """
-from flask import Blueprint, jsonify, request, current_app
+from flask import Blueprint, jsonify, request, current_app, g, send_file
 import requests
+import os
 from jsonpath_ng import parse as jsonpath_parse
 
 bp = Blueprint('settings', __name__, url_prefix='/api')
@@ -911,10 +912,15 @@ def export_configuration():
     try:
         include_data = request.args.get('include_data', 'false').lower() == 'true'
 
+        # Get current user for audit trail
+        username = 'system'
+        if hasattr(g, 'current_user') and g.current_user:
+            username = g.current_user.get('username', 'system')
+
         backup_manager = _get_backup_manager()
         result = backup_manager.create_backup(
             reason='manual_export',
-            created_by=getattr(g, 'current_user', {}).get('username', 'system'),
+            created_by=username,
             notes='Manual export via UI',
             include_data=include_data
         )
@@ -926,7 +932,6 @@ def export_configuration():
             }), 500
 
         # Send the zip file as download
-        from flask import send_file
         return send_file(
             result['path'],
             as_attachment=True,

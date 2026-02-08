@@ -2118,11 +2118,15 @@
             // Show backups in a simple alert (could be improved with modal)
             let msg = 'Recent configuration backups:\n\n';
             data.backups.forEach((backup, idx) => {
-              const date = new Date(backup.timestamp * 1000).toLocaleString();
-              msg += `${idx + 1}. ${date} - ${backup.reason} (by ${backup.created_by})\n`;
-              msg += `   ID: ${backup.id}\n`;
+              const date = new Date(backup.timestamp).toLocaleString();
+              msg += `${idx + 1}. ${backup.filename} (${backup.size_human})\n`;
+              msg += `   Date: ${date}\n`;
+              msg += `   Reason: ${backup.reason} by ${backup.created_by}\n`;
               if (backup.notes) {
                 msg += `   Notes: ${backup.notes}\n`;
+              }
+              if (backup.backup_id) {
+                msg += `   ID: ${backup.backup_id.substring(0, 8)}...\n`;
               }
               msg += '\n';
             });
