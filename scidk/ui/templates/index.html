@@ -1985,12 +1985,16 @@
           btnExportConfig.disabled = true;
           btnExportConfig.textContent = 'Exporting...';
 
-          const resp = await fetch('/api/settings/export');
-          if (!resp.ok) {
-            throw new Error('Export failed');
-          }
+          const resp = await fetch('/api/settings/export', {
+            credentials: 'same-origin'
+          });
 
           const data = await resp.json();
+
+          if (!resp.ok) {
+            throw new Error(data.error || `Export failed (${resp.status})`);
+          }
+
           if (data.status === 'success') {
             // Download as JSON file
             const blob = new Blob([JSON.stringify(data.config, null, 2)], { type: 'application/json' });
@@ -2039,16 +2043,14 @@
           const previewResp = await fetch('/api/settings/import/preview', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ config })
+            body: JSON.stringify({ config }),
+            credentials: 'same-origin'
           });
 
-          if (!previewResp.ok) {
-            throw new Error('Preview failed');
-          }
-
           const previewData = await previewResp.json();
-          if (previewData.status !== 'success') {
-            throw new Error(previewData.error || 'Preview failed');
+
+          if (!previewResp.ok || previewData.status !== 'success') {
+            throw new Error(previewData.error || `Preview failed (${previewResp.status})`);
           }
 
           // Show confirmation modal with preview
@@ -2090,7 +2092,8 @@
           const importResp = await fetch('/api/settings/import', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ config, create_backup: true })
+            body: JSON.stringify({ config, create_backup: true }),
+            credentials: 'same-origin'
           });
 
           const importData = await importResp.json();
@@ -2126,12 +2129,16 @@
     if (btnViewBackups) {
       btnViewBackups.addEventListener('click', async () => {
         try {
-          const resp = await fetch('/api/settings/backups?limit=10');
-          if (!resp.ok) {
-            throw new Error('Failed to fetch backups');
-          }
+          const resp = await fetch('/api/settings/backups?limit=10', {
+            credentials: 'same-origin'
+          });
 
           const data = await resp.json();
+
+          if (!resp.ok) {
+            throw new Error(data.error || `Failed to fetch backups (${resp.status})`);
+          }
+
           if (data.status === 'success') {
             if (data.backups.length === 0) {
               alert('No backups found.');
