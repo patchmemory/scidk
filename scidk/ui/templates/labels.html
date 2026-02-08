@@ -1586,46 +1586,14 @@ function populateEditor(label) {
     attachSelectHandlers(relsContainer);
   }
 
-  // Render incoming relationships (edit view - with clickable source labels and delete buttons)
+  // Render incoming relationships (edit view - editable like outgoing relationships)
   const incomingContainer = document.getElementById('incoming-relationships-container');
   const incomingRelsEdit = label.incoming_relationships || [];
   if (incomingRelsEdit.length === 0) {
-    incomingContainer.innerHTML = '<div class="empty-state small">No incoming relationships</div>';
+    incomingContainer.innerHTML = '<div class="empty-state small">No incoming relationships defined</div>';
   } else {
-    incomingContainer.innerHTML = incomingRelsEdit.map(rel =>
-      `<div class="relationship-row" style="background: #f9f9f9; padding: 0.5rem; margin-bottom: 0.25rem; border-radius: 4px; display: flex; align-items: center; gap: 0.5rem;">
-        <span class="small" style="flex: 1;">
-          <a href="#" class="source-label-link" data-label="${rel.source_label}" style="color: var(--accent); text-decoration: none; font-weight: bold;">
-            ${rel.source_label}
-          </a> → [${rel.type}] → <em>this label</em>
-        </span>
-        <button class="btn btn-sm btn-outline-danger delete-incoming-rel"
-                data-source="${rel.source_label}"
-                data-type="${rel.type}"
-                data-target="${label.name}"
-                title="Delete this relationship">×</button>
-      </div>`
-    ).join('');
-
-    // Add click handlers for source label links
-    incomingContainer.querySelectorAll('.source-label-link').forEach(link => {
-      link.addEventListener('click', (e) => {
-        e.preventDefault();
-        const sourceLabelName = link.dataset.label;
-        loadLabel(sourceLabelName);
-      });
-    });
-
-    // Add click handlers for delete buttons
-    incomingContainer.querySelectorAll('.delete-incoming-rel').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        const sourceLabel = btn.dataset.source;
-        const relType = btn.dataset.type;
-        const targetLabel = btn.dataset.target;
-        deleteIncomingRelationship(sourceLabel, relType, targetLabel);
-      });
-    });
+    incomingContainer.innerHTML = incomingRelsEdit.map((rel, i) => createIncomingRelationshipRow(rel, i)).join('');
+    attachSelectHandlers(incomingContainer);
   }
 
   // Set to read-only mode
@@ -1768,7 +1736,16 @@ function addRelationship() {
   attachSelectHandlers(container);
 }
 
-async function addIncomingRelationship() {
+function addIncomingRelationship() {
+  const container = document.getElementById('incoming-relationships-container');
+  if (container.querySelector('.empty-state')) {
+    container.innerHTML = '';
+  }
+  container.insertAdjacentHTML('beforeend', createIncomingRelationshipRow({type: '', source_label: '', properties: []}));
+  attachSelectHandlers(container);
+}
+
+async function addIncomingRelationshipOLD() {
   if (!currentLabel) return;
 
   // Build label options excluding current label
@@ -1916,7 +1893,35 @@ function createRelationshipRow(rel, index) {
   `;
 }
 
-function saveLabel() {
+function createIncomingRelationshipRow(rel, index) {
+  // Filter out current label from source options
+  const sourceOptions = labels
+    .filter(l => !currentLabel || l.name !== currentLabel.name)
+    .map(l =>
+      `<option value="${l.name}" ${rel.source_label === l.name ? 'selected' : ''}>${l.name}</option>`
+    ).join('\n        ');
+
+  // Add navigation button if source label is selected
+  const hasSource = rel.source_label && rel.source_label !== '';
+  const navButton = hasSource
+    ? `<button class="btn btn-sm btn-outline-primary source-label-nav" data-source="${rel.source_label}" title="Go to ${rel.source_label}" style="flex: 0 0 auto;">→</button>`
+    : '';
+
+  return `
+    <div class="incoming-relationship-row" data-index="${index || ''}" data-testid="incoming-relationship-row">
+      <select class="form-select form-select-sm" data-field="source_label" data-testid="incoming-relationship-source">
+        <option value="">-- Select source label --</option>
+        ${sourceOptions}
+      </select>
+      <input type="text" class="form-control form-control-sm" placeholder="Type (e.g., HAS_SAMPLE)"
+             value="${rel.type || ''}" data-field="type" data-testid="incoming-relationship-type" />
+      ${navButton}
+      <button class="btn btn-sm btn-outline-danger" onclick="this.parentElement.remove()" data-testid="remove-incoming-relationship-btn">×</button>
+    </div>
+  `;
+}
+
+async function saveLabel() {
   const name = document.getElementById('label-name').value.trim();
   if (!name) {
     document.getElementById('name-error').textContent = 'Label name is required';
@@ -1943,7 +1948,7 @@ function saveLabel() {
     };
   }).filter(p => p && p.name);
 
-  // Gather relationships (only from outgoing relationships container, not incoming)
+  // Gather relationships (only from outgoing relationships container)
   const relsContainer = document.getElementById('relationships-container');
   const relationships = Array.from(relsContainer.querySelectorAll('.relationship-row')).map(row => {
     const typeInput = row.querySelector('[data-field="type"]');
@@ -1961,39 +1966,163 @@ function saveLabel() {
     };
   }).filter(r => r && r.type && r.target_label);
 
+  // Gather incoming relationships from the edit UI
+  const incomingContainer = document.getElementById('incoming-relationships-container');
+  const incomingRelationships = Array.from(incomingContainer.querySelectorAll('.incoming-relationship-row')).map(row => {
+    const typeInput = row.querySelector('[data-field="type"]');
+    const sourceSelect = row.querySelector('[data-field="source_label"]');
+
+    if (!typeInput || !sourceSelect) {
+      console.error('Missing field in incoming relationship row:', row);
+      return null;
+    }
+
+    return {
+      type: typeInput.value.trim(),
+      source_label: sourceSelect.value,
+      properties: []
+    };
+  }).filter(r => r && r.type && r.source_label);
+
   const payload = { name, properties, relationships };
 
   console.log('Saving label with payload:', payload);
+  console.log('Incoming relationships to apply:', incomingRelationships);
 
-  fetch('/api/labels', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  })
-    .then(r => r.json())
-    .then(data => {
-      console.log('Save response:', data);
-      if (data.status === 'success') {
-        showToast('Label saved successfully', 'success');
-        currentLabel = data.label;
-        loadLabels();
-        populateEditor(currentLabel);
-        // Switch back to read-only mode after save
-        isEditMode = false;
-        updateEditorView();
-        // Refresh instance table if instances are loaded (removes columns for deleted properties)
-        if (instanceData.length > 0) {
-          renderInstanceTable();
-        }
-      } else {
-        console.error('Error saving label:', data);
-        showToast('Error saving label: ' + (data.error || 'Unknown error'), 'error');
-      }
-    })
-    .catch(err => {
-      console.error('Network error saving label:', err);
-      showToast('Network error: ' + err.message, 'error');
+  try {
+    // First save the current label
+    const resp = await fetch('/api/labels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
     });
+
+    const data = await resp.json();
+    console.log('Save response:', data);
+
+    if (data.status !== 'success') {
+      console.error('Error saving label:', data);
+      showToast('Error saving label: ' + (data.error || 'Unknown error'), 'error');
+      return;
+    }
+
+    showToast('Label saved successfully', 'success');
+
+    // Now handle incoming relationship changes
+    await applyIncomingRelationshipChanges(name, incomingRelationships);
+
+    // Refresh the label to get updated incoming relationships
+    const refreshResp = await fetch(`/api/labels/${name}`);
+    const refreshData = await refreshResp.json();
+
+    if (refreshData.status === 'success') {
+      currentLabel = refreshData.label;
+      loadLabels();
+      populateEditor(currentLabel);
+      // Switch back to read-only mode after save
+      isEditMode = false;
+      updateEditorView();
+      // Refresh instance table if instances are loaded (removes columns for deleted properties)
+      if (instanceData.length > 0) {
+        renderInstanceTable();
+      }
+    }
+  } catch (err) {
+    console.error('Network error saving label:', err);
+    showToast('Network error: ' + err.message, 'error');
+  }
+}
+
+async function applyIncomingRelationshipChanges(targetLabel, desiredIncoming) {
+  // Get original incoming relationships
+  const originalIncoming = currentLabel.incoming_relationships || [];
+
+  // Find relationships to add and remove
+  const toAdd = desiredIncoming.filter(desired =>
+    !originalIncoming.find(orig =>
+      orig.source_label === desired.source_label && orig.type === desired.type
+    )
+  );
+
+  const toRemove = originalIncoming.filter(orig =>
+    !desiredIncoming.find(desired =>
+      desired.source_label === orig.source_label && desired.type === orig.type
+    )
+  );
+
+  console.log('Incoming relationships to add:', toAdd);
+  console.log('Incoming relationships to remove:', toRemove);
+
+  // Remove relationships from source labels
+  for (const rel of toRemove) {
+    try {
+      const resp = await fetch(`/api/labels/${rel.source_label}`);
+      const data = await resp.json();
+
+      if (data.status === 'success') {
+        const sourceLabelDef = data.label;
+        const updatedRels = sourceLabelDef.relationships.filter(r =>
+          !(r.type === rel.type && r.target_label === targetLabel)
+        );
+
+        await fetch('/api/labels', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: sourceLabelDef.name,
+            properties: sourceLabelDef.properties,
+            relationships: updatedRels
+          })
+        });
+
+        console.log(`Removed ${rel.type} from ${rel.source_label}`);
+      }
+    } catch (err) {
+      console.error(`Error removing relationship from ${rel.source_label}:`, err);
+    }
+  }
+
+  // Add relationships to source labels
+  for (const rel of toAdd) {
+    try {
+      const resp = await fetch(`/api/labels/${rel.source_label}`);
+      const data = await resp.json();
+
+      if (data.status === 'success') {
+        const sourceLabelDef = data.label;
+
+        // Check if relationship already exists
+        const exists = sourceLabelDef.relationships.find(r =>
+          r.type === rel.type && r.target_label === targetLabel
+        );
+
+        if (!exists) {
+          const updatedRels = [
+            ...sourceLabelDef.relationships,
+            {
+              type: rel.type,
+              target_label: targetLabel,
+              properties: []
+            }
+          ];
+
+          await fetch('/api/labels', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: sourceLabelDef.name,
+              properties: sourceLabelDef.properties,
+              relationships: updatedRels
+            })
+          });
+
+          console.log(`Added ${rel.type} to ${rel.source_label}`);
+        }
+      }
+    } catch (err) {
+      console.error(`Error adding relationship to ${rel.source_label}:`, err);
+    }
+  }
 }
 
 function deleteLabel() {
