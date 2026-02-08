@@ -560,6 +560,46 @@
   </div>
 </div>
 
+<!-- Push/Pull Confirmation Modal -->
+<div id="neo4j-confirm-modal" class="custom-modal" style="display: none;">
+  <div class="custom-modal-overlay"></div>
+  <div class="custom-modal-content">
+    <div class="custom-modal-header">
+      <h5 id="confirm-modal-title">Confirm Action</h5>
+      <button type="button" class="custom-modal-close" onclick="closeConfirmModal()">&times;</button>
+    </div>
+    <div class="custom-modal-body">
+      <p id="confirm-modal-message" class="small" style="margin-bottom: 1rem;">Are you sure?</p>
+
+      <div id="confirm-modal-details" style="background: #f9f9f9; border-radius: 4px; padding: 0.75rem; margin-bottom: 1rem;">
+        <div class="small">
+          <div style="margin-bottom: 0.5rem;"><strong>This will:</strong></div>
+          <ul style="margin: 0; padding-left: 1.5rem;" id="confirm-modal-actions">
+            <!-- Dynamically populated -->
+          </ul>
+        </div>
+        <div id="confirm-modal-count" class="small" style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #e0e0e0;">
+          <!-- Instance count displayed here -->
+        </div>
+      </div>
+
+      <div id="confirm-modal-loading" style="display: none; text-align: center; padding: 1rem;">
+        <div class="small" style="color: #666;">Loading instance count...</div>
+      </div>
+
+      <div id="confirm-modal-error" style="display: none; padding: 0.75rem; background: #fee; border: 1px solid #fcc; border-radius: 4px;">
+        <div class="small" style="color: #c00;">
+          <strong>⚠️ Warning:</strong> <span id="confirm-modal-error-text"></span>
+        </div>
+      </div>
+    </div>
+    <div class="custom-modal-footer">
+      <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeConfirmModal()">Cancel</button>
+      <button type="button" id="confirm-modal-action-btn" class="btn btn-sm btn-success">Confirm</button>
+    </div>
+  </div>
+</div>
+
 <script>
 let currentLabel = null;
 let labels = [];
@@ -1768,38 +1808,109 @@ function deleteLabel() {
     .catch(err => showToast('Network error: ' + err.message, 'error'));
 }
 
+// Modal helper functions
+function showConfirmModal(title, message, actions, onConfirm) {
+  const modal = document.getElementById('neo4j-confirm-modal');
+  const titleEl = document.getElementById('confirm-modal-title');
+  const messageEl = document.getElementById('confirm-modal-message');
+  const actionsEl = document.getElementById('confirm-modal-actions');
+  const countEl = document.getElementById('confirm-modal-count');
+  const detailsEl = document.getElementById('confirm-modal-details');
+  const loadingEl = document.getElementById('confirm-modal-loading');
+  const errorEl = document.getElementById('confirm-modal-error');
+  const actionBtn = document.getElementById('confirm-modal-action-btn');
+
+  // Set content
+  titleEl.textContent = title;
+  messageEl.textContent = message;
+  actionsEl.innerHTML = actions.map(action => `<li>${action}</li>`).join('');
+
+  // Reset state
+  detailsEl.style.display = 'none';
+  loadingEl.style.display = 'block';
+  errorEl.style.display = 'none';
+  countEl.innerHTML = '';
+
+  // Set up action button
+  actionBtn.onclick = () => {
+    closeConfirmModal();
+    onConfirm();
+  };
+
+  // Show modal
+  modal.style.display = 'block';
+
+  return { countEl, detailsEl, loadingEl, errorEl };
+}
+
+function closeConfirmModal() {
+  document.getElementById('neo4j-confirm-modal').style.display = 'none';
+}
+
+async function getInstanceCount(labelName) {
+  try {
+    const response = await fetch(`/api/labels/${labelName}/instance-count`);
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    return { status: 'error', error: error.message };
+  }
+}
+
 function pullFromNeo4j() {
   if (!currentLabel) return;
 
-  if (!confirm(`Pull schema for "${currentLabel.name}" from Neo4j? This will add any missing properties and relationships from the Neo4j schema.`)) return;
+  const modalElements = showConfirmModal(
+    `Pull "${currentLabel.name}" from Neo4j?`,
+    'This will sync the schema with Neo4j and add any missing properties or relationships.',
+    [
+      'Pull schema properties from Neo4j',
+      'Pull relationship definitions from Neo4j',
+      'Merge with existing local schema'
+    ],
+    () => {
+      showToast('Pulling from Neo4j...', 'info');
+      fetch(`/api/labels/${currentLabel.name}/pull`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+          if (data.status === 'success') {
+            const propCount = data.new_properties_count || 0;
+            const relCount = data.new_relationships_count || 0;
+            const total = propCount + relCount;
 
-  showToast('Pulling from Neo4j...', 'info');
+            let msg = '';
+            if (total === 0) {
+              msg = 'No new schema found in Neo4j';
+            } else {
+              const parts = [];
+              if (propCount > 0) parts.push(`${propCount} property${propCount > 1 ? 'ies' : ''}`);
+              if (relCount > 0) parts.push(`${relCount} relationship${relCount > 1 ? 's' : ''}`);
+              msg = `Added ${parts.join(' and ')} from Neo4j`;
+            }
 
-  fetch(`/api/labels/${currentLabel.name}/pull`, { method: 'POST' })
-    .then(r => r.json())
-    .then(data => {
-      if (data.status === 'success') {
-        const propCount = data.new_properties_count || 0;
-        const relCount = data.new_relationships_count || 0;
-        const total = propCount + relCount;
+            showToast(msg, 'success');
+            loadLabel(currentLabel.name);
+          } else {
+            showToast('Error pulling from Neo4j: ' + (data.error || 'Unknown error'), 'error');
+          }
+        })
+        .catch(err => showToast('Network error: ' + err.message, 'error'));
+    }
+  );
 
-        let msg = '';
-        if (total === 0) {
-          msg = 'No new schema found in Neo4j';
-        } else {
-          const parts = [];
-          if (propCount > 0) parts.push(`${propCount} property${propCount > 1 ? 'ies' : ''}`);
-          if (relCount > 0) parts.push(`${relCount} relationship${relCount > 1 ? 's' : ''}`);
-          msg = `Added ${parts.join(' and ')} from Neo4j`;
-        }
+  // Fetch instance count
+  getInstanceCount(currentLabel.name).then(data => {
+    modalElements.loadingEl.style.display = 'none';
+    modalElements.detailsEl.style.display = 'block';
 
-        showToast(msg, 'success');
-        loadLabel(currentLabel.name);
-      } else {
-        showToast('Error pulling from Neo4j: ' + (data.error || 'Unknown error'), 'error');
-      }
-    })
-    .catch(err => showToast('Network error: ' + err.message, 'error'));
+    if (data.status === 'success') {
+      const count = data.count || 0;
+      modalElements.countEl.innerHTML = `<strong>Instances in Neo4j:</strong> ${count}`;
+    } else {
+      modalElements.errorEl.style.display = 'block';
+      document.getElementById('confirm-modal-error-text').textContent = data.error || 'Could not fetch instance count';
+    }
+  });
 }
 
 function pullAllFromNeo4j() {
