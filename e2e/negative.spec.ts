@@ -54,8 +54,8 @@ test('files page loads even with no providers', async ({ page, baseURL }) => {
   await expect(page.getByTestId('files-title')).toBeVisible();
   await expect(page.getByTestId('files-root')).toBeVisible();
 
-  // Even if no data, the structure should be present
-  await page.waitForLoadState('networkidle');
+  // Even if no data, the structure should be present (skip networkidle due to polling)
+  await page.waitForTimeout(1000);
 
   // No console errors expected
   const consoleErrors: string[] = [];
@@ -97,7 +97,8 @@ test('scan form shows validation for empty path', async ({ page, baseURL }) => {
 
   // Go to Files page where scan form exists
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.getByTestId('files-title').waitFor({ state: 'visible', timeout: 10000 });
 
   // Find scan form if it exists
   const scanForm = page.getByTestId('prov-scan-form');
@@ -128,6 +129,7 @@ test('optional dependencies gracefully degrade', async ({ page, baseURL }) => {
   // Navigate through key pages
   await page.getByTestId('nav-files').click();
   await expect(page.getByTestId('files-title')).toBeVisible();
+  await page.waitForTimeout(500); // Brief wait instead of networkidle (datasets has polling)
 
   await page.getByTestId('nav-maps').click();
   await page.waitForLoadState('networkidle');

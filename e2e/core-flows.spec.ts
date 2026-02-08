@@ -49,7 +49,8 @@ test('complete flow: scan → browse → file details', async ({ page, baseURL, 
 
   // Step 3: Navigate to Files page
   await page.getByTestId('nav-files').click();
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (datasets page has continuous polling)
+  await page.getByTestId('files-title').waitFor({ state: 'visible', timeout: 10000 });
   await expect(page.getByTestId('files-title')).toBeVisible();
   await expect(page.getByTestId('files-root')).toBeVisible();
 
@@ -109,7 +110,8 @@ test('browse page shows correct file listing structure', async ({ page, baseURL,
   await page.goto(base);
   await page.waitForLoadState('networkidle');
   await page.getByTestId('nav-files').click();
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (datasets page has continuous polling)
+  await page.getByTestId('files-title').waitFor({ state: 'visible', timeout: 10000 });
 
   // Verify stable selectors are present
   await expect(page.getByTestId('files-title')).toBeVisible();
@@ -147,7 +149,13 @@ test('navigation covers all 7 pages', async ({ page, baseURL }) => {
 
     // Navigate
     await navLink.click();
-    await page.waitForLoadState('networkidle');
+
+    // For /datasets page, wait for specific element instead of networkidle (has polling)
+    if (url === '/datasets') {
+      await page.getByTestId('files-title').waitFor({ state: 'visible', timeout: 10000 });
+    } else {
+      await page.waitForLoadState('networkidle', { timeout: 15000 });
+    }
 
     // Verify page loads correctly
     await expect(page).toHaveURL(new RegExp(url));

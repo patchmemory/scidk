@@ -8,7 +8,8 @@ import { test, expect } from '@playwright/test';
 test('files page provider browser controls are present', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#prov-select').waitFor({ state: 'visible', timeout: 10000 });
 
   // Check provider selector
   const provSelect = page.locator('#prov-select');
@@ -46,7 +47,8 @@ test('files page provider browser controls are present', async ({ page, baseURL 
 test('provider selector can change providers', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#prov-select').waitFor({ state: 'visible', timeout: 10000 });
 
   const provSelect = page.locator('#prov-select');
 
@@ -69,7 +71,8 @@ test('provider selector can change providers', async ({ page, baseURL }) => {
 test('root selector updates when provider changes', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#prov-select').waitFor({ state: 'visible', timeout: 10000 });
 
   const rootSelect = page.locator('#root-select');
 
@@ -83,7 +86,8 @@ test('root selector updates when provider changes', async ({ page, baseURL }) =>
 test('path input accepts user input', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#prov-select').waitFor({ state: 'visible', timeout: 10000 });
 
   const provPath = page.locator('#prov-path');
 
@@ -99,7 +103,8 @@ test('path input accepts user input', async ({ page, baseURL }) => {
 test('recursive browse checkbox toggles', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#prov-select').waitFor({ state: 'visible', timeout: 10000 });
 
   const recursiveCheckbox = page.locator('#prov-browse-recursive');
 
@@ -118,7 +123,8 @@ test('recursive browse checkbox toggles', async ({ page, baseURL }) => {
 test('fast-list checkbox toggles', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#prov-select').waitFor({ state: 'visible', timeout: 10000 });
 
   const fastListCheckbox = page.locator('#prov-browse-fast-list');
 
@@ -133,7 +139,8 @@ test('fast-list checkbox toggles', async ({ page, baseURL }) => {
 test('max depth input accepts numeric values', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#prov-select').waitFor({ state: 'visible', timeout: 10000 });
 
   const maxDepthInput = page.locator('#prov-browse-max-depth');
 
@@ -149,7 +156,8 @@ test('max depth input accepts numeric values', async ({ page, baseURL }) => {
 test('go button triggers browse action', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#prov-select').waitFor({ state: 'visible', timeout: 10000 });
 
   // Track navigation/requests
   let browseRequestMade = false;
@@ -172,7 +180,8 @@ test('go button triggers browse action', async ({ page, baseURL }) => {
 test('rocrate viewer buttons exist if feature is enabled', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#prov-select').waitFor({ state: 'visible', timeout: 10000 });
 
   // Check if RO-Crate buttons exist (they may not be present if feature is disabled)
   const openButton = page.locator('#open-rocrate');
@@ -194,7 +203,8 @@ test('rocrate viewer buttons exist if feature is enabled', async ({ page, baseUR
 test('recent scans selector and controls are present', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#prov-select').waitFor({ state: 'visible', timeout: 10000 });
 
   // Check recent scans dropdown
   const recentScans = page.locator('#recent-scans');
@@ -212,7 +222,8 @@ test('recent scans selector and controls are present', async ({ page, baseURL })
 test('refresh scans button is functional', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
-  await page.waitForLoadState('networkidle');
+  // Wait for key elements instead of networkidle (page has continuous polling)
+  await page.locator('#prov-select').waitFor({ state: 'visible', timeout: 10000 });
 
   const refreshButton = page.locator('#refresh-scans');
 

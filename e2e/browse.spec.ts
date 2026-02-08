@@ -18,8 +18,8 @@ test('files page loads and shows stable hooks', async ({ page, baseURL }) => {
   await expect(page.getByTestId('files-title')).toBeVisible();
   await expect(page.getByTestId('files-root')).toBeVisible();
 
-  // Let network settle and ensure no console errors
-  await page.waitForLoadState('networkidle');
+  // Wait briefly for any delayed errors (skip networkidle due to polling on datasets page)
+  await page.waitForTimeout(1000);
   const errors = consoleMessages.filter((m) => m.type === 'error');
   expect(errors.length).toBe(0);
 });

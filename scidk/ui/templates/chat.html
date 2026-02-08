@@ -1,30 +1,337 @@
 {% extends 'base.html' %}
 {% block title %}-SciDK-> Chat{% endblock %}
 {% block content %}
-<section>
-  <h2>💬 Chat <span class="badge" style="background:#4a90e2; color:#fff; font-size:0.6em; padding:0.2em 0.5em; border-radius:3px">GraphRAG</span></h2>
-  <p class="small">Ask questions about your graph data in natural language.</p>
+<div class="chat-container">
+  <!-- Left Column: Chat Interface -->
+  <div class="chat-panel">
+    <div class="chat-header">
+      <h2>💬 Chat <span class="badge" style="background:#4a90e2; color:#fff; font-size:0.6em; padding:0.2em 0.5em; border-radius:3px">GraphRAG</span></h2>
+      <div class="chat-controls">
+        <select id="llm-selector" class="form-select form-select-sm" style="max-width: 180px; margin-right: 0.5rem;" title="LLM Provider">
+          <option value="anthropic">🤖 Claude</option>
+          <option value="openai">🧠 GPT</option>
+          <option value="ollama">💻 Local</option>
+          <option value="none">⚙️ Pattern-only</option>
+        </select>
+        <select id="session-selector" class="form-select form-select-sm" style="max-width: 180px; margin-right: 0.5rem;" title="Chat Session">
+          <option value="current">Current Session</option>
+        </select>
+        <label style="font-size: 0.85em; margin-right: 0.5rem;">
+          <input type="checkbox" id="verbose-mode" />
+          Verbose
+        </label>
+      </div>
+    </div>
 
-  <div style="margin-bottom: 1rem;">
-    <label style="font-size: 0.9em;">
-      <input type="checkbox" id="verbose-mode" />
-      Show technical details (entities, execution time)
-    </label>
+    <div id="chat-history" class="chat-scroll" data-testid="chat-history"></div>
+
+    <form id="chat-form" class="chat-input-form">
+      <textarea id="chat-input" class="chat-textarea" placeholder="Example: Find all files in my project&#10;Example: How many File nodes are in the database?&#10;Example: Show me recent scans" data-testid="chat-input"></textarea>
+      <div class="chat-actions">
+        <button type="submit" class="btn btn-sm btn-primary" data-testid="chat-send">Send</button>
+        <button type="button" id="clear-history" class="btn btn-sm btn-secondary" data-testid="chat-clear">Clear</button>
+        <button type="button" id="save-session" class="btn btn-sm btn-outline-secondary">Save Session</button>
+      </div>
+    </form>
   </div>
 
-  <form id="chat-form">
-    <textarea id="chat-input" style="width:100%; height: 5rem; font-family: inherit;" placeholder="Example: Find all files in my project&#10;Example: How many File nodes are in the database?&#10;Example: Show me recent scans" data-testid="chat-input"></textarea>
-    <div class="actions">
-      <button type="submit" data-testid="chat-send">Send</button>
-      <button type="button" id="clear-history" style="background:#6c757d" data-testid="chat-clear">Clear History</button>
-    </div>
-  </form>
+  <!-- Resizable Divider for Chat/Data Panel -->
+  <div class="vertical-resize-handle" id="vertical-resize-handle"></div>
 
-  <div id="chat-history" style="margin-top:1.5rem" data-testid="chat-history"></div>
-</section>
+  <!-- Right Column: Data Output & Query Editor -->
+  <div class="data-panel" id="data-panel">
+    <!-- Top Section: Results & Graph (resizable) -->
+    <div class="data-panel-top" id="data-panel-top">
+      <div class="data-panel-header">
+        <h3>Data Output</h3>
+        <div class="data-panel-tabs">
+          <button class="tab-btn active" data-tab="results">Results</button>
+          <button class="tab-btn" data-tab="graph">Graph</button>
+        </div>
+      </div>
+
+      <div class="data-panel-content">
+        <!-- Results Tab -->
+        <div id="results-tab" class="tab-content active">
+          <div class="empty-state">
+            <p class="small text-muted">Query results will appear here</p>
+          </div>
+          <div id="results-output" style="display: none;"></div>
+        </div>
+
+        <!-- Graph Visualization Tab -->
+        <div id="graph-tab" class="tab-content">
+          <div class="empty-state">
+            <p class="small text-muted">Graph visualization will appear here</p>
+          </div>
+          <div id="graph-viz" style="display: none;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resizable Divider -->
+    <div class="resize-handle" id="resize-handle"></div>
+
+    <!-- Bottom Section: Query Editor -->
+    <div class="query-editor-panel" id="query-editor-panel">
+      <div class="query-editor-header">
+        <h3>Query Editor</h3>
+        <div class="query-controls">
+          <button class="btn btn-sm btn-success" id="run-query-btn" title="Run query">▶ Run</button>
+          <button class="btn btn-sm btn-outline-secondary" id="save-query-btn" title="Save/Bookmark query">💾 Save</button>
+          <button class="btn btn-sm btn-outline-secondary" id="load-query-btn" title="Load from library">📚 Library</button>
+          <button class="btn btn-sm btn-outline-secondary" id="clear-query-btn" title="Clear editor">Clear</button>
+        </div>
+      </div>
+      <textarea id="query-editor" class="query-textarea" placeholder="// Cypher query will appear here from chat, or you can write your own&#10;MATCH (n) RETURN n LIMIT 10"></textarea>
+      <div class="query-info">
+        <span class="small text-muted" id="query-info-text">Ready</span>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 {% block head %}
 <style>
+  /* Override base.html main constraints for full-width layout */
+  main {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+
+  .chat-container {
+    display: flex;
+    height: calc(100vh - 60px);
+    gap: 0;
+  }
+
+  /* Left Column: Chat Panel */
+  .chat-panel {
+    flex: 1;
+    min-width: 350px;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+  }
+
+  /* Vertical Resizable Divider between Chat and Data Panel */
+  .vertical-resize-handle {
+    width: 6px;
+    background: #e0e0e0;
+    cursor: ew-resize;
+    position: relative;
+    transition: background 0.15s ease;
+    flex-shrink: 0;
+  }
+
+  .vertical-resize-handle:hover {
+    background: var(--accent);
+  }
+
+  .vertical-resize-handle::after {
+    content: '⋮';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #999;
+    font-size: 1.2rem;
+    line-height: 0.5rem;
+  }
+
+  .chat-header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #e0e0e0;
+    background: #f9f9f9;
+  }
+
+  .chat-header h2 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.5rem;
+  }
+
+  .chat-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .chat-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem 1.5rem;
+  }
+
+  .chat-input-form {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #e0e0e0;
+    background: #f9f9f9;
+  }
+
+  .chat-textarea {
+    width: 100%;
+    height: 5rem;
+    font-family: inherit;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 0.5rem;
+    resize: vertical;
+  }
+
+  .chat-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  /* Right Column: Data Panel with Resizable Split */
+  .data-panel {
+    flex: 1;
+    min-width: 400px;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+  }
+
+  /* Top Section: Data Output */
+  .data-panel-top {
+    flex: 1;
+    min-height: 200px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .data-panel-header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #e0e0e0;
+    background: #f9f9f9;
+  }
+
+  .data-panel-header h3 {
+    margin: 0 0 0.75rem 0;
+    font-size: 1.25rem;
+  }
+
+  .data-panel-tabs {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  .tab-btn {
+    padding: 0.4rem 1rem;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    font-size: 0.9rem;
+    transition: all 0.15s ease;
+  }
+
+  .tab-btn:hover {
+    background: #f0f0f0;
+  }
+
+  .tab-btn.active {
+    border-bottom-color: var(--accent);
+    font-weight: 600;
+  }
+
+  .data-panel-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+  }
+
+  .tab-content {
+    display: none;
+  }
+
+  .tab-content.active {
+    display: block;
+  }
+
+  /* Resizable Divider */
+  .resize-handle {
+    height: 6px;
+    background: #e0e0e0;
+    cursor: ns-resize;
+    position: relative;
+    transition: background 0.15s ease;
+  }
+
+  .resize-handle:hover {
+    background: var(--accent);
+  }
+
+  .resize-handle::after {
+    content: '⋯';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #999;
+    font-size: 1.2rem;
+    letter-spacing: 2px;
+  }
+
+  /* Bottom Section: Query Editor */
+  .query-editor-panel {
+    flex: 1;
+    min-height: 200px;
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid #e0e0e0;
+  }
+
+  .query-editor-header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #e0e0e0;
+    background: #f9f9f9;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .query-editor-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+  }
+
+  .query-controls {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .query-textarea {
+    flex: 1;
+    width: 100%;
+    padding: 1rem;
+    font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+    font-size: 0.9rem;
+    border: none;
+    resize: none;
+    background: #f8f9fa;
+  }
+
+  .query-textarea:focus {
+    outline: none;
+    background: #fff;
+  }
+
+  .query-info {
+    padding: 0.5rem 1.5rem;
+    background: #f9f9f9;
+    border-top: 1px solid #e0e0e0;
+  }
+
+  .empty-state {
+    padding: 3rem 1rem;
+    text-align: center;
+    color: #999;
+  }
+
+  /* Chat Messages */
   .chat-message {
     margin-bottom: 1rem;
     padding: 0.75rem;
@@ -84,6 +391,106 @@
     const history = document.getElementById('chat-history');
     const verboseCheckbox = document.getElementById('verbose-mode');
     const clearBtn = document.getElementById('clear-history');
+    const saveSessionBtn = document.getElementById('save-session');
+
+    // Query editor elements
+    const queryEditor = document.getElementById('query-editor');
+    const runQueryBtn = document.getElementById('run-query-btn');
+    const saveQueryBtn = document.getElementById('save-query-btn');
+    const loadQueryBtn = document.getElementById('load-query-btn');
+    const clearQueryBtn = document.getElementById('clear-query-btn');
+    const queryInfoText = document.getElementById('query-info-text');
+
+    // Resizable panels
+    const resizeHandle = document.getElementById('resize-handle');
+    const dataPanelTop = document.getElementById('data-panel-top');
+    const queryEditorPanel = document.getElementById('query-editor-panel');
+    const verticalResizeHandle = document.getElementById('vertical-resize-handle');
+    const chatPanel = document.querySelector('.chat-panel');
+    const dataPanel = document.getElementById('data-panel');
+
+    // Horizontal resize (top/bottom within right panel)
+    let isResizingHorizontal = false;
+    let startY = 0;
+    let startTopHeight = 0;
+    let startBottomHeight = 0;
+
+    resizeHandle.addEventListener('mousedown', (e) => {
+      isResizingHorizontal = true;
+      startY = e.clientY;
+      startTopHeight = dataPanelTop.offsetHeight;
+      startBottomHeight = queryEditorPanel.offsetHeight;
+      document.body.style.cursor = 'ns-resize';
+      e.preventDefault();
+    });
+
+    // Vertical resize (left/right panels)
+    let isResizingVertical = false;
+    let startX = 0;
+    let startLeftWidth = 0;
+    let startRightWidth = 0;
+
+    verticalResizeHandle.addEventListener('mousedown', (e) => {
+      isResizingVertical = true;
+      startX = e.clientX;
+      startLeftWidth = chatPanel.offsetWidth;
+      startRightWidth = dataPanel.offsetWidth;
+      document.body.style.cursor = 'ew-resize';
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      // Handle horizontal (top/bottom) resize
+      if (isResizingHorizontal) {
+        const deltaY = e.clientY - startY;
+        const newTopHeight = startTopHeight + deltaY;
+        const newBottomHeight = startBottomHeight - deltaY;
+
+        // Enforce minimum heights
+        if (newTopHeight >= 200 && newBottomHeight >= 200) {
+          dataPanelTop.style.flex = `0 0 ${newTopHeight}px`;
+          queryEditorPanel.style.flex = `0 0 ${newBottomHeight}px`;
+        }
+      }
+
+      // Handle vertical (left/right) resize
+      if (isResizingVertical) {
+        const deltaX = e.clientX - startX;
+        const newLeftWidth = startLeftWidth + deltaX;
+        const newRightWidth = startRightWidth - deltaX;
+
+        // Enforce minimum widths
+        if (newLeftWidth >= 350 && newRightWidth >= 400) {
+          chatPanel.style.flex = `0 0 ${newLeftWidth}px`;
+          dataPanel.style.flex = `0 0 ${newRightWidth}px`;
+        }
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (isResizingHorizontal || isResizingVertical) {
+        isResizingHorizontal = false;
+        isResizingVertical = false;
+        document.body.style.cursor = '';
+      }
+    });
+
+    // Tab switching (only Results/Graph now)
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetTab = btn.dataset.tab;
+
+        // Update active states
+        tabBtns.forEach(b => b.classList.remove('active'));
+        tabContents.forEach(c => c.classList.remove('active'));
+
+        btn.classList.add('active');
+        document.getElementById(`${targetTab}-tab`).classList.add('active');
+      });
+    });
 
     // Load saved history and verbose preference
     loadHistory();
@@ -99,7 +506,170 @@
       if (confirm('Clear all chat history?')) {
         localStorage.removeItem('chat_messages');
         history.innerHTML = '<p class="small" style="color:#999">History cleared. Start a new conversation!</p>';
+        clearDataPanel();
       }
+    });
+
+    // Save session (placeholder for future implementation)
+    saveSessionBtn.addEventListener('click', () => {
+      alert('Chat session persistence coming soon! Currently using browser localStorage.');
+    });
+
+    // Query Editor Functions
+    runQueryBtn.addEventListener('click', async () => {
+      const query = queryEditor.value.trim();
+      if (!query) {
+        queryInfoText.textContent = 'Please enter a query';
+        queryInfoText.style.color = '#dc3545';
+        return;
+      }
+
+      queryInfoText.textContent = 'Running query...';
+      queryInfoText.style.color = '#666';
+      runQueryBtn.disabled = true;
+
+      try {
+        const resp = await fetch('/api/graph/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query })
+        });
+        const data = await resp.json();
+
+        if (resp.ok && data.status === 'ok') {
+          queryInfoText.textContent = `Query executed successfully - ${data.result_count || 0} results in ${data.execution_time_ms || 0}ms`;
+          queryInfoText.style.color = '#28a745';
+
+          // Display results in the Results tab
+          const resultsOutput = document.getElementById('results-output');
+          const resultsEmpty = document.querySelector('#results-tab .empty-state');
+          resultsEmpty.style.display = 'none';
+          resultsOutput.style.display = 'block';
+
+          if (data.results && data.results.length > 0) {
+            const keys = Object.keys(data.results[0]);
+            let tableHtml = `<table class="table table-sm">
+              <thead><tr>${keys.map(k => `<th>${escapeHtml(k)}</th>`).join('')}</tr></thead>
+              <tbody>`;
+
+            data.results.forEach(row => {
+              tableHtml += `<tr>${keys.map(k => `<td>${escapeHtml(String(row[k] || ''))}</td>`).join('')}</tr>`;
+            });
+
+            tableHtml += `</tbody></table>`;
+            resultsOutput.innerHTML = tableHtml;
+          } else {
+            resultsOutput.innerHTML = '<p class="small text-muted">Query executed but returned no results.</p>';
+          }
+
+          // Switch to Results tab
+          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+          document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+          document.querySelector('[data-tab="results"]').classList.add('active');
+          document.getElementById('results-tab').classList.add('active');
+        } else {
+          queryInfoText.textContent = `Error: ${data.error || 'Query failed'}`;
+          queryInfoText.style.color = '#dc3545';
+        }
+      } catch (err) {
+        queryInfoText.textContent = `Error: ${err.message}`;
+        queryInfoText.style.color = '#dc3545';
+      } finally {
+        runQueryBtn.disabled = false;
+      }
+    });
+
+    saveQueryBtn.addEventListener('click', () => {
+      const query = queryEditor.value.trim();
+      if (!query) {
+        alert('Please enter a query to save');
+        return;
+      }
+
+      const name = prompt('Enter a name for this query:');
+      if (!name) return;
+
+      // Get saved queries from localStorage
+      const savedQueries = JSON.parse(localStorage.getItem('cypher_queries') || '[]');
+      savedQueries.push({ name, query, timestamp: Date.now() });
+      localStorage.setItem('cypher_queries', JSON.stringify(savedQueries));
+
+      queryInfoText.textContent = `Query saved as "${name}"`;
+      queryInfoText.style.color = '#28a745';
+      setTimeout(() => {
+        queryInfoText.textContent = 'Ready';
+        queryInfoText.style.color = '#666';
+      }, 2000);
+    });
+
+    loadQueryBtn.addEventListener('click', () => {
+      const savedQueries = JSON.parse(localStorage.getItem('cypher_queries') || '[]');
+
+      if (savedQueries.length === 0) {
+        alert('No saved queries found');
+        return;
+      }
+
+      // Create a simple query library modal
+      const libraryHtml = savedQueries.map((q, idx) =>
+        `<div style="margin-bottom:1rem; padding:0.75rem; border:1px solid #ddd; border-radius:4px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <strong>${escapeHtml(q.name)}</strong>
+            <div>
+              <button class="btn btn-sm btn-outline-primary" onclick="loadQueryByIndex(${idx})">Load</button>
+              <button class="btn btn-sm btn-outline-danger" onclick="deleteQueryByIndex(${idx})">Delete</button>
+            </div>
+          </div>
+          <pre style="margin-top:0.5rem; font-size:0.85em; background:#f8f9fa; padding:0.5rem; border-radius:3px; max-height:100px; overflow:auto;">${escapeHtml(q.query)}</pre>
+          <div class="small text-muted">${new Date(q.timestamp).toLocaleString()}</div>
+        </div>`
+      ).join('');
+
+      // Show in a simple modal-like overlay
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center;';
+      overlay.innerHTML = `<div style="background:#fff; padding:2rem; border-radius:8px; max-width:800px; max-height:80vh; overflow:auto; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+          <h3 style="margin:0;">Query Library</h3>
+          <button class="btn btn-sm btn-secondary" onclick="this.closest('[style*=fixed]').remove()">Close</button>
+        </div>
+        ${libraryHtml}
+      </div>`;
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.remove();
+      });
+    });
+
+    // Global functions for query library
+    window.loadQueryByIndex = (idx) => {
+      const savedQueries = JSON.parse(localStorage.getItem('cypher_queries') || '[]');
+      if (savedQueries[idx]) {
+        queryEditor.value = savedQueries[idx].query;
+        queryInfoText.textContent = `Loaded "${savedQueries[idx].name}"`;
+        queryInfoText.style.color = '#28a745';
+        document.querySelector('[style*="fixed"]')?.remove();
+        setTimeout(() => {
+          queryInfoText.textContent = 'Ready';
+          queryInfoText.style.color = '#666';
+        }, 2000);
+      }
+    };
+
+    window.deleteQueryByIndex = (idx) => {
+      if (!confirm('Delete this query?')) return;
+      const savedQueries = JSON.parse(localStorage.getItem('cypher_queries') || '[]');
+      savedQueries.splice(idx, 1);
+      localStorage.setItem('cypher_queries', JSON.stringify(savedQueries));
+      document.querySelector('[style*="fixed"]')?.remove();
+      loadQueryBtn.click(); // Refresh the library view
+    };
+
+    clearQueryBtn.addEventListener('click', () => {
+      if (queryEditor.value.trim() && !confirm('Clear query editor?')) return;
+      queryEditor.value = '';
+      queryInfoText.textContent = 'Query cleared';
+      queryInfoText.style.color = '#666';
     });
 
     form.addEventListener('submit', async (e) => {
@@ -122,6 +692,9 @@
         if (data.status === 'ok') {
           const metadata = data.metadata || null;
           appendMessage('assistant', data.reply, metadata);
+
+          // Update data panel with results
+          updateDataPanel(data);
         } else {
           appendMessage('assistant', `Error: ${data.error || 'Unknown error'}`, null);
         }
@@ -198,6 +771,61 @@
       const div = document.createElement('div');
       div.textContent = text;
       return div.innerHTML;
+    }
+
+    function updateDataPanel(data) {
+      const resultsOutput = document.getElementById('results-output');
+      const resultsEmpty = document.querySelector('#results-tab .empty-state');
+
+      // Update Results tab
+      if (data.metadata && data.metadata.raw_results) {
+        const results = data.metadata.raw_results;
+        resultsEmpty.style.display = 'none';
+        resultsOutput.style.display = 'block';
+
+        // Format results as a table if they're structured
+        if (Array.isArray(results) && results.length > 0) {
+          const keys = Object.keys(results[0]);
+          let tableHtml = `<table class="table table-sm">
+            <thead><tr>${keys.map(k => `<th>${escapeHtml(k)}</th>`).join('')}</tr></thead>
+            <tbody>`;
+
+          results.forEach(row => {
+            tableHtml += `<tr>${keys.map(k => `<td>${escapeHtml(String(row[k] || ''))}</td>`).join('')}</tr>`;
+          });
+
+          tableHtml += `</tbody></table>`;
+          resultsOutput.innerHTML = tableHtml;
+        } else {
+          resultsOutput.innerHTML = `<pre style="background:#f8f9fa; padding:1rem; border-radius:4px; overflow:auto;">${escapeHtml(JSON.stringify(results, null, 2))}</pre>`;
+        }
+      }
+
+      // Update Query Editor with generated Cypher
+      if (data.metadata && data.metadata.cypher_query) {
+        queryEditor.value = data.metadata.cypher_query;
+        queryInfoText.textContent = `Query loaded from chat (${data.metadata.execution_time_ms || 0}ms, ${data.metadata.result_count || 0} results)`;
+        queryInfoText.style.color = '#28a745';
+        setTimeout(() => {
+          queryInfoText.textContent = 'Ready';
+          queryInfoText.style.color = '#666';
+        }, 3000);
+      }
+    }
+
+    function clearDataPanel() {
+      // Reset Results tab to empty state
+      const resultsOutput = document.getElementById('results-output');
+      const resultsEmpty = document.querySelector('#results-tab .empty-state');
+
+      resultsEmpty.style.display = 'block';
+      resultsOutput.style.display = 'none';
+      resultsOutput.innerHTML = '';
+
+      // Clear query editor
+      queryEditor.value = '';
+      queryInfoText.textContent = 'Ready';
+      queryInfoText.style.color = '#666';
     }
   });
 </script>
