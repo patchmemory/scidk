@@ -138,20 +138,20 @@ def workbook_view(dataset_id):
 
 @bp.get('/plugins')
 def plugins():
-    """Redirect to Settings page plugins section."""
-    return redirect(url_for('ui.settings') + '#plugins')
+    """Redirect to landing page plugins section."""
+    return redirect(url_for('ui.index') + '#plugins')
 
 
 @bp.get('/interpreters')
 def interpreters():
-    """Redirect to Settings page interpreters section (backward compatibility)."""
-    return redirect(url_for('ui.settings') + '#interpreters')
+    """Redirect to landing page interpreters section (backward compatibility)."""
+    return redirect(url_for('ui.index') + '#interpreters')
 
 
 @bp.get('/extensions')
 def extensions_legacy():
-    """Backward-compatible route - redirects to settings interpreters."""
-    return redirect(url_for('ui.settings') + '#interpreters')
+    """Backward-compatible route - redirects to interpreters section."""
+    return redirect(url_for('ui.index') + '#interpreters')
 
 
 @bp.get('/rocrate_view')
