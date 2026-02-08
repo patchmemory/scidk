@@ -18,12 +18,12 @@ test('chat page loads and displays beta badge', async ({ page, baseURL }) => {
   await page.waitForLoadState('networkidle');
 
   // Verify page loads
-  await expect(page).toHaveTitle(/-SciDK-> Chats/i, { timeout: 10_000 });
+  await expect(page).toHaveTitle(/-SciDK-> Chat/i, { timeout: 10_000 });
 
-  // Check for Beta badge
+  // Check for GraphRAG badge
   const betaBadge = page.locator('.badge');
   await expect(betaBadge).toBeVisible();
-  await expect(betaBadge).toHaveText('Beta');
+  await expect(betaBadge).toHaveText('GraphRAG');
 
   // Check for chat form
   const chatForm = page.locator('#chat-form');
@@ -32,7 +32,7 @@ test('chat page loads and displays beta badge', async ({ page, baseURL }) => {
   // Check for chat input
   const chatInput = page.locator('#chat-input');
   await expect(chatInput).toBeVisible();
-  await expect(chatInput).toHaveAttribute('placeholder', /Ask something/i);
+  await expect(chatInput).toHaveAttribute('placeholder', /Example|Find all files/i);
 
   // Check for send button
   const sendButton = page.locator('#chat-form button[type="submit"]');
@@ -57,7 +57,7 @@ test('chat navigation link is visible in header', async ({ page, baseURL }) => {
   // Click it and verify we navigate to chat page
   await chatsLink.click();
   await page.waitForLoadState('networkidle');
-  await expect(page).toHaveTitle(/-SciDK-> Chats/i);
+  await expect(page).toHaveTitle(/-SciDK-> Chat/i);
 });
 
 test('chat form can accept input', async ({ page, baseURL }) => {
@@ -85,15 +85,17 @@ test('chat form submits to /api/chat endpoint', async ({ page, baseURL }) => {
 
   // Listen for API request
   const apiRequestPromise = page.waitForRequest(
-    (request) => request.url().includes('/api/chat') && request.method() === 'POST'
+    (request) => request.url().includes('/api/chat/graphrag') && request.method() === 'POST'
   );
 
   // Mock the API response to avoid actual chat API calls
-  await page.route('**/api/chat', async (route) => {
+  await page.route('**/api/chat/graphrag', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
+        status: 'ok',
+        reply: 'Here are your datasets...',
         history: [
           { role: 'user', content: 'What are my datasets?' },
           { role: 'assistant', content: 'Here are your datasets...' }
@@ -111,7 +113,7 @@ test('chat form submits to /api/chat endpoint', async ({ page, baseURL }) => {
     submitButton.click()
   ]);
 
-  expect(apiRequest.url()).toContain('/api/chat');
+  expect(apiRequest.url()).toContain('/api/chat/graphrag');
 
   // Verify request payload
   const postData = apiRequest.postDataJSON();
@@ -128,11 +130,13 @@ test('chat form displays history after response', async ({ page, baseURL }) => {
   const chatHistory = page.locator('#chat-history');
 
   // Mock the API response
-  await page.route('**/api/chat', async (route) => {
+  await page.route('**/api/chat/graphrag', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
+        status: 'ok',
+        reply: 'Test response',
         history: [
           { role: 'user', content: 'Test question' },
           { role: 'assistant', content: 'Test response' }
@@ -149,11 +153,11 @@ test('chat form displays history after response', async ({ page, baseURL }) => {
   // Wait for history to be populated
   await page.waitForTimeout(1000); // Wait for API mock and DOM update
 
-  // Verify history has content
+  // Verify history has content (new UI shows "👤 You" and "🤖 Assistant")
   const historyContent = await chatHistory.textContent();
-  expect(historyContent).toContain('user:');
+  expect(historyContent).toContain('You');
   expect(historyContent).toContain('Test question');
-  expect(historyContent).toContain('assistant:');
+  expect(historyContent).toContain('Assistant');
   expect(historyContent).toContain('Test response');
 
   // Verify input is cleared after submission
@@ -175,7 +179,7 @@ test('chat form handles API errors gracefully', async ({ page, baseURL }) => {
   });
 
   // Mock an API error
-  await page.route('**/api/chat', async (route) => {
+  await page.route('**/api/chat/graphrag', async (route) => {
     await route.abort('failed');
   });
 
@@ -201,7 +205,7 @@ test('chat form does not submit empty messages', async ({ page, baseURL }) => {
   // Track API calls
   let apiCallMade = false;
   page.on('request', (request) => {
-    if (request.url().includes('/api/chat') && request.method() === 'POST') {
+    if (request.url().includes('/api/chat/graphrag') && request.method() === 'POST') {
       apiCallMade = true;
     }
   });

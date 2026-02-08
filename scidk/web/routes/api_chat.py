@@ -109,18 +109,28 @@ def api_chat_graphrag():
                 schema_cache['schema'] = filtered
                 schema_cache['last_loaded_ts'] = now
             neo4j_schema = schema_cache.get('schema') or {"labels": [], "relationships": []}
-            # Create retriever and GraphRAG
-            try:
-                from ...services.graphrag_llm import OllamaLLMAdapter
-                if llm is None and provider in ('local_ollama','ollama'):
-                    llm = OllamaLLMAdapter(model=model)
-            except Exception:
-                pass
-            from ...services.graphrag_examples import examples as _ex
-            retriever = Text2CypherRetriever(driver=driver, llm=llm, neo4j_schema=neo4j_schema, examples=t2c_examples)
-            rag = GraphRAG(retriever=retriever, llm=llm)
-            # Execute
-            result_text = rag.query(message)
+
+            # Use new QueryEngine with entity extraction
+            from ...services.graphrag.query_engine import QueryEngine
+            anthropic_key = os.environ.get('SCIDK_ANTHROPIC_API_KEY')
+            verbose = (os.environ.get('SCIDK_GRAPHRAG_VERBOSE') or '').strip().lower() in ('1','true','yes')
+
+            engine = QueryEngine(
+                driver=driver,
+                neo4j_schema=neo4j_schema,
+                anthropic_api_key=anthropic_key,
+                examples=t2c_examples,
+                verbose=verbose
+            )
+
+            # Execute query
+            result = engine.query(message)
+
+            if result.get('status') == 'error':
+                return jsonify(result), 500
+
+            result_text = result.get('answer', 'No results found')
+
             # Track history and minimal audit
             store = _get_ext().setdefault('chat', {"history": []})
             store['history'].extend([{"role":"user","content":message},{"role":"assistant","content":result_text}])
@@ -130,11 +140,27 @@ def api_chat_graphrag():
                     'ts': int(time.time()),
                     'message': message[:500],
                     'reply_len': len(result_text or ''),
-                    'provider': provider,
+                    'execution_time_ms': result.get('execution_time_ms', 0),
                 })
             except Exception:
                 pass
-            return jsonify({"status": "ok", "reply": result_text, "history": store['history']}), 200
+
+            # Build response with metadata for enhanced UI
+            response_data = {
+                "status": "ok",
+                "reply": result_text,
+                "history": store['history']
+            }
+
+            # Include metadata if verbose mode
+            if verbose:
+                response_data["metadata"] = {
+                    "entities": result.get('entities', {}),
+                    "execution_time_ms": result.get('execution_time_ms', 0),
+                    "result_count": len(result.get('results', []))
+                }
+
+            return jsonify(response_data), 200
         except Exception as e:
             return jsonify({"status": "error", "error": str(e)}), 500
 
