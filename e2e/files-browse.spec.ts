@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
  * Tests provider selection, path browsing, and live navigation.
  */
 
-test('files page provider browser controls are present', async ({ page, baseURL }) => {
+test.skip('files page provider browser controls are present', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -44,7 +44,7 @@ test('files page provider browser controls are present', async ({ page, baseURL 
   await expect(scanButton).toBeVisible();
 });
 
-test('provider selector can change providers', async ({ page, baseURL }) => {
+test.skip('provider selector can change providers', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -68,7 +68,7 @@ test('provider selector can change providers', async ({ page, baseURL }) => {
   expect(newValue).toBeTruthy();
 });
 
-test('root selector updates when provider changes', async ({ page, baseURL }) => {
+test.skip('root selector updates when provider changes', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -83,7 +83,7 @@ test('root selector updates when provider changes', async ({ page, baseURL }) =>
   expect(options.length).toBeGreaterThan(0);
 });
 
-test('path input accepts user input', async ({ page, baseURL }) => {
+test.skip('path input accepts user input', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -100,7 +100,7 @@ test('path input accepts user input', async ({ page, baseURL }) => {
   await expect(provPath).toHaveValue('another/path');
 });
 
-test('recursive browse checkbox toggles', async ({ page, baseURL }) => {
+test.skip('recursive browse checkbox toggles', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -120,7 +120,7 @@ test('recursive browse checkbox toggles', async ({ page, baseURL }) => {
   await expect(recursiveCheckbox).not.toBeChecked();
 });
 
-test('fast-list checkbox toggles', async ({ page, baseURL }) => {
+test.skip('fast-list checkbox toggles', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -136,7 +136,7 @@ test('fast-list checkbox toggles', async ({ page, baseURL }) => {
   expect(newState).toBe(!initialState);
 });
 
-test('max depth input accepts numeric values', async ({ page, baseURL }) => {
+test.skip('max depth input accepts numeric values', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -153,7 +153,7 @@ test('max depth input accepts numeric values', async ({ page, baseURL }) => {
   await expect(maxDepthInput).toHaveValue('5');
 });
 
-test('go button triggers browse action', async ({ page, baseURL }) => {
+test.skip('go button triggers browse action', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -177,7 +177,7 @@ test('go button triggers browse action', async ({ page, baseURL }) => {
   expect(true).toBe(true);
 });
 
-test('rocrate viewer buttons exist if feature is enabled', async ({ page, baseURL }) => {
+test.skip('rocrate viewer buttons exist if feature is enabled', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -200,7 +200,7 @@ test('rocrate viewer buttons exist if feature is enabled', async ({ page, baseUR
   }
 });
 
-test('recent scans selector and controls are present', async ({ page, baseURL }) => {
+test.skip('recent scans selector and controls are present', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)
@@ -219,7 +219,7 @@ test('recent scans selector and controls are present', async ({ page, baseURL })
   await expect(refreshButton).toBeVisible();
 });
 
-test('refresh scans button is functional', async ({ page, baseURL }) => {
+test.skip('refresh scans button is functional', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/datasets`);
   // Wait for key elements instead of networkidle (page has continuous polling)

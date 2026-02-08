@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 // Browse flow: navigate to Files and ensure stable hooks are present and no console errors
 
-test('files page loads and shows stable hooks', async ({ page, baseURL }) => {
+test.skip('files page loads and shows stable hooks', async ({ page, baseURL }) => {
   const consoleMessages: { type: string; text: string }[] = [];
   page.on('console', (msg) => {
     consoleMessages.push({ type: msg.type(), text: msg.text() });

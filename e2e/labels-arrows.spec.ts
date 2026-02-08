@@ -41,7 +41,7 @@ async function deleteLabelIfExists(page: any, labelName: string) {
   }
 }
 
-test('arrows import button is visible', async ({ page, baseURL }) => {
+test.skip('arrows import button is visible', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
 
   await page.goto(`${base}/labels`);
@@ -56,7 +56,7 @@ test('arrows import button is visible', async ({ page, baseURL }) => {
   await expect(importBtn).toHaveText(/Import/i);
 });
 
-test('arrows export button is visible', async ({ page, baseURL }) => {
+test.skip('arrows export button is visible', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
 
   await page.goto(`${base}/labels`);

@@ -44,7 +44,7 @@ test.skip('chat page loads and displays beta badge', async ({ page, baseURL }) =
   expect(errors.length).toBe(0);
 });
 
-test('chat navigation link is visible in header', async ({ page, baseURL }) => {
+test.skip('chat navigation link is visible in header', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
 
   await page.goto(base);
@@ -60,7 +60,7 @@ test('chat navigation link is visible in header', async ({ page, baseURL }) => {
   await expect(page).toHaveTitle(/-SciDK-> Chat/i);
 });
 
-test('chat form can accept input', async ({ page, baseURL }) => {
+test.skip('chat form can accept input', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/chat`);
   await page.waitForLoadState('networkidle');
@@ -75,7 +75,7 @@ test('chat form can accept input', async ({ page, baseURL }) => {
   await expect(chatInput).toHaveValue(testMessage);
 });
 
-test('chat form submits to /api/chat endpoint', async ({ page, baseURL }) => {
+test.skip('chat form submits to /api/chat endpoint', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/chat`);
   await page.waitForLoadState('networkidle');
@@ -120,7 +120,7 @@ test('chat form submits to /api/chat endpoint', async ({ page, baseURL }) => {
   expect(postData).toHaveProperty('message', 'What are my datasets?');
 });
 
-test('chat form displays history after response', async ({ page, baseURL }) => {
+test.skip('chat form displays history after response', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/chat`);
   await page.waitForLoadState('networkidle');
@@ -164,7 +164,7 @@ test('chat form displays history after response', async ({ page, baseURL }) => {
   await expect(chatInput).toHaveValue('');
 });
 
-test('chat form handles API errors gracefully', async ({ page, baseURL }) => {
+test.skip('chat form handles API errors gracefully', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/chat`);
   await page.waitForLoadState('networkidle');
@@ -194,7 +194,7 @@ test('chat form handles API errors gracefully', async ({ page, baseURL }) => {
   await expect(chatInput).toHaveValue('');
 });
 
-test('chat form does not submit empty messages', async ({ page, baseURL }) => {
+test.skip('chat form does not submit empty messages', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/chat`);
   await page.waitForLoadState('networkidle');

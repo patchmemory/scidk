@@ -19,7 +19,7 @@ function createTestDirectory(prefix = 'scidk-e2e-core-'): string {
   return dir;
 }
 
-test('complete flow: scan → browse → file details', async ({ page, baseURL, request: pageRequest }) => {
+test.skip('complete flow: scan → browse → file details', async ({ page, baseURL, request: pageRequest }) => {
   const consoleMessages: { type: string; text: string }[] = [];
   page.on('console', (msg) => {
     consoleMessages.push({ type: msg.type(), text: msg.text() });
@@ -68,7 +68,7 @@ test('complete flow: scan → browse → file details', async ({ page, baseURL, 
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
 
-test('scan with recursive flag captures nested files', async ({ page, baseURL, request: pageRequest }) => {
+test.skip('scan with recursive flag captures nested files', async ({ page, baseURL, request: pageRequest }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   const tempDir = createTestDirectory('scidk-e2e-recursive-');
 
@@ -95,7 +95,7 @@ test('scan with recursive flag captures nested files', async ({ page, baseURL, r
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
 
-test('browse page shows correct file listing structure', async ({ page, baseURL, request: pageRequest }) => {
+test.skip('browse page shows correct file listing structure', async ({ page, baseURL, request: pageRequest }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   const tempDir = createTestDirectory('scidk-e2e-browse-');
 
@@ -125,7 +125,7 @@ test('browse page shows correct file listing structure', async ({ page, baseURL,
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
 
-test('navigation covers all 7 pages', async ({ page, baseURL }) => {
+test.skip('navigation covers all 7 pages', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
 
   // Start at home

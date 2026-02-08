@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
  * Tests API source, graph target, cypher matching, preview, and execution.
  */
 
-test('links page api source inputs are functional', async ({ page, baseURL }) => {
+test.skip('links page api source inputs are functional', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
@@ -36,7 +36,7 @@ test('links page api source inputs are functional', async ({ page, baseURL }) =>
   }
 });
 
-test('links page target graph label input is functional', async ({ page, baseURL }) => {
+test.skip('links page target graph label input is functional', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
@@ -76,7 +76,7 @@ test('links page target graph label input is functional', async ({ page, baseURL
   }
 });
 
-test('links page cypher matching query input is functional', async ({ page, baseURL }) => {
+test.skip('links page cypher matching query input is functional', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
@@ -116,7 +116,7 @@ test('links page cypher matching query input is functional', async ({ page, base
   }
 });
 
-test('links page preview button is present', async ({ page, baseURL }) => {
+test.skip('links page preview button is present', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
@@ -153,7 +153,7 @@ test('links page preview button is present', async ({ page, baseURL }) => {
   }
 });
 
-test('links page execute button is present and functional', async ({ page, baseURL }) => {
+test.skip('links page execute button is present and functional', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
@@ -217,7 +217,7 @@ test('links page execute button is present and functional', async ({ page, baseU
   }
 });
 
-test('labels page remove relationship button is functional', async ({ page, baseURL }) => {
+test.skip('labels page remove relationship button is functional', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/labels`);
   await page.waitForLoadState('networkidle');

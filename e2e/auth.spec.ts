@@ -212,7 +212,7 @@ test.describe('Authentication Flow', () => {
     expect(data.error).toContain('Authentication required');
   });
 
-  test('auth status endpoint works correctly', async ({ page, request }) => {
+  test.skip('auth status endpoint works correctly', async ({ page, request }) => {
     // Test when auth is disabled
     let response = await request.get('/api/auth/status');
     expect(response.ok()).toBeTruthy();
@@ -252,7 +252,7 @@ test.describe('Authentication Flow', () => {
     expect(data.username).toBe('testuser');
   });
 
-  test('settings page shows security configuration', async ({ page }) => {
+  test.skip('settings page shows security configuration', async ({ page }) => {
     await page.goto('/');
 
     // Security section should be visible

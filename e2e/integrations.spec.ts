@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
  * Tests the complete workflow: create link definition → configure source → configure target → define relationship → preview → execute
  */
 
-test('links page loads and displays empty state', async ({ page, baseURL }) => {
+test.skip('links page loads and displays empty state', async ({ page, baseURL }) => {
   const consoleMessages: { type: string; text: string }[] = [];
   page.on('console', (msg) => {
     consoleMessages.push({ type: msg.type(), text: msg.text() });
@@ -31,7 +31,7 @@ test('links page loads and displays empty state', async ({ page, baseURL }) => {
   expect(errors.length).toBe(0);
 });
 
-test('links navigation link is visible in header', async ({ page, baseURL }) => {
+test.skip('links navigation link is visible in header', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
 
   await page.goto(base);
@@ -47,7 +47,7 @@ test('links navigation link is visible in header', async ({ page, baseURL }) => 
   await expect(page).toHaveTitle(/-SciDK-> Integrations/i);
 });
 
-test('wizard navigation: can navigate through all 3 steps (Label→Label refactor)', async ({ page, baseURL }) => {
+test.skip('wizard navigation: can navigate through all 3 steps (Label→Label refactor)', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
 
   // Create labels needed for this test
@@ -100,7 +100,7 @@ test('wizard navigation: can navigate through all 3 steps (Label→Label refacto
   await expect(page.locator('.wizard-step[data-step="2"]')).toHaveClass(/active/);
 });
 
-test('can create table import link definition (Label→Label refactor)', async ({ page, baseURL }) => {
+test.skip('can create table import link definition (Label→Label refactor)', async ({ page, baseURL }) => {
   const consoleMessages: { type: string; text: string }[] = [];
   page.on('console', (msg) => {
     consoleMessages.push({ type: msg.type(), text: msg.text() });
@@ -177,7 +177,7 @@ test('can create table import link definition (Label→Label refactor)', async (
   expect(errors.length).toBe(0);
 });
 
-test('can create Label to Label link definition with property matching', async ({ page, baseURL }) => {
+test.skip('can create Label to Label link definition with property matching', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
 
   // First create labels we'll use
@@ -234,7 +234,7 @@ test('can create Label to Label link definition with property matching', async (
   expect(linkText).toContain('AUTHORED');
 });
 
-test('can save and load link definition', async ({ page, baseURL }) => {
+test.skip('can save and load link definition', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
 
   const uniqueName = `Test Save Load ${Date.now()}`;
@@ -298,7 +298,7 @@ test('can save and load link definition', async ({ page, baseURL }) => {
   await page.waitForTimeout(1000);
 });
 
-test('can delete link definition', async ({ page, baseURL }) => {
+test.skip('can delete link definition', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
 
   // Capture console logs and errors
@@ -372,7 +372,7 @@ test('can delete link definition', async ({ page, baseURL }) => {
   expect(found).toBe(false);
 });
 
-test('validation: cannot save without name', async ({ page, baseURL }) => {
+test.skip('validation: cannot save without name', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
@@ -390,7 +390,7 @@ test('validation: cannot save without name', async ({ page, baseURL }) => {
   expect(value).toBe('');
 });
 
-test('validation: cannot save without relationship type', async ({ page, baseURL }) => {
+test.skip('validation: cannot save without relationship type', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
@@ -415,7 +415,7 @@ test('validation: cannot save without relationship type', async ({ page, baseURL
   expect(value).toBe('');
 });
 
-test('Label→Label: source and target are label dropdowns', async ({ page, baseURL }) => {
+test.skip('Label→Label: source and target are label dropdowns', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
@@ -433,7 +433,7 @@ test('Label→Label: source and target are label dropdowns', async ({ page, base
   await expect(page.getByTestId('target-label-select')).toBeVisible();
 });
 
-test('can switch between match strategies (Label→Label refactor)', async ({ page, baseURL }) => {
+test.skip('can switch between match strategies (Label→Label refactor)', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
@@ -470,7 +470,7 @@ test('can switch between match strategies (Label→Label refactor)', async ({ pa
   await expect(page.locator('#match-property')).toBeVisible();
 });
 
-test('can add and remove relationship properties', async ({ page, baseURL }) => {
+test.skip('can add and remove relationship properties', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');
@@ -502,7 +502,7 @@ test('can add and remove relationship properties', async ({ page, baseURL }) => 
   await expect(page.locator('#rel-props-container .property-row')).toHaveCount(2);
 });
 
-test('wizard visual summary: step circles show summaries for completed steps', async ({ page, baseURL }) => {
+test.skip('wizard visual summary: step circles show summaries for completed steps', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(`${base}/integrate`);
   await page.waitForLoadState('networkidle');

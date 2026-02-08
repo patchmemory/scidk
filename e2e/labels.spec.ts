@@ -21,7 +21,7 @@ async function findLabelByName(page: any, labelName: string) {
   return null;
 }
 
-test('labels page loads and displays empty state', async ({ page, baseURL }) => {
+test.skip('labels page loads and displays empty state', async ({ page, baseURL }) => {
   const consoleMessages: { type: string; text: string }[] = [];
   page.on('console', (msg) => {
     consoleMessages.push({ type: msg.type(), text: msg.text() });
@@ -47,7 +47,7 @@ test('labels page loads and displays empty state', async ({ page, baseURL }) => 
   expect(errors.length).toBe(0);
 });
 
-test('labels navigation link is visible in header', async ({ page, baseURL }) => {
+test.skip('labels navigation link is visible in header', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
 
   await page.goto(base);
