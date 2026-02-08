@@ -1802,8 +1802,9 @@ function saveLabel() {
     };
   }).filter(p => p && p.name);
 
-  // Gather relationships
-  const relationships = Array.from(document.querySelectorAll('.relationship-row')).map(row => {
+  // Gather relationships (only from outgoing relationships container, not incoming)
+  const relsContainer = document.getElementById('relationships-container');
+  const relationships = Array.from(relsContainer.querySelectorAll('.relationship-row')).map(row => {
     const typeInput = row.querySelector('[data-field="type"]');
     const targetSelect = row.querySelector('[data-field="target_label"]');
 
