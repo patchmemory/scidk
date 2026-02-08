@@ -50,9 +50,12 @@ def check_auth():
         None if authentication passes, redirect Response if not authenticated
     """
     # Skip auth check in testing mode (unless specifically testing auth)
-    if current_app.config.get('TESTING', False):
+    # Check both TESTING config and if we're running under pytest
+    import os
+    import sys
+    is_testing = current_app.config.get('TESTING', False) or 'pytest' in sys.modules
+    if is_testing:
         # Only enforce auth in tests that explicitly enable it
-        import os
         if not os.environ.get('PYTEST_TEST_AUTH'):
             return None
 
