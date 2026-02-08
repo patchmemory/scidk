@@ -466,9 +466,13 @@
         <div style="display: flex; gap: 0.5rem;">
           <button id="btn-pull-instances" class="btn btn-sm btn-outline-primary" data-testid="pull-instances-btn">Pull from Neo4j</button>
           <button id="btn-push-instances" class="btn btn-sm btn-success" data-testid="push-instances-btn" style="display: none;">Push Changes</button>
+          <button id="btn-download-csv" class="btn btn-sm btn-outline-secondary" data-testid="download-csv-btn" style="display: none;">Download CSV</button>
+          <button id="btn-upload-csv" class="btn btn-sm btn-outline-secondary" data-testid="upload-csv-btn">Upload CSV</button>
           <button id="btn-refresh-instances" class="btn btn-sm btn-outline-secondary" data-testid="refresh-instances-btn">Refresh</button>
         </div>
       </div>
+
+      <input type="file" id="csv-file-input" accept=".csv" style="display:none;" />
 
       <div id="instance-table-container">
         <div class="empty-state small">Click "Pull from Neo4j" to load instances</div>
@@ -704,7 +708,10 @@ document.addEventListener('DOMContentLoaded', () => {
   try {
     // Instance browser buttons
     document.getElementById('btn-pull-instances').addEventListener('click', pullInstances);
-    document.getElementById('btn-push-instances').addEventListener('click', pushInstances);
+    document.getElementById('btn-push-instances').addEventListener('click', pushInstancesWithPreview);
+    document.getElementById('btn-download-csv').addEventListener('click', downloadInstancesCSV);
+    document.getElementById('btn-upload-csv').addEventListener('click', () => document.getElementById('csv-file-input').click());
+    document.getElementById('csv-file-input').addEventListener('change', handleCSVUpload);
     document.getElementById('btn-refresh-instances').addEventListener('click', refreshInstances);
     document.getElementById('btn-instance-prev').addEventListener('click', () => navigateInstances(-1));
     document.getElementById('btn-instance-next').addEventListener('click', () => navigateInstances(1));
@@ -2165,6 +2172,9 @@ async function pullInstances() {
       renderInstanceTable();
       showToast(`Loaded ${instanceData.length} instances`, 'success');
       document.getElementById('btn-push-instances').style.display = 'none';
+
+      // Show download CSV button if there are instances
+      document.getElementById('btn-download-csv').style.display = instanceData.length > 0 ? 'inline-block' : 'none';
     } else {
       showToast('Error loading instances: ' + (result.error || 'Unknown error'), 'error');
     }
@@ -2238,6 +2248,217 @@ async function refreshInstances() {
 function navigateInstances(delta) {
   instancePage = Math.max(0, instancePage + delta);
   pullInstances();
+}
+
+// CSV Export/Import functions
+function downloadInstancesCSV() {
+  if (!currentLabel || instanceData.length === 0) {
+    showToast('No instances to download', 'info');
+    return;
+  }
+
+  // Get property names
+  const properties = currentLabel.properties.map(p => p.name);
+
+  // Build CSV content
+  let csv = 'neo4j_id,' + properties.join(',') + '\n';
+
+  instanceData.forEach(instance => {
+    const row = [instance.id];
+    properties.forEach(prop => {
+      let value = instance.properties[prop] || '';
+      // Escape commas and quotes
+      if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
+        value = '"' + value.replace(/"/g, '""') + '"';
+      }
+      row.push(value);
+    });
+    csv += row.join(',') + '\n';
+  });
+
+  // Create download
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  const date = new Date().toISOString().split('T')[0];
+  link.setAttribute('href', url);
+  link.setAttribute('download', `${currentLabel.name}_instances_${date}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  showToast(`Downloaded ${instanceData.length} instances as CSV`, 'success');
+}
+
+function handleCSVUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  if (!currentLabel) {
+    showToast('Please select a label first', 'error');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const csv = e.target.result;
+      const lines = csv.split('\n').filter(line => line.trim());
+
+      if (lines.length < 2) {
+        showToast('CSV file is empty', 'error');
+        return;
+      }
+
+      // Parse header
+      const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+      const idIndex = headers.indexOf('neo4j_id');
+
+      if (idIndex === -1) {
+        showToast('CSV must have a "neo4j_id" column', 'error');
+        return;
+      }
+
+      // Parse rows
+      const newInstances = [];
+      const changes = {};
+
+      for (let i = 1; i < lines.length; i++) {
+        const values = parseCSVLine(lines[i]);
+        if (values.length !== headers.length) continue;
+
+        const id = values[idIndex];
+        if (!id) continue;
+
+        const properties = {};
+        headers.forEach((header, idx) => {
+          if (header !== 'neo4j_id') {
+            properties[header] = values[idx];
+          }
+        });
+
+        newInstances.push({ id, properties });
+
+        // Mark all as changed for push
+        const existingInstance = instanceData.find(inst => inst.id === id);
+        if (existingInstance) {
+          // Track changes for existing instances
+          changes[id] = {};
+          Object.entries(properties).forEach(([prop, value]) => {
+            if (existingInstance.properties[prop] !== value) {
+              changes[id][prop] = value;
+            }
+          });
+        } else {
+          // New instance - mark all properties as changed
+          changes[id] = properties;
+        }
+      }
+
+      if (newInstances.length === 0) {
+        showToast('No valid instances found in CSV', 'error');
+        return;
+      }
+
+      // Merge with existing data
+      newInstances.forEach(newInst => {
+        const existingIdx = instanceData.findIndex(inst => inst.id === newInst.id);
+        if (existingIdx >= 0) {
+          // Update existing
+          instanceData[existingIdx] = newInst;
+        } else {
+          // Add new
+          instanceData.push(newInst);
+        }
+      });
+
+      instanceChanges = changes;
+      renderInstanceTable();
+
+      // Show push button if there are changes
+      const changeCount = Object.keys(instanceChanges).length;
+      if (changeCount > 0) {
+        document.getElementById('btn-push-instances').style.display = 'inline-block';
+      }
+
+      showToast(`Loaded ${newInstances.length} instances from CSV (${changeCount} with changes)`, 'success');
+
+      // Clear file input
+      event.target.value = '';
+    } catch (error) {
+      showToast('Error parsing CSV: ' + error.message, 'error');
+      console.error('CSV parse error:', error);
+    }
+  };
+
+  reader.readAsText(file);
+}
+
+function parseCSVLine(line) {
+  const values = [];
+  let currentValue = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        currentValue += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      values.push(currentValue.trim());
+      currentValue = '';
+    } else {
+      currentValue += char;
+    }
+  }
+
+  values.push(currentValue.trim());
+  return values;
+}
+
+function pushInstancesWithPreview() {
+  if (!currentLabel) return;
+
+  const changeCount = Object.keys(instanceChanges).length;
+  if (changeCount === 0) {
+    showToast('No changes to push', 'info');
+    return;
+  }
+
+  // Count updates vs creates
+  let updateCount = 0;
+  let createCount = 0;
+
+  Object.keys(instanceChanges).forEach(instanceId => {
+    const existingInstance = instanceData.find(i => i.id === instanceId);
+    if (existingInstance && existingInstance.properties) {
+      updateCount++;
+    } else {
+      createCount++;
+    }
+  });
+
+  const modalElements = showConfirmModal(
+    `Push changes to "${currentLabel.name}"?`,
+    `You have ${changeCount} instance(s) with changes.`,
+    [
+      `Update ${updateCount} existing instance(s)`,
+      createCount > 0 ? `Create ${createCount} new instance(s)` : null,
+      'Push changes to Neo4j'
+    ].filter(Boolean),
+    () => pushInstances()
+  );
+
+  // Show change details immediately
+  modalElements.loadingEl.style.display = 'none';
+  modalElements.detailsEl.style.display = 'block';
+  modalElements.countEl.innerHTML = `<strong>Total changes:</strong> ${changeCount} instance(s)`;
 }
 
 function renderInstanceTable() {
