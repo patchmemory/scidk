@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>{% block title %}SciDK{% endblock %}</title>
+  <title>{% block title %}-SciDK->{% endblock %}</title>
   <style>
     :root { --fg:#222; --muted:#666; --bg:#fff; --accent:#0a6; }
     * { box-sizing: border-box; }
@@ -12,7 +12,7 @@
     nav a { color: var(--fg); text-decoration: none; padding: 0.25rem 0.5rem; border-radius: 4px; }
     nav a + a { margin-left: 0.25rem; }
     nav a:hover { background: #f3f3f3; }
-    main { padding: 1rem; max-width: 1100px; margin: 0 auto; }
+    main { padding: 1rem 0.5rem; max-width: 100%; margin: 0; }
     table { border-collapse: collapse; width: 100%; }
     td, th { border: 1px solid #eee; padding: 8px; text-align: left; }
     th { background: #f9f9f9; }
@@ -29,12 +29,12 @@
 </head>
 <body>
 <header data-testid="header">
-  <h1><a href="/" style="text-decoration:none;color:inherit" data-testid="nav-home">SciDK</a></h1>
+  <h1><a href="/" style="text-decoration:none;color:inherit;font-family:monospace;letter-spacing:0.02em" data-testid="nav-home">-SciDK-></a></h1>
   <nav data-testid="nav">
     <!-- Home link removed; use SciDK logo as Home -->
     <a href="/datasets" data-testid="nav-files">Files</a>
     <a href="/labels" data-testid="nav-labels">Labels</a>
-    <a href="/links" data-testid="nav-links">Links</a>
+    <a href="/integrate" data-testid="nav-integrate">Integrations</a>
     <a href="/map" data-testid="nav-maps">Maps</a>
     <a href="/chat" data-testid="nav-chats">Chats</a>
     <!-- Interpreters and Plugins moved into Settings page -->

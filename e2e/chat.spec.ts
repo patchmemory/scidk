@@ -18,7 +18,7 @@ test('chat page loads and displays beta badge', async ({ page, baseURL }) => {
   await page.waitForLoadState('networkidle');
 
   // Verify page loads
-  await expect(page).toHaveTitle(/SciDK - Chats/i, { timeout: 10_000 });
+  await expect(page).toHaveTitle(/-SciDK-> Chats/i, { timeout: 10_000 });
 
   // Check for Beta badge
   const betaBadge = page.locator('.badge');
@@ -57,7 +57,7 @@ test('chat navigation link is visible in header', async ({ page, baseURL }) => {
   // Click it and verify we navigate to chat page
   await chatsLink.click();
   await page.waitForLoadState('networkidle');
-  await expect(page).toHaveTitle(/SciDK - Chats/i);
+  await expect(page).toHaveTitle(/-SciDK-> Chats/i);
 });
 
 test('chat form can accept input', async ({ page, baseURL }) => {

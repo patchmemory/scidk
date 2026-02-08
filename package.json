@@ -7,6 +7,8 @@
   },
   "scripts": {
     "e2e": "playwright test -c e2e/playwright.config.ts",
+    "e2e:fast": "playwright test -c e2e/playwright.config.ts --grep @smoke",
+    "e2e:full": "playwright test -c e2e/playwright.config.ts",
     "e2e:headed": "PWDEBUG=1 playwright test -c e2e/playwright.config.ts --headed",
     "e2e:install": "npx playwright install --with-deps"
   }

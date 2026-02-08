@@ -226,6 +226,42 @@ The test suite creates temporary test data. You can reference `tests/conftest.py
    - Read-only: checked (recommended for demo)
 3. Click **"Create Mount"**
 
+### API Endpoints (for Links Integration)
+
+1. Navigate to **Settings** > **Links** section
+2. Scroll to "API Endpoint Mappings"
+3. Configure a new endpoint:
+   - **Name**: Descriptive name (e.g., "Users API")
+   - **URL**: Full API endpoint URL (e.g., `https://api.example.com/users`)
+   - **Auth Method**: Select authentication type:
+     - `None`: No authentication
+     - `Bearer Token`: OAuth/JWT bearer token
+     - `API Key`: API key in X-API-Key header
+   - **Auth Value**: Enter token/key if authentication is required
+   - **JSONPath** (optional): Extract specific data (e.g., `$.data[*]`)
+   - **Maps to Label** (optional): Target Label for imported data
+4. Click **"Test Connection"** to verify the endpoint
+5. Click **"Save Endpoint"** to register it
+
+**Using API Endpoints in Links:**
+- Registered endpoints appear in the Links wizard
+- Select an endpoint as a data source when creating links
+- Field mappings automatically populate from endpoint configuration
+
+**Security Notes:**
+- Auth tokens are encrypted at rest in the settings database
+- For production, set `SCIDK_API_ENCRYPTION_KEY` environment variable
+- Without this variable, an ephemeral key is generated (not persistent across restarts)
+
+**Example: JSONPlaceholder Test API**
+```
+Name: JSONPlaceholder Users
+URL: https://jsonplaceholder.typicode.com/users
+Auth Method: None
+JSONPath: $[*]
+Maps to Label: User
+```
+
 ## Troubleshooting
 
 ### Application Won't Start

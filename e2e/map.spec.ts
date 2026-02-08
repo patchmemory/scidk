@@ -18,7 +18,7 @@ test('map page loads and displays graph visualization', async ({ page, baseURL }
   await page.waitForLoadState('networkidle');
 
   // Verify page loads
-  await expect(page).toHaveTitle(/SciDK - Maps/i, { timeout: 10_000 });
+  await expect(page).toHaveTitle(/-SciDK-> Maps/i, { timeout: 10_000 });
 
   // Check for main sections
   await expect(page.locator('h2').filter({ hasText: 'Schema Graph' })).toBeVisible();
@@ -51,7 +51,7 @@ test('map navigation link is visible in header', async ({ page, baseURL }) => {
   // Click it and verify we navigate to map page
   await mapsLink.click();
   await page.waitForLoadState('networkidle');
-  await expect(page).toHaveTitle(/SciDK - Maps/i);
+  await expect(page).toHaveTitle(/-SciDK-> Maps/i);
 });
 
 test('graph filter controls are present and functional', async ({ page, baseURL }) => {

@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}SciDK - Labels{% endblock %}
+{% block title %}-SciDK-> Labels{% endblock %}
 {% block head %}
 <style>
   /* Override base.html main width constraint for labels page */
@@ -18,15 +18,54 @@
     height: calc(100vh - 200px);
     position: relative;
   }
+
+  /* Left Panel: Labels List */
   .labels-list {
-    width: 30%;
+    width: 25%;
     min-width: 200px;
     max-width: 50%;
     border: 1px solid #eee;
     border-radius: 4px;
     padding: 0.5rem;
     overflow-y: auto;
+    transition: width 0.3s ease, min-width 0.3s ease;
   }
+  .labels-list.collapsed {
+    width: 40px;
+    min-width: 40px;
+    padding: 0.25rem;
+  }
+
+  /* Center Panel: Editor + Instance Browser */
+  .labels-editor {
+    flex: 1;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    padding: 1rem;
+    overflow-y: auto;
+    min-width: 300px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Right Panel: Statistics */
+  .labels-statistics {
+    width: 25%;
+    min-width: 200px;
+    max-width: 40%;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    padding: 1rem;
+    overflow-y: auto;
+    transition: width 0.3s ease, min-width 0.3s ease;
+  }
+  .labels-statistics.collapsed {
+    width: 40px;
+    min-width: 40px;
+    padding: 0.25rem;
+  }
+
+  /* Resizers */
   .resizer {
     width: 8px;
     cursor: col-resize;
@@ -49,14 +88,146 @@
   .resizer.resizing {
     background: #2196f3;
   }
-  .labels-editor {
-    flex: 1;
-    border: 1px solid #eee;
+
+  /* Collapse/Expand Buttons */
+  .collapse-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #f0f0f0;
+    border: 1px solid #ddd;
     border-radius: 4px;
-    padding: 1rem;
-    overflow-y: auto;
-    min-width: 300px;
+    width: 24px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 14px;
+    z-index: 10;
+    transition: all 0.2s;
   }
+  .collapse-btn:hover {
+    background: #e0e0e0;
+    width: 28px;
+  }
+  .collapse-btn-left {
+    right: -12px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+  }
+  .collapse-btn-right {
+    left: -12px;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  .labels-list.collapsed .collapse-btn-left {
+    right: -24px;
+  }
+  .labels-statistics.collapsed .collapse-btn-right {
+    left: -24px;
+  }
+
+  /* Read-only mode styles */
+  .editor-mode-toggle {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    align-items: center;
+  }
+  .readonly-property {
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+    background: #f9f9f9;
+    border-radius: 4px;
+    border-left: 3px solid #2196f3;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .readonly-property:focus {
+    outline: 2px solid #2196f3;
+    outline-offset: 2px;
+    background: #e3f2fd;
+  }
+  .readonly-relationship {
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+    background: #f0f8ff;
+    border-radius: 4px;
+    border-left: 3px solid #4caf50;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .readonly-relationship:focus {
+    outline: 2px solid #4caf50;
+    outline-offset: 2px;
+    background: #e8f5e9;
+  }
+  .badge-type {
+    display: inline-block;
+    padding: 0.15rem 0.4rem;
+    font-size: 0.7rem;
+    border-radius: 3px;
+    background: #e0e0e0;
+    color: #333;
+    margin-left: 0.5rem;
+  }
+  .badge-required {
+    background: #ffebee;
+    color: #c62828;
+  }
+
+  /* Instance Browser */
+  .instance-browser {
+    margin-top: 2rem;
+    border-top: 2px solid #e0e0e0;
+    padding-top: 1rem;
+  }
+  .instance-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+  .instance-table th {
+    background: #f5f5f5;
+    padding: 0.5rem;
+    text-align: left;
+    border-bottom: 2px solid #ddd;
+    font-weight: 600;
+  }
+  .instance-table td {
+    padding: 0.5rem;
+    border-bottom: 1px solid #eee;
+  }
+  .instance-table tr:hover {
+    background: #f9f9f9;
+  }
+  .instance-cell-editable {
+    cursor: text;
+    min-height: 1.5rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+  }
+  .instance-cell-editable:hover {
+    background: #fff8e1;
+    outline: 1px dashed #ffc107;
+  }
+  .instance-cell-editing {
+    background: #fff;
+    outline: 2px solid #2196f3;
+  }
+  .instance-cell-changed {
+    background: #fff3cd !important;
+    border-left: 3px solid #ffc107;
+  }
+  .instance-pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1rem;
+    font-size: 0.875rem;
+  }
+
   .label-item {
     padding: 0.5rem;
     margin-bottom: 0.25rem;
@@ -179,6 +350,7 @@
 <div class="labels-container">
   <!-- Left Panel: Label List -->
   <div class="labels-list" id="labels-list">
+    <button class="collapse-btn collapse-btn-left" id="collapse-left-btn" title="Collapse panel">◀</button>
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
       <h3 class="small" style="margin: 0;">Labels</h3>
     </div>
@@ -202,46 +374,126 @@
     </div>
   </div>
 
-  <!-- Resizer -->
-  <div class="resizer" id="resizer"></div>
+  <!-- Resizer (Left to Center) -->
+  <div class="resizer" id="resizer-left"></div>
 
-  <!-- Right Panel: Label Editor -->
+  <!-- Center Panel: Label Editor -->
   <div class="labels-editor" id="label-editor" style="display: none;">
-    <h3 id="editor-title">New Label</h3>
-
-    <div style="margin-bottom: 1rem;">
-      <label class="form-label small" for="label-name">Name</label>
-      <input id="label-name" type="text" class="form-control form-control-sm" placeholder="e.g., Project" data-testid="label-name" />
-      <div id="name-error" class="small" style="color: #b00020; display: none;"></div>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <h3 id="editor-title" style="margin: 0;">New Label</h3>
+      <div class="editor-mode-toggle">
+        <button id="btn-toggle-mode" class="btn btn-sm btn-outline-primary" data-testid="toggle-edit-mode" style="display: none;">Edit</button>
+        <button id="btn-cancel-edit" class="btn btn-sm btn-outline-secondary" data-testid="cancel-edit" style="display: none;">Cancel</button>
+      </div>
     </div>
 
-    <div class="section-header">
-      <h4 class="small" style="margin: 0;">Properties</h4>
-      <button id="btn-add-property" class="btn btn-sm btn-outline-primary" data-testid="add-property-btn">Add Property</button>
-    </div>
-    <div id="properties-container" data-testid="properties-container">
-      <div class="empty-state small">No properties defined</div>
+    <!-- Read-only view -->
+    <div id="readonly-view" style="display: none;">
+      <div style="margin-bottom: 1rem;">
+        <label class="form-label small">Name</label>
+        <div id="readonly-name" style="padding: 0.5rem; background: #f5f5f5; border-radius: 4px; font-weight: bold;"></div>
+      </div>
+
+      <div class="section-header">
+        <h4 class="small" style="margin: 0;">Properties</h4>
+      </div>
+      <div id="readonly-properties-container">
+        <div class="empty-state small">No properties defined</div>
+      </div>
+
+      <div class="section-header">
+        <h4 class="small" style="margin: 0;">Outgoing Relationships</h4>
+      </div>
+      <div id="readonly-relationships-container">
+        <div class="empty-state small">No relationships defined</div>
+      </div>
+
+      <div class="section-header" style="margin-top: 1.5rem;">
+        <h4 class="small" style="margin: 0;">Incoming Relationships</h4>
+      </div>
+      <div id="readonly-incoming-relationships-container">
+        <div class="empty-state small">No incoming relationships</div>
+      </div>
+
+      <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <button id="btn-delete-readonly" class="btn btn-sm btn-outline-danger" data-testid="delete-label-readonly-btn">Delete</button>
+        <button id="btn-pull-neo4j-readonly" class="btn btn-sm btn-outline-secondary" data-testid="pull-neo4j-readonly-btn">Pull from Neo4j</button>
+      </div>
     </div>
 
-    <div class="section-header">
-      <h4 class="small" style="margin: 0;">Outgoing Relationships</h4>
-      <button id="btn-add-relationship" class="btn btn-sm btn-outline-primary" data-testid="add-relationship-btn">Add Relationship</button>
-    </div>
-    <div id="relationships-container" data-testid="relationships-container">
-      <div class="empty-state small">No relationships defined</div>
+    <!-- Edit view -->
+    <div id="edit-view" style="display: none;">
+      <div style="margin-bottom: 1rem;">
+        <label class="form-label small" for="label-name">Name</label>
+        <input id="label-name" type="text" class="form-control form-control-sm" placeholder="e.g., Project" data-testid="label-name" />
+        <div id="name-error" class="small" style="color: #b00020; display: none;"></div>
+      </div>
+
+      <div class="section-header">
+        <h4 class="small" style="margin: 0;">Properties</h4>
+        <button id="btn-add-property" class="btn btn-sm btn-outline-primary" data-testid="add-property-btn">Add Property</button>
+      </div>
+      <div id="properties-container" data-testid="properties-container">
+        <div class="empty-state small">No properties defined</div>
+      </div>
+
+      <div class="section-header">
+        <h4 class="small" style="margin: 0;">Outgoing Relationships</h4>
+        <button id="btn-add-relationship" class="btn btn-sm btn-outline-primary" data-testid="add-relationship-btn">Add Relationship</button>
+      </div>
+      <div id="relationships-container" data-testid="relationships-container">
+        <div class="empty-state small">No relationships defined</div>
+      </div>
+
+      <div class="section-header" style="margin-top: 1.5rem;">
+        <h4 class="small" style="margin: 0;">Incoming Relationships</h4>
+      </div>
+      <div id="incoming-relationships-container" data-testid="incoming-relationships-container">
+        <div class="empty-state small">No incoming relationships</div>
+      </div>
+
+      <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <button id="btn-save" class="btn btn-sm btn-success" data-testid="save-label-btn">Save</button>
+        <button id="btn-delete" class="btn btn-sm btn-outline-danger" data-testid="delete-label-btn" style="display: none;">Delete</button>
+        <button id="btn-pull-neo4j" class="btn btn-sm btn-outline-secondary" data-testid="pull-neo4j-btn" style="display: none;">Pull</button>
+      </div>
     </div>
 
-    <div class="section-header" style="margin-top: 1.5rem;">
-      <h4 class="small" style="margin: 0;">Incoming Relationships</h4>
-    </div>
-    <div id="incoming-relationships-container" data-testid="incoming-relationships-container">
-      <div class="empty-state small">No incoming relationships</div>
-    </div>
+    <!-- Instance Browser Section -->
+    <div class="instance-browser" id="instance-browser" style="display: none;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h4 class="small" style="margin: 0;">Instances</h4>
+        <div style="display: flex; gap: 0.5rem;">
+          <button id="btn-pull-instances" class="btn btn-sm btn-outline-primary" data-testid="pull-instances-btn">Pull from Neo4j</button>
+          <button id="btn-push-instances" class="btn btn-sm btn-success" data-testid="push-instances-btn" style="display: none;">Push Changes</button>
+          <button id="btn-refresh-instances" class="btn btn-sm btn-outline-secondary" data-testid="refresh-instances-btn">Refresh</button>
+        </div>
+      </div>
 
-    <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
-      <button id="btn-save" class="btn btn-sm btn-success" data-testid="save-label-btn">Save</button>
-      <button id="btn-delete" class="btn btn-sm btn-outline-danger" data-testid="delete-label-btn" style="display: none;">Delete</button>
-      <button id="btn-pull-neo4j" class="btn btn-sm btn-outline-secondary" data-testid="pull-neo4j-btn" style="display: none;">Pull</button>
+      <div id="instance-table-container">
+        <div class="empty-state small">Click "Pull from Neo4j" to load instances</div>
+      </div>
+
+      <div class="instance-pagination" id="instance-pagination" style="display: none;">
+        <div class="small" id="instance-page-info">Page 1 of 1 (0 instances)</div>
+        <div style="display: flex; gap: 0.5rem;">
+          <button id="btn-instance-prev" class="btn btn-sm btn-outline-secondary" disabled>Previous</button>
+          <button id="btn-instance-next" class="btn btn-sm btn-outline-secondary" disabled>Next</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Resizer (Center to Right) -->
+  <div class="resizer" id="resizer-right"></div>
+
+  <!-- Right Panel: Statistics -->
+  <div class="labels-statistics" id="labels-statistics" style="display: none;">
+    <button class="collapse-btn collapse-btn-right" id="collapse-right-btn" title="Collapse panel">▶</button>
+    <h3 class="small">Statistics</h3>
+
+    <div id="statistics-content">
+      <div class="empty-state small">Select a label to view statistics</div>
     </div>
   </div>
 </div>
@@ -251,26 +503,59 @@
   <div class="custom-modal-overlay"></div>
   <div class="custom-modal-content">
     <div class="custom-modal-header">
-      <h5>Import Schema from Arrows.app</h5>
+      <h5>Import Schema</h5>
       <button type="button" class="custom-modal-close" onclick="closeImportModal()">&times;</button>
     </div>
     <div class="custom-modal-body">
-      <p class="small">Paste JSON exported from <a href="https://arrows.app" target="_blank" rel="noopener">arrows.app</a></p>
-      <textarea id="arrows-json-input" class="form-control font-monospace" rows="12" placeholder='{"nodes": [...], "relationships": [...]}'></textarea>
-      <div style="margin-top: 0.5rem;">
-        <label for="arrows-file-input" class="btn btn-sm btn-outline-secondary">
-          Or choose file...
-        </label>
-        <input type="file" id="arrows-file-input" accept=".json" style="display:none">
-        <span id="file-name" class="small" style="margin-left: 0.5rem;"></span>
+      <!-- Import Type Selection -->
+      <div style="margin-bottom: 1rem; padding: 0.75rem; background: #f9f9f9; border-radius: 4px;">
+        <div style="margin-bottom: 0.5rem;"><strong class="small">Import Type:</strong></div>
+        <div style="display: flex; gap: 1rem;">
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.25rem;">
+            <input type="radio" name="import-type" value="arrows" checked data-testid="import-type-arrows">
+            <span class="small">Arrows.app JSON</span>
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.25rem;">
+            <input type="radio" name="import-type" value="eda" data-testid="import-type-eda">
+            <span class="small">NC3Rs EDA File</span>
+          </label>
+        </div>
       </div>
-      <div id="import-preview" style="display:none; margin-top: 1rem; padding: 0.75rem; background: #f9f9f9; border-radius: 4px;">
-        <div class="small"><strong>Preview:</strong> <span id="preview-label-count">0</span> labels, <span id="preview-rel-count">0</span> relationships</div>
+
+      <!-- Arrows Import Section -->
+      <div id="arrows-import-section">
+        <p class="small">Paste JSON exported from <a href="https://arrows.app" target="_blank" rel="noopener">arrows.app</a></p>
+        <textarea id="arrows-json-input" class="form-control font-monospace" rows="12" placeholder='{"nodes": [...], "relationships": [...]}'></textarea>
+        <div style="margin-top: 0.5rem;">
+          <label for="arrows-file-input" class="btn btn-sm btn-outline-secondary">
+            Or choose JSON file...
+          </label>
+          <input type="file" id="arrows-file-input" accept=".json" style="display:none">
+          <span id="arrows-file-name" class="small" style="margin-left: 0.5rem;"></span>
+        </div>
+        <div id="import-preview" style="display:none; margin-top: 1rem; padding: 0.75rem; background: #f9f9f9; border-radius: 4px;">
+          <div class="small"><strong>Preview:</strong> <span id="preview-label-count">0</span> labels, <span id="preview-rel-count">0</span> relationships</div>
+        </div>
+      </div>
+
+      <!-- EDA Import Section -->
+      <div id="eda-import-section" style="display: none;">
+        <p class="small">Import experimental design from <a href="https://nc3rs.org.uk/eda" target="_blank" rel="noopener">NC3Rs EDA</a> (.eda file)</p>
+        <div style="margin-top: 0.5rem;">
+          <label for="eda-file-input" class="btn btn-sm btn-outline-success">
+            Choose .eda file...
+          </label>
+          <input type="file" id="eda-file-input" accept=".eda" style="display:none" data-testid="eda-file-input">
+          <span id="eda-file-name" class="small" style="margin-left: 0.5rem;"></span>
+        </div>
+        <div class="small" style="margin-top: 1rem; padding: 0.75rem; background: #f0f8ff; border-radius: 4px; border-left: 3px solid #2196f3;">
+          <strong>EDA Files:</strong> ZIP archives containing experimental designs with node types like Treatment, Subject, Measurement, etc.
+        </div>
       </div>
     </div>
     <div class="custom-modal-footer">
       <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeImportModal()">Cancel</button>
-      <button type="button" id="import-confirm-btn" class="btn btn-sm btn-success" data-testid="import-confirm-btn" onclick="importFromArrows()">Import</button>
+      <button type="button" id="import-confirm-btn" class="btn btn-sm btn-success" data-testid="import-confirm-btn">Import</button>
     </div>
   </div>
 </div>
@@ -294,36 +579,99 @@ function showToast(message, type = 'info') {
 // Modal functions
 function openImportModal() {
   document.getElementById('import-arrows-modal').style.display = 'block';
+  // Reset to Arrows import by default
+  document.querySelector('input[name="import-type"][value="arrows"]').checked = true;
+  switchImportType('arrows');
 }
 
 function closeImportModal() {
   const modal = document.getElementById('import-arrows-modal');
   modal.style.display = 'none';
-  // Clear input
+  // Clear all inputs
   document.getElementById('arrows-json-input').value = '';
-  document.getElementById('file-name').textContent = '';
+  document.getElementById('arrows-file-name').textContent = '';
+  document.getElementById('eda-file-name').textContent = '';
   document.getElementById('import-preview').style.display = 'none';
+  // Reset file inputs
+  document.getElementById('arrows-file-input').value = '';
+  document.getElementById('eda-file-input').value = '';
+}
+
+function switchImportType(type) {
+  const arrowsSection = document.getElementById('arrows-import-section');
+  const edaSection = document.getElementById('eda-import-section');
+
+  if (type === 'arrows') {
+    arrowsSection.style.display = 'block';
+    edaSection.style.display = 'none';
+  } else if (type === 'eda') {
+    arrowsSection.style.display = 'none';
+    edaSection.style.display = 'block';
+  }
 }
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
-  loadLabels();
+  console.log('DOMContentLoaded - initializing labels page');
 
-  document.getElementById('btn-new-label').addEventListener('click', () => {
-    currentLabel = null;
-    showEditor();
-    clearEditor();
-    document.getElementById('editor-title').textContent = 'New Label';
-    document.getElementById('btn-delete').style.display = 'none';
-    document.getElementById('btn-pull-neo4j').style.display = 'none';
-  });
+  try {
+    loadLabels();
+    console.log('loadLabels() called successfully');
+  } catch (e) {
+    console.error('Error calling loadLabels():', e);
+  }
 
-  document.getElementById('btn-save').addEventListener('click', saveLabel);
-  document.getElementById('btn-delete').addEventListener('click', deleteLabel);
-  document.getElementById('btn-pull-neo4j').addEventListener('click', pullFromNeo4j);
-  document.getElementById('btn-pull-all-neo4j').addEventListener('click', pullAllFromNeo4j);
-  document.getElementById('btn-add-property').addEventListener('click', addProperty);
-  document.getElementById('btn-add-relationship').addEventListener('click', addRelationship);
+  try {
+    document.getElementById('btn-new-label').addEventListener('click', () => {
+      currentLabel = null;
+      showEditor();
+      clearEditor();
+      document.getElementById('editor-title').textContent = 'New Label';
+      document.getElementById('btn-delete').style.display = 'none';
+      document.getElementById('btn-pull-neo4j').style.display = 'none';
+      // For new labels, start in edit mode
+      isEditMode = true;
+      updateEditorView();
+    });
+    console.log('btn-new-label listener attached');
+  } catch (e) {
+    console.error('Error attaching btn-new-label listener:', e);
+  }
+
+  try {
+    document.getElementById('btn-save').addEventListener('click', saveLabel);
+    document.getElementById('btn-delete').addEventListener('click', deleteLabel);
+    document.getElementById('btn-pull-neo4j').addEventListener('click', pullFromNeo4j);
+    document.getElementById('btn-pull-all-neo4j').addEventListener('click', pullAllFromNeo4j);
+    document.getElementById('btn-add-property').addEventListener('click', addProperty);
+    document.getElementById('btn-add-relationship').addEventListener('click', addRelationship);
+    console.log('Main editor button listeners attached');
+  } catch (e) {
+    console.error('Error attaching main editor listeners:', e);
+  }
+
+  try {
+    // Mode toggle buttons
+    document.getElementById('btn-toggle-mode').addEventListener('click', toggleEditMode);
+    document.getElementById('btn-cancel-edit').addEventListener('click', cancelEdit);
+    document.getElementById('btn-delete-readonly').addEventListener('click', deleteLabel);
+    document.getElementById('btn-pull-neo4j-readonly').addEventListener('click', pullFromNeo4j);
+    console.log('Mode toggle listeners attached');
+  } catch (e) {
+    console.error('Error attaching mode toggle listeners:', e);
+  }
+
+  try {
+    // Instance browser buttons
+    document.getElementById('btn-pull-instances').addEventListener('click', pullInstances);
+    document.getElementById('btn-push-instances').addEventListener('click', pushInstances);
+    document.getElementById('btn-refresh-instances').addEventListener('click', refreshInstances);
+    document.getElementById('btn-instance-prev').addEventListener('click', () => navigateInstances(-1));
+    document.getElementById('btn-instance-next').addEventListener('click', () => navigateInstances(1));
+    console.log('Instance browser listeners attached');
+  } catch (e) {
+    console.error('Error attaching instance browser listeners:', e);
+  }
 
   // Batch action buttons
   document.getElementById('btn-batch-pull').addEventListener('click', batchPull);
@@ -334,13 +682,21 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-import-arrows')?.addEventListener('click', openImportModal);
   document.getElementById('btn-export-arrows')?.addEventListener('click', exportToArrows);
 
+  // Import type radio button handling
+  document.querySelectorAll('input[name="import-type"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      switchImportType(e.target.value);
+    });
+  });
+
+  // Arrows file input
   document.getElementById('arrows-file-input')?.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = (ev) => {
         document.getElementById('arrows-json-input').value = ev.target.result;
-        document.getElementById('file-name').textContent = file.name;
+        document.getElementById('arrows-file-name').textContent = file.name;
         previewArrowsImport();
       };
       reader.readAsText(file);
@@ -349,42 +705,139 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('arrows-json-input')?.addEventListener('input', previewArrowsImport);
 
-  document.getElementById('import-confirm-btn')?.addEventListener('click', importFromArrows);
+  // EDA file input
+  document.getElementById('eda-file-input')?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      document.getElementById('eda-file-name').textContent = file.name;
+    } else {
+      document.getElementById('eda-file-name').textContent = '';
+    }
+  });
+
+  // Unified import confirm button
+  document.getElementById('import-confirm-btn')?.addEventListener('click', async () => {
+    const selectedType = document.querySelector('input[name="import-type"]:checked').value;
+
+    if (selectedType === 'arrows') {
+      importFromArrows();
+    } else if (selectedType === 'eda') {
+      const fileInput = document.getElementById('eda-file-input');
+      const file = fileInput.files[0];
+
+      if (!file) {
+        alert('Please select an .eda file');
+        return;
+      }
+
+      if (!file.name.endsWith('.eda')) {
+        alert('File must be .eda format');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const resp = await fetch('/api/labels/import/eda', {
+          method: 'POST',
+          body: formData
+        });
+
+        const result = await resp.json();
+        if (result.status === 'success') {
+          const msg = `Successfully imported ${result.imported.labels} labels and ${result.imported.relationships} relationships from ${file.name}`;
+          if (result.skipped && result.skipped.length > 0) {
+            alert(msg + `\n\nSkipped ${result.skipped.length} existing labels: ${result.skipped.join(', ')}`);
+          } else {
+            alert(msg);
+          }
+          loadLabels();  // Refresh label list
+          closeImportModal();
+        } else {
+          alert('Import failed: ' + result.error);
+        }
+      } catch (err) {
+        alert('Import error: ' + err.message);
+      }
+    }
+  });
 
   // Keyboard navigation
   document.addEventListener('keydown', handleGlobalKeydown);
 
-  // Resizer functionality
-  const resizer = document.getElementById('resizer');
+  // Collapse/Expand functionality
+  const collapseLeftBtn = document.getElementById('collapse-left-btn');
+  const collapseRightBtn = document.getElementById('collapse-right-btn');
   const leftPanel = document.getElementById('labels-list');
+  const rightPanel = document.getElementById('labels-statistics');
+
+  collapseLeftBtn.addEventListener('click', () => {
+    leftPanel.classList.toggle('collapsed');
+    collapseLeftBtn.textContent = leftPanel.classList.contains('collapsed') ? '▶' : '◀';
+    collapseLeftBtn.title = leftPanel.classList.contains('collapsed') ? 'Expand panel' : 'Collapse panel';
+  });
+
+  collapseRightBtn.addEventListener('click', () => {
+    rightPanel.classList.toggle('collapsed');
+    collapseRightBtn.textContent = rightPanel.classList.contains('collapsed') ? '◀' : '▶';
+    collapseRightBtn.title = rightPanel.classList.contains('collapsed') ? 'Expand panel' : 'Collapse panel';
+  });
+
+  // Resizer functionality for both dividers
+  const resizerLeft = document.getElementById('resizer-left');
+  const resizerRight = document.getElementById('resizer-right');
   const container = document.querySelector('.labels-container');
 
-  let isResizing = false;
+  let activeResizer = null;
 
-  resizer.addEventListener('mousedown', (e) => {
-    isResizing = true;
+  function startResize(resizer) {
+    activeResizer = resizer;
     resizer.classList.add('resizing');
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
+  }
+
+  resizerLeft.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    startResize(resizerLeft);
+  });
+
+  resizerRight.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    startResize(resizerRight);
   });
 
   document.addEventListener('mousemove', (e) => {
-    if (!isResizing) return;
+    if (!activeResizer) return;
 
     const containerRect = container.getBoundingClientRect();
-    const newWidth = e.clientX - containerRect.left;
-    const minWidth = 200;
-    const maxWidth = containerRect.width * 0.5;
 
-    if (newWidth >= minWidth && newWidth <= maxWidth) {
-      leftPanel.style.width = `${newWidth}px`;
+    if (activeResizer === resizerLeft) {
+      // Resize left panel
+      const newWidth = e.clientX - containerRect.left;
+      const minWidth = leftPanel.classList.contains('collapsed') ? 40 : 200;
+      const maxWidth = containerRect.width * 0.5;
+
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        leftPanel.style.width = `${newWidth}px`;
+      }
+    } else if (activeResizer === resizerRight) {
+      // Resize right panel
+      const newWidth = containerRect.right - e.clientX;
+      const minWidth = rightPanel.classList.contains('collapsed') ? 40 : 200;
+      const maxWidth = containerRect.width * 0.4;
+
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        rightPanel.style.width = `${newWidth}px`;
+      }
     }
   });
 
   document.addEventListener('mouseup', () => {
-    if (isResizing) {
-      isResizing = false;
-      resizer.classList.remove('resizing');
+    if (activeResizer) {
+      activeResizer.classList.remove('resizing');
+      activeResizer = null;
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     }
@@ -529,6 +982,13 @@ function handleGlobalKeydown(e) {
 
   // Don't handle other keys if user is typing
   if (isTyping) return;
+
+  // Don't handle side panel navigation if focus is in the editor
+  const isInEditor = activeElement && activeElement.closest('#label-editor');
+  if (isInEditor && (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'Home' || e.key === 'End')) {
+    // Focus is in editor, don't trigger side panel navigation
+    return;
+  }
 
   // Check if shift is held for range selection
   const shiftHeld = e.shiftKey;
@@ -761,23 +1221,35 @@ function clearLabelNavigationState() {
 
 function loadLabels() {
   console.log('loadLabels() executing, fetching /api/labels');
+  const container = document.getElementById('label-list');
+  container.innerHTML = '<div class="empty-state small" style="padding: 2rem; text-align: center;">Loading labels...</div>';
+
   fetch('/api/labels')
     .then(r => {
-      console.log('loadLabels() got response');
+      console.log('loadLabels() got response, status:', r.status);
+      if (!r.ok) {
+        throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+      }
       return r.json();
     })
     .then(data => {
-      console.log('loadLabels() got data:', data);
+      console.log('loadLabels() got data, count:', (data.labels || []).length);
       if (data.status === 'success') {
         labels = data.labels || [];
         renderLabelList();
+        if (labels.length === 0) {
+          console.log('No labels found. Try clicking "Pull All" to import from Neo4j.');
+        }
       } else {
+        console.error('API returned error:', data.error);
         showToast('Error loading labels: ' + (data.error || 'Unknown error'), 'error');
+        container.innerHTML = '<div class="empty-state small">Error loading labels. Check console.</div>';
       }
     })
     .catch(err => {
       console.error('loadLabels() error:', err);
       showToast('Network error: ' + err.message, 'error');
+      container.innerHTML = '<div class="empty-state small">Network error. Check console.</div>';
     });
 }
 
@@ -919,8 +1391,11 @@ function loadLabel(name) {
 }
 
 function showEditor() {
-  document.getElementById('label-editor').style.display = 'block';
+  document.getElementById('label-editor').style.display = 'flex';
+  document.getElementById('labels-statistics').style.display = 'block';
 }
+
+let isEditMode = false;
 
 function clearEditor() {
   document.getElementById('label-name').value = '';
@@ -929,16 +1404,110 @@ function clearEditor() {
   document.getElementById('relationships-container').innerHTML = '<div class="empty-state small">No relationships defined</div>';
   document.getElementById('incoming-relationships-container').innerHTML = '<div class="empty-state small">No incoming relationships</div>';
   document.getElementById('name-error').style.display = 'none';
+
+  // Also clear read-only view
+  document.getElementById('readonly-name').textContent = '';
+  document.getElementById('readonly-properties-container').innerHTML = '<div class="empty-state small">No properties defined</div>';
+  document.getElementById('readonly-relationships-container').innerHTML = '<div class="empty-state small">No relationships defined</div>';
+  document.getElementById('readonly-incoming-relationships-container').innerHTML = '<div class="empty-state small">No incoming relationships</div>';
+}
+
+function toggleEditMode() {
+  isEditMode = !isEditMode;
+  updateEditorView();
+}
+
+function cancelEdit() {
+  isEditMode = false;
+  // Reload current label to discard changes
+  if (currentLabel) {
+    populateEditor(currentLabel);
+  }
+  updateEditorView();
+}
+
+function updateEditorView() {
+  const readonlyView = document.getElementById('readonly-view');
+  const editView = document.getElementById('edit-view');
+  const toggleBtn = document.getElementById('btn-toggle-mode');
+  const cancelBtn = document.getElementById('btn-cancel-edit');
+
+  if (isEditMode) {
+    readonlyView.style.display = 'none';
+    editView.style.display = 'block';
+    toggleBtn.style.display = 'none';
+    cancelBtn.style.display = 'inline-block';
+  } else {
+    readonlyView.style.display = 'block';
+    editView.style.display = 'none';
+    // Only show toggle button if we have a current label (not for new labels)
+    if (currentLabel) {
+      toggleBtn.style.display = 'inline-block';
+    } else {
+      toggleBtn.style.display = 'none';
+    }
+    cancelBtn.style.display = 'none';
+  }
 }
 
 function populateEditor(label) {
-  document.getElementById('editor-title').textContent = `Edit Label: ${label.name}`;
+  document.getElementById('editor-title').textContent = label.name;
+
+  // Start in read-only mode for existing labels
+  isEditMode = false;
+
+  // Show instance browser
+  document.getElementById('instance-browser').style.display = 'block';
+
+  // Populate read-only view
+  document.getElementById('readonly-name').textContent = label.name;
+
+  const readonlyPropsContainer = document.getElementById('readonly-properties-container');
+  if (label.properties.length === 0) {
+    readonlyPropsContainer.innerHTML = '<div class="empty-state small">No properties defined</div>';
+  } else {
+    readonlyPropsContainer.innerHTML = label.properties.map((prop, idx) => `
+      <div class="readonly-property" tabindex="0" data-nav-group="property" data-nav-index="${idx}">
+        <strong>${prop.name}</strong>
+        <span class="badge-type">${prop.type}</span>
+        ${prop.required ? '<span class="badge-type badge-required">required</span>' : ''}
+      </div>
+    `).join('');
+  }
+
+  const readonlyRelsContainer = document.getElementById('readonly-relationships-container');
+  if (label.relationships.length === 0) {
+    readonlyRelsContainer.innerHTML = '<div class="empty-state small">No relationships defined</div>';
+  } else {
+    readonlyRelsContainer.innerHTML = label.relationships.map((rel, idx) => `
+      <div class="readonly-relationship" tabindex="0" data-nav-group="outgoing-rel" data-nav-index="${idx}">
+        <em>${label.name}</em> —[<strong>${rel.type}</strong>]→ <a href="#" class="target-label-link" data-label="${rel.target_label}" style="color: var(--accent); text-decoration: none; font-weight: bold;">${rel.target_label}</a>
+      </div>
+    `).join('');
+  }
+
+  const readonlyIncomingContainer = document.getElementById('readonly-incoming-relationships-container');
+  const incomingRels = label.incoming_relationships || [];
+  if (incomingRels.length === 0) {
+    readonlyIncomingContainer.innerHTML = '<div class="empty-state small">No incoming relationships</div>';
+  } else {
+    readonlyIncomingContainer.innerHTML = incomingRels.map((rel, idx) => `
+      <div class="readonly-relationship" tabindex="0" data-nav-group="incoming-rel" data-nav-index="${idx}">
+        <a href="#" class="source-label-link" data-label="${rel.source_label}" style="color: var(--accent); text-decoration: none; font-weight: bold;">${rel.source_label}</a> —[<strong>${rel.type}</strong>]→ <em>${label.name}</em>
+      </div>
+    `).join('');
+  }
+
+  // Populate edit view (same as before)
   document.getElementById('label-name').value = label.name;
   document.getElementById('label-name').readOnly = true;
   document.getElementById('btn-delete').style.display = 'inline-block';
   document.getElementById('btn-pull-neo4j').style.display = 'inline-block';
 
-  // Render properties
+  // Populate statistics panel
+  populateStatistics(label);
+
+  // Render properties (edit view)
   const propsContainer = document.getElementById('properties-container');
   if (label.properties.length === 0) {
     propsContainer.innerHTML = '<div class="empty-state small">No properties defined</div>';
@@ -968,13 +1537,13 @@ function populateEditor(label) {
     attachSelectHandlers(relsContainer);
   }
 
-  // Render incoming relationships (read-only with clickable source labels)
+  // Render incoming relationships (edit view - with clickable source labels)
   const incomingContainer = document.getElementById('incoming-relationships-container');
-  const incomingRels = label.incoming_relationships || [];
-  if (incomingRels.length === 0) {
+  const incomingRelsEdit = label.incoming_relationships || [];
+  if (incomingRelsEdit.length === 0) {
     incomingContainer.innerHTML = '<div class="empty-state small">No incoming relationships</div>';
   } else {
-    incomingContainer.innerHTML = incomingRels.map(rel =>
+    incomingContainer.innerHTML = incomingRelsEdit.map(rel =>
       `<div class="relationship-row" style="background: #f9f9f9; padding: 0.5rem; margin-bottom: 0.25rem; border-radius: 4px;">
         <span class="small">
           <a href="#" class="source-label-link" data-label="${rel.source_label}" style="color: var(--accent); text-decoration: none; font-weight: bold;">
@@ -993,6 +1562,78 @@ function populateEditor(label) {
       });
     });
   }
+
+  // Set to read-only mode
+  updateEditorView();
+
+  // Add click handlers for label links in read-only mode
+  document.querySelectorAll('.target-label-link, .source-label-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const targetLabel = e.target.dataset.label;
+      loadLabel(targetLabel);
+    });
+  });
+
+  // Add keyboard navigation for properties and relationships in read-only mode
+  document.querySelectorAll('.readonly-property, .readonly-relationship').forEach(item => {
+    item.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+
+        const currentGroup = item.dataset.navGroup;
+        const currentIndex = parseInt(item.dataset.navIndex);
+
+        // Get all items in the same group
+        const groupItems = Array.from(document.querySelectorAll(`[data-nav-group="${currentGroup}"]`));
+
+        let targetIndex;
+        if (e.key === 'ArrowDown') {
+          targetIndex = currentIndex + 1;
+          // If at end of current group, move to first item of next group
+          if (targetIndex >= groupItems.length) {
+            const nextGroup = getNextNavGroup(currentGroup);
+            if (nextGroup) {
+              const nextGroupItems = document.querySelectorAll(`[data-nav-group="${nextGroup}"]`);
+              if (nextGroupItems.length > 0) {
+                nextGroupItems[0].focus();
+              }
+            }
+            return;
+          }
+        } else {
+          targetIndex = currentIndex - 1;
+          // If at start of current group, move to last item of previous group
+          if (targetIndex < 0) {
+            const prevGroup = getPrevNavGroup(currentGroup);
+            if (prevGroup) {
+              const prevGroupItems = document.querySelectorAll(`[data-nav-group="${prevGroup}"]`);
+              if (prevGroupItems.length > 0) {
+                prevGroupItems[prevGroupItems.length - 1].focus();
+              }
+            }
+            return;
+          }
+        }
+
+        if (groupItems[targetIndex]) {
+          groupItems[targetIndex].focus();
+        }
+      }
+    });
+  });
+}
+
+function getNextNavGroup(currentGroup) {
+  const groups = ['property', 'outgoing-rel', 'incoming-rel'];
+  const currentIdx = groups.indexOf(currentGroup);
+  return currentIdx < groups.length - 1 ? groups[currentIdx + 1] : null;
+}
+
+function getPrevNavGroup(currentGroup) {
+  const groups = ['property', 'outgoing-rel', 'incoming-rel'];
+  const currentIdx = groups.indexOf(currentGroup);
+  return currentIdx > 0 ? groups[currentIdx - 1] : null;
 }
 
 function addProperty() {
@@ -1097,6 +1738,9 @@ function saveLabel() {
         currentLabel = data.label;
         loadLabels();
         populateEditor(currentLabel);
+        // Switch back to read-only mode after save
+        isEditMode = false;
+        updateEditorView();
       } else {
         showToast('Error saving label: ' + (data.error || 'Unknown error'), 'error');
       }
@@ -1299,6 +1943,7 @@ async function batchDelete() {
       clearSelection();
       currentLabel = null;
       document.getElementById('label-editor').style.display = 'none';
+      document.getElementById('labels-statistics').style.display = 'none';
       loadLabels();
     } else {
       showToast('Batch delete error: ' + (result.error || 'Unknown error'), 'error');
@@ -1306,6 +1951,325 @@ async function batchDelete() {
   } catch (e) {
     showToast('Network error: ' + e.message, 'error');
   }
+}
+
+function populateStatistics(label) {
+  const container = document.getElementById('statistics-content');
+
+  // Calculate statistics
+  const propertyCount = label.properties.length;
+  const requiredCount = label.properties.filter(p => p.required).length;
+  const optionalCount = propertyCount - requiredCount;
+  const outgoingRels = label.relationships.length;
+  const incomingRels = (label.incoming_relationships || []).length;
+  const totalRels = outgoingRels + incomingRels;
+
+  // Property type distribution
+  const typeDistribution = {};
+  label.properties.forEach(prop => {
+    typeDistribution[prop.type] = (typeDistribution[prop.type] || 0) + 1;
+  });
+
+  const typeDistHtml = Object.entries(typeDistribution).map(([type, count]) =>
+    `<div class="small" style="margin-left: 1rem;">• ${type}: ${count}</div>`
+  ).join('');
+
+  // Relationship details
+  const outgoingRelsHtml = label.relationships.map(rel =>
+    `<div class="small" style="margin-left: 1rem;">• [${rel.type}] → ${rel.target_label}</div>`
+  ).join('') || '<div class="small" style="margin-left: 1rem; color: #999;">None</div>';
+
+  const incomingRelsHtml = (label.incoming_relationships || []).map(rel =>
+    `<div class="small" style="margin-left: 1rem;">• ${rel.source_label} → [${rel.type}]</div>`
+  ).join('') || '<div class="small" style="margin-left: 1rem; color: #999;">None</div>';
+
+  container.innerHTML = `
+    <div style="margin-bottom: 1.5rem;">
+      <h4 class="small" style="font-weight: bold; margin-bottom: 0.5rem;">Properties</h4>
+      <div class="small">Total: <strong>${propertyCount}</strong></div>
+      <div class="small">Required: <strong>${requiredCount}</strong></div>
+      <div class="small">Optional: <strong>${optionalCount}</strong></div>
+      ${typeDistHtml ? '<div class="small" style="margin-top: 0.5rem; font-weight: bold;">Type Distribution:</div>' + typeDistHtml : ''}
+    </div>
+
+    <div style="margin-bottom: 1.5rem;">
+      <h4 class="small" style="font-weight: bold; margin-bottom: 0.5rem;">Relationships</h4>
+      <div class="small">Total: <strong>${totalRels}</strong></div>
+      <div class="small">Outgoing: <strong>${outgoingRels}</strong></div>
+      ${outgoingRelsHtml}
+      <div class="small" style="margin-top: 0.5rem;">Incoming: <strong>${incomingRels}</strong></div>
+      ${incomingRelsHtml}
+    </div>
+
+    <div style="margin-bottom: 1.5rem;">
+      <h4 class="small" style="font-weight: bold; margin-bottom: 0.5rem;">Instances</h4>
+      <div class="small" style="color: #999;">Instance count requires Neo4j connection</div>
+      <div class="small" style="margin-top: 0.5rem;">
+        <button class="btn btn-sm btn-outline-primary" onclick="loadInstanceCount('${label.name}')" style="font-size: 0.75rem;">
+          Check Neo4j
+        </button>
+      </div>
+      <div id="instance-count-${label.name}" style="margin-top: 0.5rem;"></div>
+    </div>
+  `;
+}
+
+async function loadInstanceCount(labelName) {
+  const countDiv = document.getElementById(`instance-count-${labelName}`);
+  countDiv.innerHTML = '<div class="small" style="color: #666;">Loading...</div>';
+
+  try {
+    const resp = await fetch(`/api/labels/${labelName}/instance-count`);
+    const result = await resp.json();
+
+    if (result.status === 'success') {
+      const count = result.count || 0;
+      countDiv.innerHTML = `<div class="small"><strong>${count}</strong> instance${count !== 1 ? 's' : ''} in Neo4j</div>`;
+    } else {
+      countDiv.innerHTML = `<div class="small" style="color: #b00020;">${result.error || 'Error loading count'}</div>`;
+    }
+  } catch (e) {
+    countDiv.innerHTML = `<div class="small" style="color: #b00020;">Error: ${e.message}</div>`;
+  }
+}
+
+// Instance browser functions
+let instanceData = [];
+let instancePage = 0;
+let instanceLimit = 50;
+let instanceChanges = {};
+
+async function pullInstances() {
+  if (!currentLabel) return;
+
+  showToast('Pulling instances from Neo4j...', 'info');
+
+  try {
+    const resp = await fetch(`/api/labels/${currentLabel.name}/instances?limit=${instanceLimit}&offset=${instancePage * instanceLimit}`);
+    const result = await resp.json();
+
+    if (result.status === 'success') {
+      instanceData = result.instances || [];
+      instanceChanges = {};
+      renderInstanceTable();
+      showToast(`Loaded ${instanceData.length} instances`, 'success');
+      document.getElementById('btn-push-instances').style.display = 'none';
+    } else {
+      showToast('Error loading instances: ' + (result.error || 'Unknown error'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+async function pushInstances() {
+  if (!currentLabel) return;
+
+  const changeCount = Object.keys(instanceChanges).length;
+  if (changeCount === 0) {
+    showToast('No changes to push', 'info');
+    return;
+  }
+
+  if (!confirm(`Push ${changeCount} changed instance(s) to Neo4j?`)) return;
+
+  showToast(`Pushing ${changeCount} changes...`, 'info');
+
+  let successCount = 0;
+  let errorCount = 0;
+
+  for (const [instanceId, changes] of Object.entries(instanceChanges)) {
+    for (const [prop, value] of Object.entries(changes)) {
+      try {
+        const resp = await fetch(`/api/labels/${currentLabel.name}/instances/${instanceId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ property: prop, value: value })
+        });
+
+        const result = await resp.json();
+
+        if (result.status === 'success') {
+          successCount++;
+          // Update instanceData with new value
+          const instance = instanceData.find(i => i.id === instanceId);
+          if (instance) {
+            instance.properties[prop] = value;
+          }
+        } else {
+          errorCount++;
+          console.error('Error updating instance:', result.error);
+        }
+      } catch (e) {
+        errorCount++;
+        console.error('Network error updating instance:', e);
+      }
+    }
+  }
+
+  // Clear changes and re-render
+  instanceChanges = {};
+  renderInstanceTable();
+  document.getElementById('btn-push-instances').style.display = 'none';
+
+  if (errorCount === 0) {
+    showToast(`Successfully pushed ${successCount} changes`, 'success');
+  } else {
+    showToast(`Pushed ${successCount} changes, ${errorCount} failed`, 'error');
+  }
+}
+
+async function refreshInstances() {
+  instancePage = 0;
+  await pullInstances();
+}
+
+function navigateInstances(delta) {
+  instancePage = Math.max(0, instancePage + delta);
+  pullInstances();
+}
+
+function renderInstanceTable() {
+  const container = document.getElementById('instance-table-container');
+
+  if (instanceData.length === 0) {
+    container.innerHTML = '<div class="empty-state small">No instances found</div>';
+    document.getElementById('instance-pagination').style.display = 'none';
+    return;
+  }
+
+  // Get property names from current label
+  const properties = currentLabel.properties.map(p => p.name);
+
+  // Build table
+  let html = '<table class="instance-table"><thead><tr>';
+  html += '<th>ID</th>';
+  properties.forEach(prop => {
+    html += `<th>${prop}</th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  instanceData.forEach(instance => {
+    html += '<tr>';
+    html += `<td style="font-family: monospace; font-size: 0.75rem;">${instance.id.substring(0, 8)}...</td>`;
+    properties.forEach(prop => {
+      const value = instance.properties[prop] || '';
+      const hasChange = instanceChanges[instance.id] && instanceChanges[instance.id][prop] !== undefined;
+      const displayValue = hasChange ? instanceChanges[instance.id][prop] : value;
+      const changeClass = hasChange ? ' instance-cell-changed' : '';
+      html += `<td><div class="instance-cell-editable${changeClass}" data-id="${instance.id}" data-prop="${prop}" contenteditable="true">${displayValue}</div></td>`;
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  container.innerHTML = html;
+
+  // Show pagination
+  document.getElementById('instance-pagination').style.display = 'flex';
+  document.getElementById('instance-page-info').textContent = `Page ${instancePage + 1} (${instanceData.length} instances)`;
+
+  // Attach cell editing listeners
+  document.querySelectorAll('.instance-cell-editable').forEach(cell => {
+    cell.addEventListener('focus', (e) => {
+      e.target.classList.add('instance-cell-editing');
+    });
+
+    cell.addEventListener('blur', (e) => {
+      e.target.classList.remove('instance-cell-editing');
+      const instanceId = e.target.dataset.id;
+      const prop = e.target.dataset.prop;
+      const newValue = e.target.textContent.trim();
+
+      // Find original value
+      const instance = instanceData.find(i => i.id === instanceId);
+      const originalValue = instance ? instance.properties[prop] || '' : '';
+
+      // Track change if different
+      if (newValue !== originalValue) {
+        if (!instanceChanges[instanceId]) {
+          instanceChanges[instanceId] = {};
+        }
+        instanceChanges[instanceId][prop] = newValue;
+        e.target.classList.add('instance-cell-changed');
+
+        // Show push button if there are changes
+        if (Object.keys(instanceChanges).length > 0) {
+          document.getElementById('btn-push-instances').style.display = 'inline-block';
+        }
+      } else {
+        // Remove change if reverted to original
+        if (instanceChanges[instanceId]) {
+          delete instanceChanges[instanceId][prop];
+          if (Object.keys(instanceChanges[instanceId]).length === 0) {
+            delete instanceChanges[instanceId];
+          }
+        }
+        e.target.classList.remove('instance-cell-changed');
+
+        // Hide push button if no changes
+        if (Object.keys(instanceChanges).length === 0) {
+          document.getElementById('btn-push-instances').style.display = 'none';
+        }
+      }
+    });
+
+    cell.addEventListener('keydown', (e) => {
+      // Save on Enter
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        e.target.blur();
+        return;
+      }
+
+      // Cancel on Escape
+      if (e.key === 'Escape') {
+        const instanceId = e.target.dataset.id;
+        const prop = e.target.dataset.prop;
+        const instance = instanceData.find(i => i.id === instanceId);
+        const originalValue = instance ? instance.properties[prop] || '' : '';
+        e.target.textContent = originalValue;
+        e.target.blur();
+        return;
+      }
+
+      // Arrow key navigation
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        // Only navigate if not editing
+        if (document.activeElement !== e.target) return;
+
+        e.preventDefault();
+        const currentCell = e.target;
+        const currentRow = currentCell.closest('tr');
+        const cells = Array.from(currentRow.querySelectorAll('.instance-cell-editable'));
+        const currentIndex = cells.indexOf(currentCell);
+
+        let targetCell = null;
+
+        if (e.key === 'ArrowLeft' && currentIndex > 0) {
+          targetCell = cells[currentIndex - 1];
+        } else if (e.key === 'ArrowRight' && currentIndex < cells.length - 1) {
+          targetCell = cells[currentIndex + 1];
+        } else if (e.key === 'ArrowUp') {
+          const prevRow = currentRow.previousElementSibling;
+          if (prevRow) {
+            const prevCells = Array.from(prevRow.querySelectorAll('.instance-cell-editable'));
+            targetCell = prevCells[currentIndex];
+          }
+        } else if (e.key === 'ArrowDown') {
+          const nextRow = currentRow.nextElementSibling;
+          if (nextRow) {
+            const nextCells = Array.from(nextRow.querySelectorAll('.instance-cell-editable'));
+            targetCell = nextCells[currentIndex];
+          }
+        }
+
+        if (targetCell) {
+          targetCell.focus();
+        }
+      }
+    });
+  });
 }
 </script>
 {% endblock %}

@@ -1,12 +1,12 @@
 """
-Link service for managing relationship creation workflows.
+Link service for managing Label→Label relationship creation workflows.
 
 This service provides operations for:
 - CRUD operations on link definitions (stored in SQLite)
 - Preview and execution of link jobs
-- Source adapters (Graph, CSV, API)
-- Target adapters (Graph, Label)
-- Matching strategies (Property, ID, Custom Cypher)
+- Label→Label mapping enforcement (both source and target are Labels)
+- Match strategies: Property, Fuzzy, Table Import, API Endpoint
+- Legacy migration support for old source/target types
 """
 from __future__ import annotations
 from typing import Dict, List, Any, Optional
@@ -40,11 +40,12 @@ class LinkService:
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
+            # First try new schema with source_label and target_label
             cursor.execute(
                 """
-                SELECT id, name, source_type, source_config, target_type, target_config,
-                       match_strategy, match_config, relationship_type, relationship_props,
-                       created_at, updated_at
+                SELECT id, name, source_label, target_label, source_type, source_config,
+                       target_type, target_config, match_strategy, match_config,
+                       relationship_type, relationship_props, created_at, updated_at
                 FROM link_definitions
                 ORDER BY updated_at DESC
                 """
@@ -53,11 +54,13 @@ class LinkService:
 
             definitions = []
             for row in rows:
-                (id, name, source_type, source_config, target_type, target_config,
+                (id, name, source_label, target_label, source_type, source_config, target_type, target_config,
                  match_strategy, match_config, rel_type, rel_props, created_at, updated_at) = row
                 definitions.append({
                     'id': id,
                     'name': name,
+                    'source_label': source_label,
+                    'target_label': target_label,
                     'source_type': source_type,
                     'source_config': json.loads(source_config) if source_config else {},
                     'target_type': target_type,
@@ -88,9 +91,9 @@ class LinkService:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT id, name, source_type, source_config, target_type, target_config,
-                       match_strategy, match_config, relationship_type, relationship_props,
-                       created_at, updated_at
+                SELECT id, name, source_label, target_label, source_type, source_config,
+                       target_type, target_config, match_strategy, match_config,
+                       relationship_type, relationship_props, created_at, updated_at
                 FROM link_definitions
                 WHERE id = ?
                 """,
@@ -101,11 +104,13 @@ class LinkService:
             if not row:
                 return None
 
-            (id, name, source_type, source_config, target_type, target_config,
+            (id, name, source_label, target_label, source_type, source_config, target_type, target_config,
              match_strategy, match_config, rel_type, rel_props, created_at, updated_at) = row
             return {
                 'id': id,
                 'name': name,
+                'source_label': source_label,
+                'target_label': target_label,
                 'source_type': source_type,
                 'source_config': json.loads(source_config) if source_config else {},
                 'target_type': target_type,
@@ -122,10 +127,10 @@ class LinkService:
 
     def save_link_definition(self, definition: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Create or update a link definition.
+        Create or update a link definition (Label→Label).
 
         Args:
-            definition: Dict with required keys: name, source_type, target_type, match_strategy, relationship_type
+            definition: Dict with required keys: name, source_label, target_label, match_strategy, relationship_type
 
         Returns:
             Updated link definition
@@ -138,17 +143,27 @@ class LinkService:
         if not name:
             raise ValueError("Link name is required")
 
-        source_type = definition.get('source_type', '').strip()
-        if source_type not in ['graph', 'csv', 'api']:
-            raise ValueError("source_type must be 'graph', 'csv', or 'api'")
+        # New Label→Label model
+        source_label = definition.get('source_label', '').strip()
+        if not source_label:
+            raise ValueError("source_label is required (must reference an existing Label)")
 
-        target_type = definition.get('target_type', '').strip()
-        if target_type not in ['graph', 'label']:
-            raise ValueError("target_type must be 'graph' or 'label'")
+        target_label = definition.get('target_label', '').strip()
+        if not target_label:
+            raise ValueError("target_label is required (must reference an existing Label)")
 
+        # Validate that labels exist
+        self._validate_label_exists(source_label)
+        self._validate_label_exists(target_label)
+
+        # Legacy support: auto-migrate old source_type/target_type to new model
+        source_type = definition.get('source_type', 'label')
+        target_type = definition.get('target_type', 'label')
+
+        # Match strategy now includes table_import and api_endpoint
         match_strategy = definition.get('match_strategy', '').strip()
-        if match_strategy not in ['property', 'id', 'cypher']:
-            raise ValueError("match_strategy must be 'property', 'id', or 'cypher'")
+        if match_strategy not in ['property', 'fuzzy', 'table_import', 'api_endpoint', 'id', 'cypher']:
+            raise ValueError("match_strategy must be 'property', 'fuzzy', 'table_import', 'api_endpoint', 'id', or 'cypher'")
 
         relationship_type = definition.get('relationship_type', '').strip()
         if not relationship_type:
@@ -172,12 +187,12 @@ class LinkService:
                 cursor.execute(
                     """
                     UPDATE link_definitions
-                    SET name = ?, source_type = ?, source_config = ?, target_type = ?,
-                        target_config = ?, match_strategy = ?, match_config = ?,
+                    SET name = ?, source_label = ?, target_label = ?, source_type = ?, source_config = ?,
+                        target_type = ?, target_config = ?, match_strategy = ?, match_config = ?,
                         relationship_type = ?, relationship_props = ?, updated_at = ?
                     WHERE id = ?
                     """,
-                    (name, source_type, source_config, target_type, target_config,
+                    (name, source_label, target_label, source_type, source_config, target_type, target_config,
                      match_strategy, match_config, relationship_type, relationship_props, now, link_id)
                 )
                 created_at = existing['created_at']
@@ -186,12 +201,12 @@ class LinkService:
                 cursor.execute(
                     """
                     INSERT INTO link_definitions
-                    (id, name, source_type, source_config, target_type, target_config,
+                    (id, name, source_label, target_label, source_type, source_config, target_type, target_config,
                      match_strategy, match_config, relationship_type, relationship_props,
                      created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (link_id, name, source_type, source_config, target_type, target_config,
+                    (link_id, name, source_label, target_label, source_type, source_config, target_type, target_config,
                      match_strategy, match_config, relationship_type, relationship_props, now, now)
                 )
                 created_at = now
@@ -201,6 +216,8 @@ class LinkService:
             return {
                 'id': link_id,
                 'name': name,
+                'source_label': source_label,
+                'target_label': target_label,
                 'source_type': source_type,
                 'source_config': json.loads(source_config),
                 'target_type': target_type,
@@ -395,6 +412,22 @@ class LinkService:
             conn.close()
 
     # --- Internal helpers ---
+
+    def _validate_label_exists(self, label_name: str):
+        """
+        Validate that a label exists in the label registry.
+
+        Args:
+            label_name: Name of the label to validate
+
+        Raises:
+            ValueError: If label does not exist
+        """
+        from .label_service import LabelService
+        label_service = LabelService(self.app)
+        label = label_service.get_label(label_name)
+        if not label:
+            raise ValueError(f"Label '{label_name}' does not exist. Please create it in the Labels page first.")
 
     def _fetch_source_data(self, definition: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Fetch data from source based on source_type."""

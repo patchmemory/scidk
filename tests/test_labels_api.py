@@ -438,3 +438,70 @@ def test_batch_delete_labels_partial_success(client):
     # Verify the existing label was deleted
     get_response = client.get('/api/labels/DeleteExists')
     assert get_response.status_code == 404
+
+
+def test_get_label_instances_no_neo4j(client):
+    """Test getting instances when Neo4j is not configured."""
+    # Create a label first
+    payload = {
+        'name': 'Person',
+        'properties': [
+            {'name': 'name', 'type': 'string', 'required': False},
+            {'name': 'age', 'type': 'number', 'required': False}
+        ],
+        'relationships': []
+    }
+    client.post('/api/labels', json=payload)
+
+    # Try to get instances (will fail without Neo4j)
+    response = client.get('/api/labels/Person/instances')
+    data = response.get_json()
+    # Without Neo4j configured, this should return an error
+    assert data['status'] == 'error'
+
+
+def test_get_instance_count_no_neo4j(client):
+    """Test getting instance count when Neo4j is not configured."""
+    # Create a label first
+    payload = {
+        'name': 'Person',
+        'properties': [
+            {'name': 'name', 'type': 'string', 'required': False}
+        ],
+        'relationships': []
+    }
+    client.post('/api/labels', json=payload)
+
+    # Try to get count (will fail without Neo4j)
+    response = client.get('/api/labels/Person/instance-count')
+    data = response.get_json()
+    assert data['status'] == 'error'
+
+
+def test_update_instance_label_not_found(client):
+    """Test updating instance for non-existent label."""
+    response = client.patch('/api/labels/NonExistent/instances/some-id', json={
+        'property': 'name',
+        'value': 'John'
+    })
+    assert response.status_code == 404
+
+
+def test_update_instance_missing_property(client):
+    """Test updating instance without property name."""
+    # Create a label first
+    payload = {
+        'name': 'Person',
+        'properties': [{'name': 'name', 'type': 'string', 'required': False}],
+        'relationships': []
+    }
+    client.post('/api/labels', json=payload)
+
+    # Try to update without property
+    response = client.patch('/api/labels/Person/instances/some-id', json={
+        'value': 'John'
+    })
+    assert response.status_code == 400
+    data = response.get_json()
+    assert data['status'] == 'error'
+    assert 'required' in data['error'].lower()

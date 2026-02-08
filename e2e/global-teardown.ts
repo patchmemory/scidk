@@ -28,6 +28,17 @@ export default async function globalTeardown(config: FullConfig) {
     } catch (error) {
       console.error('[cleanup] Failed to cleanup test labels:', error);
     }
+
+    // Clean up test API endpoints
+    try {
+      const response = await fetch(`${baseUrl}/api/admin/cleanup-test-endpoints`, {
+        method: 'POST',
+      });
+      const result = await response.json();
+      console.log('[cleanup] Test API endpoints cleaned up:', result);
+    } catch (error) {
+      console.error('[cleanup] Failed to cleanup test API endpoints:', error);
+    }
   }
 
   // Kill the server process

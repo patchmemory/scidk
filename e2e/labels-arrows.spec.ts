@@ -84,7 +84,7 @@ test('can open import modal and close it', async ({ page, baseURL }) => {
   await expect(modal).toBeVisible();
 
   // Check modal title (using custom modal structure)
-  await expect(modal.locator('.custom-modal-header h5')).toHaveText(/Import Schema from Arrows\.app/i);
+  await expect(modal.locator('.custom-modal-header h5')).toHaveText(/Import Schema/i);
 
   // Check textarea is present
   const textarea = modal.locator('#arrows-json-input');

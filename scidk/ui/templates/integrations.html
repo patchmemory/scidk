@@ -1,11 +1,11 @@
 {% extends 'base.html' %}
-{% block title %}-SciDK-> Links{% endblock %}
+{% block title %}-SciDK-> Integrations{% endblock %}
 {% block head %}
 <style>
   /* Override base.html main width constraint for links page */
   main {
     max-width: 100% !important;
-    padding: 1rem 2rem !important;
+    padding: 1rem 0.5rem !important;
   }
 </style>
 {% endblock %}
@@ -220,18 +220,18 @@
   }
 </style>
 
-<h1>Links</h1>
+<h1>Integrations</h1>
 <p class="small">Create relationships between data instances using graph, CSV, or API sources.</p>
 
 <div class="links-container">
-  <!-- Left Panel: Link Definitions List -->
+  <!-- Left Panel: Integration Definitions List -->
   <div class="links-list" id="links-list">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
       <h3 class="small" style="margin: 0;">Definitions</h3>
-      <button id="btn-new-link" class="btn btn-sm btn-primary" data-testid="new-link-btn">New Link</button>
+      <button id="btn-new-link" class="btn btn-sm btn-primary" data-testid="new-integration-btn">New Integration</button>
     </div>
-    <div id="link-list" data-testid="link-list">
-      <div class="empty-state small">No link definitions</div>
+    <div id="link-list" data-testid="integration-list">
+      <div class="empty-state small">No integration definitions</div>
     </div>
   </div>
 
@@ -240,7 +240,7 @@
 
   <!-- Right Panel: Wizard -->
   <div class="links-wizard" id="link-wizard" style="display: none;">
-    <h3 id="wizard-title">New Link Definition</h3>
+    <h3 id="wizard-title">New Integration Definition</h3>
 
     <!-- Wizard Steps Indicator (3-step: Source Label → Match Strategy → Target Label) -->
     <div class="wizard-steps">
@@ -269,7 +269,7 @@
 
         <div class="form-group">
           <label class="form-label small" for="link-name">Link Name</label>
-          <input id="link-name" type="text" class="form-control form-control-sm" placeholder="e.g., Person to File via email" data-testid="link-name" />
+          <input id="link-name" type="text" class="form-control form-control-sm" placeholder="e.g., Person to File via email" data-testid="integration-name" />
         </div>
 
         <div class="form-group">
@@ -322,7 +322,7 @@
             <label class="form-label small" for="fuzzy-threshold">Similarity Threshold (%)</label>
             <input id="fuzzy-threshold" type="number" class="form-control form-control-sm" value="80" min="0" max="100" />
           </div>
-          <small class="small text-muted">Note: Fuzzy matching requires configuration in Settings > Links</small>
+          <small class="small text-muted">Note: Fuzzy matching requires configuration in Settings > Integrations</small>
         </div>
 
         <!-- Table Import Config -->
@@ -344,7 +344,7 @@
             <label class="form-label small" for="api-jsonpath">JSONPath (optional)</label>
             <input id="api-jsonpath" type="text" class="form-control form-control-sm" placeholder="$.data.users[*]" />
           </div>
-          <small class="small text-muted">Note: Advanced API endpoints can be configured in Settings > Links</small>
+          <small class="small text-muted">Note: Advanced API endpoints can be configured in Settings > Integrations</small>
         </div>
       </div>
 
@@ -388,7 +388,7 @@
       <div style="display: flex; gap: 0.5rem;">
         <button id="btn-save-def" class="btn btn-sm btn-outline-success">Save Definition</button>
         <button id="btn-next" class="btn btn-sm btn-primary">Next →</button>
-        <button id="btn-execute" class="btn btn-sm btn-success" style="display: none;" data-testid="execute-link-btn">Execute</button>
+        <button id="btn-execute" class="btn btn-sm btn-success" style="display: none;" data-testid="execute-integration-btn">Execute</button>
         <button id="btn-delete-def" class="btn btn-sm btn-outline-danger" style="display: none;">Delete</button>
       </div>
     </div>
@@ -555,7 +555,7 @@ function renderLinkList() {
   const validLinks = linkDefinitions.filter(link => link && link.id);
 
   if (validLinks.length === 0) {
-    container.innerHTML = '<div class="empty-state small">No link definitions</div>';
+    container.innerHTML = '<div class="empty-state small">No integration definitions</div>';
     return;
   }
 
@@ -711,7 +711,7 @@ function resetWizard() {
 
 function showWizard() {
   document.getElementById('link-wizard').style.display = 'block';
-  document.getElementById('wizard-title').textContent = currentLink ? 'Edit Link Definition' : 'New Link Definition';
+  document.getElementById('wizard-title').textContent = currentLink ? 'Edit Integration Definition' : 'New Integration Definition';
 }
 
 function navigateStep(delta) {
@@ -873,7 +873,7 @@ function saveLinkDefinition() {
   const data = collectWizardData();
 
   if (!data.name) {
-    showToast('Link name is required', 'error');
+    showToast('Integration name is required', 'error');
     return;
   }
 
@@ -892,7 +892,7 @@ function saveLinkDefinition() {
     .then(r => r.json())
     .then(result => {
       if (result.status === 'success') {
-        showToast('Link definition saved', 'success');
+        showToast('Integration definition saved', 'success');
         wizardData.id = result.link.id;
         currentLink = result.link;
         loadLinkDefinitions();
@@ -912,7 +912,7 @@ function deleteLinkDefinition() {
     .then(r => r.json())
     .then(result => {
       if (result.status === 'success') {
-        showToast('Link definition deleted', 'success');
+        showToast('Integration definition deleted', 'success');
         loadLinkDefinitions();
         document.getElementById('link-wizard').style.display = 'none';
       } else {

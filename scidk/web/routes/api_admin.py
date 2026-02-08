@@ -367,3 +367,76 @@ def api_admin_cleanup_test_labels():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+@bp.post('/admin/cleanup-test-endpoints')
+def api_admin_cleanup_test_endpoints():
+    """Remove test API endpoints from the database (endpoints with test prefixes).
+
+    This endpoint cleans up API endpoints created during testing that accumulate over time.
+
+    Returns:
+        JSON with counts of deleted endpoints
+    """
+    try:
+        import sqlite3
+
+        # Test endpoint patterns to delete
+        test_patterns = [
+            'Test%',  # Test Users API, etc
+            'E2E%',  # E2E test endpoints
+            'Secure%',  # Secure API from auth tests
+            'Updated%',  # Updated API from update tests
+            'Bearer%',  # Bearer API from auth tests
+            'API%Key%',  # API Key API from auth tests
+            '%JSONPath%',  # JSONPath API tests
+            'Original%',  # Original API from edit tests
+            'Delete%',  # Delete Me API from delete tests
+            'Cancel%',  # Cancel Test API from cancel tests
+        ]
+
+        # Use settings DB (where API endpoints are stored, not path_index)
+        settings_db = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+        conn = sqlite3.connect(settings_db)
+        conn.execute('PRAGMA journal_mode=WAL')
+        try:
+            cur = conn.cursor()
+
+            # Check if api_endpoints table exists
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='api_endpoints'")
+            if not cur.fetchone():
+                return jsonify({
+                    'deleted_endpoints': 0,
+                    'message': 'API endpoints table does not exist'
+                }), 200
+
+            # Collect endpoint names that match test patterns
+            deleted_endpoints = []
+            total_deleted = 0
+
+            for pattern in test_patterns:
+                cur.execute("SELECT name FROM api_endpoints WHERE name LIKE ?", (pattern,))
+                matching_endpoints = [row[0] for row in cur.fetchall()]
+                deleted_endpoints.extend(matching_endpoints)
+
+                # Delete matching endpoints
+                cur.execute("DELETE FROM api_endpoints WHERE name LIKE ?", (pattern,))
+                total_deleted += cur.rowcount
+
+            conn.commit()
+
+            return jsonify({
+                'deleted_endpoints': total_deleted,
+                'endpoint_names': deleted_endpoints[:10] + (['...'] if len(deleted_endpoints) > 10 else []),
+                'total_test_endpoints_found': len(deleted_endpoints),
+                'message': f'Successfully deleted {total_deleted} test endpoints'
+            }), 200
+
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+

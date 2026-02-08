@@ -96,6 +96,10 @@ test('interpreter checkboxes can be toggled', async ({ page, baseURL }) => {
   await page.goto(`${base}/settings`);
   await page.waitForLoadState('networkidle');
 
+  // Navigate to Interpreters section
+  await page.locator('.settings-sidebar-item[data-section="interpreters"]').click();
+  await page.waitForTimeout(200);
+
   // Wait for interpreters table to populate
   await page.waitForTimeout(1500);
 
@@ -143,6 +147,10 @@ test('interpreter checkbox has data-iid attribute', async ({ page, baseURL }) =>
 
   await page.goto(`${base}/settings`);
   await page.waitForLoadState('networkidle');
+
+  // Navigate to Interpreters section
+  await page.locator('.settings-sidebar-item[data-section="interpreters"]').click();
+  await page.waitForTimeout(200);
 
   // Wait for interpreters table to populate
   await page.waitForTimeout(1500);

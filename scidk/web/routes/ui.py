@@ -188,10 +188,16 @@ def labels():
     return render_template('labels.html')
 
 
+@bp.get('/integrate')
+def integrate():
+    """Integration definitions page for relationship creation workflows."""
+    return render_template('integrations.html')
+
+
 @bp.get('/links')
-def links():
-    """Link definitions page for relationship creation workflows."""
-    return render_template('links.html')
+def links_redirect():
+    """Backward compatibility redirect: /links → /integrate"""
+    return redirect(url_for('ui.integrate'))
 
 
 @bp.get('/settings')

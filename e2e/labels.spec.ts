@@ -34,7 +34,7 @@ test('labels page loads and displays empty state', async ({ page, baseURL }) => 
   await page.waitForLoadState('networkidle');
 
   // Verify page loads
-  await expect(page).toHaveTitle(/SciDK - Labels/i, { timeout: 10_000 });
+  await expect(page).toHaveTitle(/-SciDK-> Labels/i, { timeout: 10_000 });
 
   // Check for new label button
   await expect(page.getByTestId('new-label-btn')).toBeVisible();
@@ -60,7 +60,7 @@ test('labels navigation link is visible in header', async ({ page, baseURL }) =>
   // Click it and verify we navigate to labels page
   await labelsLink.click();
   await page.waitForLoadState('networkidle');
-  await expect(page).toHaveTitle(/SciDK - Labels/i);
+  await expect(page).toHaveTitle(/-SciDK-> Labels/i);
 });
 
 test('complete label workflow: create → edit → delete', async ({ page, baseURL }) => {
@@ -123,8 +123,8 @@ test('complete label workflow: create → edit → delete', async ({ page, baseU
   const editPropertyRows = page.getByTestId('property-row');
   await expect(editPropertyRows).toHaveCount(2);
 
-  // Step 8: Delete the label
-  const deleteBtn = page.getByTestId('delete-label-btn');
+  // Step 8: Delete the label (use readonly button since we're in read-only mode)
+  const deleteBtn = page.getByTestId('delete-label-readonly-btn');
   await expect(deleteBtn).toBeVisible();
 
   // Handle confirmation dialog
@@ -198,7 +198,7 @@ test('can add and remove multiple properties', async ({ page, baseURL }) => {
   // Cleanup: delete the label
   await foundLabel!.click();
   page.on('dialog', async (dialog) => await dialog.accept());
-  await page.getByTestId('delete-label-btn').click();
+  await page.getByTestId('delete-label-readonly-btn').click();
   await page.waitForTimeout(500);
 });
 
@@ -239,7 +239,7 @@ test('can create label with relationships', async ({ page, baseURL }) => {
     const item = labelItems.filter({ hasText: labelName });
     await item.click();
     await page.waitForTimeout(300);
-    await page.getByTestId('delete-label-btn').click();
+    await page.getByTestId('delete-label-readonly-btn').click();
     await page.waitForTimeout(500);
   }
 });
@@ -309,7 +309,7 @@ test('neo4j: push label to neo4j', async ({ page, baseURL, request: pageRequest 
   page.on('dialog', async (dialog) => await dialog.accept());
   await ourLabel!.click();
   await page.waitForTimeout(300);
-  await page.getByTestId('delete-label-btn').click();
+  await page.getByTestId('delete-label-readonly-btn').click();
   await page.waitForTimeout(500);
 });
 
@@ -344,4 +344,63 @@ test('neo4j: pull labels from neo4j', async ({ page, baseURL }) => {
   // Verify the label list is still visible and functional
   const labelList = page.getByTestId('label-list');
   await expect(labelList).toBeVisible();
+});
+
+test('import modal has EDA option', async ({ page, baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+  await page.goto(`${base}/labels`);
+  await page.waitForLoadState('networkidle');
+
+  // Click Import button to open modal
+  const importBtn = page.getByTestId('import-arrows-btn');
+  await importBtn.click();
+
+  // Wait for modal to be visible
+  await page.waitForTimeout(200);
+
+  // Verify both import type radio buttons exist
+  const arrowsRadio = page.getByTestId('import-type-arrows');
+  const edaRadio = page.getByTestId('import-type-eda');
+
+  await expect(arrowsRadio).toBeVisible();
+  await expect(edaRadio).toBeVisible();
+
+  // Verify Arrows is selected by default
+  await expect(arrowsRadio).toBeChecked();
+
+  // Verify EDA file input exists
+  const edaFileInput = page.getByTestId('eda-file-input');
+  await expect(edaFileInput).toBeAttached();
+});
+
+test('import modal switches between import types', async ({ page, baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+  await page.goto(`${base}/labels`);
+  await page.waitForLoadState('networkidle');
+
+  // Open import modal
+  await page.getByTestId('import-arrows-btn').click();
+  await page.waitForTimeout(200);
+
+  // Initially Arrows section should be visible
+  const arrowsSection = page.locator('#arrows-import-section');
+  const edaSection = page.locator('#eda-import-section');
+
+  await expect(arrowsSection).toBeVisible();
+  await expect(edaSection).not.toBeVisible();
+
+  // Click EDA radio button
+  await page.getByTestId('import-type-eda').click();
+  await page.waitForTimeout(100);
+
+  // Now EDA section should be visible
+  await expect(arrowsSection).not.toBeVisible();
+  await expect(edaSection).toBeVisible();
+
+  // Switch back to Arrows
+  await page.getByTestId('import-type-arrows').click();
+  await page.waitForTimeout(100);
+
+  await expect(arrowsSection).toBeVisible();
+  await expect(edaSection).not.toBeVisible();
 });
