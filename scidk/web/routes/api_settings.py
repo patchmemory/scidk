@@ -1200,3 +1200,47 @@ def delete_backup(backup_id):
             'status': 'error',
             'error': str(e)
         }), 500
+
+
+@bp.route('/backups/<filename>', methods=['GET'])
+def download_backup_file(filename):
+    """
+    Serve a backup file for download.
+
+    This endpoint serves static backup files from the backups/ directory.
+    Used by the UI to allow users to download backup files directly.
+
+    Returns: File download
+    """
+    try:
+        # Get backup manager to access backups directory
+        backup_manager = _get_backup_manager()
+        backup_dir = backup_manager.backup_dir
+
+        # Security: only allow files from backups directory, prevent path traversal
+        if '..' in filename or '/' in filename or '\\' in filename:
+            return jsonify({
+                'status': 'error',
+                'error': 'Invalid filename'
+            }), 400
+
+        file_path = os.path.join(backup_dir, filename)
+
+        if not os.path.exists(file_path):
+            return jsonify({
+                'status': 'error',
+                'error': 'Backup file not found'
+            }), 404
+
+        return send_file(
+            file_path,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/zip'
+        )
+
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500

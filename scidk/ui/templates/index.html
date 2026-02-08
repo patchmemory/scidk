@@ -1995,7 +1995,8 @@
             try {
               const json = JSON.parse(errorData);
               throw new Error(json.error || `Export failed (${resp.status})`);
-            } catch {
+            } catch (parseErr) {
+              // If we can't parse JSON, throw the original error
               throw new Error(`Export failed (${resp.status})`);
             }
           }
@@ -2095,11 +2096,11 @@
       });
     }
 
-    // View backups
+    // View backups - show modal with table
     if (btnViewBackups) {
       btnViewBackups.addEventListener('click', async () => {
         try {
-          const resp = await fetch('/api/settings/backups?limit=10', {
+          const resp = await fetch('/api/settings/backups?limit=20', {
             credentials: 'same-origin'
           });
 
@@ -2111,33 +2112,187 @@
 
           if (data.status === 'success') {
             if (data.backups.length === 0) {
-              alert('No backups found.');
+              alert('No backups found. Click "Export Configuration" to create your first backup.');
               return;
             }
 
-            // Show backups in a simple alert (could be improved with modal)
-            let msg = 'Recent configuration backups:\n\n';
-            data.backups.forEach((backup, idx) => {
-              const date = new Date(backup.timestamp).toLocaleString();
-              msg += `${idx + 1}. ${backup.filename} (${backup.size_human})\n`;
-              msg += `   Date: ${date}\n`;
-              msg += `   Reason: ${backup.reason} by ${backup.created_by}\n`;
-              if (backup.notes) {
-                msg += `   Notes: ${backup.notes}\n`;
-              }
-              if (backup.backup_id) {
-                msg += `   ID: ${backup.backup_id.substring(0, 8)}...\n`;
-              }
-              msg += '\n';
-            });
-
-            alert(msg);
+            // Show modal with backups table
+            showBackupsModal(data.backups);
           } else {
             throw new Error(data.error || 'Failed to list backups');
           }
         } catch (err) {
           alert(`Failed to view backups: ${err.message}`);
         }
+      });
+    }
+
+    // Show backups in a modal
+    function showBackupsModal(backups) {
+      // Create modal overlay
+      const modal = document.createElement('div');
+      modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:10000;';
+
+      // Create modal content
+      const content = document.createElement('div');
+      content.style.cssText = 'background:white;border-radius:8px;padding:2rem;max-width:900px;max-height:80vh;overflow:auto;box-shadow:0 4px 20px rgba(0,0,0,0.3);';
+
+      content.innerHTML = `
+        <h2 style="margin-top:0;">Configuration Backups</h2>
+        <p class="small" style="color:#666;margin-bottom:1.5rem;">Click a backup to download it, or use the Restore button to restore your configuration.</p>
+        <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+          <thead>
+            <tr style="border-bottom:2px solid #e0e0e0;">
+              <th style="text-align:left;padding:0.75rem 0.5rem;">Date</th>
+              <th style="text-align:left;padding:0.75rem 0.5rem;">Filename</th>
+              <th style="text-align:left;padding:0.75rem 0.5rem;">Size</th>
+              <th style="text-align:left;padding:0.75rem 0.5rem;">Reason</th>
+              <th style="text-align:left;padding:0.75rem 0.5rem;">By</th>
+              <th style="text-align:right;padding:0.75rem 0.5rem;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="backups-table-body"></tbody>
+        </table>
+        <div style="margin-top:1.5rem;text-align:right;">
+          <button id="close-backups-modal" class="btn btn-sm btn-secondary">Close</button>
+        </div>
+      `;
+
+      modal.appendChild(content);
+      document.body.appendChild(modal);
+
+      // Populate table
+      const tbody = document.getElementById('backups-table-body');
+      backups.forEach(backup => {
+        const row = document.createElement('tr');
+        row.style.cssText = 'border-bottom:1px solid #f0f0f0;';
+        row.innerHTML = `
+          <td style="padding:0.75rem 0.5rem;">${new Date(backup.timestamp).toLocaleString()}</td>
+          <td style="padding:0.75rem 0.5rem;">
+            <a href="#" class="download-backup" data-filename="${backup.filename}" style="color:#007bff;text-decoration:none;">
+              ${backup.filename}
+            </a>
+          </td>
+          <td style="padding:0.75rem 0.5rem;">${backup.size_human}</td>
+          <td style="padding:0.75rem 0.5rem;">${backup.reason}</td>
+          <td style="padding:0.75rem 0.5rem;">${backup.created_by}</td>
+          <td style="padding:0.75rem 0.5rem;text-align:right;">
+            <button class="restore-backup btn btn-sm btn-outline-primary" data-filename="${backup.filename}" style="margin-right:0.5rem;">
+              Restore
+            </button>
+            <button class="delete-backup btn btn-sm btn-outline-danger" data-filename="${backup.filename}">
+              Delete
+            </button>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+
+      // Close modal
+      document.getElementById('close-backups-modal').addEventListener('click', () => {
+        document.body.removeChild(modal);
+      });
+
+      // Close on background click
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          document.body.removeChild(modal);
+        }
+      });
+
+      // Download backup
+      document.querySelectorAll('.download-backup').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          const filename = btn.dataset.filename;
+
+          // Create a hidden link to download from backups directory
+          const a = document.createElement('a');
+          a.href = `/backups/${filename}`;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        });
+      });
+
+      // Restore backup
+      document.querySelectorAll('.restore-backup').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const filename = btn.dataset.filename;
+
+          if (!confirm(`Restore from: ${filename}?\n\nThis will:\n- Create a backup of current state\n- Replace all databases and settings\n- Require a page reload\n\nContinue?`)) {
+            return;
+          }
+
+          try {
+            btn.disabled = true;
+            btn.textContent = 'Restoring...';
+
+            // Fetch the backup file and restore it
+            const backupResp = await fetch(`/backups/${filename}`);
+            const backupBlob = await backupResp.blob();
+
+            const formData = new FormData();
+            formData.append('backup_file', backupBlob, filename);
+
+            const restoreResp = await fetch('/api/settings/import', {
+              method: 'POST',
+              body: formData,
+              credentials: 'same-origin'
+            });
+
+            const result = await restoreResp.json();
+
+            if (result.status === 'success' && result.report && result.report.success) {
+              alert(`Backup restored successfully!\n${result.report.files_restored} files restored.`);
+              document.body.removeChild(modal);
+
+              setTimeout(() => {
+                if (confirm('Backup restored. Reload page now?')) {
+                  location.reload();
+                }
+              }, 500);
+            } else {
+              throw new Error(result.error || result.report?.error || 'Restore failed');
+            }
+          } catch (err) {
+            alert(`Restore failed: ${err.message}`);
+            btn.disabled = false;
+            btn.textContent = 'Restore';
+          }
+        });
+      });
+
+      // Delete backup
+      document.querySelectorAll('.delete-backup').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const filename = btn.dataset.filename;
+
+          if (!confirm(`Delete backup: ${filename}?\n\nThis cannot be undone.`)) {
+            return;
+          }
+
+          try {
+            const resp = await fetch(`/api/settings/backups/${filename}`, {
+              method: 'DELETE',
+              credentials: 'same-origin'
+            });
+
+            const result = await resp.json();
+
+            if (result.status === 'success') {
+              alert('Backup deleted successfully.');
+              // Refresh the modal
+              document.body.removeChild(modal);
+              btnViewBackups.click();
+            } else {
+              throw new Error(result.error || 'Delete failed');
+            }
+          } catch (err) {
+            alert(`Delete failed: ${err.message}`);
+          }
+        });
       });
     }
   }
