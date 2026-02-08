@@ -21,6 +21,7 @@ dependencies = [
   "jsonpath-ng>=1.6",
   "pandas>=2.0",
   "rapidfuzz>=3.0",
+  "bcrypt>=4.0",
 ]
 
 [project.optional-dependencies]
