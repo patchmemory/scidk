@@ -537,3 +537,183 @@ def test_cleanup_all_test_sessions(client):
     sessions = sessions_resp.get_json()['sessions']
     session_names = [s['name'] for s in sessions]
     assert 'Real User Session' in session_names
+
+
+# ========== Permissions & Sharing Tests ==========
+
+def test_session_default_visibility(client):
+    """Test that sessions default to private visibility."""
+    resp = client.post('/api/chat/sessions', json={'name': 'Test Session', 'metadata': {'test_session': True}})
+    assert resp.status_code == 201
+
+    session_id = resp.get_json()['session']['id']
+
+    # Get session and check default visibility
+    get_resp = client.get(f'/api/chat/sessions/{session_id}')
+    data = get_resp.get_json()
+
+    # Should default to private with system owner
+    session = data['session']
+    assert session.get('visibility', 'private') == 'private'
+    assert session.get('owner', 'system') == 'system'
+
+
+def test_set_visibility_invalid(client):
+    """Test setting invalid visibility fails (without auth, expecting 401)."""
+    create_resp = client.post('/api/chat/sessions', json={'name': 'Test', 'metadata': {'test_session': True}})
+    session_id = create_resp.get_json()['session']['id']
+
+    resp = client.put(f'/api/chat/sessions/{session_id}/visibility', json={
+        'visibility': 'invalid_value'
+    })
+
+    # Without auth, should get 401, or 400 if validation happens first
+    assert resp.status_code in (400, 401)
+
+
+def test_list_permissions_requires_admin(client):
+    """Test that listing permissions requires admin access."""
+    # Create session
+    create_resp = client.post('/api/chat/sessions', json={'name': 'Test', 'metadata': {'test_session': True}})
+    session_id = create_resp.get_json()['session']['id']
+
+    # Try to list permissions without auth
+    resp = client.get(f'/api/chat/sessions/{session_id}/permissions')
+
+    # Should require authentication
+    assert resp.status_code == 401
+
+
+def test_grant_permission_invalid_level(client):
+    """Test granting invalid permission level fails."""
+    create_resp = client.post('/api/chat/sessions', json={'name': 'Test', 'metadata': {'test_session': True}})
+    session_id = create_resp.get_json()['session']['id']
+
+    resp = client.post(f'/api/chat/sessions/{session_id}/permissions', json={
+        'username': 'alice',
+        'permission': 'superuser'  # Invalid
+    })
+
+    # Without auth should be 401, or 400 if validation happens first
+    assert resp.status_code in (400, 401)
+
+
+def test_permission_hierarchy(client, tmp_path):
+    """Test that permission levels work hierarchically (admin > edit > view)."""
+    # This tests the service layer logic
+    from scidk.services.chat_service import get_chat_service
+
+    # Use a temporary file database instead of :memory:
+    db_path = str(tmp_path / "test.db")
+    chat_service = get_chat_service(db_path=db_path)
+
+    # Create a test session
+    session = chat_service.create_session('Test Session')
+    session_id = session.id
+
+    # Set owner for grant to work
+    conn = chat_service._get_conn()
+    try:
+        conn.execute("UPDATE chat_sessions SET owner = ? WHERE id = ?", ('admin', session_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Grant edit permission to alice
+    chat_service.grant_permission(session_id, 'alice', 'edit', 'admin')
+
+    # Alice should have view access (edit includes view)
+    assert chat_service.check_permission(session_id, 'alice', 'view') is True
+
+    # Alice should have edit access
+    assert chat_service.check_permission(session_id, 'alice', 'edit') is True
+
+    # Alice should NOT have admin access
+    assert chat_service.check_permission(session_id, 'alice', 'admin') is False
+
+
+def test_owner_has_full_access(client, tmp_path):
+    """Test that session owner has automatic full access."""
+    from scidk.services.chat_service import get_chat_service
+
+    db_path = str(tmp_path / "test_owner.db")
+    chat_service = get_chat_service(db_path=db_path)
+
+    # Create session with specific owner
+    session = chat_service.create_session('Owner Test')
+    session_id = session.id
+
+    # Manually set owner
+    conn = chat_service._get_conn()
+    try:
+        conn.execute("UPDATE chat_sessions SET owner = ? WHERE id = ?", ('bob', session_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Owner should have all permissions without explicit grant
+    assert chat_service.check_permission(session_id, 'bob', 'view') is True
+    assert chat_service.check_permission(session_id, 'bob', 'edit') is True
+    assert chat_service.check_permission(session_id, 'bob', 'admin') is True
+
+
+def test_public_visibility_allows_view(client, tmp_path):
+    """Test that public sessions allow view access to everyone."""
+    from scidk.services.chat_service import get_chat_service
+
+    db_path = str(tmp_path / "test_public.db")
+    chat_service = get_chat_service(db_path=db_path)
+
+    # Create and make public
+    session = chat_service.create_session('Public Session')
+    session_id = session.id
+
+    # Set visibility to public
+    conn = chat_service._get_conn()
+    try:
+        conn.execute("UPDATE chat_sessions SET visibility = ?, owner = ? WHERE id = ?", ('public', 'owner', session_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Anyone should be able to view
+    assert chat_service.check_permission(session_id, 'random_user', 'view') is True
+
+    # But not edit or admin
+    assert chat_service.check_permission(session_id, 'random_user', 'edit') is False
+    assert chat_service.check_permission(session_id, 'random_user', 'admin') is False
+
+
+def test_cascade_delete_permissions(client, tmp_path):
+    """Test that deleting session also deletes permissions."""
+    from scidk.services.chat_service import get_chat_service
+
+    db_path = str(tmp_path / "test_cascade.db")
+    chat_service = get_chat_service(db_path=db_path)
+
+    # Create session and grant permissions
+    session = chat_service.create_session('Test')
+    session_id = session.id
+
+    # Set owner and grant permissions
+    conn = chat_service._get_conn()
+    try:
+        conn.execute("UPDATE chat_sessions SET owner = ? WHERE id = ?", ('admin', session_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+    chat_service.grant_permission(session_id, 'alice', 'view', 'admin')
+    chat_service.grant_permission(session_id, 'bob', 'edit', 'admin')
+
+    # Verify permissions exist
+    permissions = chat_service.list_permissions(session_id, 'admin')
+    assert len(permissions) == 2
+
+    # Delete session
+    chat_service.delete_session(session_id)
+
+    # Permissions should be gone (cascade delete)
+    # Try to get permissions - should return None (session doesn't exist)
+    result = chat_service.list_permissions(session_id, 'admin')
+    assert result is None
