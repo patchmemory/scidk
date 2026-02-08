@@ -610,6 +610,55 @@ def update_label_instance(name, instance_id):
         }), 500
 
 
+@bp.route('/labels/<name>/instances/<instance_id>', methods=['PUT'])
+def overwrite_label_instance(name, instance_id):
+    """
+    Overwrite all properties of a label instance in Neo4j.
+    This removes properties not in the provided set.
+
+    Request body:
+    {
+        "properties": {"name": "value", "age": 30},
+        "mode": "overwrite"
+    }
+
+    Returns:
+    {
+        "status": "success",
+        "instance": {...}
+    }
+    """
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        properties = data.get('properties', {})
+        mode = data.get('mode', 'overwrite')
+
+        if not properties:
+            return jsonify({
+                'status': 'error',
+                'error': 'Properties object is required'
+            }), 400
+
+        service = _get_label_service()
+        result = service.overwrite_label_instance(name, instance_id, properties)
+
+        if result.get('status') == 'error':
+            return jsonify(result), 500
+
+        return jsonify(result), 200
+
+    except ValueError as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 404
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
 @bp.route('/labels/import/eda', methods=['POST'])
 def import_eda_file():
     """

@@ -713,3 +713,59 @@ class LabelService:
                 'status': 'error',
                 'error': str(e)
             }
+
+    def overwrite_label_instance(self, name: str, instance_id: str, properties: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Overwrite all properties of a label instance in Neo4j.
+        This removes any properties not in the provided dictionary.
+
+        Args:
+            name: Label name
+            instance_id: Neo4j element ID
+            properties: Complete set of properties to set (removes all others)
+
+        Returns:
+            Dict with status and updated instance
+        """
+        label_def = self.get_label(name)
+        if not label_def:
+            raise ValueError(f"Label '{name}' not found")
+
+        try:
+            from .neo4j_client import get_neo4j_client
+            neo4j_client = get_neo4j_client()
+
+            if not neo4j_client:
+                raise Exception("Neo4j client not configured")
+
+            # Use SET n = {properties} to overwrite all properties
+            # This removes any properties not in the provided dict
+            query = f"""
+            MATCH (n:{name})
+            WHERE elementId(n) = $instance_id
+            SET n = $properties
+            RETURN elementId(n) as id, properties(n) as properties
+            """
+
+            results = neo4j_client.execute_write(query, {
+                'instance_id': instance_id,
+                'properties': properties
+            })
+
+            if not results:
+                raise Exception(f"Instance with ID '{instance_id}' not found")
+
+            instance = {
+                'id': results[0].get('id'),
+                'properties': results[0].get('properties', {})
+            }
+
+            return {
+                'status': 'success',
+                'instance': instance
+            }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'error': str(e)
+            }

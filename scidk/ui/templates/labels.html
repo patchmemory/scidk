@@ -451,6 +451,7 @@
       <div id="incoming-relationships-container" data-testid="incoming-relationships-container">
         <div class="empty-state small">No incoming relationships</div>
       </div>
+      <button id="btn-add-incoming-relationship" class="btn btn-sm btn-outline-primary" data-testid="add-incoming-relationship-btn" style="margin-top: 0.5rem;">Add Incoming Relationship</button>
 
       <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
         <button id="btn-save" class="btn btn-sm btn-success" data-testid="save-label-btn">Save</button>
@@ -466,9 +467,13 @@
         <div style="display: flex; gap: 0.5rem;">
           <button id="btn-pull-instances" class="btn btn-sm btn-outline-primary" data-testid="pull-instances-btn">Pull from Neo4j</button>
           <button id="btn-push-instances" class="btn btn-sm btn-success" data-testid="push-instances-btn" style="display: none;">Push Changes</button>
+          <button id="btn-download-csv" class="btn btn-sm btn-outline-secondary" data-testid="download-csv-btn" style="display: none;">Download CSV</button>
+          <button id="btn-upload-csv" class="btn btn-sm btn-outline-secondary" data-testid="upload-csv-btn">Upload CSV</button>
           <button id="btn-refresh-instances" class="btn btn-sm btn-outline-secondary" data-testid="refresh-instances-btn">Refresh</button>
         </div>
       </div>
+
+      <input type="file" id="csv-file-input" accept=".csv" style="display:none;" />
 
       <div id="instance-table-container">
         <div class="empty-state small">Click "Pull from Neo4j" to load instances</div>
@@ -560,6 +565,46 @@
   </div>
 </div>
 
+<!-- Push/Pull Confirmation Modal -->
+<div id="neo4j-confirm-modal" class="custom-modal" style="display: none;">
+  <div class="custom-modal-overlay"></div>
+  <div class="custom-modal-content">
+    <div class="custom-modal-header">
+      <h5 id="confirm-modal-title">Confirm Action</h5>
+      <button type="button" class="custom-modal-close" onclick="closeConfirmModal()">&times;</button>
+    </div>
+    <div class="custom-modal-body">
+      <p id="confirm-modal-message" class="small" style="margin-bottom: 1rem;">Are you sure?</p>
+
+      <div id="confirm-modal-details" style="background: #f9f9f9; border-radius: 4px; padding: 0.75rem; margin-bottom: 1rem;">
+        <div class="small">
+          <div style="margin-bottom: 0.5rem;"><strong>This will:</strong></div>
+          <ul style="margin: 0; padding-left: 1.5rem;" id="confirm-modal-actions">
+            <!-- Dynamically populated -->
+          </ul>
+        </div>
+        <div id="confirm-modal-count" class="small" style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #e0e0e0;">
+          <!-- Instance count displayed here -->
+        </div>
+      </div>
+
+      <div id="confirm-modal-loading" style="display: none; text-align: center; padding: 1rem;">
+        <div class="small" style="color: #666;">Loading instance count...</div>
+      </div>
+
+      <div id="confirm-modal-error" style="display: none; padding: 0.75rem; background: #fee; border: 1px solid #fcc; border-radius: 4px;">
+        <div class="small" style="color: #c00;">
+          <strong>⚠️ Warning:</strong> <span id="confirm-modal-error-text"></span>
+        </div>
+      </div>
+    </div>
+    <div class="custom-modal-footer">
+      <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeConfirmModal()">Cancel</button>
+      <button type="button" id="confirm-modal-action-btn" class="btn btn-sm btn-success">Confirm</button>
+    </div>
+  </div>
+</div>
+
 <script>
 let currentLabel = null;
 let labels = [];
@@ -645,6 +690,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-pull-all-neo4j').addEventListener('click', pullAllFromNeo4j);
     document.getElementById('btn-add-property').addEventListener('click', addProperty);
     document.getElementById('btn-add-relationship').addEventListener('click', addRelationship);
+    document.getElementById('btn-add-incoming-relationship').addEventListener('click', addIncomingRelationship);
     console.log('Main editor button listeners attached');
   } catch (e) {
     console.error('Error attaching main editor listeners:', e);
@@ -664,7 +710,10 @@ document.addEventListener('DOMContentLoaded', () => {
   try {
     // Instance browser buttons
     document.getElementById('btn-pull-instances').addEventListener('click', pullInstances);
-    document.getElementById('btn-push-instances').addEventListener('click', pushInstances);
+    document.getElementById('btn-push-instances').addEventListener('click', pushInstancesWithPreview);
+    document.getElementById('btn-download-csv').addEventListener('click', downloadInstancesCSV);
+    document.getElementById('btn-upload-csv').addEventListener('click', () => document.getElementById('csv-file-input').click());
+    document.getElementById('csv-file-input').addEventListener('change', handleCSVUpload);
     document.getElementById('btn-refresh-instances').addEventListener('click', refreshInstances);
     document.getElementById('btn-instance-prev').addEventListener('click', () => navigateInstances(-1));
     document.getElementById('btn-instance-next').addEventListener('click', () => navigateInstances(1));
@@ -1537,30 +1586,14 @@ function populateEditor(label) {
     attachSelectHandlers(relsContainer);
   }
 
-  // Render incoming relationships (edit view - with clickable source labels)
+  // Render incoming relationships (edit view - editable like outgoing relationships)
   const incomingContainer = document.getElementById('incoming-relationships-container');
   const incomingRelsEdit = label.incoming_relationships || [];
   if (incomingRelsEdit.length === 0) {
-    incomingContainer.innerHTML = '<div class="empty-state small">No incoming relationships</div>';
+    incomingContainer.innerHTML = '<div class="empty-state small">No incoming relationships defined</div>';
   } else {
-    incomingContainer.innerHTML = incomingRelsEdit.map(rel =>
-      `<div class="relationship-row" style="background: #f9f9f9; padding: 0.5rem; margin-bottom: 0.25rem; border-radius: 4px;">
-        <span class="small">
-          <a href="#" class="source-label-link" data-label="${rel.source_label}" style="color: var(--accent); text-decoration: none; font-weight: bold;">
-            ${rel.source_label}
-          </a> → [${rel.type}] → <em>this label</em>
-        </span>
-      </div>`
-    ).join('');
-
-    // Add click handlers for source label links
-    incomingContainer.querySelectorAll('.source-label-link').forEach(link => {
-      link.addEventListener('click', (e) => {
-        e.preventDefault();
-        const sourceLabelName = link.dataset.label;
-        loadLabel(sourceLabelName);
-      });
-    });
+    incomingContainer.innerHTML = incomingRelsEdit.map((rel, i) => createIncomingRelationshipRow(rel, i)).join('');
+    attachSelectHandlers(incomingContainer);
   }
 
   // Set to read-only mode
@@ -1645,9 +1678,36 @@ function addProperty() {
   attachSelectHandlers(container);
 }
 
+function handlePropertyRemoval(button) {
+  // Get the property name before removal
+  const propertyRow = button.closest('.property-row');
+  const propertyName = propertyRow.dataset.propName;
+
+  // Remove the property row
+  propertyRow.remove();
+
+  // Clean up any instance changes for this property
+  if (propertyName && currentLabel && instanceData.length > 0) {
+    Object.keys(instanceChanges).forEach(instanceId => {
+      if (instanceChanges[instanceId] && instanceChanges[instanceId][propertyName] !== undefined) {
+        delete instanceChanges[instanceId][propertyName];
+        // Remove instance from changes if no properties left
+        if (Object.keys(instanceChanges[instanceId]).length === 0) {
+          delete instanceChanges[instanceId];
+        }
+      }
+    });
+
+    // Hide push button if no changes left
+    if (Object.keys(instanceChanges).length === 0) {
+      document.getElementById('btn-push-instances').style.display = 'none';
+    }
+  }
+}
+
 function createPropertyRow(prop, index) {
   return `
-    <div class="property-row" data-index="${index || ''}" data-testid="property-row">
+    <div class="property-row" data-index="${index || ''}" data-testid="property-row" data-prop-name="${prop.name || ''}">
       <input type="text" class="form-control form-control-sm" placeholder="Property name"
              value="${prop.name || ''}" data-field="name" data-testid="property-name" />
       <select class="form-select form-select-sm" data-field="type" data-testid="property-type">
@@ -1662,7 +1722,7 @@ function createPropertyRow(prop, index) {
                data-field="required" data-testid="property-required" />
         <label class="form-check-label small" style="margin-left: 0.25rem;">Required</label>
       </div>
-      <button class="btn btn-sm btn-outline-danger" onclick="this.parentElement.remove()" data-testid="remove-property-btn">×</button>
+      <button class="btn btn-sm btn-outline-danger" onclick="handlePropertyRemoval(this)" data-testid="remove-property-btn">×</button>
     </div>
   `;
 }
@@ -1674,6 +1734,138 @@ function addRelationship() {
   }
   container.insertAdjacentHTML('beforeend', createRelationshipRow({type: '', target_label: '', properties: []}));
   attachSelectHandlers(container);
+}
+
+function addIncomingRelationship() {
+  const container = document.getElementById('incoming-relationships-container');
+  if (container.querySelector('.empty-state')) {
+    container.innerHTML = '';
+  }
+  container.insertAdjacentHTML('beforeend', createIncomingRelationshipRow({type: '', source_label: '', properties: []}));
+  attachSelectHandlers(container);
+}
+
+async function addIncomingRelationshipOLD() {
+  if (!currentLabel) return;
+
+  // Build label options excluding current label
+  const availableLabels = labels.filter(l => l.name !== currentLabel.name);
+
+  if (availableLabels.length === 0) {
+    showToast('No other labels available', 'info');
+    return;
+  }
+
+  const labelOptions = availableLabels.map(l =>
+    `<option value="${l.name}">${l.name}</option>`
+  ).join('\n');
+
+  // Show modal with source label selector and relationship type input
+  const modalElements = showConfirmModal(
+    `Add Incoming Relationship to "${currentLabel.name}"`,
+    'Select the source label and enter the relationship type.',
+    [
+      '<div style="margin-top: 0.5rem;">',
+      '  <label style="display: block; margin-bottom: 0.25rem; font-weight: bold;">Source Label:</label>',
+      '  <select id="incoming-source-label" class="form-select form-select-sm" style="width: 100%;">',
+      '    <option value="">-- Select source label --</option>',
+      labelOptions,
+      '  </select>',
+      '</div>',
+      '<div style="margin-top: 0.75rem;">',
+      '  <label style="display: block; margin-bottom: 0.25rem; font-weight: bold;">Relationship Type:</label>',
+      '  <input id="incoming-rel-type" type="text" class="form-control form-control-sm" placeholder="e.g., HAS_SAMPLE" style="width: 100%;" />',
+      '</div>'
+    ],
+    async () => {
+      const sourceLabel = document.getElementById('incoming-source-label').value;
+      const relType = document.getElementById('incoming-rel-type').value.trim();
+
+      if (!sourceLabel) {
+        showToast('Please select a source label', 'error');
+        return;
+      }
+
+      if (!relType) {
+        showToast('Please enter a relationship type', 'error');
+        return;
+      }
+
+      closeConfirmModal();
+      showToast('Adding relationship...', 'info');
+
+      try {
+        // Fetch the source label
+        const resp = await fetch(`/api/labels/${sourceLabel}`);
+        const data = await resp.json();
+
+        if (data.status !== 'success') {
+          showToast('Error fetching source label: ' + (data.error || 'Unknown error'), 'error');
+          return;
+        }
+
+        const sourceLabelDef = data.label;
+
+        // Check if relationship already exists
+        const existingRel = sourceLabelDef.relationships.find(rel =>
+          rel.type === relType && rel.target_label === currentLabel.name
+        );
+
+        if (existingRel) {
+          showToast(`Relationship ${relType} already exists from ${sourceLabel}`, 'info');
+          return;
+        }
+
+        // Add the new relationship to source label
+        const updatedRelationships = [
+          ...sourceLabelDef.relationships,
+          {
+            type: relType,
+            target_label: currentLabel.name,
+            properties: []
+          }
+        ];
+
+        // Save the updated source label
+        const saveResp = await fetch('/api/labels', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: sourceLabelDef.name,
+            properties: sourceLabelDef.properties,
+            relationships: updatedRelationships
+          })
+        });
+
+        const saveData = await saveResp.json();
+
+        if (saveData.status === 'success') {
+          showToast(`Added relationship from ${sourceLabel}`, 'success');
+
+          // Reload current label to update incoming relationships display
+          const refreshResp = await fetch(`/api/labels/${currentLabel.name}`);
+          const refreshData = await refreshResp.json();
+
+          if (refreshData.status === 'success') {
+            currentLabel = refreshData.label;
+            populateEditor(currentLabel);
+            // Stay in read-only mode
+            isEditMode = false;
+            updateEditorView();
+          }
+        } else {
+          showToast('Error saving changes: ' + (saveData.error || 'Unknown error'), 'error');
+        }
+      } catch (err) {
+        console.error('Error adding relationship:', err);
+        showToast('Network error: ' + err.message, 'error');
+      }
+    }
+  );
+
+  // Show details immediately
+  modalElements.loadingEl.style.display = 'none';
+  modalElements.detailsEl.style.display = 'block';
 }
 
 function createRelationshipRow(rel, index) {
@@ -1701,7 +1893,35 @@ function createRelationshipRow(rel, index) {
   `;
 }
 
-function saveLabel() {
+function createIncomingRelationshipRow(rel, index) {
+  // Filter out current label from source options
+  const sourceOptions = labels
+    .filter(l => !currentLabel || l.name !== currentLabel.name)
+    .map(l =>
+      `<option value="${l.name}" ${rel.source_label === l.name ? 'selected' : ''}>${l.name}</option>`
+    ).join('\n        ');
+
+  // Add navigation button if source label is selected
+  const hasSource = rel.source_label && rel.source_label !== '';
+  const navButton = hasSource
+    ? `<button class="btn btn-sm btn-outline-primary source-label-nav" data-source="${rel.source_label}" title="Go to ${rel.source_label}" style="flex: 0 0 auto;">→</button>`
+    : '';
+
+  return `
+    <div class="incoming-relationship-row" data-index="${index || ''}" data-testid="incoming-relationship-row">
+      <select class="form-select form-select-sm" data-field="source_label" data-testid="incoming-relationship-source">
+        <option value="">-- Select source label --</option>
+        ${sourceOptions}
+      </select>
+      <input type="text" class="form-control form-control-sm" placeholder="Type (e.g., HAS_SAMPLE)"
+             value="${rel.type || ''}" data-field="type" data-testid="incoming-relationship-type" />
+      ${navButton}
+      <button class="btn btn-sm btn-outline-danger" onclick="this.parentElement.remove()" data-testid="remove-incoming-relationship-btn">×</button>
+    </div>
+  `;
+}
+
+async function saveLabel() {
   const name = document.getElementById('label-name').value.trim();
   if (!name) {
     document.getElementById('name-error').textContent = 'Label name is required';
@@ -1711,41 +1931,198 @@ function saveLabel() {
   document.getElementById('name-error').style.display = 'none';
 
   // Gather properties
-  const properties = Array.from(document.querySelectorAll('.property-row')).map(row => ({
-    name: row.querySelector('[data-field="name"]').value.trim(),
-    type: row.querySelector('[data-field="type"]').value,
-    required: row.querySelector('[data-field="required"]').checked
-  })).filter(p => p.name);
+  const properties = Array.from(document.querySelectorAll('.property-row')).map(row => {
+    const nameInput = row.querySelector('[data-field="name"]');
+    const typeSelect = row.querySelector('[data-field="type"]');
+    const requiredCheckbox = row.querySelector('[data-field="required"]');
 
-  // Gather relationships
-  const relationships = Array.from(document.querySelectorAll('.relationship-row')).map(row => ({
-    type: row.querySelector('[data-field="type"]').value.trim(),
-    target_label: row.querySelector('[data-field="target_label"]').value,
-    properties: []
-  })).filter(r => r.type && r.target_label);
+    if (!nameInput || !typeSelect || !requiredCheckbox) {
+      console.error('Missing field in property row:', row);
+      return null;
+    }
+
+    return {
+      name: nameInput.value.trim(),
+      type: typeSelect.value,
+      required: requiredCheckbox.checked
+    };
+  }).filter(p => p && p.name);
+
+  // Gather relationships (only from outgoing relationships container)
+  const relsContainer = document.getElementById('relationships-container');
+  const relationships = Array.from(relsContainer.querySelectorAll('.relationship-row')).map(row => {
+    const typeInput = row.querySelector('[data-field="type"]');
+    const targetSelect = row.querySelector('[data-field="target_label"]');
+
+    if (!typeInput || !targetSelect) {
+      console.error('Missing field in relationship row:', row);
+      return null;
+    }
+
+    return {
+      type: typeInput.value.trim(),
+      target_label: targetSelect.value,
+      properties: []
+    };
+  }).filter(r => r && r.type && r.target_label);
+
+  // Gather incoming relationships from the edit UI
+  const incomingContainer = document.getElementById('incoming-relationships-container');
+  const incomingRelationships = Array.from(incomingContainer.querySelectorAll('.incoming-relationship-row')).map(row => {
+    const typeInput = row.querySelector('[data-field="type"]');
+    const sourceSelect = row.querySelector('[data-field="source_label"]');
+
+    if (!typeInput || !sourceSelect) {
+      console.error('Missing field in incoming relationship row:', row);
+      return null;
+    }
+
+    return {
+      type: typeInput.value.trim(),
+      source_label: sourceSelect.value,
+      properties: []
+    };
+  }).filter(r => r && r.type && r.source_label);
 
   const payload = { name, properties, relationships };
 
-  fetch('/api/labels', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  })
-    .then(r => r.json())
-    .then(data => {
-      if (data.status === 'success') {
-        showToast('Label saved successfully', 'success');
-        currentLabel = data.label;
-        loadLabels();
-        populateEditor(currentLabel);
-        // Switch back to read-only mode after save
-        isEditMode = false;
-        updateEditorView();
-      } else {
-        showToast('Error saving label: ' + (data.error || 'Unknown error'), 'error');
+  console.log('Saving label with payload:', payload);
+  console.log('Incoming relationships to apply:', incomingRelationships);
+
+  try {
+    // First save the current label
+    const resp = await fetch('/api/labels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await resp.json();
+    console.log('Save response:', data);
+
+    if (data.status !== 'success') {
+      console.error('Error saving label:', data);
+      showToast('Error saving label: ' + (data.error || 'Unknown error'), 'error');
+      return;
+    }
+
+    showToast('Label saved successfully', 'success');
+
+    // Now handle incoming relationship changes
+    await applyIncomingRelationshipChanges(name, incomingRelationships);
+
+    // Refresh the label to get updated incoming relationships
+    const refreshResp = await fetch(`/api/labels/${name}`);
+    const refreshData = await refreshResp.json();
+
+    if (refreshData.status === 'success') {
+      currentLabel = refreshData.label;
+      loadLabels();
+      populateEditor(currentLabel);
+      // Switch back to read-only mode after save
+      isEditMode = false;
+      updateEditorView();
+      // Refresh instance table if instances are loaded (removes columns for deleted properties)
+      if (instanceData.length > 0) {
+        renderInstanceTable();
       }
-    })
-    .catch(err => showToast('Network error: ' + err.message, 'error'));
+    }
+  } catch (err) {
+    console.error('Network error saving label:', err);
+    showToast('Network error: ' + err.message, 'error');
+  }
+}
+
+async function applyIncomingRelationshipChanges(targetLabel, desiredIncoming) {
+  // Get original incoming relationships
+  const originalIncoming = currentLabel.incoming_relationships || [];
+
+  // Find relationships to add and remove
+  const toAdd = desiredIncoming.filter(desired =>
+    !originalIncoming.find(orig =>
+      orig.source_label === desired.source_label && orig.type === desired.type
+    )
+  );
+
+  const toRemove = originalIncoming.filter(orig =>
+    !desiredIncoming.find(desired =>
+      desired.source_label === orig.source_label && desired.type === orig.type
+    )
+  );
+
+  console.log('Incoming relationships to add:', toAdd);
+  console.log('Incoming relationships to remove:', toRemove);
+
+  // Remove relationships from source labels
+  for (const rel of toRemove) {
+    try {
+      const resp = await fetch(`/api/labels/${rel.source_label}`);
+      const data = await resp.json();
+
+      if (data.status === 'success') {
+        const sourceLabelDef = data.label;
+        const updatedRels = sourceLabelDef.relationships.filter(r =>
+          !(r.type === rel.type && r.target_label === targetLabel)
+        );
+
+        await fetch('/api/labels', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: sourceLabelDef.name,
+            properties: sourceLabelDef.properties,
+            relationships: updatedRels
+          })
+        });
+
+        console.log(`Removed ${rel.type} from ${rel.source_label}`);
+      }
+    } catch (err) {
+      console.error(`Error removing relationship from ${rel.source_label}:`, err);
+    }
+  }
+
+  // Add relationships to source labels
+  for (const rel of toAdd) {
+    try {
+      const resp = await fetch(`/api/labels/${rel.source_label}`);
+      const data = await resp.json();
+
+      if (data.status === 'success') {
+        const sourceLabelDef = data.label;
+
+        // Check if relationship already exists
+        const exists = sourceLabelDef.relationships.find(r =>
+          r.type === rel.type && r.target_label === targetLabel
+        );
+
+        if (!exists) {
+          const updatedRels = [
+            ...sourceLabelDef.relationships,
+            {
+              type: rel.type,
+              target_label: targetLabel,
+              properties: []
+            }
+          ];
+
+          await fetch('/api/labels', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: sourceLabelDef.name,
+              properties: sourceLabelDef.properties,
+              relationships: updatedRels
+            })
+          });
+
+          console.log(`Added ${rel.type} to ${rel.source_label}`);
+        }
+      }
+    } catch (err) {
+      console.error(`Error adding relationship to ${rel.source_label}:`, err);
+    }
+  }
 }
 
 function deleteLabel() {
@@ -1768,38 +2145,184 @@ function deleteLabel() {
     .catch(err => showToast('Network error: ' + err.message, 'error'));
 }
 
+async function deleteIncomingRelationship(sourceLabel, relType, targetLabel) {
+  // Show confirmation modal
+  const modalElements = showConfirmModal(
+    `Delete relationship?`,
+    `This will remove the relationship from "${sourceLabel}".`,
+    [
+      `Source: ${sourceLabel}`,
+      `Relationship: [${relType}]`,
+      `Target: ${targetLabel}`,
+      '',
+      '⚠️ This action cannot be undone.'
+    ],
+    async () => {
+      closeConfirmModal();
+      showToast('Deleting relationship...', 'info');
+
+      try {
+        // Fetch the source label
+        const resp = await fetch(`/api/labels/${sourceLabel}`);
+        const data = await resp.json();
+
+        if (data.status !== 'success') {
+          showToast('Error fetching source label: ' + (data.error || 'Unknown error'), 'error');
+          return;
+        }
+
+        const sourceLabelDef = data.label;
+
+        // Remove the relationship from source label's relationships array
+        const updatedRelationships = sourceLabelDef.relationships.filter(rel => {
+          return !(rel.type === relType && rel.target_label === targetLabel);
+        });
+
+        // Save the updated source label
+        const saveResp = await fetch('/api/labels', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: sourceLabelDef.name,
+            properties: sourceLabelDef.properties,
+            relationships: updatedRelationships
+          })
+        });
+
+        const saveData = await saveResp.json();
+
+        if (saveData.status === 'success') {
+          showToast(`Removed relationship from ${sourceLabel}`, 'success');
+
+          // Reload current label to update incoming relationships display
+          const refreshResp = await fetch(`/api/labels/${targetLabel}`);
+          const refreshData = await refreshResp.json();
+
+          if (refreshData.status === 'success') {
+            currentLabel = refreshData.label;
+            populateEditor(currentLabel);
+            // Stay in read-only mode
+            isEditMode = false;
+            updateEditorView();
+          }
+        } else {
+          showToast('Error saving changes: ' + (saveData.error || 'Unknown error'), 'error');
+        }
+      } catch (err) {
+        console.error('Error deleting relationship:', err);
+        showToast('Network error: ' + err.message, 'error');
+      }
+    }
+  );
+
+  // Show details immediately
+  modalElements.loadingEl.style.display = 'none';
+  modalElements.detailsEl.style.display = 'block';
+}
+
+// Modal helper functions
+function showConfirmModal(title, message, actions, onConfirm) {
+  const modal = document.getElementById('neo4j-confirm-modal');
+  const titleEl = document.getElementById('confirm-modal-title');
+  const messageEl = document.getElementById('confirm-modal-message');
+  const actionsEl = document.getElementById('confirm-modal-actions');
+  const countEl = document.getElementById('confirm-modal-count');
+  const detailsEl = document.getElementById('confirm-modal-details');
+  const loadingEl = document.getElementById('confirm-modal-loading');
+  const errorEl = document.getElementById('confirm-modal-error');
+  const actionBtn = document.getElementById('confirm-modal-action-btn');
+
+  // Set content
+  titleEl.textContent = title;
+  messageEl.textContent = message;
+  actionsEl.innerHTML = actions.map(action => `<li>${action}</li>`).join('');
+
+  // Reset state
+  detailsEl.style.display = 'none';
+  loadingEl.style.display = 'block';
+  errorEl.style.display = 'none';
+  countEl.innerHTML = '';
+
+  // Set up action button
+  actionBtn.onclick = () => {
+    closeConfirmModal();
+    onConfirm();
+  };
+
+  // Show modal
+  modal.style.display = 'block';
+
+  return { countEl, detailsEl, loadingEl, errorEl };
+}
+
+function closeConfirmModal() {
+  document.getElementById('neo4j-confirm-modal').style.display = 'none';
+}
+
+async function getInstanceCount(labelName) {
+  try {
+    const response = await fetch(`/api/labels/${labelName}/instance-count`);
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    return { status: 'error', error: error.message };
+  }
+}
+
 function pullFromNeo4j() {
   if (!currentLabel) return;
 
-  if (!confirm(`Pull schema for "${currentLabel.name}" from Neo4j? This will add any missing properties and relationships from the Neo4j schema.`)) return;
+  const modalElements = showConfirmModal(
+    `Pull "${currentLabel.name}" from Neo4j?`,
+    'This will sync the schema with Neo4j and add any missing properties or relationships.',
+    [
+      'Pull schema properties from Neo4j',
+      'Pull relationship definitions from Neo4j',
+      'Merge with existing local schema'
+    ],
+    () => {
+      showToast('Pulling from Neo4j...', 'info');
+      fetch(`/api/labels/${currentLabel.name}/pull`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+          if (data.status === 'success') {
+            const propCount = data.new_properties_count || 0;
+            const relCount = data.new_relationships_count || 0;
+            const total = propCount + relCount;
 
-  showToast('Pulling from Neo4j...', 'info');
+            let msg = '';
+            if (total === 0) {
+              msg = 'No new schema found in Neo4j';
+            } else {
+              const parts = [];
+              if (propCount > 0) parts.push(`${propCount} property${propCount > 1 ? 'ies' : ''}`);
+              if (relCount > 0) parts.push(`${relCount} relationship${relCount > 1 ? 's' : ''}`);
+              msg = `Added ${parts.join(' and ')} from Neo4j`;
+            }
 
-  fetch(`/api/labels/${currentLabel.name}/pull`, { method: 'POST' })
-    .then(r => r.json())
-    .then(data => {
-      if (data.status === 'success') {
-        const propCount = data.new_properties_count || 0;
-        const relCount = data.new_relationships_count || 0;
-        const total = propCount + relCount;
+            showToast(msg, 'success');
+            loadLabel(currentLabel.name);
+          } else {
+            showToast('Error pulling from Neo4j: ' + (data.error || 'Unknown error'), 'error');
+          }
+        })
+        .catch(err => showToast('Network error: ' + err.message, 'error'));
+    }
+  );
 
-        let msg = '';
-        if (total === 0) {
-          msg = 'No new schema found in Neo4j';
-        } else {
-          const parts = [];
-          if (propCount > 0) parts.push(`${propCount} property${propCount > 1 ? 'ies' : ''}`);
-          if (relCount > 0) parts.push(`${relCount} relationship${relCount > 1 ? 's' : ''}`);
-          msg = `Added ${parts.join(' and ')} from Neo4j`;
-        }
+  // Fetch instance count
+  getInstanceCount(currentLabel.name).then(data => {
+    modalElements.loadingEl.style.display = 'none';
+    modalElements.detailsEl.style.display = 'block';
 
-        showToast(msg, 'success');
-        loadLabel(currentLabel.name);
-      } else {
-        showToast('Error pulling from Neo4j: ' + (data.error || 'Unknown error'), 'error');
-      }
-    })
-    .catch(err => showToast('Network error: ' + err.message, 'error'));
+    if (data.status === 'success') {
+      const count = data.count || 0;
+      modalElements.countEl.innerHTML = `<strong>Instances in Neo4j:</strong> ${count}`;
+    } else {
+      modalElements.errorEl.style.display = 'block';
+      document.getElementById('confirm-modal-error-text').textContent = data.error || 'Could not fetch instance count';
+    }
+  });
 }
 
 function pullAllFromNeo4j() {
@@ -2054,6 +2577,9 @@ async function pullInstances() {
       renderInstanceTable();
       showToast(`Loaded ${instanceData.length} instances`, 'success');
       document.getElementById('btn-push-instances').style.display = 'none';
+
+      // Show download CSV button if there are instances
+      document.getElementById('btn-download-csv').style.display = instanceData.length > 0 ? 'inline-block' : 'none';
     } else {
       showToast('Error loading instances: ' + (result.error || 'Unknown error'), 'error');
     }
@@ -2062,7 +2588,7 @@ async function pullInstances() {
   }
 }
 
-async function pushInstances() {
+async function pushInstances(mode = 'merge') {
   if (!currentLabel) return;
 
   const changeCount = Object.keys(instanceChanges).length;
@@ -2071,30 +2597,44 @@ async function pushInstances() {
     return;
   }
 
-  if (!confirm(`Push ${changeCount} changed instance(s) to Neo4j?`)) return;
-
-  showToast(`Pushing ${changeCount} changes...`, 'info');
+  closeConfirmModal();
+  showToast(`Pushing ${changeCount} changes (${mode} mode)...`, 'info');
 
   let successCount = 0;
   let errorCount = 0;
 
-  for (const [instanceId, changes] of Object.entries(instanceChanges)) {
-    for (const [prop, value] of Object.entries(changes)) {
+  // In overwrite mode, we need to send all properties from the schema
+  if (mode === 'overwrite') {
+    // Build complete property sets for each changed instance
+    for (const [instanceId, changes] of Object.entries(instanceChanges)) {
+      const instance = instanceData.find(i => i.id === instanceId);
+      if (!instance) continue;
+
+      // Merge original properties with changes, but only include schema properties
+      const completeProperties = {};
+      currentLabel.properties.forEach(prop => {
+        const propName = prop.name;
+        if (changes[propName] !== undefined) {
+          completeProperties[propName] = changes[propName];
+        } else if (instance.properties[propName] !== undefined) {
+          completeProperties[propName] = instance.properties[propName];
+        }
+      });
+
       try {
         const resp = await fetch(`/api/labels/${currentLabel.name}/instances/${instanceId}`, {
-          method: 'PATCH',
+          method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ property: prop, value: value })
+          body: JSON.stringify({ properties: completeProperties, mode: 'overwrite' })
         });
 
-        const result = await resp.json();
+          const result = await resp.json();
 
         if (result.status === 'success') {
           successCount++;
-          // Update instanceData with new value
-          const instance = instanceData.find(i => i.id === instanceId);
+          // Update instanceData with complete properties
           if (instance) {
-            instance.properties[prop] = value;
+            instance.properties = completeProperties;
           }
         } else {
           errorCount++;
@@ -2103,6 +2643,36 @@ async function pushInstances() {
       } catch (e) {
         errorCount++;
         console.error('Network error updating instance:', e);
+      }
+    }
+  } else {
+    // Merge mode - only update changed properties
+    for (const [instanceId, changes] of Object.entries(instanceChanges)) {
+      for (const [prop, value] of Object.entries(changes)) {
+        try {
+          const resp = await fetch(`/api/labels/${currentLabel.name}/instances/${instanceId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ property: prop, value: value })
+          });
+
+          const result = await resp.json();
+
+          if (result.status === 'success') {
+            successCount++;
+            // Update instanceData with new value
+            const instance = instanceData.find(i => i.id === instanceId);
+            if (instance) {
+              instance.properties[prop] = value;
+            }
+          } else {
+            errorCount++;
+            console.error('Error updating instance:', result.error);
+          }
+        } catch (e) {
+          errorCount++;
+          console.error('Network error updating instance:', e);
+        }
       }
     }
   }
@@ -2127,6 +2697,289 @@ async function refreshInstances() {
 function navigateInstances(delta) {
   instancePage = Math.max(0, instancePage + delta);
   pullInstances();
+}
+
+// Copy/Paste handler for Excel-like multi-cell paste
+function handleCellPaste(startCell, pastedText) {
+  const instanceId = startCell.dataset.id;
+  const startProp = startCell.dataset.prop;
+
+  // Split by lines (rows) and tabs (columns)
+  const rows = pastedText.split('\n').filter(r => r.trim());
+
+  if (rows.length === 0) return;
+
+  // Parse first row to see if it's multi-column
+  const firstRowCells = rows[0].split('\t');
+
+  if (rows.length === 1 && firstRowCells.length === 1) {
+    // Single cell paste
+    startCell.textContent = firstRowCells[0].trim();
+    startCell.dispatchEvent(new Event('blur'));
+    return;
+  }
+
+  // Multi-cell paste
+  const properties = currentLabel.properties.map(p => p.name);
+  const startPropIndex = properties.indexOf(startProp);
+
+  if (startPropIndex === -1) return;
+
+  // Get current instance and subsequent instances
+  const startInstanceIndex = instanceData.findIndex(i => i.id === instanceId);
+  if (startInstanceIndex === -1) return;
+
+  let changesCount = 0;
+
+  rows.forEach((row, rowOffset) => {
+    const targetInstanceIndex = startInstanceIndex + rowOffset;
+    if (targetInstanceIndex >= instanceData.length) return;
+
+    const targetInstance = instanceData[targetInstanceIndex];
+    const cells = row.split('\t');
+
+    cells.forEach((cellValue, colOffset) => {
+      const targetPropIndex = startPropIndex + colOffset;
+      if (targetPropIndex >= properties.length) return;
+
+      const targetProp = properties[targetPropIndex];
+      const trimmedValue = cellValue.trim();
+
+      // Record change
+      if (!instanceChanges[targetInstance.id]) {
+        instanceChanges[targetInstance.id] = {};
+      }
+      instanceChanges[targetInstance.id][targetProp] = trimmedValue;
+      changesCount++;
+    });
+  });
+
+  // Re-render table to show changes
+  renderInstanceTable();
+
+  // Show push button
+  if (Object.keys(instanceChanges).length > 0) {
+    document.getElementById('btn-push-instances').style.display = 'inline-block';
+  }
+
+  showToast(`Pasted ${changesCount} cell(s)`, 'success', 1500);
+}
+
+// CSV Export/Import functions
+function downloadInstancesCSV() {
+  if (!currentLabel || instanceData.length === 0) {
+    showToast('No instances to download', 'info');
+    return;
+  }
+
+  // Get property names
+  const properties = currentLabel.properties.map(p => p.name);
+
+  // Build CSV content
+  let csv = 'neo4j_id,' + properties.join(',') + '\n';
+
+  instanceData.forEach(instance => {
+    const row = [instance.id];
+    properties.forEach(prop => {
+      let value = instance.properties[prop] || '';
+      // Escape commas and quotes
+      if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
+        value = '"' + value.replace(/"/g, '""') + '"';
+      }
+      row.push(value);
+    });
+    csv += row.join(',') + '\n';
+  });
+
+  // Create download
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  const date = new Date().toISOString().split('T')[0];
+  link.setAttribute('href', url);
+  link.setAttribute('download', `${currentLabel.name}_instances_${date}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  showToast(`Downloaded ${instanceData.length} instances as CSV`, 'success');
+}
+
+function handleCSVUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  if (!currentLabel) {
+    showToast('Please select a label first', 'error');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const csv = e.target.result;
+      const lines = csv.split('\n').filter(line => line.trim());
+
+      if (lines.length < 2) {
+        showToast('CSV file is empty', 'error');
+        return;
+      }
+
+      // Parse header
+      const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+      const idIndex = headers.indexOf('neo4j_id');
+
+      if (idIndex === -1) {
+        showToast('CSV must have a "neo4j_id" column', 'error');
+        return;
+      }
+
+      // Parse rows
+      const newInstances = [];
+      const changes = {};
+
+      for (let i = 1; i < lines.length; i++) {
+        const values = parseCSVLine(lines[i]);
+        if (values.length !== headers.length) continue;
+
+        const id = values[idIndex];
+        if (!id) continue;
+
+        const properties = {};
+        headers.forEach((header, idx) => {
+          if (header !== 'neo4j_id') {
+            properties[header] = values[idx];
+          }
+        });
+
+        newInstances.push({ id, properties });
+
+        // Mark all as changed for push
+        const existingInstance = instanceData.find(inst => inst.id === id);
+        if (existingInstance) {
+          // Track changes for existing instances
+          changes[id] = {};
+          Object.entries(properties).forEach(([prop, value]) => {
+            if (existingInstance.properties[prop] !== value) {
+              changes[id][prop] = value;
+            }
+          });
+        } else {
+          // New instance - mark all properties as changed
+          changes[id] = properties;
+        }
+      }
+
+      if (newInstances.length === 0) {
+        showToast('No valid instances found in CSV', 'error');
+        return;
+      }
+
+      // Merge with existing data
+      newInstances.forEach(newInst => {
+        const existingIdx = instanceData.findIndex(inst => inst.id === newInst.id);
+        if (existingIdx >= 0) {
+          // Update existing
+          instanceData[existingIdx] = newInst;
+        } else {
+          // Add new
+          instanceData.push(newInst);
+        }
+      });
+
+      instanceChanges = changes;
+      renderInstanceTable();
+
+      // Show push button if there are changes
+      const changeCount = Object.keys(instanceChanges).length;
+      if (changeCount > 0) {
+        document.getElementById('btn-push-instances').style.display = 'inline-block';
+      }
+
+      showToast(`Loaded ${newInstances.length} instances from CSV (${changeCount} with changes)`, 'success');
+
+      // Clear file input
+      event.target.value = '';
+    } catch (error) {
+      showToast('Error parsing CSV: ' + error.message, 'error');
+      console.error('CSV parse error:', error);
+    }
+  };
+
+  reader.readAsText(file);
+}
+
+function parseCSVLine(line) {
+  const values = [];
+  let currentValue = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        currentValue += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      values.push(currentValue.trim());
+      currentValue = '';
+    } else {
+      currentValue += char;
+    }
+  }
+
+  values.push(currentValue.trim());
+  return values;
+}
+
+function pushInstancesWithPreview() {
+  if (!currentLabel) return;
+
+  const changeCount = Object.keys(instanceChanges).length;
+  if (changeCount === 0) {
+    showToast('No changes to push', 'info');
+    return;
+  }
+
+  // Count updates vs creates
+  let updateCount = 0;
+  let createCount = 0;
+
+  Object.keys(instanceChanges).forEach(instanceId => {
+    const existingInstance = instanceData.find(i => i.id === instanceId);
+    if (existingInstance && existingInstance.properties) {
+      updateCount++;
+    } else {
+      createCount++;
+    }
+  });
+
+  const modalElements = showConfirmModal(
+    `Push changes to "${currentLabel.name}"?`,
+    `You have ${changeCount} instance(s) with changes.`,
+    [
+      `Update ${updateCount} existing instance(s)`,
+      createCount > 0 ? `Create ${createCount} new instance(s)` : null,
+      '<strong>Push Mode:</strong>',
+      '<label style="display: block; margin-left: 1rem; cursor: pointer;"><input type="radio" name="push-mode" value="merge" checked style="margin-right: 0.5rem;">Merge (update only changed properties)</label>',
+      '<label style="display: block; margin-left: 1rem; cursor: pointer;"><input type="radio" name="push-mode" value="overwrite" style="margin-right: 0.5rem;">Overwrite (remove properties not in schema)</label>',
+      '<div style="margin-left: 2rem; margin-top: 0.5rem; font-size: 0.85rem; color: #666;">⚠️ Overwrite mode will delete any properties from Neo4j nodes that are not defined in the label schema</div>'
+    ].filter(Boolean),
+    () => {
+      const selectedMode = document.querySelector('input[name="push-mode"]:checked')?.value || 'merge';
+      pushInstances(selectedMode);
+    }
+  );
+
+  // Show change details immediately
+  modalElements.loadingEl.style.display = 'none';
+  modalElements.detailsEl.style.display = 'block';
+  modalElements.countEl.innerHTML = `<strong>Total changes:</strong> ${changeCount} instance(s)`;
 }
 
 function renderInstanceTable() {
@@ -2215,6 +3068,30 @@ function renderInstanceTable() {
     });
 
     cell.addEventListener('keydown', (e) => {
+      // Copy (Ctrl+C or Cmd+C)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && !e.target.classList.contains('instance-cell-editing')) {
+        e.preventDefault();
+        const text = e.target.textContent;
+        navigator.clipboard.writeText(text).then(() => {
+          showToast('Copied to clipboard', 'success', 1000);
+        }).catch(err => {
+          console.error('Copy failed:', err);
+        });
+        return;
+      }
+
+      // Paste (Ctrl+V or Cmd+V)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        e.preventDefault();
+        navigator.clipboard.readText().then(text => {
+          handleCellPaste(e.target, text);
+        }).catch(err => {
+          console.error('Paste failed:', err);
+          showToast('Paste failed - clipboard access denied', 'error');
+        });
+        return;
+      }
+
       // Save on Enter
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
