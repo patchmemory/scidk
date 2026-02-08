@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from tests.conftest import authenticate_test_client
 
 
 def test_fs_auto_enters_base_rclone(monkeypatch, tmp_path):
@@ -29,7 +30,7 @@ def test_fs_auto_enters_base_rclone(monkeypatch, tmp_path):
 
     from scidk.app import create_app
     app = create_app()
-    client = app.test_client()
+    client = authenticate_test_client(app.test_client(), app)
 
     resp = client.post('/api/scans', json={
         'provider_id': 'rclone',

@@ -1,6 +1,7 @@
 import json as _json
 import types
 from scidk.app import create_app
+from tests.conftest import authenticate_test_client
 
 
 def make_client_with_rclone(monkeypatch, listremotes_output=None, lsjson_map=None):
@@ -41,7 +42,7 @@ def make_client_with_rclone(monkeypatch, listremotes_output=None, lsjson_map=Non
 
     app = create_app()
     app.config.update({"TESTING": True})
-    return app.test_client()
+    return authenticate_test_client(app.test_client(), app)
 
 
 def test_providers_includes_rclone_and_roots_listing(monkeypatch):
@@ -91,7 +92,7 @@ def test_rclone_not_installed_gives_clear_error(monkeypatch):
     monkeypatch.setattr(_shutil, 'which', lambda name: None)
 
     app = create_app(); app.config.update({"TESTING": True})
-    client = app.test_client()
+    client = authenticate_test_client(app.test_client(), app)
 
     resp = client.get('/api/provider_roots', query_string={'provider_id': 'rclone'})
     # Our API wraps provider errors as 500 with {error: message}

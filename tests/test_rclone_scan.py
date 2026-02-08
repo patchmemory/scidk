@@ -1,4 +1,5 @@
 from scidk.app import create_app
+from tests.conftest import authenticate_test_client
 
 
 def test_scan_rclone_path_metadata_only(monkeypatch):
@@ -8,7 +9,7 @@ def test_scan_rclone_path_metadata_only(monkeypatch):
     monkeypatch.setattr(_shutil, 'which', lambda name: '/usr/bin/rclone' if name == 'rclone' else None)
 
     app = create_app(); app.config.update({"TESTING": True})
-    client = app.test_client()
+    client = authenticate_test_client(app.test_client(), app)
 
     # Perform a scan with an rclone path; should not error and should return ok with provider_id
     resp = client.post('/api/scan', json={

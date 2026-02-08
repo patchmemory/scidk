@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 from scidk.app import create_app
+from tests.conftest import authenticate_test_client
 
 pytestmark = pytest.mark.integration
 
@@ -29,7 +30,7 @@ def test_second_scan_skips_when_unchanged(monkeypatch, tmp_path):
     (base / 'sub' / 'b.txt').write_text('world')
 
     app = create_app()
-    client = app.test_client()
+    client = authenticate_test_client(app.test_client(), app)
 
     # First scan
     p1 = _run_scan(client, base)

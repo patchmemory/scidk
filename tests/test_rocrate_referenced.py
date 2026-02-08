@@ -2,13 +2,14 @@ import json
 import os
 from pathlib import Path
 from scidk.app import create_app
+from tests.conftest import authenticate_test_client
 
 
 def test_rocrate_referenced_feature_flag_off(monkeypatch):
     # Ensure feature disabled by default
     monkeypatch.delenv('SCIDK_ENABLE_ROCRATE_REFERENCED', raising=False)
     app = create_app(); app.config.update({"TESTING": True})
-    client = app.test_client()
+    client = authenticate_test_client(app.test_client(), app)
     resp = client.post('/api/ro-crates/referenced', json={"dataset_ids": [], "files": []})
     assert resp.status_code == 404
 
@@ -19,7 +20,7 @@ def test_rocrate_referenced_writes_crate(monkeypatch, tmp_path):
     monkeypatch.setenv('SCIDK_ROCRATE_DIR', str(tmp_path))
 
     app = create_app(); app.config.update({"TESTING": True})
-    client = app.test_client()
+    client = authenticate_test_client(app.test_client(), app)
 
     # Seed a minimal dataset in graph
     g = app.extensions['scidk']['graph']

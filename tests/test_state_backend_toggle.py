@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from scidk.app import create_app
+from tests.conftest import authenticate_test_client
 
 
 @pytest.mark.integration
@@ -15,7 +16,7 @@ def test_api_scans_uses_sqlite_when_backend_sqlite(monkeypatch, tmp_path):
     monkeypatch.setenv("SCIDK_STATE_BACKEND", "sqlite")
 
     app = create_app()
-    client = app.test_client()
+    client = authenticate_test_client(app.test_client(), app)
 
     # Create a small temp directory to scan
     scan_dir = tmp_path / "scanroot"
@@ -47,7 +48,7 @@ def test_api_scans_uses_memory_when_backend_memory(monkeypatch, tmp_path):
     monkeypatch.setenv("SCIDK_STATE_BACKEND", "memory")
 
     app = create_app()
-    client = app.test_client()
+    client = authenticate_test_client(app.test_client(), app)
 
     # Create test dir
     scan_dir = tmp_path / "scanroot"
@@ -78,7 +79,7 @@ def test_api_directories_sqlite_vs_memory(monkeypatch, tmp_path):
     monkeypatch.setenv("SCIDK_DB_PATH", str(db_file))
     monkeypatch.setenv("SCIDK_STATE_BACKEND", "sqlite")
     app = create_app()
-    client = app.test_client()
+    client = authenticate_test_client(app.test_client(), app)
 
     base = tmp_path / "root1"
     base.mkdir(parents=True, exist_ok=True)
@@ -102,7 +103,7 @@ def test_api_directories_sqlite_vs_memory(monkeypatch, tmp_path):
     # Now with memory backend
     monkeypatch.setenv("SCIDK_STATE_BACKEND", "memory")
     app2 = create_app()
-    client2 = app2.test_client()
+    client2 = authenticate_test_client(app2.test_client(), app2)
 
     base2 = tmp_path / "root2"
     base2.mkdir(parents=True, exist_ok=True)
@@ -131,7 +132,7 @@ def test_api_tasks_lists_without_error_under_both_backends(monkeypatch, tmp_path
     # First sqlite
     monkeypatch.setenv("SCIDK_STATE_BACKEND", "sqlite")
     app = create_app()
-    client = app.test_client()
+    client = authenticate_test_client(app.test_client(), app)
 
     # Start a background scan (creates a task)
     root = tmp_path / "t1"
@@ -147,7 +148,7 @@ def test_api_tasks_lists_without_error_under_both_backends(monkeypatch, tmp_path
     # Then memory
     monkeypatch.setenv("SCIDK_STATE_BACKEND", "memory")
     app2 = create_app()
-    client2 = app2.test_client()
+    client2 = authenticate_test_client(app2.test_client(), app2)
 
     root2 = tmp_path / "t2"
     root2.mkdir(parents=True, exist_ok=True)
