@@ -1,12 +1,20 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, request as playwrightRequest } from '@playwright/test';
 
 test.describe('Settings - API Endpoints', () => {
   test.beforeEach(async ({ page, baseURL }) => {
+    // Disable auth before each test
+    const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+    const api = await playwrightRequest.newContext();
+    await api.post(`${base}/api/settings/security/auth`, {
+      headers: { 'Content-Type': 'application/json' },
+      data: { enabled: false },
+    });
+
     // Clean up test endpoints before each test
     const response = await fetch(`${baseURL}/api/admin/cleanup-test-endpoints`, { method: 'POST' });
     await response.json(); // Wait for cleanup to complete
 
-    await page.goto(`${baseURL}/settings#integrations`);
+    await page.goto(`${baseURL}/#integrations`);
     await page.waitForLoadState('domcontentloaded'); // Wait for DOM to be ready
     await page.waitForSelector('[data-testid="api-endpoint-name"]');
     await page.waitForLoadState('networkidle'); // Then wait for all API calls to complete
@@ -30,6 +38,8 @@ test.describe('Settings - API Endpoints', () => {
     await expect(page.locator('[data-testid="btn-save-api-endpoint"]')).toBeVisible();
   });
 
+  // TODO: This test fails because #api-endpoint-message never shows "Endpoint saved!"
+  // Needs investigation - possible backend issue with saving endpoints or message display timing
   test.skip('should create a new API endpoint @smoke', async ({ page }) => {
     // Fill in endpoint details
     await page.fill('[data-testid="api-endpoint-name"]', 'Test Users API');
@@ -40,8 +50,8 @@ test.describe('Settings - API Endpoints', () => {
     // Save endpoint
     await page.click('[data-testid="btn-save-api-endpoint"]');
 
-    // Wait for success message
-    await expect(page.locator('#api-endpoint-message')).toContainText('Endpoint saved!');
+    // Wait for success message with longer timeout
+    await expect(page.locator('#api-endpoint-message')).toContainText('Endpoint saved!', { timeout: 10000 });
 
     // Verify endpoint appears in list
     await expect(page.locator('#api-endpoints-list')).toContainText('Test Users API');
@@ -69,6 +79,7 @@ test.describe('Settings - API Endpoints', () => {
     await expect(page.locator('#api-endpoint-message')).toContainText('Connection successful', { timeout: 15000 });
   });
 
+  // TODO: Same issue as above - message not displaying after save
   test.skip('should handle bearer token auth', async ({ page }) => {
     await page.fill('[data-testid="api-endpoint-name"]', 'Secure API');
     await page.fill('[data-testid="api-endpoint-url"]', 'https://api.example.com/data');
@@ -78,18 +89,19 @@ test.describe('Settings - API Endpoints', () => {
     // Save endpoint
     await page.click('[data-testid="btn-save-api-endpoint"]');
 
-    // Verify saved
-    await expect(page.locator('#api-endpoint-message')).toContainText('Endpoint saved!');
+    // Verify saved with longer timeout
+    await expect(page.locator('#api-endpoint-message')).toContainText('Endpoint saved!', { timeout: 10000 });
     await expect(page.locator('#api-endpoints-list')).toContainText('Secure API');
     await expect(page.locator('#api-endpoints-list')).toContainText('bearer');
   });
 
+  // TODO: Same issue - "Endpoint updated!" message not displaying
   test.skip('should edit an existing endpoint', async ({ page }) => {
     // First create an endpoint
     await page.fill('[data-testid="api-endpoint-name"]', 'Original API');
     await page.fill('[data-testid="api-endpoint-url"]', 'https://api.example.com/original');
     await page.click('[data-testid="btn-save-api-endpoint"]');
-    await page.waitForSelector('#api-endpoints-list:has-text("Original API")');
+    await page.waitForSelector('#api-endpoints-list:has-text("Original API")', { timeout: 10000 });
 
     // Click edit button
     await page.click('#api-endpoints-list button:has-text("Edit")');

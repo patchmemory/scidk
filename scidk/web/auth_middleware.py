@@ -1,0 +1,124 @@
+"""Authentication middleware for SciDK.
+
+This module provides a before_request handler that enforces authentication
+when it's enabled. Public routes (login page, auth API) are always accessible.
+"""
+
+from flask import request, redirect, url_for, current_app
+from ..core.auth import get_auth_manager
+
+
+# Routes that should always be accessible without authentication
+PUBLIC_ROUTES = {
+    '/login',
+    '/api/auth/login',
+    '/api/auth/status',
+    '/api/settings/security/auth',  # Allow disabling/checking auth config
+    '/static',  # Prefix for static files
+}
+
+
+def is_public_route(path: str) -> bool:
+    """Check if a route is public (doesn't require authentication).
+
+    Args:
+        path: Request path
+
+    Returns:
+        bool: True if route is public, False otherwise
+    """
+    # Exact matches
+    if path in PUBLIC_ROUTES:
+        return True
+
+    # Prefix matches (e.g., /static/*)
+    for public_prefix in PUBLIC_ROUTES:
+        if path.startswith(public_prefix + '/'):
+            return True
+
+    return False
+
+
+def check_auth():
+    """Check authentication before each request.
+
+    This function runs before every request. If authentication is enabled
+    and the user is not authenticated, they are redirected to the login page
+    (unless accessing a public route).
+
+    Returns:
+        None if authentication passes, redirect Response if not authenticated
+    """
+    # Skip auth check in testing mode (unless specifically testing auth)
+    # Check both TESTING config and if we're running under pytest or E2E tests
+    import os
+    import sys
+    is_testing = (
+        current_app.config.get('TESTING', False) or
+        'pytest' in sys.modules or
+        os.environ.get('SCIDK_E2E_TEST')
+    )
+    if is_testing and not os.environ.get('PYTEST_TEST_AUTH'):
+        # In test mode, but check if auth has been explicitly enabled via API
+        # If auth is enabled, we need to enforce it (for auth E2E tests)
+        db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+        auth = get_auth_manager(db_path=db_path)
+        if not auth.is_enabled():
+            # Auth is disabled, skip auth check for tests
+            return None
+        # Auth is explicitly enabled - continue with normal auth flow below
+
+    # Skip auth check for public routes
+    if is_public_route(request.path):
+        return None
+
+    # Get auth manager
+    db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+    auth = get_auth_manager(db_path=db_path)
+
+    # If auth is not enabled, allow all requests
+    if not auth.is_enabled():
+        return None
+
+    # Get session token from cookie or header
+    token = request.cookies.get('scidk_session')
+    if not token:
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            token = auth_header[7:]
+
+    # Verify session (try multi-user first, fall back to legacy)
+    user = auth.get_session_user(token) if token else None
+
+    if not user:
+        # Try legacy single-user session verification
+        username = auth.verify_session(token) if token else None
+        if username:
+            # Legacy session - create minimal user dict
+            user = {'username': username, 'role': 'admin'}
+
+    if user:
+        # Authentication successful - store user info in Flask g for access in routes
+        from flask import g
+        g.scidk_user = user['username']
+        g.scidk_user_role = user.get('role', 'admin')
+        g.scidk_user_id = user.get('id')
+        return None
+    else:
+        # Not authenticated - redirect to login page with original URL
+        if request.path.startswith('/api/'):
+            # API requests should return 401 instead of redirecting
+            from flask import jsonify
+            return jsonify({'error': 'Authentication required'}), 401
+        else:
+            # UI requests redirect to login
+            return redirect(url_for('ui.login', redirect=request.path))
+
+
+def init_auth_middleware(app):
+    """Initialize authentication middleware for the Flask app.
+
+    Args:
+        app: Flask application instance
+    """
+    app.before_request(check_auth)

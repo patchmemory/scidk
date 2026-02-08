@@ -12,7 +12,7 @@ function makeTempDirWithFile(prefix = 'scidk-e2e-'): string {
   return dir;
 }
 
-test('scan a temp directory and verify it appears on Home', async ({ page, baseURL, request: pageRequest }) => {
+test('scan a temp directory and verify it appears in Files page', async ({ page, baseURL, request: pageRequest }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   const tempDir = makeTempDirWithFile();
 
@@ -24,13 +24,17 @@ test('scan a temp directory and verify it appears on Home', async ({ page, baseU
   });
   expect(resp.ok()).toBeTruthy();
 
-  // Navigate to Home and check that the scanned source is listed
-  await page.goto(base);
+  // Navigate to Files page (/datasets) and check that the scanned source is listed
+  await page.goto(`${base}/datasets`);
   await page.waitForLoadState('domcontentloaded');
-  await page.waitForLoadState('networkidle');
+  // Don't wait for networkidle - /datasets page may have continuous polling for tasks
+  await page.waitForTimeout(2000); // Give page time to load scans dropdown
 
-  // The Home page shows a Scanned Sources list when directories exist.
-  // Assert the tempDir path appears somewhere in the page. Use getByText to avoid regex parsing of slashes.
-  const occurrences = await page.getByText(tempDir, { exact: false }).count();
-  expect(occurrences).toBeGreaterThan(0);
+  // The Files page shows scanned sources in the "Recent scans" dropdown
+  const recentScansSelect = page.locator('#recent-scans');
+  await expect(recentScansSelect).toBeVisible({ timeout: 10_000 });
+
+  // Get all options text and verify our temp directory path appears
+  const selectText = await recentScansSelect.textContent();
+  expect(selectText).toContain(tempDir);
 });

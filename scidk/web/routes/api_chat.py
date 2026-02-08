@@ -13,6 +13,12 @@ def _get_ext():
     """Get SciDK extensions from current Flask current_app."""
     return current_app.extensions['scidk']
 
+def _get_chat_service():
+    """Get ChatService instance using settings DB path from config."""
+    from ...services.chat_service import get_chat_service
+    db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+    return get_chat_service(db_path=db_path)
+
 @bp.post('/chat')
 def api_chat():
         data = request.get_json(force=True, silent=True) or {}
@@ -254,3 +260,452 @@ def api_chat_observability_graphrag():
         }), 200
 
 
+# ========== Chat Session Persistence ==========
+
+@bp.get('/chat/sessions')
+def list_sessions():
+    """List all chat sessions, ordered by most recently updated.
+
+    Query params:
+        limit (int): Maximum number of sessions (default 100)
+        offset (int): Number of sessions to skip (default 0)
+
+    Returns:
+        200: {
+            "sessions": [
+                {
+                    "id": "uuid",
+                    "name": "Session Name",
+                    "created_at": 1234567890.0,
+                    "updated_at": 1234567890.0,
+                    "message_count": 5,
+                    "metadata": {}
+                },
+                ...
+            ]
+        }
+    """
+    chat_service = _get_chat_service()
+
+    limit = request.args.get('limit', 100, type=int)
+    offset = request.args.get('offset', 0, type=int)
+
+    sessions = chat_service.list_sessions(limit=limit, offset=offset)
+
+    return jsonify({
+        'sessions': [s.to_dict() for s in sessions]
+    }), 200
+
+
+@bp.post('/chat/sessions')
+def create_session():
+    """Create a new chat session.
+
+    Request body:
+        {
+            "name": "Session Name",
+            "metadata": {}  // optional
+        }
+
+    Returns:
+        201: {
+            "session": {
+                "id": "uuid",
+                "name": "Session Name",
+                "created_at": 1234567890.0,
+                "updated_at": 1234567890.0,
+                "message_count": 0,
+                "metadata": {}
+            }
+        }
+        400: {"error": "Missing session name"}
+    """
+    chat_service = _get_chat_service()
+
+    data = request.get_json() or {}
+    name = data.get('name', '').strip()
+    metadata = data.get('metadata')
+
+    if not name:
+        return jsonify({'error': 'Missing session name'}), 400
+
+    session = chat_service.create_session(name=name, metadata=metadata)
+
+    return jsonify({
+        'session': session.to_dict()
+    }), 201
+
+
+@bp.get('/chat/sessions/<session_id>')
+def get_session(session_id):
+    """Get a session with its messages.
+
+    Query params:
+        limit (int): Maximum number of messages (default: all)
+        offset (int): Number of messages to skip (default: 0)
+
+    Returns:
+        200: {
+            "session": {...},
+            "messages": [
+                {
+                    "id": "uuid",
+                    "session_id": "uuid",
+                    "role": "user",
+                    "content": "message text",
+                    "timestamp": 1234567890.0,
+                    "metadata": {}
+                },
+                ...
+            ]
+        }
+        404: {"error": "Session not found"}
+    """
+    chat_service = _get_chat_service()
+
+    session = chat_service.get_session(session_id)
+    if not session:
+        return jsonify({'error': 'Session not found'}), 404
+
+    limit = request.args.get('limit', type=int)
+    offset = request.args.get('offset', 0, type=int)
+
+    messages = chat_service.get_messages(session_id, limit=limit, offset=offset)
+
+    return jsonify({
+        'session': session.to_dict(),
+        'messages': [m.to_dict() for m in messages]
+    }), 200
+
+
+@bp.put('/chat/sessions/<session_id>')
+def update_session(session_id):
+    """Update session metadata.
+
+    Request body:
+        {
+            "name": "New Name",  // optional
+            "metadata": {}       // optional
+        }
+
+    Returns:
+        200: {"success": true}
+        404: {"error": "Session not found"}
+        400: {"error": "No updates provided"}
+    """
+    chat_service = _get_chat_service()
+
+    data = request.get_json() or {}
+    name = data.get('name')
+    metadata = data.get('metadata')
+
+    if name is None and metadata is None:
+        return jsonify({'error': 'No updates provided'}), 400
+
+    success = chat_service.update_session(session_id, name=name, metadata=metadata)
+
+    if not success:
+        return jsonify({'error': 'Session not found'}), 404
+
+    return jsonify({'success': True}), 200
+
+
+@bp.delete('/chat/sessions/<session_id>')
+def delete_session(session_id):
+    """Delete a session and all its messages.
+
+    Returns:
+        200: {"success": true}
+        404: {"error": "Session not found"}
+    """
+    chat_service = _get_chat_service()
+
+    success = chat_service.delete_session(session_id)
+
+    if not success:
+        return jsonify({'error': 'Session not found'}), 404
+
+    return jsonify({'success': True}), 200
+
+
+@bp.post('/chat/sessions/<session_id>/messages')
+def add_message(session_id):
+    """Add a message to a session.
+
+    Request body:
+        {
+            "role": "user" or "assistant",
+            "content": "message text",
+            "metadata": {}  // optional
+        }
+
+    Returns:
+        201: {
+            "message": {
+                "id": "uuid",
+                "session_id": "uuid",
+                "role": "user",
+                "content": "message text",
+                "timestamp": 1234567890.0,
+                "metadata": {}
+            }
+        }
+        400: {"error": "Missing role or content"}
+        404: {"error": "Session not found"}
+    """
+    chat_service = _get_chat_service()
+
+    # Verify session exists
+    session = chat_service.get_session(session_id)
+    if not session:
+        return jsonify({'error': 'Session not found'}), 404
+
+    data = request.get_json() or {}
+    role = data.get('role', '').strip()
+    content = data.get('content', '').strip()
+    metadata = data.get('metadata')
+
+    if not role or not content:
+        return jsonify({'error': 'Missing role or content'}), 400
+
+    if role not in ('user', 'assistant'):
+        return jsonify({'error': 'Role must be "user" or "assistant"'}), 400
+
+    message = chat_service.add_message(
+        session_id=session_id,
+        role=role,
+        content=content,
+        metadata=metadata
+    )
+
+    return jsonify({
+        'message': message.to_dict()
+    }), 201
+
+
+@bp.get('/chat/sessions/<session_id>/export')
+def export_session(session_id):
+    """Export a session and its messages as JSON.
+
+    Returns:
+        200: {
+            "session": {...},
+            "messages": [...]
+        }
+        404: {"error": "Session not found"}
+    """
+    chat_service = _get_chat_service()
+
+    export_data = chat_service.export_session(session_id)
+
+    if not export_data:
+        return jsonify({'error': 'Session not found'}), 404
+
+    return jsonify(export_data), 200
+
+
+@bp.post('/chat/sessions/import')
+def import_session():
+    """Import a session from exported JSON.
+
+    Request body:
+        {
+            "data": {
+                "session": {...},
+                "messages": [...]
+            },
+            "new_name": "Optional New Name"
+        }
+
+    Returns:
+        201: {
+            "session": {
+                "id": "new-uuid",
+                "name": "Session Name",
+                ...
+            }
+        }
+        400: {"error": "Invalid import data"}
+    """
+    chat_service = _get_chat_service()
+
+    body = request.get_json() or {}
+    data = body.get('data')
+    new_name = body.get('new_name')
+
+    if not data or 'session' not in data:
+        return jsonify({'error': 'Invalid import data'}), 400
+
+    try:
+        session = chat_service.import_session(data, new_name=new_name)
+        return jsonify({
+            'session': session.to_dict()
+        }), 201
+    except Exception as e:
+        return jsonify({'error': f'Import failed: {str(e)}'}), 400
+
+
+@bp.delete('/chat/sessions/test-cleanup')
+def cleanup_test_sessions():
+    """Delete test sessions for e2e test cleanup.
+
+    Query params:
+        test_id (optional): Delete only sessions with this test_id
+
+    Returns:
+        200: {"deleted_count": 5}
+    """
+    chat_service = _get_chat_service()
+
+    test_id = request.args.get('test_id')
+    deleted_count = chat_service.delete_test_sessions(test_id=test_id)
+
+    return jsonify({'deleted_count': deleted_count}), 200
+
+
+# ========== Permissions & Sharing ==========
+
+@bp.get('/chat/sessions/<session_id>/permissions')
+def get_session_permissions(session_id):
+    """Get all permissions for a session.
+
+    Requires: Admin permission on the session
+
+    Returns:
+        200: {
+            "permissions": [
+                {
+                    "username": "alice",
+                    "permission": "edit",
+                    "granted_at": 1234567890.0,
+                    "granted_by": "bob"
+                },
+                ...
+            ]
+        }
+        403: {"error": "Insufficient permissions"}
+    """
+    from flask import g
+
+    chat_service = _get_chat_service()
+
+    # Get current user from Flask g (set by auth middleware)
+    username = getattr(g, 'scidk_username', None)
+    if not username:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    permissions = chat_service.list_permissions(session_id, username)
+    if permissions is None:
+        return jsonify({'error': 'Insufficient permissions'}), 403
+
+    return jsonify({'permissions': permissions}), 200
+
+
+@bp.post('/chat/sessions/<session_id>/permissions')
+def grant_session_permission(session_id):
+    """Grant permission to a user for a session.
+
+    Requires: Admin permission on the session
+
+    Request body:
+        {
+            "username": "alice",
+            "permission": "view" | "edit" | "admin"
+        }
+
+    Returns:
+        200: {"success": true}
+        400: {"error": "Invalid request"}
+        403: {"error": "Insufficient permissions"}
+    """
+    from flask import g
+
+    chat_service = _get_chat_service()
+
+    # Get current user
+    current_user = getattr(g, 'scidk_username', None)
+    if not current_user:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    data = request.get_json() or {}
+    target_username = data.get('username', '').strip()
+    permission = data.get('permission', '').strip()
+
+    if not target_username or not permission:
+        return jsonify({'error': 'Missing username or permission'}), 400
+
+    if permission not in ('view', 'edit', 'admin'):
+        return jsonify({'error': 'Invalid permission level'}), 400
+
+    success = chat_service.grant_permission(session_id, target_username, permission, current_user)
+
+    if not success:
+        return jsonify({'error': 'Insufficient permissions or session not found'}), 403
+
+    return jsonify({'success': True}), 200
+
+
+@bp.delete('/chat/sessions/<session_id>/permissions/<username>')
+def revoke_session_permission(session_id, username):
+    """Revoke a user's permission for a session.
+
+    Requires: Admin permission on the session
+
+    Returns:
+        200: {"success": true}
+        403: {"error": "Insufficient permissions"}
+    """
+    from flask import g
+
+    chat_service = _get_chat_service()
+
+    # Get current user
+    current_user = getattr(g, 'scidk_username', None)
+    if not current_user:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    success = chat_service.revoke_permission(session_id, username, current_user)
+
+    if not success:
+        return jsonify({'error': 'Insufficient permissions or permission not found'}), 403
+
+    return jsonify({'success': True}), 200
+
+
+@bp.put('/chat/sessions/<session_id>/visibility')
+def set_session_visibility(session_id):
+    """Set session visibility.
+
+    Requires: Admin permission on the session
+
+    Request body:
+        {
+            "visibility": "private" | "shared" | "public"
+        }
+
+    Returns:
+        200: {"success": true}
+        400: {"error": "Invalid visibility"}
+        403: {"error": "Insufficient permissions"}
+    """
+    from flask import g
+
+    chat_service = _get_chat_service()
+
+    # Get current user
+    username = getattr(g, 'scidk_username', None)
+    if not username:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    data = request.get_json() or {}
+    visibility = data.get('visibility', '').strip()
+
+    if visibility not in ('private', 'shared', 'public'):
+        return jsonify({'error': 'Invalid visibility. Must be: private, shared, or public'}), 400
+
+    success = chat_service.set_visibility(session_id, visibility, username)
+
+    if not success:
+        return jsonify({'error': 'Insufficient permissions or session not found'}), 403
+
+    return jsonify({'success': True}), 200

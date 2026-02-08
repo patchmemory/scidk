@@ -1,22 +1,30 @@
-import { test, expect, request } from '@playwright/test';
+import { test, expect, request as playwrightRequest } from '@playwright/test';
 
 // Negative path tests: error states, empty states, invalid inputs
 
-test('home page shows empty state when no scans exist', async ({ page, baseURL }) => {
+// Disable auth before all tests in this file
+test.beforeEach(async ({ baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+  const api = await playwrightRequest.newContext();
+  await api.post(`${base}/api/settings/security/auth`, {
+    headers: { 'Content-Type': 'application/json' },
+    data: { enabled: false },
+  });
+});
+
+test('landing page (settings) loads without errors', async ({ page, baseURL }) => {
   const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
   await page.goto(base);
 
   // Wait for page to load
   await page.waitForLoadState('networkidle');
 
-  // Should see the empty state message or Recent Scans section
-  const recentScans = await page.getByTestId('home-recent-scans');
-  await expect(recentScans).toBeVisible();
+  // Settings page should have sidebar
+  const sidebar = await page.locator('.settings-sidebar');
+  await expect(sidebar).toBeVisible();
 
-  // Check for empty state text (may say "No scans yet")
-  const hasEmptyText = await page.getByText(/no scans yet/i).count();
-  // This is informational - just verify page loads without errors
-  expect(hasEmptyText).toBeGreaterThanOrEqual(0);
+  // Page should load without major errors
+  expect(true).toBe(true);
 });
 
 test('scan with invalid path returns error', async ({ page, baseURL, request: pageRequest }) => {
@@ -134,8 +142,10 @@ test('optional dependencies gracefully degrade', async ({ page, baseURL }) => {
   await page.getByTestId('nav-maps').click();
   await page.waitForLoadState('networkidle');
 
-  await page.getByTestId('nav-settings').click();
+  // Navigate to home (Settings landing page)
+  await page.getByTestId('nav-home').click();
   await page.waitForLoadState('networkidle');
+  await expect(page.locator('.settings-sidebar')).toBeVisible();
 
   // All pages should load without crashing
   // This verifies the app handles missing optional dependencies gracefully

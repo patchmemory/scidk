@@ -30,43 +30,37 @@ def _get_ext():
 
 
 # Routes
+@bp.get('/login')
+def login():
+    """Login page for authentication."""
+    return render_template('login.html')
+
+
 @bp.get('/')
 def index():
-    """Homepage with dataset and scan summaries."""
+    """Settings page (landing page)."""
     ext = _get_ext()
     datasets = ext['graph'].list_datasets()
-    # Build lightweight summaries for the landing page
-    by_ext = {}
-    interp_types = set()
-    for d in datasets:
-        by_ext[d.get('extension') or ''] = by_ext.get(d.get('extension') or '', 0) + 1
-        for k in (d.get('interpretations') or {}).keys():
-            interp_types.add(k)
-    schema_summary = ext['graph'].schema_summary()
-    telemetry = ext.get('telemetry', {})
-    directories = list(ext.get('directories', {}).values())
-    directories.sort(key=lambda d: d.get('last_scanned') or 0, reverse=True)
-    scans = list(ext.get('scans', {}).values())
-    scans.sort(key=lambda s: s.get('ended') or s.get('started') or 0, reverse=True)
-    # Add SQLite-backed scan_count for landing summary
-    scan_count = None
-    try:
-        from ...core import path_index_sqlite as pix
-        conn = pix.connect()
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT COUNT(1) FROM scans")
-            row = cur.fetchone()
-            if row:
-                scan_count = int(row[0])
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
-    except Exception:
-        scan_count = None
-    return render_template('index.html', datasets=datasets, by_ext=by_ext, schema_summary=schema_summary, telemetry=telemetry, directories=directories, scans=scans, scan_count=scan_count)
+    reg = ext['registry']
+    info = {
+        'host': os.environ.get('SCIDK_HOST', '127.0.0.1'),
+        'port': os.environ.get('SCIDK_PORT', '5000'),
+        'debug': os.environ.get('SCIDK_DEBUG', '1'),
+        'feature_file_index': os.environ.get('SCIDK_FEATURE_FILE_INDEX', ''),
+        'hash_policy': os.environ.get('SCIDK_HASH_POLICY', 'auto'),
+        'dataset_count': len(datasets),
+        'interpreter_count': len(reg.by_id),
+        'channel': os.environ.get('SCIDK_CHANNEL', 'stable'),
+        'files_viewer': os.environ.get('SCIDK_FILES_VIEWER', ''),
+        'providers': os.environ.get('SCIDK_PROVIDERS', 'local_fs,mounted_fs'),
+    }
+    # Provide interpreter mappings and rules, and plugin summary counts for the Settings page sections
+    mappings = {ext: [getattr(i, 'id', 'unknown') for i in interps] for ext, interps in reg.by_extension.items()}
+    rules = list(reg.rules.rules)
+    ext_count = len(reg.by_extension)
+    interp_count = len(reg.by_id)
+    # Rclone mounts UI is now always enabled
+    return render_template('index.html', info=info, mappings=mappings, rules=rules, ext_count=ext_count, interp_count=interp_count, rclone_mounts_feature=True)
 
 
 @bp.get('/chat')
@@ -150,20 +144,20 @@ def workbook_view(dataset_id):
 
 @bp.get('/plugins')
 def plugins():
-    """Redirect to Settings page plugins section."""
-    return redirect(url_for('ui.settings') + '#plugins')
+    """Redirect to landing page plugins section."""
+    return redirect(url_for('ui.index') + '#plugins')
 
 
 @bp.get('/interpreters')
 def interpreters():
-    """Redirect to Settings page interpreters section (backward compatibility)."""
-    return redirect(url_for('ui.settings') + '#interpreters')
+    """Redirect to landing page interpreters section (backward compatibility)."""
+    return redirect(url_for('ui.index') + '#interpreters')
 
 
 @bp.get('/extensions')
 def extensions_legacy():
-    """Backward-compatible route - redirects to settings interpreters."""
-    return redirect(url_for('ui.settings') + '#interpreters')
+    """Backward-compatible route - redirects to interpreters section."""
+    return redirect(url_for('ui.index') + '#interpreters')
 
 
 @bp.get('/rocrate_view')
@@ -202,29 +196,9 @@ def links_redirect():
 
 @bp.get('/settings')
 def settings():
-    """Basic settings from environment and current in-memory sizes."""
-    ext = _get_ext()
-    datasets = ext['graph'].list_datasets()
-    reg = ext['registry']
-    info = {
-        'host': os.environ.get('SCIDK_HOST', '127.0.0.1'),
-        'port': os.environ.get('SCIDK_PORT', '5000'),
-        'debug': os.environ.get('SCIDK_DEBUG', '1'),
-        'feature_file_index': os.environ.get('SCIDK_FEATURE_FILE_INDEX', ''),
-        'hash_policy': os.environ.get('SCIDK_HASH_POLICY', 'auto'),
-        'dataset_count': len(datasets),
-        'interpreter_count': len(reg.by_id),
-        'channel': os.environ.get('SCIDK_CHANNEL', 'stable'),
-        'files_viewer': os.environ.get('SCIDK_FILES_VIEWER', ''),
-        'providers': os.environ.get('SCIDK_PROVIDERS', 'local_fs,mounted_fs'),
-    }
-    # Provide interpreter mappings and rules, and plugin summary counts for the Settings page sections
-    mappings = {ext: [getattr(i, 'id', 'unknown') for i in interps] for ext, interps in reg.by_extension.items()}
-    rules = list(reg.rules.rules)
-    ext_count = len(reg.by_extension)
-    interp_count = len(reg.by_id)
-    # Rclone mounts UI is now always enabled
-    return render_template('settings.html', info=info, mappings=mappings, rules=rules, ext_count=ext_count, interp_count=interp_count, rclone_mounts_feature=True)
+    """Redirect to landing page (backward compatibility)."""
+    # Preserve hash fragment if present in referrer
+    return redirect(url_for('ui.index'))
 
 
 @bp.post('/scan')

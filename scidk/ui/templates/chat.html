@@ -16,6 +16,7 @@
         <select id="session-selector" class="form-select form-select-sm" style="max-width: 180px; margin-right: 0.5rem;" title="Chat Session">
           <option value="current">Current Session</option>
         </select>
+        <button id="manage-sessions" class="btn btn-sm btn-outline-secondary" title="Manage Sessions">📂</button>
         <label style="font-size: 0.85em; margin-right: 0.5rem;">
           <input type="checkbox" id="verbose-mode" />
           Verbose
@@ -510,10 +511,464 @@
       }
     });
 
-    // Save session (placeholder for future implementation)
-    saveSessionBtn.addEventListener('click', () => {
-      alert('Chat session persistence coming soon! Currently using browser localStorage.');
+    // Session management
+    const sessionSelector = document.getElementById('session-selector');
+    const manageSessionsBtn = document.getElementById('manage-sessions');
+    let currentSessionId = null;
+
+    // Load saved sessions into dropdown
+    async function loadSessions() {
+      try {
+        const resp = await fetch('/api/chat/sessions');
+        const data = await resp.json();
+
+        // Keep "Current Session" option
+        sessionSelector.innerHTML = '<option value="current">Current Session</option>';
+
+        if (data.sessions && data.sessions.length > 0) {
+          data.sessions.forEach(session => {
+            const option = document.createElement('option');
+            option.value = session.id;
+            option.textContent = `${session.name} (${session.message_count} msgs)`;
+            sessionSelector.appendChild(option);
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load sessions:', err);
+      }
+    }
+
+    // Load initial sessions list
+    loadSessions();
+
+    // Save current session to database
+    saveSessionBtn.addEventListener('click', async () => {
+      const messages = JSON.parse(localStorage.getItem('chat_messages') || '[]');
+
+      if (messages.length === 0) {
+        alert('No messages to save');
+        return;
+      }
+
+      const sessionName = prompt('Enter a name for this session:', `Chat ${new Date().toLocaleDateString()}`);
+      if (!sessionName) return;
+
+      try {
+        // Create session
+        const sessionResp = await fetch('/api/chat/sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: sessionName })
+        });
+        const sessionData = await sessionResp.json();
+
+        if (!sessionResp.ok) {
+          alert(`Failed to create session: ${sessionData.error}`);
+          return;
+        }
+
+        const sessionId = sessionData.session.id;
+
+        // Save all messages
+        for (const msg of messages) {
+          await fetch(`/api/chat/sessions/${sessionId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              role: msg.role,
+              content: msg.content,
+              metadata: msg.metadata || {}
+            })
+          });
+        }
+
+        alert(`Session "${sessionName}" saved successfully!`);
+        await loadSessions();
+      } catch (err) {
+        alert(`Failed to save session: ${err.message}`);
+      }
     });
+
+    // Load session when selected
+    sessionSelector.addEventListener('change', async () => {
+      const sessionId = sessionSelector.value;
+
+      if (sessionId === 'current') {
+        // Load from localStorage
+        currentSessionId = null;
+        renderHistory();
+        return;
+      }
+
+      try {
+        const resp = await fetch(`/api/chat/sessions/${sessionId}`);
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          alert(`Failed to load session: ${data.error}`);
+          return;
+        }
+
+        // Convert to localStorage format and display
+        const messages = data.messages.map(msg => ({
+          role: msg.role,
+          content: msg.content,
+          metadata: msg.metadata,
+          timestamp: msg.timestamp * 1000 // Convert to ms
+        }));
+
+        localStorage.setItem('chat_messages', JSON.stringify(messages));
+        currentSessionId = sessionId;
+        renderHistory();
+      } catch (err) {
+        alert(`Failed to load session: ${err.message}`);
+      }
+    });
+
+    // Manage sessions modal
+    manageSessionsBtn.addEventListener('click', () => {
+      showSessionManager();
+    });
+
+    async function showSessionManager() {
+      try {
+        const resp = await fetch('/api/chat/sessions');
+        const data = await resp.json();
+
+        const sessions = data.sessions || [];
+
+        if (sessions.length === 0) {
+          alert('No saved sessions yet. Save your current chat to create one!');
+          return;
+        }
+
+        const sessionRows = sessions.map(session => {
+          // Determine visibility badge
+          const visibility = session.visibility || 'private';
+          let visibilityBadge = '';
+          if (visibility === 'public') {
+            visibilityBadge = '<span class="badge" style="background:#28a745;margin-left:0.5rem">🌐 Public</span>';
+          } else if (visibility === 'shared') {
+            visibilityBadge = '<span class="badge" style="background:#17a2b8;margin-left:0.5rem">👥 Shared</span>';
+          } else {
+            visibilityBadge = '<span class="badge" style="background:#6c757d;margin-left:0.5rem">🔒 Private</span>';
+          }
+
+          return `
+          <div style="margin-bottom:1rem; padding:0.75rem; border:1px solid #ddd; border-radius:4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <strong>${escapeHtml(session.name)}</strong>${visibilityBadge}
+                <div class="small text-muted">
+                  ${session.message_count} messages · Created ${new Date(session.created_at * 1000).toLocaleString()}
+                </div>
+              </div>
+              <div style="display:flex; gap:0.5rem;">
+                <button class="btn btn-sm btn-outline-primary" onclick="loadSessionById('${session.id}')">Load</button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="renameSessionById('${session.id}', '${escapeHtml(session.name).replace(/'/g, "\\'")}')">Rename</button>
+                <button class="btn btn-sm btn-outline-info" onclick="shareSessionById('${session.id}', '${escapeHtml(session.name).replace(/'/g, "\\'")}')">Share</button>
+                <button class="btn btn-sm btn-outline-success" onclick="exportSessionById('${session.id}')">Export</button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteSessionById('${session.id}')">Delete</button>
+              </div>
+            </div>
+          </div>
+        `;
+        }).join('');
+
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center;';
+        overlay.innerHTML = `
+          <div style="background:#fff; padding:2rem; border-radius:8px; max-width:800px; max-height:80vh; overflow:auto; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+              <h3 style="margin:0;">Chat Sessions</h3>
+              <div style="display:flex; gap:0.5rem;">
+                <button class="btn btn-sm btn-outline-secondary" onclick="showImportSession()">Import</button>
+                <button class="btn btn-sm btn-secondary" onclick="this.closest('[style*=fixed]').remove()">Close</button>
+              </div>
+            </div>
+            ${sessionRows}
+          </div>
+        `;
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) overlay.remove();
+        });
+      } catch (err) {
+        alert(`Failed to load sessions: ${err.message}`);
+      }
+    }
+
+    // Global functions for session management
+    window.loadSessionById = async (sessionId) => {
+      sessionSelector.value = sessionId;
+      await sessionSelector.dispatchEvent(new Event('change'));
+      document.querySelector('[style*="fixed"]')?.remove();
+    };
+
+    window.renameSessionById = async (sessionId, currentName) => {
+      const newName = prompt('Enter new name:', currentName);
+      if (!newName || newName === currentName) return;
+
+      try {
+        const resp = await fetch(`/api/chat/sessions/${sessionId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newName })
+        });
+
+        if (resp.ok) {
+          alert('Session renamed successfully');
+          document.querySelector('[style*="fixed"]')?.remove();
+          await loadSessions();
+          showSessionManager();
+        } else {
+          const data = await resp.json();
+          alert(`Failed to rename: ${data.error}`);
+        }
+      } catch (err) {
+        alert(`Failed to rename: ${err.message}`);
+      }
+    };
+
+    window.exportSessionById = async (sessionId) => {
+      try {
+        const resp = await fetch(`/api/chat/sessions/${sessionId}/export`);
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          alert(`Failed to export: ${data.error}`);
+          return;
+        }
+
+        // Download as JSON file
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `chat-session-${data.session.name.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        alert(`Failed to export: ${err.message}`);
+      }
+    };
+
+    window.deleteSessionById = async (sessionId) => {
+      if (!confirm('Delete this session permanently?')) return;
+
+      try {
+        const resp = await fetch(`/api/chat/sessions/${sessionId}`, {
+          method: 'DELETE'
+        });
+
+        if (resp.ok) {
+          alert('Session deleted successfully');
+          document.querySelector('[style*="fixed"]')?.remove();
+          await loadSessions();
+          showSessionManager();
+        } else {
+          const data = await resp.json();
+          alert(`Failed to delete: ${data.error}`);
+        }
+      } catch (err) {
+        alert(`Failed to delete: ${err.message}`);
+      }
+    };
+
+    window.shareSessionById = async (sessionId, sessionName) => {
+      try {
+        // Get current permissions and visibility
+        const permResp = await fetch(`/api/chat/sessions/${sessionId}/permissions`);
+        let permissions = [];
+        if (permResp.ok) {
+          const data = await permResp.json();
+          permissions = data.permissions || [];
+        }
+
+        // Get session details for current visibility
+        const sessionResp = await fetch(`/api/chat/sessions/${sessionId}`);
+        const sessionData = await sessionResp.json();
+        const currentVisibility = sessionData.session?.visibility || 'private';
+
+        // Create share dialog
+        const permRows = permissions.map(p => `
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem; border-bottom:1px solid #eee;">
+            <div>
+              <strong>${escapeHtml(p.username)}</strong>
+              <span class="badge" style="background:#6c757d;margin-left:0.5rem">${p.permission}</span>
+              <div class="small text-muted">Granted ${new Date(p.granted_at * 1000).toLocaleString()}</div>
+            </div>
+            <button class="btn btn-sm btn-outline-danger" onclick="revokePermission('${sessionId}', '${p.username}')">Remove</button>
+          </div>
+        `).join('');
+
+        const overlay = document.createElement('div');
+        overlay.id = 'share-dialog';
+        overlay.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:10000; display:flex; align-items:center; justify-content:center;';
+        overlay.innerHTML = `
+          <div style="background:#fff; padding:2rem; border-radius:8px; max-width:600px; max-height:80vh; overflow:auto; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+            <h3 style="margin-top:0;">Share: ${escapeHtml(sessionName)}</h3>
+
+            <div style="margin-bottom:1.5rem;">
+              <label><strong>Visibility</strong></label>
+              <select id="session-visibility" class="form-select" style="margin-top:0.5rem;">
+                <option value="private" ${currentVisibility === 'private' ? 'selected' : ''}>🔒 Private - Only you and specific users</option>
+                <option value="shared" ${currentVisibility === 'shared' ? 'selected' : ''}>👥 Shared - Only you and granted users</option>
+                <option value="public" ${currentVisibility === 'public' ? 'selected' : ''}>🌐 Public - Everyone can view (read-only)</option>
+              </select>
+              <button class="btn btn-sm btn-primary" style="margin-top:0.5rem;" onclick="updateVisibility('${sessionId}')">Update Visibility</button>
+            </div>
+
+            <div style="margin-bottom:1.5rem;">
+              <label><strong>Grant Access to User</strong></label>
+              <div style="display:flex; gap:0.5rem; margin-top:0.5rem;">
+                <input type="text" id="share-username" placeholder="username" class="form-control" style="flex:1;" />
+                <select id="share-permission" class="form-select" style="width:120px;">
+                  <option value="view">View</option>
+                  <option value="edit">Edit</option>
+                  <option value="admin">Admin</option>
+                </select>
+                <button class="btn btn-sm btn-success" onclick="grantPermission('${sessionId}')">Grant</button>
+              </div>
+              <div class="small text-muted" style="margin-top:0.25rem;">
+                View = read-only · Edit = can add messages · Admin = full control
+              </div>
+            </div>
+
+            <div style="margin-bottom:1.5rem;">
+              <label><strong>Current Permissions</strong></label>
+              <div style="margin-top:0.5rem; max-height:200px; overflow:auto;">
+                ${permissions.length > 0 ? permRows : '<div class="small text-muted">No users have been granted access yet.</div>'}
+              </div>
+            </div>
+
+            <div style="text-align:right;">
+              <button class="btn btn-secondary" onclick="document.getElementById('share-dialog').remove()">Close</button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) overlay.remove();
+        });
+      } catch (err) {
+        alert(`Failed to load sharing options: ${err.message}`);
+      }
+    };
+
+    window.grantPermission = async (sessionId) => {
+      const username = document.getElementById('share-username').value.trim();
+      const permission = document.getElementById('share-permission').value;
+
+      if (!username) {
+        alert('Please enter a username');
+        return;
+      }
+
+      try {
+        const resp = await fetch(`/api/chat/sessions/${sessionId}/permissions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, permission })
+        });
+
+        if (resp.ok) {
+          alert(`Granted ${permission} permission to ${username}`);
+          document.getElementById('share-dialog').remove();
+          // Could refresh the share dialog here instead
+        } else {
+          const data = await resp.json();
+          alert(`Failed to grant permission: ${data.error}`);
+        }
+      } catch (err) {
+        alert(`Failed to grant permission: ${err.message}`);
+      }
+    };
+
+    window.revokePermission = async (sessionId, username) => {
+      if (!confirm(`Remove ${username}'s access?`)) return;
+
+      try {
+        const resp = await fetch(`/api/chat/sessions/${sessionId}/permissions/${username}`, {
+          method: 'DELETE'
+        });
+
+        if (resp.ok) {
+          alert(`Removed ${username}'s access`);
+          document.getElementById('share-dialog').remove();
+        } else {
+          const data = await resp.json();
+          alert(`Failed to revoke permission: ${data.error}`);
+        }
+      } catch (err) {
+        alert(`Failed to revoke permission: ${err.message}`);
+      }
+    };
+
+    window.updateVisibility = async (sessionId) => {
+      const visibility = document.getElementById('session-visibility').value;
+
+      try {
+        const resp = await fetch(`/api/chat/sessions/${sessionId}/visibility`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ visibility })
+        });
+
+        if (resp.ok) {
+          alert(`Visibility updated to ${visibility}`);
+          document.getElementById('share-dialog').remove();
+          await loadSessions();
+          showSessionManager();
+        } else {
+          const data = await resp.json();
+          alert(`Failed to update visibility: ${data.error}`);
+        }
+      } catch (err) {
+        alert(`Failed to update visibility: ${err.message}`);
+      }
+    };
+
+    window.showImportSession = () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'application/json,.json';
+      input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        try {
+          const text = await file.text();
+          const data = JSON.parse(text);
+
+          const newName = prompt('Enter a name for the imported session (leave blank to keep original):', data.session?.name || '');
+
+          const resp = await fetch('/api/chat/sessions/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              data,
+              new_name: newName || undefined
+            })
+          });
+
+          if (resp.ok) {
+            alert('Session imported successfully');
+            document.querySelector('[style*="fixed"]')?.remove();
+            await loadSessions();
+            showSessionManager();
+          } else {
+            const result = await resp.json();
+            alert(`Failed to import: ${result.error}`);
+          }
+        } catch (err) {
+          alert(`Failed to import: ${err.message}`);
+        }
+      };
+      input.click();
+    };
 
     // Query Editor Functions
     runQueryBtn.addEventListener('click', async () => {
@@ -539,6 +994,19 @@
         if (resp.ok && data.status === 'ok') {
           queryInfoText.textContent = `Query executed successfully - ${data.result_count || 0} results in ${data.execution_time_ms || 0}ms`;
           queryInfoText.style.color = '#28a745';
+
+          // Add query execution to chat history
+          const resultSummary = data.result_count === 0
+            ? 'Query executed but returned no results.'
+            : `Query returned ${data.result_count} result${data.result_count !== 1 ? 's' : ''} in ${data.execution_time_ms}ms.`;
+
+          appendMessage('assistant', resultSummary, {
+            cypher_query: query,
+            raw_results: data.results,
+            execution_time_ms: data.execution_time_ms,
+            result_count: data.result_count,
+            query_source: 'manual_query_editor'
+          });
 
           // Display results in the Results tab
           const resultsOutput = document.getElementById('results-output');
@@ -579,7 +1047,7 @@
       }
     });
 
-    saveQueryBtn.addEventListener('click', () => {
+    saveQueryBtn.addEventListener('click', async () => {
       const query = queryEditor.value.trim();
       if (!query) {
         alert('Please enter a query to save');
@@ -589,80 +1057,137 @@
       const name = prompt('Enter a name for this query:');
       if (!name) return;
 
-      // Get saved queries from localStorage
-      const savedQueries = JSON.parse(localStorage.getItem('cypher_queries') || '[]');
-      savedQueries.push({ name, query, timestamp: Date.now() });
-      localStorage.setItem('cypher_queries', JSON.stringify(savedQueries));
+      const description = prompt('Description (optional):') || '';
+      const tagsInput = prompt('Tags (comma-separated, optional):') || '';
+      const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
 
-      queryInfoText.textContent = `Query saved as "${name}"`;
-      queryInfoText.style.color = '#28a745';
-      setTimeout(() => {
-        queryInfoText.textContent = 'Ready';
-        queryInfoText.style.color = '#666';
-      }, 2000);
+      try {
+        // Save to database via API
+        const resp = await fetch('/api/queries', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            query,
+            description: description || undefined,
+            tags: tags.length > 0 ? tags : undefined,
+            metadata: {
+              source_session_id: currentSessionId,
+              saved_from: 'query_editor'
+            }
+          })
+        });
+
+        if (resp.ok) {
+          queryInfoText.textContent = `Query saved as "${name}"`;
+          queryInfoText.style.color = '#28a745';
+          setTimeout(() => {
+            queryInfoText.textContent = 'Ready';
+            queryInfoText.style.color = '#666';
+          }, 2000);
+        } else {
+          const data = await resp.json();
+          alert(`Failed to save query: ${data.error || 'Unknown error'}`);
+        }
+      } catch (err) {
+        alert(`Failed to save query: ${err.message}`);
+      }
     });
 
-    loadQueryBtn.addEventListener('click', () => {
-      const savedQueries = JSON.parse(localStorage.getItem('cypher_queries') || '[]');
+    loadQueryBtn.addEventListener('click', async () => {
+      try {
+        // Load queries from database
+        const resp = await fetch('/api/queries?sort_by=last_used_at');
+        const data = await resp.json();
 
-      if (savedQueries.length === 0) {
-        alert('No saved queries found');
-        return;
-      }
+        if (!resp.ok || !data.queries || data.queries.length === 0) {
+          alert('No saved queries found');
+          return;
+        }
 
-      // Create a simple query library modal
-      const libraryHtml = savedQueries.map((q, idx) =>
-        `<div style="margin-bottom:1rem; padding:0.75rem; border:1px solid #ddd; border-radius:4px;">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <strong>${escapeHtml(q.name)}</strong>
-            <div>
-              <button class="btn btn-sm btn-outline-primary" onclick="loadQueryByIndex(${idx})">Load</button>
-              <button class="btn btn-sm btn-outline-danger" onclick="deleteQueryByIndex(${idx})">Delete</button>
+        // Create query library modal
+        const libraryHtml = data.queries.map(q =>
+          `<div style="margin-bottom:1rem; padding:0.75rem; border:1px solid #ddd; border-radius:4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <strong>${escapeHtml(q.name)}</strong>
+                ${q.tags && q.tags.length > 0 ? `<div class="small">${q.tags.map(t => `<span class="badge" style="background:#6c757d;margin-right:0.25rem">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+                ${q.description ? `<div class="small text-muted">${escapeHtml(q.description)}</div>` : ''}
+              </div>
+              <div>
+                <button class="btn btn-sm btn-outline-primary" onclick="loadQueryById('${q.id}', '${escapeHtml(q.name).replace(/'/g, "\\'")}')">Load</button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteQueryById('${q.id}')">Delete</button>
+              </div>
             </div>
-          </div>
-          <pre style="margin-top:0.5rem; font-size:0.85em; background:#f8f9fa; padding:0.5rem; border-radius:3px; max-height:100px; overflow:auto;">${escapeHtml(q.query)}</pre>
-          <div class="small text-muted">${new Date(q.timestamp).toLocaleString()}</div>
-        </div>`
-      ).join('');
+            <pre style="margin-top:0.5rem; font-size:0.85em; background:#f8f9fa; padding:0.5rem; border-radius:3px; max-height:100px; overflow:auto;">${escapeHtml(q.query)}</pre>
+            <div class="small text-muted">
+              Created: ${new Date(q.created_at * 1000).toLocaleString()}
+              ${q.use_count > 0 ? ` · Used ${q.use_count} time${q.use_count !== 1 ? 's' : ''}` : ''}
+              ${q.last_used_at ? ` · Last used: ${new Date(q.last_used_at * 1000).toLocaleString()}` : ''}
+            </div>
+          </div>`
+        ).join('');
 
-      // Show in a simple modal-like overlay
-      const overlay = document.createElement('div');
-      overlay.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center;';
-      overlay.innerHTML = `<div style="background:#fff; padding:2rem; border-radius:8px; max-width:800px; max-height:80vh; overflow:auto; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-          <h3 style="margin:0;">Query Library</h3>
-          <button class="btn btn-sm btn-secondary" onclick="this.closest('[style*=fixed]').remove()">Close</button>
-        </div>
-        ${libraryHtml}
-      </div>`;
-      document.body.appendChild(overlay);
-      overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) overlay.remove();
-      });
+        // Show modal
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center;';
+        overlay.innerHTML = `<div style="background:#fff; padding:2rem; border-radius:8px; max-width:800px; max-height:80vh; overflow:auto; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <h3 style="margin:0;">Query Library (${data.queries.length})</h3>
+            <button class="btn btn-sm btn-secondary" onclick="this.closest('[style*=fixed]').remove()">Close</button>
+          </div>
+          ${libraryHtml}
+        </div>`;
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) overlay.remove();
+        });
+      } catch (err) {
+        alert(`Failed to load query library: ${err.message}`);
+      }
     });
 
     // Global functions for query library
-    window.loadQueryByIndex = (idx) => {
-      const savedQueries = JSON.parse(localStorage.getItem('cypher_queries') || '[]');
-      if (savedQueries[idx]) {
-        queryEditor.value = savedQueries[idx].query;
-        queryInfoText.textContent = `Loaded "${savedQueries[idx].name}"`;
-        queryInfoText.style.color = '#28a745';
-        document.querySelector('[style*="fixed"]')?.remove();
-        setTimeout(() => {
-          queryInfoText.textContent = 'Ready';
-          queryInfoText.style.color = '#666';
-        }, 2000);
+    window.loadQueryById = async (queryId, queryName) => {
+      try {
+        const resp = await fetch(`/api/queries/${queryId}`);
+        const data = await resp.json();
+
+        if (resp.ok && data.query) {
+          queryEditor.value = data.query.query;
+          queryInfoText.textContent = `Loaded "${queryName}"`;
+          queryInfoText.style.color = '#28a745';
+          document.querySelector('[style*="fixed"]')?.remove();
+
+          // Record usage
+          fetch(`/api/queries/${queryId}/use`, { method: 'POST' }).catch(() => {});
+
+          setTimeout(() => {
+            queryInfoText.textContent = 'Ready';
+            queryInfoText.style.color = '#666';
+          }, 2000);
+        }
+      } catch (err) {
+        alert(`Failed to load query: ${err.message}`);
       }
     };
 
-    window.deleteQueryByIndex = (idx) => {
-      if (!confirm('Delete this query?')) return;
-      const savedQueries = JSON.parse(localStorage.getItem('cypher_queries') || '[]');
-      savedQueries.splice(idx, 1);
-      localStorage.setItem('cypher_queries', JSON.stringify(savedQueries));
-      document.querySelector('[style*="fixed"]')?.remove();
-      loadQueryBtn.click(); // Refresh the library view
+    window.deleteQueryById = async (queryId) => {
+      if (!confirm('Delete this query from the library?')) return;
+
+      try {
+        const resp = await fetch(`/api/queries/${queryId}`, { method: 'DELETE' });
+
+        if (resp.ok) {
+          document.querySelector('[style*="fixed"]')?.remove();
+          loadQueryBtn.click(); // Refresh the library view
+        } else {
+          const data = await resp.json();
+          alert(`Failed to delete: ${data.error}`);
+        }
+      } catch (err) {
+        alert(`Failed to delete: ${err.message}`);
+      }
     };
 
     clearQueryBtn.addEventListener('click', () => {

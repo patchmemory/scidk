@@ -1,0 +1,234 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Login - -SciDK-></title>
+  <style>
+    :root { --fg:#222; --muted:#666; --bg:#fff; --accent:#0a6; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif;
+      margin: 0;
+      color: var(--fg);
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .login-container {
+      width: 100%;
+      max-width: 400px;
+      padding: 2rem;
+    }
+    .login-box {
+      background: var(--bg);
+      border: 1px solid #eee;
+      border-radius: 8px;
+      padding: 2rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .login-header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    .login-header h1 {
+      font-family: monospace;
+      letter-spacing: 0.02em;
+      font-size: 1.8rem;
+      margin: 0 0 0.5rem 0;
+      color: var(--accent);
+    }
+    .login-header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .form-group {
+      margin-bottom: 1.25rem;
+    }
+    label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+      font-size: 0.95rem;
+    }
+    input[type="text"],
+    input[type="password"] {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 1rem;
+      font-family: inherit;
+    }
+    input[type="text"]:focus,
+    input[type="password"]:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1.25rem;
+    }
+    .checkbox-group input[type="checkbox"] {
+      width: auto;
+      cursor: pointer;
+    }
+    .checkbox-group label {
+      margin: 0;
+      font-weight: normal;
+      cursor: pointer;
+    }
+    button[type="submit"] {
+      width: 100%;
+      padding: 0.75rem;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    button[type="submit"]:hover {
+      opacity: 0.9;
+    }
+    button[type="submit"]:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .error-message {
+      background: #fee;
+      color: #b00020;
+      padding: 0.75rem;
+      border-radius: 4px;
+      margin-bottom: 1rem;
+      font-size: 0.95rem;
+      display: none;
+    }
+    .error-message.show {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="login-box">
+      <div class="login-header">
+        <h1 data-testid="login-header">-SciDK-></h1>
+        <p>Sign in to continue</p>
+      </div>
+
+      <div id="error-message" class="error-message" data-testid="login-error"></div>
+
+      <form id="login-form" data-testid="login-form">
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input
+            type="text"
+            id="username"
+            name="username"
+            data-testid="login-username"
+            required
+            autofocus
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            data-testid="login-password"
+            required
+          />
+        </div>
+
+        <div class="checkbox-group">
+          <input
+            type="checkbox"
+            id="remember_me"
+            name="remember_me"
+            data-testid="login-remember"
+          />
+          <label for="remember_me">Remember me</label>
+        </div>
+
+        <button type="submit" data-testid="login-submit">Sign In</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const form = document.getElementById('login-form');
+      const errorDiv = document.getElementById('error-message');
+      const submitBtn = form.querySelector('button[type="submit"]');
+
+      function showError(message) {
+        errorDiv.textContent = message;
+        errorDiv.classList.add('show');
+      }
+
+      function hideError() {
+        errorDiv.classList.remove('show');
+        errorDiv.textContent = '';
+      }
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        hideError();
+
+        const username = form.username.value.trim();
+        const password = form.password.value;
+        const remember_me = form.remember_me.checked;
+
+        if (!username || !password) {
+          showError('Please enter both username and password');
+          return;
+        }
+
+        // Disable submit button during request
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Signing in...';
+
+        try {
+          const response = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ username, password, remember_me }),
+          });
+
+          const data = await response.json();
+
+          if (response.ok && data.success) {
+            // Login successful - redirect to home/landing page
+            const redirectUrl = new URLSearchParams(window.location.search).get('redirect') || '/';
+            window.location.href = redirectUrl;
+          } else {
+            // Login failed
+            showError(data.error || 'Login failed. Please try again.');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Sign In';
+          }
+        } catch (error) {
+          showError('Connection error. Please try again.');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Sign In';
+        }
+      });
+
+      // Clear error on input
+      form.username.addEventListener('input', hideError);
+      form.password.addEventListener('input', hideError);
+    })();
+  </script>
+</body>
+</html>

@@ -31,15 +31,17 @@
 <header data-testid="header">
   <h1><a href="/" style="text-decoration:none;color:inherit;font-family:monospace;letter-spacing:0.02em" data-testid="nav-home">-SciDK-></a></h1>
   <nav data-testid="nav">
-    <!-- Home link removed; use SciDK logo as Home -->
+    <!-- SciDK logo links to landing page (Settings) -->
     <a href="/datasets" data-testid="nav-files">Files</a>
     <a href="/labels" data-testid="nav-labels">Labels</a>
     <a href="/integrate" data-testid="nav-integrate">Integrations</a>
     <a href="/map" data-testid="nav-maps">Maps</a>
     <a href="/chat" data-testid="nav-chats">Chats</a>
-    <!-- Interpreters and Plugins moved into Settings page -->
-    <a href="/settings" data-testid="nav-settings">Settings</a>
   </nav>
+  <div id="auth-status" style="margin-left:auto; display:none;">
+    <span id="auth-username" style="color:var(--muted); font-size:0.9em; margin-right:0.5rem;"></span>
+    <a href="#" id="logout-btn" data-testid="logout-btn" style="color:var(--accent); text-decoration:none; padding:0.25rem 0.5rem; border-radius:4px;">Logout</a>
+  </div>
 </header>
 <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 <main data-testid="main">
@@ -63,6 +65,62 @@
       setTimeout(() => { t.remove(); }, timeoutMs);
     }
     window.toast = makeToast;
+  })();
+
+  // Auth status checking and logout functionality
+  (function(){
+    const authStatusDiv = document.getElementById('auth-status');
+    const authUsernameSpan = document.getElementById('auth-username');
+    const logoutBtn = document.getElementById('logout-btn');
+
+    // Check auth status on page load
+    async function checkAuthStatus() {
+      try {
+        const response = await fetch('/api/auth/status');
+        const data = await response.json();
+
+        if (data.authenticated && data.username) {
+          // Show logout button and username
+          authUsernameSpan.textContent = data.username;
+          authStatusDiv.style.display = 'flex';
+          authStatusDiv.style.alignItems = 'center';
+        } else {
+          // Hide auth status (not authenticated or auth disabled)
+          authStatusDiv.style.display = 'none';
+        }
+      } catch (error) {
+        // Silently fail - auth status not critical for UI rendering
+        console.error('Failed to check auth status:', error);
+      }
+    }
+
+    // Handle logout click
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+
+        try {
+          const response = await fetch('/api/auth/logout', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (response.ok) {
+            // Redirect to login page
+            window.location.href = '/login';
+          } else {
+            window.toast('Logout failed', 'error');
+          }
+        } catch (error) {
+          window.toast('Logout error', 'error');
+        }
+      });
+    }
+
+    // Check status on page load
+    checkAuthStatus();
   })();
 </script>
 </body>

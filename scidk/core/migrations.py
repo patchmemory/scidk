@@ -314,6 +314,101 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 7)
             version = 7
 
+        # v8: Add chat_sessions and chat_messages tables for persistent chat history
+        if version < 8:
+            # Chat sessions table - stores metadata about conversation sessions
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS chat_sessions (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    message_count INTEGER DEFAULT 0,
+                    metadata TEXT
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated ON chat_sessions(updated_at DESC);")
+
+            # Chat messages table - stores individual messages within sessions
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    metadata TEXT,
+                    timestamp REAL NOT NULL,
+                    FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_timestamp ON chat_messages(timestamp);")
+
+            conn.commit()
+            _set_version(conn, 8)
+            version = 8
+
+        # v9: Add saved_queries table for query library
+        if version < 9:
+            # Saved queries table - stores user's saved Cypher queries
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS saved_queries (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    query TEXT NOT NULL,
+                    description TEXT,
+                    tags TEXT,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    last_used_at REAL,
+                    use_count INTEGER DEFAULT 0,
+                    metadata TEXT
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_saved_queries_name ON saved_queries(name);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_saved_queries_updated ON saved_queries(updated_at DESC);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_saved_queries_last_used ON saved_queries(last_used_at DESC);")
+
+            conn.commit()
+            _set_version(conn, 9)
+            version = 9
+
+        # v10: Add permissions/sharing for chat sessions
+        if version < 10:
+            # Add owner and visibility columns to chat_sessions
+            cur.execute("ALTER TABLE chat_sessions ADD COLUMN owner TEXT DEFAULT 'system'")
+            cur.execute("ALTER TABLE chat_sessions ADD COLUMN visibility TEXT DEFAULT 'private'")
+            # visibility: 'private' (owner only), 'shared' (specific users), 'public' (all users)
+
+            # Chat session permissions table for shared access
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS chat_session_permissions (
+                    session_id TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    permission TEXT NOT NULL,
+                    granted_at REAL NOT NULL,
+                    granted_by TEXT,
+                    PRIMARY KEY (session_id, username),
+                    FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+                );
+                """
+            )
+            # permission: 'view' (read-only), 'edit' (can add messages), 'admin' (can manage permissions)
+
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_perms_session ON chat_session_permissions(session_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_perms_user ON chat_session_permissions(username);")
+
+            conn.commit()
+            _set_version(conn, 10)
+            version = 10
+
         return version
     finally:
         if own:

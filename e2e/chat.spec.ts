@@ -1,9 +1,19 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, request as playwrightRequest } from '@playwright/test';
 
 /**
  * E2E tests for Chat page functionality.
  * Tests chat form, API integration, and history display.
  */
+
+// Disable auth before all tests in this file
+test.beforeEach(async ({ baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+  const api = await playwrightRequest.newContext();
+  await api.post(`${base}/api/settings/security/auth`, {
+    headers: { 'Content-Type': 'application/json' },
+    data: { enabled: false },
+  });
+});
 
 test('chat page loads and displays beta badge', async ({ page, baseURL }) => {
   const consoleMessages: { type: string; text: string }[] = [];
@@ -50,9 +60,9 @@ test('chat navigation link is visible in header', async ({ page, baseURL }) => {
   await page.goto(base);
   await page.waitForLoadState('networkidle');
 
-  // Check that Chats link exists in navigation
+  // Check that Chats link exists in navigation (it's in base.html so should be on all pages)
   const chatsLink = page.getByTestId('nav-chats');
-  await expect(chatsLink).toBeVisible();
+  await expect(chatsLink).toBeVisible({ timeout: 10_000 });
 
   // Click it and verify we navigate to chat page
   await chatsLink.click();

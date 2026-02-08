@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Settings - Table Format Registry', () => {
   test.beforeEach(async ({ page, baseURL }) => {
-    await page.goto(`${baseURL}/settings#integrations`);
+    await page.goto(`${baseURL}/#integrations`);
     await page.waitForLoadState('domcontentloaded');
     await page.waitForSelector('[data-testid="table-format-name"]');
     await page.waitForLoadState('networkidle');

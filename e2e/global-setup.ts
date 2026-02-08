@@ -25,7 +25,12 @@ let proc: ChildProcessWithoutNullStreams | null = null;
 
 export default async function globalSetup(config: FullConfig) {
   const port = 5010 + Math.floor(Math.random() * 500);
-  const env = { ...process.env, PORT: String(port), FLASK_ENV: 'development' };
+  const env = {
+    ...process.env,
+    PORT: String(port),
+    FLASK_ENV: 'development',
+    SCIDK_E2E_TEST: '1'  // Disable auth for E2E tests
+  };
 
   // Prefer running the Flask app directly via Python to avoid Flask CLI dependency
   const pyCode = [
