@@ -167,13 +167,15 @@ def api_auth_status():
             "authenticated": true,
             "username": "admin",
             "auth_enabled": true,
-            "token_valid": true
+            "token_valid": true,
+            "session_locked": false
         }
         or
         200: {
             "authenticated": false,
             "auth_enabled": true,
-            "token_valid": false
+            "token_valid": false,
+            "session_locked": false
         }
     """
     auth = _get_auth_manager()
@@ -186,6 +188,7 @@ def api_auth_status():
             'username': None,
             'auth_enabled': False,
             'token_valid': False,
+            'session_locked': False,
         }), 200
 
     # Check if user has valid session (try multi-user first)
@@ -198,6 +201,9 @@ def api_auth_status():
         if username:
             user = {'username': username, 'role': 'admin', 'id': None}
 
+    # Check if session is locked
+    session_locked = auth.is_session_locked(token) if token else False
+
     if user:
         return jsonify({
             'authenticated': True,
@@ -206,6 +212,7 @@ def api_auth_status():
             'user_id': user.get('id'),
             'auth_enabled': True,
             'token_valid': True,
+            'session_locked': session_locked,
         }), 200
     else:
         return jsonify({
@@ -215,4 +222,102 @@ def api_auth_status():
             'user_id': None,
             'auth_enabled': True,
             'token_valid': False,
+            'session_locked': False,
         }), 200
+
+
+@bp.post('/lock')
+def api_auth_lock():
+    """Lock current session (auto-lock feature).
+
+    Returns:
+        200: {"success": true, "locked_at": timestamp}
+        400: {"success": false, "error": "No active session"}
+        503: {"success": false, "error": "Authentication not enabled"}
+    """
+    auth = _get_auth_manager()
+
+    # Check if auth is enabled
+    if not auth.is_enabled():
+        return jsonify({'success': False, 'error': 'Authentication not enabled'}), 503
+
+    token = _get_session_token()
+
+    if not token:
+        return jsonify({'success': False, 'error': 'No active session'}), 400
+
+    # Lock the session
+    success = auth.lock_session(token)
+
+    if success:
+        # Get lock info
+        lock_info = auth.get_session_lock_info(token)
+
+        # Log lock event
+        if lock_info:
+            ip_address = request.remote_addr
+            auth.log_audit(lock_info['username'], 'session_locked', 'Session locked', ip_address)
+
+        return jsonify({
+            'success': True,
+            'locked_at': lock_info['locked_at'] if lock_info else None,
+        }), 200
+    else:
+        return jsonify({'success': False, 'error': 'Failed to lock session'}), 500
+
+
+@bp.post('/unlock')
+def api_auth_unlock():
+    """Unlock a locked session with password verification.
+
+    Request body:
+        {
+            "password": "password123"
+        }
+
+    Returns:
+        200: {"success": true}
+        400: {"success": false, "error": "Missing password"}
+        401: {"success": false, "error": "Invalid password"}
+        400: {"success": false, "error": "No active session"}
+        503: {"success": false, "error": "Authentication not enabled"}
+    """
+    auth = _get_auth_manager()
+
+    # Check if auth is enabled
+    if not auth.is_enabled():
+        return jsonify({'success': False, 'error': 'Authentication not enabled'}), 503
+
+    token = _get_session_token()
+
+    if not token:
+        return jsonify({'success': False, 'error': 'No active session'}), 400
+
+    # Parse request body
+    data = request.get_json() or {}
+    password = data.get('password', '')
+
+    if not password:
+        return jsonify({'success': False, 'error': 'Missing password'}), 400
+
+    # Attempt unlock
+    success = auth.unlock_session(token, password)
+
+    if success:
+        # Get session info for audit log
+        lock_info = auth.get_session_lock_info(token)
+
+        if lock_info:
+            ip_address = request.remote_addr
+            auth.log_audit(lock_info['username'], 'session_unlocked', 'Session unlocked successfully', ip_address)
+
+        return jsonify({'success': True}), 200
+    else:
+        # Log failed unlock attempt
+        lock_info = auth.get_session_lock_info(token)
+        if lock_info:
+            ip_address = request.remote_addr
+            auth.log_failed_attempt(lock_info['username'], ip_address)
+            auth.log_audit(lock_info['username'], 'unlock_failed', 'Failed unlock attempt', ip_address)
+
+        return jsonify({'success': False, 'error': 'Invalid password'}), 401

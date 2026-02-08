@@ -62,6 +62,25 @@
               </div>
             </div>
           </div>
+          <div style="margin-bottom:1rem; margin-top:1.5rem">
+            <label style="display:block; font-size:0.9em; margin-bottom:0.5rem; font-weight:500">Auto-Lock Session</label>
+            <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem">
+              <input type="checkbox" id="auto-lock-enabled" style="width:18px; height:18px" />
+              <label for="auto-lock-enabled" class="small">Enable auto-lock after inactivity</label>
+            </div>
+            <div id="auto-lock-timeout-container" style="display:none; margin-left:1.5rem">
+              <label for="auto-lock-timeout" style="display:block; font-size:0.85em; margin-bottom:0.25rem; color:#666">Timeout (minutes)</label>
+              <input
+                id="auto-lock-timeout"
+                type="number"
+                min="1"
+                max="120"
+                value="5"
+                style="width:100px; padding:0.5rem; border:1px solid #ccc; border-radius:4px"
+              />
+              <p class="small" style="color:#666; margin-top:0.25rem; margin-bottom:0">Lock session after this many minutes of inactivity (1-120)</p>
+            </div>
+          </div>
         </div>
         <button id="btn-save-security" data-testid="save-security-btn" style="padding:0.5rem 1rem; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer; margin-top:0.5rem">Save Security Settings</button>
         <p id="security-status" class="small" style="margin-top:0.75rem; color:#666"></p>
@@ -447,8 +466,9 @@
     const usernameInput = document.getElementById('security-username');
     const passwordInput = document.getElementById('security-password');
     const passwordShowCheck = document.getElementById('security-password-show');
-    const lockEnabledCheck = document.getElementById('security-lock-enabled');
-    const lockTimeoutContainer = document.getElementById('security-lock-timeout-container');
+    const autoLockEnabledCheck = document.getElementById('auto-lock-enabled');
+    const autoLockTimeoutContainer = document.getElementById('auto-lock-timeout-container');
+    const autoLockTimeoutInput = document.getElementById('auto-lock-timeout');
     const saveSecurityBtn = document.getElementById('btn-save-security');
     const statusP = document.getElementById('security-status');
 
@@ -475,6 +495,23 @@
       }
     }
 
+    // Load auto-lock config
+    async function loadAutoLockConfig() {
+      try {
+        const response = await fetch('/api/settings/security/auto-lock');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.status === 'success' && data.config) {
+            autoLockEnabledCheck.checked = data.config.enabled || false;
+            autoLockTimeoutInput.value = data.config.timeout_minutes || 5;
+            autoLockTimeoutContainer.style.display = data.config.enabled ? 'block' : 'none';
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load auto-lock config:', error);
+      }
+    }
+
     // Toggle auth settings visibility
     authEnabledCheck.addEventListener('change', () => {
       authSettingsDiv.style.display = authEnabledCheck.checked ? 'block' : 'none';
@@ -487,10 +524,10 @@
       });
     }
 
-    // Toggle lock timeout input (not yet implemented - future task)
-    if (lockEnabledCheck && lockTimeoutContainer) {
-      lockEnabledCheck.addEventListener('change', () => {
-        lockTimeoutContainer.style.display = lockEnabledCheck.checked ? 'block' : 'none';
+    // Toggle auto-lock timeout input
+    if (autoLockEnabledCheck && autoLockTimeoutContainer) {
+      autoLockEnabledCheck.addEventListener('change', () => {
+        autoLockTimeoutContainer.style.display = autoLockEnabledCheck.checked ? 'block' : 'none';
       });
     }
 
@@ -500,6 +537,10 @@
         const enabled = authEnabledCheck.checked;
         const username = usernameInput.value.trim();
         const password = passwordInput.value.trim();
+
+        // Auto-lock settings
+        const autoLockEnabled = autoLockEnabledCheck.checked;
+        const autoLockTimeout = parseInt(autoLockTimeoutInput.value, 10);
 
         // Validation
         if (enabled && !username) {
@@ -513,48 +554,80 @@
           return;
         }
 
+        // Validate auto-lock timeout
+        if (autoLockEnabled && (isNaN(autoLockTimeout) || autoLockTimeout < 1 || autoLockTimeout > 120)) {
+          toast('Auto-lock timeout must be between 1 and 120 minutes', 'error');
+          return;
+        }
+
         // Disable button during save
         saveSecurityBtn.disabled = true;
         saveSecurityBtn.textContent = 'Saving...';
         statusP.textContent = '';
 
         try {
-          const payload = { enabled, username };
+          // Save auth settings
+          const authPayload = { enabled, username };
           if (password) {
-            payload.password = password;
+            authPayload.password = password;
           }
 
-          const response = await fetch('/api/settings/security/auth', {
+          const authResponse = await fetch('/api/settings/security/auth', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify(payload),
+            body: JSON.stringify(authPayload),
           });
 
-          const data = await response.json();
+          const authData = await authResponse.json();
 
-          if (response.ok && data.status === 'success') {
-            toast('Security settings saved successfully', 'success');
-            statusP.textContent = enabled ?
-              '✅ Authentication is enabled. Users will need to log in to access SciDK.' :
-              'Authentication is disabled. SciDK is accessible without login.';
-            statusP.style.color = '#0a6';
-
-            // Clear password field after successful save
-            passwordInput.value = '';
-            passwordInput.placeholder = '••••••••';
-
-            // If auth was enabled, redirect to login after a short delay
-            if (enabled) {
-              setTimeout(() => {
-                window.location.href = '/login';
-              }, 2000);
-            }
-          } else {
-            toast(data.error || 'Failed to save security settings', 'error');
-            statusP.textContent = '❌ ' + (data.error || 'Failed to save');
+          if (!authResponse.ok || authData.status !== 'success') {
+            toast(authData.error || 'Failed to save authentication settings', 'error');
+            statusP.textContent = '❌ ' + (authData.error || 'Failed to save');
             statusP.style.color = '#b00';
+            return;
+          }
+
+          // Save auto-lock settings
+          const autoLockPayload = {
+            enabled: autoLockEnabled,
+            timeout_minutes: autoLockTimeout
+          };
+
+          const autoLockResponse = await fetch('/api/settings/security/auto-lock', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(autoLockPayload),
+          });
+
+          const autoLockData = await autoLockResponse.json();
+
+          if (!autoLockResponse.ok || autoLockData.status !== 'success') {
+            toast('Auth saved, but auto-lock settings failed to save', 'error');
+            statusP.textContent = '⚠️ Partial save - auto-lock settings not saved';
+            statusP.style.color = '#f80';
+            return;
+          }
+
+          // Both saved successfully
+          toast('Security settings saved successfully', 'success');
+          statusP.textContent = enabled ?
+            '✅ Authentication is enabled. Users will need to log in to access SciDK.' :
+            'Authentication is disabled. SciDK is accessible without login.';
+          statusP.style.color = '#0a6';
+
+          // Clear password field after successful save
+          passwordInput.value = '';
+          passwordInput.placeholder = '••••••••';
+
+          // If auth was enabled, redirect to login after a short delay
+          if (enabled) {
+            setTimeout(() => {
+              window.location.href = '/login';
+            }, 2000);
           }
         } catch (error) {
           toast('Connection error. Please try again.', 'error');
@@ -569,6 +642,7 @@
 
     // Load initial config
     loadAuthConfig();
+    loadAutoLockConfig();
 
     // Check if current user is admin and show user management/audit sections
     checkAdminAccess();

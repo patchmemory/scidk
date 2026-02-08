@@ -122,6 +122,220 @@
     // Check status on page load
     checkAuthStatus();
   })();
+
+  // Activity Monitor and Auto-Lock functionality
+  (function(){
+    let activityMonitor = null;
+
+    class ActivityMonitor {
+      constructor(timeoutMinutes, onInactive) {
+        this.timeoutMs = timeoutMinutes * 60 * 1000;
+        this.lastActivity = Date.now();
+        this.onInactive = onInactive;
+        this.checkInterval = null;
+
+        // Track user activity
+        ['mousedown', 'keydown', 'scroll', 'touchstart'].forEach(event => {
+          document.addEventListener(event, () => this.recordActivity(), { passive: true });
+        });
+
+        this.start();
+      }
+
+      recordActivity() {
+        this.lastActivity = Date.now();
+      }
+
+      start() {
+        this.checkInterval = setInterval(() => {
+          if (Date.now() - this.lastActivity > this.timeoutMs) {
+            this.onInactive();
+          }
+        }, 10000); // Check every 10 seconds
+      }
+
+      stop() {
+        if (this.checkInterval) {
+          clearInterval(this.checkInterval);
+          this.checkInterval = null;
+        }
+      }
+
+      updateTimeout(timeoutMinutes) {
+        this.timeoutMs = timeoutMinutes * 60 * 1000;
+        this.recordActivity(); // Reset timer when updating
+      }
+    }
+
+    // Initialize auto-lock on page load
+    async function initAutoLock() {
+      try {
+        // Check if auth is enabled
+        const authResponse = await fetch('/api/auth/status');
+        const authData = await authResponse.json();
+
+        if (!authData.authenticated || !authData.auth_enabled) {
+          // Auth not enabled or user not authenticated
+          return;
+        }
+
+        // Check if session is already locked
+        if (authData.session_locked) {
+          showLockScreen(authData.username);
+          return;
+        }
+
+        // Get auto-lock configuration
+        const configResponse = await fetch('/api/settings/security/auto-lock');
+        const configData = await configResponse.json();
+
+        if (configData.status === 'success' && configData.config.enabled) {
+          const timeoutMinutes = configData.config.timeout_minutes || 5;
+
+          // Start activity monitor
+          activityMonitor = new ActivityMonitor(timeoutMinutes, async () => {
+            // Lock session
+            try {
+              const lockResponse = await fetch('/api/auth/lock', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+              });
+
+              if (lockResponse.ok) {
+                showLockScreen(authData.username);
+              }
+            } catch (error) {
+              console.error('Failed to lock session:', error);
+            }
+          });
+        }
+      } catch (error) {
+        console.error('Failed to initialize auto-lock:', error);
+      }
+    }
+
+    function showLockScreen(username) {
+      // Stop activity monitor while locked
+      if (activityMonitor) {
+        activityMonitor.stop();
+      }
+
+      // Create lock screen overlay
+      const lockScreen = document.createElement('div');
+      lockScreen.id = 'lock-screen';
+      lockScreen.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.9);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+      `;
+
+      const lockDialog = document.createElement('div');
+      lockDialog.style.cssText = `
+        background: white;
+        padding: 2rem;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        max-width: 400px;
+        width: 90%;
+      `;
+
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString();
+
+      lockDialog.innerHTML = `
+        <h2 style="margin: 0 0 0.5rem 0; font-size: 1.5rem;">Session Locked</h2>
+        <p class="small" style="margin: 0 0 1rem 0;">Locked at ${timeStr}</p>
+        <p style="margin: 0 0 1rem 0;">User: <strong>${username || 'Unknown'}</strong></p>
+        <form id="unlock-form" style="margin: 0;">
+          <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Password</label>
+          <input
+            type="password"
+            id="unlock-password"
+            placeholder="Enter password"
+            required
+            autofocus
+            style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 1rem;"
+          />
+          <button
+            type="submit"
+            style="width: 100%; padding: 0.75rem; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; font-weight: 500;"
+          >Unlock</button>
+        </form>
+        <p id="unlock-error" class="small" style="color: #b00020; margin: 0.5rem 0 0 0; display: none;"></p>
+      `;
+
+      lockScreen.appendChild(lockDialog);
+      document.body.appendChild(lockScreen);
+
+      // Handle unlock form submission
+      const unlockForm = document.getElementById('unlock-form');
+      const unlockPassword = document.getElementById('unlock-password');
+      const unlockError = document.getElementById('unlock-error');
+
+      unlockForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const password = unlockPassword.value;
+
+        if (!password) {
+          unlockError.textContent = 'Password is required';
+          unlockError.style.display = 'block';
+          return;
+        }
+
+        try {
+          const response = await fetch('/api/auth/unlock', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password }),
+          });
+
+          if (response.ok) {
+            // Unlock successful - remove lock screen and restart activity monitor
+            lockScreen.remove();
+
+            // Restart activity monitor if it was active
+            if (activityMonitor) {
+              const configResponse = await fetch('/api/settings/security/auto-lock');
+              const configData = await configResponse.json();
+              if (configData.status === 'success' && configData.config.enabled) {
+                activityMonitor.start();
+              }
+            }
+
+            // Optionally show success toast
+            window.toast('Session unlocked', 'success', 2000);
+          } else {
+            const data = await response.json();
+            unlockError.textContent = data.error || 'Invalid password';
+            unlockError.style.display = 'block';
+            unlockPassword.value = '';
+            unlockPassword.focus();
+          }
+        } catch (error) {
+          unlockError.textContent = 'Unlock failed. Please try again.';
+          unlockError.style.display = 'block';
+          console.error('Unlock error:', error);
+        }
+      });
+
+      // Focus password input
+      unlockPassword.focus();
+    }
+
+    // Initialize on page load
+    initAutoLock();
+
+    // Export for external use
+    window.scidkActivityMonitor = activityMonitor;
+  })();
 </script>
 </body>
 </html>
