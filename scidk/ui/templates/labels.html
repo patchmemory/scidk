@@ -451,6 +451,7 @@
       <div id="incoming-relationships-container" data-testid="incoming-relationships-container">
         <div class="empty-state small">No incoming relationships</div>
       </div>
+      <button id="btn-add-incoming-relationship" class="btn btn-sm btn-outline-primary" data-testid="add-incoming-relationship-btn" style="margin-top: 0.5rem;">Add Incoming Relationship</button>
 
       <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
         <button id="btn-save" class="btn btn-sm btn-success" data-testid="save-label-btn">Save</button>
@@ -689,6 +690,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-pull-all-neo4j').addEventListener('click', pullAllFromNeo4j);
     document.getElementById('btn-add-property').addEventListener('click', addProperty);
     document.getElementById('btn-add-relationship').addEventListener('click', addRelationship);
+    document.getElementById('btn-add-incoming-relationship').addEventListener('click', addIncomingRelationship);
     console.log('Main editor button listeners attached');
   } catch (e) {
     console.error('Error attaching main editor listeners:', e);
@@ -1764,6 +1766,129 @@ function addRelationship() {
   }
   container.insertAdjacentHTML('beforeend', createRelationshipRow({type: '', target_label: '', properties: []}));
   attachSelectHandlers(container);
+}
+
+async function addIncomingRelationship() {
+  if (!currentLabel) return;
+
+  // Build label options excluding current label
+  const availableLabels = labels.filter(l => l.name !== currentLabel.name);
+
+  if (availableLabels.length === 0) {
+    showToast('No other labels available', 'info');
+    return;
+  }
+
+  const labelOptions = availableLabels.map(l =>
+    `<option value="${l.name}">${l.name}</option>`
+  ).join('\n');
+
+  // Show modal with source label selector and relationship type input
+  const modalElements = showConfirmModal(
+    `Add Incoming Relationship to "${currentLabel.name}"`,
+    'Select the source label and enter the relationship type.',
+    [
+      '<div style="margin-top: 0.5rem;">',
+      '  <label style="display: block; margin-bottom: 0.25rem; font-weight: bold;">Source Label:</label>',
+      '  <select id="incoming-source-label" class="form-select form-select-sm" style="width: 100%;">',
+      '    <option value="">-- Select source label --</option>',
+      labelOptions,
+      '  </select>',
+      '</div>',
+      '<div style="margin-top: 0.75rem;">',
+      '  <label style="display: block; margin-bottom: 0.25rem; font-weight: bold;">Relationship Type:</label>',
+      '  <input id="incoming-rel-type" type="text" class="form-control form-control-sm" placeholder="e.g., HAS_SAMPLE" style="width: 100%;" />',
+      '</div>'
+    ],
+    async () => {
+      const sourceLabel = document.getElementById('incoming-source-label').value;
+      const relType = document.getElementById('incoming-rel-type').value.trim();
+
+      if (!sourceLabel) {
+        showToast('Please select a source label', 'error');
+        return;
+      }
+
+      if (!relType) {
+        showToast('Please enter a relationship type', 'error');
+        return;
+      }
+
+      closeConfirmModal();
+      showToast('Adding relationship...', 'info');
+
+      try {
+        // Fetch the source label
+        const resp = await fetch(`/api/labels/${sourceLabel}`);
+        const data = await resp.json();
+
+        if (data.status !== 'success') {
+          showToast('Error fetching source label: ' + (data.error || 'Unknown error'), 'error');
+          return;
+        }
+
+        const sourceLabelDef = data.label;
+
+        // Check if relationship already exists
+        const existingRel = sourceLabelDef.relationships.find(rel =>
+          rel.type === relType && rel.target_label === currentLabel.name
+        );
+
+        if (existingRel) {
+          showToast(`Relationship ${relType} already exists from ${sourceLabel}`, 'info');
+          return;
+        }
+
+        // Add the new relationship to source label
+        const updatedRelationships = [
+          ...sourceLabelDef.relationships,
+          {
+            type: relType,
+            target_label: currentLabel.name,
+            properties: []
+          }
+        ];
+
+        // Save the updated source label
+        const saveResp = await fetch('/api/labels', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: sourceLabelDef.name,
+            properties: sourceLabelDef.properties,
+            relationships: updatedRelationships
+          })
+        });
+
+        const saveData = await saveResp.json();
+
+        if (saveData.status === 'success') {
+          showToast(`Added relationship from ${sourceLabel}`, 'success');
+
+          // Reload current label to update incoming relationships display
+          const refreshResp = await fetch(`/api/labels/${currentLabel.name}`);
+          const refreshData = await refreshResp.json();
+
+          if (refreshData.status === 'success') {
+            currentLabel = refreshData.label;
+            populateEditor(currentLabel);
+            // Stay in read-only mode
+            isEditMode = false;
+            updateEditorView();
+          }
+        } else {
+          showToast('Error saving changes: ' + (saveData.error || 'Unknown error'), 'error');
+        }
+      } catch (err) {
+        console.error('Error adding relationship:', err);
+        showToast('Network error: ' + err.message, 'error');
+      }
+    }
+  );
+
+  // Show details immediately
+  modalElements.loadingEl.style.display = 'none';
+  modalElements.detailsEl.style.display = 'block';
 }
 
 function createRelationshipRow(rel, index) {
