@@ -66,25 +66,45 @@ def api_auth_login():
     if not username or not password:
         return jsonify({'success': False, 'error': 'Missing username or password'}), 400
 
-    # Verify credentials
-    if not auth.verify_credentials(username, password):
-        # Log failed attempt
-        ip_address = request.remote_addr
-        auth.log_failed_attempt(username, ip_address)
-        return jsonify({'success': False, 'error': 'Invalid credentials'}), 401
+    # Verify credentials (try multi-user first)
+    user = auth.verify_user_credentials(username, password)
+
+    if not user:
+        # Try legacy single-user verification
+        if auth.verify_credentials(username, password):
+            # Legacy auth succeeded - create basic user dict
+            user = {'username': username, 'id': None, 'role': 'admin'}
+        else:
+            # Log failed attempt
+            ip_address = request.remote_addr
+            auth.log_failed_attempt(username, ip_address)
+            auth.log_audit(username, 'login_failed', f'Failed login attempt', ip_address)
+            return jsonify({'success': False, 'error': 'Invalid credentials'}), 401
 
     # Create session
     duration_hours = 720 if remember_me else 24  # 30 days vs 24 hours
-    token = auth.create_session(username, duration_hours=duration_hours)
+
+    if user.get('id') is not None:
+        # Multi-user session
+        token = auth.create_user_session(user['id'], user['username'], duration_hours=duration_hours)
+    else:
+        # Legacy session
+        token = auth.create_session(user['username'], duration_hours=duration_hours)
 
     if not token:
         return jsonify({'success': False, 'error': 'Failed to create session'}), 500
 
-    # Return success with token
+    # Log successful login
+    ip_address = request.remote_addr
+    auth.log_audit(user['username'], 'login', f'Successful login', ip_address)
+
+    # Return success with token and user info
     response = jsonify({
         'success': True,
         'token': token,
-        'username': username,
+        'username': user['username'],
+        'role': user.get('role', 'admin'),
+        'user_id': user.get('id'),
     })
 
     # Set cookie with secure flags
@@ -115,7 +135,21 @@ def api_auth_logout():
         return jsonify({'success': False, 'error': 'No active session'}), 400
 
     auth = _get_auth_manager()
+
+    # Get username before deleting session for audit log
+    user = auth.get_session_user(token, update_activity=False)
+    username = user['username'] if user else None
+
+    # If multi-user session doesn't exist, try legacy
+    if not username:
+        username = auth.verify_session(token, update_activity=False)
+
     auth.delete_session(token)
+
+    # Log logout event
+    if username:
+        ip_address = request.remote_addr
+        auth.log_audit(username, 'logout', 'User logged out', ip_address)
 
     # Clear cookie
     response = jsonify({'success': True})
@@ -154,14 +188,22 @@ def api_auth_status():
             'token_valid': False,
         }), 200
 
-    # Check if user has valid session
+    # Check if user has valid session (try multi-user first)
     token = _get_session_token()
-    username = auth.verify_session(token) if token else None
+    user = auth.get_session_user(token) if token else None
 
-    if username:
+    if not user:
+        # Try legacy session verification
+        username = auth.verify_session(token) if token else None
+        if username:
+            user = {'username': username, 'role': 'admin', 'id': None}
+
+    if user:
         return jsonify({
             'authenticated': True,
-            'username': username,
+            'username': user['username'],
+            'role': user.get('role', 'admin'),
+            'user_id': user.get('id'),
             'auth_enabled': True,
             'token_valid': True,
         }), 200
@@ -169,6 +211,8 @@ def api_auth_status():
         return jsonify({
             'authenticated': False,
             'username': None,
+            'role': None,
+            'user_id': None,
             'auth_enabled': True,
             'token_valid': False,
         }), 200

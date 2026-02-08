@@ -39,6 +39,8 @@ def register_blueprints(app):
     from . import api_integrations
     from . import api_settings
     from . import api_auth
+    from . import api_users
+    from . import api_audit
 
     # Register UI blueprint
     app.register_blueprint(ui.bp)
@@ -58,3 +60,5 @@ def register_blueprints(app):
     app.register_blueprint(api_links.bp)  # Keep for backward compatibility
     app.register_blueprint(api_settings.bp)
     app.register_blueprint(api_auth.bp)
+    app.register_blueprint(api_users.bp)
+    app.register_blueprint(api_audit.bp)

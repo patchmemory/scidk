@@ -34,8 +34,8 @@ class AuthManager:
         self.init_tables()
 
     def init_tables(self):
-        """Create auth_config and sessions tables if they don't exist."""
-        # Auth configuration table (single row expected)
+        """Create auth_config, users, sessions, and audit tables if they don't exist."""
+        # Auth configuration table (single row, legacy - kept for backward compatibility)
         self.db.execute(
             """
             CREATE TABLE IF NOT EXISTS auth_config (
@@ -49,15 +49,34 @@ class AuthManager:
             """
         )
 
-        # Active sessions table
+        # Multi-user table (new primary user storage)
+        self.db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS auth_users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL CHECK (role IN ('admin', 'user')),
+                enabled INTEGER DEFAULT 1,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                created_by TEXT,
+                last_login REAL
+            )
+            """
+        )
+
+        # Active sessions table (updated with user_id)
         self.db.execute(
             """
             CREATE TABLE IF NOT EXISTS auth_sessions (
                 token TEXT PRIMARY KEY,
                 username TEXT NOT NULL,
+                user_id INTEGER,
                 created_at REAL NOT NULL,
                 expires_at REAL NOT NULL,
-                last_activity REAL NOT NULL
+                last_activity REAL NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES auth_users(id) ON DELETE CASCADE
             )
             """
         )
@@ -74,7 +93,66 @@ class AuthManager:
             """
         )
 
+        # Audit log for user actions
+        self.db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS auth_audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp REAL NOT NULL,
+                username TEXT NOT NULL,
+                action TEXT NOT NULL,
+                details TEXT,
+                ip_address TEXT
+            )
+            """
+        )
+
         self.db.commit()
+
+        # Auto-migrate from single-user to multi-user on first run
+        self._migrate_to_multi_user()
+
+    def _migrate_to_multi_user(self):
+        """Migrate from single-user auth_config to multi-user auth_users table.
+
+        If auth_config has a user configured but auth_users is empty,
+        migrate the user to auth_users as an admin.
+        """
+        try:
+            # Check if migration is needed
+            cur = self.db.execute("SELECT COUNT(*) FROM auth_users")
+            user_count = cur.fetchone()[0]
+
+            if user_count > 0:
+                # Already migrated
+                return
+
+            # Check if there's a user in auth_config
+            cur = self.db.execute(
+                "SELECT enabled, username, password_hash FROM auth_config WHERE id = 1"
+            )
+            row = cur.fetchone()
+
+            if not row or not row[1] or not row[2]:
+                # No user to migrate
+                return
+
+            enabled, username, password_hash = row
+            now = time.time()
+
+            # Migrate user to auth_users as admin
+            self.db.execute(
+                """
+                INSERT INTO auth_users (username, password_hash, role, enabled, created_at, updated_at, created_by)
+                VALUES (?, ?, 'admin', ?, ?, ?, 'system')
+                """,
+                (username, password_hash, int(enabled), now, now)
+            )
+            self.db.commit()
+
+            print(f"Migrated user '{username}' from auth_config to auth_users as admin")
+        except Exception as e:
+            print(f"Migration warning: {e}")
 
     def is_enabled(self) -> bool:
         """Check if authentication is currently enabled.
@@ -83,6 +161,13 @@ class AuthManager:
             bool: True if auth is enabled, False otherwise
         """
         try:
+            # Check if there are any enabled users in auth_users (multi-user mode)
+            cur = self.db.execute("SELECT COUNT(*) FROM auth_users WHERE enabled = 1")
+            user_count = cur.fetchone()[0]
+            if user_count > 0:
+                return True
+
+            # Fall back to auth_config for backward compatibility
             cur = self.db.execute("SELECT enabled FROM auth_config WHERE id = 1")
             row = cur.fetchone()
             return bool(row and row[0]) if row else False
@@ -350,6 +435,475 @@ class AuthManager:
                 for row in rows
             ]
         except Exception:
+            return []
+
+    # ========== Multi-User Management Methods ==========
+
+    def list_users(self, include_disabled: bool = False) -> list:
+        """Get list of all users.
+
+        Args:
+            include_disabled: Whether to include disabled users
+
+        Returns:
+            list: List of user dicts (without password hashes)
+        """
+        try:
+            if include_disabled:
+                cur = self.db.execute(
+                    """
+                    SELECT id, username, role, enabled, created_at, updated_at, created_by, last_login
+                    FROM auth_users
+                    ORDER BY created_at DESC
+                    """
+                )
+            else:
+                cur = self.db.execute(
+                    """
+                    SELECT id, username, role, enabled, created_at, updated_at, created_by, last_login
+                    FROM auth_users
+                    WHERE enabled = 1
+                    ORDER BY created_at DESC
+                    """
+                )
+
+            rows = cur.fetchall()
+            return [
+                {
+                    'id': row[0],
+                    'username': row[1],
+                    'role': row[2],
+                    'enabled': bool(row[3]),
+                    'created_at': row[4],
+                    'updated_at': row[5],
+                    'created_by': row[6],
+                    'last_login': row[7],
+                }
+                for row in rows
+            ]
+        except Exception as e:
+            print(f"AuthManager.list_users error: {e}")
+            return []
+
+    def get_user(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """Get user by ID.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            dict or None: User dict (without password hash) if found
+        """
+        try:
+            cur = self.db.execute(
+                """
+                SELECT id, username, role, enabled, created_at, updated_at, created_by, last_login
+                FROM auth_users
+                WHERE id = ?
+                """,
+                (user_id,)
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+
+            return {
+                'id': row[0],
+                'username': row[1],
+                'role': row[2],
+                'enabled': bool(row[3]),
+                'created_at': row[4],
+                'updated_at': row[5],
+                'created_by': row[6],
+                'last_login': row[7],
+            }
+        except Exception as e:
+            print(f"AuthManager.get_user error: {e}")
+            return None
+
+    def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
+        """Get user by username.
+
+        Args:
+            username: Username
+
+        Returns:
+            dict or None: User dict (without password hash) if found
+        """
+        try:
+            cur = self.db.execute(
+                """
+                SELECT id, username, role, enabled, created_at, updated_at, created_by, last_login
+                FROM auth_users
+                WHERE username = ?
+                """,
+                (username,)
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+
+            return {
+                'id': row[0],
+                'username': row[1],
+                'role': row[2],
+                'enabled': bool(row[3]),
+                'created_at': row[4],
+                'updated_at': row[5],
+                'created_by': row[6],
+                'last_login': row[7],
+            }
+        except Exception as e:
+            print(f"AuthManager.get_user_by_username error: {e}")
+            return None
+
+    def create_user(self, username: str, password: str, role: str = 'user',
+                    created_by: Optional[str] = None) -> Optional[int]:
+        """Create a new user.
+
+        Args:
+            username: Username (must be unique)
+            password: Plain-text password (will be hashed)
+            role: User role ('admin' or 'user')
+            created_by: Username of creator (for audit trail)
+
+        Returns:
+            int or None: User ID if successful, None on error
+        """
+        try:
+            if role not in ('admin', 'user'):
+                return None
+
+            # Hash password
+            password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+            now = time.time()
+            cur = self.db.execute(
+                """
+                INSERT INTO auth_users (username, password_hash, role, enabled, created_at, updated_at, created_by)
+                VALUES (?, ?, ?, 1, ?, ?, ?)
+                """,
+                (username, password_hash, role, now, now, created_by)
+            )
+            self.db.commit()
+
+            return cur.lastrowid
+        except Exception as e:
+            print(f"AuthManager.create_user error: {e}")
+            return None
+
+    def update_user(self, user_id: int, username: Optional[str] = None,
+                    password: Optional[str] = None, role: Optional[str] = None,
+                    enabled: Optional[bool] = None) -> bool:
+        """Update user properties.
+
+        Args:
+            user_id: User ID
+            username: New username (optional)
+            password: New plain-text password (will be hashed, optional)
+            role: New role (optional)
+            enabled: New enabled status (optional)
+
+        Returns:
+            bool: True if successful, False on error
+        """
+        try:
+            # Build dynamic update query
+            updates = []
+            params = []
+
+            if username is not None:
+                updates.append("username = ?")
+                params.append(username)
+
+            if password is not None:
+                password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                updates.append("password_hash = ?")
+                params.append(password_hash)
+
+            if role is not None:
+                if role not in ('admin', 'user'):
+                    return False
+                updates.append("role = ?")
+                params.append(role)
+
+            if enabled is not None:
+                updates.append("enabled = ?")
+                params.append(int(enabled))
+
+            if not updates:
+                return True  # Nothing to update
+
+            updates.append("updated_at = ?")
+            params.append(time.time())
+            params.append(user_id)
+
+            query = f"UPDATE auth_users SET {', '.join(updates)} WHERE id = ?"
+            self.db.execute(query, params)
+            self.db.commit()
+
+            return True
+        except Exception as e:
+            print(f"AuthManager.update_user error: {e}")
+            return False
+
+    def delete_user(self, user_id: int) -> bool:
+        """Delete a user (and all their sessions).
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            bool: True if successful, False on error
+        """
+        try:
+            # Safety check: don't delete the last admin
+            user = self.get_user(user_id)
+            if user and user['role'] == 'admin':
+                admin_count = self.count_admin_users()
+                if admin_count <= 1:
+                    print("Cannot delete last admin user")
+                    return False
+
+            # Delete user (CASCADE will delete sessions)
+            self.db.execute("DELETE FROM auth_users WHERE id = ?", (user_id,))
+            self.db.commit()
+
+            return True
+        except Exception as e:
+            print(f"AuthManager.delete_user error: {e}")
+            return False
+
+    def delete_user_sessions(self, user_id: int) -> bool:
+        """Delete all sessions for a user (force logout).
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            bool: True if successful, False on error
+        """
+        try:
+            self.db.execute("DELETE FROM auth_sessions WHERE user_id = ?", (user_id,))
+            self.db.commit()
+            return True
+        except Exception as e:
+            print(f"AuthManager.delete_user_sessions error: {e}")
+            return False
+
+    def count_admin_users(self) -> int:
+        """Count the number of admin users.
+
+        Returns:
+            int: Number of admin users
+        """
+        try:
+            cur = self.db.execute("SELECT COUNT(*) FROM auth_users WHERE role = 'admin' AND enabled = 1")
+            return cur.fetchone()[0]
+        except Exception:
+            return 0
+
+    # ========== Session Management (Updated for Multi-User) ==========
+
+    def verify_user_credentials(self, username: str, password: str) -> Optional[Dict[str, Any]]:
+        """Verify username and password against auth_users table.
+
+        Args:
+            username: Username to check
+            password: Plain-text password to verify
+
+        Returns:
+            dict or None: User dict if credentials are valid, None otherwise
+        """
+        try:
+            cur = self.db.execute(
+                """
+                SELECT id, username, password_hash, role, enabled
+                FROM auth_users
+                WHERE username = ?
+                """,
+                (username,)
+            )
+            row = cur.fetchone()
+
+            if not row:
+                return None
+
+            user_id, username, password_hash, role, enabled = row
+
+            if not enabled:
+                return None
+
+            # Verify password
+            if not bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8')):
+                return None
+
+            # Update last_login
+            self.db.execute(
+                "UPDATE auth_users SET last_login = ? WHERE id = ?",
+                (time.time(), user_id)
+            )
+            self.db.commit()
+
+            return {
+                'id': user_id,
+                'username': username,
+                'role': role,
+                'enabled': bool(enabled),
+            }
+        except Exception as e:
+            print(f"AuthManager.verify_user_credentials error: {e}")
+            return None
+
+    def create_user_session(self, user_id: int, username: str, duration_hours: int = 24) -> str:
+        """Create a new session token for the given user.
+
+        Args:
+            user_id: User ID
+            username: Username
+            duration_hours: Session validity duration (default: 24 hours)
+
+        Returns:
+            str: Session token (URL-safe random string)
+        """
+        token = secrets.token_urlsafe(32)
+        now = time.time()
+        expires_at = now + (duration_hours * 3600)
+
+        try:
+            self.db.execute(
+                """
+                INSERT INTO auth_sessions (token, username, user_id, created_at, expires_at, last_activity)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (token, username, user_id, now, expires_at, now)
+            )
+            self.db.commit()
+            return token
+        except Exception as e:
+            print(f"AuthManager.create_user_session error: {e}")
+            return ""
+
+    def get_session_user(self, token: str, update_activity: bool = True) -> Optional[Dict[str, Any]]:
+        """Get user info from session token.
+
+        Args:
+            token: Session token to verify
+            update_activity: Whether to update last_activity timestamp
+
+        Returns:
+            dict or None: User dict if session is valid, None otherwise
+        """
+        if not token:
+            return None
+
+        try:
+            now = time.time()
+            cur = self.db.execute(
+                """
+                SELECT s.username, s.user_id, u.role, u.enabled
+                FROM auth_sessions s
+                JOIN auth_users u ON s.user_id = u.id
+                WHERE s.token = ? AND s.expires_at > ?
+                """,
+                (token, now)
+            )
+            row = cur.fetchone()
+
+            if not row:
+                return None
+
+            username, user_id, role, enabled = row
+
+            if not enabled:
+                return None
+
+            # Update last activity timestamp
+            if update_activity:
+                self.db.execute(
+                    "UPDATE auth_sessions SET last_activity = ? WHERE token = ?",
+                    (now, token)
+                )
+                self.db.commit()
+
+            return {
+                'id': user_id,
+                'username': username,
+                'role': role,
+                'enabled': bool(enabled),
+            }
+        except Exception as e:
+            print(f"AuthManager.get_session_user error: {e}")
+            return None
+
+    # ========== Audit Logging ==========
+
+    def log_audit(self, username: str, action: str, details: Optional[str] = None,
+                  ip_address: Optional[str] = None):
+        """Log an audit event.
+
+        Args:
+            username: Username performing the action
+            action: Action description (e.g., 'user_created', 'user_deleted', 'login')
+            details: Additional details (optional, can be JSON string)
+            ip_address: IP address of the request (optional)
+        """
+        try:
+            now = time.time()
+            self.db.execute(
+                """
+                INSERT INTO auth_audit_log (timestamp, username, action, details, ip_address)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (now, username, action, details, ip_address)
+            )
+            self.db.commit()
+        except Exception as e:
+            print(f"AuthManager.log_audit error: {e}")
+
+    def get_audit_log(self, since_timestamp: Optional[float] = None,
+                      username: Optional[str] = None, limit: int = 100) -> list:
+        """Get audit log entries.
+
+        Args:
+            since_timestamp: Only return entries after this timestamp (optional)
+            username: Filter by username (optional)
+            limit: Maximum number of entries to return
+
+        Returns:
+            list: List of dicts with keys: id, timestamp, username, action, details, ip_address
+        """
+        try:
+            query = "SELECT id, timestamp, username, action, details, ip_address FROM auth_audit_log WHERE 1=1"
+            params = []
+
+            if since_timestamp:
+                query += " AND timestamp > ?"
+                params.append(since_timestamp)
+
+            if username:
+                query += " AND username = ?"
+                params.append(username)
+
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+
+            cur = self.db.execute(query, params)
+            rows = cur.fetchall()
+
+            return [
+                {
+                    'id': row[0],
+                    'timestamp': row[1],
+                    'username': row[2],
+                    'action': row[3],
+                    'details': row[4],
+                    'ip_address': row[5],
+                }
+                for row in rows
+            ]
+        except Exception as e:
+            print(f"AuthManager.get_audit_log error: {e}")
             return []
 
     def close(self):

@@ -75,13 +75,22 @@ def check_auth():
         if auth_header.startswith('Bearer '):
             token = auth_header[7:]
 
-    # Verify session
-    username = auth.verify_session(token) if token else None
+    # Verify session (try multi-user first, fall back to legacy)
+    user = auth.get_session_user(token) if token else None
 
-    if username:
-        # Authentication successful - store username in Flask g for access in routes
+    if not user:
+        # Try legacy single-user session verification
+        username = auth.verify_session(token) if token else None
+        if username:
+            # Legacy session - create minimal user dict
+            user = {'username': username, 'role': 'admin'}
+
+    if user:
+        # Authentication successful - store user info in Flask g for access in routes
         from flask import g
-        g.scidk_user = username
+        g.scidk_user = user['username']
+        g.scidk_user_role = user.get('role', 'admin')
+        g.scidk_user_id = user.get('id')
         return None
     else:
         # Not authenticated - redirect to login page with original URL

@@ -121,7 +121,18 @@
 
       <h3 style="margin-top:2rem">Security</h3>
       <p class="small">Configure authentication and access control for this SciDK instance.</p>
-      <div style="background:#f9f9f9; border:1px solid #e0e0e0; border-radius:4px; padding:1rem; max-width:720px">
+
+      <!-- Current User Info (shown when logged in) -->
+      <div id="current-user-info" style="display:none; background:#e7f3ff; border:1px solid #b3d9ff; border-radius:4px; padding:0.75rem; max-width:720px; margin-bottom:1rem">
+        <div style="display:flex; align-items:center; gap:0.5rem">
+          <span style="font-size:0.9em; font-weight:500">Logged in as:</span>
+          <span id="current-username" style="font-size:0.9em"></span>
+          <span id="current-role-badge" class="badge" style="background:#ffc107; color:#000"></span>
+        </div>
+      </div>
+
+      <!-- Legacy auth setup form (shown only when no users exist yet) -->
+      <div id="security-legacy-setup" style="background:#f9f9f9; border:1px solid #e0e0e0; border-radius:4px; padding:1rem; max-width:720px">
         <div style="margin-bottom:1rem">
           <label style="display:block; font-size:0.9em; margin-bottom:0.25rem; font-weight:500">Enable Authentication</label>
           <div style="display:flex; align-items:center; gap:0.5rem">
@@ -144,20 +155,55 @@
               </div>
             </div>
           </div>
-          <div style="margin-bottom:1rem">
-            <label style="display:block; font-size:0.9em; margin-bottom:0.25rem; font-weight:500">Lock Page After Inactivity</label>
-            <div style="display:flex; align-items:center; gap:0.5rem">
-              <input type="checkbox" id="security-lock-enabled" style="width:18px; height:18px" />
-              <label for="security-lock-enabled" class="small">Enable auto-lock</label>
-            </div>
-            <div id="security-lock-timeout-container" style="display:none; margin-top:0.5rem">
-              <label for="security-lock-timeout" class="small">Lock after (minutes):</label>
-              <input id="security-lock-timeout" type="number" min="1" max="120" value="15" style="width:80px; padding:0.25rem 0.5rem; border:1px solid #ccc; border-radius:4px; margin-left:0.5rem" />
-            </div>
-          </div>
         </div>
         <button id="btn-save-security" data-testid="save-security-btn" style="padding:0.5rem 1rem; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer; margin-top:0.5rem">Save Security Settings</button>
         <p id="security-status" class="small" style="margin-top:0.75rem; color:#666"></p>
+      </div>
+
+      <!-- Message for regular users -->
+      <div id="security-user-message" style="display:none; background:#f9f9f9; border:1px solid #e0e0e0; border-radius:4px; padding:1rem; max-width:720px">
+        <p class="small" style="margin:0; color:#666">
+          <strong>Your Account</strong><br>
+          You are logged in with a regular user account. Contact an administrator to manage users or change security settings.
+        </p>
+      </div>
+
+      <!-- Message for admins when multi-user is active -->
+      <div id="security-admin-message" style="display:none; background:#f9f9f9; border:1px solid #e0e0e0; border-radius:4px; padding:1rem; max-width:720px">
+        <p class="small" style="margin:0; color:#666">
+          <strong>Authentication Active</strong><br>
+          Multi-user authentication is enabled. Use the "Users" section below to manage user accounts and permissions.
+        </p>
+      </div>
+
+      <!-- User Management (Admin Only) -->
+      <div id="users-section-container" style="display:none; margin-top:2rem">
+        <h3>Users</h3>
+        <p class="small">Manage user accounts and permissions. <span class="badge" style="background:#ffc107; color:#000">Admin Only</span></p>
+        <div style="background:#f9f9f9; border:1px solid #e0e0e0; border-radius:4px; padding:1rem; max-width:900px">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem">
+            <h4 style="margin:0">User List</h4>
+            <button id="btn-add-user" style="padding:0.5rem 1rem; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer">+ Add User</button>
+          </div>
+          <div id="users-list-container">
+            <p class="small" style="color:#666">Loading users...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Audit Log (Admin Only) -->
+      <div id="audit-section-container" style="display:none; margin-top:2rem">
+        <h3>Audit Log</h3>
+        <p class="small">Security and user action logs. <span class="badge" style="background:#ffc107; color:#000">Admin Only</span></p>
+        <div style="background:#f9f9f9; border:1px solid #e0e0e0; border-radius:4px; padding:1rem; max-width:900px">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem">
+            <h4 style="margin:0">Recent Activity</h4>
+            <button id="btn-refresh-audit" style="padding:0.5rem 1rem; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer">Refresh</button>
+          </div>
+          <div id="audit-log-container">
+            <p class="small" style="color:#666">Loading audit log...</p>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -2092,6 +2138,412 @@
 
     // Load initial config
     loadAuthConfig();
+
+    // Check if current user is admin and show user management/audit sections
+    checkAdminAccess();
+  }
+
+  // User Management (Admin Only)
+  async function checkAdminAccess() {
+    try {
+      const response = await fetch('/api/auth/status');
+      if (response.ok) {
+        const data = await response.json();
+
+        const legacySetup = document.getElementById('security-legacy-setup');
+        const userMessage = document.getElementById('security-user-message');
+        const adminMessage = document.getElementById('security-admin-message');
+
+        // Show current user info if authenticated
+        if (data.authenticated && data.username) {
+          const currentUserInfo = document.getElementById('current-user-info');
+          const currentUsername = document.getElementById('current-username');
+          const currentRoleBadge = document.getElementById('current-role-badge');
+
+          if (currentUserInfo && currentUsername && currentRoleBadge) {
+            currentUsername.textContent = data.username;
+            currentRoleBadge.textContent = data.role || 'user';
+
+            // Color code the role badge
+            if (data.role === 'admin') {
+              currentRoleBadge.style.background = '#ffc107';
+              currentRoleBadge.style.color = '#000';
+            } else {
+              currentRoleBadge.style.background = '#6c757d';
+              currentRoleBadge.style.color = '#fff';
+            }
+
+            currentUserInfo.style.display = 'block';
+          }
+
+          // Hide legacy setup form and show appropriate message
+          if (legacySetup) legacySetup.style.display = 'none';
+
+          if (data.role === 'admin') {
+            // Show message for admin
+            if (adminMessage) adminMessage.style.display = 'block';
+            if (userMessage) userMessage.style.display = 'none';
+          } else {
+            // Show message for regular user
+            if (userMessage) userMessage.style.display = 'block';
+            if (adminMessage) adminMessage.style.display = 'none';
+          }
+        } else {
+          // Not logged in - show legacy setup form if it exists
+          if (legacySetup) legacySetup.style.display = 'block';
+          if (userMessage) userMessage.style.display = 'none';
+          if (adminMessage) adminMessage.style.display = 'none';
+        }
+
+        // Only show admin sections if user is admin
+        if (data.authenticated && data.role === 'admin') {
+          // Show admin-only sections
+          const usersSection = document.getElementById('users-section-container');
+          const auditSection = document.getElementById('audit-section-container');
+          if (usersSection) usersSection.style.display = 'block';
+          if (auditSection) auditSection.style.display = 'block';
+
+          // Initialize user management and audit log
+          initUserManagement();
+          initAuditLog();
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check admin access:', error);
+    }
+  }
+
+  function initUserManagement() {
+    const addUserBtn = document.getElementById('btn-add-user');
+    const usersListContainer = document.getElementById('users-list-container');
+
+    if (!usersListContainer) return;
+
+    // Load users list
+    async function loadUsers() {
+      try {
+        const response = await fetch('/api/users?include_disabled=true');
+        if (response.ok) {
+          const data = await response.json();
+          renderUsersList(data.users || []);
+        } else if (response.status === 403) {
+          usersListContainer.innerHTML = '<p class="small" style="color:#b00">Access denied. Admin role required.</p>';
+        } else {
+          usersListContainer.innerHTML = '<p class="small" style="color:#b00">Failed to load users.</p>';
+        }
+      } catch (error) {
+        console.error('Failed to load users:', error);
+        usersListContainer.innerHTML = '<p class="small" style="color:#b00">Connection error.</p>';
+      }
+    }
+
+    // Render users list
+    function renderUsersList(users) {
+      if (users.length === 0) {
+        usersListContainer.innerHTML = '<p class="small" style="color:#666">No users found.</p>';
+        return;
+      }
+
+      const table = document.createElement('table');
+      table.style.cssText = 'width:100%; border-collapse:collapse';
+      table.innerHTML = `
+        <thead>
+          <tr style="border-bottom:2px solid #ddd; text-align:left">
+            <th style="padding:0.5rem; font-size:0.9em">Username</th>
+            <th style="padding:0.5rem; font-size:0.9em">Role</th>
+            <th style="padding:0.5rem; font-size:0.9em">Status</th>
+            <th style="padding:0.5rem; font-size:0.9em">Last Login</th>
+            <th style="padding:0.5rem; font-size:0.9em">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${users.map(user => `
+            <tr style="border-bottom:1px solid #eee">
+              <td style="padding:0.5rem; font-size:0.9em">${escapeHtml(user.username)}</td>
+              <td style="padding:0.5rem; font-size:0.9em">
+                <span class="badge" style="background:${user.role === 'admin' ? '#ffc107' : '#6c757d'}; color:${user.role === 'admin' ? '#000' : '#fff'}">${user.role}</span>
+              </td>
+              <td style="padding:0.5rem; font-size:0.9em">
+                <span class="badge" style="background:${user.enabled ? '#28a745' : '#dc3545'}; color:#fff">${user.enabled ? 'Active' : 'Disabled'}</span>
+              </td>
+              <td style="padding:0.5rem; font-size:0.9em">${user.last_login ? new Date(user.last_login * 1000).toLocaleString() : 'Never'}</td>
+              <td style="padding:0.5rem; font-size:0.9em">
+                <button class="btn-edit-user" data-user-id="${user.id}" style="padding:0.25rem 0.5rem; border:1px solid #ccc; border-radius:3px; background:#fff; cursor:pointer; font-size:0.85em; margin-right:0.25rem">Edit</button>
+                <button class="btn-delete-user" data-user-id="${user.id}" data-username="${escapeHtml(user.username)}" style="padding:0.25rem 0.5rem; border:1px solid #dc3545; border-radius:3px; background:#fff; color:#dc3545; cursor:pointer; font-size:0.85em">Delete</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      `;
+
+      usersListContainer.innerHTML = '';
+      usersListContainer.appendChild(table);
+
+      // Add event listeners for edit/delete buttons
+      table.querySelectorAll('.btn-edit-user').forEach(btn => {
+        btn.addEventListener('click', () => editUser(btn.dataset.userId));
+      });
+
+      table.querySelectorAll('.btn-delete-user').forEach(btn => {
+        btn.addEventListener('click', () => deleteUser(btn.dataset.userId, btn.dataset.username));
+      });
+    }
+
+    // Add user
+    if (addUserBtn) {
+      addUserBtn.addEventListener('click', () => {
+        showAddUserDialog();
+      });
+    }
+
+    // Show add user dialog
+    function showAddUserDialog() {
+      // Create modal dialog
+      const dialog = document.createElement('div');
+      dialog.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:9999';
+
+      dialog.innerHTML = `
+        <div style="background:#fff; border-radius:8px; padding:2rem; max-width:500px; width:90%">
+          <h3 style="margin-top:0">Add New User</h3>
+
+          <div style="margin-bottom:1rem">
+            <label style="display:block; font-size:0.9em; margin-bottom:0.25rem; font-weight:500">Username</label>
+            <input id="new-user-username" type="text" placeholder="username" style="width:100%; padding:0.5rem; border:1px solid #ccc; border-radius:4px" />
+          </div>
+
+          <div style="margin-bottom:1rem">
+            <label style="display:block; font-size:0.9em; margin-bottom:0.25rem; font-weight:500">Password</label>
+            <input id="new-user-password" type="password" placeholder="••••••••" style="width:100%; padding:0.5rem; border:1px solid #ccc; border-radius:4px" />
+          </div>
+
+          <div style="margin-bottom:1.5rem">
+            <label style="display:block; font-size:0.9em; margin-bottom:0.5rem; font-weight:500">Role</label>
+            <div style="display:flex; gap:1rem">
+              <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; padding:0.5rem; border:1px solid #ddd; border-radius:4px; flex:1">
+                <input type="radio" name="new-user-role" value="user" checked style="cursor:pointer" />
+                <span style="flex:1">
+                  <div style="font-weight:500">
+                    <span class="badge" style="background:#6c757d; color:#fff">User</span>
+                  </div>
+                  <div style="font-size:0.8em; color:#666; margin-top:0.25rem">Regular access</div>
+                </span>
+              </label>
+              <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; padding:0.5rem; border:1px solid #ddd; border-radius:4px; flex:1">
+                <input type="radio" name="new-user-role" value="admin" style="cursor:pointer" />
+                <span style="flex:1">
+                  <div style="font-weight:500">
+                    <span class="badge" style="background:#ffc107; color:#000">Admin</span>
+                  </div>
+                  <div style="font-size:0.8em; color:#666; margin-top:0.25rem">Full control</div>
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <div style="display:flex; gap:0.5rem; justify-content:flex-end">
+            <button id="cancel-add-user" style="padding:0.5rem 1rem; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer">Cancel</button>
+            <button id="confirm-add-user" style="padding:0.5rem 1rem; border:none; border-radius:4px; background:#007bff; color:#fff; cursor:pointer">Add User</button>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(dialog);
+
+      // Focus username field
+      const usernameInput = document.getElementById('new-user-username');
+      setTimeout(() => usernameInput.focus(), 100);
+
+      // Cancel button
+      document.getElementById('cancel-add-user').addEventListener('click', () => {
+        document.body.removeChild(dialog);
+      });
+
+      // Confirm button
+      document.getElementById('confirm-add-user').addEventListener('click', () => {
+        const username = document.getElementById('new-user-username').value.trim();
+        const password = document.getElementById('new-user-password').value;
+        const role = document.querySelector('input[name="new-user-role"]:checked').value;
+
+        if (!username) {
+          toast('Username is required', 'error');
+          return;
+        }
+
+        if (!password) {
+          toast('Password is required', 'error');
+          return;
+        }
+
+        document.body.removeChild(dialog);
+        createUser(username, password, role);
+      });
+
+      // Close on background click
+      dialog.addEventListener('click', (e) => {
+        if (e.target === dialog) {
+          document.body.removeChild(dialog);
+        }
+      });
+
+      // Close on Escape key
+      const escapeHandler = (e) => {
+        if (e.key === 'Escape') {
+          document.body.removeChild(dialog);
+          document.removeEventListener('keydown', escapeHandler);
+        }
+      };
+      document.addEventListener('keydown', escapeHandler);
+    }
+
+    async function createUser(username, password, role) {
+      try {
+        const response = await fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password, role }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          toast(`User "${username}" created successfully`, 'success');
+          loadUsers();
+        } else {
+          toast(data.error || 'Failed to create user', 'error');
+        }
+      } catch (error) {
+        toast('Connection error', 'error');
+      }
+    }
+
+    // Edit user
+    async function editUser(userId) {
+      // Simple implementation - just toggle enabled/disabled
+      const action = confirm('Enable or disable this user?\n\nOK = Enable, Cancel = Disable');
+
+      try {
+        const response = await fetch(`/api/users/${userId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: action }),
+        });
+
+        if (response.ok) {
+          toast('User updated successfully', 'success');
+          loadUsers();
+        } else {
+          const data = await response.json();
+          toast(data.error || 'Failed to update user', 'error');
+        }
+      } catch (error) {
+        toast('Connection error', 'error');
+      }
+    }
+
+    // Delete user
+    async function deleteUser(userId, username) {
+      if (!confirm(`Are you sure you want to delete user "${username}"?\n\nThis action cannot be undone.`)) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/users/${userId}`, {
+          method: 'DELETE',
+        });
+
+        if (response.ok) {
+          toast(`User "${username}" deleted successfully`, 'success');
+          loadUsers();
+        } else {
+          const data = await response.json();
+          toast(data.error || 'Failed to delete user', 'error');
+        }
+      } catch (error) {
+        toast('Connection error', 'error');
+      }
+    }
+
+    // Load initial users
+    loadUsers();
+  }
+
+  // Audit Log (Admin Only)
+  function initAuditLog() {
+    const refreshBtn = document.getElementById('btn-refresh-audit');
+    const auditLogContainer = document.getElementById('audit-log-container');
+
+    if (!auditLogContainer) return;
+
+    // Load audit log
+    async function loadAuditLog() {
+      try {
+        const response = await fetch('/api/audit-log?limit=50');
+        if (response.ok) {
+          const data = await response.json();
+          renderAuditLog(data.entries || []);
+        } else if (response.status === 403) {
+          auditLogContainer.innerHTML = '<p class="small" style="color:#b00">Access denied. Admin role required.</p>';
+        } else {
+          auditLogContainer.innerHTML = '<p class="small" style="color:#b00">Failed to load audit log.</p>';
+        }
+      } catch (error) {
+        console.error('Failed to load audit log:', error);
+        auditLogContainer.innerHTML = '<p class="small" style="color:#b00">Connection error.</p>';
+      }
+    }
+
+    // Render audit log
+    function renderAuditLog(entries) {
+      if (entries.length === 0) {
+        auditLogContainer.innerHTML = '<p class="small" style="color:#666">No audit entries found.</p>';
+        return;
+      }
+
+      const table = document.createElement('table');
+      table.style.cssText = 'width:100%; border-collapse:collapse';
+      table.innerHTML = `
+        <thead>
+          <tr style="border-bottom:2px solid #ddd; text-align:left">
+            <th style="padding:0.5rem; font-size:0.9em">Timestamp</th>
+            <th style="padding:0.5rem; font-size:0.9em">User</th>
+            <th style="padding:0.5rem; font-size:0.9em">Action</th>
+            <th style="padding:0.5rem; font-size:0.9em">Details</th>
+            <th style="padding:0.5rem; font-size:0.9em">IP Address</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${entries.map(entry => `
+            <tr style="border-bottom:1px solid #eee">
+              <td style="padding:0.5rem; font-size:0.85em">${new Date(entry.timestamp * 1000).toLocaleString()}</td>
+              <td style="padding:0.5rem; font-size:0.85em">${escapeHtml(entry.username)}</td>
+              <td style="padding:0.5rem; font-size:0.85em">
+                <code style="background:#f5f5f5; padding:0.1rem 0.3rem; border-radius:3px">${escapeHtml(entry.action)}</code>
+              </td>
+              <td style="padding:0.5rem; font-size:0.85em">${escapeHtml(entry.details || '')}</td>
+              <td style="padding:0.5rem; font-size:0.85em">${escapeHtml(entry.ip_address || '')}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      `;
+
+      auditLogContainer.innerHTML = '';
+      auditLogContainer.appendChild(table);
+    }
+
+    // Refresh button
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', loadAuditLog);
+    }
+
+    // Load initial audit log
+    loadAuditLog();
+  }
+
+  // Helper function to escape HTML
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   // Initialize new General section features

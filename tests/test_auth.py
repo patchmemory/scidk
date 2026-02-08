@@ -330,3 +330,34 @@ class TestAuthAPIEndpoints:
         )
         data = response.get_json()
         assert data['authenticated'] is False
+
+    def test_first_user_is_admin(self, client):
+        """Test that the first user created through auth setup is automatically an admin."""
+        # Enable authentication for the first time (creates first user)
+        response = client.post('/api/settings/security/auth', json={
+            'enabled': True,
+            'username': 'firstuser',
+            'password': 'password123'
+        })
+        assert response.status_code == 200
+
+        # Login as the first user
+        response = client.post('/api/auth/login', json={
+            'username': 'firstuser',
+            'password': 'password123'
+        })
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data['success'] is True
+
+        # Verify user has admin role
+        assert 'role' in data
+        assert data['role'] == 'admin'
+
+        # Verify status endpoint also returns admin role
+        token = data['token']
+        response = client.get('/api/auth/status', headers={'Authorization': f'Bearer {token}'})
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data['authenticated'] is True
+        assert data['role'] == 'admin'

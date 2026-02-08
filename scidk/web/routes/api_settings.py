@@ -835,22 +835,41 @@ def update_security_auth_config():
 
         # Check if password is required
         auth = _get_auth_manager()
+        existing_users = auth.list_users(include_disabled=True)
         existing_config = auth.get_config()
 
-        if enabled and not password and not existing_config.get('has_password'):
-            return jsonify({
-                'status': 'error',
-                'error': 'Password is required when enabling authentication for the first time'
-            }), 400
+        # If there are no users yet, this is the first user - must be admin
+        if enabled and len(existing_users) == 0:
+            if not password:
+                return jsonify({
+                    'status': 'error',
+                    'error': 'Password is required when enabling authentication for the first time'
+                }), 400
 
-        # Update config
-        success = auth.set_config(enabled=enabled, username=username, password=password)
+            # Create first user as admin
+            user_id = auth.create_user(username, password, role='admin', created_by='system')
+            if not user_id:
+                return jsonify({
+                    'status': 'error',
+                    'error': 'Failed to create admin user'
+                }), 500
 
-        if not success:
-            return jsonify({
-                'status': 'error',
-                'error': 'Failed to update authentication configuration'
-            }), 500
+            # Log audit event
+            auth.log_audit(username, 'first_user_created', 'First admin user created during auth setup', request.remote_addr)
+        else:
+            # Use legacy set_config for backward compatibility with existing setups
+            if enabled and not password and not existing_config.get('has_password'):
+                return jsonify({
+                    'status': 'error',
+                    'error': 'Password is required when enabling authentication for the first time'
+                }), 400
+
+            success = auth.set_config(enabled=enabled, username=username, password=password)
+            if not success:
+                return jsonify({
+                    'status': 'error',
+                    'error': 'Failed to update authentication configuration'
+                }), 500
 
         # Return updated config
         config = auth.get_config()
