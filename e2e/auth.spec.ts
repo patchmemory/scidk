@@ -34,6 +34,8 @@ async function disableAuth(request: any) {
   expect(response.ok()).toBeTruthy();
 }
 
+test.describe.configure({ mode: 'serial' }); // Run auth tests serially to avoid state conflicts
+
 test.describe('Authentication Flow', () => {
   test.beforeEach(async ({ page, request }) => {
     // Ensure auth is disabled before each test
