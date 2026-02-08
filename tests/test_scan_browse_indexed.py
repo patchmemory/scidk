@@ -6,6 +6,7 @@ import pytest
 
 from scidk.core import path_index_sqlite as pix
 from scidk.app import create_app
+from tests.conftest import authenticate_test_client
 
 
 def _insert_rows(conn, rows):
@@ -51,7 +52,7 @@ def test_scan_browse_index_listing_sort_filter_pagination(monkeypatch, tmp_path)
             'path': parent,
         }
 
-    client = app.test_client()
+    client = authenticate_test_client(app.test_client(), app)
 
     # 1) Basic listing at parent, expect: folders (adir, zdir) then files (a.csv, b.txt, c.txt)
     r = client.get(f'/api/scans/{scan_id}/browse', query_string={'path': parent, 'page_size': 10})

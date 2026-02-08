@@ -99,6 +99,26 @@
         <span class="badge" title="Providers">Providers: {{ info.providers }}</span>
         <span class="badge" title="Files viewer">Files viewer: {{ info.files_viewer or '(default)' }}</span>
       </div>
+
+      <hr style="margin: 2rem 0;">
+      <h3>Configuration Management</h3>
+      <p class="small">Export and import your complete SciDK configuration for backup or migration.</p>
+
+      <div style="display:flex; gap:.75rem; margin-bottom:1rem;">
+        <button id="btn-export-config" class="btn btn-sm btn-primary" data-testid="export-config-button">
+          Export Configuration
+        </button>
+        <button id="btn-import-config" class="btn btn-sm btn-outline-secondary" data-testid="import-config-button">
+          Import Configuration
+        </button>
+        <button id="btn-view-backups" class="btn btn-sm btn-outline-secondary" data-testid="view-backups-button">
+          View Backups
+        </button>
+      </div>
+
+      <input type="file" id="config-file-input" accept=".json" style="display:none;" />
+
+      <div id="config-status" class="alert alert-info small" style="display:none; max-width:720px; margin-top:1rem;"></div>
     </section>
 
     <!-- Neo4j Section -->
@@ -1850,6 +1870,198 @@
     document.addEventListener('DOMContentLoaded', initChatSettings);
   } else {
     initChatSettings();
+  }
+
+  // ========================================================================
+  // Configuration Export/Import
+  // ========================================================================
+
+  const btnExportConfig = document.getElementById('btn-export-config');
+  const btnImportConfig = document.getElementById('btn-import-config');
+  const btnViewBackups = document.getElementById('btn-view-backups');
+  const configFileInput = document.getElementById('config-file-input');
+  const configStatus = document.getElementById('config-status');
+
+  // Export configuration
+  if (btnExportConfig) {
+    btnExportConfig.addEventListener('click', async () => {
+      try {
+        btnExportConfig.disabled = true;
+        btnExportConfig.textContent = 'Exporting...';
+
+        const resp = await fetch('/api/settings/export');
+        if (!resp.ok) {
+          throw new Error('Export failed');
+        }
+
+        const data = await resp.json();
+        if (data.status === 'success') {
+          // Download as JSON file
+          const blob = new Blob([JSON.stringify(data.config, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = data.filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+
+          configStatus.className = 'alert alert-success small';
+          configStatus.textContent = `Configuration exported successfully: ${data.filename}`;
+          configStatus.style.display = 'block';
+          setTimeout(() => { configStatus.style.display = 'none'; }, 5000);
+        } else {
+          throw new Error(data.error || 'Export failed');
+        }
+      } catch (err) {
+        configStatus.className = 'alert alert-danger small';
+        configStatus.textContent = `Export failed: ${err.message}`;
+        configStatus.style.display = 'block';
+      } finally {
+        btnExportConfig.disabled = false;
+        btnExportConfig.textContent = 'Export Configuration';
+      }
+    });
+  }
+
+  // Import configuration
+  if (btnImportConfig && configFileInput) {
+    btnImportConfig.addEventListener('click', () => {
+      configFileInput.click();
+    });
+
+    configFileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const config = JSON.parse(text);
+
+        // Preview changes first
+        const previewResp = await fetch('/api/settings/import/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config })
+        });
+
+        if (!previewResp.ok) {
+          throw new Error('Preview failed');
+        }
+
+        const previewData = await previewResp.json();
+        if (previewData.status !== 'success') {
+          throw new Error(previewData.error || 'Preview failed');
+        }
+
+        // Show confirmation modal with preview
+        const diff = previewData.diff;
+        const hasChanges = Object.keys(diff.sections || {}).length > 0;
+
+        if (!hasChanges) {
+          configStatus.className = 'alert alert-info small';
+          configStatus.textContent = 'No changes detected in the imported configuration.';
+          configStatus.style.display = 'block';
+          setTimeout(() => { configStatus.style.display = 'none'; }, 5000);
+          return;
+        }
+
+        // Build preview message
+        let previewMsg = 'The following sections will be updated:\\n\\n';
+        for (const [section, changes] of Object.entries(diff.sections)) {
+          previewMsg += `${section}:\\n`;
+          if (changes.changed.length > 0) {
+            previewMsg += `  • ${changes.changed.length} changed value(s)\\n`;
+          }
+          if (changes.added.length > 0) {
+            previewMsg += `  • ${changes.added.length} new value(s)\\n`;
+          }
+          if (changes.removed.length > 0) {
+            previewMsg += `  • ${changes.removed.length} removed value(s)\\n`;
+          }
+        }
+        previewMsg += '\\nA backup will be created automatically. Continue?';
+
+        if (!confirm(previewMsg)) {
+          return;
+        }
+
+        // Perform import
+        btnImportConfig.disabled = true;
+        btnImportConfig.textContent = 'Importing...';
+
+        const importResp = await fetch('/api/settings/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config, create_backup: true })
+        });
+
+        const importData = await importResp.json();
+
+        if (importData.report && importData.report.success) {
+          configStatus.className = 'alert alert-success small';
+          configStatus.textContent = `Configuration imported successfully! Backup ID: ${importData.report.backup_id}`;
+          configStatus.style.display = 'block';
+
+          // Suggest page reload
+          setTimeout(() => {
+            if (confirm('Configuration imported. Reload page to see changes?')) {
+              location.reload();
+            }
+          }, 1000);
+        } else {
+          const errors = (importData.report && importData.report.errors) ? importData.report.errors.join(', ') : importData.error || 'Unknown error';
+          throw new Error(errors);
+        }
+      } catch (err) {
+        configStatus.className = 'alert alert-danger small';
+        configStatus.textContent = `Import failed: ${err.message}`;
+        configStatus.style.display = 'block';
+      } finally {
+        btnImportConfig.disabled = false;
+        btnImportConfig.textContent = 'Import Configuration';
+        configFileInput.value = ''; // Reset file input
+      }
+    });
+  }
+
+  // View backups
+  if (btnViewBackups) {
+    btnViewBackups.addEventListener('click', async () => {
+      try {
+        const resp = await fetch('/api/settings/backups?limit=10');
+        if (!resp.ok) {
+          throw new Error('Failed to fetch backups');
+        }
+
+        const data = await resp.json();
+        if (data.status === 'success') {
+          if (data.backups.length === 0) {
+            alert('No backups found.');
+            return;
+          }
+
+          // Show backups in a simple alert (could be improved with modal)
+          let msg = 'Recent configuration backups:\\n\\n';
+          data.backups.forEach((backup, idx) => {
+            const date = new Date(backup.timestamp * 1000).toLocaleString();
+            msg += `${idx + 1}. ${date} - ${backup.reason} (by ${backup.created_by})\\n`;
+            msg += `   ID: ${backup.id}\\n`;
+            if (backup.notes) {
+              msg += `   Notes: ${backup.notes}\\n`;
+            }
+            msg += '\\n';
+          });
+
+          alert(msg);
+        } else {
+          throw new Error(data.error || 'Failed to list backups');
+        }
+      } catch (err) {
+        alert(`Failed to view backups: ${err.message}`);
+      }
+    });
   }
 </script>
 {% endblock %}

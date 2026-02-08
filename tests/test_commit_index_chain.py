@@ -1,6 +1,7 @@
 import json
 import os
 import types
+from tests.conftest import authenticate_test_client
 
 def test_commit_from_index_synthesizes_folder_chain(monkeypatch, tmp_path):
     # Enable index-driven commit
@@ -28,7 +29,7 @@ def test_commit_from_index_synthesizes_folder_chain(monkeypatch, tmp_path):
     # Create app and perform scan
     from scidk.app import create_app
     app = create_app(); app.config['TESTING'] = True
-    client = app.test_client()
+    client = authenticate_test_client(app.test_client(), app)
     r = client.post('/api/scans', json={
         'provider_id': 'rclone',
         'root_id': 'dropbox:',

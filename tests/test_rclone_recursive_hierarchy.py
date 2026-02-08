@@ -1,6 +1,7 @@
 import json
 import os
 from scidk.app import create_app
+from tests.conftest import authenticate_test_client
 
 
 def test_rclone_recursive_preserves_hierarchy_and_synthesizes_dirs(monkeypatch, tmp_path):
@@ -29,7 +30,7 @@ def test_rclone_recursive_preserves_hierarchy_and_synthesizes_dirs(monkeypatch, 
 
     app = create_app()
     app.config['TESTING'] = True
-    client = app.test_client()
+    client = authenticate_test_client(app.test_client(), app)
 
     resp = client.post('/api/scans', json={
         'provider_id': 'rclone',

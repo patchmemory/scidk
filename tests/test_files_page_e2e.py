@@ -7,6 +7,7 @@ import os
 import time
 from pathlib import Path
 import pytest
+from tests.conftest import authenticate_test_client
 
 try:
     from bs4 import BeautifulSoup
@@ -22,7 +23,7 @@ def test_files_page_loads_successfully():
     app = create_app()
     app.config['TESTING'] = True
 
-    with app.test_client() as client:
+    with authenticate_test_client(app.test_client(), app) as client:
         resp = client.get('/datasets')
         assert resp.status_code == 200
         assert b'Files' in resp.data
@@ -35,7 +36,7 @@ def test_scan_button_uses_background_tasks_only():
     app = create_app()
     app.config['TESTING'] = True
 
-    with app.test_client() as client:
+    with authenticate_test_client(app.test_client(), app) as client:
         resp = client.get('/datasets')
         assert resp.status_code == 200
 
@@ -63,7 +64,7 @@ def test_browse_and_scan_integration(tmp_path: Path):
     (test_dir / 'subdir').mkdir()
     (test_dir / 'subdir' / 'file3.txt').write_text('content3', encoding='utf-8')
 
-    with app.test_client() as client:
+    with authenticate_test_client(app.test_client(), app) as client:
         # Browse the directory
         browse_resp = client.get(f'/api/browse?provider_id=local_fs&root_id=/&path={str(test_dir)}')
         assert browse_resp.status_code == 200
@@ -114,7 +115,7 @@ def test_scan_history_unified_display(tmp_path: Path):
     test_dir.mkdir()
     (test_dir / 'test.txt').write_text('test', encoding='utf-8')
 
-    with app.test_client() as client:
+    with authenticate_test_client(app.test_client(), app) as client:
         # Create first scan
         resp1 = client.post('/api/tasks', json={
             'type': 'scan',
@@ -145,7 +146,7 @@ def test_rclone_scan_with_options():
     app = create_app()
     app.config['TESTING'] = True
 
-    with app.test_client() as client:
+    with authenticate_test_client(app.test_client(), app) as client:
         # Mock rclone scan with fast-list option
         # Note: This will fail in test without actual rclone, but validates API contract
         resp = client.post('/api/tasks', json={
@@ -171,7 +172,7 @@ def test_snapshot_browser_after_scan(tmp_path: Path):
     test_dir.mkdir()
     (test_dir / 'data.csv').write_text('col1,col2\n1,2\n', encoding='utf-8')
 
-    with app.test_client() as client:
+    with authenticate_test_client(app.test_client(), app) as client:
         # Perform scan
         scan_resp = client.post('/api/tasks', json={
             'type': 'scan',
@@ -216,7 +217,7 @@ def test_no_synchronous_scan_in_ui():
     app = create_app()
     app.config['TESTING'] = True
 
-    with app.test_client() as client:
+    with authenticate_test_client(app.test_client(), app) as client:
         resp = client.get('/datasets')
         html = resp.data.decode('utf-8')
 
@@ -235,7 +236,7 @@ def test_current_location_display_updates():
     app = create_app()
     app.config['TESTING'] = True
 
-    with app.test_client() as client:
+    with authenticate_test_client(app.test_client(), app) as client:
         resp = client.get('/datasets')
         html = resp.data.decode('utf-8')
 
@@ -254,7 +255,7 @@ def test_scan_button_integration_with_background_form():
     app = create_app()
     app.config['TESTING'] = True
 
-    with app.test_client() as client:
+    with authenticate_test_client(app.test_client(), app) as client:
         resp = client.get('/datasets')
         html = resp.data.decode('utf-8')
 
@@ -273,7 +274,7 @@ def test_files_page_structure_consolidated():
     app = create_app()
     app.config['TESTING'] = True
 
-    with app.test_client() as client:
+    with authenticate_test_client(app.test_client(), app) as client:
         resp = client.get('/datasets')
         html = resp.data.decode('utf-8')
         soup = BeautifulSoup(html, 'html.parser')
@@ -298,7 +299,7 @@ def test_provider_selector_and_roots_load():
     app = create_app()
     app.config['TESTING'] = True
 
-    with app.test_client() as client:
+    with authenticate_test_client(app.test_client(), app) as client:
         # Get providers
         prov_resp = client.get('/api/providers')
         assert prov_resp.status_code == 200

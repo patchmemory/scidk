@@ -1,9 +1,10 @@
 from scidk.app import create_app
+from tests.conftest import authenticate_test_client
 
 def test_metrics_endpoint_exists():
     app = create_app()
     app.config['TESTING'] = True
-    with app.test_client() as c:
+    with authenticate_test_client(app.test_client(), app) as c:
         r = c.get('/api/metrics')
         assert r.status_code == 200
         data = r.get_json()

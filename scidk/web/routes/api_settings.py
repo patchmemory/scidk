@@ -6,8 +6,9 @@ Provides REST endpoints for:
 - Endpoint connection testing
 - Settings persistence
 """
-from flask import Blueprint, jsonify, request, current_app
+from flask import Blueprint, jsonify, request, current_app, g, send_file
 import requests
+import os
 from jsonpath_ng import parse as jsonpath_parse
 
 bp = Blueprint('settings', __name__, url_prefix='/api')
@@ -878,6 +879,366 @@ def update_security_auth_config():
             'status': 'success',
             'config': config
         }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+def _get_backup_manager():
+    """Get or create BackupManager instance."""
+    from ...core.backup_manager import get_backup_manager
+
+    if 'backup_manager' not in current_app.extensions.get('scidk', {}):
+        if 'scidk' not in current_app.extensions:
+            current_app.extensions['scidk'] = {}
+
+        current_app.extensions['scidk']['backup_manager'] = get_backup_manager()
+
+    return current_app.extensions['scidk']['backup_manager']
+
+
+@bp.route('/settings/export', methods=['GET'])
+def export_configuration():
+    """
+    Export complete configuration as a zip file backup.
+
+    Query params:
+        - include_data: Include data files (default: false)
+
+    Returns: Zip file download
+    """
+    try:
+        include_data = request.args.get('include_data', 'false').lower() == 'true'
+
+        # Get current user for audit trail
+        username = 'system'
+        if hasattr(g, 'current_user') and g.current_user:
+            username = g.current_user.get('username', 'system')
+
+        backup_manager = _get_backup_manager()
+        result = backup_manager.create_backup(
+            reason='manual_export',
+            created_by=username,
+            notes='Manual export via UI',
+            include_data=include_data
+        )
+
+        if not result['success']:
+            return jsonify({
+                'status': 'error',
+                'error': result.get('error', 'Backup failed')
+            }), 500
+
+        # Send the zip file as download
+        return send_file(
+            result['path'],
+            as_attachment=True,
+            download_name=result['filename'],
+            mimetype='application/zip'
+        )
+
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/import', methods=['POST'])
+def import_configuration():
+    """
+    Import configuration from uploaded zip file.
+
+    Expects multipart/form-data with a 'backup_file' field.
+
+    Returns:
+    {
+        "status": "success",
+        "report": {
+            "success": true,
+            "files_restored": 2,
+            "pre_restore_backup": "backup_id"
+        }
+    }
+    """
+    try:
+        # Check if file was uploaded
+        if 'backup_file' not in request.files:
+            return jsonify({
+                'status': 'error',
+                'error': 'No backup file uploaded'
+            }), 400
+
+        file = request.files['backup_file']
+
+        if file.filename == '':
+            return jsonify({
+                'status': 'error',
+                'error': 'No file selected'
+            }), 400
+
+        # Save uploaded file temporarily
+        import tempfile
+        fd, temp_path = tempfile.mkstemp(suffix='.zip')
+        os.close(fd)
+
+        try:
+            file.save(temp_path)
+
+            # Restore from backup
+            backup_manager = _get_backup_manager()
+            report = backup_manager.restore_backup(
+                temp_path,
+                create_backup_first=True
+            )
+
+            status_code = 200 if report['success'] else 400
+
+            return jsonify({
+                'status': 'success' if report['success'] else 'error',
+                'report': report
+            }), status_code
+
+        finally:
+            # Clean up temp file
+            try:
+                os.unlink(temp_path)
+            except Exception:
+                pass
+
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/backups', methods=['GET'])
+def list_backups():
+    """
+    List configuration backups.
+
+    Query params:
+        - limit: Maximum number of backups to return (default: 50)
+
+    Returns:
+    {
+        "status": "success",
+        "backups": [...]
+    }
+    """
+    try:
+        limit = int(request.args.get('limit', 50))
+
+        backup_manager = _get_backup_manager()
+        backups = backup_manager.list_backups(limit=limit)
+
+        return jsonify({
+            'status': 'success',
+            'backups': backups
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/backups/<backup_id>', methods=['GET'])
+def get_backup(backup_id):
+    """
+    Get a specific backup by ID.
+
+    Returns:
+    {
+        "status": "success",
+        "backup": {
+            "id": "uuid",
+            "timestamp": 1234567890.123,
+            "timestamp_iso": "2026-02-08T10:30:00+00:00",
+            "config": {...},
+            "reason": "pre_import",
+            "created_by": "admin",
+            "notes": ""
+        }
+    }
+    """
+    try:
+        config_manager = _get_config_manager()
+        backup = config_manager.get_backup(backup_id)
+
+        if not backup:
+            return jsonify({
+                'status': 'error',
+                'error': f'Backup {backup_id} not found'
+            }), 404
+
+        return jsonify({
+            'status': 'success',
+            'backup': backup
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/backups', methods=['POST'])
+def create_backup():
+    """
+    Create a manual backup of current configuration.
+
+    Request body:
+    {
+        "reason": "manual",  // optional, default: "manual"
+        "created_by": "username",  // optional, default: "system"
+        "notes": "Before major changes"  // optional
+    }
+
+    Returns:
+    {
+        "status": "success",
+        "backup_id": "uuid"
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        reason = data.get('reason', 'manual')
+        created_by = data.get('created_by', 'system')
+        notes = data.get('notes', '')
+
+        backup_manager = _get_backup_manager()
+        result = backup_manager.create_backup(
+            reason=reason,
+            created_by=created_by,
+            notes=notes
+        )
+
+        if not result['success']:
+            return jsonify({
+                'status': 'error',
+                'error': result.get('error')
+            }), 500
+
+        return jsonify({
+            'status': 'success',
+            'backup_id': result['backup_id'],
+            'filename': result['filename'],
+            'size': result['size_human']
+        }), 201
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/backups/<backup_id>/restore', methods=['POST'])
+def restore_backup(backup_id):
+    """
+    Restore configuration from a backup.
+
+    Request body:
+    {
+        "created_by": "username"  // optional, default: "system"
+    }
+
+    Returns:
+    {
+        "status": "success",
+        "report": {...}  // Same as import report
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        created_by = data.get('created_by', 'system')
+
+        config_manager = _get_config_manager()
+        report = config_manager.restore_backup(backup_id, created_by=created_by)
+
+        status_code = 200 if report['success'] else 400
+
+        return jsonify({
+            'status': 'success' if report['success'] else 'error',
+            'report': report
+        }), status_code
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/backups/<backup_id>', methods=['DELETE'])
+def delete_backup(backup_id):
+    """
+    Delete a backup.
+
+    Returns:
+    {
+        "status": "success"
+    }
+    """
+    try:
+        backup_manager = _get_backup_manager()
+        deleted = backup_manager.delete_backup(backup_id)
+
+        if not deleted:
+            return jsonify({
+                'status': 'error',
+                'error': f'Backup {backup_id} not found'
+            }), 404
+
+        return jsonify({
+            'status': 'success'
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/backups/<filename>', methods=['GET'])
+def download_backup_file(filename):
+    """
+    Serve a backup file for download.
+
+    This endpoint serves static backup files from the backups/ directory.
+    Used by the UI to allow users to download backup files directly.
+
+    Returns: File download
+    """
+    try:
+        # Get backup manager to access backups directory
+        backup_manager = _get_backup_manager()
+        backup_dir = backup_manager.backup_dir
+
+        # Security: only allow files from backups directory, prevent path traversal
+        if '..' in filename or '/' in filename or '\\' in filename:
+            return jsonify({
+                'status': 'error',
+                'error': 'Invalid filename'
+            }), 400
+
+        file_path = os.path.join(backup_dir, filename)
+
+        if not os.path.exists(file_path):
+            return jsonify({
+                'status': 'error',
+                'error': 'Backup file not found'
+            }), 404
+
+        return send_file(
+            file_path,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/zip'
+        )
+
     except Exception as e:
         return jsonify({
             'status': 'error',

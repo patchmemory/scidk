@@ -1,12 +1,13 @@
 import time
 from scidk.app import create_app
+from tests.conftest import authenticate_test_client
 
 
 def test_logs_endpoint_exists():
     """Test that /api/logs endpoint exists and returns expected structure."""
     app = create_app()
     app.config['TESTING'] = True
-    with app.test_client() as c:
+    with authenticate_test_client(app.test_client(), app) as c:
         r = c.get('/api/logs')
         assert r.status_code == 200
         data = r.get_json()
@@ -22,7 +23,7 @@ def test_logs_endpoint_pagination():
     """Test that pagination parameters work correctly."""
     app = create_app()
     app.config['TESTING'] = True
-    with app.test_client() as c:
+    with authenticate_test_client(app.test_client(), app) as c:
         # Test with custom limit and offset
         r = c.get('/api/logs?limit=5&offset=0')
         assert r.status_code == 200
@@ -36,7 +37,7 @@ def test_logs_endpoint_level_filter():
     """Test that level filter works correctly."""
     app = create_app()
     app.config['TESTING'] = True
-    with app.test_client() as c:
+    with authenticate_test_client(app.test_client(), app) as c:
         # Insert a test log entry
         from scidk.core import path_index_sqlite as pix
         conn = pix.connect()
@@ -68,7 +69,7 @@ def test_logs_endpoint_since_ts_filter():
     """Test that since_ts filter works correctly."""
     app = create_app()
     app.config['TESTING'] = True
-    with app.test_client() as c:
+    with authenticate_test_client(app.test_client(), app) as c:
         # Insert test log entries with different timestamps
         from scidk.core import path_index_sqlite as pix
         conn = pix.connect()
@@ -106,7 +107,7 @@ def test_logs_endpoint_no_sensitive_data():
     """Test that logs don't expose sensitive file paths or user data."""
     app = create_app()
     app.config['TESTING'] = True
-    with app.test_client() as c:
+    with authenticate_test_client(app.test_client(), app) as c:
         r = c.get('/api/logs')
         assert r.status_code == 200
         data = r.get_json()

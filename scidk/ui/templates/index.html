@@ -111,13 +111,16 @@
         <span class="badge" title="Files viewer">Files viewer: {{ info.files_viewer or '(default)' }}</span>
       </div>
 
-      <h3 style="margin-top:2rem">Configuration Export</h3>
-      <p class="small">Export current configuration as a snapshot image for backup or sharing.</p>
-      <div style="display:flex; gap:.5rem; align-items:center; margin:.5rem 0;">
-        <button id="btn-export-config" style="padding:0.5rem 1rem; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer">Export Configuration</button>
-        <span id="export-config-status" class="small"></span>
+      <h3 style="margin-top:2rem">Configuration Management</h3>
+      <p class="small">Export and import your complete SciDK configuration for backup or migration.</p>
+      <div style="display:flex; gap:.75rem; align-items:center; margin:.75rem 0;">
+        <button id="btn-export-config" class="btn btn-sm btn-primary" data-testid="export-config-button">Export Configuration</button>
+        <button id="btn-import-config" class="btn btn-sm btn-outline-secondary" data-testid="import-config-button">Import Configuration</button>
+        <button id="btn-view-backups" class="btn btn-sm btn-outline-secondary" data-testid="view-backups-button">View Backups</button>
       </div>
-      <p class="small" style="margin-top:0.25rem; color:#666">Exports all settings including Neo4j connection, interpreters, plugins, rclone mounts, and integration endpoints.</p>
+      <input type="file" id="config-file-input" accept=".zip" style="display:none;" />
+      <div id="config-status" class="alert alert-info small" style="display:none; max-width:720px; margin-top:1rem;"></div>
+      <p class="small" style="margin-top:0.5rem; color:#666">Exports all settings including Neo4j connection, interpreters, plugins, rclone mounts, and integration endpoints.</p>
 
       <h3 style="margin-top:2rem">Security</h3>
       <p class="small">Configure authentication and access control for this SciDK instance.</p>
@@ -1969,53 +1972,329 @@
 
   // Configuration Export (wireframe)
   function initConfigExport() {
-    const exportBtn = document.getElementById('btn-export-config');
-    const statusSpan = document.getElementById('export-config-status');
+    const btnExportConfig = document.getElementById('btn-export-config');
+    const btnImportConfig = document.getElementById('btn-import-config');
+    const btnViewBackups = document.getElementById('btn-view-backups');
+    const configFileInput = document.getElementById('config-file-input');
+    const configStatus = document.getElementById('config-status');
 
-    if (!exportBtn) return;
+    // Export configuration
+    if (btnExportConfig) {
+      btnExportConfig.addEventListener('click', async () => {
+        try {
+          btnExportConfig.disabled = true;
+          btnExportConfig.textContent = 'Exporting...';
 
-    exportBtn.addEventListener('click', async () => {
-      statusSpan.textContent = 'Exporting...';
-      statusSpan.style.color = '#666';
+          const resp = await fetch('/api/settings/export', {
+            credentials: 'same-origin'
+          });
 
-      // Simulated export - in real implementation, would call /api/settings/export
-      try {
-        // Mock delay to simulate API call
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        // Create mock configuration object
-        const config = {
-          timestamp: new Date().toISOString(),
-          version: '1.0',
-          settings: {
-            general: {
-              host: '{{ info.host }}',
-              port: '{{ info.port }}',
-              channel: '{{ info.channel }}'
-            },
-            // Would include all other settings in real implementation
+          if (!resp.ok) {
+            // Try to parse error as JSON
+            const errorData = await resp.text();
+            try {
+              const json = JSON.parse(errorData);
+              throw new Error(json.error || `Export failed (${resp.status})`);
+            } catch (parseErr) {
+              // If we can't parse JSON, throw the original error
+              throw new Error(`Export failed (${resp.status})`);
+            }
           }
-        };
 
-        // Download as JSON file
-        const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `scidk-config-${Date.now()}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+          // Get the filename from Content-Disposition header or generate one
+          const disposition = resp.headers.get('Content-Disposition');
+          let filename = 'scidk-backup.zip';
+          if (disposition && disposition.includes('filename=')) {
+            filename = disposition.split('filename=')[1].replace(/["']/g, '');
+          }
 
-        statusSpan.textContent = '✓ Exported successfully';
-        statusSpan.style.color = 'green';
-        setTimeout(() => { statusSpan.textContent = ''; }, 3000);
-      } catch (err) {
-        statusSpan.textContent = '✗ Export failed';
-        statusSpan.style.color = 'red';
-      }
-    });
+          // Download the zip file
+          const blob = await resp.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+
+          configStatus.className = 'alert alert-success small';
+          configStatus.textContent = `Backup created successfully: ${filename}`;
+          configStatus.style.display = 'block';
+          setTimeout(() => { configStatus.style.display = 'none'; }, 5000);
+        } catch (err) {
+          configStatus.className = 'alert alert-danger small';
+          configStatus.textContent = `Export failed: ${err.message}`;
+          configStatus.style.display = 'block';
+        } finally {
+          btnExportConfig.disabled = false;
+          btnExportConfig.textContent = 'Export Configuration';
+        }
+      });
+    }
+
+    // Import configuration
+    if (btnImportConfig && configFileInput) {
+      btnImportConfig.addEventListener('click', () => {
+        configFileInput.click();
+      });
+
+      configFileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        // Confirm before restoring
+        if (!confirm(`Restore from backup: ${file.name}?\n\nThis will:\n- Create a backup of current state\n- Replace all databases and settings\n- Require a page reload\n\nContinue?`)) {
+          configFileInput.value = '';  // Reset file input
+          return;
+        }
+
+        try {
+          btnImportConfig.disabled = true;
+          btnImportConfig.textContent = 'Restoring...';
+
+          // Upload the backup zip file
+          const formData = new FormData();
+          formData.append('backup_file', file);
+
+          const importResp = await fetch('/api/settings/import', {
+            method: 'POST',
+            body: formData,
+            credentials: 'same-origin'
+          });
+
+          const importData = await importResp.json();
+
+          if (importData.status === 'success' && importData.report && importData.report.success) {
+            configStatus.className = 'alert alert-success small';
+            configStatus.textContent = `Backup restored successfully! ${importData.report.files_restored} files restored.`;
+            if (importData.report.pre_restore_backup) {
+              configStatus.textContent += ` Backup created: ${importData.report.pre_restore_backup.substring(0, 8)}`;
+            }
+            configStatus.style.display = 'block';
+
+            // Suggest page reload
+            setTimeout(() => {
+              if (confirm('Backup restored. Reload page now?')) {
+                location.reload();
+              }
+            }, 1000);
+          } else {
+            const error = (importData.report && importData.report.error) || importData.error || 'Unknown error';
+            throw new Error(error);
+          }
+        } catch (err) {
+          configStatus.className = 'alert alert-danger small';
+          configStatus.textContent = `Import failed: ${err.message}`;
+          configStatus.style.display = 'block';
+        } finally {
+          btnImportConfig.disabled = false;
+          btnImportConfig.textContent = 'Import Configuration';
+          configFileInput.value = ''; // Reset file input
+        }
+      });
+    }
+
+    // View backups - show modal with table
+    if (btnViewBackups) {
+      btnViewBackups.addEventListener('click', async () => {
+        try {
+          const resp = await fetch('/api/settings/backups?limit=20', {
+            credentials: 'same-origin'
+          });
+
+          const data = await resp.json();
+
+          if (!resp.ok) {
+            throw new Error(data.error || `Failed to fetch backups (${resp.status})`);
+          }
+
+          if (data.status === 'success') {
+            if (data.backups.length === 0) {
+              alert('No backups found. Click "Export Configuration" to create your first backup.');
+              return;
+            }
+
+            // Show modal with backups table
+            showBackupsModal(data.backups);
+          } else {
+            throw new Error(data.error || 'Failed to list backups');
+          }
+        } catch (err) {
+          alert(`Failed to view backups: ${err.message}`);
+        }
+      });
+    }
+
+    // Show backups in a modal
+    function showBackupsModal(backups) {
+      // Create modal overlay
+      const modal = document.createElement('div');
+      modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:10000;';
+
+      // Create modal content
+      const content = document.createElement('div');
+      content.style.cssText = 'background:white;border-radius:8px;padding:2rem;max-width:900px;max-height:80vh;overflow:auto;box-shadow:0 4px 20px rgba(0,0,0,0.3);';
+
+      content.innerHTML = `
+        <h2 style="margin-top:0;">Configuration Backups</h2>
+        <p class="small" style="color:#666;margin-bottom:1.5rem;">Click a backup to download it, or use the Restore button to restore your configuration.</p>
+        <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+          <thead>
+            <tr style="border-bottom:2px solid #e0e0e0;">
+              <th style="text-align:left;padding:0.75rem 0.5rem;">Date</th>
+              <th style="text-align:left;padding:0.75rem 0.5rem;">Filename</th>
+              <th style="text-align:left;padding:0.75rem 0.5rem;">Size</th>
+              <th style="text-align:left;padding:0.75rem 0.5rem;">Reason</th>
+              <th style="text-align:left;padding:0.75rem 0.5rem;">By</th>
+              <th style="text-align:right;padding:0.75rem 0.5rem;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="backups-table-body"></tbody>
+        </table>
+        <div style="margin-top:1.5rem;text-align:right;">
+          <button id="close-backups-modal" class="btn btn-sm btn-secondary">Close</button>
+        </div>
+      `;
+
+      modal.appendChild(content);
+      document.body.appendChild(modal);
+
+      // Populate table
+      const tbody = document.getElementById('backups-table-body');
+      backups.forEach(backup => {
+        const row = document.createElement('tr');
+        row.style.cssText = 'border-bottom:1px solid #f0f0f0;';
+        row.innerHTML = `
+          <td style="padding:0.75rem 0.5rem;">${new Date(backup.timestamp).toLocaleString()}</td>
+          <td style="padding:0.75rem 0.5rem;">
+            <a href="#" class="download-backup" data-filename="${backup.filename}" style="color:#007bff;text-decoration:none;">
+              ${backup.filename}
+            </a>
+          </td>
+          <td style="padding:0.75rem 0.5rem;">${backup.size_human}</td>
+          <td style="padding:0.75rem 0.5rem;">${backup.reason}</td>
+          <td style="padding:0.75rem 0.5rem;">${backup.created_by}</td>
+          <td style="padding:0.75rem 0.5rem;text-align:right;">
+            <button class="restore-backup btn btn-sm btn-outline-primary" data-filename="${backup.filename}" style="margin-right:0.5rem;">
+              Restore
+            </button>
+            <button class="delete-backup btn btn-sm btn-outline-danger" data-filename="${backup.filename}">
+              Delete
+            </button>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+
+      // Close modal
+      document.getElementById('close-backups-modal').addEventListener('click', () => {
+        document.body.removeChild(modal);
+      });
+
+      // Close on background click
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          document.body.removeChild(modal);
+        }
+      });
+
+      // Download backup
+      document.querySelectorAll('.download-backup').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          const filename = btn.dataset.filename;
+
+          // Create a hidden link to download from backups directory
+          const a = document.createElement('a');
+          a.href = `/backups/${filename}`;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        });
+      });
+
+      // Restore backup
+      document.querySelectorAll('.restore-backup').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const filename = btn.dataset.filename;
+
+          if (!confirm(`Restore from: ${filename}?\n\nThis will:\n- Create a backup of current state\n- Replace all databases and settings\n- Require a page reload\n\nContinue?`)) {
+            return;
+          }
+
+          try {
+            btn.disabled = true;
+            btn.textContent = 'Restoring...';
+
+            // Fetch the backup file and restore it
+            const backupResp = await fetch(`/backups/${filename}`);
+            const backupBlob = await backupResp.blob();
+
+            const formData = new FormData();
+            formData.append('backup_file', backupBlob, filename);
+
+            const restoreResp = await fetch('/api/settings/import', {
+              method: 'POST',
+              body: formData,
+              credentials: 'same-origin'
+            });
+
+            const result = await restoreResp.json();
+
+            if (result.status === 'success' && result.report && result.report.success) {
+              alert(`Backup restored successfully!\n${result.report.files_restored} files restored.`);
+              document.body.removeChild(modal);
+
+              setTimeout(() => {
+                if (confirm('Backup restored. Reload page now?')) {
+                  location.reload();
+                }
+              }, 500);
+            } else {
+              throw new Error(result.error || result.report?.error || 'Restore failed');
+            }
+          } catch (err) {
+            alert(`Restore failed: ${err.message}`);
+            btn.disabled = false;
+            btn.textContent = 'Restore';
+          }
+        });
+      });
+
+      // Delete backup
+      document.querySelectorAll('.delete-backup').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const filename = btn.dataset.filename;
+
+          if (!confirm(`Delete backup: ${filename}?\n\nThis cannot be undone.`)) {
+            return;
+          }
+
+          try {
+            const resp = await fetch(`/api/settings/backups/${filename}`, {
+              method: 'DELETE',
+              credentials: 'same-origin'
+            });
+
+            const result = await resp.json();
+
+            if (result.status === 'success') {
+              alert('Backup deleted successfully.');
+              // Refresh the modal
+              document.body.removeChild(modal);
+              btnViewBackups.click();
+            } else {
+              throw new Error(result.error || 'Delete failed');
+            }
+          } catch (err) {
+            alert(`Delete failed: ${err.message}`);
+          }
+        });
+      });
+    }
   }
 
   // Security Settings

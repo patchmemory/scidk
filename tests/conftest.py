@@ -27,6 +27,9 @@ def _pin_repo_local_test_env():
     # Clean up test labels from SQLite database
     _cleanup_test_labels_from_db(db_dir / 'unit_integration.db')
 
+    # Clean up test users from SQLite database
+    _cleanup_test_users_from_db(db_dir / 'unit_integration.db')
+
     # OS temp for tempfile and libraries
     os.environ.setdefault("TMPDIR", str(tmp_root))
     os.environ.setdefault("TMP", str(tmp_root))
@@ -185,6 +188,81 @@ def _cleanup_test_labels_from_db(db_path: Path):
         pass  # Silently fail; don't break test runs
 
 
+def _cleanup_test_users_from_db(db_path: Path):
+    """Remove test users from the SQLite database before test runs.
+
+    This prevents accumulation of test users (from auth tests) that show up
+    in the UI when running scidk-serve after tests have run.
+
+    Args:
+        db_path: Path to the SQLite database file
+    """
+    if not db_path.exists():
+        return
+
+    try:
+        import sqlite3
+        conn = sqlite3.connect(str(db_path))
+        try:
+            cur = conn.cursor()
+
+            # Check if auth_users table exists
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='auth_users'")
+            if not cur.fetchone():
+                return
+
+            # List of test user patterns to delete
+            test_user_patterns = [
+                'test%',       # testuser, test_admin, etc
+                'Test%',       # TestUser
+                'admin%test',  # admin_test, admin-test
+                'demo%',       # demo users
+                'temp%',       # temporary test users
+            ]
+
+            # Delete test users
+            for pattern in test_user_patterns:
+                cur.execute("DELETE FROM auth_users WHERE username LIKE ?", (pattern,))
+
+            # Also delete any users created by 'system' during tests (like test fixtures)
+            # But be careful not to delete legitimate system users in production
+            # Only delete if created_by is 'system' AND username looks like a test user
+            cur.execute("""
+                DELETE FROM auth_users
+                WHERE created_by = 'system'
+                AND (username LIKE 'test%' OR username = 'testuser')
+            """)
+
+            # Clean up associated auth records
+            # Delete sessions for users that no longer exist
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='auth_sessions'")
+            if cur.fetchone():
+                cur.execute("""
+                    DELETE FROM auth_sessions
+                    WHERE user_id NOT IN (SELECT id FROM auth_users)
+                """)
+
+            # Delete failed login attempts for users that no longer exist
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='auth_failed_attempts'")
+            if cur.fetchone():
+                cur.execute("""
+                    DELETE FROM auth_failed_attempts
+                    WHERE username NOT IN (SELECT username FROM auth_users)
+                """)
+
+            # Delete audit logs for test users
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='auth_audit_log'")
+            if cur.fetchone():
+                for pattern in test_user_patterns:
+                    cur.execute("DELETE FROM auth_audit_log WHERE username LIKE ?", (pattern,))
+
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass  # Silently fail; don't break test runs
+
+
 # --- Flask app + test client fixtures expected by unit/integration tests ---
 @pytest.fixture(scope="function")
 def app():
@@ -204,10 +282,59 @@ def app():
         ctx.pop()
 
 
+def authenticate_test_client(test_client, app):
+    """Helper to authenticate a test client if auth is enabled.
+
+    This function can be imported by tests that create their own app/client
+    instead of using the fixture. Usage:
+
+        from tests.conftest import authenticate_test_client
+        app = create_app()
+        client = authenticate_test_client(app.test_client(), app)
+
+    Args:
+        test_client: Flask test client
+        app: Flask app instance
+
+    Returns:
+        Authenticated test client
+    """
+    from scidk.core.auth import get_auth_manager
+    db_path = app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+    auth = get_auth_manager(db_path=db_path)
+
+    if auth.is_enabled():
+        # Get any admin user or create a test user
+        users = auth.list_users()
+        admin_users = [u for u in users if u.get('role') == 'admin']
+
+        if admin_users:
+            # Use first admin user - create session directly
+            session_token = auth.create_user_session(admin_users[0]['id'], '127.0.0.1')
+            if session_token:
+                test_client.set_cookie('scidk_session', session_token)
+        else:
+            # Create a test admin user if none exists
+            test_username = 'test_admin'
+            test_password = 'test_password'
+            user_id = auth.create_user(test_username, test_password, role='admin', created_by='system')
+            if user_id:
+                session_token = auth.create_user_session(user_id, '127.0.0.1')
+                if session_token:
+                    test_client.set_cookie('scidk_session', session_token)
+
+    return test_client
+
+
 @pytest.fixture()
 def client(app):
-    """Flask test client used by many unit tests."""
-    return app.test_client()
+    """Flask test client used by many unit tests.
+
+    This client automatically authenticates if auth is enabled,
+    so tests don't need to manually handle authentication.
+    """
+    test_client = app.test_client()
+    return authenticate_test_client(test_client, app)
 
 
 # --- File fixtures used by interpreter/filesystem tests ---

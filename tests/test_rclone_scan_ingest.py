@@ -1,6 +1,7 @@
 import json
 import os
 from scidk.app import create_app
+from tests.conftest import authenticate_test_client
 
 
 def test_rclone_scan_ingest_monkeypatched(monkeypatch, tmp_path):
@@ -32,7 +33,7 @@ def test_rclone_scan_ingest_monkeypatched(monkeypatch, tmp_path):
     monkeypatch.setattr(prov_mod.RcloneProvider, '_run', staticmethod(fake_run))
 
     app = create_app()
-    client = app.test_client()
+    client = authenticate_test_client(app.test_client(), app)
 
     # Trigger a scan using rclone provider, non-recursive with fast_list
     resp = client.post('/api/scans', json={

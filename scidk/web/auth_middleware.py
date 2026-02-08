@@ -14,6 +14,7 @@ PUBLIC_ROUTES = {
     '/api/auth/login',
     '/api/auth/status',
     '/api/settings/security/auth',  # Allow disabling/checking auth config
+    '/api/health',  # Health check endpoint (legitimately needs to be public)
     '/static',  # Prefix for static files
 }
 

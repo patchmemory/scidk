@@ -2,6 +2,7 @@ import io
 import os
 from pathlib import Path
 from scidk.app import create_app
+from tests.conftest import authenticate_test_client
 
 
 def test_rocrate_export_zip(monkeypatch, tmp_path):
@@ -10,7 +11,7 @@ def test_rocrate_export_zip(monkeypatch, tmp_path):
     monkeypatch.setenv('SCIDK_ROCRATE_DIR', str(tmp_path))
 
     app = create_app(); app.config.update({"TESTING": True})
-    client = app.test_client()
+    client = authenticate_test_client(app.test_client(), app)
 
     # Create a crate with no items is fine
     resp = client.post('/api/ro-crates/referenced', json={
@@ -40,7 +41,7 @@ def test_rocrate_export_missing(monkeypatch, tmp_path):
     monkeypatch.setenv('SCIDK_ENABLE_ROCRATE_REFERENCED', '1')
     monkeypatch.setenv('SCIDK_ROCRATE_DIR', str(tmp_path))
     app = create_app(); app.config.update({"TESTING": True})
-    client = app.test_client()
+    client = authenticate_test_client(app.test_client(), app)
     resp = client.post('/api/ro-crates/does-not-exist/export?target=zip')
     assert resp.status_code == 404
     assert 'error' in resp.get_json()
