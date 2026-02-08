@@ -27,6 +27,9 @@ def _pin_repo_local_test_env():
     # Clean up test labels from SQLite database
     _cleanup_test_labels_from_db(db_dir / 'unit_integration.db')
 
+    # Clean up test users from SQLite database
+    _cleanup_test_users_from_db(db_dir / 'unit_integration.db')
+
     # OS temp for tempfile and libraries
     os.environ.setdefault("TMPDIR", str(tmp_root))
     os.environ.setdefault("TMP", str(tmp_root))
@@ -177,6 +180,81 @@ def _cleanup_test_labels_from_db(db_path: Path):
             # Delete test labels
             for pattern in test_patterns:
                 cur.execute("DELETE FROM label_definitions WHERE name LIKE ?", (pattern,))
+
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass  # Silently fail; don't break test runs
+
+
+def _cleanup_test_users_from_db(db_path: Path):
+    """Remove test users from the SQLite database before test runs.
+
+    This prevents accumulation of test users (from auth tests) that show up
+    in the UI when running scidk-serve after tests have run.
+
+    Args:
+        db_path: Path to the SQLite database file
+    """
+    if not db_path.exists():
+        return
+
+    try:
+        import sqlite3
+        conn = sqlite3.connect(str(db_path))
+        try:
+            cur = conn.cursor()
+
+            # Check if auth_users table exists
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='auth_users'")
+            if not cur.fetchone():
+                return
+
+            # List of test user patterns to delete
+            test_user_patterns = [
+                'test%',       # testuser, test_admin, etc
+                'Test%',       # TestUser
+                'admin%test',  # admin_test, admin-test
+                'demo%',       # demo users
+                'temp%',       # temporary test users
+            ]
+
+            # Delete test users
+            for pattern in test_user_patterns:
+                cur.execute("DELETE FROM auth_users WHERE username LIKE ?", (pattern,))
+
+            # Also delete any users created by 'system' during tests (like test fixtures)
+            # But be careful not to delete legitimate system users in production
+            # Only delete if created_by is 'system' AND username looks like a test user
+            cur.execute("""
+                DELETE FROM auth_users
+                WHERE created_by = 'system'
+                AND (username LIKE 'test%' OR username = 'testuser')
+            """)
+
+            # Clean up associated auth records
+            # Delete sessions for users that no longer exist
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='auth_sessions'")
+            if cur.fetchone():
+                cur.execute("""
+                    DELETE FROM auth_sessions
+                    WHERE user_id NOT IN (SELECT id FROM auth_users)
+                """)
+
+            # Delete failed login attempts for users that no longer exist
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='auth_failed_attempts'")
+            if cur.fetchone():
+                cur.execute("""
+                    DELETE FROM auth_failed_attempts
+                    WHERE username NOT IN (SELECT username FROM auth_users)
+                """)
+
+            # Delete audit logs for test users
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='auth_audit_log'")
+            if cur.fetchone():
+                for pattern in test_user_patterns:
+                    cur.execute("DELETE FROM auth_audit_log WHERE username LIKE ?", (pattern,))
 
             conn.commit()
         finally:
