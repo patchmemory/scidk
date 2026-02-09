@@ -58,13 +58,16 @@ Open your browser and navigate to: **http://127.0.0.1:5000**
 
 | Page | URL | Purpose |
 |------|-----|---------|
-| **Home** | `/` | Landing page, search, filters |
-| **Chat** | `/chat` | Chat interface |
-| **Files** | `/datasets` | Browse files, scans, snapshots |
-| **Map** | `/map` | Graph visualization |
-| **Labels** | `/labels` | Graph schema management |
+| **Home** | `/` | Landing page, search, filters, quick chat |
+| **Chat** | `/chat` | Full chat interface (multi-user) |
+| **Files** | `/datasets` | Browse files, scans, snapshots, data cleaning |
+| **Map** | `/map` | Graph visualization (Neo4j + local schema) |
+| **Labels** | `/labels` | Graph schema management (3-column layout) |
 | **Links** | `/links` | Link definition wizard |
-| **Settings** | `/settings` | Neo4j, interpreters, rclone |
+| **Extensions** | `/extensions` | Plugin/extension management |
+| **Integrations** | `/integrations` | External service integrations |
+| **Settings** | `/settings` | Neo4j, interpreters, rclone, chat, plugins |
+| **Login** | `/login` | User authentication |
 
 ## Creating Test Data
 
@@ -176,9 +179,17 @@ The test suite creates temporary test data. You can reference `tests/conftest.py
 5. Import file (File → Import → From JSON)
 6. View/edit schema in Arrows
 
-### Workflow 4: Link Creation
+### Workflow 4: Integration & Link Creation
 
-1. **Navigate** to Links page
+**Option A: Configure External API Integration**
+1. **Navigate** to Integrations page (`/integrations`)
+2. **Configure** external service (API endpoint, auth)
+3. **Test** connection to verify it works
+4. **Save** integration configuration
+5. **Navigate** to Links page to use the integration
+
+**Option B: Direct Link Creation**
+1. **Navigate** to Links page (`/links`)
 2. **Create** new link definition
 3. **Choose** data source (CSV, API, or Cypher)
 4. **Configure** source and target labels
@@ -188,70 +199,123 @@ The test suite creates temporary test data. You can reference `tests/conftest.py
 
 ### Workflow 5: Search & Chat
 
-1. **Home page**: Enter search query
+**Quick Chat (from Home):**
+1. **Home page**: Enter search query OR use quick chat input
 2. **View** results filtered by type
-3. **Navigate** to Chat page
-4. **Ask** about indexed files
-5. **Get** responses with file references
+3. **Get** inline responses without leaving home
+
+**Full Chat Interface:**
+1. **Navigate** to Chat page (`/chat`)
+2. **Login** if using multi-user mode
+3. **Ask** questions about indexed files
+4. **Get** context-aware responses with file references
+5. **View** conversation history (persisted per user)
+
+### Workflow 6: Data Cleaning
+
+1. **Navigate** to Files page (`/datasets`)
+2. **Browse** snapshot or search for files
+3. **Select** files to delete (individual or bulk)
+4. **Click** delete button
+5. **Confirm** deletion
+6. **System** automatically cleans up:
+   - File nodes from graph
+   - Associated relationships
+   - Orphaned link records
+7. **View** updated file list
 
 ## Configuration for Demo
 
+### First-Time Setup: User Authentication
+
+1. **Navigate** to Login page (`/login`) - or you'll be redirected on first visit
+2. **Create** an account (if no users exist, first user becomes admin)
+3. **Login** with username/password
+4. **Note**: Multi-user mode supports:
+   - Role-based access control (Admin/User)
+   - Per-user chat history
+   - Session management with auto-lock after inactivity
+
 ### Neo4j Connection
 
-1. Navigate to **Settings** page
-2. Enter Neo4j details:
+1. Navigate to **Settings** page (`/settings`)
+2. Click **"Neo4j"** tab in settings
+3. Enter Neo4j details:
    - URI: `bolt://localhost:7687`
    - Username: `neo4j`
    - Database: `neo4j`
    - Password: `[your password]`
-3. Click **"Save Settings"**
-4. Click **"Connect"** to test
+4. Click **"Save Settings"**
+5. Click **"Connect"** to test connection
+6. Success message confirms connection
 
 ### Interpreter Configuration
 
-1. On **Settings** page, scroll to "Interpreters"
+1. On **Settings** page, click **"Interpreters"** tab
 2. Enable desired interpreters:
    - CSV, JSON, YAML (common formats)
    - Python, Jupyter (code files)
    - Excel (workbooks)
-3. Changes save automatically
+3. Configure advanced settings:
+   - Suggest threshold
+   - Batch size
+4. Click **"Save"** to apply changes
 
 ### Rclone Mounts (Optional)
 
-1. On **Settings** page, scroll to "Rclone Mounts"
+1. On **Settings** page, click **"Rclone"** tab
 2. Configure remote:
    - Remote: `myremote:`
    - Subpath: `/folder/path`
    - Name: `MyRemote`
    - Read-only: checked (recommended for demo)
 3. Click **"Create Mount"**
+4. Click **"Refresh Mounts"** to see updated list
 
-### API Endpoints (for Links Integration)
+### Chat Backend Configuration
 
-1. Navigate to **Settings** > **Links** section
+1. On **Settings** page, click **"Chat"** tab
+2. Configure chat backend:
+   - LLM service endpoint
+   - API key (if required)
+   - Context settings
+3. Click **"Save Settings"**
+4. Test by sending a message from Home or Chat page
+
+### External Service Integrations
+
+1. Navigate to **Integrations** page (`/integrations`)
+2. Select an integration to configure
+3. Enter service-specific settings:
+   - API endpoint URL
+   - Authentication credentials (encrypted at rest)
+   - JSONPath extraction (optional)
+   - Target label mapping (optional)
+4. Click **"Test Connection"** to verify
+5. Click **"Save"** to enable integration
+
+**OR** configure in Settings:
+1. On **Settings** page, click **"Integrations"** tab
 2. Scroll to "API Endpoint Mappings"
-3. Configure a new endpoint:
+3. Configure endpoint:
    - **Name**: Descriptive name (e.g., "Users API")
-   - **URL**: Full API endpoint URL (e.g., `https://api.example.com/users`)
-   - **Auth Method**: Select authentication type:
-     - `None`: No authentication
-     - `Bearer Token`: OAuth/JWT bearer token
-     - `API Key`: API key in X-API-Key header
-   - **Auth Value**: Enter token/key if authentication is required
-   - **JSONPath** (optional): Extract specific data (e.g., `$.data[*]`)
-   - **Maps to Label** (optional): Target Label for imported data
-4. Click **"Test Connection"** to verify the endpoint
-5. Click **"Save Endpoint"** to register it
+   - **URL**: Full API endpoint (e.g., `https://api.example.com/users`)
+   - **Auth Method**: None, Bearer Token, or API Key
+   - **Auth Value**: Token/key if authentication required
+   - **JSONPath**: Extract specific data (e.g., `$.data[*]`)
+   - **Maps to Label**: Target label for imported data
+4. Click **"Test Connection"** to verify
+5. Click **"Save Endpoint"** to register
 
-**Using API Endpoints in Links:**
-- Registered endpoints appear in the Links wizard
-- Select an endpoint as a data source when creating links
-- Field mappings automatically populate from endpoint configuration
+**Using Integrations in Links:**
+- Registered endpoints appear in Links wizard
+- Select an endpoint as a data source
+- Field mappings auto-populate from endpoint config
 
 **Security Notes:**
-- Auth tokens are encrypted at rest in the settings database
-- For production, set `SCIDK_API_ENCRYPTION_KEY` environment variable
-- Without this variable, an ephemeral key is generated (not persistent across restarts)
+- Auth tokens encrypted at rest in settings database
+- Set `SCIDK_API_ENCRYPTION_KEY` environment variable for production
+- Without this variable, ephemeral key is generated (not persistent across restarts)
 
 **Example: JSONPlaceholder Test API**
 ```
@@ -261,6 +325,19 @@ Auth Method: None
 JSONPath: $[*]
 Maps to Label: User
 ```
+
+### Configuration Backup & Restore
+
+1. On **Settings** page, click **"General"** tab
+2. Scroll to "Configuration Management"
+3. **Export** settings:
+   - Click **"Export Settings"**
+   - Download JSON backup file
+4. **Import** settings:
+   - Click **"Import Settings"**
+   - Select JSON backup file
+   - Confirm import
+   - Application restores all configurations
 
 ## Troubleshooting
 
@@ -321,20 +398,50 @@ SCIDK_PORT=5001 scidk-serve
 
 ### During the Demo
 
-- **Start at Home**: Show search and summary cards
-- **Show Files workflow**: Browse → Detail → Interpretation
-- **Demonstrate Graph**: Map visualization with filters
-- **Highlight Schema**: Show Labels and relationships
-- **Show Link Creation**: Quick wizard walkthrough
-- **End with Chat**: Ask questions about the data
+**Suggested Demo Flow:**
+1. **Login**: Show authentication (multi-user support)
+2. **Home Page**:
+   - Demonstrate search with filters
+   - Show summary cards (file count, scan count, extensions)
+   - Try quick chat input (inline responses)
+3. **Files Workflow**:
+   - Browse → Scan → Snapshot → File Detail → Interpretation
+   - Show data cleaning (delete files, auto-cleanup relationships)
+4. **Labels Page**:
+   - Show 3-column layout (list, editor, instance browser)
+   - Create/edit label with properties
+   - Define relationships
+   - Show keyboard navigation (arrow keys, Enter, Escape)
+   - Push schema to Neo4j
+5. **Map Visualization**:
+   - Show combined view (in-memory + local labels + Neo4j schema)
+   - Demonstrate filters (labels, relationships)
+   - Show color-coding (blue/red/green for different sources)
+   - Adjust layout and appearance controls
+6. **Integrations**:
+   - Configure external API endpoint
+   - Test connection
+   - Show encrypted credential storage
+7. **Links Creation**:
+   - Quick wizard walkthrough
+   - Use configured integration as data source
+   - Preview and execute to create relationships
+8. **Chat Interface**:
+   - Ask context-aware questions about indexed files
+   - Show conversation history (persisted per user)
+   - Demonstrate file references in responses
+9. **Settings**:
+   - Show modular settings tabs (Neo4j, Interpreters, Rclone, Chat, etc.)
+   - Demonstrate configuration backup/restore
 
 ### Known Limitations (to mention if asked)
 
 - Scans are synchronous (page waits for completion)
 - Very large files (>10MB) may have limited preview
-- Chat requires external LLM service (if not configured)
+- Chat requires external LLM service configuration
 - Map rendering slows with 1000+ nodes
-- Rclone features require rclone installed
+- Rclone features require rclone installed on system
+- Session auto-locks after inactivity (configurable timeout)
 
 ## Testing the Application
 
@@ -418,6 +525,7 @@ python -m scidk.app
 
 ## Additional Resources
 
+- **Feature Index**: `FEATURE_INDEX.md` (comprehensive feature list by page)
 - **Development Protocols**: `dev/README-planning.md`
 - **UX Testing Checklist**: `dev/ux-testing-checklist.md`
 - **E2E Testing Guide**: `docs/e2e-testing.md`
