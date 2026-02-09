@@ -8,7 +8,7 @@ Provides REST endpoints for:
 - SMTP configuration
 """
 from flask import Blueprint, jsonify, request, current_app
-from ..auth_middleware import require_admin
+from ..decorators import require_admin
 
 bp = Blueprint('alerts', __name__, url_prefix='/api')
 
