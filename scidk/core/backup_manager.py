@@ -26,15 +26,17 @@ class BackupManager:
 
     BACKUP_VERSION = "1.0"
 
-    def __init__(self, backup_dir: str = "backups"):
+    def __init__(self, backup_dir: str = "backups", alert_manager=None):
         """
         Initialize BackupManager.
 
         Args:
             backup_dir: Directory to store backup files (default: 'backups/')
+            alert_manager: Optional AlertManager instance for notifications
         """
         self.backup_dir = Path(backup_dir)
         self.backup_dir.mkdir(exist_ok=True)
+        self.alert_manager = alert_manager
 
     def create_backup(
         self,
@@ -130,6 +132,18 @@ class BackupManager:
             }
 
         except Exception as e:
+            # Trigger backup_failed alert
+            if self.alert_manager:
+                try:
+                    self.alert_manager.check_alerts('backup_failed', {
+                        'error': str(e),
+                        'timestamp': timestamp.isoformat(),
+                        'reason': reason,
+                        'value': 1  # Failed
+                    })
+                except Exception as alert_error:
+                    print(f"Failed to trigger backup_failed alert: {alert_error}")
+
             return {
                 'success': False,
                 'error': str(e)

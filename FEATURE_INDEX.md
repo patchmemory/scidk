@@ -413,6 +413,35 @@ Settings organized into separate template files for maintainability:
 - Encrypted credential storage
 - Test endpoint connections
 
+**Alerts Settings** (`_alerts.html`) (Recent: task:ops/monitoring/alert-system)
+- Alert/notification system for critical events
+- SMTP Configuration:
+  - Host, port, username, password (encrypted)
+  - From address, TLS toggle
+  - Test email button
+  - Save configuration
+- Alert Definitions:
+  - Pre-configured alerts:
+    - Import Failed
+    - High Discrepancies (threshold: 50)
+    - Backup Failed
+    - Neo4j Connection Lost
+    - Disk Space Critical (threshold: 95%)
+  - Enable/disable toggles
+  - Recipient configuration (comma-separated emails)
+  - Threshold adjustment (where applicable)
+  - Test alert button (sends test notification)
+  - Update button
+- Alert History:
+  - Recent alert trigger history
+  - Success/failure status
+  - Condition details
+  - Timestamp tracking
+- Backend integration:
+  - Backup manager triggers backup_failed alerts
+  - Extensible for scan/import, reconciliation, health checks
+  - Alert trigger logging and tracking
+
 **Configuration Backup/Restore** (Recent: PR #41)
 - Export all settings to JSON
 - Import settings from JSON backup

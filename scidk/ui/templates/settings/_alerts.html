@@ -1,0 +1,477 @@
+    <!-- Alerts Section -->
+    <section id="alerts-section" class="settings-section">
+  <h1>Alert Configuration</h1>
+  <p class="small">Configure automated alerts for critical system events. Alerts can send email notifications when important conditions are detected.</p>
+
+  <!-- SMTP Configuration (prerequisite) -->
+  <div class="smtp-config" style="margin-bottom: 2rem; padding: 1rem; background: #f9f9f9; border-radius: 4px;">
+    <h2>SMTP Configuration</h2>
+    <p class="small">Required for email alerts. Configure your email server settings to enable notifications.</p>
+
+    <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+      <div>
+        <label for="smtp-host">SMTP Host:</label>
+        <input type="text" id="smtp-host" class="form-control" placeholder="smtp.gmail.com" data-testid="smtp-host">
+      </div>
+      <div>
+        <label for="smtp-port">Port:</label>
+        <input type="number" id="smtp-port" class="form-control" value="587" data-testid="smtp-port">
+      </div>
+      <div>
+        <label for="smtp-username">Username:</label>
+        <input type="text" id="smtp-username" class="form-control" placeholder="user@example.com" data-testid="smtp-username">
+      </div>
+      <div>
+        <label for="smtp-password">Password:</label>
+        <input type="password" id="smtp-password" class="form-control" placeholder="Leave blank to keep existing" data-testid="smtp-password">
+      </div>
+      <div>
+        <label for="smtp-from">From Address:</label>
+        <input type="email" id="smtp-from" class="form-control" placeholder="noreply@example.com" data-testid="smtp-from">
+      </div>
+      <div style="display: flex; align-items: end;">
+        <div class="form-check">
+          <input id="smtp-use-tls" class="form-check-input" type="checkbox" checked data-testid="smtp-use-tls">
+          <label for="smtp-use-tls" class="form-check-label small">Use TLS</label>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
+      <button id="btn-save-smtp" class="btn btn-sm btn-primary" data-testid="btn-save-smtp">Save SMTP Config</button>
+      <button id="btn-test-smtp" class="btn btn-sm btn-outline-primary" data-testid="btn-test-smtp">Test Email</button>
+    </div>
+    <div id="smtp-message" class="small" style="margin-top: 0.5rem;"></div>
+  </div>
+
+  <!-- Alert Definitions -->
+  <h2>Alert Definitions</h2>
+  <p class="small">Enable/disable alerts and configure recipients. Click Test to send a test notification. Recipients should be comma-separated email addresses.</p>
+
+  <div id="alerts-list">
+    <p class="small" style="color: #999;"><em>Loading alerts...</em></p>
+  </div>
+
+  <!-- Alert History -->
+  <details style="margin-top: 2rem;">
+    <summary style="cursor: pointer; font-weight: bold; font-size: 1.1rem; padding: 0.5rem 0;">
+      <span style="display: inline-block; width: 1.5rem;">▸</span> Alert History
+    </summary>
+    <div style="margin-top: 1rem; padding: 1rem; background: #f9f9f9; border-radius: 4px;">
+      <p class="small">Recent alert trigger history (last 50 events)</p>
+      <div id="alert-history-list">
+        <p class="small" style="color: #999;"><em>Loading history...</em></p>
+      </div>
+    </div>
+  </details>
+
+  <script>
+    // ======================
+    // State Management
+    // ======================
+    let currentAlerts = [];
+    let smtpConfig = null;
+
+    // ======================
+    // SMTP Configuration
+    // ======================
+    async function loadSMTPConfig() {
+      try {
+        const resp = await fetch('/api/settings/smtp');
+        const data = await resp.json();
+
+        if (data.status === 'success' && data.smtp) {
+          smtpConfig = data.smtp;
+
+          // Populate form
+          document.getElementById('smtp-host').value = data.smtp.host || '';
+          document.getElementById('smtp-port').value = data.smtp.port || 587;
+          document.getElementById('smtp-username').value = data.smtp.username || '';
+          document.getElementById('smtp-from').value = data.smtp.from_address || '';
+          document.getElementById('smtp-use-tls').checked = data.smtp.use_tls !== false;
+
+          // Don't populate password (masked)
+          document.getElementById('smtp-password').placeholder = data.smtp.password ? '••••••••' : 'Enter password';
+
+          // Show status
+          if (data.smtp.enabled) {
+            showSMTPMessage('SMTP configured and enabled', 'success');
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load SMTP config:', err);
+      }
+    }
+
+    async function saveSMTPConfig() {
+      const host = document.getElementById('smtp-host').value.trim();
+      const port = parseInt(document.getElementById('smtp-port').value);
+      const username = document.getElementById('smtp-username').value.trim();
+      const password = document.getElementById('smtp-password').value; // Empty if not changed
+      const fromAddress = document.getElementById('smtp-from').value.trim();
+      const useTLS = document.getElementById('smtp-use-tls').checked;
+
+      if (!host || !port || !fromAddress) {
+        showSMTPMessage('Please fill in host, port, and from address', 'error');
+        return;
+      }
+
+      try {
+        const payload = {
+          host,
+          port,
+          username,
+          from_address: fromAddress,
+          use_tls: useTLS,
+          enabled: true
+        };
+
+        // Only include password if it was changed
+        if (password) {
+          payload.password = password;
+        }
+
+        const resp = await fetch('/api/settings/smtp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await resp.json();
+
+        if (data.status === 'success') {
+          showSMTPMessage('SMTP configuration saved successfully', 'success');
+          // Clear password field
+          document.getElementById('smtp-password').value = '';
+          document.getElementById('smtp-password').placeholder = '••••••••';
+          await loadSMTPConfig();
+        } else {
+          showSMTPMessage('Failed to save: ' + (data.error || 'Unknown error'), 'error');
+        }
+      } catch (err) {
+        showSMTPMessage('Network error: ' + err.message, 'error');
+      }
+    }
+
+    async function testSMTP() {
+      const btn = document.getElementById('btn-test-smtp');
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+
+      try {
+        const resp = await fetch('/api/settings/smtp/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await resp.json();
+
+        if (data.status === 'success') {
+          showSMTPMessage('✓ Test email sent successfully! Check your inbox.', 'success');
+        } else {
+          showSMTPMessage('✗ Test failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+      } catch (err) {
+        showSMTPMessage('Network error: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Test Email';
+      }
+    }
+
+    function showSMTPMessage(msg, type) {
+      const el = document.getElementById('smtp-message');
+      el.textContent = msg;
+      el.style.color = type === 'success' ? 'var(--success, #4caf50)' : 'var(--error, #f44336)';
+
+      // Auto-clear after 5 seconds for success messages
+      if (type === 'success') {
+        setTimeout(() => {
+          el.textContent = '';
+        }, 5000);
+      }
+    }
+
+    // ======================
+    // Alert Management
+    // ======================
+    async function loadAlerts() {
+      try {
+        const resp = await fetch('/api/settings/alerts');
+        const data = await resp.json();
+
+        if (data.status === 'success') {
+          currentAlerts = data.alerts || [];
+          renderAlerts();
+        }
+      } catch (err) {
+        console.error('Failed to load alerts:', err);
+        document.getElementById('alerts-list').innerHTML =
+          '<p class="small" style="color: var(--error, #f44336);"><em>Failed to load alerts</em></p>';
+      }
+    }
+
+    function renderAlerts() {
+      const container = document.getElementById('alerts-list');
+
+      if (currentAlerts.length === 0) {
+        container.innerHTML = '<p class="small" style="color: #999;"><em>No alerts configured</em></p>';
+        return;
+      }
+
+      let html = '<div style="display: grid; gap: 1rem;">';
+
+      for (const alert of currentAlerts) {
+        const recipientsText = alert.recipients && alert.recipients.length > 0
+          ? alert.recipients.join(', ')
+          : 'No recipients configured';
+
+        const thresholdText = alert.threshold ? ` (threshold: ${alert.threshold})` : '';
+
+        html += `
+          <div class="alert-card" style="padding: 1rem; background: ${alert.enabled ? '#fff' : '#f5f5f5'}; border: 1px solid #ddd; border-radius: 4px;">
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+              <div style="flex: 1;">
+                <h3 style="margin: 0 0 0.5rem 0; font-size: 1.1rem;">
+                  ${alert.name}
+                  ${alert.enabled ? '<span style="color: #4caf50; font-size: 0.9rem;">●</span>' : '<span style="color: #999; font-size: 0.9rem;">○</span>'}
+                </h3>
+                <p class="small" style="margin: 0 0 0.5rem 0; color: #666;">
+                  <strong>Condition:</strong> ${alert.condition_type}${thresholdText}
+                </p>
+                <div style="margin-bottom: 0.5rem;">
+                  <label class="small" for="alert-recipients-${alert.id}"><strong>Recipients:</strong></label>
+                  <input
+                    type="text"
+                    id="alert-recipients-${alert.id}"
+                    class="form-control form-control-sm"
+                    placeholder="email1@example.com, email2@example.com"
+                    value="${alert.recipients ? alert.recipients.join(', ') : ''}"
+                    style="margin-top: 0.25rem;"
+                    data-testid="alert-recipients-${alert.id}"
+                  >
+                </div>
+                ${alert.threshold !== null ? `
+                  <div style="margin-bottom: 0.5rem;">
+                    <label class="small" for="alert-threshold-${alert.id}"><strong>Threshold:</strong></label>
+                    <input
+                      type="number"
+                      id="alert-threshold-${alert.id}"
+                      class="form-control form-control-sm"
+                      value="${alert.threshold}"
+                      step="0.1"
+                      style="margin-top: 0.25rem; max-width: 150px;"
+                      data-testid="alert-threshold-${alert.id}"
+                    >
+                  </div>
+                ` : ''}
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-left: 1rem;">
+                <div class="form-check form-switch">
+                  <input
+                    class="form-check-input"
+                    type="checkbox"
+                    id="alert-enabled-${alert.id}"
+                    ${alert.enabled ? 'checked' : ''}
+                    onchange="toggleAlert('${alert.id}', this.checked)"
+                    data-testid="alert-enabled-${alert.id}"
+                  >
+                  <label class="form-check-label small" for="alert-enabled-${alert.id}">
+                    ${alert.enabled ? 'Enabled' : 'Disabled'}
+                  </label>
+                </div>
+                <button
+                  class="btn btn-sm btn-outline-primary"
+                  onclick="updateAlert('${alert.id}')"
+                  data-testid="btn-update-alert-${alert.id}"
+                >
+                  Update
+                </button>
+                <button
+                  class="btn btn-sm btn-outline-secondary"
+                  onclick="testAlert('${alert.id}')"
+                  data-testid="btn-test-alert-${alert.id}"
+                >
+                  Test
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      html += '</div>';
+      container.innerHTML = html;
+    }
+
+    async function toggleAlert(alertId, enabled) {
+      try {
+        const resp = await fetch(`/api/settings/alerts/${alertId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled })
+        });
+
+        const data = await resp.json();
+
+        if (data.status === 'success') {
+          // Update local state
+          const alert = currentAlerts.find(a => a.id === alertId);
+          if (alert) {
+            alert.enabled = enabled;
+          }
+          renderAlerts();
+        } else {
+          alert('Failed to toggle alert: ' + (data.error || 'Unknown error'));
+          // Reload to sync state
+          await loadAlerts();
+        }
+      } catch (err) {
+        alert('Network error: ' + err.message);
+        await loadAlerts();
+      }
+    }
+
+    async function updateAlert(alertId) {
+      const alert = currentAlerts.find(a => a.id === alertId);
+      if (!alert) return;
+
+      const recipientsInput = document.getElementById(`alert-recipients-${alertId}`).value;
+      const recipients = recipientsInput.split(',').map(e => e.trim()).filter(e => e.length > 0);
+
+      const payload = { recipients };
+
+      // Include threshold if applicable
+      if (alert.threshold !== null) {
+        const thresholdInput = document.getElementById(`alert-threshold-${alertId}`);
+        if (thresholdInput) {
+          payload.threshold = parseFloat(thresholdInput.value);
+        }
+      }
+
+      try {
+        const resp = await fetch(`/api/settings/alerts/${alertId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await resp.json();
+
+        if (data.status === 'success') {
+          // Update local state
+          alert.recipients = recipients;
+          if (payload.threshold !== undefined) {
+            alert.threshold = payload.threshold;
+          }
+          showAlertMessage(alertId, '✓ Updated successfully', 'success');
+          await loadAlerts();
+        } else {
+          showAlertMessage(alertId, '✗ Failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+      } catch (err) {
+        showAlertMessage(alertId, '✗ Network error: ' + err.message, 'error');
+      }
+    }
+
+    async function testAlert(alertId) {
+      const btn = event.target;
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+
+      try {
+        const resp = await fetch(`/api/settings/alerts/${alertId}/test`, {
+          method: 'POST'
+        });
+
+        const data = await resp.json();
+
+        if (data.status === 'success') {
+          showAlertMessage(alertId, '✓ Test alert sent! Check recipient inbox.', 'success');
+        } else {
+          showAlertMessage(alertId, '✗ Test failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+      } catch (err) {
+        showAlertMessage(alertId, '✗ Network error: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Test';
+      }
+    }
+
+    function showAlertMessage(alertId, msg, type) {
+      // Show message in SMTP message area for now
+      showSMTPMessage(msg, type);
+    }
+
+    // ======================
+    // Alert History
+    // ======================
+    async function loadAlertHistory() {
+      try {
+        const resp = await fetch('/api/settings/alerts/history?limit=50');
+        const data = await resp.json();
+
+        if (data.status === 'success') {
+          renderAlertHistory(data.history || []);
+        }
+      } catch (err) {
+        console.error('Failed to load alert history:', err);
+        document.getElementById('alert-history-list').innerHTML =
+          '<p class="small" style="color: var(--error, #f44336);"><em>Failed to load history</em></p>';
+      }
+    }
+
+    function renderAlertHistory(history) {
+      const container = document.getElementById('alert-history-list');
+
+      if (history.length === 0) {
+        container.innerHTML = '<p class="small" style="color: #999;"><em>No alert history</em></p>';
+        return;
+      }
+
+      let html = '<div style="display: grid; gap: 0.5rem; max-height: 400px; overflow-y: auto;">';
+
+      for (const entry of history) {
+        const alert = currentAlerts.find(a => a.id === entry.alert_id);
+        const alertName = alert ? alert.name : entry.alert_id;
+        const timestamp = new Date(entry.triggered_at * 1000).toLocaleString();
+        const statusIcon = entry.success ? '✓' : '✗';
+        const statusColor = entry.success ? '#4caf50' : '#f44336';
+
+        html += `
+          <div style="padding: 0.5rem; background: #fff; border-left: 3px solid ${statusColor}; font-size: 0.9rem;">
+            <strong style="color: ${statusColor};">${statusIcon}</strong>
+            <strong>${alertName}</strong> - ${timestamp}
+            ${entry.condition_details && entry.condition_details.test ? ' <span style="color: #ff9800;">[TEST]</span>' : ''}
+            ${entry.error_message ? `<br><span class="small" style="color: #f44336;">${entry.error_message}</span>` : ''}
+          </div>
+        `;
+      }
+
+      html += '</div>';
+      container.innerHTML = html;
+    }
+
+    // ======================
+    // Event Listeners
+    // ======================
+    document.getElementById('btn-save-smtp').addEventListener('click', saveSMTPConfig);
+    document.getElementById('btn-test-smtp').addEventListener('click', testSMTP);
+
+    // Expand details on click
+    document.querySelector('details[open]') || document.querySelector('details').addEventListener('toggle', function() {
+      if (this.open) {
+        loadAlertHistory();
+      }
+    });
+
+    // ======================
+    // Initialization
+    // ======================
+    (async function init() {
+      await loadSMTPConfig();
+      await loadAlerts();
+    })();
+  </script>
+</section>
