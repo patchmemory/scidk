@@ -42,6 +42,9 @@ def _pin_repo_local_test_env():
     # Prefer sqlite-backed state for tests by default
     os.environ.setdefault("SCIDK_STATE_BACKEND", "sqlite")
 
+    # Settings DB for auth and configuration
+    os.environ.setdefault("SCIDK_SETTINGS_DB", str(db_dir / 'test_settings.db'))
+
     # Providers and auth safe defaults
     os.environ.setdefault("SCIDK_PROVIDERS", "local_fs,mounted_fs")
     os.environ.setdefault("NEO4J_AUTH", "none")
@@ -273,6 +276,7 @@ def app():
     application.config.update({
         "TESTING": True,
         "state.backend": (os.environ.get("SCIDK_STATE_BACKEND") or "sqlite").lower(),
+        "SCIDK_SETTINGS_DB": os.environ.get("SCIDK_SETTINGS_DB", "scidk_settings.db"),
     })
     ctx = application.app_context()
     ctx.push()

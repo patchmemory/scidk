@@ -1,0 +1,374 @@
+<section id="health-section" class="settings-section">
+  <h1>System Health Dashboard</h1>
+  <p class="small">Real-time monitoring of all system components. Auto-refreshes every 30 seconds.</p>
+
+  <div id="health-status-overall" class="health-overall">
+    <h2>Overall Status: <span id="health-overall-status" class="status-indicator">Loading...</span></h2>
+    <p class="small">Last checked: <span id="health-last-check">Never</span> | Next check: <span id="health-next-check">-</span></p>
+  </div>
+
+  <div id="health-components" class="health-grid">
+    <!-- Flask -->
+    <div class="health-card" data-component="flask">
+      <h3>Flask Application</h3>
+      <div class="status-badge" id="status-flask">-</div>
+      <p class="metric">Uptime: <span id="flask-uptime">-</span></p>
+      <p class="metric">Memory: <span id="flask-memory">-</span> MB</p>
+    </div>
+
+    <!-- SQLite -->
+    <div class="health-card" data-component="sqlite">
+      <h3>SQLite Database</h3>
+      <div class="status-badge" id="status-sqlite">-</div>
+      <p class="metric">Size: <span id="sqlite-size">-</span> MB</p>
+      <p class="metric">Journal: <span id="sqlite-journal">-</span></p>
+    </div>
+
+    <!-- Neo4j -->
+    <div class="health-card" data-component="neo4j">
+      <h3>Neo4j Graph DB</h3>
+      <div class="status-badge" id="status-neo4j">-</div>
+      <p class="metric">Response: <span id="neo4j-response">-</span> ms</p>
+      <p class="metric">Nodes: <span id="neo4j-nodes">-</span></p>
+    </div>
+
+    <!-- Interpreters -->
+    <div class="health-card" data-component="interpreters">
+      <h3>Interpreters</h3>
+      <div class="status-badge" id="status-interpreters">-</div>
+      <p class="metric">Enabled: <span id="interpreters-enabled">-</span>/<span id="interpreters-total">-</span></p>
+    </div>
+
+    <!-- Disk -->
+    <div class="health-card" data-component="disk">
+      <h3>Disk Space</h3>
+      <div class="status-badge" id="status-disk">-</div>
+      <p class="metric">Free: <span id="disk-free">-</span> GB / <span id="disk-total">-</span> GB</p>
+      <p class="metric">Used: <span id="disk-percent">-</span>%</p>
+    </div>
+
+    <!-- Memory -->
+    <div class="health-card" data-component="memory">
+      <h3>Memory</h3>
+      <div class="status-badge" id="status-memory">-</div>
+      <p class="metric">Used: <span id="memory-used">-</span> MB / <span id="memory-total">-</span> MB</p>
+      <p class="metric">Usage: <span id="memory-percent">-</span>%</p>
+    </div>
+
+    <!-- CPU -->
+    <div class="health-card" data-component="cpu">
+      <h3>CPU Load</h3>
+      <div class="status-badge" id="status-cpu">-</div>
+      <p class="metric">Load: <span id="cpu-load">-</span>%</p>
+    </div>
+  </div>
+
+  <!-- Detail Modal -->
+  <div id="health-detail-modal" class="health-modal" style="display: none;">
+    <div class="health-modal-content">
+      <span class="health-modal-close">&times;</span>
+      <h2 id="health-modal-title">Component Details</h2>
+      <pre id="health-modal-body"></pre>
+    </div>
+  </div>
+
+  <style>
+    .health-overall {
+      padding: 1rem;
+      background: #f9f9f9;
+      border-radius: 4px;
+      margin-bottom: 1.5rem;
+    }
+
+    .health-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1rem;
+    }
+
+    .health-card {
+      padding: 1rem;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background: white;
+      cursor: pointer;
+      transition: box-shadow 0.2s;
+    }
+
+    .health-card:hover {
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .health-card h3 {
+      margin-top: 0;
+      font-size: 1rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 12px;
+      font-size: 0.85rem;
+      font-weight: bold;
+      margin: 0.5rem 0;
+    }
+
+    .status-badge.ok, .status-badge.healthy, .status-badge.connected, .status-badge.good, .status-badge.normal, .status-badge.low {
+      background: #19c37d;
+      color: white;
+    }
+
+    .status-badge.warning, .status-badge.high {
+      background: #ffa500;
+      color: white;
+    }
+
+    .status-badge.critical, .status-badge.error, .status-badge.unavailable {
+      background: #e74c3c;
+      color: white;
+    }
+
+    .status-badge.not_configured {
+      background: #6c757d;
+      color: white;
+    }
+
+    .metric {
+      font-size: 0.9rem;
+      margin: 0.25rem 0;
+      color: #666;
+    }
+
+    .status-indicator {
+      font-weight: bold;
+    }
+
+    .status-indicator.healthy {
+      color: #19c37d;
+    }
+
+    .status-indicator.warning {
+      color: #ffa500;
+    }
+
+    .status-indicator.critical {
+      color: #e74c3c;
+    }
+
+    /* Modal styles */
+    .health-modal {
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background-color: rgba(0,0,0,0.4);
+    }
+
+    .health-modal-content {
+      background-color: #fefefe;
+      margin: 10% auto;
+      padding: 20px;
+      border: 1px solid #888;
+      border-radius: 4px;
+      width: 80%;
+      max-width: 600px;
+    }
+
+    .health-modal-close {
+      color: #aaa;
+      float: right;
+      font-size: 28px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .health-modal-close:hover,
+    .health-modal-close:focus {
+      color: black;
+    }
+
+    #health-modal-body {
+      background: #f5f5f5;
+      padding: 1rem;
+      border-radius: 4px;
+      overflow-x: auto;
+      max-height: 400px;
+    }
+  </style>
+
+  <script>
+    let healthRefreshInterval = null;
+    let lastHealthData = null;
+
+    function updateHealthDashboard() {
+      fetch('/api/health/comprehensive')
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+          }
+          return res.json();
+        })
+        .then(data => {
+          lastHealthData = data;
+
+          // Update overall status
+          document.getElementById('health-overall-status').textContent = data.status.toUpperCase();
+          document.getElementById('health-overall-status').className = `status-indicator ${data.status}`;
+
+          const now = new Date();
+          document.getElementById('health-last-check').textContent = now.toLocaleTimeString();
+          const nextCheck = new Date(now.getTime() + 30000);
+          document.getElementById('health-next-check').textContent = nextCheck.toLocaleTimeString();
+
+          // Update each component
+          const components = data.components;
+
+          // Flask
+          if (components.flask) {
+            updateStatusBadge('flask', components.flask.status);
+            document.getElementById('flask-uptime').textContent = formatUptime(components.flask.uptime_seconds);
+            document.getElementById('flask-memory').textContent = components.flask.memory_mb || '-';
+          }
+
+          // SQLite
+          if (components.sqlite) {
+            updateStatusBadge('sqlite', components.sqlite.status);
+            document.getElementById('sqlite-size').textContent = components.sqlite.size_mb || '-';
+            document.getElementById('sqlite-journal').textContent = components.sqlite.journal_mode || '-';
+          }
+
+          // Neo4j
+          if (components.neo4j) {
+            updateStatusBadge('neo4j', components.neo4j.status);
+            document.getElementById('neo4j-response').textContent = components.neo4j.response_time_ms || '-';
+            document.getElementById('neo4j-nodes').textContent = components.neo4j.node_count || '-';
+          }
+
+          // Interpreters
+          if (components.interpreters) {
+            updateStatusBadge('interpreters', components.interpreters.status);
+            document.getElementById('interpreters-enabled').textContent = components.interpreters.enabled_count || 0;
+            document.getElementById('interpreters-total').textContent = components.interpreters.total_count || 0;
+          }
+
+          // Disk
+          if (components.disk) {
+            updateStatusBadge('disk', components.disk.status);
+            document.getElementById('disk-free').textContent = components.disk.free_gb || '-';
+            document.getElementById('disk-total').textContent = components.disk.total_gb || '-';
+            document.getElementById('disk-percent').textContent = components.disk.percent_used || '-';
+          }
+
+          // Memory
+          if (components.memory) {
+            updateStatusBadge('memory', components.memory.status);
+            document.getElementById('memory-used').textContent = components.memory.used_mb || '-';
+            document.getElementById('memory-total').textContent = components.memory.total_mb || '-';
+            document.getElementById('memory-percent').textContent = components.memory.percent_used || '-';
+          }
+
+          // CPU
+          if (components.cpu) {
+            updateStatusBadge('cpu', components.cpu.status);
+            document.getElementById('cpu-load').textContent = components.cpu.load_percent || '-';
+          }
+        })
+        .catch(err => {
+          console.error('Health check failed:', err);
+          document.getElementById('health-overall-status').textContent = 'ERROR';
+          document.getElementById('health-overall-status').className = 'status-indicator critical';
+        });
+    }
+
+    function updateStatusBadge(component, status) {
+      const badge = document.getElementById(`status-${component}`);
+      if (badge) {
+        badge.textContent = status.toUpperCase().replace('_', ' ');
+        badge.className = `status-badge ${status}`;
+      }
+    }
+
+    function formatUptime(seconds) {
+      if (!seconds || seconds < 0) return '-';
+      const days = Math.floor(seconds / 86400);
+      const hours = Math.floor((seconds % 86400) / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      if (days > 0) return `${days}d ${hours}h`;
+      if (hours > 0) return `${hours}h ${minutes}m`;
+      return `${minutes}m`;
+    }
+
+    // Component detail modal
+    document.querySelectorAll('.health-card').forEach(card => {
+      card.addEventListener('click', function() {
+        const component = this.dataset.component;
+        if (lastHealthData && lastHealthData.components[component]) {
+          const modal = document.getElementById('health-detail-modal');
+          const title = document.getElementById('health-modal-title');
+          const body = document.getElementById('health-modal-body');
+
+          title.textContent = this.querySelector('h3').textContent + ' Details';
+          body.textContent = JSON.stringify(lastHealthData.components[component], null, 2);
+          modal.style.display = 'block';
+        }
+      });
+    });
+
+    // Modal close handlers
+    document.querySelector('.health-modal-close').addEventListener('click', function() {
+      document.getElementById('health-detail-modal').style.display = 'none';
+    });
+
+    window.addEventListener('click', function(event) {
+      const modal = document.getElementById('health-detail-modal');
+      if (event.target === modal) {
+        modal.style.display = 'none';
+      }
+    });
+
+    // Initialize on section activation
+    function initHealthDashboard() {
+      if (!healthRefreshInterval) {
+        updateHealthDashboard();
+        healthRefreshInterval = setInterval(updateHealthDashboard, 30000);
+      }
+    }
+
+    function cleanupHealthDashboard() {
+      if (healthRefreshInterval) {
+        clearInterval(healthRefreshInterval);
+        healthRefreshInterval = null;
+      }
+    }
+
+    // Start monitoring when health section is activated
+    const healthSection = document.getElementById('health-section');
+    if (healthSection) {
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+            if (healthSection.classList.contains('active')) {
+              initHealthDashboard();
+            } else {
+              cleanupHealthDashboard();
+            }
+          }
+        });
+      });
+
+      observer.observe(healthSection, { attributes: true });
+
+      // Initialize if already active
+      if (healthSection.classList.contains('active')) {
+        initHealthDashboard();
+      }
+    }
+
+    // Clean up on page unload
+    window.addEventListener('beforeunload', cleanupHealthDashboard);
+  </script>
+</section>

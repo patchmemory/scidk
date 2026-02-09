@@ -8,6 +8,7 @@ import os
 import time
 
 from ..helpers import get_neo4j_params, build_commit_rows, commit_to_neo4j, get_or_build_scan_index
+from ..decorators import require_admin
 bp = Blueprint('admin', __name__, url_prefix='/api')
 
 def _get_ext():
@@ -116,6 +117,204 @@ def api_health():
             info['sqlite']['error'] = str(e)
         # Always return 200 so UIs can render details; clients can decide on status
         return jsonify(info), 200
+
+
+@bp.get('/health/comprehensive')
+@require_admin
+def api_health_comprehensive():
+    """
+    Comprehensive system health check for admin dashboard.
+
+    Returns health status for all system components: Flask, SQLite, Neo4j,
+    interpreters, disk, memory, and CPU usage.
+
+    Returns:
+        JSON with overall status and individual component health metrics
+    """
+    import psutil
+    from ...core import path_index_sqlite as pix
+
+    components = {}
+    start_time_key = 'START_TIME'
+
+    # Flask/Application health
+    try:
+        uptime = int(time.time() - current_app.config.get(start_time_key, time.time()))
+        memory_mb = round(psutil.Process().memory_info().rss / 1024 / 1024, 1)
+        components['flask'] = {
+            'status': 'ok',
+            'uptime_seconds': uptime,
+            'memory_mb': memory_mb
+        }
+    except Exception as e:
+        components['flask'] = {
+            'status': 'error',
+            'error': str(e)
+        }
+
+    # SQLite health (reuse existing logic)
+    try:
+        conn = pix.connect()
+        try:
+            dbp = pix._db_path()
+            mode = (conn.execute('PRAGMA journal_mode;').fetchone() or [''])[0]
+
+            # Get database size
+            size_bytes = 0
+            try:
+                from pathlib import Path as _P
+                db_path = _P(str(dbp))
+                if db_path.exists():
+                    size_bytes = db_path.stat().st_size
+            except Exception:
+                pass
+
+            # Get row count from scans table
+            row_count = 0
+            try:
+                result = conn.execute('SELECT COUNT(*) FROM scans').fetchone()
+                row_count = result[0] if result else 0
+            except Exception:
+                pass
+
+            components['sqlite'] = {
+                'status': 'ok',
+                'path': str(dbp),
+                'size_mb': round(size_bytes / 1024 / 1024, 2),
+                'journal_mode': mode.lower() if isinstance(mode, str) else 'unknown',
+                'row_count': row_count
+            }
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        components['sqlite'] = {
+            'status': 'error',
+            'error': str(e)
+        }
+
+    # Neo4j health (reuse existing logic)
+    try:
+        uri, user, pwd, database, auth_mode = get_neo4j_params()
+        if uri:
+            neo4j_start = time.time()
+            try:
+                from neo4j import GraphDatabase
+                driver = None
+                try:
+                    driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
+                    with driver.session(database=database) as sess:
+                        result = sess.run("MATCH (n) RETURN count(n) AS count")
+                        rec = result.single()
+                        node_count = rec['count'] if rec else 0
+                        response_ms = round((time.time() - neo4j_start) * 1000)
+                        components['neo4j'] = {
+                            'status': 'connected',
+                            'response_time_ms': response_ms,
+                            'node_count': node_count
+                        }
+                finally:
+                    if driver:
+                        driver.close()
+            except Exception as e:
+                components['neo4j'] = {
+                    'status': 'unavailable',
+                    'error': str(e)
+                }
+        else:
+            components['neo4j'] = {
+                'status': 'not_configured'
+            }
+    except Exception as e:
+        components['neo4j'] = {
+            'status': 'error',
+            'error': str(e)
+        }
+
+    # Interpreters health
+    try:
+        from ...core.interpreter_registry import list_interpreters
+        interpreters = list_interpreters()
+        enabled = [i for i in interpreters if i.get('enabled', False)]
+        components['interpreters'] = {
+            'status': 'ok',
+            'enabled_count': len(enabled),
+            'total_count': len(interpreters)
+        }
+    except Exception as e:
+        components['interpreters'] = {
+            'status': 'error',
+            'error': str(e)
+        }
+
+    # Disk health
+    try:
+        disk = psutil.disk_usage('/')
+        disk_percent = round(disk.percent, 1)
+        components['disk'] = {
+            'status': 'critical' if disk_percent > 95 else 'warning' if disk_percent > 85 else 'good',
+            'free_gb': round(disk.free / 1024**3, 1),
+            'total_gb': round(disk.total / 1024**3, 1),
+            'percent_used': disk_percent
+        }
+    except Exception as e:
+        components['disk'] = {
+            'status': 'error',
+            'error': str(e)
+        }
+
+    # Memory health
+    try:
+        mem = psutil.virtual_memory()
+        mem_percent = round(mem.percent, 1)
+        components['memory'] = {
+            'status': 'critical' if mem_percent > 90 else 'high' if mem_percent > 75 else 'normal',
+            'used_mb': round(mem.used / 1024 / 1024),
+            'total_mb': round(mem.total / 1024 / 1024),
+            'percent_used': mem_percent
+        }
+    except Exception as e:
+        components['memory'] = {
+            'status': 'error',
+            'error': str(e)
+        }
+
+    # CPU health
+    try:
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        components['cpu'] = {
+            'status': 'high' if cpu_percent > 80 else 'normal' if cpu_percent > 20 else 'low',
+            'load_percent': round(cpu_percent, 1)
+        }
+    except Exception as e:
+        components['cpu'] = {
+            'status': 'error',
+            'error': str(e)
+        }
+
+    # Calculate overall status
+    statuses = []
+    for comp in components.values():
+        status = comp.get('status', 'unknown')
+        if status == 'error' or status == 'critical':
+            statuses.append('critical')
+        elif status == 'warning' or status == 'high':
+            statuses.append('warning')
+        elif status == 'unavailable' or status == 'not_configured':
+            # Don't count unavailable/not_configured as critical
+            pass
+        else:
+            statuses.append('healthy')
+
+    overall = 'critical' if 'critical' in statuses else 'warning' if 'warning' in statuses else 'healthy'
+
+    return jsonify({
+        'status': overall,
+        'timestamp': time.time(),
+        'components': components
+    }), 200
 
 
 @bp.get('/metrics')

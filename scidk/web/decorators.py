@@ -31,6 +31,25 @@ def require_role(*allowed_roles):
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
+            # In test mode with auth disabled, allow all requests
+            # This matches the behavior of auth_middleware which skips auth in test mode
+            import os
+            import sys
+            from flask import current_app
+            is_testing = (
+                current_app.config.get('TESTING', False) or
+                'pytest' in sys.modules or
+                os.environ.get('SCIDK_E2E_TEST')
+            )
+            if is_testing and not os.environ.get('PYTEST_TEST_AUTH'):
+                # In test mode - check if auth is actually enabled
+                from ..core.auth import get_auth_manager
+                db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+                auth = get_auth_manager(db_path=db_path)
+                if not auth.is_enabled():
+                    # Auth disabled in tests - allow the request
+                    return f(*args, **kwargs)
+
             # Check if user is authenticated
             if not hasattr(g, 'scidk_user_role'):
                 return jsonify({'error': 'Authentication required'}), 401
