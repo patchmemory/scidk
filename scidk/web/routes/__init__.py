@@ -43,6 +43,7 @@ def register_blueprints(app):
     from . import api_audit
     from . import api_queries
     from . import api_alerts
+    from . import api_logs
 
     # Register UI blueprint
     app.register_blueprint(ui.bp)
@@ -66,3 +67,4 @@ def register_blueprints(app):
     app.register_blueprint(api_users.bp)
     app.register_blueprint(api_audit.bp)
     app.register_blueprint(api_alerts.bp)
+    app.register_blueprint(api_logs.bp)
