@@ -374,6 +374,7 @@ def update_smtp_config():
             username=data.get('username', ''),
             password=data.get('password'),  # Can be None to keep existing
             from_address=data['from_address'],
+            recipients=data.get('recipients', []),  # Global recipients list
             use_tls=data.get('use_tls', True),
             enabled=data.get('enabled', True)
         )
