@@ -409,6 +409,26 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 10)
             version = 10
 
+        # v11: Add plugin_settings table for per-plugin configuration
+        if version < 11:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS plugin_settings (
+                    plugin_name TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    value TEXT,
+                    encrypted INTEGER DEFAULT 0,
+                    updated_at REAL NOT NULL,
+                    PRIMARY KEY (plugin_name, key)
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_plugin_settings_name ON plugin_settings(plugin_name);")
+
+            conn.commit()
+            _set_version(conn, 11)
+            version = 11
+
         return version
     finally:
         if own:

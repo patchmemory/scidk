@@ -151,6 +151,10 @@
                      onchange="togglePlugin('${plugin.module_name || plugin.name}', this.checked)">
               Enable Plugin
             </label>
+            <button class="btn-secondary" style="margin-left: 1rem;"
+                    onclick="openPluginSettings('${plugin.module_name || plugin.name}')">
+              Configure
+            </button>
           </div>
         </div>
       `;
@@ -185,4 +189,256 @@
       loadPlugins(); // Reload to reset UI state
     });
   }
+
+  function openPluginSettings(pluginName) {
+    // Fetch plugin settings and schema
+    fetch('/api/plugins/' + encodeURIComponent(pluginName) + '/settings')
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          showPluginSettingsModal(pluginName, data.settings || {}, data.schema || null);
+        } else {
+          alert('Error loading settings: ' + (data.error || 'Unknown error'));
+        }
+      })
+      .catch(error => {
+        alert('Error loading settings: ' + error.message);
+      });
+  }
+
+  function showPluginSettingsModal(pluginName, settings, schema) {
+    // Create modal
+    const modal = document.createElement('div');
+    modal.className = 'plugin-settings-modal';
+    modal.innerHTML = `
+      <div class="plugin-settings-modal-content">
+        <div class="plugin-settings-modal-header">
+          <h2>Configure ${pluginName}</h2>
+          <button class="close-btn" onclick="closePluginSettingsModal()">&times;</button>
+        </div>
+        <div class="plugin-settings-modal-body" id="plugin-settings-form">
+          ${renderSettingsForm(pluginName, settings, schema)}
+        </div>
+        <div class="plugin-settings-modal-footer">
+          <button class="btn-primary" onclick="savePluginSettings('${pluginName}')">Save Settings</button>
+          <button class="btn-secondary" onclick="closePluginSettingsModal()">Cancel</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+
+  function renderSettingsForm(pluginName, settings, schema) {
+    if (!schema) {
+      return '<p class="small">This plugin does not define any configurable settings.</p>';
+    }
+
+    let html = '<form id="plugin-settings-form-fields">';
+
+    for (const [key, fieldSchema] of Object.entries(schema)) {
+      const value = settings[key] !== undefined ? settings[key] : (fieldSchema.default || '');
+      const fieldType = fieldSchema.type || 'text';
+      const required = fieldSchema.required ? 'required' : '';
+      const description = fieldSchema.description || '';
+
+      html += `
+        <div class="form-group">
+          <label for="plugin-field-${key}">
+            ${key}${required ? ' *' : ''}
+          </label>
+          ${description ? `<p class="small">${description}</p>` : ''}
+      `;
+
+      if (fieldType === 'boolean') {
+        html += `
+          <input type="checkbox" id="plugin-field-${key}" name="${key}"
+                 ${value ? 'checked' : ''}>
+        `;
+      } else if (fieldType === 'password') {
+        html += `
+          <input type="password" id="plugin-field-${key}" name="${key}"
+                 value="${value}" ${required} class="form-control">
+        `;
+      } else if (fieldType === 'number') {
+        html += `
+          <input type="number" id="plugin-field-${key}" name="${key}"
+                 value="${value}" ${required} class="form-control">
+        `;
+      } else if (fieldType === 'select' && fieldSchema.options) {
+        html += `<select id="plugin-field-${key}" name="${key}" ${required} class="form-control">`;
+        for (const option of fieldSchema.options) {
+          const selected = value === option ? 'selected' : '';
+          html += `<option value="${option}" ${selected}>${option}</option>`;
+        }
+        html += `</select>`;
+      } else {
+        // Default to text input
+        html += `
+          <input type="text" id="plugin-field-${key}" name="${key}"
+                 value="${value}" ${required} class="form-control">
+        `;
+      }
+
+      html += '</div>';
+    }
+
+    html += '</form>';
+    return html;
+  }
+
+  function savePluginSettings(pluginName) {
+    const form = document.getElementById('plugin-settings-form-fields');
+    if (!form) return;
+
+    // Collect form data
+    const settings = {};
+    const formData = new FormData(form);
+
+    for (const [key, value] of formData.entries()) {
+      const input = form.querySelector(`[name="${key}"]`);
+      if (input && input.type === 'checkbox') {
+        settings[key] = input.checked;
+      } else {
+        settings[key] = value;
+      }
+    }
+
+    // Save to API
+    fetch('/api/plugins/' + encodeURIComponent(pluginName) + '/settings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ settings: settings })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        alert('Settings saved successfully!');
+        closePluginSettingsModal();
+      } else {
+        alert('Error saving settings: ' + (data.error || 'Unknown error'));
+        if (data.errors) {
+          alert('Validation errors:\n' + data.errors.join('\n'));
+        }
+      }
+    })
+    .catch(error => {
+      alert('Error saving settings: ' + error.message);
+    });
+  }
+
+  function closePluginSettingsModal() {
+    const modal = document.querySelector('.plugin-settings-modal');
+    if (modal) {
+      modal.remove();
+    }
+  }
 </script>
+
+<style>
+  .plugin-settings-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  }
+
+  .plugin-settings-modal-content {
+    background: white;
+    border-radius: 8px;
+    max-width: 600px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  }
+
+  .plugin-settings-modal-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .plugin-settings-modal-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+  }
+
+  .plugin-settings-modal-header .close-btn {
+    background: none;
+    border: none;
+    font-size: 2rem;
+    cursor: pointer;
+    color: #666;
+    line-height: 1;
+  }
+
+  .plugin-settings-modal-header .close-btn:hover {
+    color: #333;
+  }
+
+  .plugin-settings-modal-body {
+    padding: 1.5rem;
+  }
+
+  .plugin-settings-modal-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #ddd;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+
+  .form-group {
+    margin-bottom: 1.5rem;
+  }
+
+  .form-group label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+  }
+
+  .form-control {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 1rem;
+  }
+
+  .btn-primary, .btn-secondary {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+  }
+
+  .btn-primary {
+    background: #007bff;
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: #0056b3;
+  }
+
+  .btn-secondary {
+    background: #6c757d;
+    color: white;
+  }
+
+  .btn-secondary:hover {
+    background: #545b62;
+  }
+</style>

@@ -38,6 +38,46 @@ def status():
     })
 
 
+def get_settings_schema():
+    """Define the settings schema for this plugin.
+
+    Returns:
+        dict: Settings schema defining configurable options
+    """
+    return {
+        'api_key': {
+            'type': 'password',
+            'required': False,
+            'description': 'Example API key (encrypted when saved)',
+            'default': ''
+        },
+        'endpoint_url': {
+            'type': 'text',
+            'required': False,
+            'description': 'Example endpoint URL',
+            'default': 'https://api.example.com'
+        },
+        'enabled_features': {
+            'type': 'text',
+            'required': False,
+            'description': 'Comma-separated list of enabled features',
+            'default': 'feature1,feature2'
+        },
+        'max_retries': {
+            'type': 'number',
+            'required': False,
+            'description': 'Maximum number of retry attempts',
+            'default': 3
+        },
+        'debug_mode': {
+            'type': 'boolean',
+            'required': False,
+            'description': 'Enable debug logging',
+            'default': False
+        }
+    }
+
+
 def register_plugin(app):
     """Register the example plugin with the Flask app.
 
