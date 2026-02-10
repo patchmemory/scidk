@@ -634,6 +634,12 @@
     // Keep a small client-side list for local (synchronous) scans so they appear alongside server tasks
     window.scidkLocalTasks = window.scidkLocalTasks || [];
     const fmtPct = (x) => Math.round((x || 0) * 100);
+    function fmtETA(seconds){
+      if (!seconds || seconds <= 0) return '';
+      if (seconds < 60) return `~${seconds}s remaining`;
+      if (seconds < 3600) return `~${Math.round(seconds/60)}m remaining`;
+      return `~${Math.round(seconds/3600)}h ${Math.round((seconds%3600)/60)}m remaining`;
+    }
     function renderTasks(tasks){
       if (!tasks || tasks.length === 0){ tasksDiv.innerHTML = '<p class="small">No background tasks.</p>'; return; }
       tasksDiv.innerHTML = tasks.map(t => {
@@ -651,7 +657,9 @@
           extra = `<div class=\"small\">Neo4j: attempted=${attempted}${written!==''?(' — prepared='+written):''}${dbv!==''?(' — verify='+dbv+' (files:'+dbf+', folders:'+dbfo+')'):''}${err}</div>`;
         }
         const cancelBtn = (t.status==='running') ? ` <button class=\"btn btn-sm btn-outline-danger\" data-cancel=\"${t.id}\">Cancel</button>` : '';
-        const info = `<div class=\"small\">${t.type} ${t.status} — ${t.path || ''} — ${t.processed||0}/${total} (${pct}%) ${t.error?(' — error: '+t.error):''} ${t.scan_id?(' — <a href=\"/datasets?scan_id='+t.scan_id+'\">open</a>'):''} ${cancelBtn}</div>`;
+        const statusMsg = t.status_message ? ` — ${t.status_message}` : '';
+        const etaMsg = (t.status === 'running' && t.eta_seconds) ? ` — ${fmtETA(t.eta_seconds)}` : '';
+        const info = `<div class=\"small\">${t.type} ${t.status} — ${t.path || ''} — ${t.processed||0}/${total} (${pct}%)${statusMsg}${etaMsg} ${t.error?(' — error: '+t.error):''} ${t.scan_id?(' — <a href=\"/datasets?scan_id='+t.scan_id+'\">open</a>'):''} ${cancelBtn}</div>`;
         return `<div style=\"margin:.25rem 0\">${bar}${info}${extra}</div>`;
       }).join('');
       // Attach cancel handlers
