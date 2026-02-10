@@ -163,6 +163,161 @@ Each instance has different API credentials, endpoints, and sync intervals.
 3. **Enable/disable**: Use enabled flag instead of deleting instances
 4. **Test before production**: Test with small datasets first
 
+## Graph Integration
+
+### Plugin → Label → Integration Architecture
+
+Plugin instances can publish their data schemas to the **Labels page**, creating a clean path from data import to graph relationships:
+
+```
+Plugin Instance → Publishes Schema → Label Definition → Used in Integrations
+```
+
+### Publishing Labels from Plugin Instances
+
+**For `data_import` category plugins** (e.g., table_loader):
+
+1. **During Instance Creation**: Optionally configure graph integration in wizard
+   - Enable "Create Label from this data"
+   - Specify label name (auto-generated from table name)
+   - Select primary key column
+   - Choose sync strategy (on-demand or automatic)
+
+2. **Label Registration**: Instance publishes schema to Labels page
+   ```bash
+   POST /api/plugins/instances/{id}/publish-label
+   {
+     "label_name": "LabEquipment",
+     "primary_key": "serial_number",
+     "sync_strategy": "on_demand"
+   }
+   ```
+
+3. **Schema Auto-Detection**: Properties inferred from SQLite table structure
+   - Column names → property names
+   - Column types → property types (string, integer, boolean, etc.)
+   - NOT NULL constraints → required properties
+
+4. **Label Appears**: Labels page shows new label with plugin source badge:
+   - 📦 Plugin: iLab Equipment 2024
+   - 45 rows in SQLite, 0 nodes in graph
+
+5. **Sync to Neo4j**: User clicks [Sync to Neo4j] button
+   - Reads data from SQLite table
+   - Creates/updates nodes in Neo4j
+   - Records sync timestamp and node count
+
+6. **Available in Integrations**: Label automatically discovered by Integrations page
+   - Can create relationships with other labels
+   - Example: LabEquipment → USED_BY → Researcher
+
+### Plugin Categories
+
+**data_import**: Imports tabular data, can publish labels
+- Examples: table_loader, csv_importer, api_fetcher
+- Graph behavior: Creates label from table schema
+
+**graph_inject**: Directly injects graph (nodes + relationships)
+- Examples: ontology_loader, knowledge_base_importer
+- Graph behavior: Registers labels it creates (read-only)
+
+**enrichment**: Adds properties to existing nodes
+- Examples: metadata_enricher, annotation_engine
+- Graph behavior: No new labels
+
+**exporter**: Reads data, no graph writes
+- Examples: report_generator, backup_exporter
+- Graph behavior: None
+
+### Example: Table Loader with Graph Integration
+
+```python
+# 1. Create instance with graph config
+instance_config = {
+    "template_id": "table_loader",
+    "name": "iLab Equipment 2024",
+    "config": {
+        "file_path": "/data/equipment.xlsx",
+        "table_name": "ilab_equipment_2024"
+    },
+    "graph_config": {
+        "create_label": True,
+        "label_name": "LabEquipment",
+        "primary_key": "serial_number",
+        "sync_strategy": "on_demand"
+    }
+}
+
+# 2. Instance automatically publishes label
+# Label "LabEquipment" now appears on Labels page
+
+# 3. User syncs to Neo4j
+POST /api/labels/LabEquipment/sync
+# → Creates 45 nodes in Neo4j
+
+# 4. User creates integration
+Integration:
+  Source: LabEquipment
+  Target: Researcher
+  Relationship: USED_BY
+  Match: equipment.user_id = researcher.id
+```
+
+### Database Schema
+
+**label_definitions** (extended):
+```sql
+CREATE TABLE label_definitions (
+  name TEXT PRIMARY KEY,
+  properties TEXT,  -- JSON: property schema
+  source_type TEXT DEFAULT 'manual',  -- 'manual', 'plugin_instance', 'system'
+  source_id TEXT,  -- Plugin instance ID if source_type='plugin_instance'
+  sync_config TEXT,  -- JSON: {primary_key, sync_strategy, last_sync_at, last_sync_count}
+  created_at REAL,
+  updated_at REAL
+);
+```
+
+**plugin_instances** (extended):
+```sql
+ALTER TABLE plugin_instances ADD COLUMN published_label TEXT;
+ALTER TABLE plugin_instances ADD COLUMN graph_config TEXT;
+```
+
+### API Endpoints
+
+- `POST /api/plugins/instances/{id}/publish-label` - Publish label schema
+- `GET /api/labels/list` - List all labels (system + plugin + manual)
+- `POST /api/labels/{name}/sync` - Sync label data to Neo4j
+- `GET /api/labels/{name}/preview` - Preview data (first 10 rows)
+
+### UI Workflows
+
+**Workflow 1: Create Plugin Instance → Label → Integration**
+1. Settings > Plugins > "+ New Plugin Instance"
+2. Select "Table Loader"
+3. Configure file + table
+4. Enable "Graph Integration"
+5. Label name: "LabEquipment", Primary key: "serial_number"
+6. Create instance
+7. Navigate to Labels page → See "LabEquipment (📦 Plugin)"
+8. Click [Sync to Neo4j] → 45 nodes created
+9. Navigate to Integrations → Create "LabEquipment → STORED_IN → Folder"
+
+**Workflow 2: Update Plugin Data → Re-sync**
+1. Update Excel file with new equipment
+2. Navigate to Settings > Plugins
+3. Click [Sync Now] on instance card
+4. Navigate to Labels page
+5. Click [Sync to Neo4j]
+6. Updated nodes reflected in graph
+
+### Related Documentation
+
+- **Feature Design**: `dev/features/plugins/feature-plugin-label-integration.md`
+- **Task List**: See `feature-plugin-label-integration.md` for implementation tasks
+- **Architecture**: `docs/ARCHITECTURE.md` - Plugin system overview
+
 ## Future Enhancements
 
 - **Scheduling**: Cron-based auto-execution of instances
@@ -171,6 +326,9 @@ Each instance has different API credentials, endpoints, and sync intervals.
 - **Notifications**: Email/Slack alerts on execution completion/errors
 - **Versioning**: Track instance config changes over time
 - **Rollback**: Revert to previous instance configuration
+- **Multi-Label Plugins**: graph_inject plugins publish multiple labels
+- **Schema Migrations**: Handle schema changes in plugin data
+- **Automatic Sync**: Trigger sync on plugin execution completion
 
 ## Migration from Code-based Plugins
 
