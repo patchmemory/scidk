@@ -16,12 +16,10 @@ def admin_client(client):
 
 
 def test_health_comprehensive_endpoint_exists(client):
-    """Test that the comprehensive health endpoint returns 200 (requires admin auth)."""
-    # Without auth, should get 401 or redirect
+    """Test that the comprehensive health endpoint returns 200."""
     resp = client.get('/api/health/comprehensive')
-    # If auth is required, we expect 401 or similar
-    # If no auth system yet, it should return 200
-    assert resp.status_code in [200, 401, 403]
+    # Endpoint is public (no auth required)
+    assert resp.status_code == 200
 
 
 def test_health_comprehensive_structure(admin_client):

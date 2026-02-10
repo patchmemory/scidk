@@ -8,7 +8,6 @@ import os
 import time
 
 from ..helpers import get_neo4j_params, build_commit_rows, commit_to_neo4j, get_or_build_scan_index
-from ..decorators import require_admin
 bp = Blueprint('admin', __name__, url_prefix='/api')
 
 def _get_ext():
@@ -120,13 +119,15 @@ def api_health():
 
 
 @bp.get('/health/comprehensive')
-@require_admin
 def api_health_comprehensive():
     """
-    Comprehensive system health check for admin dashboard.
+    Comprehensive system health check dashboard.
 
     Returns health status for all system components: Flask, SQLite, Neo4j,
     interpreters, disk, memory, and CPU usage.
+
+    Note: Available to all users (authentication handled by middleware).
+    System health information is not sensitive and useful for all users.
 
     Returns:
         JSON with overall status and individual component health metrics
@@ -235,14 +236,27 @@ def api_health_comprehensive():
 
     # Interpreters health
     try:
-        from ...core.interpreter_registry import list_interpreters
-        interpreters = list_interpreters()
-        enabled = [i for i in interpreters if i.get('enabled', False)]
-        components['interpreters'] = {
-            'status': 'ok',
-            'enabled_count': len(enabled),
-            'total_count': len(interpreters)
-        }
+        ext = _get_ext()
+        reg = ext.get('registry')
+        if reg and hasattr(reg, 'by_id'):
+            # Get interpreter state
+            interp_state = ext.get('interpreters', {})
+            eff = set(interp_state.get('effective_enabled') or [])
+
+            total = len(reg.by_id)
+            enabled = len(eff) if eff else total  # If no override, assume all enabled
+
+            components['interpreters'] = {
+                'status': 'ok',
+                'enabled_count': enabled,
+                'total_count': total
+            }
+        else:
+            components['interpreters'] = {
+                'status': 'ok',
+                'enabled_count': 0,
+                'total_count': 0
+            }
     except Exception as e:
         components['interpreters'] = {
             'status': 'error',
