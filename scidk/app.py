@@ -186,6 +186,17 @@ def create_app():
     label_endpoint_registry = LabelEndpointRegistry()
     app.extensions['scidk']['label_endpoints'] = label_endpoint_registry
 
+    # Initialize plugin template registry (for UI-instantiable plugins)
+    from .core.plugin_template_registry import PluginTemplateRegistry
+    plugin_template_registry = PluginTemplateRegistry()
+    app.extensions['scidk']['plugin_templates'] = plugin_template_registry
+
+    # Initialize plugin instance manager (for user-created instances)
+    from .core.plugin_instance_manager import PluginInstanceManager
+    settings_db = app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+    plugin_instance_manager = PluginInstanceManager(db_path=settings_db)
+    app.extensions['scidk']['plugin_instances'] = plugin_instance_manager
+
     # Load plugins after all core initialization is complete
     from .core.plugin_loader import PluginLoader, get_all_plugin_states
     plugin_loader = PluginLoader()
