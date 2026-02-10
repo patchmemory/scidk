@@ -45,6 +45,12 @@ def register_plugin(app):
         'description': 'Import spreadsheets into SQLite tables',
         'category': 'data_import',
         'supports_multiple_instances': True,  # Users can create many instances
+        'graph_behavior': {
+            'can_create_label': True,
+            'label_source': 'table_columns',
+            'sync_strategy': 'on_demand',
+            'supports_preview': True
+        },
         'config_schema': {
             'type': 'object',
             'properties': {
@@ -138,13 +144,41 @@ Researcher wants to pull data from multiple APIs:
 
 Each instance has different API credentials, endpoints, and sync intervals.
 
-## Template Categories
+## Plugin Categories
 
-- **data_import**: Import data from files (CSV, Excel, EDA, BioPAX)
-- **api_fetcher**: Fetch data from external APIs
-- **file_importer**: Import from specialized file formats
-- **exporter**: Export data to external systems
-- **transformer**: Transform/process existing data
+Plugin templates must specify a `category` field that determines how they interact with the graph layer. Valid categories:
+
+### data_import
+- **Purpose**: Import tabular data to SQLite, can publish schemas as Labels
+- **Graph Behavior**: Creates label definitions from table schemas
+- **Examples**: table_loader, csv_importer, api_fetcher
+- **Required Config**: `graph_behavior` block with:
+  - `can_create_label`: Boolean (true for most data importers)
+  - `label_source`: String ('table_columns' for table-based imports)
+  - `sync_strategy`: 'on_demand' or 'automatic'
+  - `supports_preview`: Boolean (true if preview supported)
+
+### graph_inject
+- **Purpose**: Directly create nodes + relationships in Neo4j
+- **Graph Behavior**: Bypasses SQLite, writes directly to graph
+- **Examples**: ontology_loader, knowledge_base_importer
+- **Use Case**: Pre-structured graph data (OWL, RDF, knowledge bases)
+
+### enrichment
+- **Purpose**: Add properties to existing nodes without creating new labels
+- **Graph Behavior**: Updates existing nodes, no schema changes
+- **Examples**: metadata_enricher, annotation_engine
+- **Use Case**: Add computed properties, external metadata
+
+### exporter
+- **Purpose**: Read from graph/database, no graph writes (default)
+- **Graph Behavior**: None (read-only)
+- **Examples**: report_generator, backup_exporter
+- **Use Case**: Export data, generate reports
+
+**Default**: If no category specified, defaults to `exporter` for backward compatibility.
+
+**Validation**: PluginTemplateRegistry validates categories on registration and logs warnings for data_import plugins missing recommended `graph_behavior` config.
 
 ## Best Practices
 

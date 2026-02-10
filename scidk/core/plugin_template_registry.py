@@ -18,6 +18,9 @@ logger = logging.getLogger(__name__)
 class PluginTemplateRegistry:
     """Registry for plugin templates that can be instantiated by users."""
 
+    # Valid plugin categories
+    VALID_CATEGORIES = ['data_import', 'graph_inject', 'enrichment', 'exporter']
+
     def __init__(self):
         """Initialize the template registry."""
         self.templates: Dict[str, dict] = {}
@@ -44,7 +47,7 @@ class PluginTemplateRegistry:
             bool: True if registration successful, False otherwise
         """
         # Validate required fields
-        required_fields = ['id', 'name', 'description', 'category', 'handler']
+        required_fields = ['id', 'name', 'description', 'handler']
         for field in required_fields:
             if field not in template_config:
                 logger.error(f"Plugin template registration missing required field: {field}")
@@ -61,21 +64,37 @@ class PluginTemplateRegistry:
             logger.error(f"Plugin template handler for {template_id} is not callable")
             return False
 
+        # Validate and set category (default to 'exporter' for backward compatibility)
+        category = template_config.get('category', 'exporter')
+        if category not in self.VALID_CATEGORIES:
+            logger.error(f"Invalid category '{category}' for template {template_id}. "
+                        f"Valid categories: {', '.join(self.VALID_CATEGORIES)}")
+            return False
+
+        # Validate graph_behavior for data_import category
+        if category == 'data_import':
+            graph_behavior = template_config.get('graph_behavior', {})
+            required_keys = ['can_create_label', 'label_source']
+            if not all(k in graph_behavior for k in required_keys):
+                logger.warning(f"Template {template_id} with category 'data_import' "
+                             f"missing recommended graph_behavior config keys: {required_keys}")
+
         # Store template with defaults
         self.templates[template_id] = {
             'id': template_id,
             'name': template_config['name'],
             'description': template_config['description'],
-            'category': template_config['category'],
+            'category': category,
             'supports_multiple_instances': template_config.get('supports_multiple_instances', True),
             'config_schema': template_config.get('config_schema', {}),
             'handler': template_config['handler'],
             'icon': template_config.get('icon', '📦'),
             'preset_configs': template_config.get('preset_configs', {}),
-            'version': template_config.get('version', '1.0.0')
+            'version': template_config.get('version', '1.0.0'),
+            'graph_behavior': template_config.get('graph_behavior', {})
         }
 
-        logger.info(f"Registered plugin template: {template_id} ({template_config['name']})")
+        logger.info(f"Registered plugin template: {template_id} ({template_config['name']}) [category: {category}]")
         return True
 
     def unregister(self, template_id: str) -> bool:

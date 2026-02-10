@@ -63,6 +63,12 @@ def register_plugin(app):
         'icon': '📊',
         'supports_multiple_instances': True,
         'version': '1.0.0',
+        'graph_behavior': {
+            'can_create_label': True,
+            'label_source': 'table_columns',
+            'sync_strategy': 'on_demand',
+            'supports_preview': True
+        },
         'config_schema': {
             'type': 'object',
             'properties': {
