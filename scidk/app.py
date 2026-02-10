@@ -141,6 +141,25 @@ def create_app():
     from .web.auth_middleware import init_auth_middleware
     init_auth_middleware(app)
 
+    # Load plugins after all core initialization is complete
+    from .core.plugin_loader import PluginLoader, get_all_plugin_states
+    plugin_loader = PluginLoader()
+    plugin_states = get_all_plugin_states()
+
+    # Get list of enabled plugins from database
+    discovered_plugins = plugin_loader.discover_plugins()
+    enabled_plugins = [p for p in discovered_plugins if plugin_states.get(p, True)]
+
+    # Load all plugins
+    plugin_loader.load_all_plugins(app, enabled_plugins=enabled_plugins)
+
+    # Store plugin loader in app extensions for access in routes
+    app.extensions['scidk']['plugins'] = {
+        'loader': plugin_loader,
+        'loaded': plugin_loader.list_plugins(),
+        'failed': plugin_loader.list_failed_plugins()
+    }
+
     return app
 
 

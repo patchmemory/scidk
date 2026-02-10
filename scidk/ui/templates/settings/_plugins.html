@@ -1,8 +1,188 @@
 <section id="plugins-section" class="settings-section">
   <h1>Plugins</h1>
-  <p class="small">Plugin registry summary.</p>
-  <ul>
-    <li class="small">Registered interpreter count: {{ interp_count or 0 }}</li>
-    <li class="small">Extensions mapped: {{ ext_count or 0 }}</li>
-  </ul>
+  <p class="small">Manage plugins and extensions for SciDK. Plugins can add routes, labels, and functionality.</p>
+
+  <div id="plugins-list" style="margin-top: 1.5rem;">
+    <p class="small">Loading plugins...</p>
+  </div>
+
+  {% if failed_plugins %}
+  <div class="failed-plugins" style="margin-top: 2rem;">
+    <h3>Failed Plugins</h3>
+    <ul class="error">
+      {% for name, error in failed_plugins.items() %}
+        <li><strong>{{ name }}</strong>: {{ error }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
 </section>
+
+<style>
+  .plugin-card {
+    border: 1px solid #ddd;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border-radius: 4px;
+    background: #f9f9f9;
+  }
+
+  .plugin-card h3 {
+    margin-top: 0;
+    color: #333;
+  }
+
+  .plugin-card .plugin-meta {
+    color: #666;
+    font-size: 0.9em;
+    margin: 0.5rem 0;
+  }
+
+  .plugin-card .plugin-description {
+    margin: 0.5rem 0;
+  }
+
+  .plugin-card .plugin-actions {
+    margin-top: 1rem;
+  }
+
+  .plugin-card .toggle-switch {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+  }
+
+  .plugin-card .toggle-switch input {
+    margin-right: 0.5rem;
+  }
+
+  .plugin-card.disabled {
+    opacity: 0.6;
+    background: #f0f0f0;
+  }
+
+  .plugin-status {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.85em;
+    font-weight: bold;
+  }
+
+  .plugin-status.enabled {
+    background: #d4edda;
+    color: #155724;
+  }
+
+  .plugin-status.disabled {
+    background: #f8d7da;
+    color: #721c24;
+  }
+</style>
+
+<script>
+  // Load plugins when the plugins section becomes active
+  document.addEventListener('DOMContentLoaded', function() {
+    // Listen for section changes
+    const pluginsSidebarItem = document.querySelector('[data-section="plugins"]');
+    if (pluginsSidebarItem) {
+      pluginsSidebarItem.addEventListener('click', loadPluginsIfNeeded);
+    }
+
+    // Load immediately if we're already on the plugins section
+    if (window.location.hash === '#plugins') {
+      loadPlugins();
+    }
+  });
+
+  let pluginsLoaded = false;
+
+  function loadPluginsIfNeeded() {
+    if (!pluginsLoaded) {
+      loadPlugins();
+    }
+  }
+
+  function loadPlugins() {
+    fetch('/api/plugins')
+      .then(response => response.json())
+      .then(data => {
+        renderPlugins(data.plugins || []);
+        pluginsLoaded = true;
+      })
+      .catch(error => {
+        const container = document.getElementById('plugins-list');
+        if (container) {
+          container.innerHTML = '<p class="error">Error loading plugins: ' + error.message + '</p>';
+        }
+      });
+  }
+
+  function renderPlugins(plugins) {
+    const container = document.getElementById('plugins-list');
+    if (!container) return;
+
+    if (plugins.length === 0) {
+      container.innerHTML = '<p class="small">No plugins installed. Create a plugin in the <code>plugins/</code> directory. See <a href="/docs/plugins.md">plugin documentation</a> for details.</p>';
+      return;
+    }
+
+    let html = '';
+    plugins.forEach(plugin => {
+      const isEnabled = plugin.enabled !== false;
+      const statusClass = isEnabled ? 'enabled' : 'disabled';
+      const cardClass = isEnabled ? '' : ' disabled';
+
+      html += `
+        <div class="plugin-card${cardClass}" data-plugin="${plugin.module_name || plugin.name}">
+          <h3>${plugin.name || plugin.module_name || 'Unknown Plugin'}</h3>
+          <div class="plugin-meta">
+            <span><strong>Version:</strong> ${plugin.version || 'N/A'}</span> |
+            <span><strong>Author:</strong> ${plugin.author || 'Unknown'}</span> |
+            <span class="plugin-status ${statusClass}">${isEnabled ? 'Enabled' : 'Disabled'}</span>
+          </div>
+          <div class="plugin-description">
+            ${plugin.description || 'No description available.'}
+          </div>
+          <div class="plugin-actions">
+            <label class="toggle-switch">
+              <input type="checkbox"
+                     ${isEnabled ? 'checked' : ''}
+                     onchange="togglePlugin('${plugin.module_name || plugin.name}', this.checked)">
+              Enable Plugin
+            </label>
+          </div>
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+  }
+
+  function togglePlugin(pluginName, enabled) {
+    fetch('/api/plugins/' + encodeURIComponent(pluginName) + '/toggle', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ enabled: enabled })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        alert('Plugin ' + (enabled ? 'enabled' : 'disabled') + '. Please restart the application for changes to take effect.');
+        pluginsLoaded = false;  // Force reload on next visit
+        loadPlugins(); // Reload plugins list
+      } else {
+        alert('Error: ' + (data.error || 'Unknown error'));
+        pluginsLoaded = false;
+        loadPlugins(); // Reload to reset UI state
+      }
+    })
+    .catch(error => {
+      alert('Error toggling plugin: ' + error.message);
+      pluginsLoaded = false;
+      loadPlugins(); // Reload to reset UI state
+    });
+  }
+</script>
