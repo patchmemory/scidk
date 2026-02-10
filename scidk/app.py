@@ -165,30 +165,28 @@ def create_app():
         from .core.backup_manager import get_backup_manager
         from .core.backup_scheduler import get_backup_scheduler
 
-        # Get configuration from environment or use defaults
-        backup_schedule_hour = int(os.environ.get('SCIDK_BACKUP_HOUR', '2'))
-        backup_retention_days = int(os.environ.get('SCIDK_BACKUP_RETENTION_DAYS', '30'))
+        # Get settings database path
+        settings_db = app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
 
         # Get alert manager if available
         alert_manager = None
         try:
             from .core.alert_manager import AlertManager
-            settings_db = app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
             alert_manager = AlertManager(db_path=settings_db)
         except Exception:
             # Alert manager optional
             pass
 
         # Initialize backup manager and scheduler
+        # Scheduler will load settings from database (schedule, retention, etc.)
         backup_manager = get_backup_manager()
         backup_scheduler = get_backup_scheduler(
             backup_manager=backup_manager,
-            schedule_hour=backup_schedule_hour,
-            retention_days=backup_retention_days,
+            settings_db_path=settings_db,
             alert_manager=alert_manager
         )
 
-        # Start scheduler
+        # Start scheduler (will only run if schedule_enabled is True in settings)
         backup_scheduler.start()
 
         # Store in app extensions for access in routes

@@ -946,3 +946,94 @@ def api_backups_cleanup():
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@bp.get('/backups/settings')
+@require_admin
+def api_backups_settings_get():
+    """
+    Get current backup schedule and retention settings.
+
+    Admin-only endpoint to retrieve backup configuration.
+
+    Returns:
+        JSON with current settings
+    """
+    try:
+        ext = _get_ext()
+        backup_scheduler = ext.get('backup_scheduler')
+
+        if not backup_scheduler:
+            return jsonify({'error': 'Backup scheduler not available'}), 503
+
+        settings = backup_scheduler.get_settings()
+
+        return jsonify(settings), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.post('/backups/settings')
+@require_admin
+def api_backups_settings_update():
+    """
+    Update backup schedule and retention settings.
+
+    Admin-only endpoint to configure automated backups.
+
+    Request body (JSON):
+        - schedule_enabled: Enable/disable automated backups (boolean)
+        - schedule_hour: Hour to run daily backup (0-23)
+        - schedule_minute: Minute to run daily backup (0-59)
+        - retention_days: Days to keep backups before cleanup
+        - verify_backups: Enable/disable backup verification (boolean)
+
+    Returns:
+        JSON with updated settings
+    """
+    try:
+        ext = _get_ext()
+        backup_scheduler = ext.get('backup_scheduler')
+
+        if not backup_scheduler:
+            return jsonify({'error': 'Backup scheduler not available'}), 503
+
+        data = request.get_json() or {}
+
+        # Validate settings
+        if 'schedule_hour' in data:
+            try:
+                hour = int(data['schedule_hour'])
+                if hour < 0 or hour > 23:
+                    return jsonify({'error': 'schedule_hour must be between 0 and 23'}), 400
+            except ValueError:
+                return jsonify({'error': 'schedule_hour must be an integer'}), 400
+
+        if 'schedule_minute' in data:
+            try:
+                minute = int(data['schedule_minute'])
+                if minute < 0 or minute > 59:
+                    return jsonify({'error': 'schedule_minute must be between 0 and 59'}), 400
+            except ValueError:
+                return jsonify({'error': 'schedule_minute must be an integer'}), 400
+
+        if 'retention_days' in data:
+            try:
+                days = int(data['retention_days'])
+                if days < 1:
+                    return jsonify({'error': 'retention_days must be at least 1'}), 400
+            except ValueError:
+                return jsonify({'error': 'retention_days must be an integer'}), 400
+
+        # Update settings
+        success = backup_scheduler.update_settings(data)
+
+        if success:
+            updated_settings = backup_scheduler.get_settings()
+            return jsonify(updated_settings), 200
+        else:
+            return jsonify({'error': 'Failed to update settings'}), 500
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

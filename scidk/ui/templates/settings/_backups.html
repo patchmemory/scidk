@@ -2,9 +2,47 @@
   <h1>Backup Management</h1>
   <p class="small">Automated backup scheduling, history, and restoration. Backups are created daily at the configured time.</p>
 
+  <!-- Backup Settings Configuration -->
+  <div class="backup-settings-config">
+    <h2>Backup Schedule Configuration</h2>
+    <div class="settings-form">
+      <div class="form-row">
+        <label>
+          <input type="checkbox" id="setting-schedule-enabled" checked>
+          Enable Automated Backups
+        </label>
+      </div>
+      <div class="form-row">
+        <label>
+          Schedule Time (24h):
+          <input type="number" id="setting-schedule-hour" min="0" max="23" value="2" style="width: 60px;">
+          :
+          <input type="number" id="setting-schedule-minute" min="0" max="59" value="0" style="width: 60px;">
+        </label>
+      </div>
+      <div class="form-row">
+        <label>
+          Retention (days):
+          <input type="number" id="setting-retention-days" min="1" value="30" style="width: 80px;">
+        </label>
+      </div>
+      <div class="form-row">
+        <label>
+          <input type="checkbox" id="setting-verify-backups" checked>
+          Verify backups after creation
+        </label>
+      </div>
+      <div class="form-row">
+        <button id="btn-save-settings" class="btn btn-primary">Save Settings</button>
+        <button id="btn-cancel-settings" class="btn btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Scheduler Status -->
   <div id="backup-scheduler-status" class="backup-status">
-    <h2>Automated Backups: <span id="scheduler-enabled" class="status-indicator">Loading...</span></h2>
+    <h2>Current Status</h2>
+    <p>Automated Backups: <span id="scheduler-enabled" class="status-indicator">Loading...</span></p>
     <p class="small">Schedule: Daily at <span id="schedule-hour">-</span> | Retention: <span id="retention-days">-</span> days</p>
     <p class="small">Next backup: <span id="next-backup">-</span></p>
   </div>
@@ -54,6 +92,47 @@
   </div>
 
   <style>
+    .backup-settings-config {
+      padding: 1rem;
+      background: #f0f8ff;
+      border: 1px solid #cde;
+      border-radius: 4px;
+      margin-bottom: 1.5rem;
+    }
+
+    .backup-settings-config h2 {
+      margin-top: 0;
+      margin-bottom: 1rem;
+    }
+
+    .settings-form {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .form-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .form-row label {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .form-row input[type="number"] {
+      padding: 0.25rem 0.5rem;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+
+    .form-row input[type="checkbox"] {
+      cursor: pointer;
+    }
+
     .backup-status {
       padding: 1rem;
       background: #f9f9f9;
@@ -228,6 +307,73 @@
   <script>
     let backupsRefreshInterval = null;
     let selectedBackupId = null;
+    let originalSettings = null;
+
+    function loadSettings() {
+      fetch('/api/backups/settings')
+        .then(res => res.json())
+        .then(data => {
+          // Store original settings
+          originalSettings = {...data};
+
+          // Populate form
+          document.getElementById('setting-schedule-enabled').checked = data.schedule_enabled;
+          document.getElementById('setting-schedule-hour').value = data.schedule_hour;
+          document.getElementById('setting-schedule-minute').value = data.schedule_minute;
+          document.getElementById('setting-retention-days').value = data.retention_days;
+          document.getElementById('setting-verify-backups').checked = data.verify_backups;
+        })
+        .catch(err => {
+          console.error('Failed to load settings:', err);
+        });
+    }
+
+    function saveSettings() {
+      const btn = document.getElementById('btn-save-settings');
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+
+      const settings = {
+        schedule_enabled: document.getElementById('setting-schedule-enabled').checked,
+        schedule_hour: parseInt(document.getElementById('setting-schedule-hour').value),
+        schedule_minute: parseInt(document.getElementById('setting-schedule-minute').value),
+        retention_days: parseInt(document.getElementById('setting-retention-days').value),
+        verify_backups: document.getElementById('setting-verify-backups').checked
+      };
+
+      fetch('/api/backups/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) {
+            alert('Failed to save settings: ' + data.error);
+          } else {
+            alert('Settings saved successfully!');
+            originalSettings = {...data};
+            loadBackups(); // Reload to show updated status
+          }
+        })
+        .catch(err => {
+          alert('Failed to save settings: ' + err.message);
+        })
+        .finally(() => {
+          btn.disabled = false;
+          btn.textContent = 'Save Settings';
+        });
+    }
+
+    function cancelSettings() {
+      if (originalSettings) {
+        document.getElementById('setting-schedule-enabled').checked = originalSettings.schedule_enabled;
+        document.getElementById('setting-schedule-hour').value = originalSettings.schedule_hour;
+        document.getElementById('setting-schedule-minute').value = originalSettings.schedule_minute;
+        document.getElementById('setting-retention-days').value = originalSettings.retention_days;
+        document.getElementById('setting-verify-backups').checked = originalSettings.verify_backups;
+      }
+    }
 
     function loadBackups() {
       document.getElementById('backups-loading').style.display = 'block';
@@ -493,6 +639,8 @@
     }
 
     // Event listeners
+    document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
+    document.getElementById('btn-cancel-settings').addEventListener('click', cancelSettings);
     document.getElementById('btn-create-backup').addEventListener('click', createBackup);
     document.getElementById('btn-cleanup-old').addEventListener('click', cleanupOldBackups);
     document.getElementById('btn-confirm-restore').addEventListener('click', restoreBackup);
@@ -522,6 +670,7 @@
         mutations.forEach((mutation) => {
           if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
             if (backupsSection.classList.contains('active')) {
+              loadSettings();
               loadBackups();
             }
           }
@@ -532,6 +681,7 @@
 
       // Initialize if already active
       if (backupsSection.classList.contains('active')) {
+        loadSettings();
         loadBackups();
       }
     }

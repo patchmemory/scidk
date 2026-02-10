@@ -22,31 +22,80 @@ class BackupScheduler:
     def __init__(
         self,
         backup_manager: BackupManager,
-        schedule_hour: int = 2,
-        schedule_minute: int = 0,
-        retention_days: int = 30,
-        verify_backups: bool = True,
+        settings_db_path: str = 'scidk_settings.db',
         alert_manager=None
     ):
         """
         Initialize BackupScheduler.
 
+        Loads schedule and retention settings from database.
+
         Args:
             backup_manager: BackupManager instance
-            schedule_hour: Hour to run daily backup (0-23, default: 2 AM)
-            schedule_minute: Minute to run daily backup (0-59, default: 0)
-            retention_days: Days to keep backups (default: 30)
-            verify_backups: Whether to verify backups after creation
+            settings_db_path: Path to settings database
             alert_manager: Optional AlertManager for notifications
         """
         self.backup_manager = backup_manager
-        self.schedule_hour = schedule_hour
-        self.schedule_minute = schedule_minute
-        self.retention_days = retention_days
-        self.verify_backups = verify_backups
+        self.settings_db_path = settings_db_path
         self.alert_manager = alert_manager
         self.scheduler = BackgroundScheduler()
         self._running = False
+
+        # Load settings from database (with defaults)
+        self.reload_settings()
+
+    def reload_settings(self):
+        """Reload schedule and retention settings from database."""
+        import sqlite3
+
+        defaults = {
+            'schedule_enabled': True,
+            'schedule_hour': 2,
+            'schedule_minute': 0,
+            'retention_days': 30,
+            'verify_backups': True
+        }
+
+        try:
+            db = sqlite3.connect(self.settings_db_path)
+            db.execute('PRAGMA journal_mode=WAL;')
+
+            # Ensure settings table exists
+            db.execute('''
+                CREATE TABLE IF NOT EXISTS backup_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            # Load each setting
+            for key, default_value in defaults.items():
+                cur = db.execute('SELECT value FROM backup_settings WHERE key = ?', (key,))
+                row = cur.fetchone()
+                if row and row[0] is not None:
+                    # Parse value based on type
+                    if isinstance(default_value, bool):
+                        value = row[0].lower() in ('true', '1', 'yes')
+                    elif isinstance(default_value, int):
+                        value = int(row[0])
+                    else:
+                        value = row[0]
+                    setattr(self, key, value)
+                else:
+                    # Use default and save it
+                    setattr(self, key, default_value)
+                    db.execute(
+                        'INSERT OR IGNORE INTO backup_settings (key, value) VALUES (?, ?)',
+                        (key, str(default_value))
+                    )
+
+            db.commit()
+            db.close()
+        except Exception:
+            # If database fails, use defaults
+            for key, default_value in defaults.items():
+                setattr(self, key, default_value)
 
     def start(self):
         """Start the backup scheduler."""
@@ -348,11 +397,71 @@ class BackupScheduler:
 
         return None
 
+    def update_settings(self, settings: Dict[str, Any]) -> bool:
+        """
+        Update backup settings and reschedule if needed.
+
+        Args:
+            settings: Dict of settings to update (schedule_hour, schedule_minute, retention_days, etc.)
+
+        Returns:
+            True if settings were updated successfully
+        """
+        import sqlite3
+
+        try:
+            db = sqlite3.connect(self.settings_db_path)
+            db.execute('PRAGMA journal_mode=WAL;')
+
+            # Update database
+            for key, value in settings.items():
+                db.execute(
+                    'INSERT OR REPLACE INTO backup_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
+                    (key, str(value))
+                )
+
+            db.commit()
+            db.close()
+
+            # Reload settings into memory
+            self.reload_settings()
+
+            # Reschedule if scheduler is running
+            if self._running:
+                # Remove existing job
+                try:
+                    self.scheduler.remove_job('daily_backup')
+                except Exception:
+                    pass
+
+                # Re-add job with new schedule
+                if self.schedule_enabled:
+                    self.scheduler.add_job(
+                        self._run_scheduled_backup,
+                        CronTrigger(hour=self.schedule_hour, minute=self.schedule_minute),
+                        id='daily_backup',
+                        replace_existing=True,
+                        name='Daily Backup'
+                    )
+
+            return True
+        except Exception:
+            return False
+
+    def get_settings(self) -> Dict[str, Any]:
+        """Get current backup settings."""
+        return {
+            'schedule_enabled': self.schedule_enabled,
+            'schedule_hour': self.schedule_hour,
+            'schedule_minute': self.schedule_minute,
+            'retention_days': self.retention_days,
+            'verify_backups': self.verify_backups
+        }
+
 
 def get_backup_scheduler(
     backup_manager: BackupManager,
-    schedule_hour: int = 2,
-    retention_days: int = 30,
+    settings_db_path: str = 'scidk_settings.db',
     alert_manager=None
 ) -> BackupScheduler:
     """
@@ -360,8 +469,7 @@ def get_backup_scheduler(
 
     Args:
         backup_manager: BackupManager instance
-        schedule_hour: Hour to run daily backup (default: 2 AM)
-        retention_days: Days to keep backups (default: 30)
+        settings_db_path: Path to settings database
         alert_manager: Optional AlertManager for notifications
 
     Returns:
@@ -369,7 +477,6 @@ def get_backup_scheduler(
     """
     return BackupScheduler(
         backup_manager=backup_manager,
-        schedule_hour=schedule_hour,
-        retention_days=retention_days,
+        settings_db_path=settings_db_path,
         alert_manager=alert_manager
     )

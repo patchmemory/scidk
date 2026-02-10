@@ -50,13 +50,13 @@ def backup_manager(temp_backup_dir):
 
 
 @pytest.fixture
-def backup_scheduler(backup_manager):
+def backup_scheduler(backup_manager, tmp_path):
     """Create a BackupScheduler instance."""
+    # Use temp database for tests
+    test_db = tmp_path / "test_settings.db"
     return BackupScheduler(
         backup_manager=backup_manager,
-        schedule_hour=2,
-        retention_days=30,
-        verify_backups=True
+        settings_db_path=str(test_db)
     )
 
 
@@ -189,14 +189,21 @@ def test_get_next_backup_time(backup_scheduler):
     backup_scheduler.stop()
 
 
-def test_backup_scheduler_with_custom_schedule(backup_manager):
+def test_backup_scheduler_with_custom_schedule(backup_manager, tmp_path):
     """Test scheduler with custom schedule settings."""
+    # Use temp database and update settings
+    test_db = tmp_path / "test_custom_settings.db"
     scheduler = BackupScheduler(
         backup_manager=backup_manager,
-        schedule_hour=14,  # 2 PM
-        schedule_minute=30,
-        retention_days=60
+        settings_db_path=str(test_db)
     )
+
+    # Update settings
+    scheduler.update_settings({
+        'schedule_hour': 14,
+        'schedule_minute': 30,
+        'retention_days': 60
+    })
 
     assert scheduler.schedule_hour == 14
     assert scheduler.schedule_minute == 30
