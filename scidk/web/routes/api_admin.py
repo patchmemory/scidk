@@ -17,7 +17,39 @@ def _get_ext():
 
 @bp.get('/health/graph')
 def api_health_graph():
-        """Basic health for graph backend. In-memory is always OK; if Neo4j settings/env are provided, try a connection."""
+        """Graph backend health check
+        ---
+        tags:
+          - Health
+        summary: Check health of graph backend (Neo4j or in-memory)
+        description: Returns health status of the graph backend. In-memory is always OK. If Neo4j settings are provided, attempts a connection test.
+        responses:
+          200:
+            description: Health status retrieved successfully
+            schema:
+              type: object
+              properties:
+                backend:
+                  type: string
+                  example: neo4j
+                  description: Backend type (neo4j or in_memory)
+                in_memory_ok:
+                  type: boolean
+                  example: true
+                neo4j:
+                  type: object
+                  properties:
+                    configured:
+                      type: boolean
+                      description: Whether Neo4j is configured
+                    connectable:
+                      type: boolean
+                      description: Whether connection to Neo4j succeeded
+                    error:
+                      type: string
+                      nullable: true
+                      description: Error message if connection failed
+        """
         backend = os.environ.get('SCIDK_GRAPH_BACKEND', 'in_memory').lower() or 'in_memory'
         info = {
             'backend': backend,
@@ -65,7 +97,44 @@ def api_health_graph():
 
 @bp.get('/health')
 def api_health():
-        """Overall health focusing on SQLite availability and WAL mode."""
+        """System health check
+        ---
+        tags:
+          - Health
+        summary: Check overall system health
+        description: Returns health status focusing on SQLite database availability, WAL mode, and schema version
+        responses:
+          200:
+            description: Health status retrieved successfully
+            schema:
+              type: object
+              properties:
+                sqlite:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                      description: Path to SQLite database file
+                    exists:
+                      type: boolean
+                      description: Whether database file exists
+                    journal_mode:
+                      type: string
+                      description: SQLite journal mode
+                    wal_mode:
+                      type: boolean
+                      description: Whether WAL mode is enabled
+                    schema_version:
+                      type: integer
+                      description: Current schema version
+                    select1:
+                      type: boolean
+                      description: Whether basic SELECT query works
+                    error:
+                      type: string
+                      nullable: true
+                      description: Error message if health check failed
+        """
         from ...core import path_index_sqlite as pix
         from ...core import migrations as _migs
         info = {

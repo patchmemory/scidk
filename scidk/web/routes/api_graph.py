@@ -26,19 +26,72 @@ def api_graph_schema():
 
 @bp.get('/graph/schema/combined')
 def api_graph_schema_combined():
-    """
-    Unified schema endpoint combining local Labels, Neo4j schema, and in-memory graph.
-
-    Query params:
-    - source: 'labels' | 'neo4j' | 'graph' | 'all' (default: 'all')
-    - include_properties: 'true' | 'false' (default: 'false')
-
-    Returns:
-    {
-        "nodes": [{"label": "...", "count": 0, "source": "labels", "properties": [...]}],
-        "edges": [{"start_label": "...", "rel_type": "...", "end_label": "...", "count": 0, "source": "labels"}],
-        "sources": {"labels": {"count": N, "enabled": true}, ...}
-    }
+    """Get combined graph schema
+    ---
+    tags:
+      - Graph
+    summary: Get unified schema from all sources
+    description: Returns combined schema from local Labels, Neo4j schema, and in-memory graph
+    parameters:
+      - name: source
+        in: query
+        type: string
+        enum: [labels, neo4j, graph, all]
+        default: all
+        description: Schema source to query
+      - name: include_properties
+        in: query
+        type: string
+        enum: ["true", "false"]
+        default: "false"
+        description: Include property definitions
+    responses:
+      200:
+        description: Combined schema
+        schema:
+          type: object
+          properties:
+            nodes:
+              type: array
+              items:
+                type: object
+                properties:
+                  label:
+                    type: string
+                    example: Dataset
+                  count:
+                    type: integer
+                    example: 5
+                  source:
+                    type: string
+                    example: labels
+                  properties:
+                    type: array
+                    items:
+                      type: string
+            edges:
+              type: array
+              items:
+                type: object
+                properties:
+                  start_label:
+                    type: string
+                    example: Dataset
+                  rel_type:
+                    type: string
+                    example: CONTAINS
+                  end_label:
+                    type: string
+                    example: File
+                  count:
+                    type: integer
+                    example: 10
+                  source:
+                    type: string
+                    example: labels
+            sources:
+              type: object
+              description: Metadata about each schema source
     """
     source = (request.args.get('source') or 'all').strip().lower()
     include_props = (request.args.get('include_properties') or 'false').strip().lower() == 'true'

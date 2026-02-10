@@ -10,6 +10,7 @@ and scidk/services/ to keep this file lean and maintainable.
 from flask import Flask
 from pathlib import Path
 import os
+from flasgger import Swagger
 
 # Core components
 from .core.filesystem import FilesystemManager
@@ -41,6 +42,45 @@ def create_app():
     apply_channel_defaults()
 
     app = Flask(__name__, template_folder="ui/templates", static_folder="ui/static")
+
+    # Initialize Swagger for API documentation
+    swagger_template = {
+        'info': {
+            'title': 'SciDK API',
+            'version': '1.0.0',
+            'description': 'RESTful API for SciDK scientific data management and knowledge graph operations',
+            'contact': {
+                'name': 'SciDK Team',
+                'url': 'https://github.com/scidk/scidk'
+            }
+        },
+        'securityDefinitions': {
+            'Bearer': {
+                'type': 'apiKey',
+                'name': 'Authorization',
+                'in': 'header',
+                'description': 'JWT Authorization header using the Bearer scheme. Example: "Authorization: Bearer {token}"'
+            }
+        },
+        'security': [
+            {'Bearer': []}
+        ]
+    }
+    swagger_config = {
+        'headers': [],
+        'specs': [
+            {
+                'endpoint': 'apispec',
+                'route': '/apispec.json',
+                'rule_filter': lambda rule: True,
+                'model_filter': lambda tag: True,
+            }
+        ],
+        'static_url_path': '/flasgger_static',
+        'swagger_ui': True,
+        'specs_route': '/api/docs'
+    }
+    Swagger(app, template=swagger_template, config=swagger_config)
 
     # Feature: selective dry-run UI flag (dev default)
     try:
