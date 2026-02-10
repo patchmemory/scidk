@@ -160,6 +160,45 @@ def create_app():
         'failed': plugin_loader.list_failed_plugins()
     }
 
+    # Initialize backup scheduler
+    try:
+        from .core.backup_manager import get_backup_manager
+        from .core.backup_scheduler import get_backup_scheduler
+
+        # Get configuration from environment or use defaults
+        backup_schedule_hour = int(os.environ.get('SCIDK_BACKUP_HOUR', '2'))
+        backup_retention_days = int(os.environ.get('SCIDK_BACKUP_RETENTION_DAYS', '30'))
+
+        # Get alert manager if available
+        alert_manager = None
+        try:
+            from .core.alert_manager import AlertManager
+            settings_db = app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+            alert_manager = AlertManager(db_path=settings_db)
+        except Exception:
+            # Alert manager optional
+            pass
+
+        # Initialize backup manager and scheduler
+        backup_manager = get_backup_manager()
+        backup_scheduler = get_backup_scheduler(
+            backup_manager=backup_manager,
+            schedule_hour=backup_schedule_hour,
+            retention_days=backup_retention_days,
+            alert_manager=alert_manager
+        )
+
+        # Start scheduler
+        backup_scheduler.start()
+
+        # Store in app extensions for access in routes
+        app.extensions['scidk']['backup_scheduler'] = backup_scheduler
+        app.extensions['scidk']['backup_manager'] = backup_manager
+    except Exception as e:
+        # Backup scheduler is optional - log but don't fail startup
+        import logging
+        logging.warning(f"Failed to initialize backup scheduler: {e}")
+
     return app
 
 

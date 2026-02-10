@@ -8,6 +8,7 @@ import os
 import time
 
 from ..helpers import get_neo4j_params, build_commit_rows, commit_to_neo4j, get_or_build_scan_index
+from ..decorators import require_admin
 bp = Blueprint('admin', __name__, url_prefix='/api')
 
 def _get_ext():
@@ -653,3 +654,295 @@ def api_admin_cleanup_test_endpoints():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+# Backup Management API Endpoints
+
+@bp.get('/backups')
+@require_admin
+def api_backups_list():
+    """
+    List all backups with metadata.
+
+    Admin-only endpoint that returns backup history with verification status.
+
+    Returns:
+        JSON list of backups with metadata
+    """
+    try:
+        from ...core.backup_manager import get_backup_manager
+
+        backup_manager = get_backup_manager()
+        backups = backup_manager.list_backups(limit=100)
+
+        # Add verification status from metadata
+        for backup in backups:
+            try:
+                import zipfile
+                backup_path = Path(backup['path'])
+                if backup_path.exists():
+                    with zipfile.ZipFile(backup_path, 'r') as zipf:
+                        if 'backup_metadata.json' in zipf.namelist():
+                            metadata_str = zipf.read('backup_metadata.json').decode('utf-8')
+                            metadata = json.loads(metadata_str)
+                            verification = metadata.get('verification', {})
+                            backup['verified'] = verification.get('verified', False)
+                            backup['verification_error'] = verification.get('error')
+                            backup['verification_timestamp'] = verification.get('timestamp')
+            except Exception:
+                # If we can't read verification status, mark as unknown
+                backup['verified'] = None
+
+        # Get scheduler info if available
+        scheduler_info = {}
+        try:
+            ext = _get_ext()
+            backup_scheduler = ext.get('backup_scheduler')
+            if backup_scheduler and backup_scheduler.is_running():
+                scheduler_info = {
+                    'enabled': True,
+                    'next_backup': backup_scheduler.get_next_backup_time(),
+                    'schedule_hour': backup_scheduler.schedule_hour,
+                    'schedule_minute': backup_scheduler.schedule_minute,
+                    'retention_days': backup_scheduler.retention_days
+                }
+            else:
+                scheduler_info = {'enabled': False}
+        except Exception:
+            scheduler_info = {'enabled': False}
+
+        return jsonify({
+            'backups': backups,
+            'scheduler': scheduler_info
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.post('/backups')
+@require_admin
+def api_backups_create():
+    """
+    Trigger manual backup creation.
+
+    Admin-only endpoint to create a backup on demand.
+
+    Request body (JSON, optional):
+        - reason: Reason for backup (default: 'manual')
+        - notes: Optional notes
+        - include_data: Include data files (default: false)
+        - verify: Verify backup after creation (default: true)
+
+    Returns:
+        JSON with backup details and verification status
+    """
+    try:
+        from ...core.backup_manager import get_backup_manager
+        from flask import g
+
+        data = request.get_json() or {}
+        reason = data.get('reason', 'manual')
+        notes = data.get('notes', '')
+        include_data = data.get('include_data', False)
+        verify = data.get('verify', True)
+
+        # Get username from auth context if available
+        created_by = getattr(g, 'scidk_username', 'admin')
+
+        backup_manager = get_backup_manager()
+        result = backup_manager.create_backup(
+            reason=reason,
+            created_by=created_by,
+            notes=notes,
+            include_data=include_data
+        )
+
+        if not result['success']:
+            return jsonify(result), 500
+
+        # Verify backup if requested
+        verification_result = None
+        if verify:
+            try:
+                ext = _get_ext()
+                backup_scheduler = ext.get('backup_scheduler')
+                if backup_scheduler:
+                    verification_result = backup_scheduler.verify_backup(result['filename'])
+                    result['verification'] = verification_result
+            except Exception as e:
+                result['verification_error'] = str(e)
+
+        return jsonify(result), 201
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.post('/backups/<backup_id>/restore')
+@require_admin
+def api_backups_restore(backup_id):
+    """
+    Restore from a backup.
+
+    Admin-only endpoint to restore application state from a backup file.
+
+    Path parameter:
+        backup_id: Backup filename or ID
+
+    Request body (JSON, optional):
+        - create_backup_first: Create backup before restoring (default: true)
+
+    Returns:
+        JSON with restore results
+    """
+    try:
+        from ...core.backup_manager import get_backup_manager
+
+        data = request.get_json() or {}
+        create_backup_first = data.get('create_backup_first', True)
+
+        backup_manager = get_backup_manager()
+
+        # Try to find backup by ID or filename
+        backups = backup_manager.list_backups(limit=1000)
+        backup_file = None
+
+        for backup in backups:
+            if backup.get('backup_id') == backup_id or backup.get('filename') == backup_id:
+                backup_file = backup['filename']
+                break
+
+        if not backup_file:
+            return jsonify({'error': f'Backup not found: {backup_id}'}), 404
+
+        result = backup_manager.restore_backup(
+            backup_file=backup_file,
+            create_backup_first=create_backup_first
+        )
+
+        if not result['success']:
+            return jsonify(result), 500
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.delete('/backups/<backup_id>')
+@require_admin
+def api_backups_delete(backup_id):
+    """
+    Delete a backup file.
+
+    Admin-only endpoint to permanently delete a backup.
+
+    Path parameter:
+        backup_id: Backup filename or ID
+
+    Returns:
+        JSON with deletion result
+    """
+    try:
+        from ...core.backup_manager import get_backup_manager
+
+        backup_manager = get_backup_manager()
+
+        # Try to find backup by ID or filename
+        backups = backup_manager.list_backups(limit=1000)
+        backup_file = None
+
+        for backup in backups:
+            if backup.get('backup_id') == backup_id or backup.get('filename') == backup_id:
+                backup_file = backup['filename']
+                break
+
+        if not backup_file:
+            return jsonify({'error': f'Backup not found: {backup_id}'}), 404
+
+        success = backup_manager.delete_backup(backup_file)
+
+        if success:
+            return jsonify({
+                'success': True,
+                'message': f'Backup deleted: {backup_file}'
+            }), 200
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to delete backup'
+            }), 500
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.post('/backups/verify/<backup_id>')
+@require_admin
+def api_backups_verify(backup_id):
+    """
+    Verify a backup's integrity.
+
+    Admin-only endpoint to verify a backup without restoring it.
+
+    Path parameter:
+        backup_id: Backup filename or ID
+
+    Returns:
+        JSON with verification results
+    """
+    try:
+        from ...core.backup_manager import get_backup_manager
+
+        ext = _get_ext()
+        backup_scheduler = ext.get('backup_scheduler')
+
+        if not backup_scheduler:
+            return jsonify({'error': 'Backup scheduler not available'}), 503
+
+        backup_manager = get_backup_manager()
+
+        # Try to find backup by ID or filename
+        backups = backup_manager.list_backups(limit=1000)
+        backup_file = None
+
+        for backup in backups:
+            if backup.get('backup_id') == backup_id or backup.get('filename') == backup_id:
+                backup_file = backup['filename']
+                break
+
+        if not backup_file:
+            return jsonify({'error': f'Backup not found: {backup_id}'}), 404
+
+        result = backup_scheduler.verify_backup(backup_file)
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.post('/backups/cleanup')
+@require_admin
+def api_backups_cleanup():
+    """
+    Manually trigger cleanup of old backups.
+
+    Admin-only endpoint to delete backups older than retention policy.
+
+    Returns:
+        JSON with cleanup results
+    """
+    try:
+        ext = _get_ext()
+        backup_scheduler = ext.get('backup_scheduler')
+
+        if not backup_scheduler:
+            return jsonify({'error': 'Backup scheduler not available'}), 503
+
+        result = backup_scheduler.cleanup_old_backups()
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
