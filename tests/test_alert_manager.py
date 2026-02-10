@@ -222,7 +222,8 @@ def test_send_email_alert(mock_smtp, alert_manager):
         password='test123',
         from_address='noreply@test.com',
         use_tls=True,
-        enabled=True
+        enabled=True,
+        recipients=['recipient@test.com']
     )
 
     # Create alert with recipients
@@ -293,7 +294,8 @@ def test_test_alert(mock_smtp, alert_manager):
         password='test123',
         from_address='noreply@test.com',
         use_tls=True,
-        enabled=True
+        enabled=True,
+        recipients=['recipient@test.com']
     )
 
     # Create alert
@@ -333,7 +335,8 @@ def test_smtp_config(alert_manager):
         password='app_password',
         from_address='noreply@example.com',
         use_tls=True,
-        enabled=True
+        enabled=True,
+        recipients=['admin@example.com']
     )
 
     # Get config (safe version)
@@ -355,7 +358,8 @@ def test_smtp_config(alert_manager):
         password=None,  # Don't change password
         from_address='noreply@test.com',
         use_tls=False,
-        enabled=True
+        enabled=True,
+        recipients=['admin@test.com']
     )
 
     config = alert_manager.get_smtp_config_safe()
@@ -375,7 +379,8 @@ def test_test_smtp_config(mock_smtp, alert_manager):
         password='test123',
         from_address='noreply@test.com',
         use_tls=True,
-        enabled=True
+        enabled=True,
+        recipients=['recipient@test.com']
     )
 
     # Mock SMTP server

@@ -1,0 +1,27 @@
+[run]
+source = scidk
+omit =
+    */tests/*
+    */test_*.py
+    */__pycache__/*
+    */migrations/*
+    scidk/__main__.py
+    # Exclude services not part of production MVP
+    scidk/services/commit_service.py
+    scidk/services/query_service.py
+    scidk/services/scan_index_service.py
+    scidk/services/link_migration.py
+    scidk/services/config.py
+    scidk/services/graphrag_examples.py
+    scidk/services/graphrag_llm.py
+    # Exclude experimental/optional features
+    scidk/interpreters/*
+    scidk/core/graphrag/*
+
+[report]
+precision = 2
+show_missing = True
+skip_covered = False
+
+[html]
+directory = htmlcov
