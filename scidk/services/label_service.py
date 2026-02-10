@@ -29,14 +29,16 @@ class LabelService:
         Get all label definitions from SQLite.
 
         Returns:
-            List of label definition dicts with keys: name, properties, relationships, created_at, updated_at
+            List of label definition dicts with keys: name, properties, relationships, created_at, updated_at,
+            source_type, source_id, sync_config
         """
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT name, properties, relationships, created_at, updated_at
+                SELECT name, properties, relationships, created_at, updated_at,
+                       source_type, source_id, sync_config
                 FROM label_definitions
                 ORDER BY name
                 """
@@ -45,13 +47,16 @@ class LabelService:
 
             labels = []
             for row in rows:
-                name, props_json, rels_json, created_at, updated_at = row
+                name, props_json, rels_json, created_at, updated_at, source_type, source_id, sync_config_json = row
                 labels.append({
                     'name': name,
                     'properties': json.loads(props_json) if props_json else [],
                     'relationships': json.loads(rels_json) if rels_json else [],
                     'created_at': created_at,
-                    'updated_at': updated_at
+                    'updated_at': updated_at,
+                    'source_type': source_type or 'manual',
+                    'source_id': source_id,
+                    'sync_config': json.loads(sync_config_json) if sync_config_json else {}
                 })
             return labels
         finally:
@@ -72,7 +77,8 @@ class LabelService:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT name, properties, relationships, created_at, updated_at
+                SELECT name, properties, relationships, created_at, updated_at,
+                       source_type, source_id, sync_config
                 FROM label_definitions
                 WHERE name = ?
                 """,
@@ -83,7 +89,7 @@ class LabelService:
             if not row:
                 return None
 
-            name, props_json, rels_json, created_at, updated_at = row
+            name, props_json, rels_json, created_at, updated_at, source_type, source_id, sync_config_json = row
 
             # Get outgoing relationships (defined on this label)
             relationships = json.loads(rels_json) if rels_json else []
@@ -116,7 +122,10 @@ class LabelService:
                 'relationships': relationships,
                 'incoming_relationships': incoming_relationships,
                 'created_at': created_at,
-                'updated_at': updated_at
+                'updated_at': updated_at,
+                'source_type': source_type or 'manual',
+                'source_id': source_id,
+                'sync_config': json.loads(sync_config_json) if sync_config_json else {}
             }
         finally:
             conn.close()
@@ -126,7 +135,8 @@ class LabelService:
         Create or update a label definition.
 
         Args:
-            definition: Dict with keys: name, properties (list), relationships (list)
+            definition: Dict with keys: name, properties (list), relationships (list),
+                       source_type (optional), source_id (optional), sync_config (optional)
 
         Returns:
             Updated label definition
@@ -137,6 +147,9 @@ class LabelService:
 
         properties = definition.get('properties', [])
         relationships = definition.get('relationships', [])
+        source_type = definition.get('source_type', 'manual')
+        source_id = definition.get('source_id')
+        sync_config = definition.get('sync_config', {})
 
         # Validate property structure
         for prop in properties:
@@ -150,6 +163,7 @@ class LabelService:
 
         props_json = json.dumps(properties)
         rels_json = json.dumps(relationships)
+        sync_config_json = json.dumps(sync_config)
         now = time.time()
 
         # Check if label exists
@@ -163,20 +177,22 @@ class LabelService:
                 cursor.execute(
                     """
                     UPDATE label_definitions
-                    SET properties = ?, relationships = ?, updated_at = ?
+                    SET properties = ?, relationships = ?, source_type = ?, source_id = ?,
+                        sync_config = ?, updated_at = ?
                     WHERE name = ?
                     """,
-                    (props_json, rels_json, now, name)
+                    (props_json, rels_json, source_type, source_id, sync_config_json, now, name)
                 )
                 created_at = existing['created_at']
             else:
                 # Insert
                 cursor.execute(
                     """
-                    INSERT INTO label_definitions (name, properties, relationships, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO label_definitions (name, properties, relationships, source_type,
+                                                   source_id, sync_config, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (name, props_json, rels_json, now, now)
+                    (name, props_json, rels_json, source_type, source_id, sync_config_json, now, now)
                 )
                 created_at = now
 
@@ -186,6 +202,9 @@ class LabelService:
                 'name': name,
                 'properties': properties,
                 'relationships': relationships,
+                'source_type': source_type,
+                'source_id': source_id,
+                'sync_config': sync_config,
                 'created_at': created_at,
                 'updated_at': now
             }

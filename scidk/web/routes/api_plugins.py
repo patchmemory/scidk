@@ -738,3 +738,59 @@ def get_plugin_instance_stats():
             'status': 'error',
             'error': str(e)
         }), 500
+
+
+@bp.post('/instances/<instance_id>/publish-label')
+def publish_plugin_label(instance_id):
+    """Publish plugin instance schema as a Label.
+
+    Request body:
+    {
+        "label_name": "LabEquipment",
+        "primary_key": "serial_number",
+        "property_mapping": {
+            "serial_number": {"type": "string", "required": true},
+            "name": {"type": "string", "required": true}
+        },
+        "sync_strategy": "on_demand"
+    }
+
+    Returns:
+        JSON response with success status
+    """
+    try:
+        ext = _get_ext()
+        manager = ext.get('plugin_instances')
+
+        if not manager:
+            return jsonify({
+                'status': 'error',
+                'error': 'Plugin instance manager not initialized'
+            }), 500
+
+        data = request.get_json()
+        if not data or 'label_name' not in data:
+            return jsonify({
+                'status': 'error',
+                'error': 'Missing required field: label_name'
+            }), 400
+
+        success = manager.publish_label_schema(instance_id, data, app=current_app)
+
+        if not success:
+            return jsonify({
+                'status': 'error',
+                'error': 'Failed to publish label schema'
+            }), 500
+
+        return jsonify({
+            'status': 'success',
+            'message': f"Label '{data['label_name']}' published successfully"
+        })
+
+    except Exception as e:
+        logger.error(f"Error publishing label: {e}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500

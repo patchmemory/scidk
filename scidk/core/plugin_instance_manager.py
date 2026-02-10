@@ -289,7 +289,7 @@ class PluginInstanceManager:
         Returns:
             dict: Instance data with parsed JSON fields
         """
-        return {
+        result = {
             'id': row['id'],
             'name': row['name'],
             'template_id': row['template_id'],
@@ -301,6 +301,17 @@ class PluginInstanceManager:
             'created_at': row['created_at'],
             'updated_at': row['updated_at']
         }
+
+        # Add new columns if they exist
+        try:
+            result['published_label'] = row['published_label']
+            result['graph_config'] = json.loads(row['graph_config']) if row['graph_config'] else None
+        except (KeyError, IndexError):
+            # Columns don't exist yet (pre-migration)
+            result['published_label'] = None
+            result['graph_config'] = None
+
+        return result
 
     def get_stats(self) -> dict:
         """Get statistics about plugin instances.
@@ -330,3 +341,165 @@ class PluginInstanceManager:
             'by_status': by_status,
             'by_template': by_template
         }
+
+    def publish_label_schema(self, instance_id: str, label_config: dict, app=None) -> bool:
+        """Publish plugin instance schema as a Label.
+
+        Args:
+            instance_id: Plugin instance ID
+            label_config: {
+                "label_name": "LabEquipment",
+                "primary_key": "serial_number",
+                "property_mapping": {...},  # Optional, auto-generated if missing
+                "sync_strategy": "on_demand"
+            }
+            app: Flask app instance (optional, for LabelService)
+
+        Returns:
+            bool: True if published successfully
+        """
+        instance = self.get_instance(instance_id)
+        if not instance:
+            logger.error(f"Instance {instance_id} not found")
+            return False
+
+        label_name = label_config.get('label_name')
+        if not label_name:
+            logger.error("Label name is required")
+            return False
+
+        primary_key = label_config.get('primary_key', 'id')
+        sync_strategy = label_config.get('sync_strategy', 'on_demand')
+        property_mapping = label_config.get('property_mapping', {})
+
+        # Auto-generate property schema from SQLite table if not provided
+        if not property_mapping:
+            config = instance['config']
+            table_name = config.get('table_name')
+            if table_name:
+                property_mapping = self._infer_table_schema(table_name)
+
+        # Convert property_mapping dict to properties list for label service
+        properties = []
+        for prop_name, prop_info in property_mapping.items():
+            properties.append({
+                'name': prop_name,
+                'type': prop_info.get('type', 'string'),
+                'required': prop_info.get('required', False)
+            })
+
+        # Create or update label definition
+        label_def = {
+            'name': label_name,
+            'properties': properties,
+            'relationships': [],  # No relationships initially
+            'source_type': 'plugin_instance',
+            'source_id': instance_id,
+            'sync_config': {
+                'primary_key': primary_key,
+                'sync_strategy': sync_strategy,
+                'auto_sync': False,
+                'last_sync_at': None,
+                'last_sync_count': 0
+            }
+        }
+
+        try:
+            # Use LabelService to save label
+            if app:
+                from ..services.label_service import LabelService
+                label_service = LabelService(app)
+                label_service.save_label(label_def)
+            else:
+                # Fallback: direct database save using the same database
+                conn = self._get_connection()
+                cursor = conn.cursor()
+
+                props_json = json.dumps(properties)
+                sync_config_json = json.dumps(label_def['sync_config'])
+                now = time.time()
+
+                # Check if label exists
+                cursor.execute('SELECT name FROM label_definitions WHERE name = ?', (label_name,))
+                exists = cursor.fetchone()
+
+                if exists:
+                    cursor.execute('''
+                        UPDATE label_definitions
+                        SET properties = ?, source_type = ?, source_id = ?,
+                            sync_config = ?, updated_at = ?
+                        WHERE name = ?
+                    ''', (props_json, 'plugin_instance', instance_id, sync_config_json, now, label_name))
+                else:
+                    cursor.execute('''
+                        INSERT INTO label_definitions
+                        (name, properties, relationships, source_type, source_id, sync_config, created_at, updated_at)
+                        VALUES (?, ?, '[]', ?, ?, ?, ?, ?)
+                    ''', (label_name, props_json, 'plugin_instance', instance_id, sync_config_json, now, now))
+
+                conn.commit()
+                conn.close()
+
+            # Update instance with published label
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE plugin_instances
+                SET published_label = ?, graph_config = ?, updated_at = ?
+                WHERE id = ?
+            ''', (label_name, json.dumps(label_config), time.time(), instance_id))
+            conn.commit()
+            conn.close()
+
+            logger.info(f"Published label '{label_name}' from instance {instance_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error publishing label: {e}", exc_info=True)
+            return False
+
+    def _infer_table_schema(self, table_name: str) -> dict:
+        """Infer property schema from SQLite table structure.
+
+        Args:
+            table_name: SQLite table name
+
+        Returns:
+            dict: Property mapping {column_name: {type, required}}
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            # Get table schema
+            cursor.execute(f"PRAGMA table_info({table_name})")
+            columns = cursor.fetchall()
+
+            property_mapping = {}
+            for col in columns:
+                col_name = col[1] if isinstance(col, tuple) else col['name']
+                col_type = (col[2] if isinstance(col, tuple) else col['type']).lower()
+                not_null = col[3] if isinstance(col, tuple) else col['notnull']
+
+                # Map SQLite types to schema types
+                if 'int' in col_type:
+                    prop_type = 'integer'
+                elif 'real' in col_type or 'float' in col_type or 'double' in col_type:
+                    prop_type = 'number'
+                elif 'bool' in col_type:
+                    prop_type = 'boolean'
+                else:
+                    prop_type = 'string'
+
+                property_mapping[col_name] = {
+                    'type': prop_type,
+                    'required': bool(not_null)
+                }
+
+            return property_mapping
+
+        except Exception as e:
+            logger.error(f"Error inferring schema for table {table_name}: {e}")
+            return {}
+        finally:
+            conn.close()

@@ -320,8 +320,19 @@ ALTER TABLE plugin_instances ADD COLUMN graph_config TEXT;
 
 ### API Endpoints
 
-- `POST /api/plugins/instances/{id}/publish-label` - Publish label schema
-- `GET /api/labels/list` - List all labels (system + plugin + manual)
+**Plugin Label Publishing:**
+- `POST /api/plugins/instances/{id}/publish-label` - Publish label schema from plugin instance
+  - Request body: `{"label_name": "LabEquipment", "primary_key": "serial_number", "sync_strategy": "on_demand"}`
+  - Auto-generates property mapping from SQLite table if not provided
+  - Returns: `{"status": "success", "message": "Label 'LabEquipment' published successfully"}`
+
+**Label Management:**
+- `GET /api/labels` - List all labels with source info
+- `GET /api/labels/{name}` - Get specific label definition
+- `POST /api/labels` - Create/update label definition
+- `DELETE /api/labels/{name}` - Delete label definition
+
+**Neo4j Sync (planned):**
 - `POST /api/labels/{name}/sync` - Sync label data to Neo4j
 - `GET /api/labels/{name}/preview` - Preview data (first 10 rows)
 

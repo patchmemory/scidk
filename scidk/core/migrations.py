@@ -429,6 +429,40 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 11)
             version = 11
 
+        # v12: Add plugin-label integration columns
+        if version < 12:
+            # Extend label_definitions with source tracking
+            try:
+                cur.execute("ALTER TABLE label_definitions ADD COLUMN source_type TEXT DEFAULT 'manual'")
+            except sqlite3.OperationalError:
+                # Column may already exist
+                pass
+
+            try:
+                cur.execute("ALTER TABLE label_definitions ADD COLUMN source_id TEXT")
+            except sqlite3.OperationalError:
+                pass
+
+            try:
+                cur.execute("ALTER TABLE label_definitions ADD COLUMN sync_config TEXT")
+            except sqlite3.OperationalError:
+                pass
+
+            # Extend plugin_instances with graph integration
+            try:
+                cur.execute("ALTER TABLE plugin_instances ADD COLUMN published_label TEXT")
+            except sqlite3.OperationalError:
+                pass
+
+            try:
+                cur.execute("ALTER TABLE plugin_instances ADD COLUMN graph_config TEXT")
+            except sqlite3.OperationalError:
+                pass
+
+            conn.commit()
+            _set_version(conn, 12)
+            version = 12
+
         return version
     finally:
         if own:
