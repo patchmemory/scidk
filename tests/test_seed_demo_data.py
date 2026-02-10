@@ -94,7 +94,7 @@ class TestDemoDataSeeding:
         # Test each user can login
         users = ['admin', 'facility_staff', 'billing_team']
         for username in users:
-            user = auth.verify_password(username, 'demo123')
+            user = auth.verify_user_credentials(username, 'demo123')
             assert user is not None
             assert user['username'] == username
 

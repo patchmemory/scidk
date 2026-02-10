@@ -71,7 +71,7 @@ class TestIlabPlugin:
         """Test that equipment preset has proper column hints."""
         presets = _get_preset_configs()
         equipment = presets['equipment']
-        assert 'name' in equipment['name']
+        assert equipment['name'] == 'iLab Equipment'
         assert 'column_hints' in equipment
         assert 'Service Name' in equipment['column_hints']
         assert equipment['column_hints']['Service Name'] == 'name'
@@ -108,7 +108,7 @@ class TestIlabPlugin:
         assert result['plugin'] == 'ilab_importer'
         assert result['preset'] == 'equipment'
         assert result['preset_name'] == 'iLab Equipment'
-        assert result['row_count'] == 3
+        assert result['rows_imported'] == 3
         assert 'Service Name' in result['columns']
 
     def test_import_services_with_preset(self, sample_services_csv, tmp_path):
@@ -125,7 +125,7 @@ class TestIlabPlugin:
 
         assert result['status'] == 'success'
         assert result['preset'] == 'services'
-        assert result['row_count'] == 3
+        assert result['rows_imported'] == 3
 
     def test_import_pi_directory_with_preset(self, sample_pi_csv, tmp_path):
         """Test importing PI directory with preset."""
@@ -141,7 +141,7 @@ class TestIlabPlugin:
 
         assert result['status'] == 'success'
         assert result['preset'] == 'pi_directory'
-        assert result['row_count'] == 3
+        assert result['rows_imported'] == 3
         assert 'PI Name' in result['columns']
 
     def test_import_without_preset(self, sample_equipment_csv, tmp_path):
@@ -158,7 +158,7 @@ class TestIlabPlugin:
         assert result['status'] == 'success'
         assert result['plugin'] == 'ilab_importer'
         assert 'preset' not in result
-        assert result['row_count'] == 3
+        assert result['rows_imported'] == 3
 
     def test_table_name_auto_fill_with_preset(self, sample_equipment_csv, tmp_path):
         """Test that table name is auto-filled from preset hint."""

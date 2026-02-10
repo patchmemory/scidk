@@ -113,7 +113,8 @@ def set_plugin_setting(plugin_name: str, key: str, value: Any, encrypted: bool =
         if encrypted and value_str:
             value_str = _encrypt_value(value_str)
 
-        now = datetime.utcnow().timestamp()
+        from datetime import timezone
+        now = datetime.now(tz=timezone.utc).timestamp()
 
         conn.execute(
             """

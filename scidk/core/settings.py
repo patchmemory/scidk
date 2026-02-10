@@ -29,7 +29,8 @@ class InterpreterSettings:
 
     def save_enabled_interpreters(self, enabled_set: Set[str]):
         payload = json.dumps(sorted(list(enabled_set)))
-        now = datetime.utcnow().isoformat()
+        from datetime import timezone
+        now = datetime.now(tz=timezone.utc).isoformat()
         self.db.execute(
             "INSERT OR REPLACE INTO interpreter_settings(key, value, updated_at) VALUES (?, ?, ?)",
             ("enabled_interpreters", payload, now),
@@ -101,7 +102,8 @@ def set_setting(key: str, value: str):
         )
         """
     )
-    now = datetime.utcnow().isoformat()
+    from datetime import timezone
+    now = datetime.now(tz=timezone.utc).isoformat()
     db.execute(
         "INSERT OR REPLACE INTO interpreter_settings(key, value, updated_at) VALUES (?, ?, ?)",
         (key, value, now),

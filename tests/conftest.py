@@ -162,7 +162,7 @@ def _cleanup_test_labels_from_db(db_path: Path):
             # List of test label patterns to delete
             test_patterns = [
                 'E2E%',  # E2E test labels
-                'Test%',  # TestLabel, TestNode, etc
+                'Test%',  # TestLabel, TestNode, TestProject42, TestMulti*, etc
                 'Person%',  # From arrows test
                 'Company%',  # From arrows test
                 'Project%',  # Multiple test uses

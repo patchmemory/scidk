@@ -241,9 +241,10 @@ def test_encrypt_decrypt():
 
 def test_setting_update_timestamp(temp_db):
     """Test that updated_at timestamp is set correctly."""
-    before = datetime.utcnow().timestamp()
+    from datetime import timezone
+    before = datetime.now(tz=timezone.utc).timestamp()
     set_plugin_setting('test_plugin', 'key', 'value')
-    after = datetime.utcnow().timestamp()
+    after = datetime.now(tz=timezone.utc).timestamp()
 
     # Check timestamp in database
     conn = sqlite3.connect(temp_db)
