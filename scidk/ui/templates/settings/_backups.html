@@ -1,0 +1,689 @@
+<section id="backups-section" class="settings-section">
+  <h1>Backup Management</h1>
+  <p class="small">Automated backup scheduling, history, and restoration. Backups are created daily at the configured time.</p>
+
+  <!-- Backup Settings Configuration -->
+  <div class="backup-settings-config">
+    <h2>Backup Schedule Configuration</h2>
+    <div class="settings-form">
+      <div class="form-row">
+        <label>
+          <input type="checkbox" id="setting-schedule-enabled" checked>
+          Enable Automated Backups
+        </label>
+      </div>
+      <div class="form-row">
+        <label>
+          Schedule Time (24h):
+          <input type="number" id="setting-schedule-hour" min="0" max="23" value="2" style="width: 60px;">
+          :
+          <input type="number" id="setting-schedule-minute" min="0" max="59" value="0" style="width: 60px;">
+        </label>
+      </div>
+      <div class="form-row">
+        <label>
+          Retention (days):
+          <input type="number" id="setting-retention-days" min="1" value="30" style="width: 80px;">
+        </label>
+      </div>
+      <div class="form-row">
+        <label>
+          <input type="checkbox" id="setting-verify-backups" checked>
+          Verify backups after creation
+        </label>
+      </div>
+      <div class="form-row">
+        <button id="btn-save-settings" class="btn btn-primary">Save Settings</button>
+        <button id="btn-cancel-settings" class="btn btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scheduler Status -->
+  <div id="backup-scheduler-status" class="backup-status">
+    <h2>Current Status</h2>
+    <p>Automated Backups: <span id="scheduler-enabled" class="status-indicator">Loading...</span></p>
+    <p class="small">Schedule: Daily at <span id="schedule-hour">-</span> | Retention: <span id="retention-days">-</span> days</p>
+    <p class="small">Next backup: <span id="next-backup">-</span></p>
+  </div>
+
+  <!-- Manual Backup -->
+  <div class="backup-actions">
+    <h3>Manual Backup</h3>
+    <button id="btn-create-backup" class="btn btn-primary">Create Backup Now</button>
+    <button id="btn-cleanup-old" class="btn btn-secondary">Cleanup Old Backups</button>
+  </div>
+
+  <!-- Backup History -->
+  <div class="backup-history">
+    <h3>Backup History</h3>
+    <div id="backups-loading" style="display: none;">Loading backups...</div>
+    <div id="backups-empty" style="display: none;">No backups found.</div>
+    <table id="backups-table" style="display: none;">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Reason</th>
+          <th>Created By</th>
+          <th>Size</th>
+          <th>Files</th>
+          <th>Verified</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="backups-list">
+        <!-- Populated by JavaScript -->
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Restore Confirmation Modal -->
+  <div id="restore-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <span class="modal-close">&times;</span>
+      <h2>Confirm Restore</h2>
+      <p>Are you sure you want to restore from this backup?</p>
+      <p><strong>Warning:</strong> Current data will be backed up first, but this action will replace all current settings and data with the backup.</p>
+      <div class="modal-actions">
+        <button id="btn-confirm-restore" class="btn btn-danger">Restore</button>
+        <button id="btn-cancel-restore" class="btn btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .backup-settings-config {
+      padding: 1rem;
+      background: #f0f8ff;
+      border: 1px solid #cde;
+      border-radius: 4px;
+      margin-bottom: 1.5rem;
+    }
+
+    .backup-settings-config h2 {
+      margin-top: 0;
+      margin-bottom: 1rem;
+    }
+
+    .settings-form {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .form-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .form-row label {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .form-row input[type="number"] {
+      padding: 0.25rem 0.5rem;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+
+    .form-row input[type="checkbox"] {
+      cursor: pointer;
+    }
+
+    .backup-status {
+      padding: 1rem;
+      background: #f9f9f9;
+      border-radius: 4px;
+      margin-bottom: 1.5rem;
+    }
+
+    .backup-actions {
+      margin-bottom: 2rem;
+    }
+
+    .backup-actions h3 {
+      margin-bottom: 0.75rem;
+    }
+
+    .backup-actions .btn {
+      margin-right: 0.5rem;
+    }
+
+    .backup-history {
+      margin-top: 2rem;
+    }
+
+    #backups-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+    }
+
+    #backups-table th,
+    #backups-table td {
+      padding: 0.75rem;
+      text-align: left;
+      border-bottom: 1px solid #ddd;
+    }
+
+    #backups-table th {
+      background: #f5f5f5;
+      font-weight: bold;
+    }
+
+    #backups-table tr:hover {
+      background: #f9f9f9;
+    }
+
+    .status-indicator {
+      font-weight: bold;
+    }
+
+    .status-indicator.enabled {
+      color: #19c37d;
+    }
+
+    .status-indicator.disabled {
+      color: #6c757d;
+    }
+
+    .verified-badge {
+      display: inline-block;
+      padding: 0.25rem 0.5rem;
+      border-radius: 12px;
+      font-size: 0.85rem;
+      font-weight: bold;
+    }
+
+    .verified-badge.yes {
+      background: #19c37d;
+      color: white;
+    }
+
+    .verified-badge.no {
+      background: #e74c3c;
+      color: white;
+    }
+
+    .verified-badge.unknown {
+      background: #6c757d;
+      color: white;
+    }
+
+    .backup-action-btn {
+      padding: 0.25rem 0.5rem;
+      font-size: 0.85rem;
+      margin-right: 0.25rem;
+    }
+
+    .btn {
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+
+    .btn-primary {
+      background: #007bff;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #0056b3;
+    }
+
+    .btn-secondary {
+      background: #6c757d;
+      color: white;
+    }
+
+    .btn-secondary:hover {
+      background: #545b62;
+    }
+
+    .btn-danger {
+      background: #e74c3c;
+      color: white;
+    }
+
+    .btn-danger:hover {
+      background: #c0392b;
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    /* Modal styles */
+    .modal {
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background-color: rgba(0,0,0,0.4);
+    }
+
+    .modal-content {
+      background-color: #fefefe;
+      margin: 15% auto;
+      padding: 20px;
+      border: 1px solid #888;
+      border-radius: 4px;
+      width: 80%;
+      max-width: 500px;
+    }
+
+    .modal-close {
+      color: #aaa;
+      float: right;
+      font-size: 28px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .modal-close:hover,
+    .modal-close:focus {
+      color: black;
+    }
+
+    .modal-actions {
+      margin-top: 1.5rem;
+      text-align: right;
+    }
+
+    .modal-actions .btn {
+      margin-left: 0.5rem;
+    }
+  </style>
+
+  <script>
+    let backupsRefreshInterval = null;
+    let selectedBackupId = null;
+    let originalSettings = null;
+
+    function loadSettings() {
+      fetch('/api/backups/settings')
+        .then(res => res.json())
+        .then(data => {
+          // Store original settings
+          originalSettings = {...data};
+
+          // Populate form
+          document.getElementById('setting-schedule-enabled').checked = data.schedule_enabled;
+          document.getElementById('setting-schedule-hour').value = data.schedule_hour;
+          document.getElementById('setting-schedule-minute').value = data.schedule_minute;
+          document.getElementById('setting-retention-days').value = data.retention_days;
+          document.getElementById('setting-verify-backups').checked = data.verify_backups;
+        })
+        .catch(err => {
+          console.error('Failed to load settings:', err);
+        });
+    }
+
+    function saveSettings() {
+      const btn = document.getElementById('btn-save-settings');
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+
+      const settings = {
+        schedule_enabled: document.getElementById('setting-schedule-enabled').checked,
+        schedule_hour: parseInt(document.getElementById('setting-schedule-hour').value),
+        schedule_minute: parseInt(document.getElementById('setting-schedule-minute').value),
+        retention_days: parseInt(document.getElementById('setting-retention-days').value),
+        verify_backups: document.getElementById('setting-verify-backups').checked
+      };
+
+      fetch('/api/backups/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) {
+            alert('Failed to save settings: ' + data.error);
+          } else {
+            alert('Settings saved successfully!');
+            originalSettings = {...data};
+            loadBackups(); // Reload to show updated status
+          }
+        })
+        .catch(err => {
+          alert('Failed to save settings: ' + err.message);
+        })
+        .finally(() => {
+          btn.disabled = false;
+          btn.textContent = 'Save Settings';
+        });
+    }
+
+    function cancelSettings() {
+      if (originalSettings) {
+        document.getElementById('setting-schedule-enabled').checked = originalSettings.schedule_enabled;
+        document.getElementById('setting-schedule-hour').value = originalSettings.schedule_hour;
+        document.getElementById('setting-schedule-minute').value = originalSettings.schedule_minute;
+        document.getElementById('setting-retention-days').value = originalSettings.retention_days;
+        document.getElementById('setting-verify-backups').checked = originalSettings.verify_backups;
+      }
+    }
+
+    function loadBackups() {
+      document.getElementById('backups-loading').style.display = 'block';
+      document.getElementById('backups-table').style.display = 'none';
+      document.getElementById('backups-empty').style.display = 'none';
+
+      fetch('/api/backups')
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+          }
+          return res.json();
+        })
+        .then(data => {
+          document.getElementById('backups-loading').style.display = 'none';
+
+          // Update scheduler status
+          if (data.scheduler) {
+            const enabled = data.scheduler.enabled ? 'Enabled' : 'Disabled';
+            const enabledClass = data.scheduler.enabled ? 'enabled' : 'disabled';
+            document.getElementById('scheduler-enabled').textContent = enabled;
+            document.getElementById('scheduler-enabled').className = `status-indicator ${enabledClass}`;
+
+            if (data.scheduler.enabled) {
+              document.getElementById('schedule-hour').textContent = `${data.scheduler.schedule_hour}:${String(data.scheduler.schedule_minute).padStart(2, '0')}`;
+              document.getElementById('retention-days').textContent = data.scheduler.retention_days;
+
+              if (data.scheduler.next_backup) {
+                const nextBackup = new Date(data.scheduler.next_backup);
+                document.getElementById('next-backup').textContent = nextBackup.toLocaleString();
+              } else {
+                document.getElementById('next-backup').textContent = '-';
+              }
+            } else {
+              document.getElementById('schedule-hour').textContent = '-';
+              document.getElementById('retention-days').textContent = '-';
+              document.getElementById('next-backup').textContent = '-';
+            }
+          }
+
+          // Display backups
+          if (data.backups && data.backups.length > 0) {
+            document.getElementById('backups-table').style.display = 'table';
+            renderBackups(data.backups);
+          } else {
+            document.getElementById('backups-empty').style.display = 'block';
+          }
+        })
+        .catch(err => {
+          console.error('Failed to load backups:', err);
+          document.getElementById('backups-loading').style.display = 'none';
+          document.getElementById('backups-empty').textContent = 'Failed to load backups: ' + err.message;
+          document.getElementById('backups-empty').style.display = 'block';
+        });
+    }
+
+    function renderBackups(backups) {
+      const tbody = document.getElementById('backups-list');
+      tbody.innerHTML = '';
+
+      backups.forEach(backup => {
+        const row = document.createElement('tr');
+
+        // Date
+        const dateCell = document.createElement('td');
+        const date = new Date(backup.timestamp);
+        dateCell.textContent = date.toLocaleString();
+        row.appendChild(dateCell);
+
+        // Reason
+        const reasonCell = document.createElement('td');
+        reasonCell.textContent = backup.reason || '-';
+        row.appendChild(reasonCell);
+
+        // Created By
+        const createdByCell = document.createElement('td');
+        createdByCell.textContent = backup.created_by || '-';
+        row.appendChild(createdByCell);
+
+        // Size
+        const sizeCell = document.createElement('td');
+        sizeCell.textContent = backup.size_human || '-';
+        row.appendChild(sizeCell);
+
+        // Files count
+        const filesCell = document.createElement('td');
+        filesCell.textContent = backup.files_count || 0;
+        row.appendChild(filesCell);
+
+        // Verified
+        const verifiedCell = document.createElement('td');
+        const verifiedBadge = document.createElement('span');
+        verifiedBadge.className = 'verified-badge';
+        if (backup.verified === true) {
+          verifiedBadge.textContent = 'Yes';
+          verifiedBadge.classList.add('yes');
+        } else if (backup.verified === false) {
+          verifiedBadge.textContent = 'No';
+          verifiedBadge.classList.add('no');
+          if (backup.verification_error) {
+            verifiedBadge.title = backup.verification_error;
+          }
+        } else {
+          verifiedBadge.textContent = 'Unknown';
+          verifiedBadge.classList.add('unknown');
+        }
+        verifiedCell.appendChild(verifiedBadge);
+        row.appendChild(verifiedCell);
+
+        // Actions
+        const actionsCell = document.createElement('td');
+
+        // Verify button
+        const verifyBtn = document.createElement('button');
+        verifyBtn.textContent = 'Verify';
+        verifyBtn.className = 'btn btn-secondary backup-action-btn';
+        verifyBtn.onclick = () => verifyBackup(backup.backup_id || backup.filename);
+        actionsCell.appendChild(verifyBtn);
+
+        // Restore button
+        const restoreBtn = document.createElement('button');
+        restoreBtn.textContent = 'Restore';
+        restoreBtn.className = 'btn btn-primary backup-action-btn';
+        restoreBtn.onclick = () => showRestoreConfirmation(backup.backup_id || backup.filename);
+        actionsCell.appendChild(restoreBtn);
+
+        // Delete button
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.className = 'btn btn-danger backup-action-btn';
+        deleteBtn.onclick = () => deleteBackup(backup.backup_id || backup.filename);
+        actionsCell.appendChild(deleteBtn);
+
+        row.appendChild(actionsCell);
+        tbody.appendChild(row);
+      });
+    }
+
+    function createBackup() {
+      const btn = document.getElementById('btn-create-backup');
+      btn.disabled = true;
+      btn.textContent = 'Creating...';
+
+      fetch('/api/backups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'manual', verify: true })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            alert('Backup created successfully!');
+            loadBackups();
+          } else {
+            alert('Failed to create backup: ' + (data.error || 'Unknown error'));
+          }
+        })
+        .catch(err => {
+          alert('Failed to create backup: ' + err.message);
+        })
+        .finally(() => {
+          btn.disabled = false;
+          btn.textContent = 'Create Backup Now';
+        });
+    }
+
+    function verifyBackup(backupId) {
+      fetch(`/api/backups/verify/${backupId}`, { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+          if (data.verified) {
+            alert('Backup verification successful!');
+          } else {
+            alert('Backup verification failed: ' + (data.error || 'Unknown error'));
+          }
+          loadBackups();
+        })
+        .catch(err => {
+          alert('Failed to verify backup: ' + err.message);
+        });
+    }
+
+    function showRestoreConfirmation(backupId) {
+      selectedBackupId = backupId;
+      document.getElementById('restore-modal').style.display = 'block';
+    }
+
+    function restoreBackup() {
+      if (!selectedBackupId) return;
+
+      const modal = document.getElementById('restore-modal');
+      const btn = document.getElementById('btn-confirm-restore');
+      btn.disabled = true;
+      btn.textContent = 'Restoring...';
+
+      fetch(`/api/backups/${selectedBackupId}/restore`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ create_backup_first: true })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            alert('Backup restored successfully! Please restart the application.');
+            modal.style.display = 'none';
+            loadBackups();
+          } else {
+            alert('Failed to restore backup: ' + (data.error || 'Unknown error'));
+          }
+        })
+        .catch(err => {
+          alert('Failed to restore backup: ' + err.message);
+        })
+        .finally(() => {
+          btn.disabled = false;
+          btn.textContent = 'Restore';
+          selectedBackupId = null;
+        });
+    }
+
+    function deleteBackup(backupId) {
+      if (!confirm('Are you sure you want to delete this backup? This action cannot be undone.')) {
+        return;
+      }
+
+      fetch(`/api/backups/${backupId}`, { method: 'DELETE' })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            alert('Backup deleted successfully!');
+            loadBackups();
+          } else {
+            alert('Failed to delete backup: ' + (data.error || 'Unknown error'));
+          }
+        })
+        .catch(err => {
+          alert('Failed to delete backup: ' + err.message);
+        });
+    }
+
+    function cleanupOldBackups() {
+      const btn = document.getElementById('btn-cleanup-old');
+      btn.disabled = true;
+      btn.textContent = 'Cleaning up...';
+
+      fetch('/api/backups/cleanup', { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            alert(`Cleanup complete! Deleted ${data.deleted_count} old backup(s), freed ${data.freed_human}.`);
+            loadBackups();
+          } else {
+            alert('Failed to cleanup backups: ' + (data.error || 'Unknown error'));
+          }
+        })
+        .catch(err => {
+          alert('Failed to cleanup backups: ' + err.message);
+        })
+        .finally(() => {
+          btn.disabled = false;
+          btn.textContent = 'Cleanup Old Backups';
+        });
+    }
+
+    // Event listeners
+    document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
+    document.getElementById('btn-cancel-settings').addEventListener('click', cancelSettings);
+    document.getElementById('btn-create-backup').addEventListener('click', createBackup);
+    document.getElementById('btn-cleanup-old').addEventListener('click', cleanupOldBackups);
+    document.getElementById('btn-confirm-restore').addEventListener('click', restoreBackup);
+    document.getElementById('btn-cancel-restore').addEventListener('click', function() {
+      document.getElementById('restore-modal').style.display = 'none';
+      selectedBackupId = null;
+    });
+
+    // Modal close handlers
+    document.querySelector('.modal-close').addEventListener('click', function() {
+      document.getElementById('restore-modal').style.display = 'none';
+      selectedBackupId = null;
+    });
+
+    window.addEventListener('click', function(event) {
+      const modal = document.getElementById('restore-modal');
+      if (event.target === modal) {
+        modal.style.display = 'none';
+        selectedBackupId = null;
+      }
+    });
+
+    // Initialize on section activation
+    const backupsSection = document.getElementById('backups-section');
+    if (backupsSection) {
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+            if (backupsSection.classList.contains('active')) {
+              loadSettings();
+              loadBackups();
+            }
+          }
+        });
+      });
+
+      observer.observe(backupsSection, { attributes: true });
+
+      // Initialize if already active
+      if (backupsSection.classList.contains('active')) {
+        loadSettings();
+        loadBackups();
+      }
+    }
+  </script>
+</section>

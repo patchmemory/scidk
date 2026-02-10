@@ -10,10 +10,12 @@ and scidk/services/ to keep this file lean and maintainable.
 from flask import Flask
 from pathlib import Path
 import os
+from flasgger import Swagger
 
 # Core components
 from .core.filesystem import FilesystemManager
 from .core.registry import InterpreterRegistry
+from .core.logging_config import setup_logging
 from .interpreters import register_all as register_interpreters
 
 # Initialization modules (extracted from app.py)
@@ -32,10 +34,53 @@ def create_app():
     Returns:
         Flask: Configured Flask application instance with scidk extensions
     """
+    # Setup logging first to capture all startup activity
+    log_level = os.environ.get('SCIDK_LOG_LEVEL', 'INFO')
+    setup_logging(log_level=log_level)
+
     # Apply channel-based defaults before reading env-driven config
     apply_channel_defaults()
 
     app = Flask(__name__, template_folder="ui/templates", static_folder="ui/static")
+
+    # Initialize Swagger for API documentation
+    swagger_template = {
+        'info': {
+            'title': 'SciDK API',
+            'version': '1.0.0',
+            'description': 'RESTful API for SciDK scientific data management and knowledge graph operations',
+            'contact': {
+                'name': 'SciDK Team',
+                'url': 'https://github.com/scidk/scidk'
+            }
+        },
+        'securityDefinitions': {
+            'Bearer': {
+                'type': 'apiKey',
+                'name': 'Authorization',
+                'in': 'header',
+                'description': 'JWT Authorization header using the Bearer scheme. Example: "Authorization: Bearer {token}"'
+            }
+        },
+        'security': [
+            {'Bearer': []}
+        ]
+    }
+    swagger_config = {
+        'headers': [],
+        'specs': [
+            {
+                'endpoint': 'apispec',
+                'route': '/apispec.json',
+                'rule_filter': lambda rule: True,
+                'model_filter': lambda tag: True,
+            }
+        ],
+        'static_url_path': '/flasgger_static',
+        'swagger_ui': True,
+        'specs_route': '/api/docs'
+    }
+    Swagger(app, template=swagger_template, config=swagger_config)
 
     # Feature: selective dry-run UI flag (dev default)
     try:
@@ -135,6 +180,78 @@ def create_app():
     # Initialize authentication middleware
     from .web.auth_middleware import init_auth_middleware
     init_auth_middleware(app)
+
+    # Initialize label endpoint registry (for plugin-registered endpoints)
+    from .core.label_endpoint_registry import LabelEndpointRegistry
+    label_endpoint_registry = LabelEndpointRegistry()
+    app.extensions['scidk']['label_endpoints'] = label_endpoint_registry
+
+    # Initialize plugin template registry (for UI-instantiable plugins)
+    from .core.plugin_template_registry import PluginTemplateRegistry
+    plugin_template_registry = PluginTemplateRegistry()
+    app.extensions['scidk']['plugin_templates'] = plugin_template_registry
+
+    # Initialize plugin instance manager (for user-created instances)
+    from .core.plugin_instance_manager import PluginInstanceManager
+    settings_db = app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+    plugin_instance_manager = PluginInstanceManager(db_path=settings_db)
+    app.extensions['scidk']['plugin_instances'] = plugin_instance_manager
+
+    # Load plugins after all core initialization is complete
+    from .core.plugin_loader import PluginLoader, get_all_plugin_states
+    plugin_loader = PluginLoader()
+    plugin_states = get_all_plugin_states()
+
+    # Get list of enabled plugins from database
+    discovered_plugins = plugin_loader.discover_plugins()
+    enabled_plugins = [p for p in discovered_plugins if plugin_states.get(p, True)]
+
+    # Load all plugins
+    plugin_loader.load_all_plugins(app, enabled_plugins=enabled_plugins)
+
+    # Store plugin loader in app extensions for access in routes
+    app.extensions['scidk']['plugins'] = {
+        'loader': plugin_loader,
+        'loaded': plugin_loader.list_plugins(),
+        'failed': plugin_loader.list_failed_plugins()
+    }
+
+    # Initialize backup scheduler
+    try:
+        from .core.backup_manager import get_backup_manager
+        from .core.backup_scheduler import get_backup_scheduler
+
+        # Get settings database path
+        settings_db = app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+
+        # Get alert manager if available
+        alert_manager = None
+        try:
+            from .core.alert_manager import AlertManager
+            alert_manager = AlertManager(db_path=settings_db)
+        except Exception:
+            # Alert manager optional
+            pass
+
+        # Initialize backup manager and scheduler
+        # Scheduler will load settings from database (schedule, retention, etc.)
+        backup_manager = get_backup_manager()
+        backup_scheduler = get_backup_scheduler(
+            backup_manager=backup_manager,
+            settings_db_path=settings_db,
+            alert_manager=alert_manager
+        )
+
+        # Start scheduler (will only run if schedule_enabled is True in settings)
+        backup_scheduler.start()
+
+        # Store in app extensions for access in routes
+        app.extensions['scidk']['backup_scheduler'] = backup_scheduler
+        app.extensions['scidk']['backup_manager'] = backup_manager
+    except Exception as e:
+        # Backup scheduler is optional - log but don't fail startup
+        import logging
+        logging.warning(f"Failed to initialize backup scheduler: {e}")
 
     return app
 

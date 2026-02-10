@@ -255,6 +255,51 @@
   .label-item.focused {
     box-shadow: 0 0 0 2px #2196f3;
   }
+
+  /* Source badges */
+  .label-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.25rem;
+  }
+
+  .source-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .source-badge.plugin {
+    background: #e3f2fd;
+    color: #1976d2;
+    cursor: pointer;
+  }
+
+  .source-badge.plugin:hover {
+    background: #bbdefb;
+  }
+
+  .source-badge.manual {
+    background: #f5f5f5;
+    color: #616161;
+  }
+
+  .source-badge.system {
+    background: #e8f5e9;
+    color: #388e3c;
+  }
+
+  .source-badge.unknown {
+    background: #fff3e0;
+    color: #f57c00;
+  }
   .property-row, .relationship-row {
     display: flex;
     gap: 0.5rem;
@@ -1302,6 +1347,73 @@ function loadLabels() {
     });
 }
 
+function getSourceBadge(label) {
+  const sourceType = label.source_type || 'manual';
+  const sourceId = label.source_id;
+
+  let icon, className, clickHandler = '', displayText = '';
+
+  switch(sourceType) {
+    case 'plugin_instance':
+      icon = '📦';
+      className = 'source-badge plugin';
+      // Get display text from API or use source_id
+      displayText = sourceId ? `Plugin: ${sourceId.substring(0, 20)}` : 'Plugin';
+      clickHandler = sourceId ? ` onclick="event.stopPropagation(); navigateToPluginInstance('${escapeHtml(sourceId)}');" style="cursor: pointer;"` : '';
+      break;
+    case 'manual':
+      icon = '✏️';
+      className = 'source-badge manual';
+      displayText = 'Manual';
+      break;
+    case 'system':
+      icon = '🔧';
+      className = 'source-badge system';
+      displayText = 'System';
+      break;
+    default:
+      icon = '❓';
+      className = 'source-badge unknown';
+      displayText = sourceType;
+  }
+
+  const title = getSourceDisplayText(sourceType, sourceId);
+
+  return `
+    <span class="${className}"
+          title="${escapeHtml(title)}"
+          ${clickHandler}>
+      ${icon} ${escapeHtml(displayText)}
+    </span>
+  `;
+}
+
+function getSourceDisplayText(sourceType, sourceId) {
+  if (sourceType === 'plugin_instance' && sourceId) {
+    return `Plugin Instance: ${sourceId}`;
+  } else if (sourceType === 'system') {
+    return 'Built-in System Label';
+  } else if (sourceType === 'manual') {
+    return 'Manually Created Label';
+  } else {
+    return sourceType || 'Unknown Source';
+  }
+}
+
+function navigateToPluginInstance(instanceId) {
+  // Navigate to Settings > Plugins
+  window.location.href = '/settings#plugins';
+  // Store the instance ID to highlight after navigation
+  sessionStorage.setItem('highlight_plugin_instance', instanceId);
+}
+
+function escapeHtml(text) {
+  if (typeof text !== 'string') return text;
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 function renderLabelList() {
   const container = document.getElementById('label-list');
   if (labels.length === 0) {
@@ -1335,13 +1447,19 @@ function renderLabelList() {
     const isFocused = lastClickedIndex === index;
     const classes = ['label-item', isActive && 'active', isSelected && 'selected', isFocused && 'focused'].filter(Boolean).join(' ');
 
+    // Generate source badge
+    const sourceBadge = getSourceBadge(label);
+
     return `
       <div class="${classes}"
            data-label="${label.name}"
            data-index="${index}"
            data-testid="label-item"
            tabindex="${isFocused ? '0' : '-1'}">
-        <strong>${label.name}</strong>
+        <div class="label-header">
+          <strong>${label.name}</strong>
+          ${sourceBadge}
+        </div>
         <div class="small">${label.properties.length} properties, ${relText}${detailText}</div>
       </div>
     `;

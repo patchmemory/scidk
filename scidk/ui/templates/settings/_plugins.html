@@ -1,8 +1,1311 @@
 <section id="plugins-section" class="settings-section">
   <h1>Plugins</h1>
-  <p class="small">Plugin registry summary.</p>
-  <ul>
-    <li class="small">Registered interpreter count: {{ interp_count or 0 }}</li>
-    <li class="small">Extensions mapped: {{ ext_count or 0 }}</li>
-  </ul>
+  <p class="small">Manage plugins and extensions for SciDK. Plugins can add routes, labels, and functionality.</p>
+
+  <div id="plugins-list" style="margin-top: 1.5rem;">
+    <p class="small">Loading plugins...</p>
+  </div>
+
+  {% if failed_plugins %}
+  <div class="failed-plugins" style="margin-top: 2rem;">
+    <h3>Failed Plugins</h3>
+    <ul class="error">
+      {% for name, error in failed_plugins.items() %}
+        <li><strong>{{ name }}</strong>: {{ error }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <!-- Plugin Instances Section -->
+  <div style="margin-top: 3rem; border-top: 2px solid #ddd; padding-top: 2rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <div>
+        <h2>Plugin Instances</h2>
+        <p class="small">Manage plugin instances for data import and integration</p>
+      </div>
+      <button id="btn-new-plugin-instance" class="btn btn-primary">+ New Plugin Instance</button>
+    </div>
+
+    <div id="plugin-instances-list">
+      <p class="small">Loading plugin instances...</p>
+    </div>
+  </div>
+
+  <!-- Modal for creating new instance -->
+  <div id="plugin-instance-wizard-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Create Plugin Instance</h2>
+        <button class="close-btn" onclick="closePluginInstanceWizard()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <!-- Step 1: Select Template -->
+        <div id="wizard-step-1" class="wizard-step">
+          <h3>Step 1: Select Template</h3>
+          <p class="small">Choose a plugin template to create an instance from</p>
+          <div id="template-list">
+            <p class="small">Loading templates...</p>
+          </div>
+        </div>
+
+        <!-- Step 2: Configure Instance -->
+        <div id="wizard-step-2" class="wizard-step" style="display: none;">
+          <h3>Step 2: Configure Instance</h3>
+          <p class="small">Configure your plugin instance</p>
+          <form id="instance-config-form">
+            <div class="form-group">
+              <label for="instance-name">Instance Name *</label>
+              <input type="text" id="instance-name" name="name" required class="form-control" placeholder="e.g., iLab Equipment 2024">
+            </div>
+            <div id="template-config-fields">
+              <!-- Dynamic fields based on template -->
+            </div>
+          </form>
+        </div>
+
+        <!-- Step 3: Graph Integration (Optional, for data_import plugins) -->
+        <div id="wizard-step-3" class="wizard-step" style="display: none;">
+          <h3>Step 3: Graph Integration (Optional)</h3>
+          <p class="small">Create a Label to sync this data to the knowledge graph</p>
+
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="graph-enable" onchange="toggleGraphConfig()">
+              Create Label from this data
+            </label>
+          </div>
+
+          <div id="graph-config-fields" style="display: none;">
+            <div class="form-group">
+              <label for="graph-label-name">Label Name *</label>
+              <input type="text" id="graph-label-name" class="form-control" placeholder="e.g., LabEquipment">
+              <small>How this data will appear in the graph</small>
+            </div>
+
+            <div class="form-group">
+              <label for="graph-primary-key">Primary Key *</label>
+              <select id="graph-primary-key" class="form-control">
+                <option value="">Select unique identifier column</option>
+              </select>
+              <small>Column that uniquely identifies each row</small>
+            </div>
+
+            <div class="form-group">
+              <label>Sync Strategy</label>
+              <div>
+                <label>
+                  <input type="radio" name="sync-strategy" value="on_demand" checked>
+                  On-demand - Manual sync via Labels page
+                </label>
+              </div>
+              <div>
+                <label>
+                  <input type="radio" name="sync-strategy" value="automatic">
+                  Automatic - Sync to Neo4j when plugin runs
+                </label>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Properties to include</label>
+              <div id="graph-properties-list">
+                <p class="small">Configure columns after creating the instance</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 4: Preview Data -->
+        <div id="wizard-step-4" class="wizard-step" style="display: none;">
+          <h3>Step 4: Preview & Confirm</h3>
+          <p class="small">Review your configuration before creating the instance</p>
+          <div id="preview-content">
+            <div class="config-summary">
+              <h4>Configuration Summary</h4>
+              <div id="config-summary-details"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="wizard-prev-btn" class="btn-secondary" onclick="wizardPrevStep()" style="display: none;">Previous</button>
+        <button id="wizard-next-btn" class="btn-primary" onclick="wizardNextStep()">Next</button>
+        <button id="wizard-create-btn" class="btn-primary" onclick="createPluginInstance()" style="display: none;">Create Instance</button>
+        <button class="btn-secondary" onclick="closePluginInstanceWizard()">Cancel</button>
+      </div>
+    </div>
+  </div>
 </section>
+
+<style>
+  .plugin-card {
+    border: 1px solid #ddd;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border-radius: 4px;
+    background: #f9f9f9;
+  }
+
+  .plugin-card h3 {
+    margin-top: 0;
+    color: #333;
+  }
+
+  .plugin-card .plugin-meta {
+    color: #666;
+    font-size: 0.9em;
+    margin: 0.5rem 0;
+  }
+
+  .plugin-card .plugin-description {
+    margin: 0.5rem 0;
+  }
+
+  .plugin-card .plugin-actions {
+    margin-top: 1rem;
+  }
+
+  .plugin-card .toggle-switch {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+  }
+
+  .plugin-card .toggle-switch input {
+    margin-right: 0.5rem;
+  }
+
+  .plugin-card.disabled {
+    opacity: 0.6;
+    background: #f0f0f0;
+  }
+
+  .plugin-status {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.85em;
+    font-weight: bold;
+  }
+
+  .plugin-status.enabled {
+    background: #d4edda;
+    color: #155724;
+  }
+
+  .plugin-status.disabled {
+    background: #f8d7da;
+    color: #721c24;
+  }
+</style>
+
+<script>
+  // Load plugins when the plugins section becomes active
+  document.addEventListener('DOMContentLoaded', function() {
+    // Listen for section changes
+    const pluginsSidebarItem = document.querySelector('[data-section="plugins"]');
+    if (pluginsSidebarItem) {
+      pluginsSidebarItem.addEventListener('click', loadPluginsIfNeeded);
+    }
+
+    // Load immediately if we're already on the plugins section
+    if (window.location.hash === '#plugins') {
+      loadPlugins();
+    }
+  });
+
+  let pluginsLoaded = false;
+
+  function loadPluginsIfNeeded() {
+    if (!pluginsLoaded) {
+      loadPlugins();
+    }
+  }
+
+  function loadPlugins() {
+    fetch('/api/plugins')
+      .then(response => response.json())
+      .then(data => {
+        renderPlugins(data.plugins || []);
+        pluginsLoaded = true;
+      })
+      .catch(error => {
+        const container = document.getElementById('plugins-list');
+        if (container) {
+          container.innerHTML = '<p class="error">Error loading plugins: ' + error.message + '</p>';
+        }
+      });
+  }
+
+  function renderPlugins(plugins) {
+    const container = document.getElementById('plugins-list');
+    if (!container) return;
+
+    if (plugins.length === 0) {
+      container.innerHTML = '<p class="small">No plugins installed. Create a plugin in the <code>plugins/</code> directory. See <a href="/docs/plugins.md">plugin documentation</a> for details.</p>';
+      return;
+    }
+
+    let html = '';
+    plugins.forEach(plugin => {
+      const isEnabled = plugin.enabled !== false;
+      const statusClass = isEnabled ? 'enabled' : 'disabled';
+      const cardClass = isEnabled ? '' : ' disabled';
+
+      html += `
+        <div class="plugin-card${cardClass}" data-plugin="${plugin.module_name || plugin.name}">
+          <h3>${plugin.name || plugin.module_name || 'Unknown Plugin'}</h3>
+          <div class="plugin-meta">
+            <span><strong>Version:</strong> ${plugin.version || 'N/A'}</span> |
+            <span><strong>Author:</strong> ${plugin.author || 'Unknown'}</span> |
+            <span class="plugin-status ${statusClass}">${isEnabled ? 'Enabled' : 'Disabled'}</span>
+          </div>
+          <div class="plugin-description">
+            ${plugin.description || 'No description available.'}
+          </div>
+          <div class="plugin-actions">
+            <label class="toggle-switch">
+              <input type="checkbox"
+                     ${isEnabled ? 'checked' : ''}
+                     onchange="togglePlugin('${plugin.module_name || plugin.name}', this.checked)">
+              Enable Plugin
+            </label>
+            <button class="btn-secondary" style="margin-left: 1rem;"
+                    onclick="openPluginSettings('${plugin.module_name || plugin.name}')">
+              Configure
+            </button>
+          </div>
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+  }
+
+  function togglePlugin(pluginName, enabled) {
+    fetch('/api/plugins/' + encodeURIComponent(pluginName) + '/toggle', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ enabled: enabled })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        alert('Plugin ' + (enabled ? 'enabled' : 'disabled') + '. Please restart the application for changes to take effect.');
+        pluginsLoaded = false;  // Force reload on next visit
+        loadPlugins(); // Reload plugins list
+      } else {
+        alert('Error: ' + (data.error || 'Unknown error'));
+        pluginsLoaded = false;
+        loadPlugins(); // Reload to reset UI state
+      }
+    })
+    .catch(error => {
+      alert('Error toggling plugin: ' + error.message);
+      pluginsLoaded = false;
+      loadPlugins(); // Reload to reset UI state
+    });
+  }
+
+  function openPluginSettings(pluginName) {
+    // Fetch plugin settings and schema
+    fetch('/api/plugins/' + encodeURIComponent(pluginName) + '/settings')
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          showPluginSettingsModal(pluginName, data.settings || {}, data.schema || null);
+        } else {
+          alert('Error loading settings: ' + (data.error || 'Unknown error'));
+        }
+      })
+      .catch(error => {
+        alert('Error loading settings: ' + error.message);
+      });
+  }
+
+  function showPluginSettingsModal(pluginName, settings, schema) {
+    // Create modal
+    const modal = document.createElement('div');
+    modal.className = 'plugin-settings-modal';
+    modal.innerHTML = `
+      <div class="plugin-settings-modal-content">
+        <div class="plugin-settings-modal-header">
+          <h2>Configure ${pluginName}</h2>
+          <button class="close-btn" onclick="closePluginSettingsModal()">&times;</button>
+        </div>
+        <div class="plugin-settings-modal-body" id="plugin-settings-form">
+          ${renderSettingsForm(pluginName, settings, schema)}
+        </div>
+        <div class="plugin-settings-modal-footer">
+          <button class="btn-primary" onclick="savePluginSettings('${pluginName}')">Save Settings</button>
+          <button class="btn-secondary" onclick="closePluginSettingsModal()">Cancel</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+
+  function renderSettingsForm(pluginName, settings, schema) {
+    if (!schema) {
+      return '<p class="small">This plugin does not define any configurable settings.</p>';
+    }
+
+    let html = '<form id="plugin-settings-form-fields">';
+
+    for (const [key, fieldSchema] of Object.entries(schema)) {
+      const value = settings[key] !== undefined ? settings[key] : (fieldSchema.default || '');
+      const fieldType = fieldSchema.type || 'text';
+      const required = fieldSchema.required ? 'required' : '';
+      const description = fieldSchema.description || '';
+
+      html += `
+        <div class="form-group">
+          <label for="plugin-field-${key}">
+            ${key}${required ? ' *' : ''}
+          </label>
+          ${description ? `<p class="small">${description}</p>` : ''}
+      `;
+
+      if (fieldType === 'boolean') {
+        html += `
+          <input type="checkbox" id="plugin-field-${key}" name="${key}"
+                 ${value ? 'checked' : ''}>
+        `;
+      } else if (fieldType === 'password') {
+        html += `
+          <input type="password" id="plugin-field-${key}" name="${key}"
+                 value="${value}" ${required} class="form-control">
+        `;
+      } else if (fieldType === 'number') {
+        html += `
+          <input type="number" id="plugin-field-${key}" name="${key}"
+                 value="${value}" ${required} class="form-control">
+        `;
+      } else if (fieldType === 'select' && fieldSchema.options) {
+        html += `<select id="plugin-field-${key}" name="${key}" ${required} class="form-control">`;
+        for (const option of fieldSchema.options) {
+          const selected = value === option ? 'selected' : '';
+          html += `<option value="${option}" ${selected}>${option}</option>`;
+        }
+        html += `</select>`;
+      } else {
+        // Default to text input
+        html += `
+          <input type="text" id="plugin-field-${key}" name="${key}"
+                 value="${value}" ${required} class="form-control">
+        `;
+      }
+
+      html += '</div>';
+    }
+
+    html += '</form>';
+    return html;
+  }
+
+  function savePluginSettings(pluginName) {
+    const form = document.getElementById('plugin-settings-form-fields');
+    if (!form) return;
+
+    // Collect form data
+    const settings = {};
+    const formData = new FormData(form);
+
+    for (const [key, value] of formData.entries()) {
+      const input = form.querySelector(`[name="${key}"]`);
+      if (input && input.type === 'checkbox') {
+        settings[key] = input.checked;
+      } else {
+        settings[key] = value;
+      }
+    }
+
+    // Save to API
+    fetch('/api/plugins/' + encodeURIComponent(pluginName) + '/settings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ settings: settings })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        alert('Settings saved successfully!');
+        closePluginSettingsModal();
+      } else {
+        alert('Error saving settings: ' + (data.error || 'Unknown error'));
+        if (data.errors) {
+          alert('Validation errors:\n' + data.errors.join('\n'));
+        }
+      }
+    })
+    .catch(error => {
+      alert('Error saving settings: ' + error.message);
+    });
+  }
+
+  function closePluginSettingsModal() {
+    const modal = document.querySelector('.plugin-settings-modal');
+    if (modal) {
+      modal.remove();
+    }
+  }
+
+  // ============================================================================
+  // Plugin Instance Management
+  // ============================================================================
+
+  let pluginInstancesLoaded = false;
+  let wizardState = {
+    currentStep: 1,
+    selectedTemplate: null,
+    templateData: null,
+    config: {},
+    graphConfig: null
+  };
+
+  // Load plugin instances
+  document.addEventListener('DOMContentLoaded', function() {
+    // Load instances when plugins section becomes active
+    if (window.location.hash === '#plugins') {
+      loadPluginInstances();
+    }
+
+    // Set up new instance button
+    const newInstanceBtn = document.getElementById('btn-new-plugin-instance');
+    if (newInstanceBtn) {
+      newInstanceBtn.addEventListener('click', openPluginInstanceWizard);
+    }
+  });
+
+  async function loadPluginInstances() {
+    if (pluginInstancesLoaded) return;
+
+    try {
+      const resp = await fetch('/api/plugins/instances');
+      const data = await resp.json();
+
+      if (data.status === 'success') {
+        renderInstanceCards(data.instances || []);
+        pluginInstancesLoaded = true;
+      } else {
+        document.getElementById('plugin-instances-list').innerHTML =
+          '<p class="error">Error loading plugin instances: ' + (data.error || 'Unknown error') + '</p>';
+      }
+    } catch (error) {
+      document.getElementById('plugin-instances-list').innerHTML =
+        '<p class="error">Error loading plugin instances: ' + error.message + '</p>';
+    }
+  }
+
+  function renderInstanceCards(instances) {
+    const container = document.getElementById('plugin-instances-list');
+    if (!container) return;
+
+    if (instances.length === 0) {
+      container.innerHTML = '<p class="small">No plugin instances configured. Click "+ New Plugin Instance" to create one.</p>';
+      return;
+    }
+
+    let html = '';
+    instances.forEach(instance => {
+      const statusClass = instance.status || 'inactive';
+      const statusLabel = statusClass.charAt(0).toUpperCase() + statusClass.slice(1);
+      const lastRun = instance.last_run ? formatDate(instance.last_run) : 'Never';
+      const rowCount = instance.row_count || 0;
+
+      html += `
+        <div class="plugin-instance-card">
+          <div class="instance-header">
+            <h4>${escapeHtml(instance.name)}</h4>
+            <span class="badge ${statusClass}">${statusLabel}</span>
+          </div>
+          <div class="instance-meta">
+            <span><strong>Template:</strong> ${escapeHtml(instance.template_id)}</span>
+            <span><strong>Last sync:</strong> ${lastRun}</span>
+            <span><strong>Rows:</strong> ${rowCount}</span>
+          </div>
+          <div class="instance-actions">
+            <button class="btn-secondary" onclick="configureInstance('${instance.id}')">Configure</button>
+            <button class="btn-primary" onclick="syncInstance('${instance.id}')" ${!instance.enabled ? 'disabled' : ''}>Sync Now</button>
+            <button class="btn-secondary" onclick="toggleInstanceEnabled('${instance.id}', ${!instance.enabled})">
+              ${instance.enabled ? 'Disable' : 'Enable'}
+            </button>
+            <button class="btn-secondary" onclick="deleteInstance('${instance.id}')" style="background: #dc3545;">Delete</button>
+          </div>
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+  }
+
+  async function syncInstance(instanceId) {
+    if (!confirm('Sync this plugin instance now?')) return;
+
+    try {
+      const resp = await fetch(`/api/plugins/instances/${instanceId}/execute`, {
+        method: 'POST'
+      });
+      const result = await resp.json();
+
+      if (result.status === 'success') {
+        showToast('Sync completed successfully', 'success');
+        pluginInstancesLoaded = false;
+        loadPluginInstances();
+      } else {
+        showToast('Sync failed: ' + (result.error || 'Unknown error'), 'error');
+      }
+    } catch (error) {
+      showToast('Error syncing instance: ' + error.message, 'error');
+    }
+  }
+
+  async function toggleInstanceEnabled(instanceId, enabled) {
+    try {
+      const resp = await fetch(`/api/plugins/instances/${instanceId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: enabled })
+      });
+      const result = await resp.json();
+
+      if (result.status === 'success') {
+        showToast('Instance ' + (enabled ? 'enabled' : 'disabled'), 'success');
+        pluginInstancesLoaded = false;
+        loadPluginInstances();
+      } else {
+        showToast('Error: ' + (result.error || 'Unknown error'), 'error');
+      }
+    } catch (error) {
+      showToast('Error updating instance: ' + error.message, 'error');
+    }
+  }
+
+  async function deleteInstance(instanceId) {
+    if (!confirm('Are you sure you want to delete this plugin instance? This cannot be undone.')) return;
+
+    try {
+      const resp = await fetch(`/api/plugins/instances/${instanceId}`, {
+        method: 'DELETE'
+      });
+      const result = await resp.json();
+
+      if (result.status === 'success') {
+        showToast('Instance deleted', 'success');
+        pluginInstancesLoaded = false;
+        loadPluginInstances();
+      } else {
+        showToast('Error deleting instance: ' + (result.error || 'Unknown error'), 'error');
+      }
+    } catch (error) {
+      showToast('Error deleting instance: ' + error.message, 'error');
+    }
+  }
+
+  function configureInstance(instanceId) {
+    // Load instance and open edit modal
+    fetch(`/api/plugins/instances/${instanceId}`)
+      .then(resp => resp.json())
+      .then(data => {
+        if (data.status === 'success') {
+          showEditInstanceModal(data.instance);
+        } else {
+          showToast('Error loading instance: ' + (data.error || 'Unknown error'), 'error');
+        }
+      })
+      .catch(error => {
+        showToast('Error loading instance: ' + error.message, 'error');
+      });
+  }
+
+  function showEditInstanceModal(instance) {
+    // For now, just show a simple alert - full edit modal can be added later
+    alert('Edit modal for instance: ' + instance.name + '\n\nConfiguration:\n' + JSON.stringify(instance.config, null, 2));
+  }
+
+  // ============================================================================
+  // Plugin Instance Wizard
+  // ============================================================================
+
+  async function openPluginInstanceWizard() {
+    wizardState = {
+      currentStep: 1,
+      selectedTemplate: null,
+      templateData: null,
+      config: {},
+      graphConfig: null
+    };
+
+    // Show modal
+    const modal = document.getElementById('plugin-instance-wizard-modal');
+    modal.style.display = 'flex';
+
+    // Load templates
+    await loadTemplates();
+
+    // Reset wizard to step 1
+    showWizardStep(1);
+  }
+
+  function closePluginInstanceWizard() {
+    const modal = document.getElementById('plugin-instance-wizard-modal');
+    modal.style.display = 'none';
+    wizardState = { currentStep: 1, selectedTemplate: null, templateData: null, config: {}, graphConfig: null };
+  }
+
+  async function loadTemplates() {
+    try {
+      const resp = await fetch('/api/plugins/templates');
+      const data = await resp.json();
+
+      if (data.status === 'success') {
+        renderTemplateList(data.templates || []);
+      } else {
+        document.getElementById('template-list').innerHTML =
+          '<p class="error">Error loading templates: ' + (data.error || 'Unknown error') + '</p>';
+      }
+    } catch (error) {
+      document.getElementById('template-list').innerHTML =
+        '<p class="error">Error loading templates: ' + error.message + '</p>';
+    }
+  }
+
+  function renderTemplateList(templates) {
+    const container = document.getElementById('template-list');
+    if (!container) return;
+
+    if (templates.length === 0) {
+      container.innerHTML = '<p class="small">No plugin templates available.</p>';
+      return;
+    }
+
+    let html = '';
+    templates.forEach(template => {
+      const isIlab = template.id === 'ilab_importer';
+      const brandingClass = isIlab ? ' ilab-template' : '';
+      const icon = template.icon || '📦';
+      const presetHints = isIlab && template.preset_configs
+        ? `<div class="preset-hints">Presets: ${Object.values(template.preset_configs).map(p => p.name).join(', ')}</div>`
+        : '';
+
+      html += `
+        <div class="template-card${brandingClass}" onclick="selectTemplate('${template.id}', ${escapeHtml(JSON.stringify(template))})">
+          <div class="template-icon">${icon}</div>
+          <h4>${escapeHtml(template.name)}</h4>
+          <p>${escapeHtml(template.description || 'No description')}</p>
+          ${presetHints}
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+  }
+
+  function selectTemplate(templateId, templateData) {
+    wizardState.selectedTemplate = templateId;
+    wizardState.templateData = templateData;
+
+    // Highlight selected template
+    document.querySelectorAll('.template-card').forEach(card => {
+      card.classList.remove('selected');
+    });
+    event.target.closest('.template-card').classList.add('selected');
+  }
+
+  function showWizardStep(step) {
+    // Hide all steps
+    document.querySelectorAll('.wizard-step').forEach(s => s.style.display = 'none');
+
+    // Check if template is data_import category
+    const template = wizardState.templateData;
+    const isDataImport = template?.category === 'data_import';
+
+    // Adjust step flow based on plugin category
+    let actualStep = step;
+    if (step === 3 && !isDataImport) {
+      // Skip graph integration step for non-data_import plugins
+      actualStep = 4;
+    } else if (step === 4 && !isDataImport) {
+      // When going back from step 4 on non-data_import, go to step 2
+      if (arguments[1] === 'back') {
+        actualStep = 2;
+      }
+    }
+
+    // Show current step
+    document.getElementById(`wizard-step-${actualStep}`).style.display = 'block';
+
+    // Update buttons
+    const prevBtn = document.getElementById('wizard-prev-btn');
+    const nextBtn = document.getElementById('wizard-next-btn');
+    const createBtn = document.getElementById('wizard-create-btn');
+
+    const maxStep = isDataImport ? 4 : 3; // 4 steps if data_import, 3 otherwise (skipping graph)
+    const isLastStep = (isDataImport && step === 4) || (!isDataImport && step === 3);
+
+    prevBtn.style.display = step > 1 ? 'inline-block' : 'none';
+    nextBtn.style.display = !isLastStep ? 'inline-block' : 'none';
+    createBtn.style.display = isLastStep ? 'inline-block' : 'none';
+
+    wizardState.currentStep = step;
+
+    // Setup step-specific content
+    if (step === 2) {
+      setupConfigFields();
+    } else if (step === 3 && isDataImport) {
+      setupGraphIntegrationStep();
+    } else if (step === 4 || (step === 3 && !isDataImport)) {
+      showConfigSummary();
+    }
+  }
+
+  function wizardNextStep() {
+    const currentStep = wizardState.currentStep;
+
+    if (currentStep === 1) {
+      if (!wizardState.selectedTemplate) {
+        showToast('Please select a template', 'error');
+        return;
+      }
+    } else if (currentStep === 2) {
+      // Validate and collect config
+      const form = document.getElementById('instance-config-form');
+      if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+      }
+
+      // Collect form data
+      const formData = new FormData(form);
+      wizardState.config = {};
+      for (const [key, value] of formData.entries()) {
+        wizardState.config[key] = value;
+      }
+    } else if (currentStep === 3) {
+      // Validate and collect graph config if enabled
+      const graphEnabled = document.getElementById('graph-enable')?.checked;
+      if (graphEnabled) {
+        const labelName = document.getElementById('graph-label-name')?.value;
+        const primaryKey = document.getElementById('graph-primary-key')?.value;
+        const syncStrategy = document.querySelector('input[name="sync-strategy"]:checked')?.value;
+
+        if (!labelName || !primaryKey) {
+          showToast('Please provide label name and primary key', 'error');
+          return;
+        }
+
+        wizardState.graphConfig = {
+          enabled: true,
+          label_name: labelName,
+          primary_key: primaryKey,
+          sync_strategy: syncStrategy || 'on_demand'
+        };
+      } else {
+        wizardState.graphConfig = null;
+      }
+    }
+
+    showWizardStep(currentStep + 1);
+  }
+
+  function wizardPrevStep() {
+    showWizardStep(wizardState.currentStep - 1);
+  }
+
+  function toggleGraphConfig() {
+    const enabled = document.getElementById('graph-enable')?.checked;
+    const fieldsDiv = document.getElementById('graph-config-fields');
+    if (fieldsDiv) {
+      fieldsDiv.style.display = enabled ? 'block' : 'none';
+    }
+  }
+
+  function setupGraphIntegrationStep() {
+    const config = wizardState.config;
+    const tableName = config.table_name || config.name || 'data';
+
+    // Auto-generate label name from table name (CamelCase)
+    const suggestedLabelName = tableName
+      .split(/[_\s-]+/)
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join('');
+
+    document.getElementById('graph-label-name').value = suggestedLabelName;
+
+    // Try to infer primary key column
+    // For now, populate with common options
+    const pkDropdown = document.getElementById('graph-primary-key');
+    pkDropdown.innerHTML = `
+      <option value="">Select unique identifier column</option>
+      <option value="id">id</option>
+      <option value="uuid">uuid</option>
+      <option value="record_id">record_id</option>
+    `;
+
+    // Reset graph config
+    document.getElementById('graph-enable').checked = false;
+    document.getElementById('graph-config-fields').style.display = 'none';
+  }
+
+  function setupConfigFields() {
+    const container = document.getElementById('template-config-fields');
+    const template = wizardState.templateData;
+
+    if (!template || !template.config_schema) {
+      container.innerHTML = '<p class="small">No configuration required.</p>';
+      return;
+    }
+
+    let html = '';
+    for (const [key, field] of Object.entries(template.config_schema)) {
+      const required = field.required ? 'required' : '';
+      const description = field.description || '';
+
+      html += `
+        <div class="form-group">
+          <label for="config-${key}">${escapeHtml(field.label || key)}${field.required ? ' *' : ''}</label>
+          ${description ? `<p class="small">${escapeHtml(description)}</p>` : ''}
+      `;
+
+      if (field.type === 'file') {
+        html += `<input type="file" id="config-${key}" name="${key}" ${required} class="form-control">`;
+      } else if (field.type === 'number') {
+        html += `<input type="number" id="config-${key}" name="${key}" ${required} class="form-control">`;
+      } else if (field.type === 'select' && field.options) {
+        html += `<select id="config-${key}" name="${key}" ${required} class="form-control">`;
+        field.options.forEach(opt => {
+          html += `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`;
+        });
+        html += `</select>`;
+      } else {
+        html += `<input type="text" id="config-${key}" name="${key}" ${required} class="form-control" placeholder="${escapeHtml(field.placeholder || '')}">`;
+      }
+
+      html += '</div>';
+    }
+
+    container.innerHTML = html;
+  }
+
+  function showConfigSummary() {
+    const container = document.getElementById('config-summary-details');
+    const config = wizardState.config;
+    const template = wizardState.templateData;
+
+    let html = '<dl>';
+    html += `<dt>Template</dt><dd>${escapeHtml(template.name)}</dd>`;
+
+    for (const [key, value] of Object.entries(config)) {
+      html += `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd>`;
+    }
+
+    html += '</dl>';
+    container.innerHTML = html;
+  }
+
+  async function createPluginInstance() {
+    try {
+      const payload = {
+        template_id: wizardState.selectedTemplate,
+        name: wizardState.config.name,
+        config: { ...wizardState.config }
+      };
+      delete payload.config.name; // Name is separate
+
+      // Add graph config if provided
+      if (wizardState.graphConfig) {
+        payload.graph_config = wizardState.graphConfig;
+      }
+
+      const resp = await fetch('/api/plugins/instances', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const result = await resp.json();
+
+      if (result.status === 'success') {
+        const instanceId = result.instance.id;
+
+        // Publish label if graph integration enabled
+        if (wizardState.graphConfig?.enabled) {
+          try {
+            await publishLabel(instanceId, wizardState.graphConfig);
+            showToast('Plugin instance created and label published successfully', 'success');
+          } catch (labelError) {
+            showToast('Plugin instance created but label publishing failed: ' + labelError.message, 'warning');
+          }
+        } else {
+          showToast('Plugin instance created successfully', 'success');
+        }
+
+        closePluginInstanceWizard();
+        pluginInstancesLoaded = false;
+        loadPluginInstances();
+      } else {
+        showToast('Error creating instance: ' + (result.error || 'Unknown error'), 'error');
+      }
+    } catch (error) {
+      showToast('Error creating instance: ' + error.message, 'error');
+    }
+  }
+
+  async function publishLabel(instanceId, graphConfig) {
+    const resp = await fetch(`/api/plugins/instances/${instanceId}/publish-label`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        label_name: graphConfig.label_name,
+        primary_key: graphConfig.primary_key,
+        sync_config: {
+          strategy: graphConfig.sync_strategy
+        }
+      })
+    });
+
+    const result = await resp.json();
+
+    if (result.status !== 'success') {
+      throw new Error(result.error || 'Failed to publish label');
+    }
+
+    return result;
+  }
+
+  // ============================================================================
+  // Utility Functions
+  // ============================================================================
+
+  function formatDate(dateStr) {
+    if (!dateStr) return 'Never';
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleString();
+    } catch {
+      return dateStr;
+    }
+  }
+
+  function escapeHtml(text) {
+    if (typeof text !== 'string') return text;
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  function showToast(message, type = 'info') {
+    // Simple toast notification - can be enhanced
+    alert(message);
+  }
+</script>
+
+<style>
+  .plugin-settings-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  }
+
+  .plugin-settings-modal-content {
+    background: white;
+    border-radius: 8px;
+    max-width: 600px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  }
+
+  .plugin-settings-modal-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .plugin-settings-modal-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+  }
+
+  .plugin-settings-modal-header .close-btn {
+    background: none;
+    border: none;
+    font-size: 2rem;
+    cursor: pointer;
+    color: #666;
+    line-height: 1;
+  }
+
+  .plugin-settings-modal-header .close-btn:hover {
+    color: #333;
+  }
+
+  .plugin-settings-modal-body {
+    padding: 1.5rem;
+  }
+
+  .plugin-settings-modal-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #ddd;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+
+  .form-group {
+    margin-bottom: 1.5rem;
+  }
+
+  .form-group label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+  }
+
+  .form-control {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 1rem;
+  }
+
+  .btn-primary, .btn-secondary {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+  }
+
+  .btn-primary {
+    background: #007bff;
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: #0056b3;
+  }
+
+  .btn-secondary {
+    background: #6c757d;
+    color: white;
+  }
+
+  .btn-secondary:hover {
+    background: #545b62;
+  }
+
+  /* Plugin Instance Styles */
+  .plugin-instance-card {
+    border: 1px solid #ddd;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    border-radius: 6px;
+    background: #f9f9f9;
+  }
+
+  .instance-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+
+  .instance-header h4 {
+    margin: 0;
+    color: #333;
+  }
+
+  .badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.85em;
+    font-weight: bold;
+  }
+
+  .badge.active {
+    background: #d4edda;
+    color: #155724;
+  }
+
+  .badge.inactive {
+    background: #e2e3e5;
+    color: #383d41;
+  }
+
+  .badge.error {
+    background: #f8d7da;
+    color: #721c24;
+  }
+
+  .instance-meta {
+    color: #666;
+    font-size: 0.9em;
+    margin-bottom: 0.75rem;
+  }
+
+  .instance-meta span {
+    margin-right: 1rem;
+  }
+
+  .instance-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+
+  .instance-actions button {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.9em;
+  }
+
+  /* Modal/Wizard Styles */
+  .modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  }
+
+  .modal-content {
+    background: white;
+    border-radius: 8px;
+    max-width: 700px;
+    width: 90%;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  }
+
+  .modal-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .modal-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+  }
+
+  .modal-body {
+    padding: 1.5rem;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .modal-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #ddd;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+
+  .template-card {
+    border: 2px solid #ddd;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .template-card:hover {
+    border-color: #007bff;
+    background: #f0f8ff;
+  }
+
+  .template-card.selected {
+    border-color: #007bff;
+    background: #e7f3ff;
+  }
+
+  .template-card h4 {
+    margin: 0 0 0.5rem 0;
+    color: #333;
+  }
+
+  .template-card p {
+    margin: 0;
+    color: #666;
+    font-size: 0.9em;
+  }
+
+  /* iLab branded template styles */
+  .template-card.ilab-template {
+    border-left: 4px solid #0066cc;
+    background: linear-gradient(to right, #f0f8ff, #ffffff);
+  }
+
+  .template-card.ilab-template:hover {
+    background: linear-gradient(to right, #e0f0ff, #f8fcff);
+  }
+
+  .template-card .template-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .template-card .preset-hints {
+    font-size: 0.85em;
+    color: #666;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid #e0e0e0;
+  }
+
+  .wizard-step {
+    min-height: 300px;
+  }
+
+  .config-summary {
+    background: #f9f9f9;
+    padding: 1rem;
+    border-radius: 6px;
+    border: 1px solid #ddd;
+  }
+
+  .config-summary h4 {
+    margin-top: 0;
+  }
+
+  .config-summary dl {
+    margin: 0;
+  }
+
+  .config-summary dt {
+    font-weight: bold;
+    margin-top: 0.5rem;
+  }
+
+  .config-summary dd {
+    margin-left: 1rem;
+    color: #666;
+  }
+</style>

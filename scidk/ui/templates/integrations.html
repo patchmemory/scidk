@@ -223,6 +223,12 @@
 <h1>Integrations</h1>
 <p class="small">Create relationships between data instances using graph, CSV, or API sources.</p>
 
+<!-- Background Tasks Progress -->
+<section id="link-tasks-section" style="margin-bottom: 1rem; display: none;">
+  <h3>Running Jobs</h3>
+  <div id="link-tasks-list"></div>
+</section>
+
 <div class="links-container">
   <!-- Left Panel: Integration Definitions List -->
   <div class="links-list" id="links-list">
@@ -473,7 +479,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function loadAvailableLabels() {
-  fetch('/api/links/available-labels')
+  fetch('/api/labels/list')
     .then(r => r.json())
     .then(data => {
       if (data.status === 'success') {
@@ -488,12 +494,38 @@ function populateLabelDropdowns() {
   const sourceSelect = document.getElementById('source-label-select');
   const targetSelect = document.getElementById('target-label-select');
 
-  const options = availableLabels.map(label =>
-    `<option value="${label.name}">${label.name}</option>`
-  ).join('');
+  const options = availableLabels.map(label => {
+    const sourceIcon = getSourceIcon(label.source);
+    const nodeInfo = label.node_count > 0 ? ` (${label.node_count} nodes)` : ' (empty)';
+    const sourceInfo = label.source_display ? ` - ${label.source_display}` : '';
+
+    return `
+      <option value="${escapeHtml(label.name)}"
+              data-source="${label.source}"
+              data-count="${label.node_count}">
+        ${sourceIcon} ${escapeHtml(label.name)}${nodeInfo}${sourceInfo}
+      </option>
+    `;
+  }).join('');
 
   sourceSelect.innerHTML = '<option value="">Select a label...</option>' + options;
   targetSelect.innerHTML = '<option value="">Select a label...</option>' + options;
+}
+
+function getSourceIcon(source) {
+  switch(source) {
+    case 'plugin_instance': return '📦';
+    case 'manual': return '✏️';
+    case 'system': return '🔧';
+    default: return '❓';
+  }
+}
+
+function escapeHtml(text) {
+  if (typeof text !== 'string') return text;
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 function initializeEventListeners() {
@@ -1009,13 +1041,12 @@ function executeLink() {
 
   showToast('Starting execution...', 'info');
 
-  fetch(`/api/links/${wizardData.id}/execute`, { method: 'POST' })
+  fetch(`/api/integrations/${wizardData.id}/execute`, { method: 'POST' })
     .then(r => r.json())
     .then(result => {
       if (result.status === 'success') {
-        const jobId = result.job_id;
-        showToast('Execution started, polling for status...', 'info');
-        pollJobStatus(jobId);
+        showToast('Execution started! Check progress below.', 'info');
+        startTaskPolling();
       } else {
         showToast(`Execution failed: ${result.error}`, 'error');
       }
@@ -1023,28 +1054,77 @@ function executeLink() {
     .catch(err => showToast('Failed to execute link', 'error'));
 }
 
-function pollJobStatus(jobId) {
-  const interval = setInterval(() => {
-    fetch(`/api/links/jobs/${jobId}`)
-      .then(r => r.json())
-      .then(result => {
-        if (result.status === 'success') {
-          const job = result.job;
+// Progress tracking for link execution tasks
+let taskPollingInterval = null;
 
-          if (job.status === 'completed') {
-            clearInterval(interval);
-            showToast(`Execution completed! Created ${job.executed_count} relationships.`, 'success');
-          } else if (job.status === 'failed') {
-            clearInterval(interval);
-            showToast(`Execution failed: ${job.error}`, 'error');
-          }
-        }
-      })
-      .catch(err => {
-        clearInterval(interval);
-        showToast('Failed to poll job status', 'error');
-      });
-  }, 2000);
+function fmtETA(seconds) {
+  if (!seconds || seconds <= 0) return '';
+  if (seconds < 60) return `~${seconds}s remaining`;
+  if (seconds < 3600) return `~${Math.round(seconds/60)}m remaining`;
+  return `~${Math.round(seconds/3600)}h ${Math.round((seconds%3600)/60)}m remaining`;
+}
+
+function startTaskPolling() {
+  if (taskPollingInterval) return;
+  fetchLinkTasks();
+  taskPollingInterval = setInterval(fetchLinkTasks, 1000);
+}
+
+function stopTaskPolling() {
+  if (taskPollingInterval) {
+    clearInterval(taskPollingInterval);
+    taskPollingInterval = null;
+  }
+}
+
+async function fetchLinkTasks() {
+  try {
+    const r = await fetch('/api/tasks');
+    const tasks = await r.json();
+    const linkTasks = tasks.filter(t => t.type === 'link_execution');
+    renderLinkTasks(linkTasks);
+    const hasActiveTasks = linkTasks.some(t => t.status === 'running');
+    if (!hasActiveTasks && linkTasks.length === 0) {
+      stopTaskPolling();
+    }
+  } catch (e) {
+    console.error('Failed to fetch tasks:', e);
+  }
+}
+
+function renderLinkTasks(tasks) {
+  const section = document.getElementById('link-tasks-section');
+  const container = document.getElementById('link-tasks-list');
+  if (!tasks || tasks.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+  const fmtPct = (x) => Math.round((x || 0) * 100);
+  container.innerHTML = tasks.map(t => {
+    const pct = fmtPct(t.progress);
+    const barColor = t.status === 'completed' ? '#4caf50' : (t.status === 'error' ? '#e53935' : '#2196f3');
+    const bar = `<div style="width:100%; background:#eee; height:10px; border-radius:4px; overflow:hidden"><div style="width:${pct}%; height:10px; background:${barColor}"></div></div>`;
+    const statusMsg = t.status_message ? ` — ${t.status_message}` : '';
+    const etaMsg = (t.status === 'running' && t.eta_seconds) ? ` — ${fmtETA(t.eta_seconds)}` : '';
+    const linkName = t.link_name || t.link_def_id || 'Unknown';
+    const relsCreated = t.relationships_created ? ` (${t.relationships_created} relationships)` : '';
+    const cancelBtn = (t.status === 'running') ? ` <button class="btn btn-sm btn-outline-danger" data-cancel-task="${t.id}">Cancel</button>` : '';
+    const info = `<div class="small"><strong>${linkName}</strong> ${t.status} — ${t.processed||0}/${t.total||'?'} (${pct}%)${statusMsg}${etaMsg}${relsCreated} ${cancelBtn}</div>`;
+    return `<div style="margin:.5rem 0; padding:.5rem; border:1px solid #eee; border-radius:4px">${bar}${info}</div>`;
+  }).join('');
+  container.querySelectorAll('button[data-cancel-task]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const taskId = btn.getAttribute('data-cancel-task');
+      try {
+        const r = await fetch(`/api/tasks/${taskId}/cancel`, { method: 'POST' });
+        if (!r.ok) showToast('Cancel failed', 'error');
+        else showToast('Canceling task...', 'info');
+      } catch (e) {
+        showToast('Cancel failed: ' + e, 'error');
+      }
+    });
+  });
 }
 
 // Global keyboard navigation handler

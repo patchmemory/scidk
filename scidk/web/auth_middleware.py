@@ -18,6 +18,9 @@ PUBLIC_ROUTES = {
     '/api/settings/security/auth',  # Allow disabling/checking auth config
     '/api/health',  # Health check endpoint (legitimately needs to be public)
     '/static',  # Prefix for static files
+    '/api/docs',  # Swagger UI
+    '/apispec.json',  # Swagger API spec
+    '/flasgger_static',  # Swagger static files
 }
 
 

@@ -11,6 +11,8 @@ jsonpath-ng>=1.6
 pandas>=2.0
 rapidfuzz>=3.0
 bcrypt>=4.0
+APScheduler>=3.10
+flasgger>=0.9.7
 
 # Dev/test dependencies (same as pyproject.toml [project.optional-dependencies].dev)
 pytest>=7.4

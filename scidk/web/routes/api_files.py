@@ -17,6 +17,66 @@ def _get_ext():
 
 @bp.post('/scan/dry-run')
 def api_scan_dry_run():
+        """Scan directory dry-run
+        ---
+        tags:
+          - Files & Scans
+        summary: Preview files that would be scanned without executing scan
+        description: Returns list of files that match scan criteria without actually scanning them
+        parameters:
+          - in: body
+            name: body
+            required: true
+            schema:
+              type: object
+              properties:
+                path:
+                  type: string
+                  example: /home/user/data
+                  description: Directory path to scan
+                include:
+                  type: array
+                  items:
+                    type: string
+                  example: ["*.py", "*.csv"]
+                  description: Include patterns (glob)
+                exclude:
+                  type: array
+                  items:
+                    type: string
+                  example: ["test_*", "*.tmp"]
+                  description: Exclude patterns (glob)
+                max_depth:
+                  type: integer
+                  example: 3
+                  description: Maximum directory depth
+                use_ignore:
+                  type: boolean
+                  default: true
+                  description: Respect .scidkignore file
+        responses:
+          200:
+            description: Dry-run results
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  example: ok
+                files:
+                  type: array
+                  items:
+                    type: string
+                  description: List of file paths
+                total_files:
+                  type: integer
+                  example: 42
+                total_bytes:
+                  type: integer
+                  example: 1048576
+          400:
+            description: Invalid path
+        """
         from fnmatch import fnmatch
         data = request.get_json(force=True, silent=True) or {}
         path = data.get('path') or os.getcwd()

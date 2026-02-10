@@ -64,6 +64,8 @@ def api_tasks_create():
             'error': None,
             'cancel_requested': False,
             'selection': data.get('selection') or {},
+            'eta_seconds': None,
+            'status_message': 'Initializing scan...',
         }
         current_app.extensions['scidk'].setdefault('tasks', {})[task_id] = task
         app = current_app._get_current_object()
@@ -86,8 +88,10 @@ def api_tasks_create():
                     if provider_id in ('local_fs', 'mounted_fs'):
                         base = Path(path)
                         # Estimate total: Python traversal
+                        task['status_message'] = 'Counting files...'
                         files_list = [p for p in _get_ext()['fs']._iter_files_python(base, recursive=recursive)]
                         task['total'] = len(files_list)
+                        task['status_message'] = f'Processing {task["total"]} files...'
                         # Build rows like api_scan, apply selection rules when provided
                         sel = (task.get('selection') or {})
                         rules = sel.get('rules') or []
@@ -199,6 +203,7 @@ def api_tasks_create():
                         ingested = pix.batch_insert_files(rows)
                         # In-memory datasets and progress
                         processed = 0
+                        eta_window_start = time.time()
                         for fpath in items_files:
                             if task.get('cancel_requested'):
                                 task['status'] = 'canceled'; task['ended'] = time.time(); return
@@ -210,6 +215,14 @@ def api_tasks_create():
                             processed += 1; task['processed'] = processed
                             if task['total']:
                                 task['progress'] = processed / task['total']
+                                # Calculate ETA based on processing rate (update every 10 files to reduce overhead)
+                                if processed % 10 == 0 or processed == task['total']:
+                                    elapsed = time.time() - eta_window_start
+                                    if elapsed > 0 and processed > 0:
+                                        rate = processed / elapsed
+                                        remaining = task['total'] - processed
+                                        task['eta_seconds'] = int(remaining / rate) if rate > 0 else None
+                                        task['status_message'] = f'Processing {processed}/{task["total"]} files... ({int(rate)}/s)'
                         file_count = len(items_files)
                         # Folders meta
                         for d in items_dirs:
@@ -221,6 +234,7 @@ def api_tasks_create():
                         folder_count = len(items_dirs)
 
                     elif provider_id == 'rclone':
+                        task['status_message'] = 'Listing remote files...'
                         provs = current_app.extensions['scidk'].get('providers')
                         prov = provs.get('rclone') if provs else None
                         if not prov:
@@ -229,6 +243,7 @@ def api_tasks_create():
                         fast_list = True if recursive else False
                         try:
                             items = prov.list_files(path, recursive=recursive, fast_list=fast_list)  # type: ignore[attr-defined]
+                            task['status_message'] = f'Processing {len(items or [])} remote items...'
                         except Exception as ee:
                             raise RuntimeError(str(ee))
                         # Selection for remote: apply only to files using full remote path
@@ -304,6 +319,8 @@ def api_tasks_create():
                                     pass
                                 file_count += 1
                                 task['processed'] = file_count
+                                if file_count % 50 == 0:
+                                    task['status_message'] = f'Processed {file_count} remote files...'
                             if recursive and name:
                                 parts = [p for p in (name.split('/') if isinstance(name, str) else []) if p]
                                 cur = ''
@@ -483,6 +500,8 @@ def api_tasks_create():
             'neo4j_error': None,
             'error': None,
             'cancel_requested': False,
+            'eta_seconds': None,
+            'status_message': 'Preparing commit...',
         }
         current_app.extensions['scidk'].setdefault('tasks', {})[task_id] = task
         app = current_app._get_current_object()
@@ -494,6 +513,7 @@ def api_tasks_create():
                         task['status'] = 'canceled'
                         task['ended'] = time.time()
                         return
+                    task['status_message'] = 'Committing to in-memory graph...'
                     g = current_app.extensions['scidk']['graph']
                     # In-memory commit first (idempotent)
                     g.commit_scan(s)
@@ -530,6 +550,7 @@ def api_tasks_create():
                     except Exception:
                         pass
                     # Build rows once using shared builder when index mode is enabled
+                    task['status_message'] = 'Building commit rows...'
                     use_index = (os.environ.get('SCIDK_COMMIT_FROM_INDEX') or '').strip().lower() in ('1','true','yes','y','on')
                     if use_index:
                         from ...core.commit_rows_from_index import build_rows_for_scan_from_index
@@ -541,12 +562,14 @@ def api_tasks_create():
                     task['processed'] = total
                     if total:
                         task['progress'] = total / (task.get('total') or (total + 1))
+                    task['status_message'] = f'Built commit rows: {len(rows)} files, {len(folder_rows)} folders'
                     # Allow cancel before Neo4j step
                     if task.get('cancel_requested'):
                         task['status'] = 'canceled'
                         task['ended'] = time.time()
                         return
                     # Neo4j write if configured via helper
+                    task['status_message'] = 'Writing to Neo4j...'
                     uri, user, pwd, database, auth_mode = _get_neo4j_params()
                     def _on_prog(e, p):
                         try:

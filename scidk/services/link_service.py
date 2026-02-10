@@ -275,20 +275,72 @@ class LinkService:
 
         return matches
 
-    def execute_link_job(self, link_def_id: str) -> str:
+    def execute_link_job(self, link_def_id: str, use_background_task: bool = True) -> str:
         """
         Start background job to create relationships.
 
         Args:
             link_def_id: Link definition ID
+            use_background_task: If True, use /api/tasks background worker (default). If False, run synchronously.
 
         Returns:
-            Job ID
+            Job ID (if use_background_task=False) or Task ID (if use_background_task=True)
         """
         definition = self.get_link_definition(link_def_id)
         if not definition:
             raise ValueError(f"Link definition '{link_def_id}' not found")
 
+        # Use background task pattern (preferred for production)
+        if use_background_task:
+            import hashlib
+            from flask import current_app
+
+            now = time.time()
+            tid_src = f"link_execution|{link_def_id}|{now}"
+            task_id = hashlib.sha1(tid_src.encode()).hexdigest()[:12]
+
+            # Create task record for tracking
+            task = {
+                'id': task_id,
+                'type': 'link_execution',
+                'status': 'running',
+                'link_def_id': link_def_id,
+                'link_name': definition.get('name', 'Unknown'),
+                'started': now,
+                'ended': None,
+                'total': 0,  # Will be set after preview
+                'processed': 0,
+                'progress': 0.0,
+                'error': None,
+                'cancel_requested': False,
+                'eta_seconds': None,
+                'status_message': 'Initializing relationship creation...',
+                'relationships_created': 0,
+            }
+            current_app.extensions['scidk'].setdefault('tasks', {})[task_id] = task
+
+            # Run in background thread
+            import threading
+            app = current_app._get_current_object()
+
+            def _worker():
+                with app.app_context():
+                    try:
+                        job_id = str(uuid.uuid4())
+                        self._execute_job_impl_with_progress(job_id, definition, task)
+                        task['ended'] = time.time()
+                        task['status'] = 'completed'
+                        task['progress'] = 1.0
+                        task['status_message'] = f'Created {task["relationships_created"]} relationships'
+                    except Exception as e:
+                        task['ended'] = time.time()
+                        task['status'] = 'error'
+                        task['error'] = str(e)
+
+            threading.Thread(target=_worker, daemon=True).start()
+            return task_id
+
+        # Legacy synchronous execution (for backward compatibility)
         job_id = str(uuid.uuid4())
         now = time.time()
 
@@ -306,7 +358,7 @@ class LinkService:
             )
             conn.commit()
 
-            # Execute job (synchronously for MVP, could be async later)
+            # Execute job synchronously
             try:
                 self._execute_job_impl(job_id, definition)
             except Exception as e:
@@ -667,6 +719,156 @@ class LinkService:
                 ('completed', total_created, time.time(), job_id)
             )
             conn.commit()
+        except Exception as e:
+            # Update job with error
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE link_jobs
+                SET status = ?, error = ?, completed_at = ?
+                WHERE id = ?
+                """,
+                ('failed', str(e), time.time(), job_id)
+            )
+            conn.commit()
+            raise
+        finally:
+            conn.close()
+
+    def _execute_job_impl_with_progress(self, job_id: str, definition: Dict[str, Any], task: Dict[str, Any]):
+        """
+        Execute the link job with progress tracking for /api/tasks integration.
+
+        Args:
+            job_id: Job ID for database tracking
+            definition: Link definition
+            task: Task dict to update with progress
+        """
+        conn = self._get_conn()
+        try:
+            from .neo4j_client import get_neo4j_client
+            neo4j_client = get_neo4j_client()
+
+            if not neo4j_client:
+                raise Exception("Neo4j client not configured")
+
+            # Create job record
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO link_jobs
+                (id, link_def_id, status, preview_count, executed_count, started_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (job_id, definition.get('id'), 'running', 0, 0, task['started'])
+            )
+            conn.commit()
+
+            # Fetch all source data
+            task['status_message'] = 'Fetching source data...'
+            source_data = self._fetch_source_data(definition)
+            task['status_message'] = f'Found {len(source_data)} source items'
+
+            # Match with targets
+            task['status_message'] = 'Matching with targets...'
+            matches = self._match_with_targets(definition, source_data, limit=len(source_data))
+
+            task['total'] = len(matches)
+            task['status_message'] = f'Found {len(matches)} matches to process'
+
+            if len(matches) == 0:
+                task['status_message'] = 'No matches found'
+                cursor.execute(
+                    """
+                    UPDATE link_jobs
+                    SET status = ?, executed_count = ?, completed_at = ?
+                    WHERE id = ?
+                    """,
+                    ('completed', 0, time.time(), job_id)
+                )
+                conn.commit()
+                return
+
+            # Create relationships in batches
+            relationship_type = definition.get('relationship_type', '')
+            relationship_props = definition.get('relationship_props', {})
+
+            batch_size = 1000
+            total_created = 0
+            eta_window_start = time.time()
+
+            for i in range(0, len(matches), batch_size):
+                # Check for cancel
+                if task.get('cancel_requested'):
+                    task['status'] = 'canceled'
+                    cursor.execute(
+                        """
+                        UPDATE link_jobs
+                        SET status = ?, error = ?, completed_at = ?
+                        WHERE id = ?
+                        """,
+                        ('cancelled', 'Job cancelled by user', time.time(), job_id)
+                    )
+                    conn.commit()
+                    return
+
+                batch = matches[i:i + batch_size]
+
+                # Build batch create query
+                batch_data = []
+                for match in batch:
+                    source = match.get('source', {})
+                    target = match.get('target', {})
+
+                    if not target:
+                        continue
+
+                    batch_data.append({
+                        'source_id': source.get('_id') or source.get('id'),
+                        'target_id': target.get('_id') or target.get('id'),
+                        'properties': relationship_props
+                    })
+
+                if batch_data:
+                    query = f"""
+                    UNWIND $batch AS row
+                    MATCH (source) WHERE id(source) = row.source_id
+                    MATCH (target) WHERE id(target) = row.target_id
+                    CREATE (source)-[r:{relationship_type}]->(target)
+                    SET r = row.properties
+                    """
+                    neo4j_client.execute_write(query, {'batch': batch_data})
+                    total_created += len(batch_data)
+
+                # Update progress
+                task['processed'] = min(i + batch_size, len(matches))
+                task['relationships_created'] = total_created
+                task['progress'] = task['processed'] / task['total'] if task['total'] > 0 else 0
+
+                # Calculate ETA
+                elapsed = time.time() - eta_window_start
+                if elapsed > 0 and task['processed'] > 0:
+                    rate = task['processed'] / elapsed
+                    remaining = task['total'] - task['processed']
+                    task['eta_seconds'] = int(remaining / rate) if rate > 0 else None
+                    task['status_message'] = f'Creating relationships... {task["processed"]}/{task["total"]} ({int(rate)}/s)'
+                else:
+                    task['status_message'] = f'Creating relationships... {task["processed"]}/{task["total"]}'
+
+            # Update job status to completed
+            cursor.execute(
+                """
+                UPDATE link_jobs
+                SET status = ?, executed_count = ?, completed_at = ?
+                WHERE id = ?
+                """,
+                ('completed', total_created, time.time(), job_id)
+            )
+            conn.commit()
+
+            task['relationships_created'] = total_created
+            task['status_message'] = f'Completed: {total_created} relationships created'
+
         except Exception as e:
             # Update job with error
             cursor = conn.cursor()

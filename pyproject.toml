@@ -22,6 +22,8 @@ dependencies = [
   "pandas>=2.0",
   "rapidfuzz>=3.0",
   "bcrypt>=4.0",
+  "APScheduler>=3.10",
+  "flasgger>=0.9.7",
 ]
 
 [project.optional-dependencies]

@@ -35,20 +35,83 @@ def _get_session_token():
 
 @bp.post('/login')
 def api_auth_login():
-    """Login with username and password.
-
-    Request body:
-        {
-            "username": "admin",
-            "password": "password123",
-            "remember_me": false  // optional, default false
-        }
-
-    Returns:
-        200: {"success": true, "token": "...", "username": "admin"}
-        401: {"success": false, "error": "Invalid credentials"}
-        400: {"success": false, "error": "Missing username or password"}
-        503: {"success": false, "error": "Authentication not enabled"}
+    """User login
+    ---
+    tags:
+      - Authentication
+    summary: Login with username and password
+    description: Authenticate user and create a session token
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - username
+            - password
+          properties:
+            username:
+              type: string
+              example: admin
+              description: Username
+            password:
+              type: string
+              format: password
+              example: password123
+              description: Password
+            remember_me:
+              type: boolean
+              default: false
+              description: Keep session active for 30 days instead of 24 hours
+    responses:
+      200:
+        description: Login successful
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              example: true
+            token:
+              type: string
+              description: Session token (JWT)
+            username:
+              type: string
+              example: admin
+      401:
+        description: Invalid credentials
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              example: false
+            error:
+              type: string
+              example: Invalid credentials
+      400:
+        description: Missing required fields
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              example: false
+            error:
+              type: string
+              example: Missing username or password
+      503:
+        description: Authentication not enabled
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              example: false
+            error:
+              type: string
+              example: Authentication not enabled
     """
     auth = _get_auth_manager()
 

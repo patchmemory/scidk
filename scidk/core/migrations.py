@@ -409,6 +409,60 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 10)
             version = 10
 
+        # v11: Add plugin_settings table for per-plugin configuration
+        if version < 11:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS plugin_settings (
+                    plugin_name TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    value TEXT,
+                    encrypted INTEGER DEFAULT 0,
+                    updated_at REAL NOT NULL,
+                    PRIMARY KEY (plugin_name, key)
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_plugin_settings_name ON plugin_settings(plugin_name);")
+
+            conn.commit()
+            _set_version(conn, 11)
+            version = 11
+
+        # v12: Add plugin-label integration columns
+        if version < 12:
+            # Extend label_definitions with source tracking
+            try:
+                cur.execute("ALTER TABLE label_definitions ADD COLUMN source_type TEXT DEFAULT 'manual'")
+            except sqlite3.OperationalError:
+                # Column may already exist
+                pass
+
+            try:
+                cur.execute("ALTER TABLE label_definitions ADD COLUMN source_id TEXT")
+            except sqlite3.OperationalError:
+                pass
+
+            try:
+                cur.execute("ALTER TABLE label_definitions ADD COLUMN sync_config TEXT")
+            except sqlite3.OperationalError:
+                pass
+
+            # Extend plugin_instances with graph integration
+            try:
+                cur.execute("ALTER TABLE plugin_instances ADD COLUMN published_label TEXT")
+            except sqlite3.OperationalError:
+                pass
+
+            try:
+                cur.execute("ALTER TABLE plugin_instances ADD COLUMN graph_config TEXT")
+            except sqlite3.OperationalError:
+                pass
+
+            conn.commit()
+            _set_version(conn, 12)
+            version = 12
+
         return version
     finally:
         if own:

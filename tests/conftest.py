@@ -42,6 +42,9 @@ def _pin_repo_local_test_env():
     # Prefer sqlite-backed state for tests by default
     os.environ.setdefault("SCIDK_STATE_BACKEND", "sqlite")
 
+    # Settings DB for auth and configuration
+    os.environ.setdefault("SCIDK_SETTINGS_DB", str(db_dir / 'test_settings.db'))
+
     # Providers and auth safe defaults
     os.environ.setdefault("SCIDK_PROVIDERS", "local_fs,mounted_fs")
     os.environ.setdefault("NEO4J_AUTH", "none")
@@ -159,7 +162,7 @@ def _cleanup_test_labels_from_db(db_path: Path):
             # List of test label patterns to delete
             test_patterns = [
                 'E2E%',  # E2E test labels
-                'Test%',  # TestLabel, TestNode, etc
+                'Test%',  # TestLabel, TestNode, TestProject42, TestMulti*, etc
                 'Person%',  # From arrows test
                 'Company%',  # From arrows test
                 'Project%',  # Multiple test uses
@@ -273,6 +276,7 @@ def app():
     application.config.update({
         "TESTING": True,
         "state.backend": (os.environ.get("SCIDK_STATE_BACKEND") or "sqlite").lower(),
+        "SCIDK_SETTINGS_DB": os.environ.get("SCIDK_SETTINGS_DB", "scidk_settings.db"),
     })
     ctx = application.app_context()
     ctx.push()

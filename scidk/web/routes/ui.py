@@ -155,9 +155,9 @@ def interpreters():
 
 
 @bp.get('/extensions')
-def extensions_legacy():
-    """Backward-compatible route - redirects to interpreters section."""
-    return redirect(url_for('ui.index') + '#interpreters')
+def extensions():
+    """Redirect to plugins section on home page."""
+    return redirect(url_for('ui.index') + '#plugins')
 
 
 @bp.get('/rocrate_view')

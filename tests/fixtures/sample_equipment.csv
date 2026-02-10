@@ -1,0 +1,6 @@
+equipment_id,name,location,status,purchase_date
+EQ001,Microscope Alpha,Lab A,operational,2023-01-15
+EQ002,Centrifuge Beta,Lab B,maintenance,2023-03-22
+EQ003,Spectrometer Gamma,Lab A,operational,2023-05-10
+EQ004,PCR Machine Delta,Lab C,operational,2023-07-01
+EQ005,Incubator Epsilon,Lab B,decommissioned,2022-12-05

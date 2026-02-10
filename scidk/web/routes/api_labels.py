@@ -21,6 +21,114 @@ def _get_label_service():
     return current_app.extensions['scidk']['label_service']
 
 
+@bp.route('/labels/list', methods=['GET'])
+def list_labels_for_integration():
+    """
+    List all labels optimized for Integrations page dropdowns.
+
+    Returns labels with source indicators and node counts for populating
+    source/target label dropdowns in the Integrations page.
+
+    Returns:
+    {
+        "status": "success",
+        "labels": [
+            {
+                "name": "Project",
+                "source": "manual",
+                "source_display": "Manual",
+                "node_count": 42,
+                "instance_id": null
+            },
+            {
+                "name": "LabEquipment",
+                "source": "plugin_instance",
+                "source_display": "Plugin: iLab Equipment",
+                "node_count": 15,
+                "instance_id": "abc123"
+            }
+        ]
+    }
+    """
+    try:
+        service = _get_label_service()
+        labels = service.list_labels()
+
+        # Get node counts from Neo4j (if connected)
+        node_counts = {}
+        try:
+            from ...core.graph_db import get_neo4j_driver
+            driver = get_neo4j_driver()
+            if driver:
+                with driver.session() as session:
+                    result = session.run("CALL db.labels() YIELD label RETURN label")
+                    neo4j_labels = [record['label'] for record in result]
+
+                    # Get count for each label
+                    for label_name in neo4j_labels:
+                        count_result = session.run(f"MATCH (n:{label_name}) RETURN count(n) as count")
+                        record = count_result.single()
+                        if record:
+                            node_counts[label_name] = record['count']
+        except Exception as e:
+            # Neo4j not available or error - continue without counts
+            current_app.logger.warning(f"Could not fetch Neo4j node counts: {e}")
+
+        # Build response optimized for dropdowns
+        result = []
+        for label in labels:
+            source_type = label.get('source_type', 'manual')
+            source_id = label.get('source_id')
+
+            result.append({
+                'name': label['name'],
+                'source': source_type,
+                'source_display': _get_source_display(source_type, source_id),
+                'node_count': node_counts.get(label['name'], 0),
+                'instance_id': source_id if source_type == 'plugin_instance' else None
+            })
+
+        return jsonify({
+            'status': 'success',
+            'labels': result
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+def _get_source_display(source_type: str, source_id: str = None) -> str:
+    """
+    Get human-readable source display string.
+
+    Args:
+        source_type: Type of source (manual, system, plugin_instance)
+        source_id: Optional source ID (plugin instance ID, etc.)
+
+    Returns:
+        Display string for the source
+    """
+    if source_type == 'system':
+        return 'System'
+    elif source_type == 'plugin_instance' and source_id:
+        # Try to get plugin instance name
+        try:
+            from ...services.plugin_service import PluginService
+            plugin_service = PluginService(current_app)
+            instance = plugin_service.get_instance(source_id)
+            if instance:
+                return f"Plugin: {instance.get('name', source_id)}"
+        except:
+            pass
+        return f"Plugin: {source_id}"
+    elif source_type == 'manual':
+        return 'Manual'
+    else:
+        return source_type.title()
+
+
 @bp.route('/labels', methods=['GET'])
 def list_labels():
     """
