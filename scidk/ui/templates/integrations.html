@@ -479,7 +479,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function loadAvailableLabels() {
-  fetch('/api/links/available-labels')
+  fetch('/api/labels/list')
     .then(r => r.json())
     .then(data => {
       if (data.status === 'success') {
@@ -494,12 +494,38 @@ function populateLabelDropdowns() {
   const sourceSelect = document.getElementById('source-label-select');
   const targetSelect = document.getElementById('target-label-select');
 
-  const options = availableLabels.map(label =>
-    `<option value="${label.name}">${label.name}</option>`
-  ).join('');
+  const options = availableLabels.map(label => {
+    const sourceIcon = getSourceIcon(label.source);
+    const nodeInfo = label.node_count > 0 ? ` (${label.node_count} nodes)` : ' (empty)';
+    const sourceInfo = label.source_display ? ` - ${label.source_display}` : '';
+
+    return `
+      <option value="${escapeHtml(label.name)}"
+              data-source="${label.source}"
+              data-count="${label.node_count}">
+        ${sourceIcon} ${escapeHtml(label.name)}${nodeInfo}${sourceInfo}
+      </option>
+    `;
+  }).join('');
 
   sourceSelect.innerHTML = '<option value="">Select a label...</option>' + options;
   targetSelect.innerHTML = '<option value="">Select a label...</option>' + options;
+}
+
+function getSourceIcon(source) {
+  switch(source) {
+    case 'plugin_instance': return '📦';
+    case 'manual': return '✏️';
+    case 'system': return '🔧';
+    default: return '❓';
+  }
+}
+
+function escapeHtml(text) {
+  if (typeof text !== 'string') return text;
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 function initializeEventListeners() {
