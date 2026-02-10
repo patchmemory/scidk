@@ -686,10 +686,19 @@
 
     let html = '';
     templates.forEach(template => {
+      const isIlab = template.id === 'ilab_importer';
+      const brandingClass = isIlab ? ' ilab-template' : '';
+      const icon = template.icon || '📦';
+      const presetHints = isIlab && template.preset_configs
+        ? `<div class="preset-hints">Presets: ${Object.values(template.preset_configs).map(p => p.name).join(', ')}</div>`
+        : '';
+
       html += `
-        <div class="template-card" onclick="selectTemplate('${template.id}', ${escapeHtml(JSON.stringify(template))})">
+        <div class="template-card${brandingClass}" onclick="selectTemplate('${template.id}', ${escapeHtml(JSON.stringify(template))})">
+          <div class="template-icon">${icon}</div>
           <h4>${escapeHtml(template.name)}</h4>
           <p>${escapeHtml(template.description || 'No description')}</p>
+          ${presetHints}
         </div>
       `;
     });
@@ -1246,6 +1255,29 @@
     margin: 0;
     color: #666;
     font-size: 0.9em;
+  }
+
+  /* iLab branded template styles */
+  .template-card.ilab-template {
+    border-left: 4px solid #0066cc;
+    background: linear-gradient(to right, #f0f8ff, #ffffff);
+  }
+
+  .template-card.ilab-template:hover {
+    background: linear-gradient(to right, #e0f0ff, #f8fcff);
+  }
+
+  .template-card .template-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .template-card .preset-hints {
+    font-size: 0.85em;
+    color: #666;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid #e0e0e0;
   }
 
   .wizard-step {
