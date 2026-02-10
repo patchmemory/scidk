@@ -37,16 +37,27 @@
       </div>
     </div>
 
-    <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
+    <div style="margin-top: 0.75rem;">
+      <label for="smtp-recipients">Alert Recipients (comma-separated emails):</label>
+      <input type="text" id="smtp-recipients" class="form-control" placeholder="admin@example.com, ops@example.com" data-testid="smtp-recipients" style="width: 100%;">
+      <p class="small" style="margin-top: 0.25rem; color: #666;">All enabled alerts will send to these email addresses</p>
+    </div>
+
+    <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem; align-items: center;">
       <button id="btn-save-smtp" class="btn btn-sm btn-primary" data-testid="btn-save-smtp">Save SMTP Config</button>
       <button id="btn-test-smtp" class="btn btn-sm btn-outline-primary" data-testid="btn-test-smtp">Test Email</button>
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 0.5rem;">
+        <button id="btn-enable-browser-notifications" class="btn btn-sm btn-outline-secondary" data-testid="btn-enable-notifications">
+          <span id="notification-icon">🔔</span> Enable Browser Alerts
+        </button>
+      </div>
     </div>
     <div id="smtp-message" class="small" style="margin-top: 0.5rem;"></div>
   </div>
 
   <!-- Alert Definitions -->
   <h2>Alert Definitions</h2>
-  <p class="small">Enable/disable alerts and configure recipients. Click Test to send a test notification. Recipients should be comma-separated email addresses.</p>
+  <p class="small">Enable/disable individual alerts. All enabled alerts will send to the recipients configured above. Click Test to send a test notification.</p>
 
   <div id="alerts-list">
     <p class="small" style="color: #999;"><em>Loading alerts...</em></p>
@@ -90,6 +101,10 @@
           document.getElementById('smtp-from').value = data.smtp.from_address || '';
           document.getElementById('smtp-use-tls').checked = data.smtp.use_tls !== false;
 
+          // Recipients (comma-separated)
+          const recipients = data.smtp.recipients || [];
+          document.getElementById('smtp-recipients').value = recipients.join(', ');
+
           // Don't populate password (masked)
           document.getElementById('smtp-password').placeholder = data.smtp.password ? '••••••••' : 'Enter password';
 
@@ -111,6 +126,10 @@
       const fromAddress = document.getElementById('smtp-from').value.trim();
       const useTLS = document.getElementById('smtp-use-tls').checked;
 
+      // Parse recipients (comma-separated)
+      const recipientsStr = document.getElementById('smtp-recipients').value.trim();
+      const recipients = recipientsStr ? recipientsStr.split(',').map(e => e.trim()).filter(e => e) : [];
+
       if (!host || !port || !fromAddress) {
         showSMTPMessage('Please fill in host, port, and from address', 'error');
         return;
@@ -122,6 +141,7 @@
           port,
           username,
           from_address: fromAddress,
+          recipients,
           use_tls: useTLS,
           enabled: true
         };
@@ -459,6 +479,48 @@
     document.getElementById('btn-save-smtp').addEventListener('click', saveSMTPConfig);
     document.getElementById('btn-test-smtp').addEventListener('click', testSMTP);
 
+    // Browser notifications
+    document.getElementById('btn-enable-browser-notifications').addEventListener('click', async function() {
+      if (!window.scidkNotifications) {
+        window.toast('Browser notifications not supported', 'error');
+        return;
+      }
+
+      const status = window.scidkNotifications.getStatus();
+
+      if (status.enabled) {
+        // Disable
+        window.scidkNotifications.disable();
+        window.stopAlertPolling();
+        this.textContent = '🔔 Enable Browser Alerts';
+        window.toast('Browser alerts disabled', 'success');
+      } else {
+        // Enable
+        const granted = await window.scidkNotifications.enable();
+        if (granted) {
+          window.startAlertPolling();
+          this.textContent = '🔕 Disable Browser Alerts';
+          window.toast('Browser alerts enabled! You will receive desktop notifications for new alerts.', 'success', 5000);
+        } else {
+          window.toast('Browser notification permission denied', 'error');
+        }
+      }
+    });
+
+    // Update button state on load
+    function updateNotificationButtonState() {
+      if (!window.scidkNotifications) return;
+
+      const status = window.scidkNotifications.getStatus();
+      const btn = document.getElementById('btn-enable-browser-notifications');
+
+      if (status.enabled && status.permission === 'granted') {
+        btn.textContent = '🔕 Disable Browser Alerts';
+      } else {
+        btn.textContent = '🔔 Enable Browser Alerts';
+      }
+    }
+
     // Expand details on click
     document.querySelector('details[open]') || document.querySelector('details').addEventListener('toggle', function() {
       if (this.open) {
@@ -472,6 +534,7 @@
     (async function init() {
       await loadSMTPConfig();
       await loadAlerts();
+      updateNotificationButtonState();
     })();
   </script>
 </section>

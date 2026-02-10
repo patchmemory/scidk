@@ -88,7 +88,8 @@ class AlertManager:
                 password_encrypted TEXT,
                 from_address TEXT,
                 use_tls INTEGER DEFAULT 1,
-                enabled INTEGER DEFAULT 0
+                enabled INTEGER DEFAULT 0,
+                recipients TEXT
             )
             """
         )
@@ -292,10 +293,6 @@ class AlertManager:
                 if value is None or value < alert['threshold']:
                     continue
 
-            # Check if recipients are configured
-            if not alert.get('recipients'):
-                continue
-
             # Trigger alert
             success, error_msg = self._trigger_alert(alert, details)
             self._log_alert_history(alert['id'], details, success, error_msg)
@@ -329,9 +326,10 @@ class AlertManager:
         if not smtp_config or not smtp_config.get('enabled'):
             return False, "SMTP not configured or disabled"
 
-        recipients = alert.get('recipients', [])
+        # Get recipients from global SMTP config
+        recipients = smtp_config.get('recipients', [])
         if not recipients:
-            return False, "No recipients configured"
+            return False, "No recipients configured in SMTP settings"
 
         # Compose email
         subject = f"SciDK Alert: {alert['name']}"
@@ -487,7 +485,8 @@ class AlertManager:
             'password_encrypted': row['password_encrypted'],  # Don't expose this directly
             'from_address': row['from_address'],
             'use_tls': bool(row['use_tls']),
-            'enabled': bool(row['enabled'])
+            'enabled': bool(row['enabled']),
+            'recipients': json.loads(row['recipients']) if row['recipients'] else []
         }
 
     def get_smtp_config_safe(self) -> Optional[Dict[str, Any]]:
@@ -499,12 +498,15 @@ class AlertManager:
         return config
 
     def update_smtp_config(self, host: str, port: int, username: str, password: Optional[str],
-                           from_address: str, use_tls: bool = True, enabled: bool = True) -> bool:
+                           from_address: str, recipients: List[str], use_tls: bool = True, enabled: bool = True) -> bool:
         """Update SMTP configuration."""
         # Encrypt password if provided
         password_encrypted = None
         if password:
             password_encrypted = self._encrypt_password(password)
+
+        # JSON encode recipients
+        recipients_json = json.dumps(recipients)
 
         # Check if config exists
         cur = self.db.execute("SELECT id FROM smtp_config WHERE id = 1")
@@ -517,29 +519,29 @@ class AlertManager:
                 self.db.execute(
                     """
                     UPDATE smtp_config
-                    SET host = ?, port = ?, username = ?, password_encrypted = ?, from_address = ?, use_tls = ?, enabled = ?
+                    SET host = ?, port = ?, username = ?, password_encrypted = ?, from_address = ?, recipients = ?, use_tls = ?, enabled = ?
                     WHERE id = 1
                     """,
-                    (host, port, username, password_encrypted, from_address, 1 if use_tls else 0, 1 if enabled else 0)
+                    (host, port, username, password_encrypted, from_address, recipients_json, 1 if use_tls else 0, 1 if enabled else 0)
                 )
             else:
                 # Keep existing password
                 self.db.execute(
                     """
                     UPDATE smtp_config
-                    SET host = ?, port = ?, username = ?, from_address = ?, use_tls = ?, enabled = ?
+                    SET host = ?, port = ?, username = ?, from_address = ?, recipients = ?, use_tls = ?, enabled = ?
                     WHERE id = 1
                     """,
-                    (host, port, username, from_address, 1 if use_tls else 0, 1 if enabled else 0)
+                    (host, port, username, from_address, recipients_json, 1 if use_tls else 0, 1 if enabled else 0)
                 )
         else:
             # Insert new
             self.db.execute(
                 """
-                INSERT INTO smtp_config (id, host, port, username, password_encrypted, from_address, use_tls, enabled)
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO smtp_config (id, host, port, username, password_encrypted, from_address, recipients, use_tls, enabled)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (host, port, username, password_encrypted, from_address, 1 if use_tls else 0, 1 if enabled else 0)
+                (host, port, username, password_encrypted, from_address, recipients_json, 1 if use_tls else 0, 1 if enabled else 0)
             )
 
         self.db.commit()
