@@ -212,10 +212,22 @@ Plugin Instance → Publishes Schema → Label Definition → Used in Integratio
 **For `data_import` category plugins** (e.g., table_loader):
 
 1. **During Instance Creation**: Optionally configure graph integration in wizard
-   - Enable "Create Label from this data"
-   - Specify label name (auto-generated from table name)
-   - Select primary key column
-   - Choose sync strategy (on-demand or automatic)
+
+   The plugin instance creation wizard includes an optional **Step 3: Graph Integration** for `data_import` plugins:
+
+   - **Step 1**: Select template (e.g., "Table Loader")
+   - **Step 2**: Configure instance (name, file path, table name, etc.)
+   - **Step 3**: Graph Integration (optional)
+     - ☑ Enable "Create Label from this data"
+     - **Label Name**: Auto-generated from table name (e.g., `lab_equipment_2024` → `LabEquipment2024`)
+     - **Primary Key**: Select from dropdown (e.g., `id`, `uuid`, `serial_number`)
+     - **Sync Strategy**:
+       - On-demand - Manual sync via Labels page
+       - Automatic - Sync to Neo4j when plugin runs
+     - **Properties**: All columns included by default (configurable later)
+   - **Step 4**: Preview & Confirm
+
+   Non-`data_import` plugins skip Step 3 entirely.
 
 2. **Label Registration**: Instance publishes schema to Labels page
    ```bash
@@ -223,7 +235,9 @@ Plugin Instance → Publishes Schema → Label Definition → Used in Integratio
    {
      "label_name": "LabEquipment",
      "primary_key": "serial_number",
-     "sync_strategy": "on_demand"
+     "sync_config": {
+       "strategy": "on_demand"
+     }
    }
    ```
 

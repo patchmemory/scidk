@@ -64,9 +64,61 @@
           </form>
         </div>
 
-        <!-- Step 3: Preview Data -->
+        <!-- Step 3: Graph Integration (Optional, for data_import plugins) -->
         <div id="wizard-step-3" class="wizard-step" style="display: none;">
-          <h3>Step 3: Preview & Confirm</h3>
+          <h3>Step 3: Graph Integration (Optional)</h3>
+          <p class="small">Create a Label to sync this data to the knowledge graph</p>
+
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="graph-enable" onchange="toggleGraphConfig()">
+              Create Label from this data
+            </label>
+          </div>
+
+          <div id="graph-config-fields" style="display: none;">
+            <div class="form-group">
+              <label for="graph-label-name">Label Name *</label>
+              <input type="text" id="graph-label-name" class="form-control" placeholder="e.g., LabEquipment">
+              <small>How this data will appear in the graph</small>
+            </div>
+
+            <div class="form-group">
+              <label for="graph-primary-key">Primary Key *</label>
+              <select id="graph-primary-key" class="form-control">
+                <option value="">Select unique identifier column</option>
+              </select>
+              <small>Column that uniquely identifies each row</small>
+            </div>
+
+            <div class="form-group">
+              <label>Sync Strategy</label>
+              <div>
+                <label>
+                  <input type="radio" name="sync-strategy" value="on_demand" checked>
+                  On-demand - Manual sync via Labels page
+                </label>
+              </div>
+              <div>
+                <label>
+                  <input type="radio" name="sync-strategy" value="automatic">
+                  Automatic - Sync to Neo4j when plugin runs
+                </label>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Properties to include</label>
+              <div id="graph-properties-list">
+                <p class="small">Configure columns after creating the instance</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 4: Preview Data -->
+        <div id="wizard-step-4" class="wizard-step" style="display: none;">
+          <h3>Step 4: Preview & Confirm</h3>
           <p class="small">Review your configuration before creating the instance</p>
           <div id="preview-content">
             <div class="config-summary">
@@ -412,7 +464,8 @@
     currentStep: 1,
     selectedTemplate: null,
     templateData: null,
-    config: {}
+    config: {},
+    graphConfig: null
   };
 
   // Load plugin instances
@@ -584,7 +637,8 @@
       currentStep: 1,
       selectedTemplate: null,
       templateData: null,
-      config: {}
+      config: {},
+      graphConfig: null
     };
 
     // Show modal
@@ -601,7 +655,7 @@
   function closePluginInstanceWizard() {
     const modal = document.getElementById('plugin-instance-wizard-modal');
     modal.style.display = 'none';
-    wizardState = { currentStep: 1, selectedTemplate: null, templateData: null, config: {} };
+    wizardState = { currentStep: 1, selectedTemplate: null, templateData: null, config: {}, graphConfig: null };
   }
 
   async function loadTemplates() {
@@ -658,24 +712,45 @@
     // Hide all steps
     document.querySelectorAll('.wizard-step').forEach(s => s.style.display = 'none');
 
+    // Check if template is data_import category
+    const template = wizardState.templateData;
+    const isDataImport = template?.category === 'data_import';
+
+    // Adjust step flow based on plugin category
+    let actualStep = step;
+    if (step === 3 && !isDataImport) {
+      // Skip graph integration step for non-data_import plugins
+      actualStep = 4;
+    } else if (step === 4 && !isDataImport) {
+      // When going back from step 4 on non-data_import, go to step 2
+      if (arguments[1] === 'back') {
+        actualStep = 2;
+      }
+    }
+
     // Show current step
-    document.getElementById(`wizard-step-${step}`).style.display = 'block';
+    document.getElementById(`wizard-step-${actualStep}`).style.display = 'block';
 
     // Update buttons
     const prevBtn = document.getElementById('wizard-prev-btn');
     const nextBtn = document.getElementById('wizard-next-btn');
     const createBtn = document.getElementById('wizard-create-btn');
 
+    const maxStep = isDataImport ? 4 : 3; // 4 steps if data_import, 3 otherwise (skipping graph)
+    const isLastStep = (isDataImport && step === 4) || (!isDataImport && step === 3);
+
     prevBtn.style.display = step > 1 ? 'inline-block' : 'none';
-    nextBtn.style.display = step < 3 ? 'inline-block' : 'none';
-    createBtn.style.display = step === 3 ? 'inline-block' : 'none';
+    nextBtn.style.display = !isLastStep ? 'inline-block' : 'none';
+    createBtn.style.display = isLastStep ? 'inline-block' : 'none';
 
     wizardState.currentStep = step;
 
     // Setup step-specific content
     if (step === 2) {
       setupConfigFields();
-    } else if (step === 3) {
+    } else if (step === 3 && isDataImport) {
+      setupGraphIntegrationStep();
+    } else if (step === 4 || (step === 3 && !isDataImport)) {
       showConfigSummary();
     }
   }
@@ -702,6 +777,28 @@
       for (const [key, value] of formData.entries()) {
         wizardState.config[key] = value;
       }
+    } else if (currentStep === 3) {
+      // Validate and collect graph config if enabled
+      const graphEnabled = document.getElementById('graph-enable')?.checked;
+      if (graphEnabled) {
+        const labelName = document.getElementById('graph-label-name')?.value;
+        const primaryKey = document.getElementById('graph-primary-key')?.value;
+        const syncStrategy = document.querySelector('input[name="sync-strategy"]:checked')?.value;
+
+        if (!labelName || !primaryKey) {
+          showToast('Please provide label name and primary key', 'error');
+          return;
+        }
+
+        wizardState.graphConfig = {
+          enabled: true,
+          label_name: labelName,
+          primary_key: primaryKey,
+          sync_strategy: syncStrategy || 'on_demand'
+        };
+      } else {
+        wizardState.graphConfig = null;
+      }
     }
 
     showWizardStep(currentStep + 1);
@@ -709,6 +806,41 @@
 
   function wizardPrevStep() {
     showWizardStep(wizardState.currentStep - 1);
+  }
+
+  function toggleGraphConfig() {
+    const enabled = document.getElementById('graph-enable')?.checked;
+    const fieldsDiv = document.getElementById('graph-config-fields');
+    if (fieldsDiv) {
+      fieldsDiv.style.display = enabled ? 'block' : 'none';
+    }
+  }
+
+  function setupGraphIntegrationStep() {
+    const config = wizardState.config;
+    const tableName = config.table_name || config.name || 'data';
+
+    // Auto-generate label name from table name (CamelCase)
+    const suggestedLabelName = tableName
+      .split(/[_\s-]+/)
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join('');
+
+    document.getElementById('graph-label-name').value = suggestedLabelName;
+
+    // Try to infer primary key column
+    // For now, populate with common options
+    const pkDropdown = document.getElementById('graph-primary-key');
+    pkDropdown.innerHTML = `
+      <option value="">Select unique identifier column</option>
+      <option value="id">id</option>
+      <option value="uuid">uuid</option>
+      <option value="record_id">record_id</option>
+    `;
+
+    // Reset graph config
+    document.getElementById('graph-enable').checked = false;
+    document.getElementById('graph-config-fields').style.display = 'none';
   }
 
   function setupConfigFields() {
@@ -776,6 +908,11 @@
       };
       delete payload.config.name; // Name is separate
 
+      // Add graph config if provided
+      if (wizardState.graphConfig) {
+        payload.graph_config = wizardState.graphConfig;
+      }
+
       const resp = await fetch('/api/plugins/instances', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -785,7 +922,20 @@
       const result = await resp.json();
 
       if (result.status === 'success') {
-        showToast('Plugin instance created successfully', 'success');
+        const instanceId = result.instance.id;
+
+        // Publish label if graph integration enabled
+        if (wizardState.graphConfig?.enabled) {
+          try {
+            await publishLabel(instanceId, wizardState.graphConfig);
+            showToast('Plugin instance created and label published successfully', 'success');
+          } catch (labelError) {
+            showToast('Plugin instance created but label publishing failed: ' + labelError.message, 'warning');
+          }
+        } else {
+          showToast('Plugin instance created successfully', 'success');
+        }
+
         closePluginInstanceWizard();
         pluginInstancesLoaded = false;
         loadPluginInstances();
@@ -795,6 +945,28 @@
     } catch (error) {
       showToast('Error creating instance: ' + error.message, 'error');
     }
+  }
+
+  async function publishLabel(instanceId, graphConfig) {
+    const resp = await fetch(`/api/plugins/instances/${instanceId}/publish-label`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        label_name: graphConfig.label_name,
+        primary_key: graphConfig.primary_key,
+        sync_config: {
+          strategy: graphConfig.sync_strategy
+        }
+      })
+    });
+
+    const result = await resp.json();
+
+    if (result.status !== 'success') {
+      throw new Error(result.error || 'Failed to publish label');
+    }
+
+    return result;
   }
 
   // ============================================================================
