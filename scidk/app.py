@@ -181,6 +181,11 @@ def create_app():
     from .web.auth_middleware import init_auth_middleware
     init_auth_middleware(app)
 
+    # Initialize label endpoint registry (for plugin-registered endpoints)
+    from .core.label_endpoint_registry import LabelEndpointRegistry
+    label_endpoint_registry = LabelEndpointRegistry()
+    app.extensions['scidk']['label_endpoints'] = label_endpoint_registry
+
     # Load plugins after all core initialization is complete
     from .core.plugin_loader import PluginLoader, get_all_plugin_states
     plugin_loader = PluginLoader()

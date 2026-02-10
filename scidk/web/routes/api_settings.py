@@ -1419,3 +1419,93 @@ def download_backup_file(filename):
             'status': 'error',
             'error': str(e)
         }), 500
+
+
+@bp.route('/settings/plugin-endpoints', methods=['GET'])
+def list_plugin_endpoints():
+    """
+    Get all plugin-registered label endpoints.
+
+    These are endpoints registered by plugins that map to Label types.
+    Returns both the endpoint configuration and the plugin that registered it.
+
+    Returns:
+    {
+        "status": "success",
+        "endpoints": [
+            {
+                "name": "iLab Services",
+                "endpoint": "/api/integrations/ilab",
+                "label_type": "iLabService",
+                "auth_required": true,
+                "test_url": "/api/integrations/ilab/test",
+                "plugin": "ilab_plugin",
+                "description": "Integration with iLab service management system",
+                "source": "plugin"
+            }
+        ]
+    }
+    """
+    try:
+        registry = current_app.extensions.get('scidk', {}).get('label_endpoints')
+        if not registry:
+            return jsonify({
+                'status': 'success',
+                'endpoints': []
+            }), 200
+
+        endpoints = registry.list_endpoints()
+        return jsonify({
+            'status': 'success',
+            'endpoints': endpoints
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/settings/plugin-endpoints/<path:endpoint_path>', methods=['GET'])
+def get_plugin_endpoint(endpoint_path):
+    """
+    Get a specific plugin-registered endpoint.
+
+    Args:
+        endpoint_path: The endpoint path (e.g., "/api/integrations/ilab")
+
+    Returns:
+    {
+        "status": "success",
+        "endpoint": {...}
+    }
+    """
+    try:
+        registry = current_app.extensions.get('scidk', {}).get('label_endpoints')
+        if not registry:
+            return jsonify({
+                'status': 'error',
+                'error': 'Label endpoint registry not initialized'
+            }), 500
+
+        # Normalize endpoint path to include leading slash
+        if not endpoint_path.startswith('/'):
+            endpoint_path = '/' + endpoint_path
+
+        endpoint = registry.get_endpoint(endpoint_path)
+
+        if not endpoint:
+            return jsonify({
+                'status': 'error',
+                'error': f'Endpoint "{endpoint_path}" not found'
+            }), 404
+
+        return jsonify({
+            'status': 'success',
+            'endpoint': endpoint
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500

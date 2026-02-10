@@ -55,6 +55,13 @@
     <p class="small" style="color: #999;"><em>No endpoints registered yet</em></p>
   </div>
 
+  <!-- Plugin-Registered Endpoints -->
+  <h3 style="margin-top: 1.5rem;">Plugin Endpoints</h3>
+  <p class="small">Endpoints registered by installed plugins. These cannot be edited manually.</p>
+  <div id="plugin-endpoints-list">
+    <p class="small" style="color: #999;"><em>No plugin endpoints registered</em></p>
+  </div>
+
   <h2 style="margin-top: 1.5rem;">Table Format Registry</h2>
   <p class="small">Manage table formats for importing CSV, TSV, Excel, and Parquet files as link sources.</p>
 
@@ -550,6 +557,56 @@
     // Load labels and endpoints on page load
     loadLabels();
     loadEndpoints();
+    loadPluginEndpoints();
+  }
+
+  // Load and display plugin-registered endpoints
+  async function loadPluginEndpoints() {
+    const container = document.getElementById('plugin-endpoints-list');
+
+    try {
+      const response = await fetch('/api/settings/plugin-endpoints');
+      const data = await response.json();
+
+      if (data.status === 'success' && data.endpoints && data.endpoints.length > 0) {
+        container.innerHTML = `
+          <table class="table table-sm" style="width: 100%;">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Endpoint</th>
+                <th>Label Type</th>
+                <th>Plugin</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody id="plugin-endpoints-table-body">
+            </tbody>
+          </table>
+        `;
+
+        const tbody = document.getElementById('plugin-endpoints-table-body');
+        data.endpoints.forEach(endpoint => {
+          const row = document.createElement('tr');
+          const authBadge = endpoint.auth_required ?
+            '<span class="badge" style="background: #ff9800; color: white; margin-left: 0.25rem;">Auth Required</span>' : '';
+
+          row.innerHTML = `
+            <td>${escapeHtml(endpoint.name)}${authBadge}</td>
+            <td><code class="small">${escapeHtml(endpoint.endpoint)}</code></td>
+            <td><span class="badge">${escapeHtml(endpoint.label_type)}</span></td>
+            <td><span class="small text-muted">${escapeHtml(endpoint.plugin)}</span></td>
+            <td><span class="small">${escapeHtml(endpoint.description || '—')}</span></td>
+          `;
+          tbody.appendChild(row);
+        });
+      } else {
+        container.innerHTML = '<p class="small" style="color: #999;"><em>No plugin endpoints registered</em></p>';
+      }
+    } catch (err) {
+      console.error('Failed to load plugin endpoints:', err);
+      container.innerHTML = '<p class="small" style="color: #e53935;"><em>Failed to load plugin endpoints</em></p>';
+    }
   }
 
   // Table Format Registry Management

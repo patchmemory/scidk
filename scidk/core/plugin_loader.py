@@ -22,6 +22,22 @@ Plugin Registration:
             dict: Plugin metadata with name, version, author, description
         '''
         # Register routes, labels, etc.
+        # Example: Register blueprint
+        # from . import routes
+        # app.register_blueprint(routes.bp)
+
+        # Example: Register label endpoint
+        # registry = app.extensions['scidk']['label_endpoints']
+        # registry.register({
+        #     'name': 'iLab Services',
+        #     'endpoint': '/api/integrations/ilab',
+        #     'label_type': 'iLabService',
+        #     'auth_required': True,
+        #     'test_url': '/api/integrations/ilab/test',
+        #     'plugin': 'ilab_plugin',
+        #     'description': 'Integration with iLab services'
+        # })
+
         return {
             'name': 'My Plugin',
             'version': '1.0.0',
