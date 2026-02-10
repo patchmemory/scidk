@@ -66,3 +66,4 @@ sqlite:/tmp
 # Added here as safety net to prevent leaking into main repo
 dev/code-imports/nc3rsEDA/
 !dev/code-imports/nc3rsEDA/README.md
+/logs/
