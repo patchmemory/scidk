@@ -67,3 +67,6 @@ sqlite:/tmp
 dev/code-imports/nc3rsEDA/
 !dev/code-imports/nc3rsEDA/README.md
 /logs/
+
+# Backups are for local work, not the repository
+backups/
