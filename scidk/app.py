@@ -14,6 +14,7 @@ import os
 # Core components
 from .core.filesystem import FilesystemManager
 from .core.registry import InterpreterRegistry
+from .core.logging_config import setup_logging
 from .interpreters import register_all as register_interpreters
 
 # Initialization modules (extracted from app.py)
@@ -32,6 +33,10 @@ def create_app():
     Returns:
         Flask: Configured Flask application instance with scidk extensions
     """
+    # Setup logging first to capture all startup activity
+    log_level = os.environ.get('SCIDK_LOG_LEVEL', 'INFO')
+    setup_logging(log_level=log_level)
+
     # Apply channel-based defaults before reading env-driven config
     apply_channel_defaults()
 

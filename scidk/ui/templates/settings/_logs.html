@@ -1,0 +1,198 @@
+<section id="logs-section" class="settings-section">
+  <h1>System Logs</h1>
+  <p class="small">Real-time view of application logs. Auto-refreshes every 2 seconds.</p>
+
+  <!-- Filters -->
+  <div class="logs-filters" style="margin-bottom: 1rem; padding: 1rem; background: #f9f9f9; border-radius: 4px;">
+    <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;">
+      <div>
+        <label for="logs-level-filter" class="small">Level:</label>
+        <select id="logs-level-filter" class="form-control form-control-sm" data-testid="logs-level-filter">
+          <option value="">All</option>
+          <option value="INFO">INFO</option>
+          <option value="WARNING">WARNING</option>
+          <option value="ERROR">ERROR</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="logs-source-filter" class="small">Source:</label>
+        <input type="text" id="logs-source-filter" class="form-control form-control-sm" placeholder="e.g., scanner" data-testid="logs-source-filter">
+      </div>
+
+      <div style="flex: 1;">
+        <label for="logs-search" class="small">Search:</label>
+        <input type="text" id="logs-search" class="form-control form-control-sm" placeholder="Search log messages..." data-testid="logs-search">
+      </div>
+
+      <div style="display: flex; gap: 0.5rem; align-items: end;">
+        <button id="btn-logs-refresh" class="btn btn-sm btn-outline-primary" data-testid="btn-logs-refresh">Refresh</button>
+        <button id="btn-logs-pause" class="btn btn-sm btn-outline-secondary" data-testid="btn-logs-pause">Pause</button>
+        <button id="btn-logs-export" class="btn btn-sm btn-outline-secondary" data-testid="btn-logs-export">Export</button>
+        <button id="btn-logs-clear-filters" class="btn btn-sm btn-outline-secondary" data-testid="btn-logs-clear-filters">Clear Filters</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Logs Display -->
+  <div id="logs-container" style="background: #1e1e1e; color: #d4d4d4; padding: 1rem; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 0.85rem; height: 500px; overflow-y: auto;">
+    <p style="color: #888;">Loading logs...</p>
+  </div>
+
+  <p class="small" style="margin-top: 0.5rem; color: #666;">
+    Showing most recent 100 entries. Auto-refresh: <span id="logs-refresh-status">Active</span>
+  </p>
+
+  <style>
+    #logs-container {
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .log-entry {
+      margin: 0;
+      padding: 0.25rem 0;
+      border-bottom: 1px solid #333;
+    }
+    .log-entry.level-INFO { color: #4ec9b0; }
+    .log-entry.level-WARNING { color: #dcdcaa; }
+    .log-entry.level-ERROR { color: #f48771; }
+    .log-timestamp { color: #858585; }
+    .log-source { color: #9cdcfe; }
+  </style>
+
+  <script>
+    let logsRefreshInterval = null;
+    let logsAutoScroll = true;
+    let logsPaused = false;
+
+    function loadLogs() {
+      if (logsPaused) return;
+
+      const levelFilter = document.getElementById('logs-level-filter').value;
+      const sourceFilter = document.getElementById('logs-source-filter').value.trim();
+      const searchQuery = document.getElementById('logs-search').value.trim();
+
+      const params = new URLSearchParams();
+      if (levelFilter) params.append('level', levelFilter);
+      if (sourceFilter) params.append('source', sourceFilter);
+      if (searchQuery) params.append('search', searchQuery);
+      params.append('limit', '100');
+
+      fetch(`/api/logs/viewer?${params}`)
+        .then(res => res.json())
+        .then(data => {
+          const container = document.getElementById('logs-container');
+
+          if (!data.entries || data.entries.length === 0) {
+            container.innerHTML = '<p style="color: #888;">No log entries found matching filters.</p>';
+            return;
+          }
+
+          // Render log entries
+          container.innerHTML = data.entries.map(entry => {
+            const levelClass = `level-${entry.level}`;
+            return `<div class="log-entry ${levelClass}">
+              <span class="log-timestamp">[${entry.timestamp}]</span>
+              <span class="log-level">[${entry.level}]</span>
+              <span class="log-source">[${entry.source}]</span>
+              <span class="log-message">${escapeHtml(entry.message)}</span>
+            </div>`;
+          }).join('');
+
+          // Auto-scroll to bottom (newest)
+          if (logsAutoScroll) {
+            container.scrollTop = container.scrollHeight;
+          }
+        })
+        .catch(err => {
+          console.error('Failed to load logs:', err);
+          document.getElementById('logs-container').innerHTML = '<p style="color: #f48771;">Error loading logs</p>';
+        });
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Initialize on DOMContentLoaded if in logs section
+    if (document.getElementById('logs-section')) {
+      // Check if we're already loaded
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initLogsViewer);
+      } else {
+        initLogsViewer();
+      }
+    }
+
+    function initLogsViewer() {
+      // Only initialize if elements exist
+      if (!document.getElementById('logs-container')) return;
+
+      loadLogs();
+      logsRefreshInterval = setInterval(loadLogs, 2000);  // Refresh every 2 seconds
+
+      // Filter change handlers
+      document.getElementById('logs-level-filter').addEventListener('change', loadLogs);
+      document.getElementById('logs-source-filter').addEventListener('input', debounce(loadLogs, 500));
+      document.getElementById('logs-search').addEventListener('input', debounce(loadLogs, 500));
+
+      // Refresh button
+      document.getElementById('btn-logs-refresh').addEventListener('click', loadLogs);
+
+      // Pause button
+      document.getElementById('btn-logs-pause').addEventListener('click', () => {
+        logsPaused = !logsPaused;
+        const btn = document.getElementById('btn-logs-pause');
+        const status = document.getElementById('logs-refresh-status');
+
+        if (logsPaused) {
+          btn.textContent = 'Resume';
+          btn.classList.remove('btn-outline-secondary');
+          btn.classList.add('btn-success');
+          status.textContent = 'Paused';
+        } else {
+          btn.textContent = 'Pause';
+          btn.classList.remove('btn-success');
+          btn.classList.add('btn-outline-secondary');
+          status.textContent = 'Active';
+          loadLogs();
+        }
+      });
+
+      // Export button
+      document.getElementById('btn-logs-export').addEventListener('click', () => {
+        window.location.href = '/api/logs/export';
+      });
+
+      // Clear filters
+      document.getElementById('btn-logs-clear-filters').addEventListener('click', () => {
+        document.getElementById('logs-level-filter').value = '';
+        document.getElementById('logs-source-filter').value = '';
+        document.getElementById('logs-search').value = '';
+        loadLogs();
+      });
+
+      // Track scrolling to disable auto-scroll if user scrolls up
+      document.getElementById('logs-container').addEventListener('scroll', (e) => {
+        const container = e.target;
+        const isAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 10;
+        logsAutoScroll = isAtBottom;
+      });
+    }
+
+    // Clean up on page unload
+    window.addEventListener('beforeunload', () => {
+      if (logsRefreshInterval) clearInterval(logsRefreshInterval);
+    });
+
+    function debounce(func, wait) {
+      let timeout;
+      return function(...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), wait);
+      };
+    }
+  </script>
+</section>
