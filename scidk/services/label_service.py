@@ -1181,15 +1181,26 @@ class LabelService:
 
                 logger.info(f"Starting transfer of {total_nodes} {name} nodes from {source_profile} (mode={mode}, batch_size={batch_size})")
 
-                # Initialize progress tracking
+                # Initialize progress tracking with two-phase structure
+                import time
                 self._active_transfers[name] = {
                     'status': 'running',
                     'cancelled': False,
                     'progress': {
-                        'total_nodes': total_nodes,
-                        'transferred_nodes': 0,
-                        'transferred_relationships': 0,
-                        'percent': 0
+                        'phase': 1,  # 1=nodes, 2=relationships
+                        'phase_1': {
+                            'total': total_nodes,
+                            'completed': 0,
+                            'percent': 0
+                        },
+                        'phase_2': {
+                            'total': 0,
+                            'completed': 0,
+                            'percent': 0
+                        },
+                        'start_time': time.time(),
+                        'phase_1_start': time.time(),
+                        'phase_2_start': None
                     }
                 }
 
@@ -1249,16 +1260,16 @@ class LabelService:
 
                     offset += batch_size
 
-                    # Update progress tracking
+                    # Update Phase 1 progress tracking
                     progress_pct = min(100, int((total_transferred / total_nodes * 100))) if total_nodes > 0 else 0
                     if name in self._active_transfers:
-                        self._active_transfers[name]['progress'].update({
-                            'transferred_nodes': total_transferred,
+                        self._active_transfers[name]['progress']['phase_1'].update({
+                            'completed': total_transferred,
                             'percent': progress_pct
                         })
 
                     # Log progress every batch
-                    logger.info(f"Transfer progress: {total_transferred}/{total_nodes} nodes ({progress_pct}%)")
+                    logger.info(f"Phase 1 progress: {total_transferred}/{total_nodes} nodes ({progress_pct}%)")
 
                 # Phase 2: Transfer relationships (if mode includes them)
                 total_rels_transferred = 0
@@ -1266,7 +1277,38 @@ class LabelService:
 
                 if mode == 'nodes_and_outgoing':
                     relationships = label_def.get('relationships', [])
-                    logger.info(f"Transferring relationships for {len(relationships)} relationship types")
+                    logger.info(f"Phase 2: Counting relationships for {len(relationships)} relationship types")
+
+                    # Count total relationships before starting Phase 2
+                    total_rels = 0
+                    for rel in relationships:
+                        rel_type = rel.get('type')
+                        target_label = rel.get('target_label')
+                        count_query = f"""
+                        MATCH (:{name})-[:{rel_type}]->(:{target_label})
+                        RETURN count(*) as count
+                        """
+                        try:
+                            count_result = source_client.execute_read(count_query)
+                            if count_result:
+                                total_rels += count_result[0].get('count', 0)
+                        except Exception as e:
+                            logger.warning(f"Failed to count {rel_type} relationships: {e}")
+
+                    logger.info(f"Phase 2: Transferring {total_rels} total relationships")
+
+                    # Mark Phase 2 start and set total count
+                    import time
+                    if name in self._active_transfers:
+                        self._active_transfers[name]['progress'].update({
+                            'phase': 2,
+                            'phase_2_start': time.time(),
+                            'phase_2': {
+                                'total': total_rels,
+                                'completed': 0,
+                                'percent': 0
+                            }
+                        })
 
                     for rel in relationships:
                         rel_type = rel.get('type')
@@ -1292,11 +1334,15 @@ class LabelService:
                         )
                         total_rels_transferred += rels_count
 
-                        # Update relationship progress
-                        if name in self._active_transfers:
-                            self._active_transfers[name]['progress']['transferred_relationships'] = total_rels_transferred
+                        # Update Phase 2 relationship progress
+                        if name in self._active_transfers and total_rels > 0:
+                            rel_pct = min(100, int((total_rels_transferred / total_rels * 100)))
+                            self._active_transfers[name]['progress']['phase_2'].update({
+                                'completed': total_rels_transferred,
+                                'percent': rel_pct
+                            })
 
-                        logger.info(f"Transferred {rels_count} {rel_type} relationships")
+                        logger.info(f"Phase 2 progress: {total_rels_transferred}/{total_rels} relationships ({int((total_rels_transferred / total_rels * 100)) if total_rels > 0 else 0}%)")
 
                 logger.info(f"Transfer complete: {total_transferred} nodes, {total_rels_transferred} relationships")
 
