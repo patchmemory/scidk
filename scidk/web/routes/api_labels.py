@@ -310,54 +310,6 @@ def push_label_to_neo4j(name):
         }), 500
 
 
-@bp.route('/labels/<name>/transfer-status', methods=['GET'])
-def get_transfer_status(name):
-    """Get the current transfer status for a label."""
-    try:
-        service = _get_label_service()
-        status = service.get_transfer_status(name)
-
-        if status:
-            return jsonify({
-                'status': 'running' if not status.get('cancelled') else 'cancelling',
-                'transfer_active': True
-            }), 200
-        else:
-            return jsonify({
-                'status': 'idle',
-                'transfer_active': False
-            }), 200
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'error': str(e)
-        }), 500
-
-
-@bp.route('/labels/<name>/transfer-cancel', methods=['POST'])
-def cancel_transfer(name):
-    """Cancel an active transfer for a label."""
-    try:
-        service = _get_label_service()
-        cancelled = service.cancel_transfer(name)
-
-        if cancelled:
-            return jsonify({
-                'status': 'success',
-                'message': f'Transfer cancellation requested for {name}'
-            }), 200
-        else:
-            return jsonify({
-                'status': 'error',
-                'error': f'No active transfer found for {name}'
-            }), 404
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'error': str(e)
-        }), 500
-
-
 @bp.route('/labels/<name>/pull', methods=['POST'])
 def pull_label_from_neo4j(name):
     """
@@ -383,54 +335,6 @@ def pull_label_from_neo4j(name):
             'status': 'error',
             'error': str(e)
         }), 404
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'error': str(e)
-        }), 500
-
-
-@bp.route('/labels/<name>/transfer-status', methods=['GET'])
-def get_transfer_status(name):
-    """Get the current transfer status for a label."""
-    try:
-        service = _get_label_service()
-        status = service.get_transfer_status(name)
-
-        if status:
-            return jsonify({
-                'status': 'running' if not status.get('cancelled') else 'cancelling',
-                'transfer_active': True
-            }), 200
-        else:
-            return jsonify({
-                'status': 'idle',
-                'transfer_active': False
-            }), 200
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'error': str(e)
-        }), 500
-
-
-@bp.route('/labels/<name>/transfer-cancel', methods=['POST'])
-def cancel_transfer(name):
-    """Cancel an active transfer for a label."""
-    try:
-        service = _get_label_service()
-        cancelled = service.cancel_transfer(name)
-
-        if cancelled:
-            return jsonify({
-                'status': 'success',
-                'message': f'Transfer cancellation requested for {name}'
-            }), 200
-        else:
-            return jsonify({
-                'status': 'error',
-                'error': f'No active transfer found for {name}'
-            }), 404
     except Exception as e:
         return jsonify({
             'status': 'error',
@@ -841,54 +745,6 @@ def get_label_instances(name):
         }), 500
 
 
-@bp.route('/labels/<name>/transfer-status', methods=['GET'])
-def get_transfer_status(name):
-    """Get the current transfer status for a label."""
-    try:
-        service = _get_label_service()
-        status = service.get_transfer_status(name)
-
-        if status:
-            return jsonify({
-                'status': 'running' if not status.get('cancelled') else 'cancelling',
-                'transfer_active': True
-            }), 200
-        else:
-            return jsonify({
-                'status': 'idle',
-                'transfer_active': False
-            }), 200
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'error': str(e)
-        }), 500
-
-
-@bp.route('/labels/<name>/transfer-cancel', methods=['POST'])
-def cancel_transfer(name):
-    """Cancel an active transfer for a label."""
-    try:
-        service = _get_label_service()
-        cancelled = service.cancel_transfer(name)
-
-        if cancelled:
-            return jsonify({
-                'status': 'success',
-                'message': f'Transfer cancellation requested for {name}'
-            }), 200
-        else:
-            return jsonify({
-                'status': 'error',
-                'error': f'No active transfer found for {name}'
-            }), 404
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'error': str(e)
-        }), 500
-
-
 @bp.route('/labels/<name>/instance-count', methods=['GET'])
 def get_label_instance_count(name):
     """
@@ -914,54 +770,6 @@ def get_label_instance_count(name):
             'status': 'error',
             'error': str(e)
         }), 404
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'error': str(e)
-        }), 500
-
-
-@bp.route('/labels/<name>/transfer-status', methods=['GET'])
-def get_transfer_status(name):
-    """Get the current transfer status for a label."""
-    try:
-        service = _get_label_service()
-        status = service.get_transfer_status(name)
-
-        if status:
-            return jsonify({
-                'status': 'running' if not status.get('cancelled') else 'cancelling',
-                'transfer_active': True
-            }), 200
-        else:
-            return jsonify({
-                'status': 'idle',
-                'transfer_active': False
-            }), 200
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'error': str(e)
-        }), 500
-
-
-@bp.route('/labels/<name>/transfer-cancel', methods=['POST'])
-def cancel_transfer(name):
-    """Cancel an active transfer for a label."""
-    try:
-        service = _get_label_service()
-        cancelled = service.cancel_transfer(name)
-
-        if cancelled:
-            return jsonify({
-                'status': 'success',
-                'message': f'Transfer cancellation requested for {name}'
-            }), 200
-        else:
-            return jsonify({
-                'status': 'error',
-                'error': f'No active transfer found for {name}'
-            }), 404
     except Exception as e:
         return jsonify({
             'status': 'error',
@@ -1017,54 +825,6 @@ def update_label_instance(name, instance_id):
         }), 500
 
 
-@bp.route('/labels/<name>/transfer-status', methods=['GET'])
-def get_transfer_status(name):
-    """Get the current transfer status for a label."""
-    try:
-        service = _get_label_service()
-        status = service.get_transfer_status(name)
-
-        if status:
-            return jsonify({
-                'status': 'running' if not status.get('cancelled') else 'cancelling',
-                'transfer_active': True
-            }), 200
-        else:
-            return jsonify({
-                'status': 'idle',
-                'transfer_active': False
-            }), 200
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'error': str(e)
-        }), 500
-
-
-@bp.route('/labels/<name>/transfer-cancel', methods=['POST'])
-def cancel_transfer(name):
-    """Cancel an active transfer for a label."""
-    try:
-        service = _get_label_service()
-        cancelled = service.cancel_transfer(name)
-
-        if cancelled:
-            return jsonify({
-                'status': 'success',
-                'message': f'Transfer cancellation requested for {name}'
-            }), 200
-        else:
-            return jsonify({
-                'status': 'error',
-                'error': f'No active transfer found for {name}'
-            }), 404
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'error': str(e)
-        }), 500
-
-
 @bp.route('/labels/<name>/instances/<instance_id>', methods=['PUT'])
 def overwrite_label_instance(name, instance_id):
     """
@@ -1107,54 +867,6 @@ def overwrite_label_instance(name, instance_id):
             'status': 'error',
             'error': str(e)
         }), 404
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'error': str(e)
-        }), 500
-
-
-@bp.route('/labels/<name>/transfer-status', methods=['GET'])
-def get_transfer_status(name):
-    """Get the current transfer status for a label."""
-    try:
-        service = _get_label_service()
-        status = service.get_transfer_status(name)
-
-        if status:
-            return jsonify({
-                'status': 'running' if not status.get('cancelled') else 'cancelling',
-                'transfer_active': True
-            }), 200
-        else:
-            return jsonify({
-                'status': 'idle',
-                'transfer_active': False
-            }), 200
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'error': str(e)
-        }), 500
-
-
-@bp.route('/labels/<name>/transfer-cancel', methods=['POST'])
-def cancel_transfer(name):
-    """Cancel an active transfer for a label."""
-    try:
-        service = _get_label_service()
-        cancelled = service.cancel_transfer(name)
-
-        if cancelled:
-            return jsonify({
-                'status': 'success',
-                'message': f'Transfer cancellation requested for {name}'
-            }), 200
-        else:
-            return jsonify({
-                'status': 'error',
-                'error': f'No active transfer found for {name}'
-            }), 404
     except Exception as e:
         return jsonify({
             'status': 'error',
@@ -1296,9 +1008,8 @@ def transfer_label_to_primary(name):
             'error': str(e)
         }), 500
 
-
 @bp.route('/labels/<name>/transfer-status', methods=['GET'])
-def get_transfer_status(name):
+def label_transfer_status(name):
     """Get the current transfer status for a label."""
     try:
         service = _get_label_service()
@@ -1307,7 +1018,8 @@ def get_transfer_status(name):
         if status:
             return jsonify({
                 'status': 'running' if not status.get('cancelled') else 'cancelling',
-                'transfer_active': True
+                'transfer_active': True,
+                'progress': status.get('progress', {})
             }), 200
         else:
             return jsonify({
@@ -1322,7 +1034,7 @@ def get_transfer_status(name):
 
 
 @bp.route('/labels/<name>/transfer-cancel', methods=['POST'])
-def cancel_transfer(name):
+def label_transfer_cancel(name):
     """Cancel an active transfer for a label."""
     try:
         service = _get_label_service()

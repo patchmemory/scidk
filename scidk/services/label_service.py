@@ -1135,9 +1135,6 @@ class LabelService:
                 'error': f"Label '{name}' has no source profile configured. Cannot transfer."
             }
 
-        # Mark transfer as active
-        self._active_transfers[name] = {'status': 'running', 'cancelled': False}
-
         try:
             from .neo4j_client import get_neo4j_client, Neo4jClient
             from scidk.core.settings import get_setting
@@ -1183,6 +1180,18 @@ class LabelService:
                 total_nodes = count_result[0].get('total', 0) if count_result else 0
 
                 logger.info(f"Starting transfer of {total_nodes} {name} nodes from {source_profile} (mode={mode}, batch_size={batch_size})")
+
+                # Initialize progress tracking
+                self._active_transfers[name] = {
+                    'status': 'running',
+                    'cancelled': False,
+                    'progress': {
+                        'total_nodes': total_nodes,
+                        'transferred_nodes': 0,
+                        'transferred_relationships': 0,
+                        'percent': 0
+                    }
+                }
 
                 # Phase 1: Transfer nodes in batches
                 offset = 0
@@ -1240,8 +1249,15 @@ class LabelService:
 
                     offset += batch_size
 
-                    # Log progress every batch
+                    # Update progress tracking
                     progress_pct = min(100, int((total_transferred / total_nodes * 100))) if total_nodes > 0 else 0
+                    if name in self._active_transfers:
+                        self._active_transfers[name]['progress'].update({
+                            'transferred_nodes': total_transferred,
+                            'percent': progress_pct
+                        })
+
+                    # Log progress every batch
                     logger.info(f"Transfer progress: {total_transferred}/{total_nodes} nodes ({progress_pct}%)")
 
                 # Phase 2: Transfer relationships (if mode includes them)
@@ -1275,6 +1291,11 @@ class LabelService:
                             create_missing_targets
                         )
                         total_rels_transferred += rels_count
+
+                        # Update relationship progress
+                        if name in self._active_transfers:
+                            self._active_transfers[name]['progress']['transferred_relationships'] = total_rels_transferred
+
                         logger.info(f"Transferred {rels_count} {rel_type} relationships")
 
                 logger.info(f"Transfer complete: {total_transferred} nodes, {total_rels_transferred} relationships")
