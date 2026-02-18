@@ -16,6 +16,9 @@ import sqlite3
 class LabelService:
     """Service for managing label definitions and Neo4j schema sync."""
 
+    # Class-level transfer tracking
+    _active_transfers = {}  # {label_name: {'status': 'running', 'cancelled': False}}
+
     def __init__(self, app):
         self.app = app
 
@@ -23,6 +26,22 @@ class LabelService:
         """Get a database connection."""
         from ..core import path_index_sqlite as pix
         return pix.connect()
+
+    def get_transfer_status(self, label_name: str) -> Optional[Dict[str, Any]]:
+        """Get the current transfer status for a label."""
+        return self._active_transfers.get(label_name)
+
+    def cancel_transfer(self, label_name: str) -> bool:
+        """Cancel an active transfer for a label."""
+        if label_name in self._active_transfers:
+            self._active_transfers[label_name]['cancelled'] = True
+            return True
+        return False
+
+    def _is_transfer_cancelled(self, label_name: str) -> bool:
+        """Check if transfer has been cancelled."""
+        transfer = self._active_transfers.get(label_name)
+        return transfer and transfer.get('cancelled', False)
 
     def list_labels(self) -> List[Dict[str, Any]]:
         """
@@ -1098,6 +1117,13 @@ class LabelService:
         import logging
         logger = logging.getLogger(__name__)
 
+        # Check if transfer already running for this label
+        if name in self._active_transfers and self._active_transfers[name].get('status') == 'running':
+            return {
+                'status': 'error',
+                'error': f"Transfer already in progress for label '{name}'. Please wait or cancel the existing transfer."
+            }
+
         label_def = self.get_label(name)
         if not label_def:
             raise ValueError(f"Label '{name}' not found")
@@ -1108,6 +1134,9 @@ class LabelService:
                 'status': 'error',
                 'error': f"Label '{name}' has no source profile configured. Cannot transfer."
             }
+
+        # Mark transfer as active
+        self._active_transfers[name] = {'status': 'running', 'cancelled': False}
 
         try:
             from .neo4j_client import get_neo4j_client, Neo4jClient
@@ -1160,6 +1189,15 @@ class LabelService:
                 total_transferred = 0
 
                 while True:
+                    # Check for cancellation
+                    if self._is_transfer_cancelled(name):
+                        logger.info(f"Transfer cancelled by user at {total_transferred}/{total_nodes} nodes")
+                        return {
+                            'status': 'cancelled',
+                            'nodes_transferred': total_transferred,
+                            'message': f'Transfer cancelled after {total_transferred} nodes'
+                        }
+
                     # Pull batch from source
                     batch_query = f"""
                     MATCH (n:{name})
@@ -1252,8 +1290,14 @@ class LabelService:
 
             finally:
                 source_client.close()
+                # Clean up transfer tracking
+                if name in self._active_transfers:
+                    del self._active_transfers[name]
 
         except Exception as e:
+            # Clean up on error
+            if name in self._active_transfers:
+                del self._active_transfers[name]
             return {
                 'status': 'error',
                 'error': str(e)
