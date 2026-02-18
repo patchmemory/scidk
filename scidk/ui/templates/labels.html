@@ -718,10 +718,10 @@
         <label style="cursor: pointer; display: flex; align-items: start; gap: 0.5rem;">
           <input type="checkbox" id="transfer-create-placeholders" style="margin-top: 0.25rem;">
           <div>
-            <strong class="small">Create placeholder nodes for missing relationships</strong>
+            <strong class="small">Create missing target nodes automatically</strong>
             <div class="small text-muted">
-              If a relationship points to a node that hasn't been transferred yet, create a placeholder that can be resolved later.
-              Placeholders are marked with <code>:__Placeholder__</code> label and show in the graph with metadata about their source.
+              If a relationship points to a node that hasn't been transferred yet, create it with the properties available from the relationship.
+              Later transfers will update these nodes with complete data. Uses Neo4j's MERGE to handle this naturally.
             </div>
           </div>
         </label>
