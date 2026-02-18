@@ -966,7 +966,8 @@ class LabelService:
         rel_type: str,
         source_matching_key: str,
         target_matching_key: str,
-        batch_size: int = 100
+        batch_size: int = 100,
+        create_missing_targets: bool = False
     ) -> int:
         """
         Transfer relationships in batches with proper per-label matching keys.
@@ -980,6 +981,7 @@ class LabelService:
             source_matching_key: Property to match source nodes on
             target_matching_key: Property to match target nodes on
             batch_size: Number of relationships per batch
+            create_missing_targets: Create target nodes if they don't exist
 
         Returns:
             Number of relationships transferred
@@ -1020,23 +1022,44 @@ class LabelService:
                     continue
 
                 # Create relationship in primary with per-label matching
-                create_rel_query = f"""
-                MATCH (source:{source_label} {{{source_matching_key}: $source_key}})
-                MATCH (target:{target_label} {{{target_matching_key}: $target_key}})
-                MERGE (source)-[r:{rel_type}]->(target)
-                SET r = $rel_props
-                """
-
-                try:
-                    primary_client.execute_write(create_rel_query, {
-                        'source_key': source_key_value,
-                        'target_key': target_key_value,
-                        'rel_props': rel_props
-                    })
-                    total_transferred += 1
-                except Exception:
-                    # Skip if nodes don't exist
-                    pass
+                if create_missing_targets:
+                    # Use MERGE for target node to create if missing
+                    create_rel_query = f"""
+                    MATCH (source:{source_label} {{{source_matching_key}: $source_key}})
+                    MERGE (target:{target_label} {{{target_matching_key}: $target_key}})
+                    SET target = $target_props
+                    MERGE (source)-[r:{rel_type}]->(target)
+                    SET r = $rel_props
+                    """
+                    try:
+                        primary_client.execute_write(create_rel_query, {
+                            'source_key': source_key_value,
+                            'target_key': target_key_value,
+                            'target_props': target_props,
+                            'rel_props': rel_props
+                        })
+                        total_transferred += 1
+                    except Exception:
+                        # Skip if source node doesn't exist
+                        pass
+                else:
+                    # Only create relationship if both nodes exist (original behavior)
+                    create_rel_query = f"""
+                    MATCH (source:{source_label} {{{source_matching_key}: $source_key}})
+                    MATCH (target:{target_label} {{{target_matching_key}: $target_key}})
+                    MERGE (source)-[r:{rel_type}]->(target)
+                    SET r = $rel_props
+                    """
+                    try:
+                        primary_client.execute_write(create_rel_query, {
+                            'source_key': source_key_value,
+                            'target_key': target_key_value,
+                            'rel_props': rel_props
+                        })
+                        total_transferred += 1
+                    except Exception:
+                        # Skip if nodes don't exist
+                        pass
 
             offset += batch_size
 
@@ -1047,7 +1070,7 @@ class LabelService:
         name: str,
         batch_size: int = 100,
         mode: str = 'nodes_and_outgoing',
-        ensure_targets_exist: bool = True
+        create_missing_targets: bool = False
     ) -> Dict[str, Any]:
         """
         Transfer instances of a label from its source database to the primary database.
@@ -1060,17 +1083,21 @@ class LabelService:
         - Batch processing for memory efficiency
         - Per-label matching key resolution (configured or auto-detected)
         - Relationship preservation with proper matching
-        - Optional target node existence checking
+        - Optional automatic creation of missing target nodes
+        - Progress logging to server logs
 
         Args:
             name: Label name to transfer
             batch_size: Number of instances to process per batch (default 100)
             mode: Transfer mode - 'nodes_only' or 'nodes_and_outgoing' (default)
-            ensure_targets_exist: Check if target nodes exist before creating relationships (default True)
+            create_missing_targets: Auto-create target nodes if they don't exist (default False)
 
         Returns:
             Dict with status, counts, matching keys used, and any errors
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
         label_def = self.get_label(name)
         if not label_def:
             raise ValueError(f"Label '{name}' not found")
@@ -1121,6 +1148,13 @@ class LabelService:
                 # Get matching key for this label using new resolution method
                 matching_key = self.get_matching_key(name)
 
+                # Get total count for progress tracking
+                count_query = f"MATCH (n:{name}) RETURN count(n) as total"
+                count_result = source_client.execute_read(count_query)
+                total_nodes = count_result[0].get('total', 0) if count_result else 0
+
+                logger.info(f"Starting transfer of {total_nodes} {name} nodes from {source_profile} (mode={mode}, batch_size={batch_size})")
+
                 # Phase 1: Transfer nodes in batches
                 offset = 0
                 total_transferred = 0
@@ -1168,12 +1202,17 @@ class LabelService:
 
                     offset += batch_size
 
+                    # Log progress every batch
+                    progress_pct = min(100, int((total_transferred / total_nodes * 100))) if total_nodes > 0 else 0
+                    logger.info(f"Transfer progress: {total_transferred}/{total_nodes} nodes ({progress_pct}%)")
+
                 # Phase 2: Transfer relationships (if mode includes them)
                 total_rels_transferred = 0
                 matching_keys_used = {name: matching_key}
 
                 if mode == 'nodes_and_outgoing':
                     relationships = label_def.get('relationships', [])
+                    logger.info(f"Transferring relationships for {len(relationships)} relationship types")
 
                     for rel in relationships:
                         rel_type = rel.get('type')
@@ -1182,6 +1221,8 @@ class LabelService:
                         # Get matching key for target label
                         target_matching_key = self.get_matching_key(target_label)
                         matching_keys_used[target_label] = target_matching_key
+
+                        logger.info(f"Transferring {rel_type} relationships to {target_label}")
 
                         # Use batched relationship transfer with per-label matching
                         rels_count = self._transfer_relationships_batch(
@@ -1192,9 +1233,13 @@ class LabelService:
                             rel_type,
                             matching_key,
                             target_matching_key,
-                            batch_size
+                            batch_size,
+                            create_missing_targets
                         )
                         total_rels_transferred += rels_count
+                        logger.info(f"Transferred {rels_count} {rel_type} relationships")
+
+                logger.info(f"Transfer complete: {total_transferred} nodes, {total_rels_transferred} relationships")
 
                 return {
                     'status': 'success',
