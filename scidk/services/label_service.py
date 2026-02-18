@@ -38,7 +38,7 @@ class LabelService:
             cursor.execute(
                 """
                 SELECT name, properties, relationships, created_at, updated_at,
-                       source_type, source_id, sync_config
+                       source_type, source_id, sync_config, neo4j_source_profile
                 FROM label_definitions
                 ORDER BY name
                 """
@@ -47,7 +47,7 @@ class LabelService:
 
             labels = []
             for row in rows:
-                name, props_json, rels_json, created_at, updated_at, source_type, source_id, sync_config_json = row
+                name, props_json, rels_json, created_at, updated_at, source_type, source_id, sync_config_json, neo4j_source_profile = row
                 labels.append({
                     'name': name,
                     'properties': json.loads(props_json) if props_json else [],
@@ -56,7 +56,8 @@ class LabelService:
                     'updated_at': updated_at,
                     'source_type': source_type or 'manual',
                     'source_id': source_id,
-                    'sync_config': json.loads(sync_config_json) if sync_config_json else {}
+                    'sync_config': json.loads(sync_config_json) if sync_config_json else {},
+                    'neo4j_source_profile': neo4j_source_profile
                 })
             return labels
         finally:
@@ -78,7 +79,7 @@ class LabelService:
             cursor.execute(
                 """
                 SELECT name, properties, relationships, created_at, updated_at,
-                       source_type, source_id, sync_config
+                       source_type, source_id, sync_config, neo4j_source_profile
                 FROM label_definitions
                 WHERE name = ?
                 """,
@@ -89,19 +90,19 @@ class LabelService:
             if not row:
                 return None
 
-            name, props_json, rels_json, created_at, updated_at, source_type, source_id, sync_config_json = row
+            name, props_json, rels_json, created_at, updated_at, source_type, source_id, sync_config_json, neo4j_source_profile = row
 
             # Get outgoing relationships (defined on this label)
             relationships = json.loads(rels_json) if rels_json else []
 
-            # Find incoming relationships (from other labels to this label)
+            # Find incoming relationships (from all labels to this label)
+            # Include self-referential relationships (e.g., Sample -> Sample)
             cursor.execute(
                 """
                 SELECT name, relationships
                 FROM label_definitions
-                WHERE name != ?
                 """,
-                (name,)
+                ()
             )
 
             incoming_relationships = []
@@ -109,6 +110,7 @@ class LabelService:
                 if other_rels_json:
                     other_rels = json.loads(other_rels_json)
                     for rel in other_rels:
+                        # Include if target is this label (including self-referential)
                         if rel.get('target_label') == name:
                             incoming_relationships.append({
                                 'type': rel['type'],
@@ -125,7 +127,8 @@ class LabelService:
                 'updated_at': updated_at,
                 'source_type': source_type or 'manual',
                 'source_id': source_id,
-                'sync_config': json.loads(sync_config_json) if sync_config_json else {}
+                'sync_config': json.loads(sync_config_json) if sync_config_json else {},
+                'neo4j_source_profile': neo4j_source_profile
             }
         finally:
             conn.close()
@@ -150,6 +153,7 @@ class LabelService:
         source_type = definition.get('source_type', 'manual')
         source_id = definition.get('source_id')
         sync_config = definition.get('sync_config', {})
+        neo4j_source_profile = definition.get('neo4j_source_profile')
 
         # Validate property structure
         for prop in properties:
@@ -178,10 +182,10 @@ class LabelService:
                     """
                     UPDATE label_definitions
                     SET properties = ?, relationships = ?, source_type = ?, source_id = ?,
-                        sync_config = ?, updated_at = ?
+                        sync_config = ?, neo4j_source_profile = ?, updated_at = ?
                     WHERE name = ?
                     """,
-                    (props_json, rels_json, source_type, source_id, sync_config_json, now, name)
+                    (props_json, rels_json, source_type, source_id, sync_config_json, neo4j_source_profile, now, name)
                 )
                 created_at = existing['created_at']
             else:
@@ -189,10 +193,10 @@ class LabelService:
                 cursor.execute(
                     """
                     INSERT INTO label_definitions (name, properties, relationships, source_type,
-                                                   source_id, sync_config, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                                   source_id, sync_config, neo4j_source_profile, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (name, props_json, rels_json, source_type, source_id, sync_config_json, now, now)
+                    (name, props_json, rels_json, source_type, source_id, sync_config_json, neo4j_source_profile, now, now)
                 )
                 created_at = now
 
@@ -290,6 +294,8 @@ class LabelService:
         """
         Pull properties and relationships for a specific label from Neo4j and merge with existing definition.
 
+        Uses the 'labels_source' role connection if configured, otherwise falls back to 'primary'.
+
         Args:
             name: Label name
 
@@ -302,7 +308,8 @@ class LabelService:
 
         try:
             from .neo4j_client import get_neo4j_client
-            neo4j_client = get_neo4j_client()
+            # Try labels_source role first, falls back to primary automatically
+            neo4j_client = get_neo4j_client(role='labels_source')
 
             if not neo4j_client:
                 raise Exception("Neo4j client not configured")
@@ -409,16 +416,24 @@ class LabelService:
                 'error': str(e)
             }
 
-    def pull_from_neo4j(self) -> Dict[str, Any]:
+    def pull_from_neo4j(self, neo4j_client=None, source_profile_name=None) -> Dict[str, Any]:
         """
         Pull label schema (properties and relationships) from Neo4j and import as label definitions.
+
+        Args:
+            neo4j_client: Optional Neo4jClient instance to use. If not provided, uses the 'labels_source'
+                         role connection if configured, otherwise falls back to 'primary'.
+            source_profile_name: Optional name of the Neo4j profile being pulled from. Will be stored
+                                in label metadata for source-aware instance operations.
 
         Returns:
             Dict with status and imported labels
         """
         try:
-            from .neo4j_client import get_neo4j_client
-            neo4j_client = get_neo4j_client()
+            if neo4j_client is None:
+                from .neo4j_client import get_neo4j_client
+                # Try labels_source role first, falls back to primary automatically
+                neo4j_client = get_neo4j_client(role='labels_source')
 
             if not neo4j_client:
                 raise Exception("Neo4j client not configured")
@@ -511,11 +526,15 @@ class LabelService:
             imported = []
             for label_name, schema in labels_map.items():
                 try:
-                    self.save_label({
+                    label_def = {
                         'name': label_name,
                         'properties': schema['properties'],
                         'relationships': schema['relationships']
-                    })
+                    }
+                    # Store source profile if provided
+                    if source_profile_name:
+                        label_def['neo4j_source_profile'] = source_profile_name
+                    self.save_label(label_def)
                     imported.append(label_name)
                 except Exception as e:
                     # Continue with other labels
@@ -583,6 +602,9 @@ class LabelService:
         """
         Get instances of a label from Neo4j.
 
+        If the label has a source profile configured, instances will be pulled from that profile's
+        connection. Otherwise, uses the default (primary) connection.
+
         Args:
             name: Label name
             limit: Maximum number of instances to return
@@ -597,40 +619,78 @@ class LabelService:
 
         try:
             from .neo4j_client import get_neo4j_client
-            neo4j_client = get_neo4j_client()
+
+            # Check if label has a source profile - if so, use that connection
+            source_profile = label_def.get('neo4j_source_profile')
+            neo4j_client = None
+            created_client = False
+
+            if source_profile:
+                # Load and use the source profile connection
+                from scidk.core.settings import get_setting
+                import json
+
+                profile_key = f'neo4j_profile_{source_profile.replace(" ", "_")}'
+                profile_json = get_setting(profile_key)
+
+                if profile_json:
+                    profile = json.loads(profile_json)
+                    password_key = f'neo4j_profile_password_{source_profile.replace(" ", "_")}'
+                    password = get_setting(password_key)
+
+                    from .neo4j_client import Neo4jClient
+                    neo4j_client = Neo4jClient(
+                        uri=profile.get('uri'),
+                        user=profile.get('user'),
+                        password=password,
+                        database=profile.get('database', 'neo4j'),
+                        auth_mode='basic'
+                    )
+                    neo4j_client.connect()
+                    created_client = True
+
+            # Fall back to default connection if no source profile or profile not found
+            if not neo4j_client:
+                neo4j_client = get_neo4j_client()
 
             if not neo4j_client:
                 raise Exception("Neo4j client not configured")
 
-            # Query for instances of this label
-            query = f"""
-            MATCH (n:{name})
-            RETURN elementId(n) as id, properties(n) as properties
-            SKIP $offset
-            LIMIT $limit
-            """
+            try:
+                # Query for instances of this label
+                query = f"""
+                MATCH (n:{name})
+                RETURN elementId(n) as id, properties(n) as properties
+                SKIP $offset
+                LIMIT $limit
+                """
 
-            results = neo4j_client.execute_read(query, {'offset': offset, 'limit': limit})
+                results = neo4j_client.execute_read(query, {'offset': offset, 'limit': limit})
 
-            instances = []
-            for r in results:
-                instances.append({
-                    'id': r.get('id'),
-                    'properties': r.get('properties', {})
-                })
+                instances = []
+                for r in results:
+                    instances.append({
+                        'id': r.get('id'),
+                        'properties': r.get('properties', {})
+                    })
 
-            # Get total count
-            count_query = f"MATCH (n:{name}) RETURN count(n) as total"
-            count_results = neo4j_client.execute_read(count_query)
-            total = count_results[0].get('total', 0) if count_results else 0
+                # Get total count
+                count_query = f"MATCH (n:{name}) RETURN count(n) as total"
+                count_results = neo4j_client.execute_read(count_query)
+                total = count_results[0].get('total', 0) if count_results else 0
 
-            return {
-                'status': 'success',
-                'instances': instances,
-                'total': total,
-                'limit': limit,
-                'offset': offset
-            }
+                return {
+                    'status': 'success',
+                    'instances': instances,
+                    'total': total,
+                    'limit': limit,
+                    'offset': offset,
+                    'source_profile': source_profile  # Include source info
+                }
+            finally:
+                # Clean up temporary client if we created one
+                if created_client and neo4j_client:
+                    neo4j_client.close()
         except Exception as e:
             return {
                 'status': 'error',
@@ -640,6 +700,9 @@ class LabelService:
     def get_label_instance_count(self, name: str) -> Dict[str, Any]:
         """
         Get count of instances for a label from Neo4j.
+
+        If the label has a source profile configured, count will be from that profile's
+        connection. Otherwise, uses the default (primary) connection.
 
         Args:
             name: Label name
@@ -653,20 +716,58 @@ class LabelService:
 
         try:
             from .neo4j_client import get_neo4j_client
-            neo4j_client = get_neo4j_client()
+
+            # Check if label has a source profile - if so, use that connection
+            source_profile = label_def.get('neo4j_source_profile')
+            neo4j_client = None
+            created_client = False
+
+            if source_profile:
+                # Load and use the source profile connection
+                from scidk.core.settings import get_setting
+                import json
+
+                profile_key = f'neo4j_profile_{source_profile.replace(" ", "_")}'
+                profile_json = get_setting(profile_key)
+
+                if profile_json:
+                    profile = json.loads(profile_json)
+                    password_key = f'neo4j_profile_password_{source_profile.replace(" ", "_")}'
+                    password = get_setting(password_key)
+
+                    from .neo4j_client import Neo4jClient
+                    neo4j_client = Neo4jClient(
+                        uri=profile.get('uri'),
+                        user=profile.get('user'),
+                        password=password,
+                        database=profile.get('database', 'neo4j'),
+                        auth_mode='basic'
+                    )
+                    neo4j_client.connect()
+                    created_client = True
+
+            # Fall back to default connection if no source profile
+            if not neo4j_client:
+                neo4j_client = get_neo4j_client()
 
             if not neo4j_client:
                 raise Exception("Neo4j client not configured")
 
-            # Query for count
-            query = f"MATCH (n:{name}) RETURN count(n) as count"
-            results = neo4j_client.execute_read(query)
-            count = results[0].get('count', 0) if results else 0
+            try:
+                # Query for count
+                query = f"MATCH (n:{name}) RETURN count(n) as count"
+                results = neo4j_client.execute_read(query)
+                count = results[0].get('count', 0) if results else 0
 
-            return {
-                'status': 'success',
-                'count': count
-            }
+                return {
+                    'status': 'success',
+                    'count': count,
+                    'source_profile': source_profile  # Include source info
+                }
+            finally:
+                # Clean up temporary client if we created one
+                if created_client and neo4j_client:
+                    neo4j_client.close()
         except Exception as e:
             return {
                 'status': 'error',
@@ -697,7 +798,39 @@ class LabelService:
 
         try:
             from .neo4j_client import get_neo4j_client
-            neo4j_client = get_neo4j_client()
+
+            # Check if label has a source profile - if so, use that connection
+            source_profile = label_def.get('neo4j_source_profile')
+            neo4j_client = None
+            created_client = False
+
+            if source_profile:
+                # Load and use the source profile connection
+                from scidk.core.settings import get_setting
+                import json
+
+                profile_key = f'neo4j_profile_{source_profile.replace(" ", "_")}'
+                profile_json = get_setting(profile_key)
+
+                if profile_json:
+                    profile = json.loads(profile_json)
+                    password_key = f'neo4j_profile_password_{source_profile.replace(" ", "_")}'
+                    password = get_setting(password_key)
+
+                    from .neo4j_client import Neo4jClient
+                    neo4j_client = Neo4jClient(
+                        uri=profile.get('uri'),
+                        user=profile.get('user'),
+                        password=password,
+                        database=profile.get('database', 'neo4j'),
+                        auth_mode='basic'
+                    )
+                    neo4j_client.connect()
+                    created_client = True
+
+            # Fall back to default connection if no source profile
+            if not neo4j_client:
+                neo4j_client = get_neo4j_client()
 
             if not neo4j_client:
                 raise Exception("Neo4j client not configured")
@@ -783,6 +916,194 @@ class LabelService:
                 'status': 'success',
                 'instance': instance
             }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'error': str(e)
+            }
+
+    def transfer_to_primary(self, name: str, batch_size: int = 100) -> Dict[str, Any]:
+        """
+        Transfer instances of a label from its source database to the primary database.
+        Preserves relationships between transferred nodes.
+
+        This operation:
+        1. Pulls instances in batches from the source database
+        2. Creates nodes with matching properties in the primary database
+        3. Reconstructs relationships between transferred nodes
+        4. Uses a matching key (first required property or 'id') to link source/target nodes
+
+        Args:
+            name: Label name to transfer
+            batch_size: Number of instances to process per batch (default 100)
+
+        Returns:
+            Dict with status, counts, and any errors
+        """
+        label_def = self.get_label(name)
+        if not label_def:
+            raise ValueError(f"Label '{name}' not found")
+
+        source_profile = label_def.get('neo4j_source_profile')
+        if not source_profile:
+            return {
+                'status': 'error',
+                'error': f"Label '{name}' has no source profile configured. Cannot transfer."
+            }
+
+        try:
+            from .neo4j_client import get_neo4j_client, Neo4jClient
+            from scidk.core.settings import get_setting
+
+            # Get source client
+            profile_key = f'neo4j_profile_{source_profile.replace(" ", "_")}'
+            profile_json = get_setting(profile_key)
+            if not profile_json:
+                return {
+                    'status': 'error',
+                    'error': f"Source profile '{source_profile}' not found"
+                }
+
+            profile = json.loads(profile_json)
+            password_key = f'neo4j_profile_password_{source_profile.replace(" ", "_")}'
+            password = get_setting(password_key)
+
+            source_client = Neo4jClient(
+                uri=profile.get('uri'),
+                user=profile.get('user'),
+                password=password,
+                database=profile.get('database', 'neo4j'),
+                auth_mode='basic'
+            )
+            source_client.connect()
+
+            # Get primary client
+            primary_client = get_neo4j_client(role='primary')
+            if not primary_client:
+                source_client.close()
+                return {
+                    'status': 'error',
+                    'error': 'Primary Neo4j connection not configured'
+                }
+
+            try:
+                # Determine matching key (first required property or default to 'id')
+                matching_key = None
+                for prop in label_def.get('properties', []):
+                    if prop.get('required'):
+                        matching_key = prop.get('name')
+                        break
+                if not matching_key:
+                    matching_key = 'id'  # Fallback
+
+                # Phase 1: Transfer nodes in batches
+                offset = 0
+                total_transferred = 0
+                node_mapping = {}  # Maps source_id -> primary_id
+
+                while True:
+                    # Pull batch from source
+                    batch_query = f"""
+                    MATCH (n:{name})
+                    RETURN elementId(n) as source_id, properties(n) as props
+                    SKIP $offset
+                    LIMIT $batch_size
+                    """
+                    batch = source_client.execute_read(batch_query, {
+                        'offset': offset,
+                        'batch_size': batch_size
+                    })
+
+                    if not batch:
+                        break
+
+                    # Create nodes in primary
+                    for record in batch:
+                        source_id = record.get('source_id')
+                        props = record.get('props', {})
+
+                        # Merge node in primary using matching key
+                        merge_query = f"""
+                        MERGE (n:{name} {{{matching_key}: $key_value}})
+                        SET n = $props
+                        RETURN elementId(n) as primary_id
+                        """
+
+                        key_value = props.get(matching_key)
+                        if not key_value:
+                            # Skip nodes without matching key
+                            continue
+
+                        result = primary_client.execute_write(merge_query, {
+                            'key_value': key_value,
+                            'props': props
+                        })
+
+                        if result:
+                            primary_id = result[0].get('primary_id')
+                            node_mapping[source_id] = primary_id
+                            total_transferred += 1
+
+                    offset += batch_size
+
+                # Phase 2: Transfer relationships
+                relationships = label_def.get('relationships', [])
+                total_rels_transferred = 0
+
+                for rel in relationships:
+                    rel_type = rel.get('type')
+                    target_label = rel.get('target_label')
+
+                    # Query relationships from source
+                    rel_query = f"""
+                    MATCH (source:{name})-[r:{rel_type}]->(target:{target_label})
+                    RETURN elementId(source) as source_id,
+                           properties(source) as source_props,
+                           properties(target) as target_props,
+                           properties(r) as rel_props
+                    """
+
+                    rel_batch = source_client.execute_read(rel_query)
+
+                    for rel_record in rel_batch:
+                        source_props = rel_record.get('source_props', {})
+                        target_props = rel_record.get('target_props', {})
+                        rel_props = rel_record.get('rel_props', {})
+
+                        # Get matching keys for source and target
+                        source_key = source_props.get(matching_key)
+                        target_key = target_props.get(matching_key)
+
+                        if not source_key or not target_key:
+                            continue
+
+                        # Create relationship in primary
+                        create_rel_query = f"""
+                        MATCH (source:{name} {{{matching_key}: $source_key}})
+                        MATCH (target:{target_label} {{{matching_key}: $target_key}})
+                        MERGE (source)-[r:{rel_type}]->(target)
+                        SET r = $rel_props
+                        """
+
+                        primary_client.execute_write(create_rel_query, {
+                            'source_key': source_key,
+                            'target_key': target_key,
+                            'rel_props': rel_props
+                        })
+
+                        total_rels_transferred += 1
+
+                return {
+                    'status': 'success',
+                    'nodes_transferred': total_transferred,
+                    'relationships_transferred': total_rels_transferred,
+                    'source_profile': source_profile,
+                    'matching_key': matching_key
+                }
+
+            finally:
+                source_client.close()
+
         except Exception as e:
             return {
                 'status': 'error',
