@@ -720,8 +720,9 @@
           <div>
             <strong class="small">Create missing target nodes automatically</strong>
             <div class="small text-muted">
-              If a relationship points to a node that hasn't been transferred yet, create it with the properties available from the relationship.
-              Later transfers will update these nodes with complete data. Uses Neo4j's MERGE to handle this naturally.
+              If a relationship points to a node that hasn't been transferred yet, create it with available properties.
+              Tracks source provenance (<code>__source__</code>, <code>__created_at__</code>) for multi-source harmonization.
+              Later transfers will update these nodes with complete data.
             </div>
           </div>
         </label>
