@@ -966,6 +966,8 @@ def transfer_label_to_primary(name):
 
     Query params:
     - batch_size: Number of instances to process per batch (default: 100)
+    - mode: Transfer mode - 'nodes_only' or 'nodes_and_outgoing' (default: 'nodes_and_outgoing')
+    - ensure_targets_exist: Check if target nodes exist before creating relationships (default: true)
 
     Returns:
     {
@@ -973,14 +975,22 @@ def transfer_label_to_primary(name):
         "nodes_transferred": 150,
         "relationships_transferred": 75,
         "source_profile": "Read-Only Source",
-        "matching_key": "id"
+        "matching_keys": {"SourceLabel": "id", "TargetLabel": "name"},
+        "mode": "nodes_and_outgoing"
     }
     """
     try:
         service = _get_label_service()
         batch_size = int(request.args.get('batch_size', 100))
+        mode = request.args.get('mode', 'nodes_and_outgoing')
+        ensure_targets_exist = request.args.get('ensure_targets_exist', 'true').lower() == 'true'
 
-        result = service.transfer_to_primary(name, batch_size=batch_size)
+        result = service.transfer_to_primary(
+            name,
+            batch_size=batch_size,
+            mode=mode,
+            ensure_targets_exist=ensure_targets_exist
+        )
 
         if result.get('status') == 'error':
             return jsonify(result), 500

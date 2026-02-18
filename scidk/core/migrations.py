@@ -500,6 +500,18 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 14)
             version = 14
 
+        # v15: Add matching_key to label_definitions for configurable node matching during transfer
+        if version < 15:
+            try:
+                cur.execute("ALTER TABLE label_definitions ADD COLUMN matching_key TEXT")
+            except sqlite3.OperationalError:
+                # Column may already exist
+                pass
+
+            conn.commit()
+            _set_version(conn, 15)
+            version = 15
+
         return version
     finally:
         if own:

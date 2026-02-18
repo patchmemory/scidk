@@ -689,6 +689,26 @@
       </div>
 
       <div style="margin-bottom: 1rem;">
+        <label class="small"><strong>Transfer Mode:</strong></label>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem;">
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
+            <input type="radio" name="transfer-mode" value="nodes_only" id="transfer-mode-nodes-only">
+            <div>
+              <strong class="small">⚡ Nodes Only</strong>
+              <div class="small text-muted">Transfer only nodes, skip relationships (fastest)</div>
+            </div>
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
+            <input type="radio" name="transfer-mode" value="nodes_and_outgoing" id="transfer-mode-nodes-rels" checked>
+            <div>
+              <strong class="small">🔗 Nodes + Relationships</strong>
+              <div class="small text-muted">Transfer nodes and outgoing relationships (recommended)</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 1rem;">
         <label class="small" for="transfer-batch-size"><strong>Batch Size:</strong></label>
         <input type="number" id="transfer-batch-size" class="form-control form-control-sm" value="100" min="10" max="1000" style="max-width: 150px;" />
         <div class="small text-muted" style="margin-top: 0.25rem;">Number of instances to process per batch</div>
@@ -708,7 +728,8 @@
           <ul style="margin: 0.5rem 0 0 1.5rem; padding: 0;">
             <li><span id="nodes-transferred-count">0</span> nodes transferred</li>
             <li><span id="rels-transferred-count">0</span> relationships transferred</li>
-            <li>Matching key: <code id="matching-key-used">id</code></li>
+            <li>Mode: <code id="transfer-mode-used">nodes_and_outgoing</code></li>
+            <li id="matching-keys-display">Matching keys: <code id="matching-keys-used">{}</code></li>
           </ul>
         </div>
       </div>
@@ -2542,6 +2563,7 @@ async function startTransfer() {
   if (!currentLabel) return;
 
   const batchSize = parseInt(document.getElementById('transfer-batch-size').value) || 100;
+  const mode = document.querySelector('input[name="transfer-mode"]:checked').value;
 
   // Hide confirm button, show progress
   document.getElementById('transfer-confirm-btn').style.display = 'none';
@@ -2558,7 +2580,7 @@ async function startTransfer() {
   statusText.textContent = 'Starting transfer...';
 
   try {
-    const response = await fetch(`/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-to-primary?batch_size=${batchSize}`, {
+    const response = await fetch(`/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-to-primary?batch_size=${batchSize}&mode=${mode}`, {
       method: 'POST'
     });
 
@@ -2575,7 +2597,8 @@ async function startTransfer() {
       document.getElementById('transfer-result').style.display = 'block';
       document.getElementById('nodes-transferred-count').textContent = data.nodes_transferred || 0;
       document.getElementById('rels-transferred-count').textContent = data.relationships_transferred || 0;
-      document.getElementById('matching-key-used').textContent = data.matching_key || 'id';
+      document.getElementById('transfer-mode-used').textContent = data.mode || mode;
+      document.getElementById('matching-keys-used').textContent = JSON.stringify(data.matching_keys || {});
 
       // Update cancel button to close
       document.getElementById('transfer-cancel-btn').textContent = 'Close';
