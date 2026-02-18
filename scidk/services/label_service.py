@@ -1042,20 +1042,38 @@ class LabelService:
 
                 # Create relationship in primary with per-label matching
                 if create_missing_targets:
-                    # Use MERGE for target node to create if missing
+                    # Use MERGE for target node, creating placeholder if missing
+                    # Placeholders store metadata for later resolution
+                    import time
                     create_rel_query = f"""
                     MATCH (source:{source_label} {{{source_matching_key}: $source_key}})
                     MERGE (target:{target_label} {{{target_matching_key}: $target_key}})
-                    SET target = $target_props
+                    ON CREATE SET
+                        target:__Placeholder__,
+                        target.__stub_source__ = $source_uri,
+                        target.__stub_created__ = $stub_timestamp,
+                        target.__original_label__ = $target_label_name,
+                        target.__resolved__ = false,
+                        target = $target_props
+                    ON MATCH SET
+                        target.__resolved__ = true,
+                        target = $target_props
                     MERGE (source)-[r:{rel_type}]->(target)
                     SET r = $rel_props
                     """
                     try:
+                        # Get source URI for provenance tracking
+                        from .neo4j_client import get_neo4j_client
+                        source_profile_name = self.get_label(source_label).get('neo4j_source_profile', 'unknown')
+
                         primary_client.execute_write(create_rel_query, {
                             'source_key': source_key_value,
                             'target_key': target_key_value,
                             'target_props': target_props,
-                            'rel_props': rel_props
+                            'rel_props': rel_props,
+                            'source_uri': source_profile_name,
+                            'stub_timestamp': int(time.time() * 1000),  # milliseconds
+                            'target_label_name': target_label
                         })
                         total_transferred += 1
                     except Exception:
