@@ -1056,7 +1056,12 @@ class LabelService:
                     ON MATCH SET
                         target = $target_props
                     MERGE (source)-[r:{rel_type}]->(target)
-                    SET r = $rel_props
+                    ON CREATE SET
+                        r = $rel_props,
+                        r.__source__ = $source_uri,
+                        r.__created_at__ = $timestamp
+                    ON MATCH SET
+                        r = $rel_props
                     """
                     try:
                         # Get source URI for provenance tracking
@@ -1075,18 +1080,29 @@ class LabelService:
                         # Skip if source node doesn't exist
                         pass
                 else:
-                    # Only create relationship if both nodes exist (original behavior)
+                    # Only create relationship if both nodes exist (with provenance)
+                    import time
                     create_rel_query = f"""
                     MATCH (source:{source_label} {{{source_matching_key}: $source_key}})
                     MATCH (target:{target_label} {{{target_matching_key}: $target_key}})
                     MERGE (source)-[r:{rel_type}]->(target)
-                    SET r = $rel_props
+                    ON CREATE SET
+                        r = $rel_props,
+                        r.__source__ = $source_uri,
+                        r.__created_at__ = $timestamp
+                    ON MATCH SET
+                        r = $rel_props
                     """
                     try:
+                        # Get source URI for provenance tracking
+                        source_profile_name = self.get_label(source_label).get('neo4j_source_profile', 'unknown')
+
                         primary_client.execute_write(create_rel_query, {
                             'source_key': source_key_value,
                             'target_key': target_key_value,
-                            'rel_props': rel_props
+                            'rel_props': rel_props,
+                            'source_uri': source_profile_name,
+                            'timestamp': int(time.time() * 1000)
                         })
                         total_transferred += 1
                     except Exception:
@@ -1251,10 +1267,17 @@ class LabelService:
                         source_id = record.get('source_id')
                         props = record.get('props', {})
 
-                        # Merge node in primary using matching key
+                        # Merge node in primary using matching key with provenance tracking
+                        import time
                         merge_query = f"""
                         MERGE (n:{name} {{{matching_key}: $key_value}})
-                        SET n = $props
+                        ON CREATE SET
+                            n = $props,
+                            n.__source__ = $source_profile,
+                            n.__created_at__ = $timestamp,
+                            n.__created_via__ = 'direct_transfer'
+                        ON MATCH SET
+                            n = $props
                         RETURN elementId(n) as primary_id
                         """
 
@@ -1265,7 +1288,9 @@ class LabelService:
 
                         result = primary_client.execute_write(merge_query, {
                             'key_value': key_value,
-                            'props': props
+                            'props': props,
+                            'source_profile': source_profile,
+                            'timestamp': int(time.time() * 1000)
                         })
 
                         if result:
