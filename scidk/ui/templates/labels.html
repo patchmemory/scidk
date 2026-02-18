@@ -715,11 +715,36 @@
       </div>
 
       <div id="transfer-progress" style="display: none; padding: 0.75rem; background: #f9f9f9; border-radius: 4px;">
-        <div class="small" style="margin-bottom: 0.5rem;"><strong>Transfer Progress:</strong></div>
-        <div class="progress" style="height: 20px;">
-          <div id="transfer-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%">0%</div>
+        <div class="small" style="margin-bottom: 0.75rem;"><strong>Transfer Progress:</strong></div>
+
+        <!-- Phase 1: Nodes -->
+        <div style="margin-bottom: 0.75rem;">
+          <div class="small" style="margin-bottom: 0.25rem; display: flex; justify-content: space-between;">
+            <strong>Phase 1: Nodes</strong>
+            <span id="phase1-status" class="text-muted">0/0</span>
+          </div>
+          <div class="progress" style="height: 20px;">
+            <div id="phase1-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%">0%</div>
+          </div>
         </div>
-        <div class="small text-muted" style="margin-top: 0.5rem;" id="transfer-status">Initializing...</div>
+
+        <!-- Phase 2: Relationships -->
+        <div style="margin-bottom: 0.75rem;">
+          <div class="small" style="margin-bottom: 0.25rem; display: flex; justify-content: space-between;">
+            <strong>Phase 2: Relationships</strong>
+            <span id="phase2-status" class="text-muted">Waiting...</span>
+          </div>
+          <div class="progress" style="height: 20px;">
+            <div id="phase2-progress-bar" class="progress-bar" role="progressbar" style="width: 0%">0%</div>
+          </div>
+        </div>
+
+        <!-- Time & ETA Stats -->
+        <div class="small text-muted" id="transfer-time-stats">
+          Elapsed: <span id="elapsed-time">0s</span> |
+          ETA: <span id="eta-time">calculating...</span> |
+          Speed: <span id="transfer-speed">--</span>
+        </div>
       </div>
 
       <div id="transfer-result" style="display: none; padding: 0.75rem; border-radius: 4px; margin-top: 1rem;">
@@ -2599,22 +2624,92 @@ async function startTransfer() {
   const progressBar = document.getElementById('transfer-progress-bar');
   const statusText = document.getElementById('transfer-status');
 
-  progressBar.style.width = '0%';
-  progressBar.textContent = '0%';
-  statusText.textContent = 'Starting transfer...';
+  // Helper function to format time as "2m 15s" or "45s"
+  function formatTime(seconds) {
+    if (seconds < 60) return `${seconds}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs}s`;
+  }
 
-  // Start progress polling
+  // Start progress polling with enhanced two-phase tracking
+  const startTime = Date.now();
+
   const pollInterval = setInterval(async () => {
     try {
       const statusResp = await fetch(`/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-status`);
       const statusData = await statusResp.json();
 
       if (statusData.transfer_active && statusData.progress) {
-        const progress = statusData.progress;
-        const percent = progress.percent || 0;
-        progressBar.style.width = `${percent}%`;
-        progressBar.textContent = `${percent}%`;
-        statusText.textContent = `Transferring: ${progress.transferred_nodes || 0}/${progress.total_nodes || 0} nodes, ${progress.transferred_relationships || 0} relationships`;
+        const p = statusData.progress;
+
+        // Calculate elapsed time
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        document.getElementById('elapsed-time').textContent = formatTime(elapsed);
+
+        // Phase 1: Nodes
+        if (p.phase_1) {
+          const p1 = p.phase_1;
+          const p1Bar = document.getElementById('phase1-progress-bar');
+          p1Bar.style.width = `${p1.percent}%`;
+          p1Bar.textContent = `${p1.percent}%`;
+          document.getElementById('phase1-status').textContent =
+            `${(p1.completed || 0).toLocaleString()}/${(p1.total || 0).toLocaleString()}`;
+
+          // Mark Phase 1 complete
+          if (p1.percent === 100) {
+            p1Bar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+            p1Bar.classList.add('bg-success');
+          }
+        }
+
+        // Phase 2: Relationships
+        if (p.phase_2) {
+          const p2 = p.phase_2;
+          const p2Bar = document.getElementById('phase2-progress-bar');
+
+          if (p.phase === 2 && p2.total > 0) {
+            // Phase 2 is active
+            p2Bar.style.width = `${p2.percent}%`;
+            p2Bar.textContent = `${p2.percent}%`;
+            p2Bar.classList.add('progress-bar-animated', 'progress-bar-striped', 'bg-info');
+            document.getElementById('phase2-status').textContent =
+              `${(p2.completed || 0).toLocaleString()}/${(p2.total || 0).toLocaleString()}`;
+
+            // Mark Phase 2 complete
+            if (p2.percent === 100) {
+              p2Bar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+              p2Bar.classList.add('bg-success');
+            }
+          } else if (p.phase === 1) {
+            // Phase 2 waiting
+            p2Bar.style.width = '0%';
+            p2Bar.textContent = '0%';
+            document.getElementById('phase2-status').textContent = 'Waiting...';
+          }
+        }
+
+        // Calculate ETA and speed
+        if (p.phase === 1 && p.phase_1 && p.phase_1.completed > 0) {
+          // Phase 1: Node transfer
+          const speed = p.phase_1.completed / elapsed;
+          const remaining = p.phase_1.total - p.phase_1.completed;
+          const eta = remaining > 0 ? Math.ceil(remaining / speed) : 0;
+          document.getElementById('transfer-speed').textContent =
+            `${Math.round(speed)} nodes/s`;
+          document.getElementById('eta-time').textContent = eta > 0 ? formatTime(eta) : 'Complete';
+        } else if (p.phase === 2 && p.phase_2 && p.phase_2.completed > 0 && p.phase_2_start) {
+          // Phase 2: Relationship transfer
+          const phase2Elapsed = Math.floor((Date.now() / 1000) - p.phase_2_start);
+          if (phase2Elapsed > 0) {
+            const speed = p.phase_2.completed / phase2Elapsed;
+            const remaining = p.phase_2.total - p.phase_2.completed;
+            const eta = remaining > 0 ? Math.ceil(remaining / speed) : 0;
+            document.getElementById('transfer-speed').textContent =
+              `${Math.round(speed)} rels/s`;
+            document.getElementById('eta-time').textContent = eta > 0 ? formatTime(eta) : 'Complete';
+          }
+        }
       }
     } catch (e) {
       // Ignore polling errors
