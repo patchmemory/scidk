@@ -2599,9 +2599,27 @@ async function startTransfer() {
   const progressBar = document.getElementById('transfer-progress-bar');
   const statusText = document.getElementById('transfer-status');
 
-  progressBar.style.width = '10%';
-  progressBar.textContent = '10%';
+  progressBar.style.width = '0%';
+  progressBar.textContent = '0%';
   statusText.textContent = 'Starting transfer...';
+
+  // Start progress polling
+  const pollInterval = setInterval(async () => {
+    try {
+      const statusResp = await fetch(`/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-status`);
+      const statusData = await statusResp.json();
+
+      if (statusData.transfer_active && statusData.progress) {
+        const progress = statusData.progress;
+        const percent = progress.percent || 0;
+        progressBar.style.width = `${percent}%`;
+        progressBar.textContent = `${percent}%`;
+        statusText.textContent = `Transferring: ${progress.transferred_nodes || 0}/${progress.total_nodes || 0} nodes, ${progress.transferred_relationships || 0} relationships`;
+      }
+    } catch (e) {
+      // Ignore polling errors
+    }
+  }, 1000); // Poll every second
 
   try {
     const response = await fetch(`/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-to-primary?batch_size=${batchSize}&mode=${mode}`, {
@@ -2609,6 +2627,9 @@ async function startTransfer() {
     });
 
     const data = await response.json();
+
+    // Stop polling
+    clearInterval(pollInterval);
 
     if (data.status === 'success') {
       // Show success
@@ -2646,6 +2667,9 @@ async function startTransfer() {
       showToast(`Transfer failed: ${data.error}`, 'error');
     }
   } catch (error) {
+    // Stop polling
+    clearInterval(pollInterval);
+
     // Show error
     document.getElementById('transfer-progress').style.display = 'none';
     document.getElementById('transfer-error').style.display = 'block';
