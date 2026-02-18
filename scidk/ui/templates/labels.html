@@ -2620,10 +2620,6 @@ async function startTransfer() {
   document.getElementById('transfer-result').style.display = 'none';
   document.getElementById('transfer-error').style.display = 'none';
 
-  // Update progress
-  const progressBar = document.getElementById('transfer-progress-bar');
-  const statusText = document.getElementById('transfer-status');
-
   // Helper function to format time as "2m 15s" or "45s"
   function formatTime(seconds) {
     if (seconds < 60) return `${seconds}s`;
@@ -2727,11 +2723,6 @@ async function startTransfer() {
     clearInterval(pollInterval);
 
     if (data.status === 'success') {
-      // Show success
-      progressBar.style.width = '100%';
-      progressBar.textContent = '100%';
-      statusText.textContent = 'Transfer complete!';
-
       // Show results
       document.getElementById('transfer-progress').style.display = 'none';
       document.getElementById('transfer-result').style.display = 'block';
