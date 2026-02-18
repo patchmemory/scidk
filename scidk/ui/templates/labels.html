@@ -2555,12 +2555,36 @@ function openTransferModal() {
   confirmBtn.onclick = startTransfer;
 }
 
-function closeTransferModal() {
+async function closeTransferModal() {
+  // Cancel transfer if running
+  if (currentLabel) {
+    try {
+      await fetch(`/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-cancel`, {
+        method: 'POST'
+      });
+    } catch (error) {
+      // Ignore cancel errors
+    }
+  }
+
   document.getElementById('transfer-modal').style.display = 'none';
 }
 
 async function startTransfer() {
   if (!currentLabel) return;
+
+  // Check if transfer already running
+  try {
+    const statusResponse = await fetch(`/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-status`);
+    const statusData = await statusResponse.json();
+
+    if (statusData.transfer_active) {
+      showToast('Transfer already in progress for this label. Please wait or cancel first.', 'warning');
+      return;
+    }
+  } catch (error) {
+    // Ignore status check errors, proceed with transfer
+  }
 
   const batchSize = parseInt(document.getElementById('transfer-batch-size').value) || 100;
   const mode = document.querySelector('input[name="transfer-mode"]:checked').value;
@@ -2604,6 +2628,14 @@ async function startTransfer() {
       document.getElementById('transfer-cancel-btn').textContent = 'Close';
 
       showToast(`Transfer complete: ${data.nodes_transferred} nodes, ${data.relationships_transferred} relationships`, 'success');
+    } else if (data.status === 'cancelled') {
+      // Show cancellation
+      document.getElementById('transfer-progress').style.display = 'none';
+      document.getElementById('transfer-error').style.display = 'block';
+      document.getElementById('transfer-error-text').textContent = data.message || 'Transfer cancelled by user';
+      document.getElementById('transfer-confirm-btn').style.display = 'inline-block';
+
+      showToast(`Transfer cancelled: ${data.nodes_transferred || 0} nodes transferred before cancellation`, 'warning');
     } else {
       // Show error
       document.getElementById('transfer-progress').style.display = 'none';
