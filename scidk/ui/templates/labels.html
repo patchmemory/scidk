@@ -714,6 +714,19 @@
         <div class="small text-muted" style="margin-top: 0.25rem;">Number of instances to process per batch</div>
       </div>
 
+      <div style="margin-bottom: 1rem;">
+        <label style="cursor: pointer; display: flex; align-items: start; gap: 0.5rem;">
+          <input type="checkbox" id="transfer-create-placeholders" style="margin-top: 0.25rem;">
+          <div>
+            <strong class="small">Create placeholder nodes for missing relationships</strong>
+            <div class="small text-muted">
+              If a relationship points to a node that hasn't been transferred yet, create a placeholder that can be resolved later.
+              Placeholders are marked with <code>:__Placeholder__</code> label and show in the graph with metadata about their source.
+            </div>
+          </div>
+        </label>
+      </div>
+
       <div id="transfer-progress" style="display: none; padding: 0.75rem; background: #f9f9f9; border-radius: 4px;">
         <div class="small" style="margin-bottom: 0.75rem;"><strong>Transfer Progress:</strong></div>
 
@@ -729,7 +742,7 @@
         </div>
 
         <!-- Phase 2: Relationships -->
-        <div style="margin-bottom: 0.75rem;">
+        <div id="phase2-container" style="margin-bottom: 0.75rem;">
           <div class="small" style="margin-bottom: 0.25rem; display: flex; justify-content: space-between;">
             <strong>Phase 2: Relationships</strong>
             <span id="phase2-status" class="text-muted">Waiting...</span>
@@ -2613,12 +2626,21 @@ async function startTransfer() {
 
   const batchSize = parseInt(document.getElementById('transfer-batch-size').value) || 100;
   const mode = document.querySelector('input[name="transfer-mode"]:checked').value;
+  const createPlaceholders = document.getElementById('transfer-create-placeholders').checked;
 
   // Hide confirm button, show progress
   document.getElementById('transfer-confirm-btn').style.display = 'none';
   document.getElementById('transfer-progress').style.display = 'block';
   document.getElementById('transfer-result').style.display = 'none';
   document.getElementById('transfer-error').style.display = 'none';
+
+  // Show/hide Phase 2 based on transfer mode
+  const phase2Container = document.getElementById('phase2-container');
+  if (mode === 'nodes_only') {
+    phase2Container.style.display = 'none';
+  } else {
+    phase2Container.style.display = 'block';
+  }
 
   // Helper function to format time as "2m 15s" or "45s"
   function formatTime(seconds) {
@@ -2713,7 +2735,7 @@ async function startTransfer() {
   }, 1000); // Poll every second
 
   try {
-    const response = await fetch(`/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-to-primary?batch_size=${batchSize}&mode=${mode}`, {
+    const response = await fetch(`/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-to-primary?batch_size=${batchSize}&mode=${mode}&create_missing_targets=${createPlaceholders}`, {
       method: 'POST'
     });
 
