@@ -3045,14 +3045,195 @@
       }
     }
 
+    // Per-label color configuration
+    const perLabelColorConfig = document.getElementById('per-label-color-config');
+    const perLabelColorList = document.getElementById('per-label-color-list');
+    let labelColorSettings = {}; // {labelName: {colorBy: 'property', property: 'status'}}
+
+    function updatePerLabelColorUI() {
+      if (!perLabelColorList) return;
+
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      // Get unique labels
+      const labels = new Set();
+      cy.nodes().forEach(node => {
+        const label = node.data('fullLabel') || node.data('labels')?.[0] || 'Unknown';
+        labels.add(label);
+      });
+
+      if (labels.size === 0) {
+        perLabelColorList.innerHTML = '<div class="text-muted">No nodes in graph</div>';
+        return;
+      }
+
+      // Build configuration UI
+      let html = '';
+      labels.forEach(label => {
+        const setting = labelColorSettings[label] || {colorBy: 'default', property: null};
+
+        // Get properties for this label
+        const labelProps = new Set();
+        cy.nodes().forEach(node => {
+          const nodeLabel = node.data('fullLabel') || node.data('labels')?.[0];
+          if (nodeLabel === label) {
+            const props = node.data('properties') || {};
+            Object.keys(props).forEach(key => labelProps.add(key));
+          }
+        });
+
+        html += `
+          <div style="margin-bottom:0.75rem; padding:0.5rem; background:#fff; border:1px solid #ddd; border-radius:0.25rem">
+            <div style="font-weight:600; margin-bottom:0.25rem">${label}</div>
+            <select class="form-select form-select-sm per-label-color-mode" data-label="${label}" style="margin-bottom:0.25rem">
+              <option value="default" ${setting.colorBy === 'default' ? 'selected' : ''}>Default (by label)</option>
+              <option value="property" ${setting.colorBy === 'property' ? 'selected' : ''}>By Property</option>
+              <option value="degree" ${setting.colorBy === 'degree' ? 'selected' : ''}>By Degree</option>
+            </select>
+            <select class="form-select form-select-sm per-label-color-prop" data-label="${label}" style="display:${setting.colorBy === 'property' ? 'block' : 'none'}">
+              <option value="">Select property...</option>
+              ${Array.from(labelProps).sort().map(prop =>
+                `<option value="${prop}" ${setting.property === prop ? 'selected' : ''}>${prop}</option>`
+              ).join('')}
+            </select>
+          </div>
+        `;
+      });
+
+      perLabelColorList.innerHTML = html;
+
+      // Attach event listeners
+      perLabelColorList.querySelectorAll('.per-label-color-mode').forEach(select => {
+        select.addEventListener('change', (e) => {
+          const label = e.target.dataset.label;
+          const colorBy = e.target.value;
+          labelColorSettings[label] = {colorBy, property: labelColorSettings[label]?.property || null};
+
+          // Show/hide property selector
+          const propSelect = perLabelColorList.querySelector(`.per-label-color-prop[data-label="${label}"]`);
+          if (propSelect) {
+            propSelect.style.display = colorBy === 'property' ? 'block' : 'none';
+          }
+
+          applyPerLabelColoring();
+        });
+      });
+
+      perLabelColorList.querySelectorAll('.per-label-color-prop').forEach(select => {
+        select.addEventListener('change', (e) => {
+          const label = e.target.dataset.label;
+          const property = e.target.value;
+          if (!labelColorSettings[label]) labelColorSettings[label] = {colorBy: 'property', property};
+          labelColorSettings[label].property = property;
+
+          applyPerLabelColoring();
+        });
+      });
+    }
+
+    function applyPerLabelColoring() {
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy || cy.nodes().length === 0) return;
+
+      const legend = [];
+
+      // Group nodes by label
+      const nodesByLabel = new Map();
+      cy.nodes().forEach(node => {
+        const label = node.data('fullLabel') || node.data('labels')?.[0] || 'Unknown';
+        if (!nodesByLabel.has(label)) nodesByLabel.set(label, []);
+        nodesByLabel.get(label).push(node);
+      });
+
+      // Apply coloring for each label group
+      nodesByLabel.forEach((nodes, label) => {
+        const setting = labelColorSettings[label] || {colorBy: 'default'};
+
+        if (setting.colorBy === 'default' || setting.colorBy === 'label') {
+          // Use standard label coloring
+          const labelArray = Array.from(nodesByLabel.keys()).sort();
+          const labelIndex = labelArray.indexOf(label);
+          const color = getColorForValue(label, labelIndex, labelArray.length);
+
+          nodes.forEach(node => node.style('background-color', color));
+          legend.push({label, color});
+
+        } else if (setting.colorBy === 'property' && setting.property) {
+          // Color by property within this label
+          const values = new Set();
+          nodes.forEach(node => {
+            const props = node.data('properties') || {};
+            if (props[setting.property] !== undefined) values.add(props[setting.property]);
+          });
+
+          const valueArray = Array.from(values).sort();
+          const colorMap = new Map();
+          valueArray.forEach((value, index) => {
+            const color = getColorForValue(value, index, valueArray.length);
+            colorMap.set(value, color);
+          });
+
+          nodes.forEach(node => {
+            const props = node.data('properties') || {};
+            const value = props[setting.property];
+            const color = value !== undefined ? colorMap.get(value) || '#999' : '#ccc';
+            node.style('background-color', color);
+          });
+
+          valueArray.forEach(value => {
+            legend.push({label: `${label}.${setting.property}=${value}`, color: colorMap.get(value)});
+          });
+
+        } else if (setting.colorBy === 'degree') {
+          // Color by degree within this label
+          const degrees = nodes.map(node => node.degree()).sort((a, b) => a - b);
+          const minDegree = degrees[0] || 0;
+          const maxDegree = degrees[degrees.length - 1] || 1;
+
+          nodes.forEach(node => {
+            const degree = node.degree();
+            const normalizedDegree = maxDegree > minDegree ? (degree - minDegree) / (maxDegree - minDegree) : 0;
+            const color = getColorForValue(degree, Math.floor(normalizedDegree * 10), 11);
+            node.style('background-color', color);
+          });
+
+          legend.push({label: `${label} (by degree)`, color: '#aaa'});
+        }
+      });
+
+      // Update legend
+      if (legend.length > 0) {
+        legendItems.innerHTML = legend.map(item => `
+          <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.25rem">
+            <div style="width:12px; height:12px; background:${item.color}; border-radius:2px"></div>
+            <span>${item.label}</span>
+          </div>
+        `).join('');
+        legendDiv.style.display = 'block';
+      }
+    }
+
     // Show/hide property selector
     colorBySelect.addEventListener('change', () => {
       if (colorBySelect.value === 'property') {
         colorPropertySelectDiv.style.display = 'block';
-        // Populate property list from current graph
+        perLabelColorConfig.style.display = 'none';
         updatePropertyList();
+      } else if (colorBySelect.value === 'per-label') {
+        colorPropertySelectDiv.style.display = 'none';
+        perLabelColorConfig.style.display = 'block';
+        updatePerLabelColorUI();
+        applyPerLabelColoring();
       } else {
         colorPropertySelectDiv.style.display = 'none';
+        perLabelColorConfig.style.display = 'none';
         applyColoring();
       }
     });
@@ -3397,6 +3578,7 @@
         <select id="color-by" class="form-select form-select-sm">
           <option value="label">Label</option>
           <option value="property">Property</option>
+          <option value="per-label">Per-Label Config</option>
           <option value="degree">Degree (connections)</option>
         </select>
       </div>
@@ -3405,6 +3587,12 @@
         <select id="color-property" class="form-select form-select-sm">
           <option value="">Select property...</option>
         </select>
+      </div>
+      <div id="per-label-color-config" style="margin-bottom:0.75rem; display:none">
+        <details style="margin-top:0.5rem">
+          <summary class="small" style="cursor:pointer; user-select:none; margin-bottom:0.5rem">⚙️ Per-Label Configuration</summary>
+          <div id="per-label-color-list" style="font-size:0.75rem"></div>
+        </details>
       </div>
       <div id="label-display-options" style="margin-bottom:0.75rem">
         <label class="form-label small" style="margin-bottom:.25rem">Display</label>
