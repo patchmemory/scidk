@@ -880,6 +880,8 @@
 
   // Initialize resizer for left panel
   function initLeftResizer() {
+    if (!resizerLeft) return; // Element not found
+
     let isResizing = false;
     let startX = 0;
     let startWidth = 0;
@@ -922,6 +924,8 @@
 
   // Initialize resizer for right panel
   function initRightResizer() {
+    if (!resizerRight) return; // Element not found
+
     let isResizing = false;
     let startX = 0;
     let startWidth = 0;
@@ -2290,6 +2294,8 @@
 
   // Populate hybrid label/property selectors (placeholder - would fetch from API)
   function populateHybridSelectors() {
+    if (!hybridLabelSelect) return; // Element not found
+
     // TODO: Fetch available labels and properties from schema
     const sampleLabels = ['File', 'Folder', 'Sample', 'SampleType'];
     hybridLabelSelect.innerHTML = '<option value="">Select label...</option>';
