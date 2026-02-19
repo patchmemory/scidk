@@ -220,21 +220,19 @@
 
 <script src="https://unpkg.com/cytoscape@3.27.0/dist/cytoscape.min.js"></script>
 
-<!-- Neo4j Cypher Editor (CodeMirror 6 based) -->
-<link href="https://unpkg.com/@neo4j-cypher/codemirror@1.0.3/css/cypher-codemirror.css" rel="stylesheet" />
-<script type="module">
-  import { EditorView, basicSetup } from "https://esm.sh/codemirror@6.0.1";
-  import { EditorState } from "https://esm.sh/@codemirror/state@6.4.1";
-  import { cypher } from "https://esm.sh/@neo4j-cypher/codemirror@1.0.3";
-
-  // Make modules globally available
-  window.CodeMirror = {
-    EditorView,
-    EditorState,
-    basicSetup,
-    cypher
-  };
-</script>
+<!-- CodeMirror 6 with SQL mode (closest to Cypher) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/sql/sql.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/edit/closebrackets.min.js"></script>
+<style>
+  .CodeMirror {
+    height: 100%;
+    font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+    font-size: 0.9em;
+  }
+</style>
 
 <script>
 (async function() {
@@ -1038,17 +1036,14 @@
     // Helper to get query text from CodeMirror
     function getQueryText() {
       const editor = window.tabEditors && window.tabEditors[tabId];
-      return editor ? editor.state.doc.toString() : '';
+      return editor ? editor.getValue() : '';
     }
 
     // Helper to set query text in CodeMirror
     function setQueryText(text) {
       const editor = window.tabEditors && window.tabEditors[tabId];
       if (!editor) return;
-
-      editor.dispatch({
-        changes: { from: 0, to: editor.state.doc.length, insert: text }
-      });
+      editor.setValue(text);
     }
 
     // Helper to escape HTML
@@ -1262,7 +1257,7 @@
     }
   }
 
-  // Initialize CodeMirror editor with Neo4j Cypher syntax highlighting
+  // Initialize CodeMirror editor with SQL mode (closest to Cypher)
   function initCodeMirrorEditor(tabId) {
     // Wait for CodeMirror to be loaded
     const tryInit = () => {
@@ -1274,31 +1269,22 @@
       const container = document.querySelector(`.query-editor-container-${tabId}`);
       if (!container) return;
 
-      const { EditorView, EditorState, basicSetup, cypher } = window.CodeMirror;
-
-      const state = EditorState.create({
-        doc: '// Enter Cypher query\nMATCH (n) RETURN n LIMIT 10',
-        extensions: [
-          basicSetup,
-          cypher(),
-          EditorView.lineWrapping,
-          EditorView.theme({
-            "&": { height: "100%" },
-            ".cm-scroller": { overflow: "auto" },
-            ".cm-content": { padding: "0.75rem" }
-          }),
-          EditorView.editable.of(true)
-        ]
-      });
-
-      const view = new EditorView({
-        state,
-        parent: container
+      const editor = CodeMirror(container, {
+        value: '// Enter Cypher query\nMATCH (n) RETURN n LIMIT 10',
+        mode: 'text/x-sql',
+        lineNumbers: true,
+        lineWrapping: true,
+        matchBrackets: true,
+        autoCloseBrackets: true,
+        theme: 'default',
+        indentUnit: 2,
+        tabSize: 2,
+        indentWithTabs: false
       });
 
       // Store editor instance for later access
       if (!window.tabEditors) window.tabEditors = {};
-      window.tabEditors[tabId] = view;
+      window.tabEditors[tabId] = editor;
     };
 
     tryInit();
@@ -1418,8 +1404,10 @@
     document.querySelectorAll('.tab-content').forEach(el => {
       if (el.dataset.tabId === tabId) {
         el.classList.add('active');
+        el.style.display = 'flex'; // Override inline styles
       } else {
         el.classList.remove('active');
+        el.style.display = 'none'; // Override inline styles
       }
     });
 
