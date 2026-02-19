@@ -921,45 +921,152 @@
     tabContainer.appendChild(tabEl);
   }
 
-  // Render tab content area
+  // Render tab content area (matches Chat page layout)
   function renderTabContent(tab) {
     const contentEl = document.createElement('section');
     contentEl.className = 'tab-content';
     contentEl.dataset.tabId = tab.id;
     contentEl.style.margin = '0';
     contentEl.style.padding = '0';
+    contentEl.style.display = 'flex';
+    contentEl.style.flexDirection = 'column';
+    contentEl.style.height = '100%';
     contentEl.innerHTML = `
-      <h2>Schema Graph (Interactive) - ${tab.name}</h2>
-      <div class="graph-container-${tab.id}" data-testid="graph-container-${tab.id}" style="width: 100%; height: 420px; border: 1px solid #ddd"></div>
+      <!-- Top Section: Graph & Results (resizable) -->
+      <div class="tab-top-section-${tab.id}" style="flex: 1; min-height: 300px; display: flex; flex-direction: column; overflow: hidden;">
+        <h2 style="margin: 0 0 0.5rem 0; font-size: 1.25rem;">Schema Graph - ${tab.name}</h2>
 
-      <!-- Query Panel for this tab -->
-      <div style="margin-top:2rem">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem">
-          <h3 style="margin:0">Cypher Query</h3>
-          <button class="toggle-query-panel-${tab.id} btn btn-sm btn-outline-secondary">
-            <span class="query-panel-icon-${tab.id}">▼</span> <span class="query-panel-text-${tab.id}">Collapse</span>
-          </button>
+        <!-- Graph Visualization -->
+        <div class="graph-container-${tab.id}" data-testid="graph-container-${tab.id}" style="width: 100%; height: 350px; border: 1px solid #ddd; margin-bottom: 1rem;"></div>
+
+        <!-- Results Section -->
+        <div style="flex: 1; display: flex; flex-direction: column; min-height: 150px; overflow: hidden;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; padding-bottom: 0.5rem; border-bottom: 1px solid #e0e0e0;">
+            <h3 style="margin: 0; font-size: 1rem;">Query Results</h3>
+            <div class="result-tabs-${tab.id}" style="display: flex; gap: 0.5rem;">
+              <button class="result-tab-btn active" data-result-tab="table" style="padding: 0.25rem 0.75rem; border: 1px solid #ddd; background: #f8f9fa; cursor: pointer; font-size: 0.85rem; border-radius: 4px;">Table</button>
+              <button class="result-tab-btn" data-result-tab="json" style="padding: 0.25rem 0.75rem; border: 1px solid #ddd; background: white; cursor: pointer; font-size: 0.85rem; border-radius: 4px;">JSON</button>
+            </div>
+          </div>
+
+          <div class="query-results-${tab.id}" style="flex: 1; overflow: auto; border: 1px solid #ddd; background: #fafafa; padding: 0.5rem;">
+            <div class="query-results-content-${tab.id}">
+              <p class="small text-muted" style="margin: 0;">Query results will appear here</p>
+            </div>
+          </div>
         </div>
-        <div class="query-panel-${tab.id}" style="display:block">
-          <textarea class="form-control query-input-${tab.id}" rows="4" placeholder="Enter Cypher query..." data-testid="query-input-${tab.id}"></textarea>
-          <div style="margin-top:0.5rem; display:flex; gap:0.5rem; align-items:center">
-            <button class="run-query-${tab.id} btn btn-sm btn-primary" data-testid="run-query-${tab.id}">Run</button>
-            <button class="save-query-${tab.id} btn btn-sm btn-outline-secondary" data-testid="save-query-${tab.id}">Save</button>
-            <button class="load-library-${tab.id} btn btn-sm btn-outline-secondary" data-testid="load-library-${tab.id}">Load Library</button>
-            <button class="clear-query-${tab.id} btn btn-sm btn-outline-secondary" data-testid="clear-query-${tab.id}">Clear</button>
-            <span class="query-status-${tab.id} small" style="margin-left:auto; color:#666"></span>
+      </div>
+
+      <!-- Horizontal Resizer -->
+      <div class="horizontal-resizer-${tab.id}" style="height: 6px; cursor: row-resize; background: #e0e0e0; position: relative; flex-shrink: 0; transition: background 0.15s ease;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #999; font-size: 0.8rem;">⋯</div>
+      </div>
+
+      <!-- Bottom Section: Query Editor -->
+      <div class="tab-bottom-section-${tab.id}" style="min-height: 200px; max-height: 500px; display: flex; flex-direction: column; background: #fff;">
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid #e0e0e0; margin-bottom: 0.5rem;">
+          <h3 style="margin: 0; font-size: 1rem;">Query Editor</h3>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <button class="run-query-${tab.id} btn btn-sm btn-success" data-testid="run-query-${tab.id}" title="Run query">▶ Run</button>
+            <button class="save-query-${tab.id} btn btn-sm btn-outline-secondary" data-testid="save-query-${tab.id}" title="Save query">💾 Save</button>
+            <button class="load-library-${tab.id} btn btn-sm btn-outline-secondary" data-testid="load-library-${tab.id}" title="Load from library">📚 Library</button>
+            <button class="clear-query-${tab.id} btn btn-sm btn-outline-secondary" data-testid="clear-query-${tab.id}" title="Clear editor">Clear</button>
           </div>
-          <div class="query-results-${tab.id}" style="display:none; margin-top:1rem; max-height:300px; overflow:auto; border:1px solid #ddd; padding:0.5rem">
-            <div class="query-results-content-${tab.id}"></div>
-          </div>
+        </div>
+
+        <textarea class="query-editor-${tab.id}" data-testid="query-input-${tab.id}"
+          style="flex: 1; font-family: 'Monaco', 'Menlo', 'Courier New', monospace; font-size: 0.9em; padding: 0.75rem; border: 1px solid #ddd; resize: none;"
+          placeholder="// Enter Cypher query&#10;MATCH (n) RETURN n LIMIT 10"></textarea>
+
+        <div class="query-info-${tab.id}" style="padding: 0.5rem 0; border-top: 1px solid #e0e0e0; margin-top: 0.5rem;">
+          <span class="small text-muted query-status-${tab.id}">Ready</span>
         </div>
       </div>
     `;
 
     tabContentArea.appendChild(contentEl);
 
-    // Initialize graph for this tab (defer to when tab is active)
-    // Query panel handlers will be set up when tab becomes active
+    // Initialize horizontal resizer for this tab
+    initHorizontalResizer(tab.id);
+
+    // Initialize result tab switching
+    initResultTabs(tab.id);
+  }
+
+  // Initialize horizontal resizer between results and query editor
+  function initHorizontalResizer(tabId) {
+    const resizer = document.querySelector(`.horizontal-resizer-${tabId}`);
+    const topSection = document.querySelector(`.tab-top-section-${tabId}`);
+    const bottomSection = document.querySelector(`.tab-bottom-section-${tabId}`);
+
+    if (!resizer || !topSection || !bottomSection) return;
+
+    let isResizing = false;
+    let startY = 0;
+    let startTopHeight = 0;
+    let startBottomHeight = 0;
+
+    resizer.addEventListener('mousedown', (e) => {
+      isResizing = true;
+      startY = e.clientY;
+      startTopHeight = topSection.offsetHeight;
+      startBottomHeight = bottomSection.offsetHeight;
+      document.body.style.cursor = 'row-resize';
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isResizing) return;
+
+      const deltaY = e.clientY - startY;
+      const newTopHeight = startTopHeight + deltaY;
+      const newBottomHeight = startBottomHeight - deltaY;
+
+      // Enforce min heights
+      if (newTopHeight >= 300 && newBottomHeight >= 200 && newBottomHeight <= 500) {
+        topSection.style.flex = 'none';
+        topSection.style.height = newTopHeight + 'px';
+        bottomSection.style.height = newBottomHeight + 'px';
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (isResizing) {
+        isResizing = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    });
+
+    // Hover effect
+    resizer.addEventListener('mouseenter', () => {
+      resizer.style.background = '#2196f3';
+    });
+    resizer.addEventListener('mouseleave', () => {
+      if (!isResizing) resizer.style.background = '#e0e0e0';
+    });
+  }
+
+  // Initialize result tab switching (Table/JSON view)
+  function initResultTabs(tabId) {
+    const tabBtns = document.querySelectorAll(`.result-tabs-${tabId} .result-tab-btn`);
+
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        // Update button styles
+        tabBtns.forEach(b => {
+          b.classList.remove('active');
+          b.style.background = 'white';
+        });
+        btn.classList.add('active');
+        btn.style.background = '#f8f9fa';
+
+        // Handle view switching (will be implemented when results are displayed)
+        const view = btn.dataset.resultTab;
+        console.log(`Switched to ${view} view for ${tabId}`);
+      });
+    });
   }
 
   // Switch to a specific tab
