@@ -1164,6 +1164,12 @@
       if (!window.cytoscapeInstances) {
         window.cytoscapeInstances = {};
       }
+      if (!window.tabVisualizationModes) {
+        window.tabVisualizationModes = {};
+      }
+
+      // Default to schema mode
+      window.tabVisualizationModes[tabId] = 'schema';
 
       // Create Cytoscape instance
       const cy = cytoscape({
@@ -1208,9 +1214,98 @@
       // Store instance
       window.cytoscapeInstances[tabId] = cy;
       console.log('Cytoscape initialized for tab:', tabId);
+
+      // Auto-load schema for schema mode
+      renderSchemaVisualization(tabId);
     };
 
     tryInit();
+  }
+
+  // Render schema visualization (aggregated label triples)
+  async function renderSchemaVisualization(tabId) {
+    const cy = window.cytoscapeInstances && window.cytoscapeInstances[tabId];
+    if (!cy) {
+      console.error('Cytoscape instance not found for renderSchema:', tabId);
+      return;
+    }
+
+    try {
+      // Fetch schema from API
+      const source = document.getElementById('schema-source')?.value || 'all';
+      const url = `/api/graph/schema/combined?source=${source}`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      console.log('Schema data fetched:', data);
+
+      // Color mapping by source
+      const sourceColors = {
+        'labels': '#e15759',
+        'neo4j': '#59a14f',
+        'graph': '#4e79a7',
+        'neo4j+labels': '#f28e2c',
+        'graph+labels': '#af7aa1',
+        'graph+neo4j': '#76b7b2',
+        'all': '#edc949'
+      };
+
+      // Convert schema to Cytoscape elements
+      const nodes = new Map();
+      const edges = [];
+
+      // Add nodes
+      (data.nodes || []).forEach(n => {
+        const nodeSize = 14 + 8 * Math.log(1 + (n.count || 1));
+        nodes.set(n.label, {
+          data: {
+            id: n.label,
+            label: n.label,
+            count: n.count || 0,
+            source: n.source || 'graph'
+          },
+          style: {
+            'background-color': sourceColors[n.source] || sourceColors['graph'],
+            'width': nodeSize,
+            'height': nodeSize
+          }
+        });
+      });
+
+      // Add edges
+      (data.edges || []).forEach(e => {
+        const edgeId = `${e.start_label}_${e.rel_type}_${e.end_label}`;
+        edges.push({
+          data: {
+            id: edgeId,
+            source: e.start_label,
+            target: e.end_label,
+            label: e.rel_type,
+            count: e.count || 0,
+            relSource: e.source || 'graph'
+          }
+        });
+      });
+
+      const elements = [...nodes.values(), ...edges];
+      console.log(`Rendering schema: ${nodes.size} node types, ${edges.length} relationship types`);
+
+      // Clear and render
+      cy.elements().remove();
+      cy.add(elements);
+
+      // Apply layout
+      cy.layout({
+        name: 'cose',
+        animate: true,
+        animationDuration: 500,
+        nodeRepulsion: 8000,
+        idealEdgeLength: 100
+      }).run();
+
+    } catch (error) {
+      console.error('Error rendering schema:', error);
+    }
   }
 
   // Initialize query button handlers
@@ -1250,7 +1345,15 @@
         return;
       }
 
-      console.log('Visualizing results:', results);
+      // Check current visualization mode for this tab
+      const currentMode = window.tabVisualizationModes && window.tabVisualizationModes[tabId];
+      console.log(`Visualizing results in ${currentMode} mode:`, results);
+
+      // Only visualize in instance mode (schema mode doesn't use query results)
+      if (currentMode !== 'instance') {
+        console.log('Skipping visualization - not in instance mode');
+        return;
+      }
 
       const cy = window.cytoscapeInstances[tabId];
       const nodes = new Map();
@@ -2096,19 +2199,46 @@
   const hybridLabelSelect = document.getElementById('hybrid-label');
   const hybridPropertySelect = document.getElementById('hybrid-property');
 
-  let currentMode = 'schema';
-
   // Handle mode switching
   modeRadios.forEach(radio => {
-    radio.addEventListener('change', (e) => {
-      currentMode = e.target.value;
+    radio.addEventListener('change', async (e) => {
+      const newMode = e.target.value;
 
       // Show/hide mode-specific settings
-      instanceSettings.style.display = currentMode === 'instance' ? 'block' : 'none';
-      hybridSettings.style.display = currentMode === 'hybrid' ? 'block' : 'none';
+      instanceSettings.style.display = newMode === 'instance' ? 'block' : 'none';
+      hybridSettings.style.display = newMode === 'hybrid' ? 'block' : 'none';
 
-      // TODO: Re-fetch graph data with new mode
-      console.log(`Switched to ${currentMode} mode`);
+      // Get active tab
+      const activeTab = document.querySelector('.map-tab.active');
+      const activeTabId = activeTab?.dataset.tabId || 'tab-1';
+
+      // Update mode for this tab
+      if (window.tabVisualizationModes) {
+        window.tabVisualizationModes[activeTabId] = newMode;
+      }
+
+      console.log(`Switched tab ${activeTabId} to ${newMode} mode`);
+
+      // Re-render based on mode
+      if (newMode === 'schema') {
+        // Render schema visualization
+        if (typeof renderSchemaVisualization === 'function') {
+          await renderSchemaVisualization(activeTabId);
+        }
+      } else if (newMode === 'instance') {
+        // Clear graph and show message to run query
+        const cy = window.cytoscapeInstances && window.cytoscapeInstances[activeTabId];
+        if (cy) {
+          cy.elements().remove();
+          console.log('Instance mode: Run a query to visualize results');
+        }
+      } else if (newMode === 'hybrid') {
+        // Render hybrid visualization (schema with property grouping)
+        if (typeof renderSchemaVisualization === 'function') {
+          await renderSchemaVisualization(activeTabId);
+          console.log('Hybrid mode: Select label and property for grouping');
+        }
+      }
     });
   });
 
@@ -2152,6 +2282,51 @@
   });
 
   populateHybridSelectors();
+
+  // Wire up Data Source selector to re-fetch schema
+  const sourceSelect = document.getElementById('schema-source');
+  if (sourceSelect) {
+    sourceSelect.addEventListener('change', async () => {
+      const activeTab = document.querySelector('.map-tab.active');
+      const activeTabId = activeTab?.dataset.tabId || 'tab-1';
+      const currentMode = window.tabVisualizationModes && window.tabVisualizationModes[activeTabId];
+
+      // Re-render schema if in schema or hybrid mode
+      if (currentMode === 'schema' || currentMode === 'hybrid') {
+        console.log('Data source changed, re-fetching schema');
+        if (typeof renderSchemaVisualization === 'function') {
+          await renderSchemaVisualization(activeTabId);
+        }
+      }
+    });
+  }
+
+  // Wire up filter dropdowns to re-fetch schema
+  const labelFilter = document.getElementById('filter-labels');
+  const relFilter = document.getElementById('filter-reltypes');
+
+  async function applyFilters() {
+    const activeTab = document.querySelector('.map-tab.active');
+    const activeTabId = activeTab?.dataset.tabId || 'tab-1';
+    const currentMode = window.tabVisualizationModes && window.tabVisualizationModes[activeTabId];
+
+    // Only apply filters in schema/hybrid mode
+    if (currentMode === 'schema' || currentMode === 'hybrid') {
+      console.log('Filters changed, re-rendering schema');
+      // TODO: Implement client-side filtering of schema data
+      // For now, just re-fetch
+      if (typeof renderSchemaVisualization === 'function') {
+        await renderSchemaVisualization(activeTabId);
+      }
+    }
+  }
+
+  if (labelFilter) {
+    labelFilter.addEventListener('change', applyFilters);
+  }
+  if (relFilter) {
+    relFilter.addEventListener('change', applyFilters);
+  }
 })();
 
 // === EXPORT FUNCTIONALITY ===
