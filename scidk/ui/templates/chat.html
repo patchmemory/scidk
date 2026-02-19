@@ -84,7 +84,7 @@
           <button class="btn btn-sm btn-outline-secondary" id="clear-query-btn" title="Clear editor">Clear</button>
         </div>
       </div>
-      <textarea id="query-editor" class="query-textarea" placeholder="// Cypher query will appear here from chat, or you can write your own&#10;MATCH (n) RETURN n LIMIT 10"></textarea>
+      <div id="query-editor-cm-container" class="query-editor-cm-container"></div>
       <div class="query-info">
         <span class="small text-muted" id="query-info-text">Ready</span>
       </div>
@@ -93,6 +93,13 @@
 </div>
 {% endblock %}
 {% block head %}
+<!-- CodeMirror 5 with SQL mode (closest to Cypher) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/theme/monokai.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/sql/sql.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/edit/closebrackets.min.js"></script>
 <style>
   /* Override base.html main constraints for full-width layout */
   main {
@@ -320,6 +327,24 @@
     background: #fff;
   }
 
+  /* CodeMirror container styling */
+  .query-editor-cm-container {
+    flex: 1;
+    width: 100%;
+    overflow: auto;
+  }
+
+  .query-editor-cm-container .CodeMirror {
+    height: 100%;
+    font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+    font-size: 0.9rem;
+    background: #f8f9fa;
+  }
+
+  .query-editor-cm-container .CodeMirror-focused {
+    background: #fff;
+  }
+
   .query-info {
     padding: 0.5rem 1.5rem;
     background: #f9f9f9;
@@ -481,12 +506,32 @@
     const saveSessionBtn = document.getElementById('save-session');
 
     // Query editor elements
-    const queryEditor = document.getElementById('query-editor');
     const runQueryBtn = document.getElementById('run-query-btn');
     const saveQueryBtn = document.getElementById('save-query-btn');
     const loadQueryBtn = document.getElementById('load-query-btn');
     const clearQueryBtn = document.getElementById('clear-query-btn');
     const queryInfoText = document.getElementById('query-info-text');
+
+    // Initialize CodeMirror for query editor
+    let queryEditor = null;
+    function initQueryEditor() {
+      if (!window.CodeMirror) {
+        setTimeout(initQueryEditor, 100);
+        return;
+      }
+
+      const container = document.getElementById('query-editor-cm-container');
+      queryEditor = CodeMirror(container, {
+        value: '// Cypher query will appear here from chat, or you can write your own\nMATCH (n) RETURN n LIMIT 10',
+        mode: 'text/x-sql',
+        lineNumbers: true,
+        lineWrapping: true,
+        matchBrackets: true,
+        autoCloseBrackets: true,
+        theme: 'default'
+      });
+    }
+    initQueryEditor();
 
     // Resizable panels
     const resizeHandle = document.getElementById('resize-handle');
@@ -1073,7 +1118,7 @@
         return;
       }
 
-      const query = queryEditor.value.trim();
+      const query = queryEditor.getValue().trim();
       if (!query) {
         queryInfoText.textContent = 'Please enter a query';
         queryInfoText.style.color = '#dc3545';
@@ -1163,7 +1208,7 @@
     });
 
     saveQueryBtn.addEventListener('click', async () => {
-      const query = queryEditor.value.trim();
+      const query = queryEditor.getValue().trim();
       if (!query) {
         alert('Please enter a query to save');
         return;
@@ -1269,7 +1314,7 @@
         const data = await resp.json();
 
         if (resp.ok && data.query) {
-          queryEditor.value = data.query.query;
+          queryEditor.setValue(data.query.query);
           queryInfoText.textContent = `Loaded "${queryName}"`;
           queryInfoText.style.color = '#28a745';
           document.querySelector('[style*="fixed"]')?.remove();
@@ -1306,8 +1351,8 @@
     };
 
     clearQueryBtn.addEventListener('click', () => {
-      if (queryEditor.value.trim() && !confirm('Clear query editor?')) return;
-      queryEditor.value = '';
+      if (queryEditor.getValue().trim() && !confirm('Clear query editor?')) return;
+      queryEditor.setValue('');
       queryInfoText.textContent = 'Query cleared';
       queryInfoText.style.color = '#666';
     });
@@ -1608,7 +1653,7 @@
 
       // Update Query Editor with generated Cypher
       if (data.metadata && data.metadata.cypher_query) {
-        queryEditor.value = data.metadata.cypher_query;
+        queryEditor.setValue(data.metadata.cypher_query);
         queryInfoText.textContent = `Query loaded from chat (${data.metadata.execution_time_ms || 0}ms, ${data.metadata.result_count || 0} results)`;
         queryInfoText.style.color = '#28a745';
         setTimeout(() => {
@@ -1628,7 +1673,7 @@
       resultsOutput.innerHTML = '';
 
       // Clear query editor
-      queryEditor.value = '';
+      queryEditor.setValue('');
       queryInfoText.textContent = 'Ready';
       queryInfoText.style.color = '#666';
     }

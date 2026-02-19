@@ -310,6 +310,48 @@ def api_graph_schema_csv():
         return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename="schema.csv"'})
 
 
+def _serialize_neo4j_value(value):
+    """Convert Neo4j objects to JSON-serializable dicts.
+
+    Handles Neo4j Node, Relationship, and Path objects, as well as
+    nested lists and dicts. Plain Python primitives pass through unchanged.
+    """
+    # Import Neo4j types only when needed to avoid import errors in tests
+    try:
+        from neo4j.graph import Node, Relationship, Path
+    except ImportError:
+        # If neo4j not installed, just return value as-is
+        Node = Relationship = Path = type(None)
+
+    if isinstance(value, Node):
+        return {
+            'id': value.id,
+            'labels': list(value.labels),
+            'properties': dict(value.items())
+        }
+    elif isinstance(value, Relationship):
+        return {
+            'id': value.id,
+            'type': value.type,
+            'start_node': value.start_node.id,
+            'end_node': value.end_node.id,
+            'properties': dict(value.items())
+        }
+    elif isinstance(value, Path):
+        return {
+            'nodes': [_serialize_neo4j_value(n) for n in value.nodes],
+            'relationships': [_serialize_neo4j_value(r) for r in value.relationships]
+        }
+    elif isinstance(value, list):
+        return [_serialize_neo4j_value(v) for v in value]
+    elif isinstance(value, dict):
+        # Recursively serialize dict values, but keep dict keys as-is
+        return {k: _serialize_neo4j_value(v) for k, v in value.items()}
+    else:
+        # Primitives (str, int, float, bool, None) pass through
+        return value
+
+
 @bp.post('/graph/query')
 def api_graph_query():
     """Execute a Cypher query against Neo4j.
@@ -362,10 +404,16 @@ def api_graph_query():
 
             execution_time_ms = int((time.time() - start_time) * 1000)
 
+            # Serialize Neo4j objects to JSON-compatible format
+            serialized_results = [
+                {k: _serialize_neo4j_value(v) for k, v in row.items()}
+                for row in results
+            ]
+
             return jsonify({
                 'status': 'ok',
-                'results': results,
-                'result_count': len(results),
+                'results': serialized_results,
+                'result_count': len(serialized_results),
                 'execution_time_ms': execution_time_ms
             }), 200
 
