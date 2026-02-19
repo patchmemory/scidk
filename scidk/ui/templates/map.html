@@ -102,6 +102,111 @@
     opacity: 0.5;
   }
 
+  /* Map Library Styles */
+  .library-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+
+  .library-header h3 {
+    font-size: 1rem;
+    margin: 0;
+  }
+
+  #save-current-map {
+    font-size: 0.8rem;
+    padding: 0.25rem 0.5rem;
+  }
+
+  #map-search {
+    width: 100%;
+    font-size: 0.85rem;
+    padding: 0.4rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin-bottom: 0.75rem;
+  }
+
+  .map-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .map-item {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 0.75rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .map-item:hover {
+    border-color: #2196f3;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  }
+
+  .map-item.active {
+    border-color: #2196f3;
+    background: #e3f2fd;
+  }
+
+  .map-name {
+    font-weight: 500;
+    font-size: 0.9rem;
+    margin-bottom: 0.25rem;
+    color: #333;
+  }
+
+  .map-meta {
+    font-size: 0.75rem;
+    color: #999;
+    margin-bottom: 0.5rem;
+  }
+
+  .map-actions {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  .map-actions button {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid #ddd;
+    background: #fff;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .map-actions button:hover {
+    background: #f5f5f5;
+  }
+
+  .map-actions .load-btn:hover {
+    border-color: #2196f3;
+    color: #2196f3;
+  }
+
+  .map-actions .delete-btn {
+    color: #dc3545;
+  }
+
+  .map-actions .delete-btn:hover {
+    border-color: #dc3545;
+    background: #fff5f5;
+  }
+
+  #map-library-loading {
+    text-align: center;
+    padding: 2rem;
+    color: #999;
+    font-size: 0.9rem;
+  }
+
   /* === TAB STYLES === */
   .tab-bar {
     flex-shrink: 0;
@@ -186,15 +291,27 @@
 {% endblock %}
 {% block content %}
 <div class="maps-container">
-  <!-- LEFT PANEL: Map Library (Placeholder) -->
+  <!-- LEFT PANEL: Map Library -->
   <div class="map-library-panel">
-    <div class="panel-header">
+    <div class="library-header">
       <h3>📁 Saved Maps</h3>
+      <button id="save-current-map" class="btn btn-sm btn-primary" data-testid="save-current-map">💾 Save</button>
     </div>
-    <div class="empty-state">
+
+    <input type="search" id="map-search" placeholder="Search maps..." data-testid="map-search" />
+
+    <div id="map-library-loading" style="display:none;">
+      Loading...
+    </div>
+
+    <div id="map-library-empty" class="empty-state" style="display:none;">
       <div class="empty-state-icon">🗺️</div>
       <p class="small"><strong>No saved maps yet</strong></p>
-      <p class="small text-muted">Map library coming in Task 2</p>
+      <p class="small text-muted">Click Save to create your first map</p>
+    </div>
+
+    <div id="map-list" class="map-list" data-testid="map-list">
+      <!-- Map items will be inserted here dynamically -->
     </div>
   </div>
 
@@ -1504,6 +1621,267 @@
 
   // Initialize tabs
   init();
+})();
+
+// === MAP LIBRARY ===
+(function() {
+  let savedMaps = [];
+  let currentMapId = null;
+
+  const mapListEl = document.getElementById('map-list');
+  const mapSearchEl = document.getElementById('map-search');
+  const saveMapBtn = document.getElementById('save-current-map');
+  const loadingEl = document.getElementById('map-library-loading');
+  const emptyEl = document.getElementById('map-library-empty');
+
+  // Load saved maps from backend
+  async function loadSavedMaps() {
+    loadingEl.style.display = 'block';
+    emptyEl.style.display = 'none';
+    mapListEl.innerHTML = '';
+
+    try {
+      const response = await fetch('/api/maps/saved?sort_by=updated_at&order=DESC');
+      const data = await response.json();
+
+      if (data.status === 'ok') {
+        savedMaps = data.maps || [];
+        renderMapList();
+      } else {
+        console.error('Failed to load saved maps:', data.message);
+      }
+    } catch (error) {
+      console.error('Error loading saved maps:', error);
+    } finally {
+      loadingEl.style.display = 'none';
+    }
+  }
+
+  // Render map list
+  function renderMapList(filterText = '') {
+    mapListEl.innerHTML = '';
+
+    const filtered = savedMaps.filter(map => {
+      if (!filterText) return true;
+      const searchLower = filterText.toLowerCase();
+      return map.name.toLowerCase().includes(searchLower) ||
+             (map.description && map.description.toLowerCase().includes(searchLower)) ||
+             (map.tags && map.tags.toLowerCase().includes(searchLower));
+    });
+
+    if (filtered.length === 0) {
+      emptyEl.style.display = 'block';
+      return;
+    }
+
+    emptyEl.style.display = 'none';
+
+    filtered.forEach(map => {
+      const mapItem = document.createElement('div');
+      mapItem.className = 'map-item';
+      if (map.id === currentMapId) {
+        mapItem.classList.add('active');
+      }
+      mapItem.dataset.mapId = map.id;
+
+      const lastUsed = map.last_used_at
+        ? formatTimeAgo(map.last_used_at)
+        : `Created ${formatTimeAgo(map.created_at)}`;
+
+      mapItem.innerHTML = `
+        <div class="map-name">${escapeHtml(map.name)}</div>
+        <div class="map-meta">${lastUsed}${map.tags ? ` • ${escapeHtml(map.tags)}` : ''}</div>
+        <div class="map-actions">
+          <button class="load-btn" data-map-id="${map.id}">Load</button>
+          <button class="delete-btn" data-map-id="${map.id}">Delete</button>
+        </div>
+      `;
+
+      mapListEl.appendChild(mapItem);
+    });
+
+    // Add event listeners
+    mapListEl.querySelectorAll('.load-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        loadMap(btn.dataset.mapId);
+      });
+    });
+
+    mapListEl.querySelectorAll('.delete-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteMap(btn.dataset.mapId);
+      });
+    });
+  }
+
+  // Load a map
+  async function loadMap(mapId) {
+    try {
+      const response = await fetch(`/api/maps/saved/${mapId}`);
+      const data = await response.json();
+
+      if (data.status === 'ok' && data.map) {
+        const map = data.map;
+        currentMapId = mapId;
+
+        // Track usage
+        fetch(`/api/maps/saved/${mapId}/use`, { method: 'POST' });
+
+        // Apply filters if present
+        if (map.filters) {
+          // Apply label filters
+          if (map.filters.labels && Array.isArray(map.filters.labels)) {
+            const labelSelect = document.getElementById('filter-labels');
+            if (labelSelect) {
+              // Note: actual multiselect implementation would need more complex handling
+              console.log('Load labels:', map.filters.labels);
+            }
+          }
+
+          // Apply rel type filters
+          if (map.filters.rel_types && Array.isArray(map.filters.rel_types)) {
+            const relSelect = document.getElementById('filter-reltypes');
+            if (relSelect) {
+              console.log('Load rel types:', map.filters.rel_types);
+            }
+          }
+        }
+
+        // Load query if present
+        if (map.query && window.tabEditors) {
+          const activeTabId = Object.keys(window.tabEditors)[0];
+          if (activeTabId && window.tabEditors[activeTabId]) {
+            window.tabEditors[activeTabId].setValue(map.query);
+          }
+        }
+
+        // Apply visualization settings if present
+        if (map.visualization) {
+          if (map.visualization.mode) {
+            const sourceSelect = document.getElementById('schema-source');
+            if (sourceSelect) {
+              sourceSelect.value = map.visualization.mode;
+            }
+          }
+        }
+
+        renderMapList(); // Re-render to update active state
+        alert(`Loaded map: ${map.name}`);
+      }
+    } catch (error) {
+      console.error('Error loading map:', error);
+      alert('Failed to load map');
+    }
+  }
+
+  // Delete a map
+  async function deleteMap(mapId) {
+    const map = savedMaps.find(m => m.id === mapId);
+    if (!map) return;
+
+    if (!confirm(`Delete map "${map.name}"?`)) return;
+
+    try {
+      const response = await fetch(`/api/maps/saved/${mapId}`, { method: 'DELETE' });
+      const data = await response.json();
+
+      if (data.status === 'ok') {
+        if (currentMapId === mapId) {
+          currentMapId = null;
+        }
+        await loadSavedMaps(); // Reload list
+      } else {
+        alert('Failed to delete map: ' + data.message);
+      }
+    } catch (error) {
+      console.error('Error deleting map:', error);
+      alert('Failed to delete map');
+    }
+  }
+
+  // Save current map
+  saveMapBtn.addEventListener('click', async () => {
+    const name = prompt('Enter map name:');
+    if (!name) return;
+
+    const description = prompt('Enter description (optional):');
+
+    // Gather current state
+    const filters = {};
+    const visualization = {};
+
+    // Get active query
+    let query = null;
+    if (window.tabEditors) {
+      const activeTabId = Object.keys(window.tabEditors)[0];
+      if (activeTabId && window.tabEditors[activeTabId]) {
+        query = window.tabEditors[activeTabId].getValue();
+      }
+    }
+
+    // Get visualization settings
+    const sourceSelect = document.getElementById('schema-source');
+    if (sourceSelect) {
+      visualization.mode = sourceSelect.value;
+    }
+
+    const layoutSelect = document.getElementById('layout-mode');
+    if (layoutSelect) {
+      visualization.layout = layoutSelect.value;
+    }
+
+    try {
+      const response = await fetch('/api/maps/saved', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          description,
+          query,
+          filters,
+          visualization
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.status === 'ok') {
+        currentMapId = data.map.id;
+        await loadSavedMaps();
+        alert(`Saved map: ${name}`);
+      } else {
+        alert('Failed to save map: ' + data.message);
+      }
+    } catch (error) {
+      console.error('Error saving map:', error);
+      alert('Failed to save map');
+    }
+  });
+
+  // Search filter
+  mapSearchEl.addEventListener('input', (e) => {
+    renderMapList(e.target.value);
+  });
+
+  // Helper functions
+  function formatTimeAgo(timestamp) {
+    const seconds = Math.floor((Date.now() / 1000) - timestamp);
+    if (seconds < 60) return 'Just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Initialize
+  loadSavedMaps();
 })();
 </script>
   </div> <!-- END: Center Panel -->
