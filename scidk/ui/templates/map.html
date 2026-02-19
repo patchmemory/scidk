@@ -1168,8 +1168,13 @@
         window.tabVisualizationModes = {};
       }
 
-      // Default to schema mode
-      window.tabVisualizationModes[tabId] = 'schema';
+      // Default to schema mode (only if not already set)
+      if (!window.tabVisualizationModes[tabId]) {
+        window.tabVisualizationModes[tabId] = 'schema';
+        console.log(`Initialized tab ${tabId} with default mode: schema`);
+      } else {
+        console.log(`Tab ${tabId} already has mode: ${window.tabVisualizationModes[tabId]}`);
+      }
 
       // Create Cytoscape instance
       const cy = cytoscape({
@@ -1347,11 +1352,19 @@
 
       // Check current visualization mode for this tab
       const currentMode = window.tabVisualizationModes && window.tabVisualizationModes[tabId];
-      console.log(`Visualizing results in ${currentMode} mode:`, results);
+      const checkedRadio = document.querySelector('input[name="viz-mode"]:checked')?.value;
+      console.log('=== VISUALIZATION DEBUG ===');
+      console.log('Tab ID:', tabId);
+      console.log('Current mode (from window.tabVisualizationModes):', currentMode);
+      console.log('Checked radio button:', checkedRadio);
+      console.log('All tab modes:', window.tabVisualizationModes);
+      console.log('Results to visualize:', results);
+      console.log('===========================');
 
       // Only visualize in instance mode (schema mode doesn't use query results)
       if (currentMode !== 'instance') {
-        console.log('Skipping visualization - not in instance mode');
+        console.log(`⚠️ Skipping visualization - current mode is '${currentMode}', not 'instance'`);
+        console.log('💡 Switch to Instance mode using the radio buttons on the right panel');
         return;
       }
 
@@ -2204,6 +2217,9 @@
     radio.addEventListener('change', async (e) => {
       const newMode = e.target.value;
 
+      console.log('=== MODE SWITCH DEBUG ===');
+      console.log('Radio button changed to:', newMode);
+
       // Show/hide mode-specific settings
       instanceSettings.style.display = newMode === 'instance' ? 'block' : 'none';
       hybridSettings.style.display = newMode === 'hybrid' ? 'block' : 'none';
@@ -2212,12 +2228,19 @@
       const activeTab = document.querySelector('.map-tab.active');
       const activeTabId = activeTab?.dataset.tabId || 'tab-1';
 
+      console.log('Active tab:', activeTabId);
+      console.log('Tab modes before update:', window.tabVisualizationModes);
+
       // Update mode for this tab
       if (window.tabVisualizationModes) {
         window.tabVisualizationModes[activeTabId] = newMode;
+        console.log('Tab modes after update:', window.tabVisualizationModes);
+      } else {
+        console.error('❌ window.tabVisualizationModes not initialized!');
       }
 
-      console.log(`Switched tab ${activeTabId} to ${newMode} mode`);
+      console.log(`✓ Switched tab ${activeTabId} to ${newMode} mode`);
+      console.log('========================');
 
       // Re-render based on mode
       if (newMode === 'schema') {
