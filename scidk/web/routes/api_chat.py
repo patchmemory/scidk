@@ -19,6 +19,12 @@ def _get_chat_service():
     db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
     return get_chat_service(db_path=db_path)
 
+def _get_feedback_service():
+    """Get GraphRAGFeedbackService instance using settings DB path from config."""
+    from ...services.graphrag_feedback_service import get_graphrag_feedback_service
+    db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+    return get_graphrag_feedback_service(db_path=db_path)
+
 @bp.post('/chat')
 def api_chat():
         data = request.get_json(force=True, silent=True) or {}
@@ -709,3 +715,235 @@ def set_session_visibility(session_id):
         return jsonify({'error': 'Insufficient permissions or session not found'}), 403
 
     return jsonify({'success': True}), 200
+
+
+# ========== GraphRAG Feedback ==========
+
+@bp.post('/chat/graphrag/feedback')
+def add_graphrag_feedback():
+    """Submit feedback for a GraphRAG query.
+
+    Request body:
+        {
+            "query": "original query text",
+            "entities_extracted": {...},
+            "cypher_generated": "MATCH ...",  // optional
+            "session_id": "uuid",  // optional
+            "message_id": "uuid",  // optional
+            "feedback": {
+                "answered_question": true/false,
+                "entity_corrections": {
+                    "removed": ["Dataset:ABC"],
+                    "added": [{"type": "Sample", "value": "XYZ"}]
+                },
+                "query_corrections": "reformulated query text",
+                "missing_results": "description of what was missing",
+                "schema_terminology": {"user_term": "schema_term"},
+                "notes": "free text feedback"
+            }
+        }
+
+    Returns:
+        201: {
+            "feedback_id": "uuid",
+            "status": "success"
+        }
+        400: {"error": "Missing required fields"}
+    """
+    data = request.get_json() or {}
+
+    query = data.get('query', '').strip()
+    entities_extracted = data.get('entities_extracted', {})
+    feedback = data.get('feedback', {})
+
+    if not query:
+        return jsonify({'error': 'Missing query'}), 400
+
+    if not feedback:
+        return jsonify({'error': 'Missing feedback'}), 400
+
+    feedback_service = _get_feedback_service()
+
+    feedback_obj = feedback_service.add_feedback(
+        query=query,
+        entities_extracted=entities_extracted,
+        feedback=feedback,
+        session_id=data.get('session_id'),
+        message_id=data.get('message_id'),
+        cypher_generated=data.get('cypher_generated')
+    )
+
+    return jsonify({
+        'feedback_id': feedback_obj.id,
+        'status': 'success'
+    }), 201
+
+
+@bp.get('/chat/graphrag/feedback')
+def list_graphrag_feedback():
+    """List GraphRAG feedback entries.
+
+    Query params:
+        session_id (optional): Filter by session
+        answered_question (optional): Filter by true/false
+        limit (int): Maximum entries (default 100)
+        offset (int): Skip entries (default 0)
+
+    Returns:
+        200: {
+            "feedback": [
+                {
+                    "id": "uuid",
+                    "query": "...",
+                    "entities_extracted": {...},
+                    "feedback": {...},
+                    "timestamp": 1234567890.0
+                },
+                ...
+            ]
+        }
+    """
+    feedback_service = _get_feedback_service()
+
+    session_id = request.args.get('session_id')
+    answered_question = request.args.get('answered_question')
+    limit = request.args.get('limit', 100, type=int)
+    offset = request.args.get('offset', 0, type=int)
+
+    # Convert answered_question string to bool
+    answered_bool = None
+    if answered_question is not None:
+        answered_bool = answered_question.lower() in ('true', '1', 'yes')
+
+    feedback_list = feedback_service.list_feedback(
+        session_id=session_id,
+        answered_question=answered_bool,
+        limit=limit,
+        offset=offset
+    )
+
+    return jsonify({
+        'feedback': [f.to_dict() for f in feedback_list]
+    }), 200
+
+
+@bp.get('/chat/graphrag/feedback/<feedback_id>')
+def get_graphrag_feedback(feedback_id):
+    """Get a specific feedback entry.
+
+    Returns:
+        200: {
+            "feedback": {...}
+        }
+        404: {"error": "Feedback not found"}
+    """
+    feedback_service = _get_feedback_service()
+    feedback = feedback_service.get_feedback(feedback_id)
+
+    if not feedback:
+        return jsonify({'error': 'Feedback not found'}), 404
+
+    return jsonify({
+        'feedback': feedback.to_dict()
+    }), 200
+
+
+@bp.get('/chat/graphrag/feedback/stats')
+def get_graphrag_feedback_stats():
+    """Get aggregated feedback statistics.
+
+    Returns:
+        200: {
+            "total_feedback_count": 100,
+            "answered_yes_count": 75,
+            "answered_no_count": 25,
+            "answer_rate": 75.0,
+            "entity_corrections_count": 30,
+            "query_corrections_count": 15,
+            "terminology_corrections_count": 10
+        }
+    """
+    feedback_service = _get_feedback_service()
+    stats = feedback_service.get_feedback_stats()
+
+    return jsonify(stats), 200
+
+
+@bp.get('/chat/graphrag/feedback/analysis/entities')
+def get_entity_corrections():
+    """Get entity corrections for analysis.
+
+    Query params:
+        limit (int): Maximum entries (default 50)
+
+    Returns:
+        200: {
+            "corrections": [
+                {
+                    "query": "...",
+                    "extracted": {...},
+                    "corrections": {...},
+                    "timestamp": 1234567890.0
+                },
+                ...
+            ]
+        }
+    """
+    feedback_service = _get_feedback_service()
+    limit = request.args.get('limit', 50, type=int)
+
+    corrections = feedback_service.get_entity_corrections(limit=limit)
+
+    return jsonify({
+        'corrections': corrections
+    }), 200
+
+
+@bp.get('/chat/graphrag/feedback/analysis/queries')
+def get_query_reformulations():
+    """Get query reformulations for training data.
+
+    Query params:
+        limit (int): Maximum entries (default 50)
+
+    Returns:
+        200: {
+            "reformulations": [
+                {
+                    "original_query": "...",
+                    "corrected_query": "...",
+                    "entities_extracted": {...},
+                    "timestamp": 1234567890.0
+                },
+                ...
+            ]
+        }
+    """
+    feedback_service = _get_feedback_service()
+    limit = request.args.get('limit', 50, type=int)
+
+    reformulations = feedback_service.get_query_reformulations(limit=limit)
+
+    return jsonify({
+        'reformulations': reformulations
+    }), 200
+
+
+@bp.get('/chat/graphrag/feedback/analysis/terminology')
+def get_terminology_mappings():
+    """Get schema terminology mappings from feedback.
+
+    Returns:
+        200: {
+            "mappings": {
+                "user_term": "schema_term",
+                ...
+            }
+        }
+    """
+    feedback_service = _get_feedback_service()
+    mappings = feedback_service.get_terminology_mappings()
+
+    return jsonify({
+        'mappings': mappings
+    }), 200
