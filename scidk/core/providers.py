@@ -79,16 +79,44 @@ class LocalFSProvider(FilesystemProvider):
     id = "local_fs"
     display_name = "Local Files"
 
+    def __init__(self, base_dir: Optional[str] = None):
+        """
+        Initialize Local Files provider.
+
+        Args:
+            base_dir: Optional base directory to restrict access to.
+                     Defaults to user's home directory if not specified.
+                     Can also be set via SCIDK_LOCAL_FILES_BASE env variable.
+        """
+        super().__init__()
+        import os
+
+        # Priority: parameter > env var > home directory
+        if base_dir:
+            self.base_dir = Path(base_dir).expanduser().resolve()
+        elif os.environ.get('SCIDK_LOCAL_FILES_BASE'):
+            self.base_dir = Path(os.environ['SCIDK_LOCAL_FILES_BASE']).expanduser().resolve()
+        else:
+            self.base_dir = Path.home()
+
     def list_roots(self) -> List[DriveInfo]:
-        # Single pseudo-root representing the filesystem root
-        root = Path("/")
-        return [DriveInfo(id=str(root), name=str(root), path=str(root))]
+        """
+        Return configured base directory as the root.
+        This prevents exposing the entire filesystem root.
+        """
+        import os
+        username = os.environ.get('USER') or os.environ.get('USERNAME') or 'user'
+        return [DriveInfo(
+            id=str(self.base_dir),
+            name=f"Home ({username})",
+            path=str(self.base_dir)
+        )]
 
     def _norm(self, p: str) -> Path:
         return Path(p).expanduser().resolve()
 
     def list(self, root_id: str, path: str, page_token: Optional[str] = None, page_size: Optional[int] = None, *, recursive: bool = False, max_depth: Optional[int] = 1, fast_list: bool = False) -> Dict:
-        base = self._norm(path or root_id or "/")
+        base = self._norm(path or root_id or str(self.base_dir))
         if not base.exists():
             return {"entries": []}
         items: List[Entry] = []
@@ -138,30 +166,36 @@ class MountedFSProvider(FilesystemProvider):
     display_name = "Mounted Volumes"
 
     def list_roots(self) -> List[DriveInfo]:
+        """
+        List mounted volumes under user-specified base directories.
+        Only shows subdirectories of /mnt and /media (configurable mount points).
+        """
         drives: List[DriveInfo] = []
-        # Fallback if psutil missing
-        if psutil is None:
-            # Use common mount points heuristically
-            for p in ["/mnt", "/media", "/Volumes"]:
-                pp = Path(p)
-                if pp.exists() and pp.is_dir():
-                    for child in pp.iterdir():
-                        try:
-                            if child.is_dir():
-                                drives.append(DriveInfo(id=str(child), name=child.name, path=str(child)))
-                        except Exception:
-                            continue
-            return drives
-        try:
-            parts = psutil.disk_partitions(all=False)
-            seen = set()
-            for part in parts:
-                mount = part.mountpoint
-                if mount and mount not in seen:
-                    seen.add(mount)
-                    drives.append(DriveInfo(id=mount, name=os.path.basename(mount) or mount, path=mount))
-        except Exception:
-            pass
+
+        # User-configurable mount base directories
+        mount_bases = ["/mnt", "/media"]
+
+        for base_path in mount_bases:
+            base = Path(base_path)
+            if not base.exists() or not base.is_dir():
+                continue
+
+            try:
+                for child in base.iterdir():
+                    if child.is_dir() and child.name not in ['.', '..']:
+                        # Use a descriptive name like "USB Drive (media/usb)"
+                        display_name = f"{child.name} ({base.name}/{child.name})"
+                        drives.append(DriveInfo(
+                            id=str(child),
+                            name=display_name,
+                            path=str(child)
+                        ))
+            except PermissionError:
+                # Skip directories we can't read
+                continue
+            except Exception:
+                continue
+
         return drives
 
     def list(self, root_id: str, path: str, page_token: Optional[str] = None, page_size: Optional[int] = None, *, recursive: bool = False, max_depth: Optional[int] = 1, fast_list: bool = False) -> Dict:
