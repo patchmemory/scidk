@@ -5,6 +5,11 @@ import os
 
 def get_neo4j_params(app: Optional[Any] = None) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str], str]:
     """Read Neo4j connection parameters from app extensions or environment.
+
+    Priority order:
+    1. UI settings (app.extensions['scidk']['neo4j_config']) - set via Settings page
+    2. Environment variables - fallback for headless/Docker deployments
+
     Returns (uri, user, password, database, auth_mode) where auth_mode is 'basic' or 'none'.
     """
     cfg = {}
@@ -13,6 +18,8 @@ def get_neo4j_params(app: Optional[Any] = None) -> Tuple[Optional[str], Optional
             cfg = getattr(app, 'extensions', {}).get('scidk', {}).get('neo4j_config', {}) or {}
     except Exception:
         cfg = {}
+
+    # Priority: UI settings first, then environment variables
     uri = cfg.get('uri') or os.environ.get('NEO4J_URI') or os.environ.get('BOLT_URI')
     user = cfg.get('user') or os.environ.get('NEO4J_USER') or os.environ.get('NEO4J_USERNAME')
     pwd = cfg.get('password') or os.environ.get('NEO4J_PASSWORD')
@@ -212,13 +219,63 @@ class Neo4jClient:
             }
 
 
-def get_neo4j_client():
+def get_neo4j_client(role: Optional[str] = None):
     """Get or create Neo4j client instance.
+
+    Args:
+        role: Optional role to get connection for (e.g., 'primary', 'labels_source').
+              If None, uses the primary connection.
 
     Returns:
         Neo4jClient instance if connection parameters are available, None otherwise
     """
-    uri, user, pwd, database, auth_mode = get_neo4j_params()
+    # Try to get Flask app context to read updated config
+    app = None
+    try:
+        from flask import current_app
+        app = current_app._get_current_object()
+    except (ImportError, RuntimeError):
+        # No Flask context or not in request context
+        pass
+
+    # If role specified, try to get connection params for that role
+    if role and app:
+        try:
+            from ..core.settings import get_setting
+            import json
+
+            # Get active profile for this role
+            active_key = f'neo4j_active_role_{role}'
+            active_name = get_setting(active_key)
+
+            if active_name:
+                # Load profile
+                profile_key = f'neo4j_profile_{active_name.replace(" ", "_")}'
+                profile_json = get_setting(profile_key)
+
+                if profile_json:
+                    profile = json.loads(profile_json)
+
+                    # Load password
+                    password_key = f'neo4j_profile_password_{active_name.replace(" ", "_")}'
+                    password = get_setting(password_key)
+
+                    uri = profile.get('uri')
+                    user = profile.get('user')
+                    database = profile.get('database')
+                    auth_mode = 'basic'  # Default for profiles
+
+                    if uri:
+                        client = Neo4jClient(uri, user, password, database, auth_mode)
+                        client.connect()
+                        return client
+        except Exception as e:
+            # Fall back to default connection
+            if app:
+                app.logger.warning(f"Failed to get Neo4j connection for role {role}: {e}")
+
+    # Fall back to primary connection
+    uri, user, pwd, database, auth_mode = get_neo4j_params(app)
 
     if not uri:
         return None
