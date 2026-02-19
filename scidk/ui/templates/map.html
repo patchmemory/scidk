@@ -1347,6 +1347,103 @@
       return div.innerHTML;
     }
 
+    // Function to extract and visualize schema from query results
+    function visualizeSchemaFromResults(results, tabId) {
+      const cy = window.cytoscapeInstances[tabId];
+
+      // Track unique label triples: {startLabel}-[relType]->{endLabel}
+      const labelNodes = new Map(); // label -> {label, count}
+      const labelTriples = new Map(); // "Label1|REL_TYPE|Label2" -> {start, type, end, count}
+
+      results.forEach(row => {
+        Object.values(row).forEach(val => {
+          if (!val) return;
+
+          // Track node labels
+          if (val.id !== undefined && val.labels) {
+            val.labels.forEach(label => {
+              if (!labelNodes.has(label)) {
+                labelNodes.set(label, {label: label, count: 0});
+              }
+              labelNodes.get(label).count++;
+            });
+          }
+
+          // Track relationship triples
+          if (val.id !== undefined && val.type && val.start_node !== undefined && val.end_node !== undefined) {
+            // Find the start and end node labels in this row
+            let startLabels = null;
+            let endLabels = null;
+
+            Object.values(row).forEach(node => {
+              if (node && node.id !== undefined && node.labels) {
+                if (node.id === val.start_node) startLabels = node.labels;
+                if (node.id === val.end_node) endLabels = node.labels;
+              }
+            });
+
+            if (startLabels && endLabels) {
+              // Create triple for primary labels
+              const startLabel = startLabels[0];
+              const endLabel = endLabels[0];
+              const tripleKey = `${startLabel}|${val.type}|${endLabel}`;
+
+              if (!labelTriples.has(tripleKey)) {
+                labelTriples.set(tripleKey, {
+                  start: startLabel,
+                  type: val.type,
+                  end: endLabel,
+                  count: 0
+                });
+              }
+              labelTriples.get(tripleKey).count++;
+            }
+          }
+        });
+      });
+
+      console.log(`Schema extracted: ${labelNodes.size} label types, ${labelTriples.size} relationship types`);
+
+      // Build Cytoscape elements
+      const elements = [];
+
+      // Add label nodes (sized by count)
+      labelNodes.forEach(node => {
+        const nodeSize = 20 + Math.log(1 + node.count) * 8;
+        elements.push({
+          data: {
+            id: node.label,
+            label: node.label,
+            count: node.count
+          },
+          style: {
+            'background-color': '#4e79a7',
+            'width': nodeSize,
+            'height': nodeSize
+          }
+        });
+      });
+
+      // Add relationship edges
+      labelTriples.forEach(triple => {
+        elements.push({
+          data: {
+            source: triple.start,
+            target: triple.end,
+            label: triple.type,
+            count: triple.count
+          }
+        });
+      });
+
+      // Render
+      cy.elements().remove();
+      cy.add(elements);
+      cy.layout({name: 'cose', animate: true, animationDuration: 500}).run();
+
+      console.log(`Rendered schema: ${labelNodes.size} nodes, ${labelTriples.size} edges`);
+    }
+
     // Function to visualize query results in graph
     function visualizeQueryResults(results, tabId) {
       if (!window.cytoscapeInstances || !window.cytoscapeInstances[tabId]) {
@@ -1365,14 +1462,22 @@
       console.log('Results to visualize:', results);
       console.log('===========================');
 
-      // Only visualize in instance mode (schema mode doesn't use query results)
-      if (currentMode !== 'instance') {
-        console.log(`⚠️ Skipping visualization - current mode is '${currentMode}', not 'instance'`);
-        console.log('💡 Switch to Instance mode using the radio buttons on the right panel');
+      const cy = window.cytoscapeInstances[tabId];
+
+      // Handle different visualization modes
+      if (currentMode === 'schema') {
+        // Extract schema (unique label triples) from query results
+        console.log('📊 Extracting schema from query results');
+        visualizeSchemaFromResults(results, tabId);
+        return;
+      } else if (currentMode === 'hybrid') {
+        // TODO: Implement hybrid mode visualization
+        console.log('🔀 Hybrid mode not yet implemented for query results');
         return;
       }
 
-      const cy = window.cytoscapeInstances[tabId];
+      // Instance mode: visualize individual nodes and relationships
+      console.log('📍 Visualizing instances from query results');
       const nodes = new Map();
       const edges = [];
 
