@@ -220,20 +220,19 @@
 
 <script src="https://unpkg.com/cytoscape@3.27.0/dist/cytoscape.min.js"></script>
 
-<!-- CodeMirror 6 for Cypher syntax highlighting -->
+<!-- Neo4j Cypher Editor (CodeMirror 6 based) -->
+<link href="https://unpkg.com/@neo4j-cypher/codemirror@1.0.3/css/cypher-codemirror.css" rel="stylesheet" />
 <script type="module">
   import { EditorView, basicSetup } from "https://esm.sh/codemirror@6.0.1";
   import { EditorState } from "https://esm.sh/@codemirror/state@6.4.1";
-  import { sql } from "https://esm.sh/@codemirror/lang-sql@6.6.1";
-  import { oneDark } from "https://esm.sh/@codemirror/theme-one-dark@6.1.2";
+  import { cypher } from "https://esm.sh/@neo4j-cypher/codemirror@1.0.3";
 
-  // Make EditorView and related modules globally available
+  // Make modules globally available
   window.CodeMirror = {
     EditorView,
     EditorState,
     basicSetup,
-    sql,
-    oneDark
+    cypher
   };
 </script>
 
@@ -950,27 +949,37 @@
     contentEl.style.flexDirection = 'column';
     contentEl.style.height = '100%';
     contentEl.innerHTML = `
-      <!-- Top Section: Graph & Results (resizable) -->
+      <!-- Top Section: Visualization & Results with Tabs (resizable) -->
       <div class="tab-top-section-${tab.id}" style="flex: 1; min-height: 300px; display: flex; flex-direction: column; overflow: hidden;">
-        <h2 style="margin: 0 0 0.5rem 0; font-size: 1.25rem;">Schema Graph - ${tab.name}</h2>
+        <!-- Result Type Tabs: Visualization / Table / JSON -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; padding-bottom: 0.5rem; border-bottom: 2px solid #e0e0e0;">
+          <div class="result-type-tabs-${tab.id}" style="display: flex; gap: 0.25rem;">
+            <button class="result-type-btn active" data-result-type="visualization" style="padding: 0.5rem 1rem; border: none; border-bottom: 2px solid #2196f3; background: transparent; cursor: pointer; font-size: 0.9rem; font-weight: 500; color: #2196f3;">Visualization</button>
+            <button class="result-type-btn" data-result-type="table" style="padding: 0.5rem 1rem; border: none; border-bottom: 2px solid transparent; background: transparent; cursor: pointer; font-size: 0.9rem; color: #666;">Table</button>
+            <button class="result-type-btn" data-result-type="json" style="padding: 0.5rem 1rem; border: none; border-bottom: 2px solid transparent; background: transparent; cursor: pointer; font-size: 0.9rem; color: #666;">JSON</button>
+          </div>
+          <h2 style="margin: 0; font-size: 1rem; color: #999;">${tab.name}</h2>
+        </div>
 
-        <!-- Graph Visualization -->
-        <div class="graph-container-${tab.id}" data-testid="graph-container-${tab.id}" style="width: 100%; height: 350px; border: 1px solid #ddd; margin-bottom: 1rem;"></div>
+        <!-- Content Area (switches based on active tab) -->
+        <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+          <!-- Visualization View -->
+          <div class="result-view-visualization-${tab.id} result-view active" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+            <div class="graph-container-${tab.id}" data-testid="graph-container-${tab.id}" style="width: 100%; height: 100%; border: 1px solid #ddd;"></div>
+          </div>
 
-        <!-- Results Section -->
-        <div style="flex: 1; display: flex; flex-direction: column; min-height: 150px; overflow: hidden;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; padding-bottom: 0.5rem; border-bottom: 1px solid #e0e0e0;">
-            <h3 style="margin: 0; font-size: 1rem;">Query Results</h3>
-            <div class="result-tabs-${tab.id}" style="display: flex; gap: 0.5rem;">
-              <button class="result-tab-btn active" data-result-tab="table" style="padding: 0.25rem 0.75rem; border: 1px solid #ddd; background: #f8f9fa; cursor: pointer; font-size: 0.85rem; border-radius: 4px;">Table</button>
-              <button class="result-tab-btn" data-result-tab="json" style="padding: 0.25rem 0.75rem; border: 1px solid #ddd; background: white; cursor: pointer; font-size: 0.85rem; border-radius: 4px;">JSON</button>
+          <!-- Table View -->
+          <div class="result-view-table-${tab.id} result-view" style="flex: 1; overflow: auto; border: 1px solid #ddd; background: #fafafa; padding: 0.5rem; display: none;">
+            <div class="query-results-table-${tab.id}">
+              <p class="small text-muted" style="margin: 0;">Run a query to see table results</p>
             </div>
           </div>
 
-          <div class="query-results-${tab.id}" style="flex: 1; overflow: auto; border: 1px solid #ddd; background: #fafafa; padding: 0.5rem;">
-            <div class="query-results-content-${tab.id}">
-              <p class="small text-muted" style="margin: 0;">Query results will appear here</p>
-            </div>
+          <!-- JSON View -->
+          <div class="result-view-json-${tab.id} result-view" style="flex: 1; overflow: auto; border: 1px solid #ddd; background: #f5f5f5; padding: 0.5rem; display: none;">
+            <pre class="query-results-json-${tab.id}" style="margin: 0; font-family: monospace; font-size: 0.85em;">
+<span class="small text-muted">Run a query to see JSON results</span>
+            </pre>
           </div>
         </div>
       </div>
@@ -1013,7 +1022,7 @@
     initCodeMirrorEditor(tab.id);
   }
 
-  // Initialize CodeMirror editor with Cypher syntax highlighting
+  // Initialize CodeMirror editor with Neo4j Cypher syntax highlighting
   function initCodeMirrorEditor(tabId) {
     // Wait for CodeMirror to be loaded
     const tryInit = () => {
@@ -1025,22 +1034,20 @@
       const container = document.querySelector(`.query-editor-container-${tabId}`);
       if (!container) return;
 
-      const { EditorView, EditorState, basicSetup, sql } = window.CodeMirror;
-
-      // Create Cypher-like highlighting using SQL mode (closest match)
-      const cypherKeywords = 'MATCH WHERE RETURN CREATE MERGE DELETE SET WITH UNWIND UNION ORDER BY SKIP LIMIT OPTIONAL CALL CASE WHEN THEN ELSE END AS AND OR NOT IN IS NULL DISTINCT';
+      const { EditorView, EditorState, basicSetup, cypher } = window.CodeMirror;
 
       const state = EditorState.create({
         doc: '// Enter Cypher query\nMATCH (n) RETURN n LIMIT 10',
         extensions: [
           basicSetup,
-          sql(),
+          cypher(),
           EditorView.lineWrapping,
           EditorView.theme({
-            "&": { height: "100%", fontSize: "0.9em" },
-            ".cm-scroller": { overflow: "auto", fontFamily: "'Monaco', 'Menlo', 'Courier New', monospace" },
+            "&": { height: "100%" },
+            ".cm-scroller": { overflow: "auto" },
             ".cm-content": { padding: "0.75rem" }
-          })
+          }),
+          EditorView.editable.of(true)
         ]
       });
 
@@ -1112,23 +1119,41 @@
     });
   }
 
-  // Initialize result tab switching (Table/JSON view)
+  // Initialize result type tab switching (Visualization/Table/JSON)
   function initResultTabs(tabId) {
-    const tabBtns = document.querySelectorAll(`.result-tabs-${tabId} .result-tab-btn`);
+    const tabBtns = document.querySelectorAll(`.result-type-tabs-${tabId} .result-type-btn`);
+    const views = {
+      visualization: document.querySelector(`.result-view-visualization-${tabId}`),
+      table: document.querySelector(`.result-view-table-${tabId}`),
+      json: document.querySelector(`.result-view-json-${tabId}`)
+    };
 
     tabBtns.forEach(btn => {
       btn.addEventListener('click', () => {
+        const viewType = btn.dataset.resultType;
+
         // Update button styles
         tabBtns.forEach(b => {
           b.classList.remove('active');
-          b.style.background = 'white';
+          b.style.borderBottom = '2px solid transparent';
+          b.style.color = '#666';
+          b.style.fontWeight = 'normal';
         });
         btn.classList.add('active');
-        btn.style.background = '#f8f9fa';
+        btn.style.borderBottom = '2px solid #2196f3';
+        btn.style.color = '#2196f3';
+        btn.style.fontWeight = '500';
 
-        // Handle view switching (will be implemented when results are displayed)
-        const view = btn.dataset.resultTab;
-        console.log(`Switched to ${view} view for ${tabId}`);
+        // Show/hide views
+        Object.keys(views).forEach(key => {
+          if (key === viewType) {
+            views[key].style.display = 'flex';
+            views[key].classList.add('active');
+          } else {
+            views[key].style.display = 'none';
+            views[key].classList.remove('active');
+          }
+        });
       });
     });
   }
