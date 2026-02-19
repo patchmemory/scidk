@@ -1445,9 +1445,11 @@
 
       console.log(`Rendered schema: ${labelNodes.size} nodes, ${labelTriples.size} edges`);
 
-      // Apply coloring after rendering
+      // Apply coloring and labels after rendering
       setTimeout(() => {
         if (window.applyGraphColoring) window.applyGraphColoring();
+        if (window.updateLabelPropertyList) window.updateLabelPropertyList();
+        if (window.applyLabelProperty) window.applyLabelProperty();
       }, 100);
     }
 
@@ -1572,9 +1574,11 @@
         idealEdgeLength: 100
       }).run();
 
-      // Apply coloring after rendering
+      // Apply coloring and labels after rendering
       setTimeout(() => {
         if (window.applyGraphColoring) window.applyGraphColoring();
+        if (window.updateLabelPropertyList) window.updateLabelPropertyList();
+        if (window.applyLabelProperty) window.applyLabelProperty();
       }, 100);
 
       // Apply basic styling
@@ -3086,14 +3090,84 @@
       if (!cy) return;
 
       if (e.target.checked) {
-        cy.style().selector('node').style({'label': 'data(label)'}).update();
+        applyLabelProperty();
       } else {
         cy.style().selector('node').style({'label': ''}).update();
       }
     });
 
-    // Make applyColoring available globally for re-applying after graph changes
+    // Label property selector
+    const labelPropertySelect = document.getElementById('label-property');
+
+    function updateLabelPropertyList() {
+      if (!labelPropertySelect) return;
+
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      const properties = new Set();
+      cy.nodes().forEach(node => {
+        const props = node.data('properties') || {};
+        Object.keys(props).forEach(key => properties.add(key));
+      });
+
+      // Keep default options
+      const currentValue = labelPropertySelect.value;
+      labelPropertySelect.innerHTML = `
+        <option value="_label">Node Label</option>
+        <option value="_id">Node ID</option>
+      `;
+
+      // Add properties from graph
+      Array.from(properties).sort().forEach(prop => {
+        const option = document.createElement('option');
+        option.value = prop;
+        option.textContent = prop;
+        labelPropertySelect.appendChild(option);
+      });
+
+      // Restore selection if it still exists
+      if (Array.from(labelPropertySelect.options).some(opt => opt.value === currentValue)) {
+        labelPropertySelect.value = currentValue;
+      }
+    }
+
+    function applyLabelProperty() {
+      if (!labelPropertySelect) return;
+
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      const property = labelPropertySelect.value;
+
+      cy.nodes().forEach(node => {
+        let labelText = '';
+
+        if (property === '_label') {
+          labelText = node.data('fullLabel') || node.data('label') || node.data('labels')?.[0] || 'Node';
+        } else if (property === '_id') {
+          labelText = node.data('id') || node.id();
+        } else {
+          const props = node.data('properties') || {};
+          labelText = props[property] || node.data('label') || '';
+        }
+
+        node.style('label', String(labelText));
+      });
+    }
+
+    labelPropertySelect?.addEventListener('change', applyLabelProperty);
+
+    // Make functions available globally
     window.applyGraphColoring = applyColoring;
+    window.updateLabelPropertyList = updateLabelPropertyList;
+    window.applyLabelProperty = applyLabelProperty;
   };
 
   if (document.readyState === 'loading') {
@@ -3334,10 +3408,16 @@
       </div>
       <div id="label-display-options" style="margin-bottom:0.75rem">
         <label class="form-label small" style="margin-bottom:.25rem">Display</label>
-        <div class="form-check">
+        <div class="form-check" style="margin-bottom:0.5rem">
           <input class="form-check-input" type="checkbox" id="show-node-labels" checked />
           <label class="form-check-label small" for="show-node-labels">Show labels</label>
         </div>
+        <label for="label-property" class="form-label small" style="margin-bottom:.25rem">Label Property</label>
+        <select id="label-property" class="form-select form-select-sm">
+          <option value="_label">Node Label</option>
+          <option value="_id">Node ID</option>
+        </select>
+        <small class="text-muted" style="font-size:0.7rem; display:block; margin-top:0.25rem">Choose which property displays on nodes</small>
       </div>
       <!-- Color Legend -->
       <div id="color-legend" style="margin-top:1rem; padding:0.5rem; background:#f8f9fa; border-radius:0.25rem; display:none">
