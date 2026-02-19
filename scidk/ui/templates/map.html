@@ -1053,24 +1053,45 @@
       return div.innerHTML;
     }
 
-    // Run Query Button
+    // Run/Stop Query Button with AbortController
     if (runBtn) {
+      let abortController = null;
+      let isRunning = false;
+
       runBtn.onclick = async () => {
+        // If query is running, stop it
+        if (isRunning && abortController) {
+          abortController.abort();
+          statusEl.textContent = '⊗ Query cancelled by user';
+          statusEl.style.color = '#ff9800';
+          runBtn.innerHTML = '▶ Run';
+          runBtn.classList.remove('btn-danger');
+          runBtn.classList.add('btn-success');
+          isRunning = false;
+          return;
+        }
+
         const query = getQueryText().trim();
         if (!query) {
           alert('Please enter a query');
           return;
         }
 
+        // Switch to Stop mode
+        isRunning = true;
+        abortController = new AbortController();
+        runBtn.innerHTML = '⊠ Stop';
+        runBtn.classList.remove('btn-success');
+        runBtn.classList.add('btn-danger');
         statusEl.textContent = 'Running query...';
         statusEl.style.color = '#666';
-        runBtn.disabled = true;
 
         try {
           const resp = await fetch('/api/graph/query', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query })
+            body: JSON.stringify({ query }),
+            signal: abortController.signal
           });
           const data = await resp.json();
 
@@ -1111,11 +1132,19 @@
             jsonResultsEl.textContent = JSON.stringify(data, null, 2);
           }
         } catch (err) {
-          statusEl.textContent = `✗ Error: ${err.message}`;
-          statusEl.style.color = '#dc3545';
-          tableResultsEl.innerHTML = `<p class="small text-danger">Error: ${escapeHtml(err.message)}</p>`;
+          if (err.name === 'AbortError') {
+            // Query was cancelled - status already set above
+          } else {
+            statusEl.textContent = `✗ Error: ${err.message}`;
+            statusEl.style.color = '#dc3545';
+            tableResultsEl.innerHTML = `<p class="small text-danger">Error: ${escapeHtml(err.message)}</p>`;
+          }
         } finally {
-          runBtn.disabled = false;
+          // Reset to Run mode
+          isRunning = false;
+          runBtn.innerHTML = '▶ Run';
+          runBtn.classList.remove('btn-danger');
+          runBtn.classList.add('btn-success');
         }
       };
     }

@@ -1056,8 +1056,23 @@
       input.click();
     };
 
-    // Query Editor Functions
+    // Query Editor Functions with Run/Stop toggle
+    let queryAbortController = null;
+    let isQueryRunning = false;
+
     runQueryBtn.addEventListener('click', async () => {
+      // If query is running, stop it
+      if (isQueryRunning && queryAbortController) {
+        queryAbortController.abort();
+        queryInfoText.textContent = '⊗ Query cancelled by user';
+        queryInfoText.style.color = '#ff9800';
+        runQueryBtn.innerHTML = '▶ Run';
+        runQueryBtn.classList.remove('btn-danger');
+        runQueryBtn.classList.add('btn-success');
+        isQueryRunning = false;
+        return;
+      }
+
       const query = queryEditor.value.trim();
       if (!query) {
         queryInfoText.textContent = 'Please enter a query';
@@ -1065,15 +1080,21 @@
         return;
       }
 
+      // Switch to Stop mode
+      isQueryRunning = true;
+      queryAbortController = new AbortController();
+      runQueryBtn.innerHTML = '⊠ Stop';
+      runQueryBtn.classList.remove('btn-success');
+      runQueryBtn.classList.add('btn-danger');
       queryInfoText.textContent = 'Running query...';
       queryInfoText.style.color = '#666';
-      runQueryBtn.disabled = true;
 
       try {
         const resp = await fetch('/api/graph/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query })
+          body: JSON.stringify({ query }),
+          signal: queryAbortController.signal
         });
         const data = await resp.json();
 
@@ -1126,10 +1147,18 @@
           queryInfoText.style.color = '#dc3545';
         }
       } catch (err) {
-        queryInfoText.textContent = `Error: ${err.message}`;
-        queryInfoText.style.color = '#dc3545';
+        if (err.name === 'AbortError') {
+          // Query was cancelled - status already set above
+        } else {
+          queryInfoText.textContent = `Error: ${err.message}`;
+          queryInfoText.style.color = '#dc3545';
+        }
       } finally {
-        runQueryBtn.disabled = false;
+        // Reset to Run mode
+        isQueryRunning = false;
+        runQueryBtn.innerHTML = '▶ Run';
+        runQueryBtn.classList.remove('btn-danger');
+        runQueryBtn.classList.add('btn-success');
       }
     });
 
