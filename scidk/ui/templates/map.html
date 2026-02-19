@@ -219,6 +219,24 @@
     </div>
 
 <script src="https://unpkg.com/cytoscape@3.27.0/dist/cytoscape.min.js"></script>
+
+<!-- CodeMirror 6 for Cypher syntax highlighting -->
+<script type="module">
+  import { EditorView, basicSetup } from "https://esm.sh/codemirror@6.0.1";
+  import { EditorState } from "https://esm.sh/@codemirror/state@6.4.1";
+  import { sql } from "https://esm.sh/@codemirror/lang-sql@6.6.1";
+  import { oneDark } from "https://esm.sh/@codemirror/theme-one-dark@6.1.2";
+
+  // Make EditorView and related modules globally available
+  window.CodeMirror = {
+    EditorView,
+    EditorState,
+    basicSetup,
+    sql,
+    oneDark
+  };
+</script>
+
 <script>
 (async function() {
   function qs(params){
@@ -974,9 +992,8 @@
           </div>
         </div>
 
-        <textarea class="query-editor-${tab.id}" data-testid="query-input-${tab.id}"
-          style="flex: 1; font-family: 'Monaco', 'Menlo', 'Courier New', monospace; font-size: 0.9em; padding: 0.75rem; border: 1px solid #ddd; resize: none;"
-          placeholder="// Enter Cypher query&#10;MATCH (n) RETURN n LIMIT 10"></textarea>
+        <div class="query-editor-container-${tab.id}" data-testid="query-input-${tab.id}"
+          style="flex: 1; border: 1px solid #ddd; overflow: hidden;"></div>
 
         <div class="query-info-${tab.id}" style="padding: 0.5rem 0; border-top: 1px solid #e0e0e0; margin-top: 0.5rem;">
           <span class="small text-muted query-status-${tab.id}">Ready</span>
@@ -991,6 +1008,53 @@
 
     // Initialize result tab switching
     initResultTabs(tab.id);
+
+    // Initialize CodeMirror for syntax highlighting (wait for CodeMirror to load)
+    initCodeMirrorEditor(tab.id);
+  }
+
+  // Initialize CodeMirror editor with Cypher syntax highlighting
+  function initCodeMirrorEditor(tabId) {
+    // Wait for CodeMirror to be loaded
+    const tryInit = () => {
+      if (!window.CodeMirror) {
+        setTimeout(tryInit, 100);
+        return;
+      }
+
+      const container = document.querySelector(`.query-editor-container-${tabId}`);
+      if (!container) return;
+
+      const { EditorView, EditorState, basicSetup, sql } = window.CodeMirror;
+
+      // Create Cypher-like highlighting using SQL mode (closest match)
+      const cypherKeywords = 'MATCH WHERE RETURN CREATE MERGE DELETE SET WITH UNWIND UNION ORDER BY SKIP LIMIT OPTIONAL CALL CASE WHEN THEN ELSE END AS AND OR NOT IN IS NULL DISTINCT';
+
+      const state = EditorState.create({
+        doc: '// Enter Cypher query\nMATCH (n) RETURN n LIMIT 10',
+        extensions: [
+          basicSetup,
+          sql(),
+          EditorView.lineWrapping,
+          EditorView.theme({
+            "&": { height: "100%", fontSize: "0.9em" },
+            ".cm-scroller": { overflow: "auto", fontFamily: "'Monaco', 'Menlo', 'Courier New', monospace" },
+            ".cm-content": { padding: "0.75rem" }
+          })
+        ]
+      });
+
+      const view = new EditorView({
+        state,
+        parent: container
+      });
+
+      // Store editor instance for later access
+      if (!window.tabEditors) window.tabEditors = {};
+      window.tabEditors[tabId] = view;
+    };
+
+    tryInit();
   }
 
   // Initialize horizontal resizer between results and query editor
