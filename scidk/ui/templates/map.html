@@ -215,87 +215,8 @@
 
     <!-- Tab Content Area -->
     <div id="tab-content-area">
-      <!-- Individual tab contents will be shown/hidden here -->
+      <!-- Individual tab contents will be dynamically created here by JavaScript -->
     </div>
-
-<section style="margin:0; padding:0; display:none;" data-tab-id="main" class="tab-content active">
-  <h2>Schema Graph (Interactive)</h2>
-  <div id="schema-graph" data-testid="graph-explorer-root" style="width: 100%; height: 420px; border: 1px solid #ddd"></div>
-
-  <!-- Query Panel -->
-  <div style="margin-top:2rem">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem">
-      <h3 style="margin:0">Cypher Query</h3>
-      <button id="toggle-query-panel" class="btn btn-sm btn-outline-secondary" data-testid="toggle-query-panel">
-        <span id="query-panel-icon">▼</span> <span id="query-panel-text">Collapse</span>
-      </button>
-    </div>
-    <div id="query-panel" style="display:block">
-      <textarea id="query-input" class="form-control" rows="4" placeholder="Enter Cypher query (e.g., MATCH (n:File) RETURN n LIMIT 10)" data-testid="query-input" style="font-family:monospace; font-size:0.9em"></textarea>
-      <div style="margin-top:0.5rem; display:flex; gap:0.5rem; align-items:center">
-        <button id="run-query" class="btn btn-sm btn-success" data-testid="run-query">▶ Run Query</button>
-        <button id="save-query" class="btn btn-sm btn-outline-secondary" data-testid="save-query">💾 Save</button>
-        <button id="load-library" class="btn btn-sm btn-outline-secondary" data-testid="load-library">📚 Library</button>
-        <button id="clear-query" class="btn btn-sm btn-outline-secondary" data-testid="clear-query">Clear</button>
-        <span id="query-status" class="small text-muted" style="margin-left:1rem"></span>
-      </div>
-      <div id="query-results" style="margin-top:1rem; display:none">
-        <h4>Results</h4>
-        <div id="query-results-content" class="table-responsive" style="max-height:400px; overflow:auto; border:1px solid #eee"></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section>
-  <h2>Graph Schema</h2>
-  <p class="small">MVP: table-based schema view showing node labels and relationship types with counts. Data reflects the current in-memory session.</p>
-  <div style="display:flex; gap:2rem; flex-wrap:wrap; align-items:flex-start;">
-    <div>
-      <h3>Node Labels</h3>
-      <table class="table table-sm">
-        <thead>
-          <tr><th>Label</th><th>Count</th></tr>
-        </thead>
-        <tbody>
-          {% for label, cnt in schema_summary.nodes.items() %}
-            <tr><td>{{ label }}</td><td>{{ cnt }}</td></tr>
-          {% else %}
-            <tr><td colspan="2" class="small">No nodes</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <div>
-      <h3>Relationship Types</h3>
-      <table class="table table-sm">
-        <thead>
-          <tr><th>Type</th><th>Count</th></tr>
-        </thead>
-        <tbody>
-          {% for rel, cnt in schema_summary.relations.items() %}
-            <tr><td>{{ rel }}</td><td>{{ cnt }}</td></tr>
-          {% else %}
-            <tr><td colspan="2" class="small">No relationships</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-  <div>
-    <h3>Interpretation Types</h3>
-    {% set pref = ['csv','ipynb','json','python_code','txt','xlsx','yaml'] %}
-    {% set itypes = schema_summary.interpretation_types or [] %}
-    {% if itypes %}
-      <ul>
-        {% for it in pref if it in itypes %}<li>{{ it }}</li>{% endfor %}
-        {% for it in itypes if it not in pref %}<li>{{ it }}</li>{% endfor %}
-      </ul>
-    {% else %}
-      <p class="small">None</p>
-    {% endif %}
-  </div>
-</section>
 
 <script src="https://unpkg.com/cytoscape@3.27.0/dist/cytoscape.min.js"></script>
 <script>
@@ -913,6 +834,223 @@
   loadPanelWidths();
   initLeftResizer();
   initRightResizer();
+})();
+</script>
+
+<!-- Multi-Tab Management JavaScript -->
+<script>
+(function() {
+  const tabContainer = document.getElementById('tab-container');
+  const tabContentArea = document.getElementById('tab-content-area');
+  const addTabBtn = document.getElementById('add-tab-btn');
+
+  // Tab state
+  let tabs = [];
+  let activeTabId = null;
+  let nextTabId = 1;
+  const MAX_TABS = 8;
+
+  // Storage key
+  const STORAGE_KEY_TABS = 'maps_tabs_state';
+
+  // Initialize with first tab
+  function init() {
+    // Try to load saved state
+    const savedState = loadTabsState();
+
+    if (savedState && savedState.tabs.length > 0) {
+      tabs = savedState.tabs;
+      activeTabId = savedState.activeTabId;
+      nextTabId = savedState.nextTabId;
+
+      // Render all tabs
+      tabs.forEach(tab => {
+        renderTab(tab);
+        renderTabContent(tab);
+      });
+
+      switchToTab(activeTabId);
+    } else {
+      // Create initial tab
+      createTab('Map 1');
+    }
+  }
+
+  // Create a new tab
+  function createTab(name) {
+    if (tabs.length >= MAX_TABS) {
+      alert(`Maximum ${MAX_TABS} tabs allowed`);
+      return;
+    }
+
+    const tabId = `tab-${nextTabId++}`;
+    const tab = {
+      id: tabId,
+      name: name || `Map ${nextTabId}`,
+      created: Date.now()
+    };
+
+    tabs.push(tab);
+    renderTab(tab);
+    renderTabContent(tab);
+    switchToTab(tabId);
+    saveTabsState();
+  }
+
+  // Render tab button
+  function renderTab(tab) {
+    const tabEl = document.createElement('div');
+    tabEl.className = 'map-tab';
+    tabEl.dataset.tabId = tab.id;
+    tabEl.innerHTML = `
+      <span class="map-tab-title" title="${tab.name}">${tab.name}</span>
+      <button class="map-tab-close" data-testid="close-tab-${tab.id}">×</button>
+    `;
+
+    // Tab click handler
+    tabEl.querySelector('.map-tab-title').onclick = () => {
+      switchToTab(tab.id);
+    };
+
+    // Close button handler
+    tabEl.querySelector('.map-tab-close').onclick = (e) => {
+      e.stopPropagation();
+      closeTab(tab.id);
+    };
+
+    tabContainer.appendChild(tabEl);
+  }
+
+  // Render tab content area
+  function renderTabContent(tab) {
+    const contentEl = document.createElement('section');
+    contentEl.className = 'tab-content';
+    contentEl.dataset.tabId = tab.id;
+    contentEl.style.margin = '0';
+    contentEl.style.padding = '0';
+    contentEl.innerHTML = `
+      <h2>Schema Graph (Interactive) - ${tab.name}</h2>
+      <div class="graph-container-${tab.id}" data-testid="graph-container-${tab.id}" style="width: 100%; height: 420px; border: 1px solid #ddd"></div>
+
+      <!-- Query Panel for this tab -->
+      <div style="margin-top:2rem">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem">
+          <h3 style="margin:0">Cypher Query</h3>
+          <button class="toggle-query-panel-${tab.id} btn btn-sm btn-outline-secondary">
+            <span class="query-panel-icon-${tab.id}">▼</span> <span class="query-panel-text-${tab.id}">Collapse</span>
+          </button>
+        </div>
+        <div class="query-panel-${tab.id}" style="display:block">
+          <textarea class="form-control query-input-${tab.id}" rows="4" placeholder="Enter Cypher query..." data-testid="query-input-${tab.id}"></textarea>
+          <div style="margin-top:0.5rem; display:flex; gap:0.5rem; align-items:center">
+            <button class="run-query-${tab.id} btn btn-sm btn-primary" data-testid="run-query-${tab.id}">Run</button>
+            <button class="save-query-${tab.id} btn btn-sm btn-outline-secondary" data-testid="save-query-${tab.id}">Save</button>
+            <button class="load-library-${tab.id} btn btn-sm btn-outline-secondary" data-testid="load-library-${tab.id}">Load Library</button>
+            <button class="clear-query-${tab.id} btn btn-sm btn-outline-secondary" data-testid="clear-query-${tab.id}">Clear</button>
+            <span class="query-status-${tab.id} small" style="margin-left:auto; color:#666"></span>
+          </div>
+          <div class="query-results-${tab.id}" style="display:none; margin-top:1rem; max-height:300px; overflow:auto; border:1px solid #ddd; padding:0.5rem">
+            <div class="query-results-content-${tab.id}"></div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    tabContentArea.appendChild(contentEl);
+
+    // Initialize graph for this tab (defer to when tab is active)
+    // Query panel handlers will be set up when tab becomes active
+  }
+
+  // Switch to a specific tab
+  function switchToTab(tabId) {
+    if (!tabs.find(t => t.id === tabId)) return;
+
+    // Update active state
+    activeTabId = tabId;
+
+    // Update tab buttons
+    document.querySelectorAll('.map-tab').forEach(el => {
+      if (el.dataset.tabId === tabId) {
+        el.classList.add('active');
+      } else {
+        el.classList.remove('active');
+      }
+    });
+
+    // Update content visibility
+    document.querySelectorAll('.tab-content').forEach(el => {
+      if (el.dataset.tabId === tabId) {
+        el.classList.add('active');
+      } else {
+        el.classList.remove('active');
+      }
+    });
+
+    saveTabsState();
+  }
+
+  // Close a tab
+  function closeTab(tabId) {
+    if (tabs.length === 1) {
+      alert('Cannot close the last tab');
+      return;
+    }
+
+    // Find tab index
+    const tabIndex = tabs.findIndex(t => t.id === tabId);
+    if (tabIndex === -1) return;
+
+    // Remove from array
+    tabs.splice(tabIndex, 1);
+
+    // Remove DOM elements
+    const tabEl = document.querySelector(`.map-tab[data-tab-id="${tabId}"]`);
+    const contentEl = document.querySelector(`.tab-content[data-tab-id="${tabId}"]`);
+
+    if (tabEl) tabEl.remove();
+    if (contentEl) contentEl.remove();
+
+    // If closing active tab, switch to another
+    if (activeTabId === tabId) {
+      const newActiveTab = tabs[Math.max(0, tabIndex - 1)];
+      switchToTab(newActiveTab.id);
+    }
+
+    saveTabsState();
+  }
+
+  // Save tabs state to localStorage
+  function saveTabsState() {
+    const state = {
+      tabs: tabs,
+      activeTabId: activeTabId,
+      nextTabId: nextTabId
+    };
+    localStorage.setItem(STORAGE_KEY_TABS, JSON.stringify(state));
+  }
+
+  // Load tabs state from localStorage
+  function loadTabsState() {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_TABS);
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      console.error('Failed to load tabs state:', e);
+      return null;
+    }
+  }
+
+  // Add tab button handler
+  if (addTabBtn) {
+    addTabBtn.onclick = () => {
+      const tabNumber = tabs.length + 1;
+      createTab(`Map ${tabNumber}`);
+    };
+  }
+
+  // Initialize tabs
+  init();
 })();
 </script>
   </div> <!-- END: Center Panel -->
