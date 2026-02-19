@@ -147,15 +147,23 @@ Each label uses its own matching key, ensuring correct node resolution.
 4. Updated `transfer_to_primary()` with modes
 5. API endpoint accepts mode parameter
 6. UI transfer modal with mode selection
+7. **Comprehensive provenance tracking** for all nodes and relationships (2026-02-18)
+8. **Forward reference handling** with `create_missing_targets` (2026-02-18)
+9. **Two-phase progress tracking** with time/ETA calculation (2026-02-18)
+10. **Transfer cancellation** support with status API (2026-02-18)
 
 ### ⏳ Remaining (Optional Enhancements)
 1. **Matching Key Configuration UI**: Add dropdown in label editor to manually configure matching key per label
-2. **Tests**: Add comprehensive tests for:
+2. **Stub Resolution UI**: Panel showing unresolved forward-ref nodes with "Resolve All" button
+3. **Conflict Detection UI**: Visual interface for identifying and resolving multi-source conflicts
+4. **Tests**: Add comprehensive tests for:
    - get_matching_key() resolution
    - Batched relationship transfer
    - Transfer modes
    - Per-label matching
-3. **Full Graph Transfer Mode**: Future enhancement to transfer entire subgraphs recursively
+   - Provenance tracking
+   - Forward reference resolution
+5. **Full Graph Transfer Mode**: Future enhancement to transfer entire subgraphs recursively
 
 ## Usage
 
@@ -188,6 +196,46 @@ label_def['matching_key'] = 'serial_number'
 label_service.save_label(label_def)
 ```
 
+### Transfer with Forward Reference Handling (NEW)
+```python
+# Create missing target nodes automatically during relationship transfer
+result = label_service.transfer_to_primary(
+    'Sample',
+    batch_size=100,
+    mode='nodes_and_outgoing',
+    create_missing_targets=True  # Auto-create Experiment nodes if they don't exist yet
+)
+
+# API
+POST /api/labels/Sample/transfer-to-primary?mode=nodes_and_outgoing&create_missing_targets=true
+```
+
+### Query Provenance Metadata (NEW)
+```cypher
+// Find all nodes from a specific source
+MATCH (n) WHERE n.__source__ = 'Lab A Database'
+RETURN labels(n)[0] as label, count(*) as count
+ORDER BY count DESC
+
+// Find forward-ref nodes (created via relationships)
+MATCH (n) WHERE n.__created_via__ = 'relationship_forward_ref'
+RETURN labels(n)[0] as label, n.__source__ as source, count(*)
+
+// Check for multi-source conflicts
+MATCH (n1), (n2)
+WHERE n1.id = n2.id
+  AND id(n1) < id(n2)
+  AND n1.__source__ <> n2.__source__
+RETURN n1.id as conflict_id,
+       labels(n1)[0] as label,
+       n1.__source__ as source1,
+       n2.__source__ as source2
+
+// Recent transfers (last hour)
+MATCH (n) WHERE n.__created_at__ > timestamp() - 3600000
+RETURN labels(n)[0], n.__source__, count(*)
+```
+
 ## Migration Path
 
 **Phase 1** (Completed): Core functionality with auto-detection
@@ -218,11 +266,131 @@ label_service.save_label(label_def)
 - Batch size of 100 works well for most scenarios
 - Increase batch_size to 500-1000 for faster transfers on reliable networks
 
+## Provenance Tracking & Multi-Source Harmonization
+
+### Comprehensive Metadata (Added 2026-02-18)
+
+All transferred nodes and relationships automatically receive provenance metadata for data lineage and multi-source conflict detection.
+
+#### Node Provenance
+```cypher
+MERGE (n:Experiment {id: $key})
+ON CREATE SET
+    n = $props,
+    n.__source__ = 'Lab A Database',           # Source Neo4j profile name
+    n.__created_at__ = 1708265762000,          # Timestamp (milliseconds)
+    n.__created_via__ = 'direct_transfer'      # 'direct_transfer' or 'relationship_forward_ref'
+ON MATCH SET
+    n = $props  # Updates properties, preserves original provenance
+```
+
+#### Relationship Provenance
+```cypher
+MERGE (source)-[r:HAS_EXPERIMENT]->(target)
+ON CREATE SET
+    r = $rel_props,
+    r.__source__ = 'Lab A Database',
+    r.__created_at__ = 1708265762000
+ON MATCH SET
+    r = $rel_props
+```
+
+#### Forward Reference Handling
+
+When `create_missing_targets` is enabled, target nodes that don't yet exist are automatically created:
+
+```cypher
+// Transfer Sample → Experiment relationship before Experiment nodes transferred
+MERGE (target:Experiment {id: $key})
+ON CREATE SET
+    target = $props_from_relationship,
+    target.__created_via__ = 'relationship_forward_ref',
+    target.__source__ = 'Lab A Database',
+    target.__created_at__ = 1708265762000
+```
+
+Later when Experiment nodes are directly transferred, the same MERGE finds the existing node and updates it with complete properties.
+
+### Multi-Source Scenarios
+
+**Problem**: Multiple labs use the same IDs but different data:
+```
+Lab A: (:Experiment {id: 'exp-123', pi: 'Dr. Smith'})
+Lab B: (:Experiment {id: 'exp-123', pi: 'Dr. Jones'})
+```
+
+**Solution**: Provenance metadata tracks which source created each node:
+```cypher
+// Lab A transfer creates node first
+(:Experiment {id: 'exp-123', pi: 'Dr. Smith', __source__: 'Lab A'})
+
+// Lab B transfer finds existing node (MATCH), updates properties but preserves __source__
+(:Experiment {id: 'exp-123', pi: 'Dr. Jones', __source__: 'Lab A'})  // Still shows Lab A created it
+```
+
+### Useful Provenance Queries
+
+```cypher
+// All data from a specific source
+MATCH (n) WHERE n.__source__ = 'Lab A Database'
+RETURN labels(n), count(*)
+
+// Nodes created via forward references
+MATCH (n) WHERE n.__created_via__ = 'relationship_forward_ref'
+RETURN labels(n), count(*)
+
+// Recent additions (last 24 hours)
+MATCH (n) WHERE n.__created_at__ > timestamp() - 86400000
+RETURN labels(n), n.__source__, count(*)
+
+// Detect potential conflicts: same ID from different sources
+MATCH (n1), (n2)
+WHERE n1.id = n2.id
+  AND id(n1) < id(n2)
+  AND n1.__source__ <> n2.__source__
+RETURN n1.id, n1.__source__, n2.__source__, labels(n1)
+
+// Relationships by source
+MATCH ()-[r]->()
+RETURN r.__source__, type(r), count(*)
+```
+
+## Progress Tracking & Cancellation
+
+### Two-Phase Progress (Added 2026-02-18)
+
+Transfers now show separate progress for nodes and relationships with real-time updates:
+
+```
+Phase 1: Nodes          [████████░░] 80%    42,000/52,654
+Phase 2: Relationships  [███░░░░░░░] 30%    150/500
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Elapsed: 2m 15s | ETA: 45s | Speed: 312 nodes/s
+```
+
+- **Phase 1** only appears for all modes
+- **Phase 2** hidden for `nodes_only` mode
+- **ETA calculation** based on current throughput per phase
+- **Speed metrics** show nodes/s during Phase 1, rels/s during Phase 2
+
+### Transfer Cancellation
+
+Users can cancel long-running transfers:
+- Cancel button requests cancellation via API
+- Backend polls cancellation flag during batch processing
+- Returns partial results: `{status: 'cancelled', nodes_transferred: 8600}`
+- Prevents multiple simultaneous transfers for same label
+
+API Endpoints:
+- `GET /api/labels/<name>/transfer-status` - Check if transfer running
+- `POST /api/labels/<name>/transfer-cancel` - Request cancellation
+
 ## Known Limitations
 
 1. **Incoming Relationships**: Currently only transfers outgoing relationships (where label is source). Incoming relationships require source label to also be transferred.
 2. **Circular Dependencies**: If Label A points to Label B which points back to Label A, both must be transferred for full relationship preservation.
 3. **Manual Matching Key Config**: UI not yet implemented - matching keys are auto-detected only.
+4. **Provenance Overwrites**: ON MATCH preserves original `__source__` but updates all other properties. Multi-source conflict resolution requires manual queries.
 
 ## Future Enhancements
 
