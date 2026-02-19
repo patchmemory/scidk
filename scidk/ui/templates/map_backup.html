@@ -5,124 +5,12 @@
   /* Override base.html main width constraint for map page */
   main {
     max-width: 100% !important;
-    padding: 0 !important;
-  }
-
-  /* === THREE-COLUMN LAYOUT === */
-  .maps-container {
-    display: flex;
-    gap: 0;
-    height: calc(100vh - 60px);
-    position: relative;
-  }
-
-  /* Left Panel: Map Library (placeholder for now) */
-  .map-library-panel {
-    width: 20%;
-    min-width: 250px;
-    border-right: 1px solid #e0e0e0;
-    background: #f9f9f9;
-    overflow-y: auto;
-    padding: 1rem;
-  }
-
-  /* Center Panel: Main workspace */
-  .map-workspace-panel {
-    flex: 1;
-    min-width: 400px;
-    display: flex;
-    flex-direction: column;
-    background: #fff;
-    overflow: hidden;
-    padding: 1rem;
-  }
-
-  /* Right Panel: Controls */
-  .map-controls-panel {
-    width: 20%;
-    min-width: 250px;
-    border-left: 1px solid #e0e0e0;
-    background: #f9f9f9;
-    overflow-y: auto;
-    padding: 1rem;
-  }
-
-  /* Resizable Dividers */
-  .resizer {
-    width: 6px;
-    cursor: col-resize;
-    background: #e0e0e0;
-    position: relative;
-    flex-shrink: 0;
-    transition: background 0.15s ease;
-  }
-
-  .resizer:hover {
-    background: #2196f3;
-  }
-
-  .resizer::after {
-    content: '⋮';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    color: #999;
-    font-size: 1.2rem;
-    line-height: 0.5rem;
-  }
-
-  .resizer.resizing {
-    background: #2196f3;
-  }
-
-  /* Panel headers */
-  .panel-header {
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid #ddd;
-  }
-
-  .panel-header h3 {
-    margin: 0;
-    font-size: 1.1rem;
-    color: #333;
-  }
-
-  /* Empty state */
-  .empty-state {
-    text-align: center;
-    padding: 2rem 1rem;
-    color: #999;
-  }
-
-  .empty-state-icon {
-    font-size: 2rem;
-    margin-bottom: 0.5rem;
-    opacity: 0.5;
+    padding: 1rem 0.5rem !important;
   }
 </style>
 {% endblock %}
 {% block content %}
-<div class="maps-container">
-  <!-- LEFT PANEL: Map Library (Placeholder) -->
-  <div class="map-library-panel">
-    <div class="panel-header">
-      <h3>📁 Saved Maps</h3>
-    </div>
-    <div class="empty-state">
-      <div class="empty-state-icon">🗺️</div>
-      <p class="small"><strong>No saved maps yet</strong></p>
-      <p class="small text-muted">Map library coming in Task 2</p>
-    </div>
-  </div>
-
-  <!-- RESIZER (Left/Center) -->
-  <div class="resizer" id="resizer-left"></div>
-
-  <!-- CENTER PANEL: Main Workspace -->
-  <div class="map-workspace-panel">
-<section style="margin:0; padding:0;"
+<section>
   <h2>Schema Graph (Interactive)</h2>
   <div class="row g-2" style="margin-bottom:.5rem">
     <div class="col-auto">
@@ -769,18 +657,4 @@
   }
 })();
 </script>
-  </div> <!-- END: Center Panel -->
-
-  <!-- RESIZER (Center/Right) -->
-  <div class="resizer" id="resizer-right"></div>
-
-  <!-- RIGHT PANEL: Controls (Placeholder) -->
-  <div class="map-controls-panel">
-    <div class="panel-header">
-      <h3>⚙️ Controls</h3>
-    </div>
-    <p class="small text-muted">Controls will be moved here in Sub-task 1.2</p>
-  </div>
-
-</div> <!-- END: maps-container -->
 {% endblock %}
