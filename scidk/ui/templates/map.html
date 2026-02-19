@@ -1876,6 +1876,21 @@
       }
     });
 
+    // Sync visualization mode radio buttons with this tab's mode
+    if (window.tabVisualizationModes && window.tabVisualizationModes[tabId]) {
+      const tabMode = window.tabVisualizationModes[tabId];
+      const modeRadio = document.querySelector(`input[name="viz-mode"][value="${tabMode}"]`);
+      if (modeRadio) {
+        modeRadio.checked = true;
+        // Show/hide mode-specific settings
+        const instanceSettings = document.getElementById('instance-settings');
+        const hybridSettings = document.getElementById('hybrid-settings');
+        if (instanceSettings) instanceSettings.style.display = tabMode === 'instance' ? 'block' : 'none';
+        if (hybridSettings) hybridSettings.style.display = tabMode === 'hybrid' ? 'block' : 'none';
+        console.log(`Synced radio buttons to tab ${tabId} mode: ${tabMode}`);
+      }
+    }
+
     saveTabsState();
   }
 
