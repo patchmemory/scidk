@@ -848,3 +848,188 @@ test.skip('maps query panel load library button shows modal', async ({ page, bas
   // Verify modal is closed
   await expect(page.locator('h3').filter({ hasText: 'Query Library' })).not.toBeVisible();
 });
+
+// ============================================
+// THREE-COLUMN LAYOUT & TAB TESTS
+// ============================================
+
+test('Maps page has three-column layout', async ({ page, base }) => {
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+
+  // Verify all three panels exist
+  const leftPanel = page.locator('.map-library-panel');
+  const centerPanel = page.locator('.map-workspace-panel');
+  const rightPanel = page.locator('.map-controls-panel');
+
+  await expect(leftPanel).toBeVisible();
+  await expect(centerPanel).toBeVisible();
+  await expect(rightPanel).toBeVisible();
+
+  // Verify resizers exist
+  const resizers = page.locator('.resizer');
+  await expect(resizers).toHaveCount(2);
+});
+
+test('Tab bar is visible with initial tab', async ({ page, base }) => {
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+
+  // Tab bar should be visible
+  const tabBar = page.locator('.tab-bar');
+  await expect(tabBar).toBeVisible();
+
+  // Should have "Add Tab" button
+  const addTabBtn = page.getByTestId('add-tab-btn');
+  await expect(addTabBtn).toBeVisible();
+  await expect(addTabBtn).toHaveText('+ New Tab');
+
+  // Should have at least one tab (initial tab)
+  const tabs = page.locator('.map-tab');
+  await expect(tabs).toHaveCount(1);
+
+  // Initial tab should be active
+  const activeTab = page.locator('.map-tab.active');
+  await expect(activeTab).toBeVisible();
+  await expect(activeTab).toContainText('Map 1');
+});
+
+test('Can create new tab', async ({ page, base }) => {
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+
+  const addTabBtn = page.getByTestId('add-tab-btn');
+
+  // Initially should have 1 tab
+  let tabs = page.locator('.map-tab');
+  await expect(tabs).toHaveCount(1);
+
+  // Click "Add Tab" button
+  await addTabBtn.click();
+  await page.waitForTimeout(300);
+
+  // Now should have 2 tabs
+  tabs = page.locator('.map-tab');
+  await expect(tabs).toHaveCount(2);
+
+  // New tab should be active
+  const activeTab = page.locator('.map-tab.active');
+  await expect(activeTab).toContainText('Map 2');
+});
+
+test('Can switch between tabs', async ({ page, base }) => {
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+
+  const addTabBtn = page.getByTestId('add-tab-btn');
+
+  // Create second tab
+  await addTabBtn.click();
+  await page.waitForTimeout(300);
+
+  // Map 2 should be active
+  let activeTab = page.locator('.map-tab.active');
+  await expect(activeTab).toContainText('Map 2');
+
+  // Click on Map 1 tab
+  const map1Tab = page.locator('.map-tab').first();
+  await map1Tab.click();
+  await page.waitForTimeout(200);
+
+  // Map 1 should now be active
+  activeTab = page.locator('.map-tab.active');
+  await expect(activeTab).toContainText('Map 1');
+});
+
+test('Can close tab', async ({ page, base }) => {
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+
+  const addTabBtn = page.getByTestId('add-tab-btn');
+
+  // Create two more tabs (total 3)
+  await addTabBtn.click();
+  await page.waitForTimeout(300);
+  await addTabBtn.click();
+  await page.waitForTimeout(300);
+
+  // Should have 3 tabs
+  let tabs = page.locator('.map-tab');
+  await expect(tabs).toHaveCount(3);
+
+  // Close the second tab
+  const closeBtn = page.locator('.map-tab').nth(1).locator('.map-tab-close');
+  await closeBtn.click();
+  await page.waitForTimeout(300);
+
+  // Should now have 2 tabs
+  tabs = page.locator('.map-tab');
+  await expect(tabs).toHaveCount(2);
+});
+
+test('Cannot close last tab', async ({ page, base }) => {
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+
+  page.on('dialog', dialog => dialog.accept()); // Auto-accept alerts
+
+  // Should have 1 tab
+  let tabs = page.locator('.map-tab');
+  await expect(tabs).toHaveCount(1);
+
+  // Try to close the only tab
+  const closeBtn = page.locator('.map-tab').first().locator('.map-tab-close');
+  await closeBtn.click();
+  await page.waitForTimeout(300);
+
+  // Should still have 1 tab
+  tabs = page.locator('.map-tab');
+  await expect(tabs).toHaveCount(1);
+});
+
+test('Tab limit is enforced (max 8 tabs)', async ({ page, base }) => {
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+
+  page.on('dialog', dialog => dialog.accept()); // Auto-accept alerts
+
+  const addTabBtn = page.getByTestId('add-tab-btn');
+
+  // Create 7 more tabs (total 8)
+  for (let i = 0; i < 7; i++) {
+    await addTabBtn.click();
+    await page.waitForTimeout(200);
+  }
+
+  // Should have 8 tabs
+  let tabs = page.locator('.map-tab');
+  await expect(tabs).toHaveCount(8);
+
+  // Try to create 9th tab (should fail)
+  await addTabBtn.click();
+  await page.waitForTimeout(300);
+
+  // Should still have 8 tabs
+  tabs = page.locator('.map-tab');
+  await expect(tabs).toHaveCount(8);
+});
+
+test('Each tab has independent content', async ({ page, base }) => {
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+
+  const addTabBtn = page.getByTestId('add-tab-btn');
+
+  // Create second tab
+  await addTabBtn.click();
+  await page.waitForTimeout(300);
+
+  // Both tabs should have their own content sections
+  const tabContents = page.locator('.tab-content');
+  await expect(tabContents).toHaveCount(2);
+
+  // Only one should be active (visible)
+  const activeContent = page.locator('.tab-content.active');
+  await expect(activeContent).toHaveCount(1);
+  await expect(activeContent).toBeVisible();
+});
