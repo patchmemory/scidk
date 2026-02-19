@@ -1127,6 +1127,9 @@
 
     tabContentArea.appendChild(contentEl);
 
+    // Initialize Cytoscape graph instance for this tab
+    initCytoscapeGraph(tab.id);
+
     // Initialize horizontal resizer for this tab
     initHorizontalResizer(tab.id);
 
@@ -1138,6 +1141,76 @@
 
     // Initialize button handlers
     initQueryButtons(tab.id);
+  }
+
+  // Initialize Cytoscape graph for a tab
+  function initCytoscapeGraph(tabId) {
+    const containerSelector = `.graph-container-${tabId}`;
+    const container = document.querySelector(containerSelector);
+
+    if (!container) {
+      console.error('Graph container not found for tab:', tabId);
+      return;
+    }
+
+    // Wait for Cytoscape library to be loaded
+    const tryInit = () => {
+      if (typeof cytoscape === 'undefined') {
+        setTimeout(tryInit, 100);
+        return;
+      }
+
+      // Initialize global storage if needed
+      if (!window.cytoscapeInstances) {
+        window.cytoscapeInstances = {};
+      }
+
+      // Create Cytoscape instance
+      const cy = cytoscape({
+        container: container,
+        elements: [],
+        style: [
+          {
+            selector: 'node',
+            style: {
+              'background-color': '#4e79a7',
+              'label': 'data(label)',
+              'color': '#fff',
+              'text-outline-color': '#000',
+              'text-outline-width': 2,
+              'font-size': '10px',
+              'width': 30,
+              'height': 30,
+              'text-valign': 'center',
+              'text-halign': 'center'
+            }
+          },
+          {
+            selector: 'edge',
+            style: {
+              'width': 2,
+              'line-color': '#999',
+              'target-arrow-color': '#999',
+              'target-arrow-shape': 'triangle',
+              'curve-style': 'bezier',
+              'label': 'data(label)',
+              'font-size': '8px',
+              'text-rotation': 'autorotate',
+              'text-margin-y': -10
+            }
+          }
+        ],
+        layout: {
+          name: 'grid'
+        }
+      });
+
+      // Store instance
+      window.cytoscapeInstances[tabId] = cy;
+      console.log('Cytoscape initialized for tab:', tabId);
+    };
+
+    tryInit();
   }
 
   // Initialize query button handlers
