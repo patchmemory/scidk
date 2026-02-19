@@ -1442,6 +1442,11 @@
       cy.layout({name: 'cose', animate: true, animationDuration: 500}).run();
 
       console.log(`Rendered schema: ${labelNodes.size} nodes, ${labelTriples.size} edges`);
+
+      // Apply coloring after rendering
+      setTimeout(() => {
+        if (window.applyGraphColoring) window.applyGraphColoring();
+      }, 100);
     }
 
     // Function to visualize query results in graph
@@ -1564,6 +1569,11 @@
         nodeRepulsion: 8000,
         idealEdgeLength: 100
       }).run();
+
+      // Apply coloring after rendering
+      setTimeout(() => {
+        if (window.applyGraphColoring) window.applyGraphColoring();
+      }, 100);
 
       // Apply basic styling
       cy.style()
@@ -2578,6 +2588,374 @@
   }
 })();
 
+// === LAYOUT CONTROLS ===
+(function() {
+  const initLayoutControls = () => {
+    const layoutSelect = document.getElementById('layout-mode');
+    const savePositionsBtn = document.getElementById('save-positions');
+    const loadPositionsBtn = document.getElementById('load-positions');
+
+    if (!layoutSelect) return;
+
+    // Apply layout when algorithm changes
+    layoutSelect.addEventListener('change', (e) => {
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      const layoutName = e.target.value;
+      console.log(`Applying layout: ${layoutName}`);
+
+      if (layoutName === 'manual') {
+        console.log('Manual layout - drag nodes to position them');
+        return;
+      }
+
+      const layoutOptions = {
+        name: layoutName,
+        animate: true,
+        animationDuration: 500
+      };
+
+      // Add layout-specific options
+      if (layoutName === 'cose') {
+        layoutOptions.nodeRepulsion = 8000;
+        layoutOptions.idealEdgeLength = 100;
+        layoutOptions.gravity = 0.1;
+      } else if (layoutName === 'breadthfirst') {
+        layoutOptions.directed = true;
+        layoutOptions.spacingFactor = 1.5;
+      }
+
+      cy.layout(layoutOptions).run();
+    });
+
+    // Save positions
+    savePositionsBtn?.addEventListener('click', () => {
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      const positions = {};
+      cy.nodes().forEach(node => {
+        positions[node.id()] = node.position();
+      });
+
+      localStorage.setItem(`map_positions_${activeTabId}`, JSON.stringify(positions));
+      console.log(`✓ Saved positions for ${Object.keys(positions).length} nodes`);
+      alert('Node positions saved');
+    });
+
+    // Load positions
+    loadPositionsBtn?.addEventListener('click', () => {
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      const savedPositions = localStorage.getItem(`map_positions_${activeTabId}`);
+      if (!savedPositions) {
+        alert('No saved positions found for this tab');
+        return;
+      }
+
+      const positions = JSON.parse(savedPositions);
+      let restoredCount = 0;
+
+      cy.nodes().forEach(node => {
+        const pos = positions[node.id()];
+        if (pos) {
+          node.position(pos);
+          restoredCount++;
+        }
+      });
+
+      console.log(`✓ Restored positions for ${restoredCount} nodes`);
+      alert(`Restored positions for ${restoredCount} nodes`);
+    });
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initLayoutControls);
+  } else {
+    initLayoutControls();
+  }
+})();
+
+// === NODE & EDGE STYLE CONTROLS ===
+(function() {
+  const initStyleControls = () => {
+    const nodeSizeSlider = document.getElementById('node-size');
+    const fontSizeSlider = document.getElementById('font-size');
+    const highContrastCheckbox = document.getElementById('high-contrast');
+    const edgeWidthSlider = document.getElementById('edge-width');
+
+    if (!nodeSizeSlider) return;
+
+    // Apply node size
+    nodeSizeSlider.addEventListener('input', (e) => {
+      const scale = parseFloat(e.target.value);
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      cy.style().selector('node').style({
+        'width': ele => (ele.data('size') || 30) * scale,
+        'height': ele => (ele.data('size') || 30) * scale
+      }).update();
+    });
+
+    // Apply font size
+    fontSizeSlider?.addEventListener('input', (e) => {
+      const fontSize = parseInt(e.target.value);
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      cy.style().selector('node').style({
+        'font-size': `${fontSize}px`
+      }).update();
+    });
+
+    // Apply high contrast
+    highContrastCheckbox?.addEventListener('change', (e) => {
+      const highContrast = e.target.checked;
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      if (highContrast) {
+        cy.style().selector('node').style({
+          'text-outline-width': 3,
+          'text-outline-color': '#000'
+        }).update();
+      } else {
+        cy.style().selector('node').style({
+          'text-outline-width': 2,
+          'text-outline-color': '#000'
+        }).update();
+      }
+    });
+
+    // Apply edge width
+    edgeWidthSlider?.addEventListener('input', (e) => {
+      const scale = parseFloat(e.target.value);
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      cy.style().selector('edge').style({
+        'width': 2 * scale
+      }).update();
+    });
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initStyleControls);
+  } else {
+    initStyleControls();
+  }
+})();
+
+// === NODE COLORING & LEGEND ===
+(function() {
+  const initColoringControls = () => {
+    const colorBySelect = document.getElementById('color-by');
+    const colorPropertySelectDiv = document.getElementById('color-property-select');
+    const colorPropertySelect = document.getElementById('color-property');
+    const showLabelsCheckbox = document.getElementById('show-node-labels');
+    const legendDiv = document.getElementById('color-legend');
+    const legendItems = document.getElementById('legend-items');
+
+    if (!colorBySelect) return;
+
+    // Color palette for labels
+    const colorPalette = [
+      '#4e79a7', '#f28e2c', '#e15759', '#76b7b2', '#59a14f',
+      '#edc949', '#af7aa1', '#ff9da7', '#9c755f', '#bab0ab'
+    ];
+
+    function getColorForValue(value, index, total) {
+      if (typeof value === 'number') {
+        // Gradient from blue to red for numeric values
+        const ratio = total > 1 ? index / (total - 1) : 0;
+        const r = Math.floor(78 + ratio * (225 - 78));
+        const g = Math.floor(121 + ratio * (87 - 121));
+        const b = Math.floor(167 + ratio * (89 - 167));
+        return `rgb(${r},${g},${b})`;
+      } else {
+        // Use palette for categorical values
+        return colorPalette[index % colorPalette.length];
+      }
+    }
+
+    function applyColoring() {
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy || cy.nodes().length === 0) return;
+
+      const colorBy = colorBySelect.value;
+      const colorMap = new Map();
+      const legend = [];
+
+      if (colorBy === 'label') {
+        // Color by node label
+        const labels = new Set();
+        cy.nodes().forEach(node => {
+          const label = node.data('fullLabel') || node.data('labels')?.[0] || 'Unknown';
+          labels.add(label);
+        });
+
+        const labelArray = Array.from(labels).sort();
+        labelArray.forEach((label, index) => {
+          const color = getColorForValue(label, index, labelArray.length);
+          colorMap.set(label, color);
+          legend.push({label, color});
+        });
+
+        cy.nodes().forEach(node => {
+          const label = node.data('fullLabel') || node.data('labels')?.[0] || 'Unknown';
+          const color = colorMap.get(label) || '#999';
+          node.style('background-color', color);
+        });
+
+      } else if (colorBy === 'property') {
+        const property = colorPropertySelect.value;
+        if (!property) return;
+
+        // Color by property value
+        const values = new Set();
+        cy.nodes().forEach(node => {
+          const props = node.data('properties') || {};
+          const value = props[property];
+          if (value !== undefined) values.add(value);
+        });
+
+        const valueArray = Array.from(values).sort();
+        valueArray.forEach((value, index) => {
+          const color = getColorForValue(value, index, valueArray.length);
+          colorMap.set(value, color);
+          legend.push({label: String(value), color});
+        });
+
+        cy.nodes().forEach(node => {
+          const props = node.data('properties') || {};
+          const value = props[property];
+          const color = value !== undefined ? colorMap.get(value) || '#999' : '#ccc';
+          node.style('background-color', color);
+        });
+
+      } else if (colorBy === 'degree') {
+        // Color by number of connections
+        const degrees = cy.nodes().map(node => node.degree()).sort((a, b) => a - b);
+        const minDegree = degrees[0] || 0;
+        const maxDegree = degrees[degrees.length - 1] || 1;
+
+        cy.nodes().forEach(node => {
+          const degree = node.degree();
+          const normalizedDegree = maxDegree > minDegree ? (degree - minDegree) / (maxDegree - minDegree) : 0;
+          const color = getColorForValue(degree, Math.floor(normalizedDegree * 10), 11);
+          node.style('background-color', color);
+        });
+
+        // Create legend for degree ranges
+        for (let i = 0; i <= 10; i++) {
+          const degree = Math.floor(minDegree + (maxDegree - minDegree) * i / 10);
+          legend.push({label: `${degree} connections`, color: getColorForValue(degree, i, 11)});
+        }
+      }
+
+      // Update legend
+      if (legend.length > 0) {
+        legendItems.innerHTML = legend.map(item => `
+          <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.25rem">
+            <div style="width:12px; height:12px; background:${item.color}; border-radius:2px"></div>
+            <span>${item.label}</span>
+          </div>
+        `).join('');
+        legendDiv.style.display = 'block';
+      } else {
+        legendDiv.style.display = 'none';
+      }
+    }
+
+    // Show/hide property selector
+    colorBySelect.addEventListener('change', () => {
+      if (colorBySelect.value === 'property') {
+        colorPropertySelectDiv.style.display = 'block';
+        // Populate property list from current graph
+        updatePropertyList();
+      } else {
+        colorPropertySelectDiv.style.display = 'none';
+        applyColoring();
+      }
+    });
+
+    colorPropertySelect?.addEventListener('change', applyColoring);
+
+    function updatePropertyList() {
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      const properties = new Set();
+      cy.nodes().forEach(node => {
+        const props = node.data('properties') || {};
+        Object.keys(props).forEach(key => properties.add(key));
+      });
+
+      colorPropertySelect.innerHTML = '<option value="">Select property...</option>';
+      Array.from(properties).sort().forEach(prop => {
+        const option = document.createElement('option');
+        option.value = prop;
+        option.textContent = prop;
+        colorPropertySelect.appendChild(option);
+      });
+    }
+
+    // Show/hide labels
+    showLabelsCheckbox?.addEventListener('change', (e) => {
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      if (e.target.checked) {
+        cy.style().selector('node').style({'label': 'data(label)'}).update();
+      } else {
+        cy.style().selector('node').style({'label': ''}).update();
+      }
+    });
+
+    // Make applyColoring available globally for re-applying after graph changes
+    window.applyGraphColoring = applyColoring;
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initColoringControls);
+  } else {
+    initColoringControls();
+  }
+})();
+
 // === EXPORT FUNCTIONALITY ===
 (function() {
   const exportPngBtn = document.getElementById('export-png');
@@ -2789,9 +3167,35 @@
         <label for="font-size" class="form-label small" style="margin-bottom:.25rem">Label Font</label>
         <input id="font-size" type="range" class="form-range" min="8" max="18" step="1" value="10" style="width:100%">
       </div>
-      <div class="form-check">
+      <div class="form-check" style="margin-bottom:0.75rem">
         <input class="form-check-input" type="checkbox" id="high-contrast" />
         <label class="form-check-label small" for="high-contrast">High-contrast labels</label>
+      </div>
+      <div style="margin-bottom:0.75rem">
+        <label for="color-by" class="form-label small" style="margin-bottom:.25rem">Color By</label>
+        <select id="color-by" class="form-select form-select-sm">
+          <option value="label">Label</option>
+          <option value="property">Property</option>
+          <option value="degree">Degree (connections)</option>
+        </select>
+      </div>
+      <div id="color-property-select" style="margin-bottom:0.75rem; display:none">
+        <label for="color-property" class="form-label small" style="margin-bottom:.25rem">Property</label>
+        <select id="color-property" class="form-select form-select-sm">
+          <option value="">Select property...</option>
+        </select>
+      </div>
+      <div id="label-display-options" style="margin-bottom:0.75rem">
+        <label class="form-label small" style="margin-bottom:.25rem">Display</label>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="show-node-labels" checked />
+          <label class="form-check-label small" for="show-node-labels">Show labels</label>
+        </div>
+      </div>
+      <!-- Color Legend -->
+      <div id="color-legend" style="margin-top:1rem; padding:0.5rem; background:#f8f9fa; border-radius:0.25rem; display:none">
+        <div class="small fw-bold" style="margin-bottom:0.5rem">Legend</div>
+        <div id="legend-items" style="font-size:0.75rem"></div>
       </div>
     </div>
 
