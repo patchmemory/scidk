@@ -226,6 +226,10 @@ class TestFeedbackAPIEndpoints:
 
     def test_list_feedback_endpoint(self, client):
         """Test listing feedback via API."""
+        # Get initial count
+        initial_response = client.get('/api/chat/graphrag/feedback')
+        initial_count = len(json.loads(initial_response.data)['feedback'])
+
         # Submit some feedback first
         for i in range(3):
             client.post(
@@ -244,7 +248,8 @@ class TestFeedbackAPIEndpoints:
         assert response.status_code == 200
         data = json.loads(response.data)
         assert 'feedback' in data
-        assert len(data['feedback']) == 3
+        # Check that 3 new entries were added
+        assert len(data['feedback']) == initial_count + 3
 
     def test_get_feedback_stats_endpoint(self, client):
         """Test getting feedback statistics via API."""
