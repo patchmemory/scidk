@@ -1170,6 +1170,126 @@
       return div.innerHTML;
     }
 
+    // Function to visualize query results in graph
+    function visualizeQueryResults(results, tabId) {
+      if (!window.cytoscapeInstances || !window.cytoscapeInstances[tabId]) {
+        console.error('Cytoscape instance not found for tab', tabId);
+        return;
+      }
+
+      const cy = window.cytoscapeInstances[tabId];
+      const nodes = new Map();
+      const edges = [];
+
+      // Parse results looking for nodes (n, m) and relationships (r)
+      results.forEach(row => {
+        // Process each value in the row
+        Object.values(row).forEach(val => {
+          if (!val) return;
+
+          // Check if it's a node (has id and labels)
+          if (val.id !== undefined && val.labels) {
+            const nodeId = String(val.id);
+            if (!nodes.has(nodeId)) {
+              nodes.set(nodeId, {
+                id: nodeId,
+                label: val.labels[0] || 'Node',
+                labels: val.labels,
+                properties: val.properties || {},
+                // Create display label from properties
+                displayLabel: val.properties?.name || val.properties?.title || val.properties?.id || nodeId
+              });
+            }
+          }
+
+          // Check if it's a relationship (has id, type, start_node_id, end_node_id)
+          if (val.id !== undefined && val.type && val.start_node_id !== undefined && val.end_node_id !== undefined) {
+            edges.push({
+              id: `edge_${val.id}`,
+              source: String(val.start_node_id),
+              target: String(val.end_node_id),
+              type: val.type,
+              properties: val.properties || {}
+            });
+          }
+        });
+      });
+
+      // Build Cytoscape elements
+      const elements = [];
+
+      // Add nodes
+      nodes.forEach(node => {
+        elements.push({
+          data: {
+            id: node.id,
+            label: node.displayLabel,
+            fullLabel: node.label,
+            labels: node.labels,
+            properties: node.properties
+          },
+          classes: 'instance-node'
+        });
+      });
+
+      // Add edges
+      edges.forEach(edge => {
+        elements.push({
+          data: {
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            label: edge.type,
+            type: edge.type,
+            properties: edge.properties
+          },
+          classes: 'instance-edge'
+        });
+      });
+
+      console.log(`Visualizing ${nodes.size} nodes and ${edges.length} edges`);
+
+      // Clear and render
+      cy.elements().remove();
+      cy.add(elements);
+
+      // Apply layout
+      cy.layout({
+        name: 'cose',
+        animate: true,
+        animationDuration: 500,
+        nodeRepulsion: 8000,
+        idealEdgeLength: 100
+      }).run();
+
+      // Apply basic styling
+      cy.style()
+        .selector('node')
+        .style({
+          'background-color': '#4e79a7',
+          'label': 'data(label)',
+          'color': '#fff',
+          'text-outline-color': '#000',
+          'text-outline-width': 2,
+          'font-size': '10px',
+          'width': 30,
+          'height': 30
+        })
+        .selector('edge')
+        .style({
+          'width': 2,
+          'line-color': '#999',
+          'target-arrow-color': '#999',
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier',
+          'label': 'data(label)',
+          'font-size': '8px',
+          'text-rotation': 'autorotate',
+          'text-margin-y': -10
+        })
+        .update();
+    }
+
     // Run/Stop Query Button with AbortController
     if (runBtn) {
       let abortController = null;
@@ -1215,6 +1335,11 @@
           if (resp.ok && data.status === 'ok') {
             statusEl.textContent = `✓ Query executed - ${data.result_count || 0} results in ${data.execution_time_ms || 0}ms`;
             statusEl.style.color = '#28a745';
+
+            // VISUALIZE RESULTS IN GRAPH
+            if (data.results && data.results.length > 0) {
+              visualizeQueryResults(data.results, tabId);
+            }
 
             // Display results in Table view
             if (data.results && data.results.length > 0) {
