@@ -220,10 +220,10 @@
 
 <script src="https://unpkg.com/cytoscape@3.27.0/dist/cytoscape.min.js"></script>
 
-<!-- CodeMirror 6 with SQL mode (closest to Cypher) -->
+<!-- CodeMirror 5 with Cypher mode -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.css" />
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/sql/sql.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/cypher/cypher.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/edit/matchbrackets.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/edit/closebrackets.min.js"></script>
 <style>
@@ -1286,7 +1286,7 @@
     }
   }
 
-  // Initialize CodeMirror editor with SQL mode (closest to Cypher)
+  // Initialize CodeMirror editor with Cypher mode
   function initCodeMirrorEditor(tabId) {
     // Wait for CodeMirror to be loaded
     const tryInit = () => {
@@ -1300,7 +1300,7 @@
 
       const editor = CodeMirror(container, {
         value: '// Enter Cypher query\nMATCH (n) RETURN n LIMIT 10',
-        mode: 'text/x-sql',
+        mode: 'application/x-cypher-query',
         lineNumbers: true,
         lineWrapping: true,
         matchBrackets: true,

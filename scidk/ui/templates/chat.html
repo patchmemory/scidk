@@ -54,10 +54,20 @@
       <div class="data-panel-content">
         <!-- Results Tab -->
         <div id="results-tab" class="tab-content active">
-          <div class="empty-state">
-            <p class="small text-muted">Query results will appear here</p>
+          <div class="result-format-tabs">
+            <button class="result-format-btn active" data-format="table">Table</button>
+            <button class="result-format-btn" data-format="json">JSON</button>
           </div>
-          <div id="results-output" style="display: none;"></div>
+          <div class="result-format-content">
+            <div id="table-results" class="result-format-view active">
+              <div class="empty-state">
+                <p class="small text-muted">Query results will appear here</p>
+              </div>
+            </div>
+            <div id="json-results" class="result-format-view" style="display: none;">
+              <pre style="margin: 0; padding: 1rem; font-size: 0.85em; max-height: 100%; overflow: auto; background: #f8f9fa;"></pre>
+            </div>
+          </div>
         </div>
 
         <!-- Graph Visualization Tab -->
@@ -93,11 +103,11 @@
 </div>
 {% endblock %}
 {% block head %}
-<!-- CodeMirror 5 with SQL mode (closest to Cypher) -->
+<!-- CodeMirror 5 with Cypher mode -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.css" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/theme/monokai.min.css" />
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/sql/sql.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/cypher/cypher.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/edit/matchbrackets.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/edit/closebrackets.min.js"></script>
 <style>
@@ -256,6 +266,46 @@
   }
 
   .tab-content.active {
+    display: block;
+  }
+
+  /* Result Format Tabs (Table/JSON within Results) */
+  .result-format-tabs {
+    display: flex;
+    gap: 0.25rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid #e0e0e0;
+  }
+
+  .result-format-btn {
+    padding: 0.4rem 1rem;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    font-size: 0.85rem;
+    transition: all 0.15s ease;
+  }
+
+  .result-format-btn:hover {
+    background: #f0f0f0;
+  }
+
+  .result-format-btn.active {
+    border-bottom-color: var(--accent);
+    font-weight: 600;
+  }
+
+  .result-format-content {
+    position: relative;
+    min-height: 200px;
+  }
+
+  .result-format-view {
+    display: none;
+  }
+
+  .result-format-view.active {
     display: block;
   }
 
@@ -523,7 +573,7 @@
       const container = document.getElementById('query-editor-cm-container');
       queryEditor = CodeMirror(container, {
         value: '// Cypher query will appear here from chat, or you can write your own\nMATCH (n) RETURN n LIMIT 10',
-        mode: 'text/x-sql',
+        mode: 'application/x-cypher-query',
         lineNumbers: true,
         lineWrapping: true,
         matchBrackets: true,
@@ -607,7 +657,7 @@
       }
     });
 
-    // Tab switching (only Results/Graph now)
+    // Tab switching (Results/Graph)
     const tabBtns = document.querySelectorAll('.tab-btn');
     const tabContents = document.querySelectorAll('.tab-content');
 
@@ -621,6 +671,31 @@
 
         btn.classList.add('active');
         document.getElementById(`${targetTab}-tab`).classList.add('active');
+      });
+    });
+
+    // Result format switching (Table/JSON within Results tab)
+    const formatBtns = document.querySelectorAll('.result-format-btn');
+    const formatViews = document.querySelectorAll('.result-format-view');
+
+    formatBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetFormat = btn.dataset.format;
+
+        // Update active states
+        formatBtns.forEach(b => b.classList.remove('active'));
+        formatViews.forEach(v => v.classList.remove('active'));
+
+        btn.classList.add('active');
+        document.getElementById(`${targetFormat}-results`).classList.add('active');
+        document.getElementById(`${targetFormat}-results`).style.display = 'block';
+
+        // Hide inactive views
+        formatViews.forEach(v => {
+          if (!v.classList.contains('active')) {
+            v.style.display = 'none';
+          }
+        });
       });
     });
 
@@ -1160,26 +1235,39 @@
             query_source: 'manual_query_editor'
           });
 
-          // Display results in the Results tab
-          const resultsOutput = document.getElementById('results-output');
-          const resultsEmpty = document.querySelector('#results-tab .empty-state');
-          resultsEmpty.style.display = 'none';
-          resultsOutput.style.display = 'block';
+          // Display results in Table view
+          const tableResults = document.getElementById('table-results');
+          const jsonResults = document.getElementById('json-results');
+          const resultsEmpty = document.querySelector('#table-results .empty-state');
 
           if (data.results && data.results.length > 0) {
+            // Hide empty state
+            if (resultsEmpty) resultsEmpty.style.display = 'none';
+
+            // Build table with proper object formatting
             const keys = Object.keys(data.results[0]);
-            let tableHtml = `<table class="table table-sm">
+            let tableHtml = `<table class="table table-sm table-striped">
               <thead><tr>${keys.map(k => `<th>${escapeHtml(k)}</th>`).join('')}</tr></thead>
               <tbody>`;
 
             data.results.forEach(row => {
-              tableHtml += `<tr>${keys.map(k => `<td>${escapeHtml(String(row[k] || ''))}</td>`).join('')}</tr>`;
+              tableHtml += `<tr>${keys.map(k => {
+                const val = row[k];
+                if (val && typeof val === 'object') {
+                  return `<td><pre style="margin:0; font-size:0.85em; max-height:100px; overflow:auto">${escapeHtml(JSON.stringify(val, null, 2))}</pre></td>`;
+                }
+                return `<td>${escapeHtml(String(val != null ? val : ''))}</td>`;
+              }).join('')}</tr>`;
             });
 
             tableHtml += `</tbody></table>`;
-            resultsOutput.innerHTML = tableHtml;
+            tableResults.innerHTML = tableHtml;
+
+            // Update JSON view
+            jsonResults.querySelector('pre').textContent = JSON.stringify(data.results, null, 2);
           } else {
-            resultsOutput.innerHTML = '<p class="small text-muted">Query executed but returned no results.</p>';
+            tableResults.innerHTML = '<p class="small text-muted">Query executed but returned no results.</p>';
+            jsonResults.querySelector('pre').textContent = '[]';
           }
 
           // Switch to Results tab
