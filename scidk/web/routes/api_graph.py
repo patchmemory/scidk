@@ -310,6 +310,75 @@ def api_graph_schema_csv():
         return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename="schema.csv"'})
 
 
+@bp.post('/graph/query')
+def api_graph_query():
+    """Execute a Cypher query against Neo4j.
+
+    Request body:
+        {
+            "query": "MATCH (n) RETURN n LIMIT 10",
+            "parameters": {"optional": "params"}
+        }
+
+    Returns:
+        200: {
+            "status": "ok",
+            "results": [...],
+            "result_count": 10,
+            "execution_time_ms": 123
+        }
+        400: {"status": "error", "error": "Missing query"}
+        500: {"status": "error", "error": "Error message"}
+    """
+    import time
+    from ...services.neo4j_client import Neo4jClient, get_neo4j_params
+
+    data = request.get_json() or {}
+    query = (data.get('query') or '').strip()
+    parameters = data.get('parameters') or {}
+
+    if not query:
+        return jsonify({'status': 'error', 'error': 'Missing query'}), 400
+
+    # Get Neo4j connection parameters
+    uri, user, password, database, auth_mode = get_neo4j_params(current_app)
+
+    if not uri:
+        return jsonify({
+            'status': 'error',
+            'error': 'Neo4j not configured. Please configure Neo4j in Settings.'
+        }), 500
+
+    try:
+        # Execute query
+        start_time = time.time()
+        client = Neo4jClient(uri, user, password, database, auth_mode)
+        client.connect()
+
+        try:
+            # Use execute_read for queries that don't modify data
+            # (In production, you might want to detect write queries and use execute_write)
+            results = client.execute_read(query, parameters)
+
+            execution_time_ms = int((time.time() - start_time) * 1000)
+
+            return jsonify({
+                'status': 'ok',
+                'results': results,
+                'result_count': len(results),
+                'execution_time_ms': execution_time_ms
+            }), 200
+
+        finally:
+            client.close()
+
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
 @bp.get('/graph/subschema')
 def api_graph_subschema():
         # Filters: name (optional), labels (csv), rel_types (csv), limit (int)

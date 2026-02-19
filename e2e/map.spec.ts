@@ -568,3 +568,283 @@ test('map filter dropdowns update when source changes', async ({ page, baseURL }
   expect(labelsSourceOptions).toBeGreaterThanOrEqual(1);
   expect(graphSourceOptions).toBeGreaterThanOrEqual(1);
 });
+
+/**
+ * Tests for Query Panel (Maps query feature)
+ */
+
+test('maps query panel is visible and collapsible', async ({ page, baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+
+  // Check query panel elements are visible
+  await expect(page.locator('h3').filter({ hasText: 'Cypher Query' })).toBeVisible();
+
+  const queryInput = page.getByTestId('query-input');
+  const runQueryBtn = page.getByTestId('run-query');
+  const saveQueryBtn = page.getByTestId('save-query');
+  const loadLibraryBtn = page.getByTestId('load-library');
+  const clearQueryBtn = page.getByTestId('clear-query');
+  const toggleBtn = page.getByTestId('toggle-query-panel');
+
+  await expect(queryInput).toBeVisible();
+  await expect(runQueryBtn).toBeVisible();
+  await expect(saveQueryBtn).toBeVisible();
+  await expect(loadLibraryBtn).toBeVisible();
+  await expect(clearQueryBtn).toBeVisible();
+  await expect(toggleBtn).toBeVisible();
+
+  // Test collapse functionality
+  await toggleBtn.click();
+  await page.waitForTimeout(300);
+  await expect(queryInput).not.toBeVisible();
+
+  // Test expand functionality
+  await toggleBtn.click();
+  await page.waitForTimeout(300);
+  await expect(queryInput).toBeVisible();
+});
+
+test('maps query panel textarea accepts input', async ({ page, baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+
+  const queryInput = page.getByTestId('query-input');
+  const testQuery = 'MATCH (n:File) RETURN n LIMIT 10';
+
+  await queryInput.fill(testQuery);
+  await expect(queryInput).toHaveValue(testQuery);
+});
+
+test('maps query panel clear button works', async ({ page, baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+
+  const queryInput = page.getByTestId('query-input');
+  const clearBtn = page.getByTestId('clear-query');
+
+  // Enter some text
+  await queryInput.fill('MATCH (n) RETURN n');
+  await expect(queryInput).toHaveValue('MATCH (n) RETURN n');
+
+  // Click clear button
+  await clearBtn.click();
+  await expect(queryInput).toHaveValue('');
+});
+
+test('maps query panel run query shows error for empty query', async ({ page, baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+
+  const runQueryBtn = page.getByTestId('run-query');
+
+  // Set up dialog handler
+  page.on('dialog', async dialog => {
+    expect(dialog.message()).toContain('enter a query');
+    await dialog.accept();
+  });
+
+  // Try to run without entering a query
+  await runQueryBtn.click();
+
+  // Dialog should have been shown (handled by the handler above)
+  await page.waitForTimeout(500);
+});
+
+test.skip('maps query panel executes query successfully', async ({ page, baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+
+  // Mock the /api/graph/query endpoint
+  await page.route('**/api/graph/query', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'ok',
+        results: [
+          { id: '1', name: 'test.py' },
+          { id: '2', name: 'main.py' }
+        ],
+        result_count: 2,
+        execution_time_ms: 15
+      })
+    });
+  });
+
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+
+  const queryInput = page.getByTestId('query-input');
+  const runQueryBtn = page.getByTestId('run-query');
+
+  // Enter a query
+  await queryInput.fill('MATCH (n:File) RETURN n LIMIT 2');
+
+  // Run the query
+  await runQueryBtn.click();
+  await page.waitForTimeout(1000);
+
+  // Check for results
+  const queryStatus = page.locator('#query-status');
+  await expect(queryStatus).toContainText('2 results');
+
+  const queryResults = page.locator('#query-results');
+  await expect(queryResults).toBeVisible();
+
+  const resultsContent = page.locator('#query-results-content');
+  await expect(resultsContent).toBeVisible();
+  await expect(resultsContent).toContainText('test.py');
+  await expect(resultsContent).toContainText('main.py');
+});
+
+test.skip('maps query panel shows error for failed query', async ({ page, baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+
+  // Mock the /api/graph/query endpoint to return an error
+  await page.route('**/api/graph/query', async (route) => {
+    await route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'error',
+        error: 'Invalid Cypher syntax'
+      })
+    });
+  });
+
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+
+  const queryInput = page.getByTestId('query-input');
+  const runQueryBtn = page.getByTestId('run-query');
+
+  // Enter an invalid query
+  await queryInput.fill('INVALID QUERY');
+
+  // Run the query
+  await runQueryBtn.click();
+  await page.waitForTimeout(1000);
+
+  // Check for error message
+  const queryStatus = page.locator('#query-status');
+  await expect(queryStatus).toContainText('Error');
+  await expect(queryStatus).toContainText('Invalid Cypher syntax');
+});
+
+test.skip('maps query panel save button opens prompt', async ({ page, baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+
+  // Mock the /api/queries endpoint
+  await page.route('**/api/queries', async (route) => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          query: {
+            id: 'query-123',
+            name: 'Test Query',
+            query: 'MATCH (n) RETURN n',
+            created_at: Date.now() / 1000
+          }
+        })
+      });
+    }
+  });
+
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+
+  const queryInput = page.getByTestId('query-input');
+  const saveQueryBtn = page.getByTestId('save-query');
+
+  // Enter a query
+  await queryInput.fill('MATCH (n) RETURN n LIMIT 10');
+
+  // Set up dialog handlers for prompts
+  let promptCount = 0;
+  page.on('dialog', async dialog => {
+    promptCount++;
+    if (promptCount === 1) {
+      // First prompt: query name
+      expect(dialog.message()).toContain('name for this query');
+      await dialog.accept('Test Query');
+    } else if (promptCount === 2) {
+      // Second prompt: description
+      await dialog.accept(''); // Skip description
+    } else if (promptCount === 3) {
+      // Third prompt: tags
+      await dialog.accept(''); // Skip tags
+    }
+  });
+
+  // Click save button
+  await saveQueryBtn.click();
+  await page.waitForTimeout(1500);
+
+  // Verify success message
+  const queryStatus = page.locator('#query-status');
+  await expect(queryStatus).toContainText('saved');
+});
+
+test.skip('maps query panel load library button shows modal', async ({ page, baseURL }) => {
+  const base = baseURL || process.env.BASE_URL || 'http://127.0.0.1:5000';
+
+  // Mock the /api/queries endpoint
+  await page.route('**/api/queries*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        queries: [
+          {
+            id: 'query-1',
+            name: 'Find Files',
+            query: 'MATCH (n:File) RETURN n LIMIT 10',
+            created_at: Date.now() / 1000,
+            use_count: 5
+          },
+          {
+            id: 'query-2',
+            name: 'Find Folders',
+            query: 'MATCH (n:Folder) RETURN n LIMIT 10',
+            created_at: Date.now() / 1000,
+            use_count: 2
+          }
+        ]
+      })
+    });
+  });
+
+  await page.goto(`${base}/map`);
+  await page.waitForLoadState('networkidle');
+
+  const loadLibraryBtn = page.getByTestId('load-library');
+
+  // Click load library button
+  await loadLibraryBtn.click();
+  await page.waitForTimeout(1000);
+
+  // Check that modal is visible
+  await expect(page.locator('h3').filter({ hasText: 'Query Library' })).toBeVisible();
+
+  // Verify query entries are shown
+  await expect(page.locator('text=Find Files')).toBeVisible();
+  await expect(page.locator('text=Find Folders')).toBeVisible();
+
+  // Check for Load buttons in the modal
+  const loadButtons = page.locator('button').filter({ hasText: 'Load' });
+  await expect(loadButtons.first()).toBeVisible();
+
+  // Close modal
+  const closeBtn = page.locator('button').filter({ hasText: 'Close' }).last();
+  await closeBtn.click();
+  await page.waitForTimeout(500);
+
+  // Verify modal is closed
+  await expect(page.locator('h3').filter({ hasText: 'Query Library' })).not.toBeVisible();
+});

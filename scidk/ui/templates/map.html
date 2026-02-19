@@ -87,6 +87,30 @@
     </div>
     <div id="instances-table" class="table-responsive" style="max-height:240px; overflow:auto; border:1px solid #eee"></div>
   </div>
+
+  <!-- Query Panel -->
+  <div style="margin-top:2rem">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem">
+      <h3 style="margin:0">Cypher Query</h3>
+      <button id="toggle-query-panel" class="btn btn-sm btn-outline-secondary" data-testid="toggle-query-panel">
+        <span id="query-panel-icon">▼</span> <span id="query-panel-text">Collapse</span>
+      </button>
+    </div>
+    <div id="query-panel" style="display:block">
+      <textarea id="query-input" class="form-control" rows="4" placeholder="Enter Cypher query (e.g., MATCH (n:File) RETURN n LIMIT 10)" data-testid="query-input" style="font-family:monospace; font-size:0.9em"></textarea>
+      <div style="margin-top:0.5rem; display:flex; gap:0.5rem; align-items:center">
+        <button id="run-query" class="btn btn-sm btn-success" data-testid="run-query">▶ Run Query</button>
+        <button id="save-query" class="btn btn-sm btn-outline-secondary" data-testid="save-query">💾 Save</button>
+        <button id="load-library" class="btn btn-sm btn-outline-secondary" data-testid="load-library">📚 Library</button>
+        <button id="clear-query" class="btn btn-sm btn-outline-secondary" data-testid="clear-query">Clear</button>
+        <span id="query-status" class="small text-muted" style="margin-left:1rem"></span>
+      </div>
+      <div id="query-results" style="margin-top:1rem; display:none">
+        <h4>Results</h4>
+        <div id="query-results-content" class="table-responsive" style="max-height:400px; overflow:auto; border:1px solid #eee"></div>
+      </div>
+    </div>
+  </div>
 </section>
 
 <section>
@@ -379,6 +403,258 @@
     instDiv.innerHTML = html;
   }
   if (instBtn) instBtn.onclick = previewInstances;
+
+  // Query Panel functionality
+  const toggleQueryPanel = document.getElementById('toggle-query-panel');
+  const queryPanel = document.getElementById('query-panel');
+  const queryPanelIcon = document.getElementById('query-panel-icon');
+  const queryPanelText = document.getElementById('query-panel-text');
+  const queryInput = document.getElementById('query-input');
+  const runQueryBtn = document.getElementById('run-query');
+  const saveQueryBtn = document.getElementById('save-query');
+  const loadLibraryBtn = document.getElementById('load-library');
+  const clearQueryBtn = document.getElementById('clear-query');
+  const queryStatus = document.getElementById('query-status');
+  const queryResults = document.getElementById('query-results');
+  const queryResultsContent = document.getElementById('query-results-content');
+
+  // Helper function to escape HTML
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // Toggle query panel collapse/expand
+  if (toggleQueryPanel) {
+    toggleQueryPanel.onclick = () => {
+      if (queryPanel.style.display === 'none') {
+        queryPanel.style.display = 'block';
+        queryPanelIcon.textContent = '▼';
+        queryPanelText.textContent = 'Collapse';
+      } else {
+        queryPanel.style.display = 'none';
+        queryPanelIcon.textContent = '▶';
+        queryPanelText.textContent = 'Expand';
+      }
+    };
+  }
+
+  // Run query
+  if (runQueryBtn) {
+    runQueryBtn.onclick = async () => {
+      const query = queryInput.value.trim();
+      if (!query) {
+        alert('Please enter a query');
+        return;
+      }
+
+      queryStatus.textContent = 'Running query...';
+      queryStatus.style.color = '#666';
+      runQueryBtn.disabled = true;
+
+      try {
+        const resp = await fetch('/api/graph/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query })
+        });
+        const data = await resp.json();
+
+        if (resp.ok && data.status === 'ok') {
+          queryStatus.textContent = `✓ Query executed - ${data.result_count || 0} results in ${data.execution_time_ms || 0}ms`;
+          queryStatus.style.color = '#28a745';
+
+          // Display results
+          if (data.results && data.results.length > 0) {
+            const keys = Object.keys(data.results[0]);
+            let tableHtml = `<table class="table table-sm">
+              <thead><tr>${keys.map(k => `<th>${escapeHtml(k)}</th>`).join('')}</tr></thead>
+              <tbody>`;
+
+            data.results.forEach(row => {
+              tableHtml += `<tr>${keys.map(k => {
+                const val = row[k];
+                // Handle complex objects (nodes, relationships, etc.)
+                if (val && typeof val === 'object') {
+                  return `<td><pre style="margin:0; font-size:0.85em">${escapeHtml(JSON.stringify(val, null, 2))}</pre></td>`;
+                }
+                return `<td>${escapeHtml(String(val != null ? val : ''))}</td>`;
+              }).join('')}</tr>`;
+            });
+
+            tableHtml += `</tbody></table>`;
+            queryResultsContent.innerHTML = tableHtml;
+            queryResults.style.display = 'block';
+          } else {
+            queryResultsContent.innerHTML = '<p class="small text-muted">Query executed but returned no results.</p>';
+            queryResults.style.display = 'block';
+          }
+        } else {
+          queryStatus.textContent = `✗ Error: ${data.error || 'Query failed'}`;
+          queryStatus.style.color = '#dc3545';
+        }
+      } catch (err) {
+        queryStatus.textContent = `✗ Error: ${err.message}`;
+        queryStatus.style.color = '#dc3545';
+      } finally {
+        runQueryBtn.disabled = false;
+      }
+    };
+  }
+
+  // Save query
+  if (saveQueryBtn) {
+    saveQueryBtn.onclick = async () => {
+      const query = queryInput.value.trim();
+      if (!query) {
+        alert('Please enter a query to save');
+        return;
+      }
+
+      const name = prompt('Enter a name for this query:');
+      if (!name) return;
+
+      const description = prompt('Description (optional):') || '';
+      const tagsInput = prompt('Tags (comma-separated, optional):') || '';
+      const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
+
+      try {
+        const resp = await fetch('/api/queries', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            query,
+            description: description || undefined,
+            tags: tags.length > 0 ? tags : undefined,
+            metadata: {
+              saved_from: 'maps_query_panel'
+            }
+          })
+        });
+
+        if (resp.ok) {
+          queryStatus.textContent = `✓ Query saved as "${name}"`;
+          queryStatus.style.color = '#28a745';
+          setTimeout(() => {
+            queryStatus.textContent = '';
+          }, 3000);
+        } else {
+          const data = await resp.json();
+          alert(`Failed to save query: ${data.error || 'Unknown error'}`);
+        }
+      } catch (err) {
+        alert(`Failed to save query: ${err.message}`);
+      }
+    };
+  }
+
+  // Load query library
+  if (loadLibraryBtn) {
+    loadLibraryBtn.onclick = async () => {
+      try {
+        const resp = await fetch('/api/queries?sort_by=last_used_at');
+        const data = await resp.json();
+
+        if (!resp.ok || !data.queries || data.queries.length === 0) {
+          alert('No saved queries found');
+          return;
+        }
+
+        // Create query library modal (reuse pattern from Chat page)
+        const libraryHtml = data.queries.map(q =>
+          `<div style="margin-bottom:1rem; padding:0.75rem; border:1px solid #ddd; border-radius:4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <strong>${escapeHtml(q.name)}</strong>
+                ${q.tags && q.tags.length > 0 ? `<div class="small">${q.tags.map(t => `<span class="badge" style="background:#6c757d;margin-right:0.25rem">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+                ${q.description ? `<div class="small text-muted">${escapeHtml(q.description)}</div>` : ''}
+              </div>
+              <div>
+                <button class="btn btn-sm btn-outline-primary" onclick="loadQueryById('${q.id}', '${escapeHtml(q.name).replace(/'/g, "\\'")}')">Load</button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteQueryById('${q.id}')">Delete</button>
+              </div>
+            </div>
+            <pre style="margin-top:0.5rem; font-size:0.85em; background:#f8f9fa; padding:0.5rem; border-radius:3px; max-height:100px; overflow:auto;">${escapeHtml(q.query)}</pre>
+            <div class="small text-muted">
+              Created: ${new Date(q.created_at * 1000).toLocaleString()}
+              ${q.use_count > 0 ? ` · Used ${q.use_count} time${q.use_count !== 1 ? 's' : ''}` : ''}
+              ${q.last_used_at ? ` · Last used: ${new Date(q.last_used_at * 1000).toLocaleString()}` : ''}
+            </div>
+          </div>`
+        ).join('');
+
+        // Show modal
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center;';
+        overlay.innerHTML = `<div style="background:#fff; padding:2rem; border-radius:8px; max-width:800px; max-height:80vh; overflow:auto; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <h3 style="margin:0;">Query Library (${data.queries.length})</h3>
+            <button class="btn btn-sm btn-secondary" onclick="this.closest('[style*=fixed]').remove()">Close</button>
+          </div>
+          ${libraryHtml}
+        </div>`;
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) overlay.remove();
+        });
+      } catch (err) {
+        alert(`Failed to load query library: ${err.message}`);
+      }
+    };
+  }
+
+  // Global functions for query library
+  window.loadQueryById = async (queryId, queryName) => {
+    try {
+      const resp = await fetch(`/api/queries/${queryId}`);
+      const data = await resp.json();
+
+      if (resp.ok && data.query) {
+        queryInput.value = data.query.query;
+        queryStatus.textContent = `✓ Loaded "${queryName}"`;
+        queryStatus.style.color = '#28a745';
+        document.querySelector('[style*="fixed"]')?.remove();
+
+        // Record usage
+        fetch(`/api/queries/${queryId}/use`, { method: 'POST' }).catch(() => {});
+
+        setTimeout(() => {
+          queryStatus.textContent = '';
+        }, 3000);
+      }
+    } catch (err) {
+      alert(`Failed to load query: ${err.message}`);
+    }
+  };
+
+  window.deleteQueryById = async (queryId) => {
+    if (!confirm('Delete this query from the library?')) return;
+
+    try {
+      const resp = await fetch(`/api/queries/${queryId}`, { method: 'DELETE' });
+
+      if (resp.ok) {
+        document.querySelector('[style*="fixed"]')?.remove();
+        loadLibraryBtn.click(); // Refresh the library view
+      } else {
+        const data = await resp.json();
+        alert(`Failed to delete: ${data.error}`);
+      }
+    } catch (err) {
+      alert(`Failed to delete: ${err.message}`);
+    }
+  };
+
+  // Clear query
+  if (clearQueryBtn) {
+    clearQueryBtn.onclick = () => {
+      queryInput.value = '';
+      queryResults.style.display = 'none';
+      queryStatus.textContent = '';
+    };
+  }
 })();
 </script>
 {% endblock %}
