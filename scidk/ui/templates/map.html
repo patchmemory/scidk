@@ -2224,15 +2224,19 @@
 
 // === VISUALIZATION MODE SWITCHING ===
 (function() {
-  const modeRadios = document.querySelectorAll('input[name="viz-mode"]');
-  const instanceSettings = document.getElementById('instance-settings');
-  const hybridSettings = document.getElementById('hybrid-settings');
-  const nodeLimitInput = document.getElementById('node-limit');
-  const hybridLabelSelect = document.getElementById('hybrid-label');
-  const hybridPropertySelect = document.getElementById('hybrid-property');
+  // Wait for DOM to be ready
+  const initModeSwitch = () => {
+    const modeRadios = document.querySelectorAll('input[name="viz-mode"]');
+    const instanceSettings = document.getElementById('instance-settings');
+    const hybridSettings = document.getElementById('hybrid-settings');
+    const nodeLimitInput = document.getElementById('node-limit');
+    const hybridLabelSelect = document.getElementById('hybrid-label');
+    const hybridPropertySelect = document.getElementById('hybrid-property');
 
-  // Handle mode switching
-  modeRadios.forEach(radio => {
+    console.log('🔧 Initializing mode switching, found', modeRadios.length, 'radio buttons');
+
+    // Handle mode switching
+    modeRadios.forEach(radio => {
     radio.addEventListener('change', async (e) => {
       const newMode = e.target.value;
 
@@ -2370,6 +2374,14 @@
   }
   if (relFilter) {
     relFilter.addEventListener('change', applyFilters);
+  }
+  }; // End of initModeSwitch
+
+  // Call init when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initModeSwitch);
+  } else {
+    initModeSwitch();
   }
 })();
 
