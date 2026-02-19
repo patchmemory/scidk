@@ -1020,6 +1020,246 @@
 
     // Initialize CodeMirror for syntax highlighting (wait for CodeMirror to load)
     initCodeMirrorEditor(tab.id);
+
+    // Initialize button handlers
+    initQueryButtons(tab.id);
+  }
+
+  // Initialize query button handlers
+  function initQueryButtons(tabId) {
+    const runBtn = document.querySelector(`.run-query-${tabId}`);
+    const saveBtn = document.querySelector(`.save-query-${tabId}`);
+    const loadBtn = document.querySelector(`.load-library-${tabId}`);
+    const clearBtn = document.querySelector(`.clear-query-${tabId}`);
+    const statusEl = document.querySelector(`.query-status-${tabId}`);
+    const tableResultsEl = document.querySelector(`.query-results-table-${tabId}`);
+    const jsonResultsEl = document.querySelector(`.query-results-json-${tabId}`);
+
+    // Helper to get query text from CodeMirror
+    function getQueryText() {
+      const editor = window.tabEditors && window.tabEditors[tabId];
+      return editor ? editor.state.doc.toString() : '';
+    }
+
+    // Helper to set query text in CodeMirror
+    function setQueryText(text) {
+      const editor = window.tabEditors && window.tabEditors[tabId];
+      if (!editor) return;
+
+      editor.dispatch({
+        changes: { from: 0, to: editor.state.doc.length, insert: text }
+      });
+    }
+
+    // Helper to escape HTML
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    // Run Query Button
+    if (runBtn) {
+      runBtn.onclick = async () => {
+        const query = getQueryText().trim();
+        if (!query) {
+          alert('Please enter a query');
+          return;
+        }
+
+        statusEl.textContent = 'Running query...';
+        statusEl.style.color = '#666';
+        runBtn.disabled = true;
+
+        try {
+          const resp = await fetch('/api/graph/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query })
+          });
+          const data = await resp.json();
+
+          if (resp.ok && data.status === 'ok') {
+            statusEl.textContent = `✓ Query executed - ${data.result_count || 0} results in ${data.execution_time_ms || 0}ms`;
+            statusEl.style.color = '#28a745';
+
+            // Display results in Table view
+            if (data.results && data.results.length > 0) {
+              const keys = Object.keys(data.results[0]);
+              let tableHtml = `<table class="table table-sm table-striped">
+                <thead><tr>${keys.map(k => `<th>${escapeHtml(k)}</th>`).join('')}</tr></thead>
+                <tbody>`;
+
+              data.results.forEach(row => {
+                tableHtml += `<tr>${keys.map(k => {
+                  const val = row[k];
+                  if (val && typeof val === 'object') {
+                    return `<td><pre style="margin:0; font-size:0.85em; max-height:100px; overflow:auto">${escapeHtml(JSON.stringify(val, null, 2))}</pre></td>`;
+                  }
+                  return `<td>${escapeHtml(String(val != null ? val : ''))}</td>`;
+                }).join('')}</tr>`;
+              });
+
+              tableHtml += `</tbody></table>`;
+              tableResultsEl.innerHTML = tableHtml;
+            } else {
+              tableResultsEl.innerHTML = '<p class="small text-muted">Query executed but returned no results.</p>';
+            }
+
+            // Display results in JSON view
+            jsonResultsEl.textContent = JSON.stringify(data.results, null, 2);
+
+          } else {
+            statusEl.textContent = `✗ Error: ${data.error || 'Query failed'}`;
+            statusEl.style.color = '#dc3545';
+            tableResultsEl.innerHTML = `<p class="small text-danger">Error: ${escapeHtml(data.error || 'Query failed')}</p>`;
+            jsonResultsEl.textContent = JSON.stringify(data, null, 2);
+          }
+        } catch (err) {
+          statusEl.textContent = `✗ Error: ${err.message}`;
+          statusEl.style.color = '#dc3545';
+          tableResultsEl.innerHTML = `<p class="small text-danger">Error: ${escapeHtml(err.message)}</p>`;
+        } finally {
+          runBtn.disabled = false;
+        }
+      };
+    }
+
+    // Save Query Button
+    if (saveBtn) {
+      saveBtn.onclick = async () => {
+        const query = getQueryText().trim();
+        if (!query) {
+          alert('Please enter a query to save');
+          return;
+        }
+
+        const name = prompt('Enter a name for this query:');
+        if (!name) return;
+
+        const description = prompt('Enter a description (optional):') || '';
+
+        try {
+          const resp = await fetch('/api/queries', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, query, description })
+          });
+
+          if (resp.ok) {
+            statusEl.textContent = `✓ Query saved as "${name}"`;
+            statusEl.style.color = '#28a745';
+            setTimeout(() => { statusEl.textContent = 'Ready'; statusEl.style.color = '#666'; }, 3000);
+          } else {
+            const data = await resp.json();
+            alert(`Failed to save: ${data.error}`);
+          }
+        } catch (err) {
+          alert(`Failed to save: ${err.message}`);
+        }
+      };
+    }
+
+    // Load Library Button (reuse existing query library modal logic)
+    if (loadBtn) {
+      loadBtn.onclick = async () => {
+        try {
+          const resp = await fetch('/api/queries');
+          const data = await resp.json();
+
+          if (!resp.ok || !data.queries) {
+            alert('Failed to load query library');
+            return;
+          }
+
+          // Create modal overlay
+          const overlay = document.createElement('div');
+          overlay.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:10000;';
+          overlay.innerHTML = `
+            <div style="background:white; padding:2rem; border-radius:8px; max-width:600px; max-height:80vh; overflow:auto; box-shadow:0 4px 12px rgba(0,0,0,0.3)">
+              <h3>Query Library</h3>
+              <div style="margin-top:1rem">
+                ${data.queries.length === 0 ? '<p class="small text-muted">No saved queries yet.</p>' : ''}
+                ${data.queries.map(q => `
+                  <div style="border:1px solid #e0e0e0; padding:0.75rem; margin-bottom:0.5rem; border-radius:4px">
+                    <strong>${escapeHtml(q.name)}</strong>
+                    ${q.description ? `<p class="small text-muted" style="margin:0.25rem 0">${escapeHtml(q.description)}</p>` : ''}
+                    <div style="margin-top:0.5rem">
+                      <button class="btn btn-sm btn-primary" onclick="window.loadQueryById_${tabId}(${q.id}, '${escapeHtml(q.name)}')">Load</button>
+                      <button class="btn btn-sm btn-outline-danger" onclick="window.deleteQueryById_${tabId}(${q.id})">Delete</button>
+                      <span class="small text-muted" style="margin-left:0.5rem">Used ${q.usage_count || 0} times</span>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+              <div style="margin-top:1rem; text-align:right">
+                <button class="btn btn-sm btn-secondary">Close</button>
+              </div>
+            </div>
+          `;
+          document.body.appendChild(overlay);
+
+          // Close on overlay click or button
+          overlay.addEventListener('click', (e) => {
+            if (e.target === overlay || e.target.textContent === 'Close') overlay.remove();
+          });
+
+          // Global functions for this tab's query library
+          window[`loadQueryById_${tabId}`] = async (queryId, queryName) => {
+            try {
+              const resp = await fetch(`/api/queries/${queryId}`);
+              const data = await resp.json();
+
+              if (resp.ok && data.query) {
+                setQueryText(data.query.query);
+                statusEl.textContent = `✓ Loaded "${queryName}"`;
+                statusEl.style.color = '#28a745';
+                overlay.remove();
+
+                // Record usage
+                fetch(`/api/queries/${queryId}/use`, { method: 'POST' }).catch(() => {});
+
+                setTimeout(() => { statusEl.textContent = 'Ready'; statusEl.style.color = '#666'; }, 3000);
+              }
+            } catch (err) {
+              alert(`Failed to load query: ${err.message}`);
+            }
+          };
+
+          window[`deleteQueryById_${tabId}`] = async (queryId) => {
+            if (!confirm('Delete this query from the library?')) return;
+
+            try {
+              const resp = await fetch(`/api/queries/${queryId}`, { method: 'DELETE' });
+
+              if (resp.ok) {
+                overlay.remove();
+                loadBtn.click(); // Refresh the library view
+              } else {
+                const data = await resp.json();
+                alert(`Failed to delete: ${data.error}`);
+              }
+            } catch (err) {
+              alert(`Failed to delete: ${err.message}`);
+            }
+          };
+
+        } catch (err) {
+          alert(`Failed to load query library: ${err.message}`);
+        }
+      };
+    }
+
+    // Clear Button
+    if (clearBtn) {
+      clearBtn.onclick = () => {
+        setQueryText('// Enter Cypher query\nMATCH (n) RETURN n LIMIT 10');
+        tableResultsEl.innerHTML = '<p class="small text-muted">Run a query to see table results</p>';
+        jsonResultsEl.textContent = 'Run a query to see JSON results';
+        statusEl.textContent = 'Ready';
+        statusEl.style.color = '#666';
+      };
+    }
   }
 
   // Initialize CodeMirror editor with Neo4j Cypher syntax highlighting
