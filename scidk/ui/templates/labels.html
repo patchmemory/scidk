@@ -300,6 +300,13 @@
     background: #fff3e0;
     color: #f57c00;
   }
+
+  .source-badge.neo4j {
+    background: #e1f5fe;
+    color: #0277bd;
+    border: 1px solid #b3e5fc;
+  }
+
   .property-row, .relationship-row {
     display: flex;
     gap: 0.5rem;
@@ -400,9 +407,13 @@
       <h3 class="small" style="margin: 0;">Labels</h3>
     </div>
     <div style="display: flex; gap: 0.25rem; margin-bottom: 0.5rem; flex-wrap: wrap;">
-      <button id="btn-pull-all-neo4j" class="btn btn-sm btn-outline-info" data-testid="pull-all-neo4j-btn" title="Pull all labels from Neo4j" style="flex: 1; font-size: 0.75rem;">Pull All</button>
-      <button id="btn-import-arrows" class="btn btn-sm btn-outline-info" data-testid="import-arrows-btn" style="flex: 1; font-size: 0.75rem;">Import</button>
-      <button id="btn-export-arrows" class="btn btn-sm btn-outline-info" data-testid="export-arrows-btn" style="flex: 1; font-size: 0.75rem;">Export</button>
+      <div style="position: relative; flex: 1; min-width: fit-content;">
+        <button id="btn-pull-all-neo4j" class="btn btn-sm btn-outline-info" data-testid="pull-all-neo4j-btn" title="Pull all labels from all configured Neo4j connections" style="width: 100%; font-size: 0.75rem; padding-right: 1.5rem;">Pull All</button>
+        <button id="btn-pull-dropdown-toggle" class="btn btn-sm btn-outline-info" title="Choose connection to pull from" style="position: absolute; right: 0; top: 0; height: 100%; padding: 0 0.3rem; border-left: 1px solid rgba(0,0,0,0.1); border-top-left-radius: 0; border-bottom-left-radius: 0;">▼</button>
+        <div id="pull-dropdown-menu" style="display: none; position: absolute; top: 100%; left: 0; min-width: 200px; background: white; border: 1px solid #dee2e6; border-radius: 0.25rem; margin-top: 2px; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.15);"></div>
+      </div>
+      <button id="btn-import-arrows" class="btn btn-sm btn-outline-info" data-testid="import-arrows-btn" style="flex: 1; font-size: 0.75rem; white-space: nowrap;">Import</button>
+      <button id="btn-export-arrows" class="btn btn-sm btn-outline-info" data-testid="export-arrows-btn" style="flex: 1; font-size: 0.75rem; white-space: nowrap;">Export</button>
     </div>
     <button id="btn-new-label" class="btn btn-sm" data-testid="new-label-btn" style="width: 100%; font-weight: bold; background: #e0e0e0; color: #555; border: 1px solid #ccc; margin-bottom: 0.5rem;">+ Label</button>
     <!-- Batch action buttons (shown when multiple labels selected) -->
@@ -511,6 +522,7 @@
         <h4 class="small" style="margin: 0;">Instances</h4>
         <div style="display: flex; gap: 0.5rem;">
           <button id="btn-pull-instances" class="btn btn-sm btn-outline-primary" data-testid="pull-instances-btn">Pull from Neo4j</button>
+          <button id="btn-transfer-to-primary" class="btn btn-sm btn-warning" data-testid="transfer-to-primary-btn" style="display: none;" title="Transfer instances from source to primary database">Transfer to Primary</button>
           <button id="btn-push-instances" class="btn btn-sm btn-success" data-testid="push-instances-btn" style="display: none;">Push Changes</button>
           <button id="btn-download-csv" class="btn btn-sm btn-outline-secondary" data-testid="download-csv-btn" style="display: none;">Download CSV</button>
           <button id="btn-upload-csv" class="btn btn-sm btn-outline-secondary" data-testid="upload-csv-btn">Upload CSV</button>
@@ -650,6 +662,130 @@
   </div>
 </div>
 
+<!-- Transfer to Primary Modal -->
+<div id="transfer-modal" class="custom-modal" style="display: none;">
+  <div class="custom-modal-overlay"></div>
+  <div class="custom-modal-content">
+    <div class="custom-modal-header">
+      <h5>Transfer to Primary Database</h5>
+      <button type="button" class="custom-modal-close" onclick="closeTransferModal()">&times;</button>
+    </div>
+    <div class="custom-modal-body">
+      <p class="small" style="margin-bottom: 1rem;">
+        This will transfer all instances of <strong id="transfer-label-name"></strong> from
+        <strong id="transfer-source-name"></strong> to the primary database.
+      </p>
+
+      <div style="background: #f0f8ff; border-radius: 4px; padding: 0.75rem; margin-bottom: 1rem; border-left: 3px solid #2196f3;">
+        <div class="small">
+          <strong>What will happen:</strong>
+          <ul style="margin: 0.5rem 0 0 1.5rem; padding: 0;">
+            <li>Nodes will be created/merged in the primary database</li>
+            <li>Relationships between nodes will be preserved</li>
+            <li>Processing happens in batches to avoid memory issues</li>
+            <li>Matching is done using the first required property (or 'id' field)</li>
+          </ul>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 1rem;">
+        <label class="small"><strong>Transfer Mode:</strong></label>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem;">
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
+            <input type="radio" name="transfer-mode" value="nodes_only" id="transfer-mode-nodes-only">
+            <div>
+              <strong class="small">⚡ Nodes Only</strong>
+              <div class="small text-muted">Transfer only nodes, skip relationships (fastest)</div>
+            </div>
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
+            <input type="radio" name="transfer-mode" value="nodes_and_outgoing" id="transfer-mode-nodes-rels" checked>
+            <div>
+              <strong class="small">🔗 Nodes + Relationships</strong>
+              <div class="small text-muted">Transfer nodes and outgoing relationships (recommended)</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 1rem;">
+        <label class="small" for="transfer-batch-size"><strong>Batch Size:</strong></label>
+        <input type="number" id="transfer-batch-size" class="form-control form-control-sm" value="100" min="10" max="1000" style="max-width: 150px;" />
+        <div class="small text-muted" style="margin-top: 0.25rem;">Number of instances to process per batch</div>
+      </div>
+
+      <div style="margin-bottom: 1rem;">
+        <label style="cursor: pointer; display: flex; align-items: start; gap: 0.5rem;">
+          <input type="checkbox" id="transfer-create-placeholders" style="margin-top: 0.25rem;">
+          <div>
+            <strong class="small">Create missing target nodes automatically</strong>
+            <div class="small text-muted">
+              If a relationship points to a node that hasn't been transferred yet, create it with available properties.
+              Tracks source provenance (<code>__source__</code>, <code>__created_at__</code>) for multi-source harmonization.
+              Later transfers will update these nodes with complete data.
+            </div>
+          </div>
+        </label>
+      </div>
+
+      <div id="transfer-progress" style="display: none; padding: 0.75rem; background: #f9f9f9; border-radius: 4px;">
+        <div class="small" style="margin-bottom: 0.75rem;"><strong>Transfer Progress:</strong></div>
+
+        <!-- Phase 1: Nodes -->
+        <div style="margin-bottom: 0.75rem;">
+          <div class="small" style="margin-bottom: 0.25rem; display: flex; justify-content: space-between;">
+            <strong>Phase 1: Nodes</strong>
+            <span id="phase1-status" class="text-muted">0/0</span>
+          </div>
+          <div class="progress" style="height: 20px;">
+            <div id="phase1-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%">0%</div>
+          </div>
+        </div>
+
+        <!-- Phase 2: Relationships -->
+        <div id="phase2-container" style="margin-bottom: 0.75rem;">
+          <div class="small" style="margin-bottom: 0.25rem; display: flex; justify-content: space-between;">
+            <strong>Phase 2: Relationships</strong>
+            <span id="phase2-status" class="text-muted">Waiting...</span>
+          </div>
+          <div class="progress" style="height: 20px;">
+            <div id="phase2-progress-bar" class="progress-bar" role="progressbar" style="width: 0%">0%</div>
+          </div>
+        </div>
+
+        <!-- Time & ETA Stats -->
+        <div class="small text-muted" id="transfer-time-stats">
+          Elapsed: <span id="elapsed-time">0s</span> |
+          ETA: <span id="eta-time">calculating...</span> |
+          Speed: <span id="transfer-speed">--</span>
+        </div>
+      </div>
+
+      <div id="transfer-result" style="display: none; padding: 0.75rem; border-radius: 4px; margin-top: 1rem;">
+        <div class="small">
+          <strong>Transfer Complete:</strong>
+          <ul style="margin: 0.5rem 0 0 1.5rem; padding: 0;">
+            <li><span id="nodes-transferred-count">0</span> nodes transferred</li>
+            <li><span id="rels-transferred-count">0</span> relationships transferred</li>
+            <li>Mode: <code id="transfer-mode-used">nodes_and_outgoing</code></li>
+            <li id="matching-keys-display">Matching keys: <code id="matching-keys-used">{}</code></li>
+          </ul>
+        </div>
+      </div>
+
+      <div id="transfer-error" style="display: none; padding: 0.75rem; background: #fee; border: 1px solid #fcc; border-radius: 4px; margin-top: 1rem;">
+        <div class="small" style="color: #c00;">
+          <strong>⚠️ Error:</strong> <span id="transfer-error-text"></span>
+        </div>
+      </div>
+    </div>
+    <div class="custom-modal-footer">
+      <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeTransferModal()" id="transfer-cancel-btn">Cancel</button>
+      <button type="button" id="transfer-confirm-btn" class="btn btn-sm btn-warning">Start Transfer</button>
+    </div>
+  </div>
+</div>
+
 <script>
 let currentLabel = null;
 let labels = [];
@@ -741,6 +877,32 @@ document.addEventListener('DOMContentLoaded', () => {
     console.error('Error attaching main editor listeners:', e);
   }
 
+  // Pull dropdown toggle
+  try {
+    const dropdownToggle = document.getElementById('btn-pull-dropdown-toggle');
+    const dropdownMenu = document.getElementById('pull-dropdown-menu');
+    if (dropdownToggle && dropdownMenu) {
+      dropdownToggle.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (dropdownMenu.style.display === 'none') {
+          await loadPullDropdown();
+          dropdownMenu.style.display = 'block';
+        } else {
+          dropdownMenu.style.display = 'none';
+        }
+      });
+
+      // Close dropdown when clicking outside
+      document.addEventListener('click', (e) => {
+        if (!dropdownToggle.contains(e.target) && !dropdownMenu.contains(e.target)) {
+          dropdownMenu.style.display = 'none';
+        }
+      });
+    }
+  } catch (e) {
+    console.error('Error attaching pull dropdown listener:', e);
+  }
+
   try {
     // Mode toggle buttons
     document.getElementById('btn-toggle-mode').addEventListener('click', toggleEditMode);
@@ -755,6 +917,7 @@ document.addEventListener('DOMContentLoaded', () => {
   try {
     // Instance browser buttons
     document.getElementById('btn-pull-instances').addEventListener('click', pullInstances);
+    document.getElementById('btn-transfer-to-primary').addEventListener('click', openTransferModal);
     document.getElementById('btn-push-instances').addEventListener('click', pushInstancesWithPreview);
     document.getElementById('btn-download-csv').addEventListener('click', downloadInstancesCSV);
     document.getElementById('btn-upload-csv').addEventListener('click', () => document.getElementById('csv-file-input').click());
@@ -1348,6 +1511,17 @@ function loadLabels() {
 }
 
 function getSourceBadge(label) {
+  // Check for Neo4j source profile first (highest priority for display)
+  if (label.neo4j_source_profile) {
+    const profileName = label.neo4j_source_profile;
+    return `
+      <span class="source-badge neo4j"
+            title="Schema pulled from Neo4j connection: ${escapeHtml(profileName)}">
+      🔗 ${escapeHtml(profileName)}
+      </span>
+    `;
+  }
+
   const sourceType = label.source_type || 'manual';
   const sourceId = label.source_id;
 
@@ -1625,6 +1799,21 @@ function populateEditor(label) {
 
   // Show instance browser
   document.getElementById('instance-browser').style.display = 'block';
+
+  // Update "Pull Instances" button text to show source
+  const pullBtn = document.getElementById('btn-pull-instances');
+  const transferBtn = document.getElementById('btn-transfer-to-primary');
+  const sourceProfile = label.neo4j_source_profile;
+
+  if (pullBtn) {
+    pullBtn.textContent = sourceProfile ? `Pull from ${sourceProfile}` : 'Pull from Neo4j';
+    pullBtn.title = sourceProfile ? `Pull instances from ${sourceProfile} connection` : 'Pull instances from Neo4j';
+  }
+
+  // Show Transfer button only if label has a source profile
+  if (transferBtn) {
+    transferBtn.style.display = sourceProfile ? 'inline-block' : 'none';
+  }
 
   // Populate read-only view
   document.getElementById('readonly-name').textContent = label.name;
@@ -2377,6 +2566,229 @@ function closeConfirmModal() {
   document.getElementById('neo4j-confirm-modal').style.display = 'none';
 }
 
+// Transfer to Primary Modal functions
+function openTransferModal() {
+  if (!currentLabel) return;
+
+  const sourceProfile = currentLabel.neo4j_source_profile;
+  if (!sourceProfile) {
+    showToast('This label has no source profile configured', 'error');
+    return;
+  }
+
+  // Reset modal state
+  document.getElementById('transfer-label-name').textContent = currentLabel.name;
+  document.getElementById('transfer-source-name').textContent = sourceProfile;
+  document.getElementById('transfer-batch-size').value = 100;
+  document.getElementById('transfer-progress').style.display = 'none';
+  document.getElementById('transfer-result').style.display = 'none';
+  document.getElementById('transfer-error').style.display = 'none';
+  document.getElementById('transfer-confirm-btn').style.display = 'inline-block';
+  document.getElementById('transfer-cancel-btn').textContent = 'Cancel';
+
+  // Show modal
+  document.getElementById('transfer-modal').style.display = 'flex';
+
+  // Set up confirm button
+  const confirmBtn = document.getElementById('transfer-confirm-btn');
+  confirmBtn.onclick = startTransfer;
+}
+
+async function closeTransferModal() {
+  // Cancel transfer if running
+  if (currentLabel) {
+    try {
+      await fetch(`/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-cancel`, {
+        method: 'POST'
+      });
+    } catch (error) {
+      // Ignore cancel errors
+    }
+  }
+
+  document.getElementById('transfer-modal').style.display = 'none';
+}
+
+async function startTransfer() {
+  if (!currentLabel) return;
+
+  // Check if transfer already running
+  try {
+    const statusResponse = await fetch(`/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-status`);
+    const statusData = await statusResponse.json();
+
+    if (statusData.transfer_active) {
+      showToast('Transfer already in progress for this label. Please wait or cancel first.', 'warning');
+      return;
+    }
+  } catch (error) {
+    // Ignore status check errors, proceed with transfer
+  }
+
+  const batchSize = parseInt(document.getElementById('transfer-batch-size').value) || 100;
+  const mode = document.querySelector('input[name="transfer-mode"]:checked').value;
+  const createPlaceholders = document.getElementById('transfer-create-placeholders').checked;
+
+  // Hide confirm button, show progress
+  document.getElementById('transfer-confirm-btn').style.display = 'none';
+  document.getElementById('transfer-progress').style.display = 'block';
+  document.getElementById('transfer-result').style.display = 'none';
+  document.getElementById('transfer-error').style.display = 'none';
+
+  // Show/hide Phase 2 based on transfer mode
+  const phase2Container = document.getElementById('phase2-container');
+  if (mode === 'nodes_only') {
+    phase2Container.style.display = 'none';
+  } else {
+    phase2Container.style.display = 'block';
+  }
+
+  // Helper function to format time as "2m 15s" or "45s"
+  function formatTime(seconds) {
+    if (seconds < 60) return `${seconds}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs}s`;
+  }
+
+  // Start progress polling with enhanced two-phase tracking
+  const startTime = Date.now();
+
+  const pollInterval = setInterval(async () => {
+    try {
+      const statusResp = await fetch(`/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-status`);
+      const statusData = await statusResp.json();
+
+      if (statusData.transfer_active && statusData.progress) {
+        const p = statusData.progress;
+
+        // Calculate elapsed time
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        document.getElementById('elapsed-time').textContent = formatTime(elapsed);
+
+        // Phase 1: Nodes
+        if (p.phase_1) {
+          const p1 = p.phase_1;
+          const p1Bar = document.getElementById('phase1-progress-bar');
+          p1Bar.style.width = `${p1.percent}%`;
+          p1Bar.textContent = `${p1.percent}%`;
+          document.getElementById('phase1-status').textContent =
+            `${(p1.completed || 0).toLocaleString()}/${(p1.total || 0).toLocaleString()}`;
+
+          // Mark Phase 1 complete
+          if (p1.percent === 100) {
+            p1Bar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+            p1Bar.classList.add('bg-success');
+          }
+        }
+
+        // Phase 2: Relationships
+        if (p.phase_2) {
+          const p2 = p.phase_2;
+          const p2Bar = document.getElementById('phase2-progress-bar');
+
+          if (p.phase === 2 && p2.total > 0) {
+            // Phase 2 is active
+            p2Bar.style.width = `${p2.percent}%`;
+            p2Bar.textContent = `${p2.percent}%`;
+            p2Bar.classList.add('progress-bar-animated', 'progress-bar-striped', 'bg-info');
+            document.getElementById('phase2-status').textContent =
+              `${(p2.completed || 0).toLocaleString()}/${(p2.total || 0).toLocaleString()}`;
+
+            // Mark Phase 2 complete
+            if (p2.percent === 100) {
+              p2Bar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+              p2Bar.classList.add('bg-success');
+            }
+          } else if (p.phase === 1) {
+            // Phase 2 waiting
+            p2Bar.style.width = '0%';
+            p2Bar.textContent = '0%';
+            document.getElementById('phase2-status').textContent = 'Waiting...';
+          }
+        }
+
+        // Calculate ETA and speed
+        if (p.phase === 1 && p.phase_1 && p.phase_1.completed > 0) {
+          // Phase 1: Node transfer
+          const speed = p.phase_1.completed / elapsed;
+          const remaining = p.phase_1.total - p.phase_1.completed;
+          const eta = remaining > 0 ? Math.ceil(remaining / speed) : 0;
+          document.getElementById('transfer-speed').textContent =
+            `${Math.round(speed)} nodes/s`;
+          document.getElementById('eta-time').textContent = eta > 0 ? formatTime(eta) : 'Complete';
+        } else if (p.phase === 2 && p.phase_2 && p.phase_2.completed > 0 && p.phase_2_start) {
+          // Phase 2: Relationship transfer
+          const phase2Elapsed = Math.floor((Date.now() / 1000) - p.phase_2_start);
+          if (phase2Elapsed > 0) {
+            const speed = p.phase_2.completed / phase2Elapsed;
+            const remaining = p.phase_2.total - p.phase_2.completed;
+            const eta = remaining > 0 ? Math.ceil(remaining / speed) : 0;
+            document.getElementById('transfer-speed').textContent =
+              `${Math.round(speed)} rels/s`;
+            document.getElementById('eta-time').textContent = eta > 0 ? formatTime(eta) : 'Complete';
+          }
+        }
+      }
+    } catch (e) {
+      // Ignore polling errors
+    }
+  }, 1000); // Poll every second
+
+  try {
+    const response = await fetch(`/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-to-primary?batch_size=${batchSize}&mode=${mode}&create_missing_targets=${createPlaceholders}`, {
+      method: 'POST'
+    });
+
+    const data = await response.json();
+
+    // Stop polling
+    clearInterval(pollInterval);
+
+    if (data.status === 'success') {
+      // Show results
+      document.getElementById('transfer-progress').style.display = 'none';
+      document.getElementById('transfer-result').style.display = 'block';
+      document.getElementById('nodes-transferred-count').textContent = data.nodes_transferred || 0;
+      document.getElementById('rels-transferred-count').textContent = data.relationships_transferred || 0;
+      document.getElementById('transfer-mode-used').textContent = data.mode || mode;
+      document.getElementById('matching-keys-used').textContent = JSON.stringify(data.matching_keys || {});
+
+      // Update cancel button to close
+      document.getElementById('transfer-cancel-btn').textContent = 'Close';
+
+      showToast(`Transfer complete: ${data.nodes_transferred} nodes, ${data.relationships_transferred} relationships`, 'success');
+    } else if (data.status === 'cancelled') {
+      // Show cancellation
+      document.getElementById('transfer-progress').style.display = 'none';
+      document.getElementById('transfer-error').style.display = 'block';
+      document.getElementById('transfer-error-text').textContent = data.message || 'Transfer cancelled by user';
+      document.getElementById('transfer-confirm-btn').style.display = 'inline-block';
+
+      showToast(`Transfer cancelled: ${data.nodes_transferred || 0} nodes transferred before cancellation`, 'warning');
+    } else {
+      // Show error
+      document.getElementById('transfer-progress').style.display = 'none';
+      document.getElementById('transfer-error').style.display = 'block';
+      document.getElementById('transfer-error-text').textContent = data.error || 'Unknown error';
+      document.getElementById('transfer-confirm-btn').style.display = 'inline-block';
+
+      showToast(`Transfer failed: ${data.error}`, 'error');
+    }
+  } catch (error) {
+    // Stop polling
+    clearInterval(pollInterval);
+
+    // Show error
+    document.getElementById('transfer-progress').style.display = 'none';
+    document.getElementById('transfer-error').style.display = 'block';
+    document.getElementById('transfer-error-text').textContent = error.message || 'Network error';
+    document.getElementById('transfer-confirm-btn').style.display = 'inline-block';
+
+    showToast(`Transfer failed: ${error.message}`, 'error');
+  }
+}
+
 async function getInstanceCount(labelName) {
   try {
     const response = await fetch(`/api/labels/${labelName}/instance-count`);
@@ -2444,7 +2856,7 @@ function pullFromNeo4j() {
 }
 
 function pullAllFromNeo4j() {
-  if (!confirm('Pull all labels from Neo4j? This will import all labels and may overwrite local definitions.')) return;
+  if (!confirm('Pull all labels from all configured Neo4j connections? This will import all labels and may overwrite local definitions.')) return;
 
   showToast('Pulling all labels from Neo4j...', 'info');
 
@@ -2459,6 +2871,70 @@ function pullAllFromNeo4j() {
       }
     })
     .catch(err => showToast('Network error: ' + err.message, 'error'));
+}
+
+function pullFromConnection(profileName) {
+  if (!confirm(`Pull all labels from ${profileName}? This will import all labels and may overwrite local definitions.`)) return;
+
+  showToast(`Pulling labels from ${profileName}...`, 'info');
+
+  fetch(`/api/labels/pull?connection=${encodeURIComponent(profileName)}`, { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'success') {
+        showToast(`Imported ${data.count} labels from ${profileName}`, 'success');
+        loadLabels();
+      } else {
+        showToast(`Error pulling from ${profileName}: ` + (data.error || 'Unknown error'), 'error');
+      }
+    })
+    .catch(err => showToast('Network error: ' + err.message, 'error'));
+}
+
+async function loadPullDropdown() {
+  const dropdown = document.getElementById('pull-dropdown-menu');
+  if (!dropdown) return;
+
+  try {
+    // Load available Neo4j profiles
+    const r = await fetch('/api/settings/neo4j/profiles');
+    const j = await r.json();
+    const profiles = j.profiles || [];
+
+    const roleLabels = {
+      'primary': 'Primary',
+      'labels_source': 'Labels Source',
+      'readonly': 'Read-only',
+      'ingestion_target': 'Ingestion Target'
+    };
+
+    dropdown.innerHTML = '';
+
+    if (profiles.length === 0) {
+      dropdown.innerHTML = '<div style="padding: 0.5rem; color: #666; font-size: 0.85rem;">No connections configured</div>';
+      return;
+    }
+
+    // Add option for each profile
+    profiles.forEach(profile => {
+      const roleLabel = roleLabels[profile.role] || profile.role;
+      const item = document.createElement('div');
+      item.style.padding = '0.5rem';
+      item.style.cursor = 'pointer';
+      item.style.fontSize = '0.85rem';
+      item.style.borderBottom = '1px solid #f0f0f0';
+      item.innerHTML = `<strong>${profile.name}</strong><br><span style="color: #666; font-size: 0.75rem;">${roleLabel}</span>`;
+      item.onmouseover = () => item.style.background = '#f0f0f0';
+      item.onmouseout = () => item.style.background = 'white';
+      item.onclick = () => {
+        dropdown.style.display = 'none';
+        pullFromConnection(profile.name);
+      };
+      dropdown.appendChild(item);
+    });
+  } catch (e) {
+    dropdown.innerHTML = '<div style="padding: 0.5rem; color: #dc3545; font-size: 0.85rem;">Failed to load connections</div>';
+  }
 }
 
 function previewArrowsImport() {
@@ -2665,7 +3141,9 @@ async function loadInstanceCount(labelName) {
 
     if (result.status === 'success') {
       const count = result.count || 0;
-      countDiv.innerHTML = `<div class="small"><strong>${count}</strong> instance${count !== 1 ? 's' : ''} in Neo4j</div>`;
+      const sourceProfile = result.source_profile;
+      const sourceText = sourceProfile ? ` in ${sourceProfile}` : ' in Neo4j';
+      countDiv.innerHTML = `<div class="small"><strong>${count}</strong> instance${count !== 1 ? 's' : ''}${sourceText}</div>`;
     } else {
       countDiv.innerHTML = `<div class="small" style="color: #b00020;">${result.error || 'Error loading count'}</div>`;
     }
@@ -2678,12 +3156,15 @@ async function loadInstanceCount(labelName) {
 let instanceData = [];
 let instancePage = 0;
 let instanceLimit = 50;
+let instanceTotal = 0;
 let instanceChanges = {};
 
 async function pullInstances() {
   if (!currentLabel) return;
 
-  showToast('Pulling instances from Neo4j...', 'info');
+  const sourceProfile = currentLabel.neo4j_source_profile;
+  const sourceText = sourceProfile ? ` from ${sourceProfile}` : '';
+  showToast(`Pulling instances${sourceText}...`, 'info');
 
   try {
     const resp = await fetch(`/api/labels/${currentLabel.name}/instances?limit=${instanceLimit}&offset=${instancePage * instanceLimit}`);
@@ -2691,9 +3172,10 @@ async function pullInstances() {
 
     if (result.status === 'success') {
       instanceData = result.instances || [];
+      instanceTotal = result.total || 0;
       instanceChanges = {};
       renderInstanceTable();
-      showToast(`Loaded ${instanceData.length} instances`, 'success');
+      showToast(`Loaded ${instanceData.length} of ${instanceTotal} instances`, 'success');
       document.getElementById('btn-push-instances').style.display = 'none';
 
       // Show download CSV button if there are instances
@@ -3138,7 +3620,12 @@ function renderInstanceTable() {
 
   // Show pagination
   document.getElementById('instance-pagination').style.display = 'flex';
-  document.getElementById('instance-page-info').textContent = `Page ${instancePage + 1} (${instanceData.length} instances)`;
+  const totalPages = Math.ceil(instanceTotal / instanceLimit);
+  document.getElementById('instance-page-info').textContent = `Page ${instancePage + 1} of ${totalPages} (${instanceTotal} total instances, showing ${instanceData.length})`;
+
+  // Enable/disable pagination buttons
+  document.getElementById('btn-instance-prev').disabled = instancePage === 0;
+  document.getElementById('btn-instance-next').disabled = instancePage >= totalPages - 1;
 
   // Attach cell editing listeners
   document.querySelectorAll('.instance-cell-editable').forEach(cell => {

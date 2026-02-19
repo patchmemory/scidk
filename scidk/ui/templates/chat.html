@@ -384,6 +384,92 @@
     color: #856404;
     font-size: 0.85em;
   }
+
+  /* Feedback UI Styles */
+  .feedback-section {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed #ddd;
+  }
+
+  .feedback-quick {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .feedback-btn {
+    padding: 0.25rem 0.75rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+  }
+
+  .feedback-btn:hover {
+    background: #f0f0f0;
+    border-color: #4a90e2;
+  }
+
+  .feedback-btn.submitted {
+    background: #d4edda;
+    border-color: #c3e6cb;
+    color: #155724;
+    cursor: default;
+  }
+
+  .feedback-btn-link {
+    padding: 0.25rem 0.5rem;
+    border: none;
+    background: none;
+    color: #4a90e2;
+    cursor: pointer;
+    font-size: 0.85rem;
+    text-decoration: underline;
+  }
+
+  .feedback-btn-link:hover {
+    color: #357abd;
+  }
+
+  .feedback-detailed {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    background: #f9f9f9;
+    border-radius: 4px;
+    border: 1px solid #e0e0e0;
+  }
+
+  .feedback-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .feedback-label {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.9rem;
+    color: #333;
+    gap: 0.25rem;
+  }
+
+  .feedback-label input[type="checkbox"] {
+    width: auto;
+    margin-right: 0.5rem;
+  }
+
+  .feedback-label textarea {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 0.9rem;
+    resize: vertical;
+  }
 </style>
 <script>
   window.addEventListener('DOMContentLoaded', () => {
@@ -1197,10 +1283,15 @@
       queryInfoText.style.color = '#666';
     });
 
+    let lastUserQuery = ''; // Store last query for feedback
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const message = input.value.trim();
       if (!message) return;
+
+      // Store query for feedback
+      lastUserQuery = message;
 
       // Add user message immediately
       appendMessage('user', message);
@@ -1216,21 +1307,21 @@
 
         if (data.status === 'ok') {
           const metadata = data.metadata || null;
-          appendMessage('assistant', data.reply, metadata);
+          appendMessage('assistant', data.reply, metadata, lastUserQuery);
 
           // Update data panel with results
           updateDataPanel(data);
         } else {
-          appendMessage('assistant', `Error: ${data.error || 'Unknown error'}`, null);
+          appendMessage('assistant', `Error: ${data.error || 'Unknown error'}`, null, lastUserQuery);
         }
       } catch (err) {
-        appendMessage('assistant', `Error: ${err.message}`, null);
+        appendMessage('assistant', `Error: ${err.message}`, null, lastUserQuery);
       }
     });
 
-    function appendMessage(role, content, metadata = null) {
+    function appendMessage(role, content, metadata = null, query = null) {
       const messages = JSON.parse(localStorage.getItem('chat_messages') || '[]');
-      const msg = { role, content, metadata, timestamp: Date.now() };
+      const msg = { role, content, metadata, query, timestamp: Date.now() };
       messages.push(msg);
       localStorage.setItem('chat_messages', JSON.stringify(messages));
       renderHistory();
@@ -1248,8 +1339,10 @@
       }
 
       const verbose = verboseCheckbox.checked;
-      history.innerHTML = messages.map(msg => {
+      history.innerHTML = messages.map((msg, idx) => {
         let metadataHtml = '';
+        let feedbackHtml = '';
+
         if (verbose && msg.metadata && msg.role === 'assistant') {
           const entities = msg.metadata.entities || {};
           const executionTime = msg.metadata.execution_time_ms || 0;
@@ -1281,10 +1374,65 @@
           }
         }
 
+        // Add feedback UI for assistant messages
+        if (msg.role === 'assistant' && msg.query) {
+          const feedbackId = `feedback-${idx}`;
+          const feedbackGiven = msg.feedback_submitted || false;
+
+          feedbackHtml = `
+            <div class="feedback-section" id="${feedbackId}">
+              <div class="feedback-quick">
+                <button class="feedback-btn ${feedbackGiven ? 'submitted' : ''}"
+                        onclick="submitQuickFeedback(${idx}, true)"
+                        title="Answered my question">
+                  ${feedbackGiven ? '✅' : '👍'} ${feedbackGiven ? 'Feedback sent' : 'Helpful'}
+                </button>
+                <button class="feedback-btn ${feedbackGiven ? 'submitted' : ''}"
+                        onclick="submitQuickFeedback(${idx}, false)"
+                        title="Did not answer my question">
+                  ${feedbackGiven ? '✅' : '👎'} ${feedbackGiven ? 'Feedback sent' : 'Not helpful'}
+                </button>
+                <button class="feedback-btn-link" onclick="toggleDetailedFeedback(${idx})">
+                  ⚙ More options
+                </button>
+              </div>
+              <div class="feedback-detailed" id="feedback-detailed-${idx}" style="display: none;">
+                <div class="feedback-form">
+                  <label class="feedback-label">
+                    <input type="checkbox" id="entity-wrong-${idx}">
+                    Wrong entities extracted
+                  </label>
+                  <label class="feedback-label">
+                    <input type="checkbox" id="missing-results-${idx}">
+                    Missing expected results
+                  </label>
+                  <label class="feedback-label">
+                    What did you mean?
+                    <textarea id="query-correction-${idx}"
+                              placeholder="Rephrase your question for better results"
+                              rows="2"></textarea>
+                  </label>
+                  <label class="feedback-label">
+                    Additional notes:
+                    <textarea id="feedback-notes-${idx}"
+                              placeholder="Any other feedback"
+                              rows="2"></textarea>
+                  </label>
+                  <button class="btn btn-sm btn-primary"
+                          onclick="submitDetailedFeedback(${idx})">
+                    Submit Feedback
+                  </button>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
         return `<div class="chat-message ${msg.role}" data-testid="chat-message-${msg.role}">
           <div class="chat-message-role">${msg.role === 'user' ? '👤 You' : '🤖 Assistant'}</div>
           <div class="chat-message-content">${escapeHtml(msg.content)}</div>
           ${metadataHtml}
+          ${feedbackHtml}
         </div>`;
       }).join('');
 
@@ -1296,6 +1444,109 @@
       const div = document.createElement('div');
       div.textContent = text;
       return div.innerHTML;
+    }
+
+    // ========== Feedback Functions ==========
+
+    function toggleDetailedFeedback(msgIdx) {
+      const detailsEl = document.getElementById(`feedback-detailed-${msgIdx}`);
+      if (detailsEl) {
+        detailsEl.style.display = detailsEl.style.display === 'none' ? 'block' : 'none';
+      }
+    }
+
+    async function submitQuickFeedback(msgIdx, answeredQuestion) {
+      const messages = JSON.parse(localStorage.getItem('chat_messages') || '[]');
+      const msg = messages[msgIdx];
+
+      if (!msg || msg.role !== 'assistant') return;
+
+      const feedbackData = {
+        query: msg.query || '',
+        entities_extracted: (msg.metadata && msg.metadata.entities) || {},
+        cypher_generated: msg.cypher || null,
+        session_id: null,
+        message_id: msg.id || null,
+        feedback: {
+          answered_question: answeredQuestion
+        }
+      };
+
+      try {
+        const response = await fetch('/api/chat/graphrag/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(feedbackData)
+        });
+
+        if (response.ok) {
+          // Mark feedback as submitted
+          messages[msgIdx].feedback_submitted = true;
+          localStorage.setItem('chat_messages', JSON.stringify(messages));
+          renderHistory();
+        } else {
+          console.error('Failed to submit feedback:', await response.text());
+        }
+      } catch (err) {
+        console.error('Error submitting feedback:', err);
+      }
+    }
+
+    async function submitDetailedFeedback(msgIdx) {
+      const messages = JSON.parse(localStorage.getItem('chat_messages') || '[]');
+      const msg = messages[msgIdx];
+
+      if (!msg || msg.role !== 'assistant') return;
+
+      // Gather detailed feedback
+      const entityWrong = document.getElementById(`entity-wrong-${msgIdx}`).checked;
+      const missingResults = document.getElementById(`missing-results-${msgIdx}`).checked;
+      const queryCorrection = document.getElementById(`query-correction-${msgIdx}`).value.trim();
+      const notes = document.getElementById(`feedback-notes-${msgIdx}`).value.trim();
+
+      const feedbackData = {
+        query: msg.query || '',
+        entities_extracted: (msg.metadata && msg.metadata.entities) || {},
+        cypher_generated: msg.cypher || null,
+        session_id: null,
+        message_id: msg.id || null,
+        feedback: {
+          answered_question: !missingResults, // Assume if not missing, it answered
+          entity_corrections: entityWrong ? {
+            removed: [], // Could be enhanced to allow specific corrections
+            added: []
+          } : null,
+          query_corrections: queryCorrection || null,
+          missing_results: missingResults ? 'User indicated results were missing' : null,
+          notes: notes || null
+        }
+      };
+
+      try {
+        const response = await fetch('/api/chat/graphrag/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(feedbackData)
+        });
+
+        if (response.ok) {
+          // Mark feedback as submitted
+          messages[msgIdx].feedback_submitted = true;
+          localStorage.setItem('chat_messages', JSON.stringify(messages));
+
+          // Hide detailed form
+          document.getElementById(`feedback-detailed-${msgIdx}`).style.display = 'none';
+
+          renderHistory();
+          alert('Thank you for your feedback!');
+        } else {
+          console.error('Failed to submit feedback:', await response.text());
+          alert('Failed to submit feedback. Please try again.');
+        }
+      } catch (err) {
+        console.error('Error submitting feedback:', err);
+        alert('Error submitting feedback. Please try again.');
+      }
     }
 
     function updateDataPanel(data) {

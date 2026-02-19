@@ -168,6 +168,22 @@ def create_app():
     mounts = rehydrate_rclone_mounts()
     app.extensions['scidk']['rclone_mounts'].update(mounts)
 
+    # Hydrate Neo4j connection settings from SQLite on startup
+    try:
+        from .core.settings import get_setting
+        import json
+        neo4j_config_json = get_setting('neo4j_config')
+        if neo4j_config_json:
+            persisted_config = json.loads(neo4j_config_json)
+            app.extensions['scidk']['neo4j_config'].update(persisted_config)
+
+        # Load password separately
+        neo4j_password = get_setting('neo4j_password')
+        if neo4j_password:
+            app.extensions['scidk']['neo4j_config']['password'] = neo4j_password
+    except Exception as e:
+        app.logger.warning(f"Failed to load persisted Neo4j settings: {e}")
+
     # Feature flags for file indexing
     _ff_index = (os.environ.get('SCIDK_FEATURE_FILE_INDEX') or '').strip().lower() in (
         '1', 'true', 'yes', 'y', 'on'

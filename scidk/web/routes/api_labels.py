@@ -57,10 +57,10 @@ def list_labels_for_integration():
         # Get node counts from Neo4j (if connected)
         node_counts = {}
         try:
-            from ...core.graph_db import get_neo4j_driver
-            driver = get_neo4j_driver()
-            if driver:
-                with driver.session() as session:
+            from ...services.neo4j_client import get_neo4j_client
+            neo4j_client = get_neo4j_client()
+            if neo4j_client and neo4j_client.driver:
+                with neo4j_client.driver.session() as session:
                     result = session.run("CALL db.labels() YIELD label RETURN label")
                     neo4j_labels = [record['label'] for record in result]
 
@@ -347,6 +347,9 @@ def pull_labels_from_neo4j():
     """
     Pull label schema from Neo4j and import as label definitions.
 
+    Query Parameters:
+    - connection (optional): Name of Neo4j profile to pull from
+
     Returns:
     {
         "status": "success",
@@ -355,8 +358,112 @@ def pull_labels_from_neo4j():
     }
     """
     try:
+        connection_name = request.args.get('connection')
+
         service = _get_label_service()
-        result = service.pull_from_neo4j()
+
+        # If connection specified, temporarily use that profile
+        if connection_name:
+            from ...services.neo4j_client import get_neo4j_client
+            from ...core.settings import get_setting
+            import json
+
+            # Load profile
+            profile_key = f'neo4j_profile_{connection_name.replace(" ", "_")}'
+            profile_json = get_setting(profile_key)
+            if not profile_json:
+                return jsonify({
+                    'status': 'error',
+                    'error': f'Connection profile "{connection_name}" not found'
+                }), 404
+
+            profile = json.loads(profile_json)
+
+            # Get password
+            password_key = f'neo4j_profile_password_{connection_name.replace(" ", "_")}'
+            password = get_setting(password_key)
+
+            # Create a new temporary client for this specific connection
+            temp_client = None
+            old_client = None
+
+            try:
+                # Get current client to restore later
+                old_client = get_neo4j_client()
+
+                # Create new temporary client with profile settings
+                from ...services.neo4j_client import Neo4jClient
+                temp_client = Neo4jClient(
+                    uri=profile.get('uri'),
+                    user=profile.get('user'),
+                    password=password,
+                    database=profile.get('database', 'neo4j'),
+                    auth_mode='basic'
+                )
+                temp_client.connect()
+
+                # Pull from this specific connection by passing the client directly
+                result = service.pull_from_neo4j(neo4j_client=temp_client, source_profile_name=connection_name)
+            finally:
+                # Clean up temporary client
+                if temp_client:
+                    temp_client.close()
+        else:
+            # Pull from all active role connections
+            from ...core.settings import get_setting
+            import json
+
+            all_imported_labels = []
+            roles = ['primary', 'labels_source', 'readonly', 'ingestion_target']
+
+            for role in roles:
+                # Check if there's an active profile for this role
+                active_key = f'neo4j_active_role_{role}'
+                active_name = get_setting(active_key)
+
+                if active_name:
+                    # Load profile
+                    profile_key = f'neo4j_profile_{active_name.replace(" ", "_")}'
+                    profile_json = get_setting(profile_key)
+
+                    if profile_json:
+                        profile = json.loads(profile_json)
+
+                        # Get password
+                        password_key = f'neo4j_profile_password_{active_name.replace(" ", "_")}'
+                        password = get_setting(password_key)
+
+                        # Create temporary client for this connection
+                        from ...services.neo4j_client import Neo4jClient
+                        temp_client = None
+
+                        try:
+                            temp_client = Neo4jClient(
+                                uri=profile.get('uri'),
+                                user=profile.get('user'),
+                                password=password,
+                                database=profile.get('database', 'neo4j'),
+                                auth_mode='basic'
+                            )
+                            temp_client.connect()
+
+                            # Pull from this connection
+                            result = service.pull_from_neo4j(neo4j_client=temp_client, source_profile_name=active_name)
+
+                            if result.get('status') == 'success':
+                                all_imported_labels.extend(result.get('imported_labels', []))
+                        except Exception as e:
+                            current_app.logger.warning(f"Failed to pull from {active_name} ({role}): {e}")
+                        finally:
+                            if temp_client:
+                                temp_client.close()
+
+            # Return combined results
+            result = {
+                'status': 'success',
+                'imported_labels': list(set(all_imported_labels)),  # Remove duplicates
+                'count': len(set(all_imported_labels))
+            }
 
         if result.get('status') == 'error':
             return jsonify(result), 500
@@ -849,3 +956,102 @@ def import_eda_file():
 
     except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@bp.route('/labels/<name>/transfer-to-primary', methods=['POST'])
+def transfer_label_to_primary(name):
+    """
+    Transfer instances of a label from its source database to the primary database.
+    Preserves relationships between transferred nodes.
+
+    Query params:
+    - batch_size: Number of instances to process per batch (default: 100)
+    - mode: Transfer mode - 'nodes_only' or 'nodes_and_outgoing' (default: 'nodes_and_outgoing')
+    - create_missing_targets: Auto-create target nodes if they don't exist (default: false)
+
+    Returns:
+    {
+        "status": "success",
+        "nodes_transferred": 150,
+        "relationships_transferred": 75,
+        "source_profile": "Read-Only Source",
+        "matching_keys": {"SourceLabel": "id", "TargetLabel": "name"},
+        "mode": "nodes_and_outgoing"
+    }
+    """
+    try:
+        service = _get_label_service()
+        batch_size = int(request.args.get('batch_size', 100))
+        mode = request.args.get('mode', 'nodes_and_outgoing')
+        create_missing_targets = request.args.get('create_missing_targets', 'false').lower() == 'true'
+
+        result = service.transfer_to_primary(
+            name,
+            batch_size=batch_size,
+            mode=mode,
+            create_missing_targets=create_missing_targets
+        )
+
+        if result.get('status') == 'error':
+            return jsonify(result), 500
+
+        return jsonify(result), 200
+
+    except ValueError as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 404
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+@bp.route('/labels/<name>/transfer-status', methods=['GET'])
+def label_transfer_status(name):
+    """Get the current transfer status for a label."""
+    try:
+        service = _get_label_service()
+        status = service.get_transfer_status(name)
+
+        if status:
+            return jsonify({
+                'status': 'running' if not status.get('cancelled') else 'cancelling',
+                'transfer_active': True,
+                'progress': status.get('progress', {})
+            }), 200
+        else:
+            return jsonify({
+                'status': 'idle',
+                'transfer_active': False
+            }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/labels/<name>/transfer-cancel', methods=['POST'])
+def label_transfer_cancel(name):
+    """Cancel an active transfer for a label."""
+    try:
+        service = _get_label_service()
+        cancelled = service.cancel_transfer(name)
+
+        if cancelled:
+            return jsonify({
+                'status': 'success',
+                'message': f'Transfer cancellation requested for {name}'
+            }), 200
+        else:
+            return jsonify({
+                'status': 'error',
+                'error': f'No active transfer found for {name}'
+            }), 404
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500

@@ -463,6 +463,55 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 12)
             version = 12
 
+        # v13: Add graphrag_feedback table for query feedback collection
+        if version < 13:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS graphrag_feedback (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT,
+                    message_id TEXT,
+                    query TEXT NOT NULL,
+                    entities_extracted TEXT NOT NULL,
+                    cypher_generated TEXT,
+                    feedback TEXT NOT NULL,
+                    timestamp REAL NOT NULL,
+                    FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE SET NULL,
+                    FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE SET NULL
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_graphrag_feedback_session ON graphrag_feedback(session_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_graphrag_feedback_timestamp ON graphrag_feedback(timestamp DESC);")
+
+            conn.commit()
+            _set_version(conn, 13)
+            version = 13
+
+        # v14: Add neo4j_source_profile to label_definitions for cross-database instance operations
+        if version < 14:
+            try:
+                cur.execute("ALTER TABLE label_definitions ADD COLUMN neo4j_source_profile TEXT")
+            except sqlite3.OperationalError:
+                # Column may already exist
+                pass
+
+            conn.commit()
+            _set_version(conn, 14)
+            version = 14
+
+        # v15: Add matching_key to label_definitions for configurable node matching during transfer
+        if version < 15:
+            try:
+                cur.execute("ALTER TABLE label_definitions ADD COLUMN matching_key TEXT")
+            except sqlite3.OperationalError:
+                # Column may already exist
+                pass
+
+            conn.commit()
+            _set_version(conn, 15)
+            version = 15
+
         return version
     finally:
         if own:

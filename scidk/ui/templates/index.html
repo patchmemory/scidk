@@ -84,6 +84,7 @@
   <!-- Sidebar Navigation -->
   <nav class="settings-sidebar">
     <a href="#general" class="settings-sidebar-item active" data-section="general">General</a>
+    <a href="#providers" class="settings-sidebar-item" data-section="providers">File Providers</a>
     <a href="#neo4j" class="settings-sidebar-item" data-section="neo4j">Neo4j</a>
     <a href="#chat" class="settings-sidebar-item" data-section="chat">Chat</a>
     <a href="#interpreters" class="settings-sidebar-item" data-section="interpreters">Interpreters</a>
@@ -98,6 +99,7 @@
   <!-- Content Area -->
   <div class="settings-content">
     {% include 'settings/_general.html' %}
+    {% include 'settings/_providers.html' %}
     {% include 'settings/_neo4j.html' %}
     {% include 'settings/_chat.html' %}
     {% include 'settings/_interpreters.html' %}
