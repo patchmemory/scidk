@@ -1114,7 +1114,8 @@
           <h3 style="margin: 0; font-size: 1rem;">Query Editor</h3>
           <div style="display: flex; gap: 0.5rem; align-items: center;">
             <button class="run-query-${tab.id} btn btn-sm btn-success" data-testid="run-query-${tab.id}" title="Run query">▶ Run</button>
-            <button class="save-query-${tab.id} btn btn-sm btn-outline-secondary" data-testid="save-query-${tab.id}" title="Save query">💾 Save</button>
+            <button class="save-map-${tab.id} btn btn-sm btn-primary" data-testid="save-map-${tab.id}" title="Save entire map configuration">💾 Save Map</button>
+            <button class="save-query-${tab.id} btn btn-sm btn-outline-secondary" data-testid="save-query-${tab.id}" title="Save query">💾 Query</button>
             <button class="load-library-${tab.id} btn btn-sm btn-outline-secondary" data-testid="load-library-${tab.id}" title="Load from library">📚 Library</button>
             <button class="clear-query-${tab.id} btn btn-sm btn-outline-secondary" data-testid="clear-query-${tab.id}" title="Clear editor">Clear</button>
           </div>
@@ -1320,6 +1321,7 @@
   // Initialize query button handlers
   function initQueryButtons(tabId) {
     const runBtn = document.querySelector(`.run-query-${tabId}`);
+    const saveMapBtn = document.querySelector(`.save-map-${tabId}`);
     const saveBtn = document.querySelector(`.save-query-${tabId}`);
     const loadBtn = document.querySelector(`.load-library-${tabId}`);
     const clearBtn = document.querySelector(`.clear-query-${tabId}`);
@@ -1708,6 +1710,59 @@
           runBtn.innerHTML = '▶ Run';
           runBtn.classList.remove('btn-danger');
           runBtn.classList.add('btn-success');
+        }
+      };
+    }
+
+    // Save Map Button - saves entire configuration
+    if (saveMapBtn) {
+      saveMapBtn.onclick = async () => {
+        const query = getQueryText().trim();
+
+        // Prompt for map name
+        const mapName = prompt('Enter a name for this map:');
+        if (!mapName || !mapName.trim()) return;
+
+        // Gather all visualization settings
+        const vizSettings = {
+          mode: window.tabVisualizationModes?.[tabId] || 'schema',
+          connection: window.getSelectedNeo4jConnection ? window.getSelectedNeo4jConnection() : null,
+          nodeSize: document.getElementById('node-size')?.value || 1,
+          fontSize: document.getElementById('font-size')?.value || 10,
+          highContrast: document.getElementById('high-contrast')?.checked || false,
+          edgeWidth: document.getElementById('edge-width')?.value || 1,
+          colorBy: document.getElementById('color-by')?.value || 'label',
+          colorProperty: document.getElementById('color-property')?.value || null,
+          showLabels: document.getElementById('show-node-labels')?.checked !== false,
+          layoutAlgorithm: document.getElementById('layout-mode')?.value || 'cose',
+          schemaSource: document.getElementById('schema-source')?.value || 'all'
+        };
+
+        const payload = {
+          name: mapName.trim(),
+          query: query,
+          visualization: vizSettings,
+          tags: [] // Could add tag support later
+        };
+
+        try {
+          const resp = await fetch('/api/maps/saved', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          const data = await resp.json();
+
+          if (resp.ok && data.status === 'ok') {
+            alert(`Map "${mapName}" saved successfully!`);
+            // Reload saved maps list
+            if (window.loadSavedMaps) window.loadSavedMaps();
+          } else {
+            alert(`Failed to save map: ${data.error || 'Unknown error'}`);
+          }
+        } catch (err) {
+          alert(`Failed to save map: ${err.message}`);
         }
       };
     }
@@ -2220,15 +2275,107 @@
 
         // Apply visualization settings if present
         if (map.visualization) {
-          if (map.visualization.mode) {
+          const viz = map.visualization;
+
+          // Apply visualization mode
+          if (viz.mode) {
+            const modeRadio = document.querySelector(`input[name="viz-mode"][value="${viz.mode}"]`);
+            if (modeRadio) {
+              modeRadio.checked = true;
+              modeRadio.dispatchEvent(new Event('change'));
+            }
+          }
+
+          // Apply connection selection
+          if (viz.connection) {
+            const connectionSelect = document.getElementById('neo4j-connection-select');
+            if (connectionSelect) {
+              connectionSelect.value = viz.connection;
+              connectionSelect.dispatchEvent(new Event('change'));
+            }
+          }
+
+          // Apply node size
+          if (viz.nodeSize !== undefined) {
+            const nodeSizeSlider = document.getElementById('node-size');
+            if (nodeSizeSlider) {
+              nodeSizeSlider.value = viz.nodeSize;
+              nodeSizeSlider.dispatchEvent(new Event('input'));
+            }
+          }
+
+          // Apply font size
+          if (viz.fontSize !== undefined) {
+            const fontSizeSlider = document.getElementById('font-size');
+            if (fontSizeSlider) {
+              fontSizeSlider.value = viz.fontSize;
+              fontSizeSlider.dispatchEvent(new Event('input'));
+            }
+          }
+
+          // Apply high contrast
+          if (viz.highContrast !== undefined) {
+            const highContrastCheckbox = document.getElementById('high-contrast');
+            if (highContrastCheckbox) {
+              highContrastCheckbox.checked = viz.highContrast;
+              highContrastCheckbox.dispatchEvent(new Event('change'));
+            }
+          }
+
+          // Apply edge width
+          if (viz.edgeWidth !== undefined) {
+            const edgeWidthSlider = document.getElementById('edge-width');
+            if (edgeWidthSlider) {
+              edgeWidthSlider.value = viz.edgeWidth;
+              edgeWidthSlider.dispatchEvent(new Event('input'));
+            }
+          }
+
+          // Apply color settings
+          if (viz.colorBy) {
+            const colorBySelect = document.getElementById('color-by');
+            if (colorBySelect) {
+              colorBySelect.value = viz.colorBy;
+              colorBySelect.dispatchEvent(new Event('change'));
+            }
+          }
+
+          if (viz.colorProperty) {
+            const colorPropertySelect = document.getElementById('color-property');
+            if (colorPropertySelect) {
+              colorPropertySelect.value = viz.colorProperty;
+              colorPropertySelect.dispatchEvent(new Event('change'));
+            }
+          }
+
+          // Apply show labels
+          if (viz.showLabels !== undefined) {
+            const showLabelsCheckbox = document.getElementById('show-node-labels');
+            if (showLabelsCheckbox) {
+              showLabelsCheckbox.checked = viz.showLabels;
+              showLabelsCheckbox.dispatchEvent(new Event('change'));
+            }
+          }
+
+          // Apply layout algorithm
+          if (viz.layoutAlgorithm) {
+            const layoutSelect = document.getElementById('layout-mode');
+            if (layoutSelect) {
+              layoutSelect.value = viz.layoutAlgorithm;
+            }
+          }
+
+          // Apply schema source
+          if (viz.schemaSource) {
             const sourceSelect = document.getElementById('schema-source');
             if (sourceSelect) {
-              sourceSelect.value = map.visualization.mode;
+              sourceSelect.value = viz.schemaSource;
             }
           }
         }
 
         renderMapList(); // Re-render to update active state
+        console.log(`✓ Loaded map: ${map.name}`);
         alert(`Loaded map: ${map.name}`);
       }
     } catch (error) {
