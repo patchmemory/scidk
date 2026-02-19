@@ -270,6 +270,8 @@ class TestTransferToPrimary:
         # Mock source client
         mock_source_client = MagicMock()
         mock_source_client.execute_read.side_effect = [
+            # Count query
+            [{'total': 2}],
             # Batch 1: nodes
             [
                 {'source_id': 's1', 'props': {'id': 'obj1', 'name': 'Node 1'}},
@@ -277,27 +279,23 @@ class TestTransferToPrimary:
             ],
             # Batch 2: empty (end of nodes)
             [],
-            # Relationships query
+            # Relationship count query (Phase 2)
+            [{'count': 1}],
+            # Relationships query batch 1
             [
                 {
-                    'source_id': 's1',
                     'source_props': {'id': 'obj1'},
                     'target_props': {'id': 'obj2'},
                     'rel_props': {'since': '2024'}
                 }
-            ]
+            ],
+            # Relationships query batch 2 (empty - end)
+            []
         ]
 
         # Mock primary client
         mock_primary_client = MagicMock()
-        mock_primary_client.execute_write.side_effect = [
-            # Node 1 merge
-            [{'primary_id': 'p1'}],
-            # Node 2 merge
-            [{'primary_id': 'p2'}],
-            # Relationship creation
-            None
-        ]
+        mock_primary_client.execute_write.return_value = [{'primary_id': 'p1'}]
 
         mock_neo4j_client_class.return_value = mock_source_client
         mock_get_primary_client.return_value = mock_primary_client
@@ -310,7 +308,8 @@ class TestTransferToPrimary:
         assert result['nodes_transferred'] == 2
         assert result['relationships_transferred'] == 1
         assert result['source_profile'] == 'Read-Only Source'
-        assert result['matching_key'] == 'id'  # First required property
+        assert result['matching_keys']['TestSourceLabel'] == 'id'  # First required property
+        assert result['mode'] == 'nodes_and_outgoing'
 
         # Verify source client was closed
         mock_source_client.close.assert_called_once()
@@ -369,8 +368,13 @@ class TestAPIEndpoints:
         assert data['nodes_transferred'] == 50
         assert data['relationships_transferred'] == 25
 
-        # Verify batch_size parameter was passed
-        mock_transfer.assert_called_once_with('TestSourceLabel', batch_size=50)
+        # Verify parameters were passed (including new mode and create_missing_targets)
+        mock_transfer.assert_called_once_with(
+            'TestSourceLabel',
+            batch_size=50,
+            mode='nodes_and_outgoing',
+            create_missing_targets=False
+        )
 
     def test_get_label_instances_returns_source_profile(self, client, sample_label_with_source):
         """Test that get instances endpoint returns source_profile in response."""
