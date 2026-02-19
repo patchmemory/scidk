@@ -127,7 +127,11 @@ class Neo4jGraph:
 
     def list_instances(self, label: str) -> List[Dict]:
         label = (label or '').strip()
+        if not label:
+            return []
+
         with self._session() as s:
+            # For hardcoded labels, use specific optimized queries
             if label == 'File':
                 rows = s.run(
                     "MATCH (f:File) RETURN f.path AS path, f.filename AS filename, f.extension AS extension, f.size_bytes AS size_bytes, f.created AS created, f.modified AS modified, f.mime_type AS mime_type LIMIT 1000"
@@ -143,4 +147,31 @@ class Neo4jGraph:
                 ).data()
             if label == 'ResearchObject':
                 return []
-            return []
+
+            # For arbitrary labels, query all nodes with that label and return all properties
+            try:
+                # Use backticks to handle labels with special characters
+                query = f"MATCH (n:`{label}`) RETURN n LIMIT 1000"
+                result = s.run(query).data()
+
+                # Extract node properties and add an id field
+                rows = []
+                for record in result:
+                    node = record.get('n')
+                    if node:
+                        props = dict(node)
+                        # Try to find a good id field
+                        if 'id' not in props:
+                            if 'path' in props:
+                                props['id'] = props['path']
+                            elif 'name' in props:
+                                props['id'] = props['name']
+                            else:
+                                # Use Neo4j internal id as fallback
+                                props['id'] = str(node.id)
+                        rows.append(props)
+                return rows
+            except Exception as e:
+                # If query fails (e.g., label doesn't exist), return empty list
+                print(f"Error querying instances for label '{label}': {e}")
+                return []
