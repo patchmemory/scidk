@@ -2521,6 +2521,12 @@
       instanceSettings.style.display = newMode === 'instance' ? 'block' : 'none';
       hybridSettings.style.display = newMode === 'hybrid' ? 'block' : 'none';
 
+      // Show/hide schema display options
+      const schemaDisplayOptions = document.getElementById('schema-display-options');
+      if (schemaDisplayOptions) {
+        schemaDisplayOptions.style.display = newMode === 'schema' ? 'block' : 'none';
+      }
+
       // Get active tab
       const activeTab = document.querySelector('.map-tab.active');
       const activeTabId = activeTab?.dataset.tabId || 'tab-1';
@@ -3539,6 +3545,30 @@
         <select id="filter-reltypes" class="form-select form-select-sm" data-testid="filter-reltypes">
         </select>
       </div>
+    </div>
+
+    <!-- Schema Display Options (visible in schema mode) -->
+    <div id="schema-display-options" class="control-group" style="margin-bottom:1.5rem; display:none">
+      <details>
+        <summary style="cursor:pointer; user-select:none; font-weight:600; color:#666; text-transform:uppercase; font-size:0.85rem; margin-bottom:0.75rem">⚙️ Schema Display</summary>
+        <div style="margin-top:0.75rem">
+          <div style="margin-bottom:0.75rem">
+            <label for="schema-node-property" class="form-label small" style="margin-bottom:.25rem">Node Display Property</label>
+            <select id="schema-node-property" class="form-select form-select-sm">
+              <option value="_label">Label Only</option>
+            </select>
+            <small class="text-muted" style="font-size:0.7rem; display:block; margin-top:0.25rem">Group nodes by property value</small>
+          </div>
+          <div style="margin-bottom:0.75rem">
+            <label for="schema-rel-property" class="form-label small" style="margin-bottom:.25rem">Relationship Display Property</label>
+            <select id="schema-rel-property" class="form-select form-select-sm">
+              <option value="_type">Type Only</option>
+            </select>
+            <small class="text-muted" style="font-size:0.7rem; display:block; margin-top:0.25rem">Group relationships by property value</small>
+          </div>
+          <button id="apply-schema-display" class="btn btn-sm btn-primary w-100">Apply</button>
+        </div>
+      </details>
     </div>
 
     <!-- Layout -->
