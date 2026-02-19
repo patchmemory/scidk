@@ -1883,6 +1883,163 @@
   // Initialize
   loadSavedMaps();
 })();
+
+// === VISUALIZATION MODE SWITCHING ===
+(function() {
+  const modeRadios = document.querySelectorAll('input[name="viz-mode"]');
+  const instanceSettings = document.getElementById('instance-settings');
+  const hybridSettings = document.getElementById('hybrid-settings');
+  const nodeLimitInput = document.getElementById('node-limit');
+  const hybridLabelSelect = document.getElementById('hybrid-label');
+  const hybridPropertySelect = document.getElementById('hybrid-property');
+
+  let currentMode = 'schema';
+
+  // Handle mode switching
+  modeRadios.forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      currentMode = e.target.value;
+
+      // Show/hide mode-specific settings
+      instanceSettings.style.display = currentMode === 'instance' ? 'block' : 'none';
+      hybridSettings.style.display = currentMode === 'hybrid' ? 'block' : 'none';
+
+      // TODO: Re-fetch graph data with new mode
+      console.log(`Switched to ${currentMode} mode`);
+    });
+  });
+
+  // Handle node limit warnings
+  nodeLimitInput?.addEventListener('change', (e) => {
+    const limit = parseInt(e.target.value);
+    if (limit > 1000) {
+      alert(`Warning: Displaying ${limit} nodes may cause performance issues. Consider reducing the limit.`);
+    }
+  });
+
+  // Populate hybrid label/property selectors (placeholder - would fetch from API)
+  function populateHybridSelectors() {
+    // TODO: Fetch available labels and properties from schema
+    const sampleLabels = ['File', 'Folder', 'Sample', 'SampleType'];
+    hybridLabelSelect.innerHTML = '<option value="">Select label...</option>';
+    sampleLabels.forEach(label => {
+      const option = document.createElement('option');
+      option.value = label;
+      option.textContent = label;
+      hybridLabelSelect.appendChild(option);
+    });
+  }
+
+  hybridLabelSelect?.addEventListener('change', (e) => {
+    const label = e.target.value;
+    if (!label) {
+      hybridPropertySelect.innerHTML = '<option value="">Select property...</option>';
+      return;
+    }
+
+    // TODO: Fetch properties for selected label
+    const sampleProperties = ['type', 'status', 'category', 'created_at'];
+    hybridPropertySelect.innerHTML = '<option value="">Select property...</option>';
+    sampleProperties.forEach(prop => {
+      const option = document.createElement('option');
+      option.value = prop;
+      option.textContent = prop;
+      hybridPropertySelect.appendChild(option);
+    });
+  });
+
+  populateHybridSelectors();
+})();
+
+// === EXPORT FUNCTIONALITY ===
+(function() {
+  const exportPngBtn = document.getElementById('export-png');
+  const exportJsonBtn = document.getElementById('export-json');
+  const exportCypherBtn = document.getElementById('export-cypher');
+
+  // Export PNG
+  exportPngBtn?.addEventListener('click', () => {
+    // Get active tab's cytoscape instance
+    const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+    if (!activeTabId || !window.cytoscapeInstances || !window.cytoscapeInstances[activeTabId]) {
+      alert('No graph to export');
+      return;
+    }
+
+    const cy = window.cytoscapeInstances[activeTabId];
+    const png64 = cy.png({scale: 2, full: true});
+    const link = document.createElement('a');
+    link.download = `map_${Date.now()}.png`;
+    link.href = png64;
+    link.click();
+  });
+
+  // Export JSON
+  exportJsonBtn?.addEventListener('click', () => {
+    const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+    if (!activeTabId || !window.cytoscapeInstances || !window.cytoscapeInstances[activeTabId]) {
+      alert('No graph to export');
+      return;
+    }
+
+    const cy = window.cytoscapeInstances[activeTabId];
+    const data = {
+      nodes: cy.nodes().map(n => n.data()),
+      edges: cy.edges().map(e => e.data())
+    };
+
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+    const link = document.createElement('a');
+    link.download = `map_${Date.now()}.json`;
+    link.href = URL.createObjectURL(blob);
+    link.click();
+  });
+
+  // Export Cypher
+  exportCypherBtn?.addEventListener('click', () => {
+    const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+    if (!activeTabId || !window.cytoscapeInstances || !window.cytoscapeInstances[activeTabId]) {
+      alert('No graph to export');
+      return;
+    }
+
+    const cy = window.cytoscapeInstances[activeTabId];
+
+    // Generate Cypher CREATE statements
+    let cypher = '// Generated Cypher script\n\n';
+
+    // Create nodes
+    cy.nodes().forEach(node => {
+      const data = node.data();
+      const label = data.label || 'Node';
+      const props = Object.entries(data)
+        .filter(([k, v]) => k !== 'id' && k !== 'label' && v !== undefined)
+        .map(([k, v]) => `${k}: "${v}"`)
+        .join(', ');
+
+      cypher += `CREATE (n:${label} {id: "${data.id}"${props ? ', ' + props : ''}})\n`;
+    });
+
+    cypher += '\n';
+
+    // Create relationships
+    cy.edges().forEach(edge => {
+      const data = edge.data();
+      const type = data.type || 'RELATED_TO';
+      const source = data.source;
+      const target = data.target;
+
+      cypher += `MATCH (a {id: "${source}"}), (b {id: "${target}"})\n`;
+      cypher += `CREATE (a)-[:${type}]->(b)\n\n`;
+    });
+
+    const blob = new Blob([cypher], {type: 'text/plain'});
+    const link = document.createElement('a');
+    link.download = `map_${Date.now()}.cypher`;
+    link.href = URL.createObjectURL(blob);
+    link.click();
+  });
+})();
 </script>
   </div> <!-- END: Center Panel -->
 
@@ -1893,6 +2050,50 @@
   <div class="map-controls-panel">
     <div class="panel-header">
       <h3>⚙️ Visualization</h3>
+    </div>
+
+    <!-- Visualization Mode -->
+    <div class="control-group" style="margin-bottom:1.5rem">
+      <h4 style="font-size:0.85rem; color:#666; text-transform:uppercase; margin-bottom:0.75rem">Visualization Mode</h4>
+      <div style="display:flex; flex-direction:column; gap:0.5rem">
+        <label style="display:flex; align-items:center; cursor:pointer">
+          <input type="radio" name="viz-mode" value="schema" checked data-testid="mode-schema" style="margin-right:0.5rem">
+          <span>Schema</span>
+        </label>
+        <label style="display:flex; align-items:center; cursor:pointer">
+          <input type="radio" name="viz-mode" value="instance" data-testid="mode-instance" style="margin-right:0.5rem">
+          <span>Instance</span>
+        </label>
+        <label style="display:flex; align-items:center; cursor:pointer">
+          <input type="radio" name="viz-mode" value="hybrid" data-testid="mode-hybrid" style="margin-right:0.5rem">
+          <span>Hybrid</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Instance Mode Settings -->
+    <div id="instance-settings" class="control-group" style="margin-bottom:1.5rem; display:none">
+      <h4 style="font-size:0.85rem; color:#666; text-transform:uppercase; margin-bottom:0.75rem">Instance Settings</h4>
+      <label for="node-limit" class="form-label small" style="margin-bottom:.25rem">Node Limit</label>
+      <input type="number" id="node-limit" class="form-control form-control-sm" value="500" min="10" max="5000" data-testid="node-limit" />
+      <small class="text-muted" style="font-size:0.7rem">Warning: >1000 nodes may slow performance</small>
+    </div>
+
+    <!-- Hybrid Mode Settings -->
+    <div id="hybrid-settings" class="control-group" style="margin-bottom:1.5rem; display:none">
+      <h4 style="font-size:0.85rem; color:#666; text-transform:uppercase; margin-bottom:0.75rem">Hybrid Settings</h4>
+      <div style="margin-bottom:0.75rem">
+        <label for="hybrid-label" class="form-label small" style="margin-bottom:.25rem">Group By Label</label>
+        <select id="hybrid-label" class="form-select form-select-sm" data-testid="hybrid-label">
+          <option value="">Select label...</option>
+        </select>
+      </div>
+      <div style="margin-bottom:0.75rem">
+        <label for="hybrid-property" class="form-label small" style="margin-bottom:.25rem">Group By Property</label>
+        <select id="hybrid-property" class="form-select form-select-sm" data-testid="hybrid-property">
+          <option value="">Select property...</option>
+        </select>
+      </div>
     </div>
 
     <!-- Data Source -->
@@ -1987,8 +2188,11 @@
 
     <!-- Export -->
     <div class="control-group">
-      <h4 style="font-size:0.85rem; color:#666; text-transform:uppercase; margin-bottom:0.75rem">Export Schema</h4>
-      <button id="download-csv" class="btn btn-sm btn-outline-primary w-100">📊 Download CSV</button>
+      <h4 style="font-size:0.85rem; color:#666; text-transform:uppercase; margin-bottom:0.75rem">Export Graph</h4>
+      <button id="export-png" class="btn btn-sm btn-outline-primary w-100" data-testid="export-png" style="margin-bottom:0.5rem">🖼️ Export PNG</button>
+      <button id="export-json" class="btn btn-sm btn-outline-primary w-100" data-testid="export-json" style="margin-bottom:0.5rem">📄 Export JSON</button>
+      <button id="export-cypher" class="btn btn-sm btn-outline-primary w-100" data-testid="export-cypher" style="margin-bottom:0.5rem">🔷 Export Cypher</button>
+      <button id="download-csv" class="btn btn-sm btn-outline-secondary w-100">📊 Download CSV</button>
     </div>
   </div>
 
