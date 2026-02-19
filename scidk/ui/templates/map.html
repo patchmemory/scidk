@@ -101,6 +101,87 @@
     margin-bottom: 0.5rem;
     opacity: 0.5;
   }
+
+  /* === TAB STYLES === */
+  .tab-bar {
+    flex-shrink: 0;
+  }
+
+  #tab-container {
+    white-space: nowrap;
+  }
+
+  #tab-container::-webkit-scrollbar {
+    height: 4px;
+  }
+
+  #tab-container::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 2px;
+  }
+
+  .map-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #e0e0e0;
+    border-bottom: none;
+    background: #f5f5f5;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.15s ease;
+    border-radius: 4px 4px 0 0;
+    max-width: 150px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .map-tab:hover {
+    background: #efefef;
+  }
+
+  .map-tab.active {
+    background: #fff;
+    border-bottom: 2px solid #fff;
+    font-weight: 500;
+    position: relative;
+    z-index: 1;
+  }
+
+  .map-tab-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .map-tab-close {
+    color: #999;
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 0.25rem;
+    border: none;
+    background: none;
+  }
+
+  .map-tab-close:hover {
+    color: #dc3545;
+  }
+
+  .tab-content {
+    display: none;
+  }
+
+  .tab-content.active {
+    display: block;
+  }
+
+  #tab-content-area {
+    flex: 1;
+    overflow-y: auto;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -122,7 +203,22 @@
 
   <!-- CENTER PANEL: Main Workspace -->
   <div class="map-workspace-panel">
-<section style="margin:0; padding:0;">
+    <!-- Tab Bar -->
+    <div class="tab-bar" style="display:flex; align-items:center; border-bottom:1px solid #e0e0e0; padding:0.5rem 0; margin-bottom:1rem">
+      <div id="tab-container" style="display:flex; gap:0.25rem; flex:1; overflow-x:auto">
+        <!-- Tabs will be inserted here dynamically -->
+      </div>
+      <button id="add-tab-btn" class="btn btn-sm btn-outline-primary" style="margin-left:0.5rem" data-testid="add-tab-btn">
+        + New Tab
+      </button>
+    </div>
+
+    <!-- Tab Content Area -->
+    <div id="tab-content-area">
+      <!-- Individual tab contents will be shown/hidden here -->
+    </div>
+
+<section style="margin:0; padding:0; display:none;" data-tab-id="main" class="tab-content active">
   <h2>Schema Graph (Interactive)</h2>
   <div id="schema-graph" data-testid="graph-explorer-root" style="width: 100%; height: 420px; border: 1px solid #ddd"></div>
 
