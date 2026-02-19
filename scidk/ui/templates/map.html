@@ -122,83 +122,9 @@
 
   <!-- CENTER PANEL: Main Workspace -->
   <div class="map-workspace-panel">
-<section style="margin:0; padding:0;"
+<section style="margin:0; padding:0;">
   <h2>Schema Graph (Interactive)</h2>
-  <div class="row g-2" style="margin-bottom:.5rem">
-    <div class="col-auto">
-      <label for="schema-source" class="form-label small" style="margin-bottom:.25rem">Source</label>
-      <select id="schema-source" class="form-select form-select-sm" data-testid="schema-source-selector">
-        <option value="all" selected>All Sources</option>
-        <option value="labels">Local Labels</option>
-        <option value="neo4j">Neo4j Schema</option>
-        <option value="graph">In-Memory Graph</option>
-      </select>
-    </div>
-    <div class="col-auto">
-      <label for="filter-labels" class="form-label small" style="margin-bottom:.25rem">Labels</label>
-      <select id="filter-labels" class="form-select form-select-sm" data-testid="filter-labels">
-      </select>
-    </div>
-    <div class="col-auto">
-      <label for="filter-reltypes" class="form-label small" style="margin-bottom:.25rem">Relationship Types</label>
-      <select id="filter-reltypes" class="form-select form-select-sm" data-testid="filter-reltypes">
-      </select>
-    </div>
-    <div class="col-auto">
-      <label for="layout-mode" class="form-label small" style="margin-bottom:.25rem">Layout</label>
-      <select id="layout-mode" class="form-select form-select-sm">
-        <option value="cose">Force (cose)</option>
-        <option value="breadthfirst">Hierarchical (breadthfirst)</option>
-        <option value="manual">Manual</option>
-      </select>
-    </div>
-    <div class="col-auto" style="display:flex; gap:.5rem; align-items:end;">
-      <button id="save-positions" class="btn btn-sm btn-outline-secondary">Save</button>
-      <button id="load-positions" class="btn btn-sm btn-outline-secondary">Load</button>
-    </div>
-    <div class="col-auto">
-      <label for="node-size" class="form-label small" style="margin-bottom:.25rem">Node size</label>
-      <input id="node-size" type="range" class="form-range" min="0.5" max="3" step="0.1" value="1" style="width:140px">
-    </div>
-    <div class="col-auto">
-      <label for="edge-width" class="form-label small" style="margin-bottom:.25rem">Edge width</label>
-      <input id="edge-width" type="range" class="form-range" min="0.5" max="3" step="0.1" value="1" style="width:140px">
-    </div>
-    <div class="col-auto">
-      <label for="font-size" class="form-label small" style="margin-bottom:.25rem">Label font</label>
-      <input id="font-size" type="range" class="form-range" min="8" max="18" step="1" value="10" style="width:140px">
-    </div>
-    <div class="col-auto form-check" style="padding-top:1.6rem">
-      <input class="form-check-input" type="checkbox" id="high-contrast" />
-      <label class="form-check-label small" for="high-contrast">High-contrast labels</label>
-    </div>
-  </div>
   <div id="schema-graph" data-testid="graph-explorer-root" style="width: 100%; height: 420px; border: 1px solid #ddd"></div>
-  <div style="margin-top: .5rem">
-    <button id="download-csv" class="btn btn-sm btn-outline-primary">Download Schema (CSV)</button>
-  </div>
-
-  <div style="margin-top:1rem">
-    <h3>Instances (preview & download)</h3>
-    <div class="row g-2" style="margin-bottom:.5rem">
-      <div class="col-auto">
-        <label for="instances-label" class="form-label small" style="margin-bottom:.25rem">Label</label>
-        <select id="instances-label" class="form-select form-select-sm">
-          <option value="Scan" selected>Scan</option>
-          <option value="File">File</option>
-          <option value="Folder">Folder</option>
-        </select>
-      </div>
-      <div class="col-auto" style="display:flex; gap:.5rem; align-items:end;">
-        <button id="instances-preview" class="btn btn-sm btn-outline-secondary">Preview</button>
-        <a id="dl-file-csv" class="btn btn-sm btn-outline-primary" href="/api/graph/instances.csv?label=File">Files CSV</a>
-        <a id="dl-folder-csv" class="btn btn-sm btn-outline-primary" href="/api/graph/instances.csv?label=Folder">Folders CSV</a>
-        <a id="dl-scan-csv" class="btn btn-sm btn-outline-primary" href="/api/graph/instances.csv?label=Scan">Scans CSV</a>
-        <a id="dl-file-xlsx" class="btn btn-sm btn-outline-secondary" href="/api/graph/instances.xlsx?label=File">Files XLSX</a>
-      </div>
-    </div>
-    <div id="instances-table" class="table-responsive" style="max-height:240px; overflow:auto; border:1px solid #eee"></div>
-  </div>
 
   <!-- Query Panel -->
   <div style="margin-top:2rem">
@@ -774,12 +700,107 @@
   <!-- RESIZER (Center/Right) -->
   <div class="resizer" id="resizer-right"></div>
 
-  <!-- RIGHT PANEL: Controls (Placeholder) -->
+  <!-- RIGHT PANEL: Controls -->
   <div class="map-controls-panel">
     <div class="panel-header">
-      <h3>⚙️ Controls</h3>
+      <h3>⚙️ Visualization</h3>
     </div>
-    <p class="small text-muted">Controls will be moved here in Sub-task 1.2</p>
+
+    <!-- Data Source -->
+    <div class="control-group" style="margin-bottom:1.5rem">
+      <h4 style="font-size:0.85rem; color:#666; text-transform:uppercase; margin-bottom:0.75rem">Data Source</h4>
+      <label for="schema-source" class="form-label small" style="margin-bottom:.25rem">Source</label>
+      <select id="schema-source" class="form-select form-select-sm" data-testid="schema-source-selector">
+        <option value="all" selected>All Sources</option>
+        <option value="labels">Local Labels</option>
+        <option value="neo4j">Neo4j Schema</option>
+        <option value="graph">In-Memory Graph</option>
+      </select>
+    </div>
+
+    <!-- Filters -->
+    <div class="control-group" style="margin-bottom:1.5rem">
+      <h4 style="font-size:0.85rem; color:#666; text-transform:uppercase; margin-bottom:0.75rem">Filters</h4>
+      <div style="margin-bottom:0.75rem">
+        <label for="filter-labels" class="form-label small" style="margin-bottom:.25rem">Labels</label>
+        <select id="filter-labels" class="form-select form-select-sm" data-testid="filter-labels">
+        </select>
+      </div>
+      <div style="margin-bottom:0.75rem">
+        <label for="filter-reltypes" class="form-label small" style="margin-bottom:.25rem">Relationship Types</label>
+        <select id="filter-reltypes" class="form-select form-select-sm" data-testid="filter-reltypes">
+        </select>
+      </div>
+    </div>
+
+    <!-- Layout -->
+    <div class="control-group" style="margin-bottom:1.5rem">
+      <h4 style="font-size:0.85rem; color:#666; text-transform:uppercase; margin-bottom:0.75rem">Layout</h4>
+      <div style="margin-bottom:0.75rem">
+        <label for="layout-mode" class="form-label small" style="margin-bottom:.25rem">Algorithm</label>
+        <select id="layout-mode" class="form-select form-select-sm">
+          <option value="cose">Force (cose)</option>
+          <option value="breadthfirst">Hierarchical (breadthfirst)</option>
+          <option value="manual">Manual</option>
+        </select>
+      </div>
+      <div style="display:flex; gap:.5rem">
+        <button id="save-positions" class="btn btn-sm btn-outline-secondary" style="flex:1">💾 Save</button>
+        <button id="load-positions" class="btn btn-sm btn-outline-secondary" style="flex:1">📂 Load</button>
+      </div>
+    </div>
+
+    <!-- Node Style -->
+    <div class="control-group" style="margin-bottom:1.5rem">
+      <h4 style="font-size:0.85rem; color:#666; text-transform:uppercase; margin-bottom:0.75rem">Node Style</h4>
+      <div style="margin-bottom:0.75rem">
+        <label for="node-size" class="form-label small" style="margin-bottom:.25rem">Size</label>
+        <input id="node-size" type="range" class="form-range" min="0.5" max="3" step="0.1" value="1" style="width:100%">
+      </div>
+      <div style="margin-bottom:0.75rem">
+        <label for="font-size" class="form-label small" style="margin-bottom:.25rem">Label Font</label>
+        <input id="font-size" type="range" class="form-range" min="8" max="18" step="1" value="10" style="width:100%">
+      </div>
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="high-contrast" />
+        <label class="form-check-label small" for="high-contrast">High-contrast labels</label>
+      </div>
+    </div>
+
+    <!-- Edge Style -->
+    <div class="control-group" style="margin-bottom:1.5rem">
+      <h4 style="font-size:0.85rem; color:#666; text-transform:uppercase; margin-bottom:0.75rem">Edge Style</h4>
+      <div style="margin-bottom:0.75rem">
+        <label for="edge-width" class="form-label small" style="margin-bottom:.25rem">Width</label>
+        <input id="edge-width" type="range" class="form-range" min="0.5" max="3" step="0.1" value="1" style="width:100%">
+      </div>
+    </div>
+
+    <!-- Instances -->
+    <div class="control-group" style="margin-bottom:1.5rem">
+      <h4 style="font-size:0.85rem; color:#666; text-transform:uppercase; margin-bottom:0.75rem">Instance Export</h4>
+      <div style="margin-bottom:0.5rem">
+        <label for="instances-label" class="form-label small" style="margin-bottom:.25rem">Label</label>
+        <select id="instances-label" class="form-select form-select-sm">
+          <option value="Scan" selected>Scan</option>
+          <option value="File">File</option>
+          <option value="Folder">Folder</option>
+        </select>
+      </div>
+      <button id="instances-preview" class="btn btn-sm btn-outline-secondary w-100" style="margin-bottom:0.5rem">👁️ Preview</button>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.25rem; font-size:0.8rem">
+        <a id="dl-file-csv" class="btn btn-sm btn-outline-primary" href="/api/graph/instances.csv?label=File" style="padding:0.25rem">Files CSV</a>
+        <a id="dl-folder-csv" class="btn btn-sm btn-outline-primary" href="/api/graph/instances.csv?label=Folder" style="padding:0.25rem">Folders CSV</a>
+        <a id="dl-scan-csv" class="btn btn-sm btn-outline-primary" href="/api/graph/instances.csv?label=Scan" style="padding:0.25rem">Scans CSV</a>
+        <a id="dl-file-xlsx" class="btn btn-sm btn-outline-secondary" href="/api/graph/instances.xlsx?label=File" style="padding:0.25rem">Files XLSX</a>
+      </div>
+    </div>
+
+    <!-- Export -->
+    <div class="control-group">
+      <h4 style="font-size:0.85rem; color:#666; text-transform:uppercase; margin-bottom:0.75rem">Export Schema</h4>
+      <button id="download-csv" class="btn btn-sm btn-outline-primary w-100">📊 Download CSV</button>
+    </div>
   </div>
 
 </div> <!-- END: maps-container -->
