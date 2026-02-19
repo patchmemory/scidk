@@ -1177,12 +1177,15 @@
         return;
       }
 
+      console.log('Visualizing results:', results);
+
       const cy = window.cytoscapeInstances[tabId];
       const nodes = new Map();
       const edges = [];
 
       // Parse results looking for nodes (n, m) and relationships (r)
-      results.forEach(row => {
+      results.forEach((row, rowIndex) => {
+        console.log(`Row ${rowIndex}:`, row);
         // Process each value in the row
         Object.values(row).forEach(val => {
           if (!val) return;
@@ -1191,6 +1194,7 @@
           if (val.id !== undefined && val.labels) {
             const nodeId = String(val.id);
             if (!nodes.has(nodeId)) {
+              console.log('Found node:', nodeId, val.labels);
               nodes.set(nodeId, {
                 id: nodeId,
                 label: val.labels[0] || 'Node',
@@ -1202,12 +1206,13 @@
             }
           }
 
-          // Check if it's a relationship (has id, type, start_node_id, end_node_id)
-          if (val.id !== undefined && val.type && val.start_node_id !== undefined && val.end_node_id !== undefined) {
+          // Check if it's a relationship (has id, type, start_node, end_node)
+          if (val.id !== undefined && val.type && val.start_node !== undefined && val.end_node !== undefined) {
+            console.log('Found relationship:', val.type, 'from', val.start_node, 'to', val.end_node);
             edges.push({
               id: `edge_${val.id}`,
-              source: String(val.start_node_id),
-              target: String(val.end_node_id),
+              source: String(val.start_node),
+              target: String(val.end_node),
               type: val.type,
               properties: val.properties || {}
             });
