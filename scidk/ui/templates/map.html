@@ -1627,10 +1627,18 @@
         statusEl.style.color = '#666';
 
         try {
+          // Get selected Neo4j connection
+          const selectedConnection = window.getSelectedNeo4jConnection ? window.getSelectedNeo4jConnection() : null;
+
+          const requestBody = { query };
+          if (selectedConnection) {
+            requestBody.profile_name = selectedConnection;
+          }
+
           const resp = await fetch('/api/graph/query', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query }),
+            body: JSON.stringify(requestBody),
             signal: abortController.signal
           });
           const data = await resp.json();
@@ -2490,6 +2498,86 @@
   }
 })();
 
+// === NEO4J CONNECTION SELECTION ===
+(function() {
+  const initConnectionSelect = () => {
+    const connectionSelect = document.getElementById('neo4j-connection-select');
+    const connectionStatus = document.getElementById('connection-status');
+
+    if (!connectionSelect) {
+      console.warn('Neo4j connection selector not found');
+      return;
+    }
+
+    let selectedConnection = null; // Store selected profile name
+
+    async function loadConnections() {
+      try {
+        const response = await fetch('/api/settings/neo4j/profiles');
+        const data = await response.json();
+        const profiles = data.profiles || [];
+
+        if (profiles.length === 0) {
+          connectionSelect.innerHTML = '<option value="">No connections configured</option>';
+          connectionStatus.textContent = 'Configure connections in Settings';
+          return;
+        }
+
+        // Build options
+        connectionSelect.innerHTML = '<option value="">Select connection...</option>';
+        profiles.forEach(profile => {
+          const option = document.createElement('option');
+          option.value = profile.name;
+          option.textContent = `${profile.name} (${profile.role || 'primary'})`;
+          connectionSelect.appendChild(option);
+        });
+
+        // Try to select the primary connection by default
+        const primaryProfile = profiles.find(p => p.role === 'primary');
+        if (primaryProfile) {
+          connectionSelect.value = primaryProfile.name;
+          selectedConnection = primaryProfile.name;
+          connectionStatus.textContent = `Using: ${primaryProfile.name}`;
+          console.log(`✓ Auto-selected primary connection: ${primaryProfile.name}`);
+        } else if (profiles.length > 0) {
+          // Fall back to first profile
+          connectionSelect.value = profiles[0].name;
+          selectedConnection = profiles[0].name;
+          connectionStatus.textContent = `Using: ${profiles[0].name}`;
+          console.log(`✓ Auto-selected connection: ${profiles[0].name}`);
+        }
+      } catch (error) {
+        console.error('Failed to load Neo4j connections:', error);
+        connectionSelect.innerHTML = '<option value="">Error loading connections</option>';
+        connectionStatus.textContent = 'Failed to load connections';
+      }
+    }
+
+    // Handle connection selection change
+    connectionSelect.addEventListener('change', (e) => {
+      selectedConnection = e.target.value;
+      if (selectedConnection) {
+        connectionStatus.textContent = `Using: ${selectedConnection}`;
+        console.log(`Connection switched to: ${selectedConnection}`);
+      } else {
+        connectionStatus.textContent = 'No connection selected';
+      }
+    });
+
+    // Make selected connection available globally for query execution
+    window.getSelectedNeo4jConnection = () => selectedConnection;
+
+    loadConnections();
+  };
+
+  // Call init when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initConnectionSelect);
+  } else {
+    initConnectionSelect();
+  }
+})();
+
 // === EXPORT FUNCTIONALITY ===
 (function() {
   const exportPngBtn = document.getElementById('export-png');
@@ -2589,6 +2677,17 @@
   <div class="map-controls-panel">
     <div class="panel-header">
       <h3>⚙️ Visualization</h3>
+    </div>
+
+    <!-- Neo4j Connection Selection -->
+    <div class="control-group" style="margin-bottom:1.5rem">
+      <h4 style="font-size:0.85rem; color:#666; text-transform:uppercase; margin-bottom:0.75rem">Database Connection</h4>
+      <select id="neo4j-connection-select" class="form-select form-select-sm" data-testid="neo4j-connection">
+        <option value="">Loading connections...</option>
+      </select>
+      <small class="text-muted" style="font-size:0.7rem; display:block; margin-top:0.25rem">
+        <span id="connection-status">Select a connection</span>
+      </small>
     </div>
 
     <!-- Visualization Mode -->

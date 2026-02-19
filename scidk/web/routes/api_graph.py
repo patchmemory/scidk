@@ -14,6 +14,37 @@ def _get_ext():
     """Get SciDK extensions from current Flask current_app."""
     return current_app.extensions['scidk']
 
+def _get_profile_credentials(profile_name):
+    """Load Neo4j profile credentials by name.
+
+    Args:
+        profile_name: Name of the profile to load
+
+    Returns:
+        dict: {uri, user, password, database, role} or None if not found
+    """
+    try:
+        from ...core.settings import get_setting
+
+        profile_key = f'neo4j_profile_{profile_name.replace(" ", "_")}'
+        profile_json = get_setting(profile_key)
+
+        if not profile_json:
+            return None
+
+        profile = json.loads(profile_json)
+
+        # Load password separately
+        password_key = f'neo4j_profile_password_{profile_name.replace(" ", "_")}'
+        password = get_setting(password_key)
+        if password:
+            profile['password'] = password
+
+        profile['name'] = profile_name
+        return profile
+    except Exception:
+        return None
+
 @bp.get('/graph/schema')
 def api_graph_schema():
         try:
@@ -378,17 +409,33 @@ def api_graph_query():
     data = request.get_json() or {}
     query = (data.get('query') or '').strip()
     parameters = data.get('parameters') or {}
+    profile_name = data.get('profile_name')  # Optional: specific profile to use
 
     if not query:
         return jsonify({'status': 'error', 'error': 'Missing query'}), 400
 
     # Get Neo4j connection parameters
-    uri, user, password, database, auth_mode = get_neo4j_params(current_app)
+    # If profile_name is provided, load that profile's credentials
+    if profile_name:
+        profile_creds = _get_profile_credentials(profile_name)
+        if not profile_creds:
+            return jsonify({
+                'status': 'error',
+                'error': f'Profile "{profile_name}" not found'
+            }), 404
+        uri = profile_creds.get('uri')
+        user = profile_creds.get('user')
+        password = profile_creds.get('password')
+        database = profile_creds.get('database')
+        auth_mode = 'basic'  # Profiles use basic auth
+    else:
+        # Fall back to default connection parameters
+        uri, user, password, database, auth_mode = get_neo4j_params(current_app)
 
     if not uri:
         return jsonify({
             'status': 'error',
-            'error': 'Neo4j not configured. Please configure Neo4j in Settings.'
+            'error': 'Neo4j not configured. Please configure Neo4j in Settings or select a connection profile.'
         }), 500
 
     try:
