@@ -1,786 +1,1714 @@
 {% extends 'base.html' %}
 {% block title %}-SciDK-> Files{% endblock %}
+{% block head %}
+<style>
+  /* Override base.html main width constraint for files page */
+  main {
+    max-width: 100% !important;
+    padding: 1rem 0.5rem !important;
+  }
+
+  .files-container {
+    display: flex;
+    gap: 0;
+    margin-top: 1rem;
+    height: calc(100vh - 200px);
+    position: relative;
+  }
+
+  /* Left Panel: Tree Explorer */
+  .files-sidebar {
+    width: 25%;
+    min-width: 200px;
+    max-width: 40%;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    padding: 0;
+    overflow-y: auto;
+    transition: width 0.3s ease, min-width 0.3s ease;
+    display: flex;
+    flex-direction: column;
+  }
+  .files-sidebar.collapsed {
+    width: 40px;
+    min-width: 40px;
+  }
+
+  /* Tree Search */
+  .tree-search {
+    padding: 0.5rem;
+    border-bottom: 1px solid #eee;
+    position: sticky;
+    top: 0;
+    background: #fff;
+    z-index: 10;
+  }
+  .tree-search input {
+    width: 100%;
+    padding: 0.375rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.875rem;
+  }
+  .tree-search input:focus {
+    outline: none;
+    border-color: #2196f3;
+  }
+
+  /* Tree Section */
+  .tree-section {
+    padding: 0.5rem;
+  }
+  .tree-section-header {
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: #666;
+    padding: 0.5rem 0.25rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  /* Tree Node */
+  .tree-node {
+    padding: 0.375rem 0.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    cursor: pointer;
+    border-radius: 4px;
+    user-select: none;
+    font-size: 0.875rem;
+  }
+  .tree-node:hover {
+    background: #f3f3f3;
+  }
+  .tree-node.selected {
+    background: #e3f2fd;
+    border-left: 3px solid #2196f3;
+    padding-left: 0.125rem;
+  }
+  .tree-node .toggle {
+    width: 16px;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+    transition: transform 0.2s;
+  }
+  .tree-node .toggle.expanded {
+    transform: rotate(90deg);
+  }
+  .tree-node .icon {
+    font-size: 1rem;
+    flex-shrink: 0;
+  }
+  .tree-node .label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tree-node .count {
+    font-size: 0.75rem;
+    color: #999;
+  }
+
+  /* Tree Children */
+  .tree-children {
+    margin-left: 1rem;
+    overflow: hidden;
+  }
+  .tree-children.collapsed {
+    display: none;
+  }
+
+  /* Tree Cluster */
+  .tree-cluster {
+    font-style: italic;
+    color: #666;
+  }
+
+  /* Tree Loading */
+  .tree-loading {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    color: #999;
+  }
+
+  /* Center Panel: File Browser */
+  .files-browser {
+    flex: 1;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    padding: 1rem;
+    overflow-y: auto;
+    min-width: 300px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Right Panel: File Details/Metadata */
+  .files-details {
+    width: 25%;
+    min-width: 200px;
+    max-width: 40%;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    padding: 1rem;
+    overflow-y: auto;
+    transition: width 0.3s ease, min-width 0.3s ease;
+  }
+  .files-details.collapsed {
+    width: 40px;
+    min-width: 40px;
+    padding: 0.25rem;
+  }
+
+  /* Resizers */
+  .resizer {
+    width: 8px;
+    cursor: col-resize;
+    background: transparent;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .resizer:hover {
+    background: #e0e0e0;
+  }
+  .resizer::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 3px;
+    width: 2px;
+    background: #ddd;
+  }
+  .resizer.resizing {
+    background: #2196f3;
+  }
+
+  /* Collapse/Expand Buttons */
+  .collapse-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #f0f0f0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    width: 24px;
+    height: 32px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    transition: background 0.2s;
+  }
+  .collapse-btn:hover {
+    background: #e0e0e0;
+  }
+  .collapse-btn-left {
+    right: -12px;
+  }
+  .collapse-btn-right {
+    left: -12px;
+  }
+
+  /* Sidebar items */
+  .sidebar-item {
+    padding: 0.5rem;
+    margin-bottom: 0.25rem;
+    cursor: pointer;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    user-select: none;
+  }
+  .sidebar-item:hover {
+    background: #f3f3f3;
+  }
+  .sidebar-item.active {
+    background: #e3f2fd;
+    border-color: #2196f3;
+  }
+
+  /* Section headers in sidebar */
+  .sidebar-section {
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: #666;
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  /* Breadcrumb navigation */
+  .breadcrumb-nav {
+    font-size: 0.875rem;
+    margin-bottom: 0.75rem;
+  }
+  .breadcrumb-nav a {
+    color: #2196f3;
+    text-decoration: none;
+  }
+  .breadcrumb-nav a:hover {
+    text-decoration: underline;
+  }
+
+  /* Advanced options collapse */
+  .advanced-options {
+    background: #f8f9fa;
+    border: 1px dashed #ddd;
+    border-radius: 0.25rem;
+    padding: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  /* File table */
+  .file-table {
+    flex: 1;
+    overflow: auto;
+    border: 1px solid #eee;
+    border-radius: 4px;
+  }
+  .file-table table {
+    margin-bottom: 0;
+  }
+  .file-table tr {
+    cursor: pointer;
+  }
+  .file-table tr:hover {
+    background: #f8f9fa;
+  }
+  .file-table tr.selected {
+    background: #e3f2fd;
+  }
+
+  /* Neo4j status indicator */
+  .neo4j-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background: #f8f9fa;
+    border-radius: 4px;
+    margin-top: 1rem;
+    font-size: 0.875rem;
+  }
+  .neo4j-light {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #000;
+    border: 1px solid #333;
+  }
+  .neo4j-light.connected {
+    background: #19c37d;
+  }
+
+  /* Tasks/Progress Section */
+  .task-item {
+    margin: 0.5rem 0;
+    padding: 0.5rem;
+    background: #f8f9fa;
+    border-radius: 4px;
+    font-size: 0.875rem;
+  }
+  .task-progress-bar {
+    width: 100%;
+    height: 10px;
+    background: #eee;
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 0.25rem 0;
+  }
+  .task-progress-fill {
+    height: 100%;
+    transition: width 0.3s;
+  }
+  .task-progress-fill.completed {
+    background: #4caf50;
+  }
+  .task-progress-fill.error {
+    background: #e53935;
+  }
+  .task-progress-fill.running {
+    background: #2196f3;
+  }
+</style>
+{% endblock %}
 {% block content %}
-<h1 data-testid="files-title">Files</h1>
-<section data-testid="files-root">
-  <h2>Files</h2>
-  <div class="row g-2" style="margin-bottom:.5rem">
-    <div class="col-auto">
-      <label for="prov-select" class="form-label small" style="margin-bottom:.25rem">Provider</label>
-      <select id="prov-select" class="form-select form-select-sm" style="min-width:220px"></select>
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+  <h1 data-testid="files-title">Files</h1>
+  <div class="neo4j-status">
+    <div id="neo4j-light" class="neo4j-light" title="Disconnected"></div>
+    <span id="neo4j-status-text">Neo4j: Not connected</span>
+  </div>
+</div>
+
+<div class="files-container">
+  <!-- Left Panel: Tree Explorer -->
+  <div class="files-sidebar" id="files-sidebar">
+    <button class="collapse-btn collapse-btn-left" id="collapse-left" title="Collapse sidebar">◀</button>
+
+    <div class="tree-search">
+      <input type="text" id="tree-search-input" placeholder="Search... (/)" />
     </div>
-    <div class="col-auto">
-      <label for="root-select" class="form-label small" style="margin-bottom:.25rem">Root</label>
-      <select id="root-select" class="form-select form-select-sm" style="min-width:240px"></select>
-    </div>
-    <div class="col-auto">
-      <label for="prov-path" class="form-label small" style="margin-bottom:.25rem">Path</label>
-      <input id="prov-path" type="text" class="form-control form-control-sm" placeholder="/path/within/root" style="width:360px" />
-    </div>
-    <div class="col-auto">
-      <label class="form-label small" style="margin-bottom:.25rem">Browse options</label>
-      <div class="small" style="display:flex; gap:.75rem; align-items:center; border:1px dashed #ddd; padding:.25rem .5rem; border-radius:.25rem">
-        <div class="form-check form-check-inline">
-          <input id="prov-browse-recursive" class="form-check-input" type="checkbox" />
-          <label class="form-check-label small" for="prov-browse-recursive">Recursive</label>
-        </div>
-        <div class="form-check form-check-inline">
-          <input id="prov-browse-fast-list" class="form-check-input" type="checkbox" />
-          <label class="form-check-label small" for="prov-browse-fast-list">Fast list</label>
-        </div>
-        <div class="input-group input-group-sm" style="width: 160px;">
-          <span class="input-group-text">Max depth</span>
-          <input id="prov-browse-max-depth" type="number" class="form-control" min="1" step="1" value="1" />
-        </div>
+
+    <!-- Mode Toggle in Sidebar -->
+    <div style="padding: 0.5rem; border-bottom: 1px solid #eee;">
+      <div class="btn-group btn-group-sm w-100" role="group">
+        <input type="radio" class="btn-check" name="browse-mode" id="mode-live" value="live" checked>
+        <label class="btn btn-outline-primary" for="mode-live">Live Servers</label>
+        <input type="radio" class="btn-check" name="browse-mode" id="mode-snapshot" value="snapshot">
+        <label class="btn btn-outline-primary" for="mode-snapshot">Snapshots</label>
       </div>
     </div>
-    <div class="col-auto" style="display:flex; gap:.5rem; align-items:end;">
-      <button id="prov-go" class="btn btn-sm btn-outline-primary">Go</button>
+
+    <div style="flex: 1; overflow-y: auto;">
+      <div class="tree-section" id="servers-section">
+        <div class="tree-section-header">SERVERS</div>
+        <div id="servers-tree"></div>
+      </div>
+
+      <div class="tree-section" id="snapshots-section" style="display: none;">
+        <div class="tree-section-header">SNAPSHOTS</div>
+        <div id="scans-tree"></div>
+      </div>
+
+      <div class="tree-section">
+        <div class="tree-section-header">BACKGROUND TASKS</div>
+        <div id="tasks-list"></div>
+      </div>
     </div>
   </div>
-  <div id="prov-crumb" class="small" style="margin-bottom:.5rem"></div>
-  <div style="display:flex; gap:1rem; align-items:flex-start">
-    <div style="flex: 2 1 60%; border:1px solid #eee; max-height:420px; overflow:auto">
-      <table class="table table-sm" style="margin-bottom:0">
-        <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Modified</th><th>Provider</th></tr></thead>
-        <tbody id="prov-list"></tbody>
+
+  <!-- Resizer -->
+  <div class="resizer" id="resizer-left"></div>
+
+  <!-- Center Panel: File Browser -->
+  <div class="files-browser" id="files-browser">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+      <h3 style="margin: 0; font-size: 1.1rem;" id="browser-title">File Browser</h3>
+    </div>
+
+    <!-- Breadcrumb Navigation -->
+    <div class="breadcrumb-nav" id="breadcrumb-nav"></div>
+
+    <!-- Advanced Options (Collapsed by default) -->
+    <details style="margin-bottom: 0.75rem;">
+      <summary class="small" style="cursor: pointer; user-select: none;">Advanced Options</summary>
+      <div class="advanced-options" style="margin-top: 0.5rem;">
+        <div class="row g-2">
+          <div class="col-auto">
+            <div class="form-check">
+              <input id="opt-recursive" class="form-check-input" type="checkbox" />
+              <label class="form-check-label small" for="opt-recursive">Recursive</label>
+            </div>
+          </div>
+          <div class="col-auto">
+            <div class="form-check">
+              <input id="opt-fast-list" class="form-check-input" type="checkbox" />
+              <label class="form-check-label small" for="opt-fast-list">Fast list</label>
+            </div>
+          </div>
+          <div class="col-auto">
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">Max depth</span>
+              <input id="opt-max-depth" type="number" class="form-control" min="1" step="1" value="1" style="width: 80px;" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- File List Table -->
+    <div class="file-table">
+      <table class="table table-sm table-hover">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Size</th>
+            <th>Created</th>
+            <th>Modified</th>
+            <th>Scanned</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="file-list">
+          <tr><td colspan="7" class="small text-muted">Select a server to browse files</td></tr>
+        </tbody>
       </table>
     </div>
-    <div id="prov-panel" style="flex: 1 1 40%; border:1px solid #eee; min-height:200px; padding:.5rem; position:sticky; top:1rem">
-      <div class="small" id="prov-panel-content">
-        <div style="margin-bottom:0.5rem; padding:0.5rem; background:#f8f9fa; border-radius:0.25rem">
-          <strong>Current Location:</strong>
-          <div id="prov-current-path" class="small" style="margin-top:0.25rem; font-family:monospace">
-            No folder selected
-          </div>
-        </div>
-        <div style="margin-top:0.5rem">
-          <button id="prov-scan-btn" type="button" class="btn btn-sm btn-primary" style="width:100%" disabled>
-            🔍 Scan This Folder
-          </button>
-          <div class="small text-muted" style="margin-top:0.25rem">
-            Select a folder to enable scanning. All scans run as background tasks with progress tracking.
-          </div>
-        </div>
+
+    <!-- Actions -->
+    <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem; align-items: center;">
+      <button id="scan-folder-btn" class="btn btn-sm btn-primary" disabled>
+        🔍 Scan Current Folder
+      </button>
+      <button id="commit-scan-btn" class="btn btn-sm btn-success" style="display: none;">
+        ✓ Commit to Graph
+      </button>
+      <span id="browser-status" class="small text-muted"></span>
+    </div>
+  </div>
+
+  <!-- Resizer -->
+  <div class="resizer" id="resizer-right"></div>
+
+  <!-- Right Panel: File Details -->
+  <div class="files-details collapsed" id="files-details">
+    <button class="collapse-btn collapse-btn-right" id="collapse-right" title="Expand details">▶</button>
+    <div id="details-content" style="display: none;">
+      <h4 style="font-size: 1rem; margin-bottom: 0.75rem;">File Details</h4>
+      <div id="file-metadata" class="small">
+        <p class="text-muted">Select a file to view details</p>
       </div>
     </div>
   </div>
-</section>
+</div>
 
+<!-- RO-Crate Viewer (optional, feature-flagged) -->
 {% if files_viewer == 'rocrate' %}
-<section>
-  <h2>RO-Crate Viewer</h2>
-  <div class="row g-2" style="margin-bottom:.5rem; align-items: end;">
-    <div class="col-auto" style="display:flex; gap:.5rem;">
-      <button id="open-rocrate" class="btn btn-sm btn-outline-success">Open in RO-Crate Viewer</button>
-      <button id="close-rocrate" class="btn btn-sm btn-outline-secondary" style="display:none">Close RO-Crate Viewer</button>
+<div style="margin-top: 1rem;">
+  <details>
+    <summary class="small" style="cursor: pointer; user-select: none;">RO-Crate Viewer (Experimental)</summary>
+    <div style="margin-top: 0.5rem;">
+      <div style="margin-bottom: 0.5rem;">
+        <button id="open-rocrate" class="btn btn-sm btn-outline-success">Open RO-Crate Viewer</button>
+        <button id="close-rocrate" class="btn btn-sm btn-outline-secondary" style="display:none;">Close Viewer</button>
+        <span id="rocrate-msg" class="small text-muted"></span>
+      </div>
+      <iframe id="rocrate-frame" style="width:100%; height:60vh; border:1px solid #ddd; display:none;"></iframe>
+      <p class="small text-muted">This experimental viewer uses a minimal JSON-LD from <code>/api/rocrate</code>. Large folders may be truncated.</p>
     </div>
-    <div class="col small" id="rocrate-msg"></div>
-  </div>
-  <iframe id="rocrate-frame" style="width:100%; height:60vh; border:1px solid #ddd; display:none"></iframe>
-  <div class="small" style="margin-top:.25rem">This experimental viewer uses a minimal JSON-LD from <code>/api/rocrate</code> (or wrapper). Large folders may be truncated.</div>
-</section>
-{% else %}
-<div class="alert alert-secondary small" role="alert" style="margin-top:.5rem">
-  RO-Crate viewer is disabled. Enable it by setting environment variable <code>SCIDK_FILES_VIEWER=rocrate</code>,
-  or <a href="/datasets?files_viewer=rocrate">open this page with <code>?files_viewer=rocrate</code></a>.
+  </details>
 </div>
 {% endif %}
 
-<section>
-  <h2>Snapshot (scanned) browse</h2>
-  <div class="row g-2" style="margin-bottom:.5rem">
-    <div class="col-auto">
-      <label for="snapshot-scan" class="form-label small" style="margin-bottom:.25rem">Scan</label>
-      <select id="snapshot-scan" class="form-select form-select-sm" style="min-width:300px">
-        <option value="">-- select a recent scan below --</option>
-      </select>
-    </div>
-    <div class="col-auto">
-      <label for="snap-path" class="form-label small" style="margin-bottom:.25rem">Path</label>
-      <input id="snap-path" type="text" class="form-control form-control-sm" placeholder="(defaults to scan root)" style="width:360px" />
-    </div>
-    <div class="col-auto">
-      <label class="form-label small" style="margin-bottom:.25rem">Filters</label>
-      <div class="small" style="display:flex; gap:.75rem; align-items:center; border:1px dashed #ddd; padding:.25rem .5rem; border-radius:.25rem">
-        <div class="input-group input-group-sm" style="width: 160px;">
-          <span class="input-group-text">Type</span>
-          <select id="snap-type" class="form-select form-select-sm">
-            <option value="">any</option>
-            <option value="folder">folder</option>
-            <option value="file">file</option>
-          </select>
-        </div>
-        <div class="input-group input-group-sm" style="width: 200px;">
-          <span class="input-group-text">Ext</span>
-          <input id="snap-ext" type="text" class="form-control" placeholder=".txt, .csv" />
-        </div>
-        <div class="input-group input-group-sm" style="width: 160px;">
-          <span class="input-group-text">Page size</span>
-          <input id="snap-page-size" type="number" class="form-control" min="1" max="1000" step="1" value="100" />
-        </div>
-      </div>
-    </div>
-    <div class="col-auto" style="display:flex; gap:.5rem; align-items:end;">
-      <button id="snap-go" class="btn btn-sm btn-outline-primary">Browse</button>
-      <button id="snap-prev" class="btn btn-sm btn-outline-secondary" disabled>Prev</button>
-      <button id="snap-next" class="btn btn-sm btn-outline-secondary" disabled>Next</button>
-      <button id="snap-use-live" class="btn btn-sm btn-outline-secondary" title="Copy Live path into Snapshot">Use Live path</button>
-      <button id="snap-commit" class="btn btn-sm btn-outline-success" title="Commit selected scan to Graph">Commit selected scan</button>
-    </div>
-  </div>
-  <div class="small" id="snap-crumb" style="margin-bottom:.25rem"></div>
-  <div class="small" id="snap-status" style="margin-bottom:.5rem"></div>
-  <div class="table-responsive" style="max-height:320px; overflow:auto; border:1px solid #eee">
-    <table class="table table-sm" style="margin-bottom:0">
-      <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Modified</th></tr></thead>
-      <tbody id="snap-list"></tbody>
-    </table>
-  </div>
-  <div class="row g-2" style="margin-top:.5rem">
-    <div class="col-auto">
-      <label class="form-label small" style="margin-bottom:.25rem">Snapshot search</label>
-      <div class="input-group input-group-sm" style="width: 420px;">
-        <input id="snap-search-q" type="text" class="form-control" placeholder="search name or path within scan" />
-        <button id="snap-search-go" type="button" class="btn btn-outline-secondary">Search</button>
-      </div>
-    </div>
-    <div class="col-auto">
-      <div class="input-group input-group-sm" style="width: 200px;">
-        <span class="input-group-text">Ext</span>
-        <input id="snap-search-ext" type="text" class="form-control" placeholder=".txt" />
-      </div>
-    </div>
-    <div class="col-auto">
-      <div class="input-group input-group-sm" style="width: 320px;">
-        <span class="input-group-text">Prefix</span>
-        <input id="snap-search-prefix" type="text" class="form-control" placeholder="remote:folder or /abs/prefix" />
-      </div>
-    </div>
-  </div>
-  <div id="snap-search-results" class="small" style="margin-top:.25rem"></div>
-</section>
-
-<section>
-  <h2>Scans Summary</h2>
-  <div class="table-responsive" style="max-height:280px; overflow:auto; border:1px solid #eee">
-    <table class="table table-sm" style="margin-bottom:0">
-      <thead><tr>
-        <th>ID</th><th>Path</th><th>Files</th><th>Recursive</th><th>Started</th><th>Ended</th><th>Committed</th>
-      </tr></thead>
-      <tbody id="scans-summary"></tbody>
-    </table>
-  </div>
-</section>
-<section>
-  <h2>Scans Summary</h2>
-  <div id="tasks-list" style="margin-top:.75rem"></div>
-
-  <div class="actions" style="margin-top:1rem; align-items: baseline; gap: .5rem;">
-    <label class="small" for="recent-scans">Recent scans:</label>
-    <select id="recent-scans">
-      <option value="">-- select --</option>
-      {% for s in recent_scans or [] %}
-        <option value="{{ s.id }}">{{ s.path }} — {{ s.file_count }} files — {{ '%.0f'|format((s.ended or s.started) or 0) }}</option>
-      {% endfor %}
-    </select>
-    <button id="open-scan" type="button" class="btn btn-sm btn-outline-primary">Open</button>
-    <button id="refresh-scans" type="button" class="btn btn-sm btn-outline-secondary">Refresh</button>
-    {% if selected_scan %}
-      <span class="small">Filtering by scan <code>{{ selected_scan.id }}</code> for <code>{{ selected_scan.path }}</code> (recursive: {{ selected_scan.recursive }}) — <a href="/datasets">Clear filter</a></span>
-    {% endif %}
-  </div>
-
-  <div id="neo4j-status" class="small" style="margin-top:.5rem; display:flex; align-items:center; gap:.5rem">
-    <div id="neo4j-light-files" title="Disconnected" style="width:10px; height:10px; border-radius:50%; background:#000; border:1px solid #333;"></div>
-    <span id="neo4j-status-text-files">Neo4j: Not connected</span>
-  </div>
-  <div id="scans-panel" style="margin-top:0.5rem"></div>
-
-  {% if directories %}
-    <details style="margin-top:.5rem;">
-      <summary class="small">Previously scanned sources (this session)</summary>
-      <ul>
-        {% for d in directories %}
-          <li>{% if d.provider_id %}<span class="badge">{{ d.provider_id }}</span> {% endif %}<code>{{ d.path }}</code> — files: {{ d.scanned }}, recursive: {{ d.recursive }}{% if d.source %} — <span class="badge">{{ d.source }}</span>{% endif %}</li>
-        {% endfor %}
-      </ul>
-    </details>
-  {% endif %}
-</section>
-
-{% endblock %}
-{% block head %}
 <script>
-  window.addEventListener('DOMContentLoaded', () => {
-    // Provider-aware browser
-    const provSelect = document.getElementById('prov-select');
-    const rootSelect = document.getElementById('root-select');
-    const provGoBtn = document.getElementById('prov-go');
-    const provPathInput = document.getElementById('prov-path');
-    const provList = document.getElementById('prov-list');
-    const provCrumb = document.getElementById('prov-crumb');
-    const provPanel = document.getElementById('prov-panel-content');
-    const provScanBtn = document.getElementById('prov-scan-btn');
-    const provCurrentPath = document.getElementById('prov-current-path');
-    const btnROC = document.getElementById('open-rocrate');
-    const btnROCClose = document.getElementById('close-rocrate');
-    const rocFrame = document.getElementById('rocrate-frame');
-    const rocMsg = document.getElementById('rocrate-msg');
-    let currentProv = null;
-    let currentRoot = null;
-    let currentPath = null;
+window.addEventListener('DOMContentLoaded', () => {
+  // ===== Utility Functions =====
+  function fmtBytes(n) {
+    if (!n) return '';
+    const s = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let i = 0;
+    let v = n;
+    while (v >= 1024 && i < s.length - 1) {
+      v /= 1024;
+      i++;
+    }
+    return (Math.round(v * 10) / 10) + ' ' + s[i];
+  }
 
-    function fmtBytes(n){ if(!n) return ''; const s=['B','KB','MB','GB','TB']; let i=0; let v=n; while(v>=1024 && i<s.length-1){ v/=1024; i++; } return (Math.round(v*10)/10)+' '+s[i]; }
-    function fmtTime(ts){ try { return new Date(ts*1000).toLocaleString(); } catch(e){ return String(ts); } }
+  function fmtTime(ts) {
+    try {
+      return new Date(ts * 1000).toLocaleString();
+    } catch (e) {
+      return String(ts);
+    }
+  }
 
-    async function loadProviders(){
-      try {
-        const r = await fetch('/api/providers');
-        const items = await r.json();
-        provSelect.innerHTML = items.map(p => `<option value="${p.id}">${p.display_name}</option>`).join('');
-        currentProv = items[0]?.id || 'local_fs';
-        provSelect.value = currentProv;
-        await loadRoots(currentProv);
-      } catch(e){ provSelect.innerHTML = '<option>(failed)</option>'; }
+  function fmtPct(x) {
+    return Math.round((x || 0) * 100);
+  }
+
+  function fmtETA(seconds) {
+    if (!seconds || seconds <= 0) return '';
+    if (seconds < 60) return `~${seconds}s remaining`;
+    if (seconds < 3600) return `~${Math.round(seconds / 60)}m remaining`;
+    return `~${Math.round(seconds / 3600)}h ${Math.round((seconds % 3600) / 60)}m remaining`;
+  }
+
+  // ===== Tree Class =====
+  class FileTree {
+    constructor(containerId) {
+      this.container = document.getElementById(containerId);
+      this.selectedNode = null;
+      this.expandedNodes = new Set();
+      this.nodeCache = new Map();
     }
 
-    async function loadRoots(providerId){
-      try {
-        const r = await fetch('/api/provider_roots?provider_id=' + encodeURIComponent(providerId));
-        const roots = await r.json();
-        if (!Array.isArray(roots)) { rootSelect.innerHTML = '<option>(none)</option>'; return; }
-        rootSelect.innerHTML = roots.map(rt => `<option value="${rt.id}">${rt.name||rt.path||rt.id}</option>`).join('');
-        currentRoot = roots[0]?.id || '/';
-        rootSelect.value = currentRoot;
-        // Reset current path and input: for rclone, use relative (empty)
-        if (providerId === 'rclone') {
-          currentPath = '';
-          if (provPathInput) provPathInput.value = '';
-          // Auto-browse rclone root immediately
-          await browse(providerId, currentRoot, '');
-        } else {
-          currentPath = currentRoot;
-          if (provPathInput) provPathInput.value = currentPath;
-          // Auto-browse non-rclone root immediately
-          await browse(providerId, currentRoot, currentPath);
-        }
-      } catch(e){ rootSelect.innerHTML = '<option>(failed)</option>'; }
-    }
+    renderNode(node, level = 0) {
+      const hasChildren = node.hasChildren || (node.children && node.children.length > 0);
+      const isExpanded = this.expandedNodes.has(node.id);
+      const isSelected = this.selectedNode?.id === node.id;
 
-    function composePath(providerId, rootId, relOrAbs){
-      if (providerId === 'rclone'){
-        const remote = (rootId||'').endsWith(':') ? (rootId||'') : ((rootId||'') + ':');
-        let rel = (relOrAbs||'').replace(/^\/+/, '');
-        // If user pasted the remote prefix into the relative input, strip it
-        if (rel && rel.startsWith(remote)) {
-          rel = rel.slice(remote.length);
-        }
-        // Also strip any other "<name>:" prefix they might have pasted
-        const colonIdx = rel.indexOf(':');
-        if (colonIdx > 0) {
-          rel = rel.slice(colonIdx + 1).replace(/^\/+/, '');
-        }
-        return rel ? (remote + rel) : remote;
+      let html = `<div class="tree-node ${isSelected ? 'selected' : ''}" data-id="${node.id}" data-type="${node.type}" style="padding-left: ${level * 20 + 4}px;">`;
+
+      if (hasChildren) {
+        html += `<span class="toggle ${isExpanded ? 'expanded' : ''}">▶</span>`;
+      } else {
+        html += `<span class="toggle"></span>`;
       }
-      return relOrAbs || rootId || '/';
-    }
 
-    function displayPathFor(providerId, rootId, relOrAbs){
-      if (providerId === 'rclone'){
-        return (relOrAbs||'');
-      }
-      return relOrAbs || rootId || '/';
-    }
+      html += `<span class="icon">${node.icon || '📄'}</span>`;
+      html += `<span class="label">${node.label}</span>`;
+      if (node.count) html += `<span class="count">(${node.count})</span>`;
+      html += `</div>`;
 
-    async function browse(providerId, rootId, path){
-      const fullPath = composePath(providerId||'local_fs', rootId||'/', path||'');
-      const qs = new URLSearchParams({ provider_id: providerId||'local_fs', root_id: rootId||'/', path: fullPath });
-      // Append rclone-specific browse options if selected
-      if ((providerId||'') === 'rclone'){
-        try {
-          const chkRec = document.getElementById('prov-browse-recursive');
-          const chkFast = document.getElementById('prov-browse-fast-list');
-          const inpDepth = document.getElementById('prov-browse-max-depth');
-          if (chkRec && chkRec.checked) qs.set('recursive', 'true');
-          const d = Number(inpDepth && inpDepth.value ? inpDepth.value : '1');
-          if (d && d !== 1) qs.set('max_depth', String(d));
-          if (chkFast && chkFast.checked) qs.set('fast_list', 'true');
-        } catch(_) { /* ignore UI options if missing */ }
-      }
-      try {
-        const r = await fetch('/api/browse?' + qs.toString());
-        const j = await r.json();
-        // display breadcrumb: for rclone show Root→Remote and relative path
-        const disp = displayPathFor(providerId||'local_fs', rootId||'/', path||'');
-        const label = (providerId==='rclone') ? `${(rootId||'').replace(/:$/,'')} → ${disp||'(root)'}` : (fullPath||'/');
-        provCrumb.innerHTML = `<span class="small">Path: <code>${label}</code></span>`;
-        // Sync input to relative path for rclone; absolute otherwise
-        currentPath = disp;
-        if (provPathInput) provPathInput.value = currentPath;
-        const rows = (j.entries||[]).map(e => {
-          const type = e.type === 'folder' ? 'Folder' : 'File';
-          const size = e.type === 'folder' ? '' : fmtBytes(e.size||0);
-          const mod = fmtTime(e.mtime||0);
-          const prov = providerId;
-          return `<tr class="prov-item" data-id="${e.id}" data-type="${e.type}"><td>${e.name}</td><td>${type}</td><td>${size}</td><td>${mod}</td><td><span class="badge">${prov}</span></td></tr>`;
-        }).join('');
-        provList.innerHTML = rows || '<tr><td colspan="5" class="small">Empty folder.</td></tr>';
-        attachProvHandlers();
-
-        // Update current path display and enable scan button
-        if (provCurrentPath) {
-          provCurrentPath.textContent = fullPath || '(root)';
+      if (hasChildren && isExpanded && node.children) {
+        html += `<div class="tree-children">`;
+        for (const child of node.children) {
+          html += this.renderNode(child, level + 1);
         }
-        if (provScanBtn) {
-          provScanBtn.disabled = false;
-        }
-      } catch(e){
-        provList.innerHTML = '<tr><td colspan="5" class="small">Browse failed.</td></tr>';
-        if (provScanBtn) provScanBtn.disabled = true;
+        html += `</div>`;
+      } else if (hasChildren && isExpanded) {
+        html += `<div class="tree-children"><div class="tree-loading">Loading...</div></div>`;
       }
+
+      return html;
     }
 
-    function attachProvHandlers(){
-      document.querySelectorAll('tr.prov-item')?.forEach(tr => {
-        tr.addEventListener('click', () => {
-          const id = tr.getAttribute('data-id');
-          const type = tr.getAttribute('data-type');
-          if (type === 'folder'){
-            // For rclone, set currentPath to relative portion (strip remote prefix)
-            if (currentProv === 'rclone'){
-              const i = id.indexOf(':');
-              let rel = i >= 0 ? id.slice(i+1) : id;
-              rel = (rel||'').replace(/^\/+/, '');
-              currentPath = rel;
-            } else {
-              currentPath = id;
+    render(nodes) {
+      if (!this.container) return;
+      this.container.innerHTML = nodes.map(n => this.renderNode(n)).join('');
+      this.attachHandlers();
+    }
+
+    attachHandlers() {
+      this.container.querySelectorAll('.tree-node').forEach(node => {
+        const toggleBtn = node.querySelector('.toggle');
+        const id = node.getAttribute('data-id');
+        const type = node.getAttribute('data-type');
+
+        // Handle toggle click
+        if (toggleBtn) {
+          toggleBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (toggleBtn.textContent.trim() === '▶' || toggleBtn.classList.contains('expanded')) {
+              this.toggleNode(id, type);
             }
-            if (provPathInput) provPathInput.value = currentPath;
-            browse(currentProv, currentRoot, currentPath);
-          } else {
-            provPanel.innerHTML = `<div><strong>${tr.firstChild?.textContent||id}</strong></div><div class=\"small\">Path: <code>${id}</code></div>`;
-          }
-        });
-      });
-    }
-
-    if (provSelect){
-      provSelect.addEventListener('change', async () => {
-        currentProv = provSelect.value;
-        await loadRoots(currentProv); // auto-browse happens in loadRoots
-      });
-    }
-    if (rootSelect){
-      rootSelect.addEventListener('change', () => {
-        currentRoot = rootSelect.value;
-        if (currentProv==='rclone'){
-          currentPath='';
-          if (provPathInput) provPathInput.value='';
-          browse(currentProv, currentRoot, '');
-        } else {
-          currentPath = currentRoot;
-          if (provPathInput) provPathInput.value = currentPath;
-          browse(currentProv, currentRoot, currentPath);
-        }
-      });
-    }
-    if (btnROC && rocFrame){
-      btnROC.addEventListener('click', () => {
-        const provId = (provSelect && provSelect.value) || currentProv || 'local_fs';
-        const rootId = (rootSelect && rootSelect.value) || currentRoot || '/';
-        const path = (provPathInput && provPathInput.value) || currentPath || rootId || '/';
-        const qs = new URLSearchParams({ provider_id: provId, root_id: rootId, path });
-        rocFrame.src = '/rocrate_view?' + qs.toString();
-        rocFrame.style.display = 'block';
-        if (btnROCClose) btnROCClose.style.display = 'inline-block';
-        if (rocMsg) rocMsg.textContent = 'Loading…';
-        rocFrame.onload = () => { if (rocMsg) rocMsg.textContent = ''; };
-      });
-    }
-    if (btnROCClose && rocFrame){
-      btnROCClose.addEventListener('click', () => {
-        rocFrame.style.display = 'none';
-        rocFrame.src = '';
-        if (btnROCClose) btnROCClose.style.display = 'none';
-        if (rocMsg) rocMsg.textContent = 'Viewer closed.';
-      });
-    }
-    if (provGoBtn){
-      const doGo = () => {
-        currentProv = provSelect.value; 
-        currentRoot = rootSelect.value; 
-        let rel = (provPathInput && provPathInput.value) ? provPathInput.value.trim() : (currentPath || '');
-        // For rclone, keep empty to mean remote root; do not fallback to rootId string in the input
-        if (currentProv === 'rclone' && !rel) rel = '';
-        // For non-rclone, fallback to absolute root if empty
-        if (currentProv !== 'rclone' && !rel) rel = currentRoot || '/';
-        currentPath = rel; 
-        browse(currentProv, currentRoot, currentPath);
-      };
-      provGoBtn.addEventListener('click', (e) => { e.preventDefault(); doGo(); });
-      if (provPathInput){ provPathInput.addEventListener('keydown', (e) => { if (e.key === 'Enter'){ e.preventDefault(); doGo(); } }); }
-      // Optional: re-browse on option changes for rclone
-      const chkRec = document.getElementById('prov-browse-recursive');
-      const chkFast = document.getElementById('prov-browse-fast-list');
-      const inpDepth = document.getElementById('prov-browse-max-depth');
-      const reBrowse = () => { if ((provSelect.value||'')==='rclone'){ doGo(); } };
-      if (chkRec) chkRec.addEventListener('change', reBrowse);
-      if (chkFast) chkFast.addEventListener('change', reBrowse);
-      if (inpDepth) inpDepth.addEventListener('change', reBrowse);
-    }
-
-    // Unified scan button handler - uses background tasks
-    if (provScanBtn){
-      provScanBtn.addEventListener('click', async () => {
-        // Get current browse context
-        const provId = (provSelect && provSelect.value) || currentProv || 'local_fs';
-        const rootId = (rootSelect && rootSelect.value) || currentRoot || '/';
-        const inputPath = (provPathInput && provPathInput.value && provPathInput.value.trim()) || '';
-        const relOrAbs = inputPath || currentPath || '';
-
-        // Compose full scan path
-        let scanPath = relOrAbs || rootId || '/';
-        if (provId === 'rclone') {
-          scanPath = composePath(provId, rootId, relOrAbs);
-        }
-
-        if (!provId || !scanPath){
-          alert('Please select a provider and folder first.');
-          return;
-        }
-
-        // Populate background scan form and trigger it
-        const bgPathInput = document.getElementById('scan-path');
-        const bgRecursive = document.getElementById('scan-recursive');
-        if (bgPathInput) bgPathInput.value = scanPath;
-        if (bgRecursive) bgRecursive.checked = true;
-
-        // Trigger background scan via tasks API (same as "Start Background Scan" button)
-        const recursive = true;
-        provScanBtn.disabled = true;
-        provScanBtn.textContent = 'Starting scan...';
-
-        try {
-          const payload = {
-            type: 'scan',
-            path: scanPath,
-            recursive,
-            provider_id: provId,
-            root_id: rootId
-          };
-          const r = await fetch('/api/tasks', {
-            method: 'POST',
-            headers: { 'Content-Type':'application/json' },
-            body: JSON.stringify(payload)
           });
-
-          if (r.status === 202){
-            startPolling();
-            fetchTasks();
-            alert(`Background scan started for: ${scanPath}\nCheck progress in "Scans Summary" section below.`);
-          } else {
-            const j = await r.json();
-            alert('Scan error: ' + (j.error || r.status));
-          }
-        } catch(err){
-          alert('Scan error: ' + err);
-        } finally {
-          provScanBtn.disabled = false;
-          provScanBtn.textContent = '🔍 Scan This Folder';
         }
+
+        // Handle node click (not toggle)
+        node.addEventListener('click', (e) => {
+          if (e.target === toggleBtn || e.target.parentElement === toggleBtn) return;
+          e.stopPropagation();
+          this.selectNode(id, type);
+        });
       });
     }
 
-    // Snapshot browse logic (index-backed)
-    const snapScanSel = document.getElementById('snapshot-scan');
-    const snapPathInput = document.getElementById('snap-path');
-    const snapTypeSel = document.getElementById('snap-type');
-    const snapExtInput = document.getElementById('snap-ext');
-    const snapPageSize = document.getElementById('snap-page-size');
-    const snapGo = document.getElementById('snap-go');
-    const snapPrev = document.getElementById('snap-prev');
-    const snapNext = document.getElementById('snap-next');
-    const snapUseLive = document.getElementById('snap-use-live');
-    const snapCommit = document.getElementById('snap-commit');
-    const snapStatus = document.getElementById('snap-status');
-    const snapSearchQ = document.getElementById('snap-search-q');
-    const snapSearchExt = document.getElementById('snap-search-ext');
-    const snapSearchPrefix = document.getElementById('snap-search-prefix');
-    const snapSearchBtn = document.getElementById('snap-search-go');
-    const snapSearchResults = document.getElementById('snap-search-results');
-    const snapList = document.getElementById('snap-list');
-    const snapCrumb = document.getElementById('snap-crumb');
-    let snapToken = null;
-    let snapHistory = [];
-    async function loadScansForSnapshot(){
-      try{ const r = await fetch('/api/scans'); const scans = await r.json(); if (!snapScanSel) return; const current = snapScanSel.value; snapScanSel.innerHTML = '<option value="">-- select a recent scan below --</option>' + scans.map(s => `<option value="${s.id}">${s.path} — ${s.file_count} files</option>`).join(''); if (current) snapScanSel.value = current; } catch(e) { /* ignore */ }
-    }
-    async function browseSnapshot(direction){
-      if (!snapScanSel || !snapScanSel.value){ snapList.innerHTML = '<tr><td colspan="4" class="small">Select a scan first.</td></tr>'; return; }
-      const scanId = snapScanSel.value;
-      const path = (snapPathInput && snapPathInput.value.trim()) || '';
-      const type = (snapTypeSel && snapTypeSel.value) || '';
-      const ext = (snapExtInput && snapExtInput.value.trim()) || '';
-      const ps = Number((snapPageSize && snapPageSize.value) || '100') || 100;
-      const qs = new URLSearchParams({ page_size: String(ps) });
-      if (path !== '') qs.set('path', path);
-      if (type) qs.set('type', type);
-      if (ext) qs.set('extension', ext.toLowerCase());
-      if (direction === 'next' && snapToken) qs.set('next_page_token', snapToken);
-      if (direction === 'prev'){
-        // naive prev: step back one page using history
-        if (snapHistory.length >= 2){ snapHistory.pop(); const prevTok = snapHistory.pop(); if (prevTok) qs.set('next_page_token', prevTok); else qs.delete('next_page_token'); }
+    async toggleNode(id, type) {
+      if (this.expandedNodes.has(id)) {
+        this.expandedNodes.delete(id);
+      } else {
+        this.expandedNodes.add(id);
+        await this.loadChildren(id, type);
       }
-      try{
-        const r = await fetch(`/api/scans/${encodeURIComponent(scanId)}/browse?` + qs.toString());
-        const j = await r.json();
-        if (!r.ok){ snapList.innerHTML = `<tr><td colspan="4" class="small">Error: ${j.error||r.status}</td></tr>`; return; }
-        const entries = j.entries||[];
-        snapToken = j.next_page_token || null;
-        if (direction !== 'prev') snapHistory.push(j.next_page_token || '');
-        // Update crumb with clickable ancestors
-        const p = j.path || '';
-        let parts = [];
-        if (p){
-          if (p.includes(':')){ const i = p.indexOf(':'); const rem = p.slice(0,i+1); const suff = p.slice(i+1).replace(/^\/+/, ''); const segs = suff? suff.split('/'): []; let acc = rem; parts.push({name: rem.replace(/:$/,''), path: rem}); for (let s of segs){ acc = acc + (acc.endsWith(':')? '':'/') + s; parts.push({name: s, path: acc}); }
-          } else { const segs = p.replace(/^\/+/, '').split('/'); let acc = ''; for (let i=0;i<segs.length;i++){ acc = (i===0? ('/'+segs[i]) : (acc + '/' + segs[i])); parts.push({name: segs[i]||'/', path: acc}); } }
-        }
-        const crumbHtml = parts.length? parts.map((c, idx) => `<a href="#" data-snap-path="${c.path}">${c.name||'/'}</a>`).join(' / ') : '(scan root)';
-        snapCrumb.innerHTML = `<span class="small">Scan <code>${scanId}</code> — Path: ${crumbHtml} — Showing ${entries.length}${snapToken?(' (next token '+snapToken+')'):''}</span>`;
-        // attach crumb handlers
-        snapCrumb.querySelectorAll('a[data-snap-path]')?.forEach(a => {
-          a.addEventListener('click', (ev) => { ev.preventDefault(); const np = a.getAttribute('data-snap-path'); if (snapPathInput){ snapPathInput.value = np||''; snapToken=null; snapHistory=[]; browseSnapshot(); } });
-        });
-        // Render
-        const rows = entries.map(e => {
-          const mod = (e.modified && e.modified > 0 && e.type==='file') ? fmtTime(e.modified) : '';
-          return `<tr data-path="${e.path}" data-type="${e.type}"><td>${e.name}</td><td>${e.type}</td><td>${e.type==='file'?(fmtBytes(e.size||0)):''}</td><td>${mod}</td></tr>`;
-        }).join('');
-        snapList.innerHTML = rows || '<tr><td colspan="4" class="small">No entries.</td></tr>';
-        snapNext.disabled = !snapToken;
-        snapPrev.disabled = (snapHistory.length <= 1);
-        // Click to drill when folder
-        document.querySelectorAll('#snap-list tr')?.forEach(tr => {
-          tr.addEventListener('click', () => {
-            const t = tr.getAttribute('data-type'); const p = tr.getAttribute('data-path');
-            if (t === 'folder' && snapPathInput){ snapPathInput.value = p; snapToken = null; snapHistory = []; browseSnapshot(); }
-          });
-        });
-      } catch(e){
-        snapList.innerHTML = `<tr><td colspan="4" class="small">Browse failed.</td></tr>`;
-      }
+      this.refresh();
     }
-    if (snapGo){ snapGo.addEventListener('click', () => { snapToken = null; snapHistory = []; browseSnapshot(); }); }
-    if (snapNext){ snapNext.addEventListener('click', () => browseSnapshot('next')); }
-    if (snapPrev){ snapPrev.addEventListener('click', () => browseSnapshot('prev')); }
-    if (snapSearchBtn){ snapSearchBtn.addEventListener('click', async () => {
-      if (!snapScanSel || !snapScanSel.value){ snapSearchResults.textContent = 'Select a scan first.'; return; }
-      const qs = new URLSearchParams();
-      const q = (snapSearchQ && snapSearchQ.value.trim()) || '';
-      const ext = (snapSearchExt && snapSearchExt.value.trim()) || '';
-      const prefix = (snapSearchPrefix && snapSearchPrefix.value.trim()) || '';
-      if (q) qs.set('q', q);
-      if (ext) qs.set('ext', ext);
-      if (prefix) qs.set('prefix', prefix);
-      qs.set('scan_id', snapScanSel.value);
-      try{
-        const r = await fetch('/api/index/search?' + qs.toString());
-        const j = await r.json();
-        if (!r.ok){ snapSearchResults.textContent = 'Search error: ' + (j.error||r.status); return; }
-        const rows = (j.results||[]).map(it => `<div><code>${it.path}</code> — ${it.ext||''} ${it.size?('('+fmtBytes(it.size)+')'):''}</div>`).join('');
-        snapSearchResults.innerHTML = rows || '<div class="small">No matches.</div>';
-      } catch(e){ snapSearchResults.textContent = 'Search error: ' + e; }
-    }); }
-    if (snapScanSel){ snapScanSel.addEventListener('change', () => { snapToken = null; snapHistory = []; browseSnapshot(); }); }
-    if (snapUseLive){ snapUseLive.addEventListener('click', () => {
-      const provId = (provSelect && provSelect.value) || currentProv || 'local_fs';
-      const rootId = (rootSelect && rootSelect.value) || currentRoot || '/';
-      const relOrAbs = (provPathInput && provPathInput.value && provPathInput.value.trim()) || currentPath || '';
-      const full = provId === 'rclone' ? composePath(provId, rootId, relOrAbs) : (relOrAbs || rootId || '/');
-      if (snapPathInput) snapPathInput.value = full;
-    }); }
-    if (snapCommit){ snapCommit.addEventListener('click', async () => {
-      if (!snapScanSel || !snapScanSel.value){ snapStatus.textContent = 'Select a scan first.'; return; }
-      const id = snapScanSel.value; snapCommit.disabled = true; const prev = snapCommit.textContent; snapCommit.textContent = 'Committing…'; snapStatus.textContent = '';
-      try{ const r = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ type: 'commit', scan_id: id }) }); if (r.status === 202){ snapStatus.textContent = 'Commit started in background. Watch progress above.'; } else { const j = await r.json(); snapStatus.textContent = 'Commit failed: ' + (j.error || r.status); } }
-      catch(e){ snapStatus.textContent = 'Commit failed: ' + e; }
-      finally { snapCommit.disabled = false; snapCommit.textContent = prev; }
-    }); }
 
-    // Scans dropdown and background tasks
-    // Recent scans dropdown helpers
-    const select = document.getElementById('recent-scans');
-    const btnOpen = document.getElementById('open-scan');
-    const refreshBtn = document.getElementById('refresh-scans');
-    function openSelected(){ const id = select && select.value; if (id) { window.location = '/datasets?scan_id=' + encodeURIComponent(id); } }
-    if (select && btnOpen) {
-      btnOpen.addEventListener('click', openSelected);
-      select.addEventListener('change', openSelected);
+    selectNode(id, type) {
+      this.selectedNode = { id, type };
+      this.refresh();
+
+      // Find the actual node data to pass to onSelect
+      const nodeData = this.findNodeInTree(id, this.getCurrentNodes());
+      if (this.onSelect) {
+        this.onSelect(nodeData || { id, type });
+      }
     }
-    async function loadScansIntoDropdown(){
+
+    findNodeInTree(id, nodes) {
+      for (const node of nodes) {
+        if (node.id === id) return node;
+        if (node.children) {
+          const found = this.findNodeInTree(id, node.children);
+          if (found) return found;
+        }
+      }
+      return null;
+    }
+
+    async loadChildren(nodeId, nodeType) {
+      const cacheKey = `${nodeType}:${nodeId}`;
+      if (this.nodeCache.has(cacheKey)) return;
+
       try {
-        const r = await fetch('/api/scans');
-        const scans = await r.json();
-        if (!select) return;
-        const current = select.value;
-        select.innerHTML = '<option value="">-- select --</option>' + scans.map(s => `<option value="${s.id}">${s.path} — ${s.file_count} files — ${Math.round(s.ended||s.started||0)}</option>`).join('');
-        if (current) select.value = current;
-      } catch(e) { /* ignore */ }
-    }
-    if (refreshBtn) refreshBtn.addEventListener('click', loadScansIntoDropdown);
-
-    const tasksDiv = document.getElementById('tasks-list');
-    // Keep a small client-side list for local (synchronous) scans so they appear alongside server tasks
-    window.scidkLocalTasks = window.scidkLocalTasks || [];
-    const fmtPct = (x) => Math.round((x || 0) * 100);
-    function fmtETA(seconds){
-      if (!seconds || seconds <= 0) return '';
-      if (seconds < 60) return `~${seconds}s remaining`;
-      if (seconds < 3600) return `~${Math.round(seconds/60)}m remaining`;
-      return `~${Math.round(seconds/3600)}h ${Math.round((seconds%3600)/60)}m remaining`;
-    }
-    function renderTasks(tasks){
-      if (!tasks || tasks.length === 0){ tasksDiv.innerHTML = '<p class="small">No background tasks.</p>'; return; }
-      tasksDiv.innerHTML = tasks.map(t => {
-        const total = (t.total===null||t.total===undefined) ? '?' : (t.total||0);
-        const pct = fmtPct(t.progress);
-        const bar = `<div style=\"width:100%; background:#eee; height:10px; border-radius:4px; overflow:hidden\"><div style=\"width:${pct}%; height:10px; background:${t.status==='completed'?'#4caf50':(t.status==='error'?'#e53935':'#2196f3')}\"></div></div>`;
-        let extra = '';
-        if (t.type === 'commit'){
-          const attempted = t.neo4j_attempted ? 'yes' : 'no';
-          const written = (t.neo4j_written===undefined||t.neo4j_written===null) ? '' : String(t.neo4j_written);
-          const dbv = (t.neo4j_db_verified===undefined) ? '' : (t.neo4j_db_verified ? 'ok' : 'fail');
-          const dbf = (t.neo4j_db_files||0);
-          const dbfo = (t.neo4j_db_folders||0);
-          const err = t.neo4j_error ? (` — error: ${t.neo4j_error}`) : '';
-          extra = `<div class=\"small\">Neo4j: attempted=${attempted}${written!==''?(' — prepared='+written):''}${dbv!==''?(' — verify='+dbv+' (files:'+dbf+', folders:'+dbfo+')'):''}${err}</div>`;
+        let data;
+        if (nodeType === 'server') {
+          // Load roots (first level only)
+          const r = await fetch(`/api/provider_roots?provider_id=${encodeURIComponent(nodeId)}`);
+          const roots = await r.json();
+          data = roots.map(root => ({
+            id: root.id,
+            label: root.id,  // Show full path in sidebar (e.g., /home/patch or gdrive:)
+            type: 'root',
+            icon: '📁',
+            hasChildren: false,  // Don't expand beyond roots in sidebar
+            providerId: nodeId,
+            rootId: root.id,
+            rootPath: root.path || root.id  // Store for breadcrumb
+          }));
         }
-        const cancelBtn = (t.status==='running') ? ` <button class=\"btn btn-sm btn-outline-danger\" data-cancel=\"${t.id}\">Cancel</button>` : '';
-        const statusMsg = t.status_message ? ` — ${t.status_message}` : '';
-        const etaMsg = (t.status === 'running' && t.eta_seconds) ? ` — ${fmtETA(t.eta_seconds)}` : '';
-        const info = `<div class=\"small\">${t.type} ${t.status} — ${t.path || ''} — ${t.processed||0}/${total} (${pct}%)${statusMsg}${etaMsg} ${t.error?(' — error: '+t.error):''} ${t.scan_id?(' — <a href=\"/datasets?scan_id='+t.scan_id+'\">open</a>'):''} ${cancelBtn}</div>`;
-        return `<div style=\"margin:.25rem 0\">${bar}${info}${extra}</div>`;
-      }).join('');
-      // Attach cancel handlers
-      tasksDiv.querySelectorAll('button[data-cancel]')?.forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const id = btn.getAttribute('data-cancel');
-          try {
-            const r = await fetch('/api/tasks/' + encodeURIComponent(id) + '/cancel', { method: 'POST' });
-            if (!r.ok) {
-              try { const j = await r.json(); alert('Cancel failed: ' + (j.error || r.status)); }
-              catch(_) { alert('Cancel failed: ' + r.status); }
-            }
-          } catch (e) {
-            alert('Cancel failed: ' + e);
-          } finally {
-            try { fetchTasks(); } catch(_) { /* ignore */ }
-          }
-        });
-      });
-    }
-    async function fetchTasks(){
-      try { const r = await fetch('/api/tasks'); const data = await r.json(); const all = ([]).concat(Array.isArray(data)?data:[]).concat(window.scidkLocalTasks||[]); renderTasks(all); }
-      catch(e){ /* ignore */ }
-    }
-    let poller = null;
-    async function fetchNeoStatus(){
-      try {
-        const r = await fetch('/api/settings/neo4j');
-        const j = await r.json();
-        const light = document.getElementById('neo4j-light-files');
-        const txt = document.getElementById('neo4j-status-text-files');
-        const ok = !!(j && j.connected);
-        if (light) { light.style.background = ok ? '#19c37d' : '#000'; light.title = ok ? 'Connected' : 'Disconnected'; }
-        if (txt) { txt.textContent = ok ? 'Neo4j: Connected' : (j && j.last_error ? ('Neo4j: Error — ' + j.last_error) : 'Neo4j: Not connected'); }
-      } catch(e) {
-        const txt = document.getElementById('neo4j-status-text-files');
-        if (txt) txt.textContent = 'Neo4j: status unavailable';
+        // Don't load deeper levels in the tree - use center panel for that
+
+        this.nodeCache.set(cacheKey, data || []);
+      } catch (e) {
+        console.error('Failed to load children:', e);
+        this.nodeCache.set(cacheKey, []);
       }
     }
-    function renderScansSummaryRows(scans){
-      const tbody = document.getElementById('scans-summary');
-      if (!tbody) return;
-      const fmtTs = (t) => { try { return t ? new Date(Math.round(t)*1000).toLocaleString() : ''; } catch(_) { return t || ''; } };
-      if (!scans || scans.length === 0){ tbody.innerHTML = '<tr><td colspan="7" class="small">No scans yet.</td></tr>'; return; }
-      tbody.innerHTML = scans.map(s => `<tr>
-        <td><code>${s.id}</code></td>
-        <td>${s.path}</td>
-        <td>${s.file_count||0}</td>
-        <td>${s.recursive?'yes':'no'}</td>
-        <td>${fmtTs(s.started)}</td>
-        <td>${fmtTs(s.ended)}</td>
-        <td>${s.committed?'yes':'no'}</td>
-      </tr>`).join('');
-    }
-    async function startPolling(){
-      if (poller) return;
-      poller = setInterval(async () => {
-        try {
-          const r = await fetch('/api/scans');
-          const scans = await r.json();
-          renderScansSummaryRows(scans);
-        } catch(e){ /* ignore */ }
-        fetchTasks();
-        loadScansIntoDropdown();
-        loadScansForSnapshot();
-        renderScansPanel();
-        fetchNeoStatus();
-      }, 1000);
-    }
-    function stopPolling(){ if (poller){ clearInterval(poller); poller = null; } }
 
-    // initial render
-    startPolling(); fetchTasks(); loadScansIntoDropdown(); fetchNeoStatus();
+    findNodeRecursive(id, nodes) {
+      for (const node of nodes) {
+        if (node.id === id) return node;
+        if (node.children) {
+          const found = this.findNodeRecursive(id, node.children);
+          if (found) return found;
+        }
+      }
 
-    // Scans management panel
-    const scansDiv = document.getElementById('scans-panel');
-    function scansRow(s){
-      const ts = Math.round(s.ended||s.started||0);
-      return `<div style="padding:.25rem 0; border-bottom:1px solid #eee; display:flex; gap:.5rem; align-items:center; justify-content:space-between">
-        <div class="small"><code>${s.id}</code> — ${s.path} — files: ${s.file_count} — ${s.recursive?'recursive':'shallow'} — ${ts}</div>
-        <div style="display:flex; gap:.5rem">
-          <a class="btn btn-sm btn-outline-primary" href="/datasets?scan_id=${s.id}">Open</a>
-          <button class="btn btn-sm btn-outline-success" data-scan="${s.id}" data-action="commit">Commit to Graph</button>
-          <button class="btn btn-sm btn-outline-danger" data-scan="${s.id}" data-action="delete">Delete</button>
-        </div>
-      </div>`;
+      // Check cache
+      for (const [key, children] of this.nodeCache.entries()) {
+        for (const child of children) {
+          if (child.id === id) return child;
+        }
+      }
+      return null;
     }
-    async function renderScansPanel(){
-      try { const r = await fetch('/api/scans'); const scans = await r.json(); scansDiv.innerHTML = scans.map(scansRow).join('') || '<p class="small">No scans yet.</p>'; }
-      catch(e){ scansDiv.innerHTML = '<p class="small">Failed to load scans.</p>'; }
-      // attach handlers
-      scansDiv.querySelectorAll('button[data-action]')?.forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const id = btn.getAttribute('data-scan');
-          const action = btn.getAttribute('data-action');
-          try {
-            if (action === 'commit'){
-              // Start background commit task to show progress in the Tasks panel
-              const r = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ type: 'commit', scan_id: id }) })
-              if (r.status === 202){
-                alert('Commit started in background. Watch progress above.');
-                startPolling(); fetchTasks();
-              } else {
-                const j = await r.json();
-                alert('Commit task error: ' + (j.error || r.status));
-              }
-            } else if (action === 'delete'){
-              const r = await fetch('/api/scans/' + encodeURIComponent(id), { method: 'DELETE' });
-              if (!r.ok){ const j = await r.json(); alert('Delete failed: ' + (j.error || r.status)); }
-            }
-          } catch(err){ alert('Action failed: ' + err); }
-          renderScansPanel();
-          loadScansIntoDropdown();
+
+    findNode(id) {
+      for (const [key, children] of this.nodeCache.entries()) {
+        for (const child of children) {
+          if (child.id === id) return child;
+        }
+      }
+      return null;
+    }
+
+    refresh() {
+      const currentNodes = this.getCurrentNodes();
+      this.render(currentNodes);
+    }
+
+    getCurrentNodes() {
+      return [];
+    }
+
+    setNodes(nodes) {
+      this.nodes = nodes;
+      this.refresh();
+    }
+  }
+
+  // ===== File Clustering =====
+  function detectFilePatterns(files) {
+    const groups = {};
+
+    files.forEach(file => {
+      const match = file.name.match(/^(.+?)(\d+)(\.\w+)$/);
+      if (match) {
+        const [_, prefix, num, ext] = match;
+        const key = `${prefix}*${ext}`;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push({ ...file, num: parseInt(num) });
+      }
+    });
+
+    const clusters = [];
+    Object.entries(groups).forEach(([pattern, items]) => {
+      if (items.length > 10) {
+        items.sort((a, b) => a.num - b.num);
+        const min = items[0].num;
+        const max = items[items.length - 1].num;
+        clusters.push({
+          type: 'cluster',
+          pattern: pattern.replace('*', `${min}-${max}`),
+          count: items.length,
+          files: items,
+          isCluster: true
         });
-      });
-    }
-    renderScansPanel();
+        items.forEach(f => f.clustered = true);
+      }
+    });
 
-    // File Browser logic
-    // Initialize provider UI
-    if (provSelect){ loadProviders(); }
+    return { clusters, files: files.filter(f => !f.clustered) };
+  }
+
+  // ===== Panel Collapse/Expand =====
+  const sidebar = document.getElementById('files-sidebar');
+  const details = document.getElementById('files-details');
+  const detailsContent = document.getElementById('details-content');
+  const collapseLeft = document.getElementById('collapse-left');
+  const collapseRight = document.getElementById('collapse-right');
+
+  collapseLeft.addEventListener('click', () => {
+    sidebar.classList.toggle('collapsed');
+    collapseLeft.textContent = sidebar.classList.contains('collapsed') ? '▶' : '◀';
+    collapseLeft.title = sidebar.classList.contains('collapsed') ? 'Expand sidebar' : 'Collapse sidebar';
   });
+
+  collapseRight.addEventListener('click', () => {
+    details.classList.toggle('collapsed');
+    const isCollapsed = details.classList.contains('collapsed');
+    collapseRight.textContent = isCollapsed ? '◀' : '▶';
+    collapseRight.title = isCollapsed ? 'Expand details' : 'Collapse details';
+    detailsContent.style.display = isCollapsed ? 'none' : 'block';
+  });
+
+  // ===== Panel Resizing =====
+  const resizerLeft = document.getElementById('resizer-left');
+  const resizerRight = document.getElementById('resizer-right');
+  const browser = document.getElementById('files-browser');
+
+  let isResizing = false;
+  let currentResizer = null;
+
+  resizerLeft.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    currentResizer = 'left';
+    resizerLeft.classList.add('resizing');
+    e.preventDefault();
+  });
+
+  resizerRight.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    currentResizer = 'right';
+    resizerRight.classList.add('resizing');
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+
+    if (currentResizer === 'left') {
+      const newWidth = e.clientX - sidebar.offsetLeft;
+      if (newWidth >= 200 && newWidth <= window.innerWidth * 0.5) {
+        sidebar.style.width = newWidth + 'px';
+      }
+    } else if (currentResizer === 'right') {
+      const newWidth = (window.innerWidth - e.clientX);
+      if (newWidth >= 200 && newWidth <= window.innerWidth * 0.4) {
+        details.style.width = newWidth + 'px';
+      }
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (isResizing) {
+      isResizing = false;
+      currentResizer = null;
+      resizerLeft.classList.remove('resizing');
+      resizerRight.classList.remove('resizing');
+    }
+  });
+
+  // ===== State Management =====
+  let currentMode = 'live'; // 'live' or 'snapshot'
+  let currentServer = null;
+  let currentRoot = null;
+  let currentPath = '';
+  let currentScan = null;
+  let selectedFile = null;
+
+  // ===== Mode Switching =====
+  const modeLive = document.getElementById('mode-live');
+  const modeSnapshot = document.getElementById('mode-snapshot');
+  const serversSection = document.getElementById('servers-section');
+  const snapshotsSection = document.getElementById('snapshots-section');
+  const scanFolderBtn = document.getElementById('scan-folder-btn');
+  const commitScanBtn = document.getElementById('commit-scan-btn');
+
+  modeLive.addEventListener('change', () => {
+    if (modeLive.checked) {
+      currentMode = 'live';
+      serversSection.style.display = 'block';
+      snapshotsSection.style.display = 'none';
+      scanFolderBtn.style.display = 'inline-block';
+      commitScanBtn.style.display = 'none';
+    }
+  });
+
+  modeSnapshot.addEventListener('change', () => {
+    if (modeSnapshot.checked) {
+      currentMode = 'snapshot';
+      serversSection.style.display = 'none';
+      snapshotsSection.style.display = 'block';
+      scanFolderBtn.style.display = 'none';
+    }
+  });
+
+  // ===== Tree Instances =====
+  const serversTree = new FileTree('servers-tree');
+  const scansTree = new FileTree('scans-tree');
+  let serversData = [];
+  let scansData = [];
+
+  serversTree.onSelect = (node) => {
+    console.log('Tree node selected:', node);
+
+    if (node.type === 'server') {
+      currentServer = node.id;
+      showServerDetails(node.id);
+      // Don't auto-browse, just expand to show roots
+    } else if (node.type === 'root') {
+      // Root selected - load it in the file browser
+      console.log('Loading root:', node);
+      currentServer = node.providerId;
+      currentRoot = node.id;
+      currentPath = node.id;
+      browseLive(node.providerId, node.id, node.id);
+    } else {
+      console.warn('Unknown node type:', node.type);
+    }
+  };
+
+  scansTree.onSelect = (node) => {
+    currentScan = node.id;
+    showScanDetails(node.id);
+    browseSnapshot(node.id);
+    commitScanBtn.style.display = 'inline-block';
+  };
+
+  // ===== Servers List (Tree) =====
+  async function loadServers() {
+    try {
+      const r = await fetch('/api/providers');
+      const providers = await r.json();
+
+      serversData = providers.map(p => ({
+        id: p.id,
+        label: p.display_name,
+        type: 'server',
+        icon: '💻',
+        hasChildren: true  // Show roots (first level)
+      }));
+
+      serversTree.getCurrentNodes = () => {
+        return serversData.map(s => {
+          const children = serversTree.nodeCache.get(`server:${s.id}`) || null;
+          return { ...s, children };
+        });
+      };
+      serversTree.nodes = serversData;
+      serversTree.refresh();
+
+      if (providers.length > 0) {
+        currentServer = providers[0].id;
+        await loadRootsAndBrowse(currentServer);
+      }
+    } catch (e) {
+      document.getElementById('servers-tree').innerHTML = '<div class="small text-danger">Failed to load servers</div>';
+    }
+  }
+
+
+  async function loadRootsAndBrowse(providerId) {
+    try {
+      const r = await fetch('/api/provider_roots?provider_id=' + encodeURIComponent(providerId));
+      const roots = await r.json();
+
+      if (!Array.isArray(roots) || roots.length === 0) {
+        showMessage('No roots found for this provider', 'warning');
+        return;
+      }
+
+      currentRoot = roots[0]?.id || '/';
+      if (providerId === 'rclone') {
+        currentPath = '';
+      } else {
+        currentPath = currentRoot;
+      }
+
+      await browseLive(providerId, currentRoot, currentPath);
+    } catch (e) {
+      showMessage('Failed to load roots: ' + e.message, 'error');
+    }
+  }
+
+  // ===== File Browsing =====
+  const fileList = document.getElementById('file-list');
+  const breadcrumbNav = document.getElementById('breadcrumb-nav');
+
+  function composePath(providerId, rootId, relOrAbs) {
+    if (providerId === 'rclone') {
+      const remote = (rootId || '').endsWith(':') ? (rootId || '') : ((rootId || '') + ':');
+      let rel = (relOrAbs || '').replace(/^\/+/, '');
+      if (rel && rel.startsWith(remote)) {
+        rel = rel.slice(remote.length);
+      }
+      const colonIdx = rel.indexOf(':');
+      if (colonIdx > 0) {
+        rel = rel.slice(colonIdx + 1).replace(/^\/+/, '');
+      }
+      return rel ? (remote + rel) : remote;
+    }
+    return relOrAbs || rootId || '/';
+  }
+
+  async function browseLive(providerId, rootId, path) {
+    const fullPath = composePath(providerId, rootId, path);
+    const qs = new URLSearchParams({
+      provider_id: providerId,
+      root_id: rootId,
+      path: fullPath
+    });
+
+    if (providerId === 'rclone') {
+      const chkRec = document.getElementById('opt-recursive');
+      const chkFast = document.getElementById('opt-fast-list');
+      const inpDepth = document.getElementById('opt-max-depth');
+      if (chkRec && chkRec.checked) qs.set('recursive', 'true');
+      const d = Number(inpDepth && inpDepth.value ? inpDepth.value : '1');
+      if (d && d !== 1) qs.set('max_depth', String(d));
+      if (chkFast && chkFast.checked) qs.set('fast_list', 'true');
+    }
+
+    try {
+      const r = await fetch('/api/browse?' + qs.toString());
+      const j = await r.json();
+
+      currentPath = path;
+      renderBreadcrumb(fullPath, providerId);
+      renderFileList(j.entries || [], providerId);
+
+      scanFolderBtn.disabled = false;
+    } catch (e) {
+      fileList.innerHTML = '<tr><td colspan="4" class="small text-danger">Browse failed</td></tr>';
+      scanFolderBtn.disabled = true;
+    }
+  }
+
+  function renderBreadcrumb(fullPath, providerId) {
+    let parts = [];
+
+    if (providerId === 'rclone') {
+      // For rclone: "remote:path/to/file" format
+      const colonIdx = fullPath.indexOf(':');
+      if (colonIdx >= 0) {
+        const remote = fullPath.slice(0, colonIdx);
+        const suffix = fullPath.slice(colonIdx + 1).replace(/^\/+/, '');
+        // Root is non-clickable
+        parts.push({ name: remote + ':', path: remote + ':', isRoot: true });
+        if (suffix) {
+          const segs = suffix.split('/').filter(s => s);
+          let acc = remote + ':';
+          for (let s of segs) {
+            acc = acc + (acc.endsWith(':') ? '' : '/') + s;
+            parts.push({ name: s, path: acc, isRoot: false });
+          }
+        }
+      } else {
+        parts.push({ name: fullPath, path: fullPath, isRoot: true });
+      }
+    } else {
+      // For local/mounted: regular filesystem paths
+      const segs = fullPath.replace(/^\/+/, '').split('/').filter(s => s);
+
+      if (segs.length === 0) {
+        breadcrumbNav.innerHTML = '<span class="text-muted">/</span>';
+        return;
+      }
+
+      // First segment is the root (non-clickable)
+      parts.push({ name: '/', path: '/' + segs[0], isRoot: true });
+
+      let acc = '';
+      for (let seg of segs) {
+        acc = acc + '/' + seg;
+        parts.push({ name: seg, path: acc, isRoot: false });
+      }
+    }
+
+    if (parts.length === 0) {
+      breadcrumbNav.innerHTML = '<span class="text-muted">/</span>';
+    } else {
+      breadcrumbNav.innerHTML = parts.map((p, idx) => {
+        if (idx === parts.length - 1) {
+          // Current location - bold
+          return `<strong>${p.name}</strong>`;
+        } else if (p.isRoot) {
+          // Root - not clickable, just text
+          return `<span class="text-muted">${p.name}</span>`;
+        } else {
+          // Intermediate path - clickable
+          return `<a href="#" data-path="${p.path}">${p.name}</a>`;
+        }
+      }).join(' <span class="text-muted">/</span> ');
+
+      // Attach breadcrumb click handlers
+      breadcrumbNav.querySelectorAll('a[data-path]').forEach(a => {
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          const newPath = a.getAttribute('data-path');
+          if (currentMode === 'live') {
+            currentPath = newPath;
+            browseLive(currentServer, currentRoot, newPath);
+          }
+        });
+      });
+    }
+  }
+
+  function renderFileList(entries, providerId) {
+    if (!entries || entries.length === 0) {
+      fileList.innerHTML = '<tr><td colspan="7" class="small text-muted">Empty folder</td></tr>';
+      return;
+    }
+
+    fileList.innerHTML = entries.map(e => {
+      const icon = e.type === 'folder' ? '📁' : '📄';
+      const size = e.type === 'folder' ? '' : fmtBytes(e.size || 0);
+      const created = e.ctime ? fmtTime(e.ctime) : '';
+      const modified = e.mtime ? fmtTime(e.mtime) : '';
+      const scanned = '';  // Live files not scanned
+
+      return `<tr data-id="${e.id}" data-type="${e.type}" data-name="${e.name}">
+        <td>${icon} ${e.name}</td>
+        <td>${e.type}</td>
+        <td>${size}</td>
+        <td>${created}</td>
+        <td>${modified}</td>
+        <td>${scanned}</td>
+        <td></td>
+      </tr>`;
+    }).join('');
+
+    // Attach click handlers
+    fileList.querySelectorAll('tr').forEach(tr => {
+      tr.addEventListener('click', () => {
+        const id = tr.getAttribute('data-id');
+        const type = tr.getAttribute('data-type');
+        const name = tr.getAttribute('data-name');
+
+        // Deselect all
+        fileList.querySelectorAll('tr').forEach(t => t.classList.remove('selected'));
+        tr.classList.add('selected');
+
+        if (type === 'folder') {
+          // Navigate on double-click
+          tr.addEventListener('dblclick', () => {
+            if (currentMode === 'live') {
+              if (providerId === 'rclone') {
+                const i = id.indexOf(':');
+                let rel = i >= 0 ? id.slice(i + 1) : id;
+                rel = (rel || '').replace(/^\/+/, '');
+                currentPath = rel;
+              } else {
+                currentPath = id;
+              }
+              browseLive(currentServer, currentRoot, currentPath);
+            }
+          });
+        }
+
+        // Show file details
+        showFileDetails({ id, type, name, size: size });
+      });
+    });
+  }
+
+  // ===== File Details Panel =====
+  const fileMetadata = document.getElementById('file-metadata');
+
+  function showFileDetails(file) {
+    selectedFile = file;
+
+    // Expand right panel if collapsed
+    if (details.classList.contains('collapsed')) {
+      collapseRight.click();
+    }
+
+    fileMetadata.innerHTML = `
+      <div style="margin-bottom: 0.75rem;">
+        <strong>${file.type === 'folder' ? '📁' : '📄'} ${file.name}</strong>
+      </div>
+      <table class="table table-sm table-borderless">
+        <tr><td class="text-muted">Type:</td><td>${file.type}</td></tr>
+        <tr><td class="text-muted">Path:</td><td style="word-break: break-all; font-family: monospace; font-size: 0.75rem;">${file.id}</td></tr>
+        ${file.type === 'file' ? `<tr><td class="text-muted">Size:</td><td>${file.size}</td></tr>` : ''}
+      </table>
+      ${file.type === 'folder' ? `
+        <button class="btn btn-sm btn-outline-primary w-100" onclick="navigateToFolder('${file.id}')">
+          📂 Open Folder
+        </button>
+        <button class="btn btn-sm btn-outline-success w-100 mt-2" onclick="scanFolder('${file.id}')">
+          🔍 Scan This Folder
+        </button>
+      ` : ''}
+    `;
+  }
+
+  function showServerDetails(serverId) {
+    if (details.classList.contains('collapsed')) {
+      collapseRight.click();
+    }
+
+    fileMetadata.innerHTML = `
+      <div style="margin-bottom: 0.75rem;">
+        <strong>💻 Server: ${serverId}</strong>
+      </div>
+      <table class="table table-sm table-borderless">
+        <tr><td class="text-muted">Provider ID:</td><td style="font-family: monospace; font-size: 0.75rem;">${serverId}</td></tr>
+        <tr><td class="text-muted">Status:</td><td>✓ Connected</td></tr>
+      </table>
+      <button class="btn btn-sm btn-primary w-100" id="scan-server-btn">
+        🔍 Scan Current Path
+      </button>
+    `;
+  }
+
+  function showScanDetails(scanId) {
+    if (details.classList.contains('collapsed')) {
+      collapseRight.click();
+    }
+
+    fetch(`/api/scans`).then(r => r.json()).then(scans => {
+      const scan = scans.find(s => s.id == scanId);
+      if (!scan) return;
+
+      fileMetadata.innerHTML = `
+        <div style="margin-bottom: 0.75rem;">
+          <strong>📸 Scan #${scan.id}</strong>
+        </div>
+        <table class="table table-sm table-borderless">
+          <tr><td class="text-muted">Path:</td><td style="word-break: break-all; font-family: monospace; font-size: 0.75rem;">${scan.path}</td></tr>
+          <tr><td class="text-muted">Files:</td><td>${scan.file_count}</td></tr>
+          <tr><td class="text-muted">Started:</td><td>${fmtTime(scan.started_at)}</td></tr>
+          <tr><td class="text-muted">Committed:</td><td>${scan.committed ? '✓ Yes' : '✗ No'}</td></tr>
+        </table>
+        ${!scan.committed ? `
+          <button class="btn btn-sm btn-success w-100 mb-2" onclick="commitScanDirect(${scanId})">
+            ✓ Commit to Graph
+          </button>
+        ` : ''}
+        <button class="btn btn-sm btn-outline-danger w-100" onclick="deleteScanDirect(${scanId})">
+          🗑 Delete Scan
+        </button>
+      `;
+    });
+  }
+
+  window.scanFolder = (folderId) => {
+    currentPath = folderId;
+    scanFolderBtn.click();
+  };
+
+  window.commitScanDirect = (scanId) => {
+    currentScan = scanId;
+    commitScanBtn.click();
+  };
+
+  window.deleteScanDirect = async (scanId) => {
+    if (!confirm(`Delete scan #${scanId}?`)) return;
+    try {
+      await fetch(`/api/scans/${scanId}`, { method: 'DELETE' });
+      showMessage('Scan deleted', 'success');
+      loadScans();
+    } catch (e) {
+      showMessage('Delete failed: ' + e.message, 'error');
+    }
+  };
+
+  window.navigateToFolder = (folderId) => {
+    if (currentMode === 'live' && currentServer) {
+      if (currentServer === 'rclone') {
+        const i = folderId.indexOf(':');
+        let rel = i >= 0 ? folderId.slice(i + 1) : folderId;
+        rel = (rel || '').replace(/^\/+/, '');
+        currentPath = rel;
+      } else {
+        currentPath = folderId;
+      }
+      browseLive(currentServer, currentRoot, currentPath);
+    }
+  };
+
+  // ===== Scans List (Tree) =====
+  async function loadScans() {
+    try {
+      const r = await fetch('/api/scans');
+      const scans = await r.json();
+
+      scansData = scans.map(s => {
+        const shortPath = s.path.length > 40 ? '...' + s.path.slice(-37) : s.path;
+        return {
+          id: s.id,
+          label: `#${s.id}: ${shortPath}`,
+          type: 'scan',
+          icon: '📸',
+          count: s.file_count,
+          hasChildren: false
+        };
+      });
+
+      scansTree.getCurrentNodes = () => scansData;
+      scansTree.nodes = scansData;
+      scansTree.refresh();
+    } catch (e) {
+      document.getElementById('scans-tree').innerHTML = '<div class="small text-danger">Failed to load scans</div>';
+    }
+  }
+
+
+  async function browseSnapshot(scanId, path = '') {
+    const qs = new URLSearchParams({ page_size: '100' });
+    if (path) qs.set('path', path);
+
+    try {
+      const r = await fetch(`/api/scans/${encodeURIComponent(scanId)}/browse?` + qs.toString());
+      const j = await r.json();
+
+      if (!r.ok) {
+        fileList.innerHTML = `<tr><td colspan="4" class="small text-danger">Error: ${j.error || r.status}</td></tr>`;
+        return;
+      }
+
+      renderBreadcrumb(path || '/', 'snapshot');
+      renderSnapshotFileList(j.entries || []);
+    } catch (e) {
+      fileList.innerHTML = '<tr><td colspan="4" class="small text-danger">Browse failed</td></tr>';
+    }
+  }
+
+  function renderSnapshotFileList(entries) {
+    if (!entries || entries.length === 0) {
+      fileList.innerHTML = '<tr><td colspan="7" class="small text-muted">No entries</td></tr>';
+      return;
+    }
+
+    fileList.innerHTML = entries.map(e => {
+      const icon = e.type === 'folder' ? '📁' : '📄';
+      const size = e.type === 'folder' ? '' : fmtBytes(e.size || 0);
+      const created = e.created ? fmtTime(e.created) : '';
+      const modified = (e.modified && e.modified > 0) ? fmtTime(e.modified) : '';
+      const scanned = e.scanned_at ? fmtTime(e.scanned_at) : '';
+      const scannedClass = e.scanned_at ? 'text-success' : '';
+
+      return `<tr data-path="${e.path}" data-type="${e.type}" data-name="${e.name}" data-scan-id="${currentScan}">
+        <td>${icon} ${e.name}</td>
+        <td>${e.type}</td>
+        <td>${size}</td>
+        <td>${created}</td>
+        <td>${modified}</td>
+        <td class="${scannedClass}">${scanned}</td>
+        <td>
+          <button class="btn btn-sm btn-outline-danger delete-entry" data-path="${e.path}" title="Delete from snapshot">
+            🗑
+          </button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    // Attach click handlers
+    fileList.querySelectorAll('tr').forEach(tr => {
+      tr.addEventListener('click', (e) => {
+        // Don't select if clicking delete button
+        if (e.target.classList.contains('delete-entry')) return;
+
+        const path = tr.getAttribute('data-path');
+        const type = tr.getAttribute('data-type');
+        const name = tr.getAttribute('data-name');
+
+        fileList.querySelectorAll('tr').forEach(t => t.classList.remove('selected'));
+        tr.classList.add('selected');
+
+        if (type === 'folder') {
+          tr.addEventListener('dblclick', () => {
+            browseSnapshot(currentScan, path);
+          });
+        }
+
+        showFileDetails({ id: path, type, name, size: size });
+      });
+    });
+
+    // Attach delete handlers
+    fileList.querySelectorAll('.delete-entry').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const path = btn.getAttribute('data-path');
+        const scanId = btn.closest('tr').getAttribute('data-scan-id');
+
+        if (!confirm(`Delete "${path}" from snapshot #${scanId}?`)) return;
+
+        try {
+          const r = await fetch(`/api/scans/${scanId}/entries`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: path })
+          });
+
+          if (r.ok) {
+            showMessage('Entry deleted from snapshot', 'success');
+            // Refresh the current view
+            browseSnapshot(scanId, currentPath);
+          } else {
+            const err = await r.json();
+            showMessage('Delete failed: ' + (err.error || r.status), 'error');
+          }
+        } catch (e) {
+          showMessage('Delete failed: ' + e.message, 'error');
+        }
+      });
+    });
+  }
+
+  // ===== Scan Folder Button =====
+  scanFolderBtn.addEventListener('click', async () => {
+    if (!currentServer) {
+      alert('Please select a server first');
+      return;
+    }
+
+    const fullPath = composePath(currentServer, currentRoot, currentPath);
+
+    scanFolderBtn.disabled = true;
+    scanFolderBtn.textContent = 'Starting scan...';
+
+    try {
+      const payload = {
+        type: 'scan',
+        path: fullPath,
+        recursive: true,
+        provider_id: currentServer,
+        root_id: currentRoot
+      };
+
+      const r = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (r.status === 202) {
+        showMessage(`Scan started for: ${fullPath}`, 'success');
+        fetchTasks();
+      } else {
+        const j = await r.json();
+        showMessage('Scan error: ' + (j.error || r.status), 'error');
+      }
+    } catch (err) {
+      showMessage('Scan error: ' + err.message, 'error');
+    } finally {
+      scanFolderBtn.disabled = false;
+      scanFolderBtn.textContent = '🔍 Scan Current Folder';
+    }
+  });
+
+  // ===== Commit Scan Button =====
+  commitScanBtn.addEventListener('click', async () => {
+    if (!currentScan) {
+      alert('Please select a scan first');
+      return;
+    }
+
+    commitScanBtn.disabled = true;
+    const prev = commitScanBtn.textContent;
+    commitScanBtn.textContent = 'Committing...';
+
+    try {
+      const r = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'commit', scan_id: currentScan })
+      });
+
+      if (r.status === 202) {
+        showMessage('Commit started in background', 'success');
+        fetchTasks();
+      } else {
+        const j = await r.json();
+        showMessage('Commit failed: ' + (j.error || r.status), 'error');
+      }
+    } catch (e) {
+      showMessage('Commit failed: ' + e.message, 'error');
+    } finally {
+      commitScanBtn.disabled = false;
+      commitScanBtn.textContent = prev;
+    }
+  });
+
+  // ===== Background Tasks =====
+  const tasksList = document.getElementById('tasks-list');
+
+  function renderTasks(tasks) {
+    if (!tasks || tasks.length === 0) {
+      tasksList.innerHTML = '<div class="small text-muted">No tasks</div>';
+      return;
+    }
+
+    tasksList.innerHTML = tasks.map(t => {
+      const pct = fmtPct(t.progress);
+      const statusClass = t.status === 'completed' ? 'completed' : (t.status === 'error' ? 'error' : 'running');
+
+      return `<div class="task-item">
+        <div class="small"><strong>${t.type}</strong> — ${t.path || ''}</div>
+        <div class="task-progress-bar">
+          <div class="task-progress-fill ${statusClass}" style="width: ${pct}%;"></div>
+        </div>
+        <div style="font-size: 0.7rem; color: #666;">
+          ${t.processed || 0}/${t.total || '?'} (${pct}%)
+          ${t.eta_seconds ? ' — ' + fmtETA(t.eta_seconds) : ''}
+          ${t.error ? ' — Error: ' + t.error : ''}
+        </div>
+        ${t.status === 'running' ? `<button class="btn btn-sm btn-outline-danger mt-1" data-cancel="${t.id}">Cancel</button>` : ''}
+      </div>`;
+    }).join('');
+
+    // Attach cancel handlers
+    tasksList.querySelectorAll('button[data-cancel]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-cancel');
+        try {
+          await fetch('/api/tasks/' + encodeURIComponent(id) + '/cancel', { method: 'POST' });
+          fetchTasks();
+        } catch (e) {
+          alert('Cancel failed: ' + e.message);
+        }
+      });
+    });
+  }
+
+  async function fetchTasks() {
+    try {
+      const r = await fetch('/api/tasks');
+      const tasks = await r.json();
+      renderTasks(Array.isArray(tasks) ? tasks : []);
+    } catch (e) {
+      // Ignore fetch errors
+    }
+  }
+
+  // ===== Neo4j Status =====
+  async function fetchNeo4jStatus() {
+    try {
+      const r = await fetch('/api/settings/neo4j');
+      const j = await r.json();
+      const light = document.getElementById('neo4j-light');
+      const txt = document.getElementById('neo4j-status-text');
+      const ok = !!(j && j.connected);
+
+      if (light) {
+        light.classList.toggle('connected', ok);
+        light.title = ok ? 'Connected' : 'Disconnected';
+      }
+      if (txt) {
+        txt.textContent = ok ? 'Neo4j: Connected' : (j && j.last_error ? ('Neo4j: Error — ' + j.last_error) : 'Neo4j: Not connected');
+      }
+    } catch (e) {
+      const txt = document.getElementById('neo4j-status-text');
+      if (txt) txt.textContent = 'Neo4j: status unavailable';
+    }
+  }
+
+  // ===== Message Display =====
+  const browserStatus = document.getElementById('browser-status');
+
+  function showMessage(msg, type = 'info') {
+    browserStatus.textContent = msg;
+    browserStatus.className = 'small';
+    if (type === 'error') browserStatus.classList.add('text-danger');
+    else if (type === 'success') browserStatus.classList.add('text-success');
+    else if (type === 'warning') browserStatus.classList.add('text-warning');
+    else browserStatus.classList.add('text-muted');
+
+    setTimeout(() => {
+      browserStatus.textContent = '';
+    }, 5000);
+  }
+
+  // ===== RO-Crate Viewer =====
+  const btnROC = document.getElementById('open-rocrate');
+  const btnROCClose = document.getElementById('close-rocrate');
+  const rocFrame = document.getElementById('rocrate-frame');
+  const rocMsg = document.getElementById('rocrate-msg');
+
+  if (btnROC && rocFrame) {
+    btnROC.addEventListener('click', () => {
+      const qs = new URLSearchParams({
+        provider_id: currentServer || 'local_fs',
+        root_id: currentRoot || '/',
+        path: composePath(currentServer, currentRoot, currentPath)
+      });
+      rocFrame.src = '/rocrate_view?' + qs.toString();
+      rocFrame.style.display = 'block';
+      if (btnROCClose) btnROCClose.style.display = 'inline-block';
+      if (rocMsg) rocMsg.textContent = 'Loading…';
+      rocFrame.onload = () => { if (rocMsg) rocMsg.textContent = ''; };
+    });
+  }
+
+  if (btnROCClose && rocFrame) {
+    btnROCClose.addEventListener('click', () => {
+      rocFrame.style.display = 'none';
+      rocFrame.src = '';
+      if (btnROCClose) btnROCClose.style.display = 'none';
+      if (rocMsg) rocMsg.textContent = 'Viewer closed.';
+    });
+  }
+
+  // ===== Keyboard Navigation =====
+  const treeSearchInput = document.getElementById('tree-search-input');
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === '/' && document.activeElement !== treeSearchInput) {
+      e.preventDefault();
+      treeSearchInput.focus();
+    } else if (e.key === 'Escape' && document.activeElement === treeSearchInput) {
+      treeSearchInput.value = '';
+      treeSearchInput.blur();
+    }
+  });
+
+  let searchTimeout;
+  treeSearchInput.addEventListener('input', (e) => {
+    const query = e.target.value.toLowerCase().trim();
+
+    // Clear previous timeout
+    clearTimeout(searchTimeout);
+
+    if (!query) {
+      // Show all tree nodes when search is empty
+      document.querySelectorAll('.tree-node').forEach(node => {
+        node.style.display = '';
+      });
+      // Clear file browser
+      fileList.innerHTML = '<tr><td colspan="4" class="small text-muted">Select a server to browse files</td></tr>';
+      return;
+    }
+
+    // Filter tree nodes (local filtering)
+    document.querySelectorAll('.tree-node').forEach(node => {
+      const label = node.querySelector('.label')?.textContent.toLowerCase() || '';
+      node.style.display = label.includes(query) ? '' : 'none';
+    });
+
+    // Debounce global file search
+    searchTimeout = setTimeout(() => {
+      performGlobalSearch(query);
+    }, 500);
+  });
+
+  async function performGlobalSearch(query) {
+    if (!query) return;
+
+    fileList.innerHTML = '<tr><td colspan="4" class="small text-muted">Searching snapshots...</td></tr>';
+    breadcrumbNav.innerHTML = `<span class="small text-muted">Search results for "${query}"</span>`;
+
+    try {
+      // Only search committed snapshots (indexed in database)
+      // This is much faster than traversing live filesystems
+      const scansResp = await fetch('/api/scans');
+      const scans = await scansResp.json();
+
+      if (!scans || scans.length === 0) {
+        fileList.innerHTML = `<tr><td colspan="4" class="small text-muted">
+          No snapshots available to search. Create snapshots first by scanning folders.
+        </td></tr>`;
+        return;
+      }
+
+      // Search across all scans in parallel
+      const searchPromises = scans.map(scan =>
+        fetch(`/api/scans/${scan.id}/browse?page_size=1000`)
+          .then(r => r.json())
+          .then(data => ({
+            scanId: scan.id,
+            scanPath: scan.path,
+            entries: (data.entries || []).filter(e =>
+              e.name.toLowerCase().includes(query)
+            )
+          }))
+          .catch(() => ({ scanId: scan.id, scanPath: scan.path, entries: [] }))
+      );
+
+      const results = await Promise.all(searchPromises);
+      const allEntries = results.flatMap(r =>
+        r.entries.map(e => ({
+          ...e,
+          scanId: r.scanId,
+          scanPath: r.scanPath
+        }))
+      );
+
+      if (allEntries.length === 0) {
+        fileList.innerHTML = '<tr><td colspan="7" class="small text-muted">No results found in snapshots</td></tr>';
+      } else {
+        fileList.innerHTML = allEntries.slice(0, 100).map(e => {
+          const icon = e.type === 'folder' ? '📁' : '📄';
+          const size = e.type === 'folder' ? '' : fmtBytes(e.size || 0);
+          const scanBadge = `<span class="badge bg-info" style="font-size: 0.7rem;">Scan #${e.scanId}</span>`;
+          const created = e.created ? fmtTime(e.created) : '';
+          const modified = e.modified ? fmtTime(e.modified) : '';
+          const scanned = e.scanned_at ? fmtTime(e.scanned_at) : '';
+          const scannedClass = e.scanned_at ? 'text-success' : '';
+
+          return `<tr data-path="${e.path}" data-type="${e.type}" data-scan-id="${e.scanId}">
+            <td>${icon} ${e.name} ${scanBadge}</td>
+            <td>${e.type}</td>
+            <td>${size}</td>
+            <td>${created}</td>
+            <td>${modified}</td>
+            <td class="${scannedClass}">${scanned}</td>
+            <td>
+              <button class="btn btn-sm btn-outline-danger delete-search-entry" data-path="${e.path}" data-scan-id="${e.scanId}" title="Delete from snapshot">
+                🗑
+              </button>
+            </td>
+          </tr>`;
+        }).join('');
+
+        // Attach delete handlers for search results
+        fileList.querySelectorAll('.delete-search-entry').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const path = btn.getAttribute('data-path');
+            const scanId = btn.getAttribute('data-scan-id');
+
+            if (!confirm(`Delete "${path}" from snapshot #${scanId}?`)) return;
+
+            try {
+              const r = await fetch(`/api/scans/${scanId}/entries`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: path })
+              });
+
+              if (r.ok) {
+                showMessage('Entry deleted from snapshot', 'success');
+                // Re-run search
+                performGlobalSearch(query);
+              } else {
+                const err = await r.json();
+                showMessage('Delete failed: ' + (err.error || r.status), 'error');
+              }
+            } catch (e) {
+              showMessage('Delete failed: ' + e.message, 'error');
+            }
+          });
+        });
+
+        if (allEntries.length > 100) {
+          fileList.innerHTML += `<tr><td colspan="7" class="small text-muted">Showing 100 of ${allEntries.length} results</td></tr>`;
+        }
+      }
+    } catch (e) {
+      console.error('Search failed:', e);
+      fileList.innerHTML = '<tr><td colspan="4" class="small text-danger">Search failed: ' + e.message + '</td></tr>';
+    }
+  }
+
+  // ===== Polling =====
+  let poller = setInterval(() => {
+    fetchTasks();
+    loadScans();  // Always poll scans to keep the tree updated
+    fetchNeo4jStatus();
+  }, 2000);
+
+  // ===== Initialization =====
+  loadServers();
+  loadScans();
+  fetchTasks();
+  fetchNeo4jStatus();
+});
 </script>
 {% endblock %}
