@@ -243,12 +243,14 @@ def api_settings_neo4j_get():
 def api_settings_neo4j_set():
         data = request.get_json(force=True, silent=True) or {}
         cfg = _get_ext().setdefault('neo4j_config', {})
+
         # Accept free text fields for uri, user, database
         for k in ['uri','user','database']:
             v = data.get(k)
             if v is not None:
                 v = v.strip()
                 cfg[k] = v if v else None
+
         # Password handling: only update if non-empty provided, unless clear_password=true
         if data.get('clear_password') is True:
             cfg['password'] = None
@@ -258,6 +260,26 @@ def api_settings_neo4j_set():
                 if isinstance(v, str) and v.strip():
                     cfg['password'] = v.strip()
                 # else: ignore empty password to avoid wiping stored secret
+
+        # Persist to database for survival across restarts
+        try:
+            from ...core.settings import set_setting
+            # Store as JSON (excluding password for security - handle separately)
+            persisted_config = {
+                'uri': cfg.get('uri'),
+                'user': cfg.get('user'),
+                'database': cfg.get('database')
+            }
+            set_setting('neo4j_config', json.dumps(persisted_config))
+
+            # Store password separately (could be encrypted in future)
+            if cfg.get('password'):
+                set_setting('neo4j_password', cfg['password'])
+            elif data.get('clear_password'):
+                set_setting('neo4j_password', '')
+        except Exception as e:
+            current_app.logger.warning(f"Failed to persist Neo4j settings: {e}")
+
         # Reset state error on change
         st = _get_ext().setdefault('neo4j_state', {})
         st['last_error'] = None
@@ -329,5 +351,199 @@ def api_settings_neo4j_disconnect():
         st = _get_ext().setdefault('neo4j_state', {})
         st['connected'] = False
         return jsonify({'connected': False}), 200
+
+
+# ========== Neo4j Connection Profiles ==========
+
+@bp.get('/settings/neo4j/profiles')
+def api_neo4j_profiles_list():
+    """List all saved Neo4j connection profiles."""
+    try:
+        from ...core.settings import get_settings_by_prefix
+        profiles_data = get_settings_by_prefix('neo4j_profile_')
+
+        profiles = []
+        seen_names = set()
+
+        for key, value in profiles_data.items():
+            # Keys are like: neo4j_profile_Local_Dev, neo4j_profile_Production
+            name = key.replace('neo4j_profile_', '').replace('_', ' ')
+            if name in seen_names:
+                continue
+            seen_names.add(name)
+
+            try:
+                profile = json.loads(value)
+                profiles.append({
+                    'name': name,
+                    'uri': profile.get('uri', ''),
+                    'user': profile.get('user', ''),
+                    'database': profile.get('database', ''),
+                    'role': profile.get('role', 'primary'),
+                    # Don't return password in list
+                })
+            except Exception:
+                continue
+
+        return jsonify({'status': 'ok', 'profiles': profiles}), 200
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@bp.post('/settings/neo4j/profiles')
+def api_neo4j_profile_save():
+    """Save a Neo4j connection profile with role."""
+    try:
+        data = request.get_json() or {}
+        name = data.get('name', '').strip()
+        role = data.get('role', 'primary').strip().lower()
+
+        if not name:
+            return jsonify({'status': 'error', 'error': 'Profile name is required'}), 400
+
+        # Validate role
+        valid_roles = ['primary', 'labels_source', 'readonly', 'ingestion_target']
+        if role not in valid_roles:
+            return jsonify({'status': 'error', 'error': f'Invalid role. Must be one of: {", ".join(valid_roles)}'}), 400
+
+        # Store profile data
+        from ...core.settings import set_setting
+        profile_data = {
+            'uri': data.get('uri', ''),
+            'user': data.get('user', ''),
+            'database': data.get('database', ''),
+            'role': role
+        }
+
+        # Use underscores in key to make it a valid setting key
+        profile_key = f'neo4j_profile_{name.replace(" ", "_")}'
+        set_setting(profile_key, json.dumps(profile_data))
+
+        # Store password separately if provided
+        if data.get('password'):
+            password_key = f'neo4j_profile_password_{name.replace(" ", "_")}'
+            set_setting(password_key, data['password'])
+
+        return jsonify({'status': 'ok', 'name': name, 'role': role}), 200
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@bp.delete('/settings/neo4j/profiles/<name>')
+def api_neo4j_profile_delete(name):
+    """Delete a Neo4j connection profile."""
+    try:
+        from ...core.settings import set_setting
+
+        # Delete profile data
+        profile_key = f'neo4j_profile_{name.replace(" ", "_")}'
+        set_setting(profile_key, '')
+
+        # Delete password
+        password_key = f'neo4j_profile_password_{name.replace(" ", "_")}'
+        set_setting(password_key, '')
+
+        return jsonify({'status': 'ok'}), 200
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@bp.get('/settings/neo4j/profiles/<name>')
+def api_neo4j_profile_get(name):
+    """Get a specific Neo4j connection profile (including password for loading)."""
+    try:
+        from ...core.settings import get_setting
+
+        profile_key = f'neo4j_profile_{name.replace(" ", "_")}'
+        profile_json = get_setting(profile_key)
+
+        if not profile_json:
+            return jsonify({'status': 'error', 'error': 'Profile not found'}), 404
+
+        profile = json.loads(profile_json)
+
+        # Load password separately
+        password_key = f'neo4j_profile_password_{name.replace(" ", "_")}'
+        password = get_setting(password_key)
+        if password:
+            profile['password'] = password
+
+        profile['name'] = name
+        return jsonify({'status': 'ok', 'profile': profile}), 200
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@bp.get('/settings/neo4j/profiles/by-role/<role>')
+def api_neo4j_profile_by_role(role):
+    """Get the active profile for a specific role."""
+    try:
+        from ...core.settings import get_setting
+
+        # Get active profile name for this role
+        active_key = f'neo4j_active_role_{role}'
+        active_name = get_setting(active_key)
+
+        if not active_name:
+            return jsonify({'status': 'ok', 'profile': None, 'message': f'No active profile for role: {role}'}), 200
+
+        # Load the profile
+        profile_key = f'neo4j_profile_{active_name.replace(" ", "_")}'
+        profile_json = get_setting(profile_key)
+
+        if not profile_json:
+            return jsonify({'status': 'error', 'error': 'Active profile not found'}), 404
+
+        profile = json.loads(profile_json)
+
+        # Load password
+        password_key = f'neo4j_profile_password_{active_name.replace(" ", "_")}'
+        password = get_setting(password_key)
+        if password:
+            profile['password'] = password
+
+        profile['name'] = active_name
+        return jsonify({'status': 'ok', 'profile': profile}), 200
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@bp.put('/settings/neo4j/profiles/<name>/activate')
+def api_neo4j_profile_activate(name):
+    """Activate a profile for its assigned role."""
+    try:
+        from ...core.settings import get_setting, set_setting
+
+        # Load profile to get its role
+        profile_key = f'neo4j_profile_{name.replace(" ", "_")}'
+        profile_json = get_setting(profile_key)
+
+        if not profile_json:
+            return jsonify({'status': 'error', 'error': 'Profile not found'}), 404
+
+        profile = json.loads(profile_json)
+        role = profile.get('role', 'primary')
+
+        # Set this profile as active for its role
+        active_key = f'neo4j_active_role_{role}'
+        set_setting(active_key, name)
+
+        # Apply to current connection config if it's the primary role
+        if role == 'primary':
+            # Load password
+            password_key = f'neo4j_profile_password_{name.replace(" ", "_")}'
+            password = get_setting(password_key)
+
+            # Apply to active config
+            cfg = _get_ext().setdefault('neo4j_config', {})
+            cfg['uri'] = profile.get('uri')
+            cfg['user'] = profile.get('user')
+            cfg['database'] = profile.get('database')
+            if password:
+                cfg['password'] = password
+
+        return jsonify({'status': 'ok', 'role': role, 'message': f'Profile {name} activated for role: {role}'}), 200
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
