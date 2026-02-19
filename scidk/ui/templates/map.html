@@ -695,6 +695,130 @@
   }
 })();
 </script>
+
+<!-- Panel Resizing JavaScript -->
+<script>
+(function() {
+  const mapsContainer = document.querySelector('.maps-container');
+  const leftPanel = document.querySelector('.map-library-panel');
+  const centerPanel = document.querySelector('.map-workspace-panel');
+  const rightPanel = document.querySelector('.map-controls-panel');
+  const resizerLeft = document.getElementById('resizer-left');
+  const resizerRight = document.getElementById('resizer-right');
+
+  // Storage keys
+  const STORAGE_KEY_LEFT = 'maps_left_panel_width';
+  const STORAGE_KEY_RIGHT = 'maps_right_panel_width';
+
+  // Load saved widths from localStorage
+  function loadPanelWidths() {
+    const leftWidth = localStorage.getItem(STORAGE_KEY_LEFT);
+    const rightWidth = localStorage.getItem(STORAGE_KEY_RIGHT);
+
+    if (leftWidth) {
+      leftPanel.style.width = leftWidth;
+    }
+    if (rightWidth) {
+      rightPanel.style.width = rightWidth;
+    }
+  }
+
+  // Save panel widths to localStorage
+  function savePanelWidths() {
+    localStorage.setItem(STORAGE_KEY_LEFT, leftPanel.style.width || '20%');
+    localStorage.setItem(STORAGE_KEY_RIGHT, rightPanel.style.width || '20%');
+  }
+
+  // Initialize resizer for left panel
+  function initLeftResizer() {
+    let isResizing = false;
+    let startX = 0;
+    let startWidth = 0;
+
+    resizerLeft.addEventListener('mousedown', (e) => {
+      isResizing = true;
+      startX = e.clientX;
+      startWidth = leftPanel.offsetWidth;
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isResizing) return;
+
+      const deltaX = e.clientX - startX;
+      const newWidth = startWidth + deltaX;
+      const containerWidth = mapsContainer.offsetWidth;
+
+      // Enforce min/max widths (10% to 40%)
+      const minWidth = containerWidth * 0.10;
+      const maxWidth = containerWidth * 0.40;
+
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        const widthPercent = (newWidth / containerWidth * 100).toFixed(2) + '%';
+        leftPanel.style.width = widthPercent;
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (isResizing) {
+        isResizing = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        savePanelWidths();
+      }
+    });
+  }
+
+  // Initialize resizer for right panel
+  function initRightResizer() {
+    let isResizing = false;
+    let startX = 0;
+    let startWidth = 0;
+
+    resizerRight.addEventListener('mousedown', (e) => {
+      isResizing = true;
+      startX = e.clientX;
+      startWidth = rightPanel.offsetWidth;
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isResizing) return;
+
+      const deltaX = startX - e.clientX; // Inverted for right panel
+      const newWidth = startWidth + deltaX;
+      const containerWidth = mapsContainer.offsetWidth;
+
+      // Enforce min/max widths (10% to 40%)
+      const minWidth = containerWidth * 0.10;
+      const maxWidth = containerWidth * 0.40;
+
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        const widthPercent = (newWidth / containerWidth * 100).toFixed(2) + '%';
+        rightPanel.style.width = widthPercent;
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (isResizing) {
+        isResizing = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        savePanelWidths();
+      }
+    });
+  }
+
+  // Initialize
+  loadPanelWidths();
+  initLeftResizer();
+  initRightResizer();
+})();
+</script>
   </div> <!-- END: Center Panel -->
 
   <!-- RESIZER (Center/Right) -->
