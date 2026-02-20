@@ -787,6 +787,47 @@
     color: #333;
   }
 
+  /* New Script Modal */
+  .script-type-card {
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 1.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+  }
+
+  .script-type-card:hover {
+    border-color: #00aa66;
+    background: #f0fdf4;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  }
+
+  .script-type-card.selected {
+    border-color: #00aa66;
+    background: #f0fdf4;
+    box-shadow: 0 0 0 3px rgba(0, 170, 102, 0.1);
+  }
+
+  .script-type-icon {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .script-type-card h4 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1rem;
+    color: #111;
+  }
+
+  .script-type-card p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #666;
+    line-height: 1.4;
+  }
+
   /* Plugin Palette Modal */
   .snippet-category {
     margin-bottom: 2rem;
@@ -1187,6 +1228,70 @@ def read_json(file_path: Path) -> dict:
         <div id="available-plugins-list">
           <!-- Dynamically loaded from /api/plugins/available -->
           <div style="color: #999; font-style: italic;">Loading plugins...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- New Script Modal -->
+<div id="new-script-modal" class="modal">
+  <div class="modal-content" style="max-width: 600px;">
+    <div class="modal-header">
+      <h3>Create New Script</h3>
+      <button class="btn-close" onclick="closeNewScriptModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="color: #666; margin-bottom: 1.5rem;">
+        Select a script type to start with a pre-configured template.
+      </p>
+
+      <div class="script-type-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+        <div class="script-type-card" data-type="plugin">
+          <div class="script-type-icon">🧩</div>
+          <h4>Plugin</h4>
+          <p>General-purpose analysis or data processing module</p>
+        </div>
+        <div class="script-type-card" data-type="interpreter">
+          <div class="script-type-icon">📄</div>
+          <h4>Interpreter</h4>
+          <p>Parse files and extract structured data</p>
+        </div>
+        <div class="script-type-card" data-type="link">
+          <div class="script-type-icon">🔗</div>
+          <h4>Link</h4>
+          <p>Create relationships between graph nodes</p>
+        </div>
+        <div class="script-type-card" data-type="analysis">
+          <div class="script-type-icon">📊</div>
+          <h4>Analysis</h4>
+          <p>Custom data analysis script</p>
+        </div>
+        <div class="script-type-card" data-type="api">
+          <div class="script-type-icon">🌐</div>
+          <h4>API Endpoint</h4>
+          <p>REST API endpoint handler</p>
+        </div>
+        <div class="script-type-card" data-type="custom">
+          <div class="script-type-icon">⚙️</div>
+          <h4>Custom</h4>
+          <p>Blank script for advanced users</p>
+        </div>
+      </div>
+
+      <div id="new-script-form" style="display: none;">
+        <hr style="margin: 1.5rem 0;">
+        <div style="margin-bottom: 1rem;">
+          <label style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Script Name</label>
+          <input type="text" id="new-script-name" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;" placeholder="Enter script name">
+        </div>
+        <div style="margin-bottom: 1rem;">
+          <label style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Description</label>
+          <textarea id="new-script-description" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; resize: vertical;" rows="2" placeholder="Enter description (optional)"></textarea>
+        </div>
+        <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+          <button class="btn" onclick="closeNewScriptModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="createScriptFromTemplate()">Create Script</button>
         </div>
       </div>
     </div>
@@ -2260,38 +2365,165 @@ def create_links(source_nodes: list, target_nodes: list) -> list:
       }
     ],
     tags: ['custom']
+  },
+
+  analysis: {
+    name: 'New Analysis',
+    description: 'Custom data analysis script',
+    category: 'analyses/custom',
+    language: 'python',
+    code: `"""
+Custom analysis script.
+
+This script runs analysis queries and returns results for display.
+"""
+
+def run(context: dict) -> dict:
+    """
+    Run analysis and return results.
+
+    Args:
+        context: Contains parameters and neo4j_driver
+
+    Returns:
+        Dict with 'status' and 'data' keys
+    """
+    params = context.get('parameters', {})
+    driver = context.get('neo4j_driver')
+
+    # Your analysis logic here
+    # Can use Neo4j driver to query graph
+    # Can use pandas for data processing
+
+    results = [
+        {'metric': 'Total Items', 'value': 0},
+        {'metric': 'Processed', 'value': 0}
+    ]
+
+    return {
+        'status': 'success',
+        'data': results
+    }
+`,
+    parameters: [],
+    tags: ['analysis', 'custom']
+  },
+
+  api: {
+    name: 'New API Endpoint',
+    description: 'REST API endpoint handler',
+    category: 'api',
+    language: 'python',
+    code: `"""
+API endpoint handler.
+
+Handles HTTP requests and returns JSON responses.
+"""
+
+def run(context: dict) -> dict:
+    """
+    Handle API request.
+
+    Args:
+        context: Contains parameters (from request body/query)
+
+    Returns:
+        Dict with response data
+    """
+    params = context.get('parameters', {})
+
+    # Your API logic here
+    # params will contain request parameters
+
+    return {
+        'status': 'success',
+        'data': {
+            'message': 'API endpoint executed',
+            'received': params
+        }
+    }
+`,
+    parameters: [],
+    tags: ['api', 'custom']
+  },
+
+  custom: {
+    name: 'New Custom Script',
+    description: 'Blank script for advanced users',
+    category: 'custom',
+    language: 'python',
+    code: `"""
+Custom script.
+
+Add your custom logic here.
+"""
+
+# Your code here
+results = []
+`,
+    parameters: [],
+    tags: ['custom']
   }
 };
 
-// Create new script
-async function newScript() {
-  // Prompt for category
-  const category = prompt(
-    'Select script category:\n\n' +
-    '1 = Plugin (general-purpose analysis/processing)\n' +
-    '2 = Interpreter (parse files and extract data)\n' +
-    '3 = Link (create relationships between nodes)\n\n' +
-    'Enter number (1-3):',
-    '1'
-  );
+// State for new script modal
+let selectedScriptType = null;
 
-  // Map selection to template
-  let templateKey;
-  if (category === '1') templateKey = 'plugin';
-  else if (category === '2') templateKey = 'interpreter';
-  else if (category === '3') templateKey = 'link';
-  else {
-    window.toast('Invalid category selection', 'error');
+// Open new script modal
+function newScript() {
+  selectedScriptType = null;
+  document.getElementById('new-script-form').style.display = 'none';
+  document.getElementById('new-script-name').value = '';
+  document.getElementById('new-script-description').value = '';
+
+  // Remove all selected states
+  document.querySelectorAll('.script-type-card').forEach(card => {
+    card.classList.remove('selected');
+  });
+
+  document.getElementById('new-script-modal').style.display = 'flex';
+}
+
+// Close new script modal
+function closeNewScriptModal() {
+  document.getElementById('new-script-modal').style.display = 'none';
+}
+
+// Handle script type card click
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.script-type-card').forEach(card => {
+    card.addEventListener('click', () => {
+      // Remove selection from all cards
+      document.querySelectorAll('.script-type-card').forEach(c => c.classList.remove('selected'));
+
+      // Select this card
+      card.classList.add('selected');
+      selectedScriptType = card.dataset.type;
+
+      // Show form with pre-filled values
+      const template = SCRIPT_TEMPLATES[selectedScriptType];
+      document.getElementById('new-script-name').value = template.name;
+      document.getElementById('new-script-description').value = template.description;
+      document.getElementById('new-script-form').style.display = 'block';
+    });
+  });
+});
+
+// Create script from selected template
+async function createScriptFromTemplate() {
+  if (!selectedScriptType) {
+    window.toast('Please select a script type', 'error');
     return;
   }
 
-  const template = SCRIPT_TEMPLATES[templateKey];
+  const name = document.getElementById('new-script-name').value.trim();
+  if (!name) {
+    window.toast('Please enter a script name', 'error');
+    return;
+  }
 
-  // Prompt for script name
-  const name = prompt('Enter script name:', template.name);
-  if (!name) return;
-
-  const description = prompt('Enter description (optional):', template.description) || template.description;
+  const description = document.getElementById('new-script-description').value.trim();
+  const template = SCRIPT_TEMPLATES[selectedScriptType];
 
   try {
     const response = await fetch('/api/scripts/scripts', {
@@ -2299,7 +2531,7 @@ async function newScript() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: name,
-        description: description,
+        description: description || template.description,
         language: template.language,
         category: template.category,
         code: template.code,
@@ -2311,7 +2543,8 @@ async function newScript() {
     const data = await response.json();
 
     if (data.status === 'ok') {
-      window.toast(`${templateKey.charAt(0).toUpperCase() + templateKey.slice(1)} created successfully!`, 'success');
+      window.toast(`Script created successfully!`, 'success');
+      closeNewScriptModal();
       await loadScripts();
       await loadScript(data.script.id);
     } else {
@@ -3492,6 +3725,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('parameter-editor-modal').addEventListener('click', (e) => {
     if (e.target.id === 'parameter-editor-modal') {
       closeParameterEditor();
+    }
+  });
+
+  document.getElementById('new-script-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'new-script-modal') {
+      closeNewScriptModal();
     }
   });
 
