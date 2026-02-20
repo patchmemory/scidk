@@ -1110,6 +1110,31 @@ def read_json(file_path: Path) -> dict:
   </div>
 </div>
 
+<!-- Parameter Editor Modal -->
+<div id="parameter-editor-modal" class="modal" style="display: none;">
+  <div class="modal-content" style="max-width: 900px; max-height: 85vh; overflow-y: auto;">
+    <div class="modal-header">
+      <h3>Edit Parameters</h3>
+      <button class="btn-close" onclick="closeParameterEditor()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="color: #666; margin-bottom: 1rem;">
+        Define parameters that users can fill in when running this script.
+      </p>
+
+      <div id="parameter-editor-list">
+        <!-- Parameter editor items will be added here -->
+      </div>
+
+      <button class="btn btn-sm" onclick="addParameterRow()" style="margin-top: 1rem;">+ Add Parameter</button>
+    </div>
+    <div class="modal-footer" style="display: flex; justify-content: space-between; padding: 1rem; border-top: 1px solid #e0e0e0;">
+      <button class="btn" onclick="closeParameterEditor()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveParameters()">Save Parameters</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // Global state
 let currentScript = null;
@@ -1356,17 +1381,22 @@ function renderParameters(parameters) {
   const section = document.getElementById('parameters-section');
   const isBuiltin = currentScript?.category === 'builtin' || currentScript?.category === 'analyses/builtin';
 
-  if (!parameters || parameters.length === 0) {
-    section.innerHTML = '<p class="no-parameters">No parameters defined</p>';
-    section.style.display = 'none';
-    return;
+  let html = '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">';
+  html += '<h4 style="margin: 0;">Parameters</h4>';
+
+  // Add "Edit Parameters" button for non-builtin scripts
+  if (!isBuiltin) {
+    html += '<button class="btn btn-sm" onclick="openParameterEditor()" style="font-size: 0.85em;">✏️ Edit Parameters</button>';
   }
+  html += '</div>';
 
-  let html = '<h4>Parameters</h4>';
-
-  parameters.forEach(param => {
-    html += renderParameterField(param);
-  });
+  if (!parameters || parameters.length === 0) {
+    html += '<p class="no-parameters">No parameters defined. Click "Edit Parameters" to add some.</p>';
+  } else {
+    parameters.forEach(param => {
+      html += renderParameterField(param);
+    });
+  }
 
   section.innerHTML = html;
   section.style.display = 'block';
@@ -2325,6 +2355,208 @@ function openPluginPalette() {
 function closePluginPalette() {
   const modal = document.getElementById('plugin-palette-modal');
   modal.style.display = 'none';
+}
+
+// Parameter Editor Functions
+let parameterEditorData = [];
+
+function openParameterEditor() {
+  if (!currentScript) return;
+
+  // Load current parameters
+  parameterEditorData = JSON.parse(JSON.stringify(currentScript.parameters || []));
+
+  // Render parameter editor
+  renderParameterEditor();
+
+  // Show modal
+  const modal = document.getElementById('parameter-editor-modal');
+  modal.style.display = 'flex';
+}
+
+function closeParameterEditor() {
+  const modal = document.getElementById('parameter-editor-modal');
+  modal.style.display = 'none';
+  parameterEditorData = [];
+}
+
+function renderParameterEditor() {
+  const container = document.getElementById('parameter-editor-list');
+
+  if (parameterEditorData.length === 0) {
+    container.innerHTML = '<p style="color: #999; font-style: italic;">No parameters defined. Click "+ Add Parameter" to create one.</p>';
+    return;
+  }
+
+  let html = '';
+  parameterEditorData.forEach((param, index) => {
+    html += renderParameterEditorRow(param, index);
+  });
+
+  container.innerHTML = html;
+}
+
+function renderParameterEditorRow(param, index) {
+  const typeOptions = ['text', 'number', 'boolean', 'select', 'textarea'].map(t =>
+    `<option value="${t}" ${param.type === t ? 'selected' : ''}>${t}</option>`
+  ).join('');
+
+  return `
+    <div class="parameter-editor-row" data-index="${index}" style="border: 1px solid #e0e0e0; padding: 1rem; margin-bottom: 1rem; border-radius: 4px; background: #f9f9f9;">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
+        <strong>Parameter ${index + 1}</strong>
+        <button class="btn btn-sm" onclick="removeParameterRow(${index})" style="color: #dc2626;">🗑 Remove</button>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem;">
+        <div>
+          <label style="font-size: 0.85em; font-weight: 500; display: block; margin-bottom: 0.25rem;">Name (variable name)</label>
+          <input type="text" value="${escapeHtml(param.name || '')}"
+                 onchange="updateParameter(${index}, 'name', this.value)"
+                 placeholder="e.g., limit"
+                 style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;" />
+        </div>
+
+        <div>
+          <label style="font-size: 0.85em; font-weight: 500; display: block; margin-bottom: 0.25rem;">Type</label>
+          <select onchange="updateParameter(${index}, 'type', this.value)"
+                  style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;">
+            ${typeOptions}
+          </select>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 0.75rem;">
+        <label style="font-size: 0.85em; font-weight: 500; display: block; margin-bottom: 0.25rem;">Label (display name)</label>
+        <input type="text" value="${escapeHtml(param.label || '')}"
+               onchange="updateParameter(${index}, 'label', this.value)"
+               placeholder="e.g., Result Limit"
+               style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;" />
+      </div>
+
+      <div style="margin-bottom: 0.75rem;">
+        <label style="font-size: 0.85em; font-weight: 500; display: block; margin-bottom: 0.25rem;">Description (help text)</label>
+        <input type="text" value="${escapeHtml(param.description || '')}"
+               onchange="updateParameter(${index}, 'description', this.value)"
+               placeholder="e.g., Maximum number of results to show"
+               style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;" />
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;">
+        <div>
+          <label style="font-size: 0.85em; font-weight: 500; display: block; margin-bottom: 0.25rem;">Default Value</label>
+          <input type="text" value="${escapeHtml(param.default !== undefined ? param.default : '')}"
+                 onchange="updateParameter(${index}, 'default', this.value)"
+                 style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;" />
+        </div>
+
+        <div>
+          <label style="font-size: 0.85em; font-weight: 500; display: block; margin-bottom: 0.25rem;">
+            <input type="checkbox" ${param.required ? 'checked' : ''}
+                   onchange="updateParameter(${index}, 'required', this.checked)" />
+            Required
+          </label>
+        </div>
+
+        ${param.type === 'select' ? `
+        <div>
+          <label style="font-size: 0.85em; font-weight: 500; display: block; margin-bottom: 0.25rem;">Options (comma-separated)</label>
+          <input type="text" value="${escapeHtml((param.options || []).join(', '))}"
+                 onchange="updateParameter(${index}, 'options', this.value.split(',').map(s => s.trim()))"
+                 placeholder="e.g., option1, option2"
+                 style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;" />
+        </div>
+        ` : ''}
+
+        ${param.type === 'number' ? `
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+          <div>
+            <label style="font-size: 0.85em;">Min</label>
+            <input type="number" value="${param.min !== undefined ? param.min : ''}"
+                   onchange="updateParameter(${index}, 'min', parseFloat(this.value))"
+                   style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;" />
+          </div>
+          <div>
+            <label style="font-size: 0.85em;">Max</label>
+            <input type="number" value="${param.max !== undefined ? param.max : ''}"
+                   onchange="updateParameter(${index}, 'max', parseFloat(this.value))"
+                   style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;" />
+          </div>
+        </div>
+        ` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function addParameterRow() {
+  parameterEditorData.push({
+    name: '',
+    type: 'text',
+    label: '',
+    description: '',
+    default: '',
+    required: false
+  });
+  renderParameterEditor();
+}
+
+function removeParameterRow(index) {
+  parameterEditorData.splice(index, 1);
+  renderParameterEditor();
+}
+
+function updateParameter(index, field, value) {
+  parameterEditorData[index][field] = value;
+}
+
+async function saveParameters() {
+  if (!currentScript) return;
+
+  // Validate parameters
+  const errors = [];
+  parameterEditorData.forEach((param, index) => {
+    if (!param.name) {
+      errors.push(`Parameter ${index + 1}: Name is required`);
+    }
+    if (!param.label) {
+      errors.push(`Parameter ${index + 1}: Label is required`);
+    }
+    if (param.type === 'select' && (!param.options || param.options.length === 0)) {
+      errors.push(`Parameter ${index + 1}: Select type requires options`);
+    }
+  });
+
+  if (errors.length > 0) {
+    window.toast('Validation errors:\n' + errors.join('\n'), 'error');
+    return;
+  }
+
+  // Update current script
+  currentScript.parameters = parameterEditorData;
+
+  // Save to database
+  try {
+    const response = await fetch(`/api/scripts/scripts/${currentScript.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(currentScript)
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      window.toast('Parameters saved successfully!', 'success');
+      closeParameterEditor();
+
+      // Re-render parameter form
+      renderParameters(currentScript.parameters);
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    window.toast('Error saving parameters: ' + error.message, 'error');
+  }
 }
 
 async function copySnippetToClipboard(snippetCode) {
