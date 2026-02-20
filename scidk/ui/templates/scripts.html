@@ -2081,6 +2081,247 @@ async function deleteScript() {
   }
 }
 
+// Script templates for different categories
+const SCRIPT_TEMPLATES = {
+  plugin: {
+    name: 'New Plugin',
+    description: 'Reusable analysis or processing module',
+    category: 'plugins',
+    language: 'python',
+    code: `"""
+Plugin that processes data.
+
+Usage:
+  from scidk.core.script_plugin_loader import load_plugin
+  result = load_plugin('plugin-id', manager, {'param': 'value'})
+  data = result.to_dict()
+"""
+
+def run(context: dict) -> dict:
+    """
+    Execute plugin logic.
+
+    Args:
+        context: Input parameters as dict with keys:
+            - parameters: User-provided parameters
+            - neo4j_driver: Database driver (if available)
+
+    Returns:
+        Dict with 'status' and 'data' keys
+    """
+    params = context.get('parameters', {})
+
+    # Your plugin logic here
+    # Access parameters: params.get('param_name', default_value)
+
+    return {
+        'status': 'success',
+        'data': [
+            {'message': 'Plugin executed successfully'}
+        ]
+    }
+`,
+    parameters: [],
+    tags: ['custom']
+  },
+
+  interpreter: {
+    name: 'New Interpreter',
+    description: 'Parse files and extract structured data',
+    category: 'interpreters',
+    language: 'python',
+    code: `"""
+Interpreter that extracts data from files.
+
+Contract: Read file and return structured data
+"""
+from pathlib import Path
+
+def interpret(file_path: Path) -> dict:
+    """
+    Interpret a file and extract data.
+
+    Args:
+        file_path: Path to file to interpret
+
+    Returns:
+        Dict with 'status' and 'data' keys:
+        - status: 'success' or 'error'
+        - data: Extracted data (dict)
+    """
+    # REQUIRED: Check if file exists
+    if not file_path.exists():
+        return {
+            'status': 'error',
+            'data': {'error': 'File not found'}
+        }
+
+    try:
+        # Your parsing logic here
+        content = file_path.read_text()
+
+        # Extract/process data
+        data = {
+            'file_path': str(file_path),
+            'file_name': file_path.name,
+            'size_bytes': len(content),
+            'lines': len(content.splitlines())
+            # Add your extracted data here
+        }
+
+        return {
+            'status': 'success',
+            'data': data
+        }
+
+    except Exception as e:
+        # REQUIRED: Handle errors gracefully
+        return {
+            'status': 'error',
+            'data': {'error': str(e)}
+        }
+`,
+    parameters: [
+      {
+        name: 'file_path',
+        type: 'text',
+        label: 'File Path',
+        description: 'Path to file to interpret',
+        default: '/tmp/test.txt',
+        required: true
+      }
+    ],
+    tags: ['custom']
+  },
+
+  link: {
+    name: 'New Link',
+    description: 'Create relationships between nodes',
+    category: 'links',
+    language: 'python',
+    code: `"""
+Link script that creates relationships between nodes.
+
+Contract: Analyze nodes and create relationships
+"""
+
+def create_links(source_nodes: list, target_nodes: list) -> list:
+    """
+    Create relationships between nodes.
+
+    Args:
+        source_nodes: List of source node dicts (each has 'id' key)
+        target_nodes: List of target node dicts (each has 'id' key)
+
+    Returns:
+        List of tuples: (source_id, target_id, rel_type, properties)
+    """
+    links = []
+
+    # REQUIRED: Handle empty inputs
+    if not source_nodes or not target_nodes:
+        return links
+
+    # Your link creation logic here
+    for source in source_nodes:
+        for target in target_nodes:
+            # Your matching/scoring logic
+            should_link = True  # Replace with your condition
+
+            if should_link:
+                links.append((
+                    source.get('id'),
+                    target.get('id'),
+                    'RELATED_TO',  # Change to your relationship type
+                    {
+                        'confidence': 1.0,  # Your properties
+                        'method': 'custom_algorithm'
+                    }
+                ))
+
+    return links
+`,
+    parameters: [
+      {
+        name: 'source_nodes',
+        type: 'textarea',
+        label: 'Source Nodes (JSON)',
+        description: 'List of source nodes as JSON array',
+        default: '[{"id": "node1", "name": "A"}]',
+        required: true
+      },
+      {
+        name: 'target_nodes',
+        type: 'textarea',
+        label: 'Target Nodes (JSON)',
+        description: 'List of target nodes as JSON array',
+        default: '[{"id": "node2", "name": "B"}]',
+        required: true
+      }
+    ],
+    tags: ['custom']
+  }
+};
+
+// Create new script
+async function newScript() {
+  // Prompt for category
+  const category = prompt(
+    'Select script category:\n\n' +
+    '1 = Plugin (general-purpose analysis/processing)\n' +
+    '2 = Interpreter (parse files and extract data)\n' +
+    '3 = Link (create relationships between nodes)\n\n' +
+    'Enter number (1-3):',
+    '1'
+  );
+
+  // Map selection to template
+  let templateKey;
+  if (category === '1') templateKey = 'plugin';
+  else if (category === '2') templateKey = 'interpreter';
+  else if (category === '3') templateKey = 'link';
+  else {
+    window.toast('Invalid category selection', 'error');
+    return;
+  }
+
+  const template = SCRIPT_TEMPLATES[templateKey];
+
+  // Prompt for script name
+  const name = prompt('Enter script name:', template.name);
+  if (!name) return;
+
+  const description = prompt('Enter description (optional):', template.description) || template.description;
+
+  try {
+    const response = await fetch('/api/scripts/scripts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: name,
+        description: description,
+        language: template.language,
+        category: template.category,
+        code: template.code,
+        parameters: template.parameters,
+        tags: template.tags
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      window.toast(`${templateKey.charAt(0).toUpperCase() + templateKey.slice(1)} created successfully!`, 'success');
+      await loadScripts();
+      await loadScript(data.script.id);
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    window.toast('Error creating script: ' + error.message, 'error');
+  }
+}
+
 // Update activation button visibility
 function updateActivationButtons() {
   const activateBtn = document.getElementById('activate-script-btn');
@@ -3159,6 +3400,9 @@ function initializePanelResizing() {
 document.addEventListener('DOMContentLoaded', () => {
   initializeEditor();
   loadScripts();
+
+  // New Script button
+  document.getElementById('new-script-btn').addEventListener('click', newScript);
 
   // Run button
   document.getElementById('run-script-btn').addEventListener('click', runScript);
