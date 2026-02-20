@@ -1,0 +1,10 @@
+{
+  "source_nodes": [
+    {"id": "1", "name": "Alice", "type": "Person"},
+    {"id": "2", "name": "Bob", "type": "Person"}
+  ],
+  "target_nodes": [
+    {"id": "10", "name": "Project A", "type": "Project"},
+    {"id": "11", "name": "Project B", "type": "Project"}
+  ]
+}
