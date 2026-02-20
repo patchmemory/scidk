@@ -1678,6 +1678,7 @@ function getTestDescription(testName) {
   const descriptions = {
     'valid_syntax': 'Valid Python syntax',
     'executes_without_error': 'Executes without errors',
+    'returns_wrappable_data': 'Returns wrappable data (dict, list, or DataFrame)',
     'has_interpret_function': 'Has interpret() function',
     'interpret_has_parameter': 'interpret() accepts file_path parameter',
     'returns_dict': 'Returns dict type',
@@ -1694,6 +1695,7 @@ function getTestDescription(testName) {
 // Helper: Get fix hint for failed test
 function getFixHint(testName) {
   const hints = {
+    'returns_wrappable_data': "Plugin run() must return dict, list, or pandas DataFrame (JSON-serializable)",
     'has_interpret_function': "Add function: def interpret(file_path: Path) -> dict:",
     'interpret_has_parameter': "Function signature should be: def interpret(file_path: Path)",
     'returns_status_key': "Return dict must include 'status' key: {'status': 'success', 'data': {...}}",

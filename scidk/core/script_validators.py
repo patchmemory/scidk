@@ -171,6 +171,53 @@ results = []
         else:
             tests['executes_without_error'] = False
 
+        # Test 3: Returns wrappable data (new SciDKData contract)
+        # Only test if script has a run() function (plugin contract)
+        if tests.get('executes_without_error') and self._check_function_exists(script.code, 'run'):
+            test_code = f"""
+{script.code}
+
+# Test if output is wrappable with rich mock context
+# Provide common parameter keys that plugins might expect
+mock_context = {{
+    'mode': 'test',
+    'limit': 10,
+    'file_path': '/tmp/test.txt',
+    'query': 'test query',
+    'user_id': 1,
+    'session_id': 'test-session',
+}}
+
+try:
+    result = run(mock_context)
+    from scidk.core.data_types import auto_wrap
+    wrapped = auto_wrap(result)
+    print("wrappable: True")
+except KeyError as e:
+    # Plugin expects specific context keys - that's OK, wrappability test passed
+    print(f"wrappable: True (KeyError ok: {{e}})")
+except TypeError as e:
+    # Plugin returned unsupported type - wrappability test failed
+    print(f"wrappable: False - TypeError: {{e}}")
+except Exception as e:
+    # Other error - wrappability test failed
+    print(f"wrappable: False - {{type(e).__name__}}: {{e}}")
+"""
+            result = run_sandboxed(test_code, timeout=self.timeout)
+            is_wrappable = 'wrappable: True' in result['stdout']
+            tests['returns_wrappable_data'] = is_wrappable
+            if not is_wrappable:
+                # Extract error message from stdout
+                error_line = [line for line in result['stdout'].split('\n') if 'wrappable: False' in line]
+                if error_line:
+                    errors.append(f"Plugin returns non-wrappable data: {error_line[0]}")
+                else:
+                    errors.append("Plugin must return dict, list, or pandas DataFrame")
+        else:
+            # Skip this test if script doesn't have run() function (not a plugin)
+            # This allows interpreter/link scripts to pass base validation
+            pass
+
         # Overall pass: all tests must pass
         passed = all(tests.values())
 

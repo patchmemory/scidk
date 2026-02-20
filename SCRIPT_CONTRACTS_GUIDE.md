@@ -17,9 +17,18 @@ This guide explains the requirements for each type of script in SciDK.
 **Requirements:**
 - ✅ Valid Python syntax
 - ✅ Executes without errors
-- 💡 Convention: Define a `run(context: dict) -> dict` function
+- ✅ Returns wrappable data (dict, list, or pandas DataFrame)
+- 💡 Convention: Define a `run(context: dict)` function
 
-**Minimal Valid Example:**
+**Data Contract:**
+Plugins must return one of:
+- `dict` (most common) - JSON-serializable dictionary
+- `list` - JSON-serializable list
+- `pandas.DataFrame` - Will be auto-converted
+
+The `load_plugin()` function auto-wraps your return value in a `SciDKData` object, providing consistent `.to_dict()`, `.to_list()`, and `.to_dataframe()` methods for downstream consumers.
+
+**Minimal Valid Example (Casual User):**
 ```python
 """
 Plugin that processes data.
@@ -27,6 +36,7 @@ Plugin that processes data.
 Usage:
   from scidk.core.script_plugin_loader import load_plugin
   result = load_plugin('plugin-id', manager, {'key': 'value'})
+  data = result.to_dict()  # Extract as dict
 """
 
 def run(context: dict) -> dict:
@@ -37,10 +47,11 @@ def run(context: dict) -> dict:
         context: Input parameters as dict
 
     Returns:
-        Dict with results (JSON-serializable)
+        Dict, list, or DataFrame (auto-wrapped in SciDKData)
     """
     # Your plugin logic here
 
+    # Simple return - auto-wrapped by load_plugin()
     return {
         'status': 'success',
         'data': {
@@ -48,6 +59,28 @@ def run(context: dict) -> dict:
             'result': context.get('key')
         }
     }
+```
+
+**Advanced Example (Explicit SciDKData):**
+```python
+"""
+Advanced plugin using explicit SciDKData wrapper.
+"""
+from scidk.core.data_types import SciDKData
+
+def run(context: dict) -> SciDKData:
+    """Return explicitly wrapped data."""
+    import pandas as pd
+
+    # Create DataFrame
+    df = pd.DataFrame({
+        'gene': ['BRCA1', 'TP53'],
+        'count': [42, 37]
+    })
+
+    # Explicit wrap (optional - load_plugin auto-wraps)
+    result = SciDKData().from_dataframe(df)
+    return result
 ```
 
 ---

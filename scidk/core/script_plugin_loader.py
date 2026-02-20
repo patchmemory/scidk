@@ -8,6 +8,7 @@ import json
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from .script_sandbox import run_sandboxed
+from .data_types import SciDKData, auto_wrap
 
 if TYPE_CHECKING:
     from .scripts import ScriptsManager
@@ -23,7 +24,7 @@ def load_plugin(
     manager: 'ScriptsManager',
     context: Optional[Dict[str, Any]] = None,
     timeout: int = 10
-) -> Dict[str, Any]:
+) -> SciDKData:
     """
     Securely load and execute a validated plugin script.
 
@@ -37,11 +38,12 @@ def load_plugin(
         timeout: Execution timeout in seconds (default: 10)
 
     Returns:
-        Plugin result as dict (JSON-serializable for MVP)
+        SciDKData wrapper containing plugin result.
+        Call .to_dict(), .to_list(), or .to_dataframe() to extract data.
 
     Raises:
         PluginLoadError: If plugin not found, not validated, not active, or execution fails
-        ValueError: If plugin returns non-JSON-serializable data
+        TypeError: If plugin returns unsupported data type
 
     Example:
         >>> from scidk.core.scripts import ScriptsManager
@@ -49,7 +51,8 @@ def load_plugin(
         >>>
         >>> manager = ScriptsManager()
         >>> result = load_plugin('my-plugin-id', manager, {'param': 'value'})
-        >>> print(result['status'], result['data'])
+        >>> data = result.to_dict()  # Extract as dict
+        >>> print(data['status'], data['data'])
     """
     # 1. Get plugin script
     script = manager.get_script(plugin_id)
@@ -105,22 +108,23 @@ print(json.dumps(result))
 
     # 5. Parse stdout as JSON (MVP contract)
     try:
-        result = json.loads(sandbox_result['stdout'])
+        raw_result = json.loads(sandbox_result['stdout'])
     except json.JSONDecodeError as e:
         raise PluginLoadError(
             f"Plugin '{script.name}' returned invalid JSON. "
             f"Output: {sandbox_result['stdout'][:200]}"
         )
 
-    # 6. Validate result is a dict (base contract)
-    if not isinstance(result, dict):
-        raise ValueError(
-            f"Plugin '{script.name}' must return a dict, got {type(result).__name__}. "
-            f"This violates the plugin contract."
+    # 6. Auto-wrap result in SciDKData
+    try:
+        wrapped_result = auto_wrap(raw_result)
+    except TypeError as e:
+        raise PluginLoadError(
+            f"Plugin '{script.name}' returned invalid data type: {e}"
         )
 
-    # 7. Return parsed result
-    return result
+    # 7. Return wrapped result
+    return wrapped_result
 
 
 def list_available_plugins(manager: 'ScriptsManager') -> list:
