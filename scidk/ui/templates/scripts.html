@@ -634,16 +634,69 @@
     border-bottom: 1px solid #e0e0e0;
   }
 
-  .parameter-row {
-    margin-bottom: 0.75rem;
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
+  .parameters-section h4 {
+    margin: 0 0 1rem 0;
+    font-size: 1em;
+    font-weight: 600;
+    color: #333;
   }
 
-  .parameter-row label {
-    min-width: 100px;
+  .no-parameters {
     font-size: 0.9em;
+    color: #666;
+    font-style: italic;
+  }
+
+  .parameter-field {
+    margin-bottom: 1rem;
+  }
+
+  .parameter-field label {
+    display: block;
+    font-size: 0.9em;
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+    color: #333;
+  }
+
+  .parameter-field label .required {
+    color: #dc2626;
+    margin-left: 0.25rem;
+  }
+
+  .parameter-field input[type="text"],
+  .parameter-field input[type="number"],
+  .parameter-field select,
+  .parameter-field textarea {
+    width: 100%;
+    max-width: 400px;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.9em;
+    font-family: inherit;
+  }
+
+  .parameter-field input[type="checkbox"] {
+    width: auto;
+    margin-right: 0.5rem;
+  }
+
+  .parameter-field textarea {
+    resize: vertical;
+    min-height: 80px;
+  }
+
+  .field-description {
+    font-size: 0.85em;
+    color: #666;
+    margin-top: 0.25rem;
+  }
+
+  .field-error {
+    font-size: 0.85em;
+    color: #dc2626;
+    margin-top: 0.25rem;
     font-weight: 500;
   }
 
@@ -1303,42 +1356,104 @@ function renderParameters(parameters) {
   const section = document.getElementById('parameters-section');
   const isBuiltin = currentScript?.category === 'builtin' || currentScript?.category === 'analyses/builtin';
 
-  let html = `
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-      <h4 style="margin: 0; font-size: 0.9em;">Parameters:</h4>
-      ${!isBuiltin ? '<button type="button" onclick="toggleEditParameterLabels()" class="btn-secondary" id="edit-labels-btn" style="font-size: 0.8em; padding: 0.25rem 0.5rem;">Edit Labels</button>' : ''}
-    </div>
-  `;
+  if (!parameters || parameters.length === 0) {
+    section.innerHTML = '<p class="no-parameters">No parameters defined</p>';
+    section.style.display = 'none';
+    return;
+  }
 
-  parameters.forEach((param, index) => {
-    const label = param.label || param.name;
-    const varName = `$${param.name}`;
-    const tooltip = `Query variable: ${varName}`;
+  let html = '<h4>Parameters</h4>';
 
-    html += `
-      <div class="parameter-row">
-        <label title="${tooltip}">
-          <span class="param-label"
-                data-param-index="${index}"
-                data-param-name="${param.name}"
-                data-original-label="${label}">${label}</span>
-          <span style="color: #888; font-size: 0.85em; font-family: monospace;">${varName}</span>:
-        </label>
-        <input
-          type="${param.type === 'integer' ? 'number' : 'text'}"
-          data-param-name="${param.name}"
-          value="${param.default || ''}"
-          placeholder="${param.default || ''}"
-          title="${tooltip}"
-          ${param.required ? 'required' : ''}
-        >
-      </div>
-    `;
+  parameters.forEach(param => {
+    html += renderParameterField(param);
   });
 
   section.innerHTML = html;
   section.style.display = 'block';
-  window.parameterLabelsEditMode = false;
+}
+
+// Render individual parameter field based on type
+function renderParameterField(param) {
+  const fieldId = `param-${param.name}`;
+  const required = param.required ? '<span class="required">*</span>' : '';
+  const description = param.description ?
+    `<div class="field-description">${escapeHtml(param.description)}</div>` : '';
+
+  let inputHtml = '';
+
+  // Handle different parameter types
+  switch (param.type) {
+    case 'select':
+      const options = (param.options || []).map(opt => {
+        const selected = opt === param.default ? 'selected' : '';
+        return `<option value="${escapeHtml(opt)}" ${selected}>${escapeHtml(opt)}</option>`;
+      }).join('');
+      inputHtml = `<select id="${fieldId}" name="${param.name}" ${param.required ? 'required' : ''}>${options}</select>`;
+      break;
+
+    case 'number':
+    case 'integer':
+      inputHtml = `<input type="number" id="${fieldId}" name="${param.name}"
+                   value="${param.default !== undefined ? param.default : ''}"
+                   ${param.min !== undefined ? `min="${param.min}"` : ''}
+                   ${param.max !== undefined ? `max="${param.max}"` : ''}
+                   ${param.step !== undefined ? `step="${param.step}"` : ''}
+                   ${param.required ? 'required' : ''} />`;
+      break;
+
+    case 'boolean':
+      inputHtml = `<label style="display: flex; align-items: center; font-weight: normal;">
+                   <input type="checkbox" id="${fieldId}" name="${param.name}"
+                   ${param.default ? 'checked' : ''} />
+                   <span style="margin-left: 0.5rem;">${escapeHtml(param.label || param.name)}</span>
+                   </label>`;
+      // For boolean, we show label inline with checkbox, so skip the outer label
+      return `
+        <div class="parameter-field">
+          ${inputHtml}
+          ${description}
+          <div class="field-error" style="display:none;"></div>
+        </div>
+      `;
+
+    case 'textarea':
+      inputHtml = `<textarea id="${fieldId}" name="${param.name}"
+                   rows="${param.rows || 4}"
+                   placeholder="${escapeHtml(param.placeholder || '')}"
+                   ${param.required ? 'required' : ''}
+                   ${param.maxLength ? `maxlength="${param.maxLength}"` : ''}
+                   >${escapeHtml(param.default || '')}</textarea>`;
+      break;
+
+    case 'text':
+    default:
+      inputHtml = `<input type="text" id="${fieldId}" name="${param.name}"
+                   value="${escapeHtml(param.default || '')}"
+                   placeholder="${escapeHtml(param.placeholder || '')}"
+                   ${param.required ? 'required' : ''}
+                   ${param.maxLength ? `maxlength="${param.maxLength}"` : ''} />`;
+      break;
+  }
+
+  return `
+    <div class="parameter-field">
+      <label for="${fieldId}">
+        ${escapeHtml(param.label || param.name)}
+        ${required}
+      </label>
+      ${inputHtml}
+      ${description}
+      <div class="field-error" style="display:none;"></div>
+    </div>
+  `;
+}
+
+// Helper: Escape HTML to prevent XSS
+function escapeHtml(text) {
+  if (text === null || text === undefined) return '';
+  const div = document.createElement('div');
+  div.textContent = String(text);
+  return div.innerHTML;
 }
 
 // Toggle parameter label editing mode
@@ -1435,6 +1550,115 @@ function updateEditorMode(language) {
   codeMirrorEditor.setOption('mode', mode);
 }
 
+// Collect parameter values from form
+function collectParameterValues() {
+  const section = document.getElementById('parameters-section');
+  const inputs = section.querySelectorAll('input, select, textarea');
+  const values = {};
+
+  inputs.forEach(input => {
+    const name = input.name;
+    if (!name) return;
+
+    if (input.type === 'checkbox') {
+      values[name] = input.checked;
+    } else if (input.type === 'number') {
+      values[name] = input.value ? parseFloat(input.value) : null;
+    } else {
+      values[name] = input.value;
+    }
+  });
+
+  return values;
+}
+
+// Validate parameter values
+function validateParameterValues(parameters, values) {
+  const errors = [];
+
+  parameters.forEach(param => {
+    const value = values[param.name];
+
+    // Check required fields
+    if (param.required && (value === null || value === undefined || value === '')) {
+      errors.push({
+        field: param.name,
+        message: `${param.label || param.name} is required`
+      });
+    }
+
+    // Type-specific validation
+    if (value !== null && value !== undefined && value !== '') {
+      // Number validation
+      if ((param.type === 'number' || param.type === 'integer') && typeof value === 'number') {
+        if (param.min !== undefined && value < param.min) {
+          errors.push({
+            field: param.name,
+            message: `${param.label || param.name} must be at least ${param.min}`
+          });
+        }
+        if (param.max !== undefined && value > param.max) {
+          errors.push({
+            field: param.name,
+            message: `${param.label || param.name} must be at most ${param.max}`
+          });
+        }
+      }
+
+      // Select validation
+      if (param.type === 'select' && param.options) {
+        if (!param.options.includes(value)) {
+          errors.push({
+            field: param.name,
+            message: `${param.label || param.name} must be one of: ${param.options.join(', ')}`
+          });
+        }
+      }
+
+      // String length validation
+      if ((param.type === 'text' || param.type === 'textarea') && typeof value === 'string') {
+        if (param.maxLength && value.length > param.maxLength) {
+          errors.push({
+            field: param.name,
+            message: `${param.label || param.name} must be at most ${param.maxLength} characters`
+          });
+        }
+      }
+    }
+  });
+
+  return errors;
+}
+
+// Display parameter validation errors
+function displayParameterErrors(errors) {
+  // Clear previous errors
+  document.querySelectorAll('.parameter-field .field-error').forEach(el => {
+    el.style.display = 'none';
+    el.textContent = '';
+  });
+  document.querySelectorAll('.parameter-field').forEach(el => {
+    el.classList.remove('has-error');
+  });
+
+  // Show new errors
+  errors.forEach(error => {
+    const fieldId = `param-${error.field}`;
+    const input = document.getElementById(fieldId);
+    if (input) {
+      const field = input.closest('.parameter-field');
+      if (field) {
+        field.classList.add('has-error');
+        const errorEl = field.querySelector('.field-error');
+        if (errorEl) {
+          errorEl.textContent = error.message;
+          errorEl.style.display = 'block';
+        }
+      }
+    }
+  });
+}
+
 // Run script
 async function runScript() {
   if (!currentScript) return;
@@ -1443,12 +1667,17 @@ async function runScript() {
   statusEl.textContent = 'Running...';
   statusEl.className = 'editor-status running';
 
-  // Collect parameters
-  const parameters = {};
-  document.querySelectorAll('#parameters-section input').forEach(input => {
-    const paramName = input.dataset.paramName;
-    parameters[paramName] = input.type === 'number' ? parseInt(input.value) : input.value;
-  });
+  // Collect and validate parameters
+  const parameters = collectParameterValues();
+  const validationErrors = validateParameterValues(currentScript.parameters || [], parameters);
+
+  if (validationErrors.length > 0) {
+    displayParameterErrors(validationErrors);
+    statusEl.textContent = 'Parameter validation failed';
+    statusEl.className = 'editor-status error';
+    window.toast('Please fix parameter errors', 'error');
+    return;
+  }
 
   try {
     const response = await fetch(`/api/scripts/scripts/${currentScript.id}/run`, {
