@@ -273,6 +273,61 @@ def run_script(script_id: str):
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@bp.route("/scripts/<script_id>/validate", methods=["POST"])
+def validate_script(script_id: str):
+    """Validate a script against its category contract.
+
+    Runs contract tests in sandbox to ensure script meets requirements
+    for its category (interpreter, link, plugin, etc.).
+
+    Returns:
+        JSON response with validation result including:
+        - passed: bool
+        - errors: list of error messages
+        - test_results: dict of test name -> pass/fail
+        - warnings: list of warnings
+    """
+    try:
+        from scidk.core.script_testing import ScriptTestRunner
+        from scidk.core.script_validators import get_validator_for_category
+
+        manager = _get_scripts_manager()
+        script = manager.get_script(script_id)
+
+        if not script:
+            return jsonify({"status": "error", "message": "Script not found"}), 404
+
+        # Get appropriate validator for category
+        validator = get_validator_for_category(script.category)
+
+        # Run validation tests in sandbox
+        runner = ScriptTestRunner(timeout=10)
+        result = runner.run_tests(script, validator)
+
+        # Update script with validation results
+        script.validation_status = 'validated' if result.passed else 'failed'
+        script.validation_errors = result.errors
+        import time
+        script.validation_timestamp = time.time()
+
+        # Save updated script
+        manager.update_script(script)
+
+        return jsonify({
+            "status": "ok",
+            "validation": result.to_dict(),
+            "script": {
+                "id": script.id,
+                "validation_status": script.validation_status,
+                "validation_timestamp": script.validation_timestamp
+            }
+        })
+
+    except Exception as e:
+        logger.exception(f"Error validating script {script_id}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 # Results endpoints
 
 @bp.route("/results", methods=["GET"])

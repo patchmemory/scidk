@@ -34,7 +34,13 @@ class Script:
         tags: Optional[List[str]] = None,
         created_at: Optional[float] = None,
         created_by: Optional[str] = None,
-        updated_at: Optional[float] = None
+        updated_at: Optional[float] = None,
+        # Validation and activation fields
+        validation_status: str = 'draft',  # draft, validated, failed
+        validation_errors: Optional[List[str]] = None,
+        validation_timestamp: Optional[float] = None,
+        is_active: bool = False,
+        docstring: str = ''
     ):
         self.id = id
         self.name = name
@@ -47,6 +53,13 @@ class Script:
         self.created_at = created_at or time.time()
         self.created_by = created_by
         self.updated_at = updated_at or time.time()
+
+        # Validation and activation
+        self.validation_status = validation_status  # draft, validated, failed
+        self.validation_errors = validation_errors or []
+        self.validation_timestamp = validation_timestamp
+        self.is_active = is_active  # Only validated scripts can be active
+        self.docstring = docstring  # Extracted from code
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -61,7 +74,12 @@ class Script:
             'tags': self.tags,
             'created_at': self.created_at,
             'created_by': self.created_by,
-            'updated_at': self.updated_at
+            'updated_at': self.updated_at,
+            'validation_status': self.validation_status,
+            'validation_errors': self.validation_errors,
+            'validation_timestamp': self.validation_timestamp,
+            'is_active': self.is_active,
+            'docstring': self.docstring
         }
 
     @classmethod
@@ -78,7 +96,12 @@ class Script:
             tags=data.get('tags', []),
             created_at=data.get('created_at'),
             created_by=data.get('created_by'),
-            updated_at=data.get('updated_at')
+            updated_at=data.get('updated_at'),
+            validation_status=data.get('validation_status', 'draft'),
+            validation_errors=data.get('validation_errors', []),
+            validation_timestamp=data.get('validation_timestamp'),
+            is_active=data.get('is_active', False),
+            docstring=data.get('docstring', '')
         )
 
 
