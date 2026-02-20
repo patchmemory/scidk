@@ -77,6 +77,12 @@ def map_page():
     return render_template('map.html', schema_summary=schema_summary)
 
 
+@bp.get('/analyses')
+def analyses_page():
+    """Analysis page with script library and executor."""
+    return render_template('analyses.html')
+
+
 @bp.get('/datasets')
 def datasets():
     """List all datasets (files), optionally filtered by scan."""

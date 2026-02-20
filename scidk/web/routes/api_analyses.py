@@ -1,0 +1,490 @@
+"""API routes for Analysis page - script management and execution."""
+
+import json
+import logging
+import os
+import tempfile
+import uuid
+from pathlib import Path
+from typing import Any, Dict
+
+from flask import Blueprint, current_app, jsonify, request, send_file
+
+from scidk.core.analyses import (
+    AnalysesManager,
+    AnalysisScript,
+    export_to_csv,
+    export_to_json,
+    export_to_jupyter,
+    import_from_jupyter
+)
+from scidk.core.builtin_analyses import get_builtin_scripts
+
+logger = logging.getLogger(__name__)
+
+bp = Blueprint("api_analyses", __name__, url_prefix="/api/analyses")
+
+
+def _get_analyses_manager():
+    """Get AnalysesManager instance."""
+    return AnalysesManager()
+
+
+def _get_neo4j_driver():
+    """Get Neo4j driver if available."""
+    try:
+        ext = current_app.extensions.get('scidk')
+        if ext and 'graph' in ext:
+            graph = ext['graph']
+            if hasattr(graph, 'driver') and graph.driver:
+                return graph.driver
+    except Exception:
+        pass
+    return None
+
+
+def _get_neo4j_config():
+    """Get Neo4j connection configuration."""
+    try:
+        return {
+            'uri': os.environ.get('NEO4J_URI', 'bolt://localhost:7687'),
+            'user': os.environ.get('NEO4J_USER', 'neo4j'),
+            'password': os.environ.get('NEO4J_PASSWORD', 'password')
+        }
+    except Exception:
+        return {}
+
+
+def _get_current_user():
+    """Get current username from session/auth."""
+    # TODO: Integrate with auth system
+    return 'system'
+
+
+# Script CRUD endpoints
+
+@bp.route("/scripts", methods=["GET"])
+def list_scripts():
+    """List all analysis scripts with optional filters.
+
+    Query Parameters:
+        category (str): Filter by category (builtin, custom)
+        language (str): Filter by language (cypher, python)
+
+    Returns:
+        JSON response with list of scripts
+    """
+    try:
+        category = request.args.get("category")
+        language = request.args.get("language")
+
+        manager = _get_analyses_manager()
+        scripts = manager.list_scripts(category=category, language=language)
+
+        # Add built-in scripts if not already in database
+        if not category or category == 'builtin':
+            _ensure_builtin_scripts(manager)
+            scripts = manager.list_scripts(category=category, language=language)
+
+        return jsonify({
+            "status": "ok",
+            "scripts": [s.to_dict() for s in scripts],
+            "count": len(scripts)
+        })
+    except Exception as e:
+        logger.exception("Error listing scripts")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@bp.route("/scripts/<script_id>", methods=["GET"])
+def get_script(script_id: str):
+    """Get a single script by ID.
+
+    Returns:
+        JSON response with script details
+    """
+    try:
+        manager = _get_analyses_manager()
+        script = manager.get_script(script_id)
+
+        if not script:
+            return jsonify({"status": "error", "message": "Script not found"}), 404
+
+        return jsonify({
+            "status": "ok",
+            "script": script.to_dict()
+        })
+    except Exception as e:
+        logger.exception(f"Error getting script {script_id}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@bp.route("/scripts", methods=["POST"])
+def create_script():
+    """Create a new custom analysis script.
+
+    Request Body:
+        name (str): Script name
+        description (str): Description
+        language (str): cypher or python
+        code (str): Script code
+        parameters (list): Optional parameter definitions
+        tags (list): Optional tags
+
+    Returns:
+        JSON response with created script
+    """
+    try:
+        data = request.get_json()
+
+        script_id = str(uuid.uuid4())
+        script = AnalysisScript(
+            id=script_id,
+            name=data['name'],
+            description=data.get('description', ''),
+            language=data['language'],
+            category='custom',
+            code=data['code'],
+            parameters=data.get('parameters', []),
+            tags=data.get('tags', []),
+            created_by=_get_current_user()
+        )
+
+        manager = _get_analyses_manager()
+        created_script = manager.create_script(script)
+
+        return jsonify({
+            "status": "ok",
+            "script": created_script.to_dict()
+        }), 201
+    except KeyError as e:
+        return jsonify({"status": "error", "message": f"Missing required field: {e}"}), 400
+    except Exception as e:
+        logger.exception("Error creating script")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@bp.route("/scripts/<script_id>", methods=["PUT"])
+def update_script(script_id: str):
+    """Update an existing custom script.
+
+    Request Body:
+        name (str): Script name
+        description (str): Description
+        code (str): Script code
+        parameters (list): Parameter definitions
+        tags (list): Tags
+
+    Returns:
+        JSON response with updated script
+    """
+    try:
+        manager = _get_analyses_manager()
+        script = manager.get_script(script_id)
+
+        if not script:
+            return jsonify({"status": "error", "message": "Script not found"}), 404
+
+        if script.category == 'builtin':
+            return jsonify({"status": "error", "message": "Cannot modify built-in scripts"}), 403
+
+        data = request.get_json()
+
+        # Update fields
+        script.name = data.get('name', script.name)
+        script.description = data.get('description', script.description)
+        script.code = data.get('code', script.code)
+        script.parameters = data.get('parameters', script.parameters)
+        script.tags = data.get('tags', script.tags)
+
+        updated_script = manager.update_script(script)
+
+        return jsonify({
+            "status": "ok",
+            "script": updated_script.to_dict()
+        })
+    except Exception as e:
+        logger.exception(f"Error updating script {script_id}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@bp.route("/scripts/<script_id>", methods=["DELETE"])
+def delete_script(script_id: str):
+    """Delete a custom script.
+
+    Returns:
+        JSON response confirming deletion
+    """
+    try:
+        manager = _get_analyses_manager()
+        script = manager.get_script(script_id)
+
+        if not script:
+            return jsonify({"status": "error", "message": "Script not found"}), 404
+
+        if script.category == 'builtin':
+            return jsonify({"status": "error", "message": "Cannot delete built-in scripts"}), 403
+
+        manager.delete_script(script_id)
+
+        return jsonify({
+            "status": "ok",
+            "message": "Script deleted"
+        })
+    except Exception as e:
+        logger.exception(f"Error deleting script {script_id}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# Script execution
+
+@bp.route("/scripts/<script_id>/run", methods=["POST"])
+def run_script(script_id: str):
+    """Execute an analysis script.
+
+    Request Body:
+        parameters (dict): Optional parameters for the script
+
+    Returns:
+        JSON response with execution result
+    """
+    try:
+        data = request.get_json() or {}
+        parameters = data.get('parameters', {})
+
+        manager = _get_analyses_manager()
+        neo4j_driver = _get_neo4j_driver()
+
+        result = manager.execute_script(
+            script_id=script_id,
+            parameters=parameters,
+            neo4j_driver=neo4j_driver,
+            executed_by=_get_current_user()
+        )
+
+        return jsonify({
+            "status": "ok",
+            "result": result.to_dict()
+        })
+    except ValueError as e:
+        return jsonify({"status": "error", "message": str(e)}), 404
+    except Exception as e:
+        logger.exception(f"Error executing script {script_id}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# Results endpoints
+
+@bp.route("/results", methods=["GET"])
+def list_results():
+    """List execution results with optional filters.
+
+    Query Parameters:
+        script_id (str): Filter by script
+        limit (int): Max results (default: 50)
+
+    Returns:
+        JSON response with list of results
+    """
+    try:
+        script_id = request.args.get("script_id")
+        limit = int(request.args.get("limit", 50))
+
+        manager = _get_analyses_manager()
+        results = manager.list_results(script_id=script_id, limit=limit)
+
+        return jsonify({
+            "status": "ok",
+            "results": [r.to_dict() for r in results],
+            "count": len(results)
+        })
+    except Exception as e:
+        logger.exception("Error listing results")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@bp.route("/results/<result_id>", methods=["GET"])
+def get_result(result_id: str):
+    """Get a single result by ID.
+
+    Returns:
+        JSON response with result details
+    """
+    try:
+        manager = _get_analyses_manager()
+        result = manager.get_result(result_id)
+
+        if not result:
+            return jsonify({"status": "error", "message": "Result not found"}), 404
+
+        return jsonify({
+            "status": "ok",
+            "result": result.to_dict()
+        })
+    except Exception as e:
+        logger.exception(f"Error getting result {result_id}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@bp.route("/results/<result_id>", methods=["DELETE"])
+def delete_result(result_id: str):
+    """Delete a result.
+
+    Returns:
+        JSON response confirming deletion
+    """
+    try:
+        manager = _get_analyses_manager()
+
+        if not manager.delete_result(result_id):
+            return jsonify({"status": "error", "message": "Result not found"}), 404
+
+        return jsonify({
+            "status": "ok",
+            "message": "Result deleted"
+        })
+    except Exception as e:
+        logger.exception(f"Error deleting result {result_id}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# Export endpoints
+
+@bp.route("/results/<result_id>/export", methods=["GET"])
+def export_result(result_id: str):
+    """Export a result in various formats.
+
+    Query Parameters:
+        format (str): csv, json, or jupyter (default: csv)
+
+    Returns:
+        File download or JSON response
+    """
+    try:
+        format_type = request.args.get("format", "csv").lower()
+
+        manager = _get_analyses_manager()
+        result = manager.get_result(result_id)
+
+        if not result:
+            return jsonify({"status": "error", "message": "Result not found"}), 404
+
+        if format_type == "csv":
+            csv_data = export_to_csv(result.results)
+
+            # Create temporary file
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv') as f:
+                f.write(csv_data)
+                temp_path = f.name
+
+            return send_file(
+                temp_path,
+                mimetype='text/csv',
+                as_attachment=True,
+                download_name=f'analysis_{result_id}.csv'
+            )
+
+        elif format_type == "json":
+            json_data = export_to_json(result.results)
+
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
+                f.write(json_data)
+                temp_path = f.name
+
+            return send_file(
+                temp_path,
+                mimetype='application/json',
+                as_attachment=True,
+                download_name=f'analysis_{result_id}.json'
+            )
+
+        elif format_type == "jupyter":
+            script = manager.get_script(result.script_id)
+            if not script:
+                return jsonify({"status": "error", "message": "Script not found"}), 404
+
+            neo4j_config = _get_neo4j_config()
+            notebook = export_to_jupyter(script, result, neo4j_config)
+
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.ipynb') as f:
+                json.dump(notebook, f, indent=2)
+                temp_path = f.name
+
+            return send_file(
+                temp_path,
+                mimetype='application/x-ipynb+json',
+                as_attachment=True,
+                download_name=f'{script.name.replace(" ", "_")}.ipynb'
+            )
+
+        else:
+            return jsonify({"status": "error", "message": f"Unsupported format: {format_type}"}), 400
+
+    except Exception as e:
+        logger.exception(f"Error exporting result {result_id}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# Import endpoint
+
+@bp.route("/import-notebook", methods=["POST"])
+def import_notebook():
+    """Import scripts from a Jupyter notebook.
+
+    Request: multipart/form-data with 'file' field
+
+    Returns:
+        JSON response with imported scripts
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({"status": "error", "message": "No file provided"}), 400
+
+        file = request.files['file']
+
+        if not file.filename.endswith('.ipynb'):
+            return jsonify({"status": "error", "message": "File must be a .ipynb notebook"}), 400
+
+        # Save to temporary file
+        with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.ipynb') as f:
+            file.save(f.name)
+            temp_path = Path(f.name)
+
+        # Import scripts
+        scripts = import_from_jupyter(temp_path)
+
+        # Save to database
+        manager = _get_analyses_manager()
+        saved_scripts = []
+        for script in scripts:
+            script.created_by = _get_current_user()
+            saved_script = manager.create_script(script)
+            saved_scripts.append(saved_script)
+
+        # Cleanup
+        temp_path.unlink()
+
+        return jsonify({
+            "status": "ok",
+            "scripts": [s.to_dict() for s in saved_scripts],
+            "count": len(saved_scripts)
+        }), 201
+
+    except Exception as e:
+        logger.exception("Error importing notebook")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# Helper functions
+
+def _ensure_builtin_scripts(manager: AnalysesManager):
+    """Ensure built-in scripts are in the database."""
+    try:
+        existing_ids = {s.id for s in manager.list_scripts(category='builtin')}
+
+        for script in get_builtin_scripts():
+            if script.id not in existing_ids:
+                manager.create_script(script)
+    except Exception:
+        # Don't fail if we can't add built-in scripts
+        logger.warning("Failed to ensure built-in scripts", exc_info=True)

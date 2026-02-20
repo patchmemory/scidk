@@ -512,6 +512,56 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 15)
             version = 15
 
+        # v16: Add analyses_scripts and analyses_results tables for analysis page
+        if version < 16:
+            # analyses_scripts: stores analysis script definitions (built-in and custom)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analyses_scripts (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    language TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    code TEXT NOT NULL,
+                    parameters TEXT,
+                    tags TEXT,
+                    created_at REAL NOT NULL,
+                    created_by TEXT,
+                    updated_at REAL NOT NULL
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_analyses_scripts_category ON analyses_scripts(category);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_analyses_scripts_language ON analyses_scripts(language);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_analyses_scripts_created_by ON analyses_scripts(created_by);")
+
+            # analyses_results: stores execution results and history
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analyses_results (
+                    id TEXT PRIMARY KEY,
+                    script_id TEXT NOT NULL,
+                    executed_at REAL NOT NULL,
+                    executed_by TEXT,
+                    parameters TEXT,
+                    results TEXT,
+                    execution_time_ms INTEGER,
+                    status TEXT NOT NULL,
+                    error TEXT,
+                    FOREIGN KEY (script_id) REFERENCES analyses_scripts(id) ON DELETE CASCADE
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_analyses_results_script ON analyses_results(script_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_analyses_results_executed_at ON analyses_results(executed_at DESC);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_analyses_results_executed_by ON analyses_results(executed_by);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_analyses_results_status ON analyses_results(status);")
+
+            conn.commit()
+            _set_version(conn, 16)
+            version = 16
+
         return version
     finally:
         if own:

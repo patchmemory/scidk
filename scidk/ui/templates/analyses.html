@@ -1,0 +1,878 @@
+{% extends 'base.html' %}
+{% block title %}-SciDK-> Analyses{% endblock %}
+{% block head %}
+<!-- CodeMirror for syntax highlighting -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/monokai.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/sql/sql.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js"></script>
+
+<!-- Chart.js for visualizations -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<style>
+  main { max-width: 100% !important; padding: 0 !important; }
+
+  .analyses-container {
+    display: flex;
+    height: calc(100vh - 60px);
+    gap: 0;
+  }
+
+  /* Script Library Panel (Left) */
+  .script-library {
+    width: 280px;
+    min-width: 200px;
+    max-width: 500px;
+    background: #f9f9f9;
+    border-right: 1px solid #e0e0e0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .script-library-header {
+    padding: 1rem;
+    border-bottom: 1px solid #e0e0e0;
+    background: #fff;
+  }
+
+  .script-library-header h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1rem;
+  }
+
+  .script-search {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.9em;
+  }
+
+  .script-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 0;
+  }
+
+  .script-category {
+    margin-bottom: 1rem;
+  }
+
+  .script-category-header {
+    padding: 0.5rem 1rem;
+    font-weight: 600;
+    font-size: 0.85em;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .script-item {
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: all 0.15s ease;
+  }
+
+  .script-item:hover {
+    background: #f0f0f0;
+  }
+
+  .script-item.active {
+    background: #fff;
+    border-left-color: var(--accent);
+  }
+
+  .script-item-name {
+    font-weight: 500;
+    font-size: 0.9em;
+    margin-bottom: 0.25rem;
+  }
+
+  .script-item-desc {
+    font-size: 0.8em;
+    color: #666;
+    line-height: 1.3;
+  }
+
+  .script-library-actions {
+    padding: 1rem;
+    border-top: 1px solid #e0e0e0;
+    background: #fff;
+  }
+
+  /* Editor Panel (Center) */
+  .editor-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 400px;
+    background: #fff;
+  }
+
+  .editor-header {
+    padding: 1rem;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .editor-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+  }
+
+  .editor-controls {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .editor-meta {
+    padding: 1rem;
+    background: #f9f9f9;
+    border-bottom: 1px solid #e0e0e0;
+  }
+
+  .editor-meta-row {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .editor-meta-row:last-child {
+    margin-bottom: 0;
+  }
+
+  .editor-meta-label {
+    font-weight: 500;
+    font-size: 0.85em;
+    min-width: 80px;
+  }
+
+  .editor-meta-value {
+    flex: 1;
+  }
+
+  .CodeMirror {
+    height: 100% !important;
+    font-size: 14px;
+  }
+
+  .editor-code {
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .editor-footer {
+    padding: 1rem;
+    border-top: 1px solid #e0e0e0;
+    background: #f9f9f9;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .editor-status {
+    font-size: 0.9em;
+    color: #666;
+  }
+
+  .editor-status.running { color: #0a6; }
+  .editor-status.error { color: #d00; }
+  .editor-status.success { color: #0a6; }
+
+  /* Results Panel (Right) */
+  .results-panel {
+    width: 450px;
+    min-width: 300px;
+    max-width: 800px;
+    background: #fff;
+    border-left: 1px solid #e0e0e0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .results-header {
+    padding: 1rem;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .results-header h3 {
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  .results-tabs {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .results-tab {
+    padding: 0.5rem 1rem;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 0.9em;
+    border-bottom: 2px solid transparent;
+  }
+
+  .results-tab.active {
+    border-bottom-color: var(--accent);
+    font-weight: 600;
+  }
+
+  .results-content {
+    flex: 1;
+    overflow: auto;
+    padding: 1rem;
+  }
+
+  .results-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9em;
+  }
+
+  .results-table th,
+  .results-table td {
+    padding: 0.5rem;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+  }
+
+  .results-table th {
+    background: #f9f9f9;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+  }
+
+  .results-chart-container {
+    display: none;
+    height: 400px;
+  }
+
+  .results-chart-container.active {
+    display: block;
+  }
+
+  .results-footer {
+    padding: 1rem;
+    border-top: 1px solid #e0e0e0;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 3rem 2rem;
+    color: #999;
+  }
+
+  /* Buttons */
+  .btn {
+    padding: 0.5rem 1rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: all 0.15s ease;
+  }
+
+  .btn:hover {
+    background: #f9f9f9;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  .btn-primary:hover {
+    opacity: 0.9;
+  }
+
+  .btn-sm {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.85em;
+  }
+
+  /* Resize handles */
+  .resize-handle-vertical {
+    width: 5px;
+    cursor: ew-resize;
+    background: transparent;
+    position: relative;
+  }
+
+  .resize-handle-vertical:hover {
+    background: #ddd;
+  }
+
+  /* Select inputs */
+  select, input {
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.9em;
+  }
+
+  /* Parameters section */
+  .parameters-section {
+    padding: 1rem;
+    background: #f9f9f9;
+    border-bottom: 1px solid #e0e0e0;
+  }
+
+  .parameter-row {
+    margin-bottom: 0.75rem;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .parameter-row label {
+    min-width: 100px;
+    font-size: 0.9em;
+    font-weight: 500;
+  }
+
+  .parameter-row input {
+    flex: 1;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="analyses-container">
+  <!-- Script Library Panel -->
+  <div class="script-library" id="script-library">
+    <div class="script-library-header">
+      <h3>Script Library</h3>
+      <input type="text" class="script-search" id="script-search" placeholder="Search scripts...">
+    </div>
+
+    <div class="script-list" id="script-list">
+      <div class="empty-state">Loading scripts...</div>
+    </div>
+
+    <div class="script-library-actions">
+      <button class="btn btn-sm btn-primary" id="new-script-btn" style="width: 100%; margin-bottom: 0.5rem;">+ New Script</button>
+      <button class="btn btn-sm" id="import-notebook-btn" style="width: 100%;">📓 Import Notebook</button>
+      <input type="file" id="notebook-file-input" accept=".ipynb" style="display: none;">
+    </div>
+  </div>
+
+  <!-- Resize Handle -->
+  <div class="resize-handle-vertical" id="resize-library"></div>
+
+  <!-- Editor Panel -->
+  <div class="editor-panel" id="editor-panel">
+    <div class="editor-header">
+      <h3 id="editor-title">Analysis Editor</h3>
+      <div class="editor-controls">
+        <select id="language-selector">
+          <option value="cypher">Cypher</option>
+          <option value="python">Python</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="editor-meta" id="editor-meta" style="display: none;">
+      <div class="editor-meta-row">
+        <div class="editor-meta-label">Description:</div>
+        <div class="editor-meta-value" id="script-description">-</div>
+      </div>
+      <div class="editor-meta-row">
+        <div class="editor-meta-label">Tags:</div>
+        <div class="editor-meta-value" id="script-tags">-</div>
+      </div>
+    </div>
+
+    <div class="parameters-section" id="parameters-section" style="display: none;">
+      <!-- Dynamic parameter inputs will be inserted here -->
+    </div>
+
+    <div class="editor-code" id="editor-code">
+      <textarea id="code-editor">// Select a script from the library to begin</textarea>
+    </div>
+
+    <div class="editor-footer">
+      <div class="editor-status" id="editor-status">Ready</div>
+      <div class="editor-controls">
+        <button class="btn btn-sm" id="save-script-btn" disabled>💾 Save</button>
+        <button class="btn btn-sm" id="delete-script-btn" disabled>🗑 Delete</button>
+        <button class="btn btn-sm btn-primary" id="run-script-btn" disabled>▶ Run</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Resize Handle -->
+  <div class="resize-handle-vertical" id="resize-results"></div>
+
+  <!-- Results Panel -->
+  <div class="results-panel" id="results-panel">
+    <div class="results-header">
+      <h3>Results</h3>
+      <div class="results-tabs">
+        <button class="results-tab active" data-tab="table">Table</button>
+        <button class="results-tab" data-tab="chart">Chart</button>
+      </div>
+    </div>
+
+    <div class="results-content" id="results-content">
+      <div class="empty-state">
+        <p>Run an analysis script to see results</p>
+      </div>
+    </div>
+
+    <div class="results-footer" id="results-footer" style="display: none;">
+      <button class="btn btn-sm" id="export-csv-btn">⬇ CSV</button>
+      <button class="btn btn-sm" id="export-json-btn">⬇ JSON</button>
+      <button class="btn btn-sm" id="export-jupyter-btn">📓 Jupyter</button>
+      <div style="flex: 1"></div>
+      <span class="small" id="results-count">0 rows</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// Global state
+let currentScript = null;
+let currentResult = null;
+let codeMirrorEditor = null;
+let allScripts = [];
+let currentChart = null;
+
+// Initialize CodeMirror
+function initializeEditor() {
+  const textarea = document.getElementById('code-editor');
+  codeMirrorEditor = CodeMirror.fromTextArea(textarea, {
+    mode: 'text/x-sql',
+    theme: 'monokai',
+    lineNumbers: true,
+    readOnly: false
+  });
+}
+
+// Load scripts from API
+async function loadScripts() {
+  try {
+    const response = await fetch('/api/analyses/scripts');
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      allScripts = data.scripts;
+      renderScriptList(allScripts);
+    } else {
+      window.toast('Failed to load scripts: ' + data.message, 'error');
+    }
+  } catch (error) {
+    window.toast('Error loading scripts: ' + error.message, 'error');
+  }
+}
+
+// Render script list
+function renderScriptList(scripts) {
+  const listEl = document.getElementById('script-list');
+
+  const categorized = {
+    builtin: scripts.filter(s => s.category === 'builtin'),
+    custom: scripts.filter(s => s.category === 'custom')
+  };
+
+  let html = '';
+
+  for (const [category, items] of Object.entries(categorized)) {
+    if (items.length > 0) {
+      html += `<div class="script-category">`;
+      html += `<div class="script-category-header">${category === 'builtin' ? '📦 Built-in' : '📝 Custom'}</div>`;
+
+      items.forEach(script => {
+        html += `
+          <div class="script-item" data-script-id="${script.id}">
+            <div class="script-item-name">${script.name}</div>
+            <div class="script-item-desc">${script.description || ''}</div>
+          </div>
+        `;
+      });
+
+      html += `</div>`;
+    }
+  }
+
+  if (html === '') {
+    html = '<div class="empty-state">No scripts found</div>';
+  }
+
+  listEl.innerHTML = html;
+
+  // Add click handlers
+  document.querySelectorAll('.script-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const scriptId = item.dataset.scriptId;
+      loadScript(scriptId);
+    });
+  });
+}
+
+// Load and display a script
+async function loadScript(scriptId) {
+  try {
+    const response = await fetch(`/api/analyses/scripts/${scriptId}`);
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      currentScript = data.script;
+      displayScript(currentScript);
+    } else {
+      window.toast('Failed to load script: ' + data.message, 'error');
+    }
+  } catch (error) {
+    window.toast('Error loading script: ' + error.message, 'error');
+  }
+}
+
+// Display script in editor
+function displayScript(script) {
+  // Update active state in list
+  document.querySelectorAll('.script-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.scriptId === script.id);
+  });
+
+  // Update editor
+  document.getElementById('editor-title').textContent = script.name;
+  document.getElementById('script-description').textContent = script.description || '-';
+  document.getElementById('script-tags').textContent = script.tags.join(', ') || '-';
+  document.getElementById('editor-meta').style.display = 'block';
+
+  // Set language
+  const langSelect = document.getElementById('language-selector');
+  langSelect.value = script.language;
+  updateEditorMode(script.language);
+
+  // Set code
+  codeMirrorEditor.setValue(script.code);
+  codeMirrorEditor.setOption('readOnly', script.category === 'builtin');
+
+  // Update parameters
+  if (script.parameters && script.parameters.length > 0) {
+    renderParameters(script.parameters);
+  } else {
+    document.getElementById('parameters-section').style.display = 'none';
+  }
+
+  // Update buttons
+  document.getElementById('run-script-btn').disabled = false;
+  document.getElementById('save-script-btn').disabled = script.category === 'builtin';
+  document.getElementById('delete-script-btn').disabled = script.category === 'builtin';
+
+  document.getElementById('editor-status').textContent = 'Ready';
+  document.getElementById('editor-status').className = 'editor-status';
+}
+
+// Render parameter inputs
+function renderParameters(parameters) {
+  const section = document.getElementById('parameters-section');
+  let html = '<h4 style="margin: 0 0 0.75rem 0; font-size: 0.9em;">Parameters:</h4>';
+
+  parameters.forEach(param => {
+    html += `
+      <div class="parameter-row">
+        <label>${param.label || param.name}:</label>
+        <input
+          type="${param.type === 'integer' ? 'number' : 'text'}"
+          data-param-name="${param.name}"
+          value="${param.default || ''}"
+          ${param.required ? 'required' : ''}
+        >
+      </div>
+    `;
+  });
+
+  section.innerHTML = html;
+  section.style.display = 'block';
+}
+
+// Update editor mode based on language
+function updateEditorMode(language) {
+  const mode = language === 'python' ? 'text/x-python' : 'text/x-sql';
+  codeMirrorEditor.setOption('mode', mode);
+}
+
+// Run script
+async function runScript() {
+  if (!currentScript) return;
+
+  const statusEl = document.getElementById('editor-status');
+  statusEl.textContent = 'Running...';
+  statusEl.className = 'editor-status running';
+
+  // Collect parameters
+  const parameters = {};
+  document.querySelectorAll('#parameters-section input').forEach(input => {
+    const paramName = input.dataset.paramName;
+    parameters[paramName] = input.type === 'number' ? parseInt(input.value) : input.value;
+  });
+
+  try {
+    const response = await fetch(`/api/analyses/scripts/${currentScript.id}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parameters })
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      currentResult = data.result;
+
+      if (currentResult.status === 'success') {
+        statusEl.textContent = `Success (${currentResult.execution_time_ms}ms)`;
+        statusEl.className = 'editor-status success';
+        displayResults(currentResult.results);
+      } else {
+        statusEl.textContent = `Error: ${currentResult.error}`;
+        statusEl.className = 'editor-status error';
+        window.toast('Script execution failed: ' + currentResult.error, 'error');
+      }
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    statusEl.textContent = 'Error';
+    statusEl.className = 'editor-status error';
+    window.toast('Error running script: ' + error.message, 'error');
+  }
+}
+
+// Display results
+function displayResults(results) {
+  const contentEl = document.getElementById('results-content');
+  const footerEl = document.getElementById('results-footer');
+
+  if (!results || results.length === 0) {
+    contentEl.innerHTML = '<div class="empty-state">No results</div>';
+    footerEl.style.display = 'none';
+    return;
+  }
+
+  // Show table by default
+  renderResultsTable(results);
+  prepareChart(results);
+
+  footerEl.style.display = 'flex';
+  document.getElementById('results-count').textContent = `${results.length} rows`;
+}
+
+// Render results table
+function renderResultsTable(results) {
+  const contentEl = document.getElementById('results-content');
+
+  if (results.length === 0) {
+    contentEl.innerHTML = '<div class="empty-state">No results</div>';
+    return;
+  }
+
+  const keys = Object.keys(results[0]);
+
+  let html = '<table class="results-table"><thead><tr>';
+  keys.forEach(key => {
+    html += `<th>${key}</th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  results.forEach(row => {
+    html += '<tr>';
+    keys.forEach(key => {
+      const value = row[key];
+      html += `<td>${value !== null && value !== undefined ? value : '-'}</td>`;
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  contentEl.innerHTML = html;
+}
+
+// Prepare chart (bar chart for now)
+function prepareChart(results) {
+  if (results.length === 0) return;
+
+  // Destroy existing chart
+  if (currentChart) {
+    currentChart.destroy();
+    currentChart = null;
+  }
+
+  // Create canvas if needed
+  let canvas = document.getElementById('results-chart');
+  if (!canvas) {
+    const container = document.createElement('div');
+    container.className = 'results-chart-container';
+    container.innerHTML = '<canvas id="results-chart"></canvas>';
+    document.getElementById('results-content').appendChild(container);
+    canvas = document.getElementById('results-chart');
+  }
+
+  // Prepare data (use first two columns)
+  const keys = Object.keys(results[0]);
+  if (keys.length < 2) return;
+
+  const labels = results.map(row => row[keys[0]]);
+  const values = results.map(row => row[keys[1]]);
+
+  currentChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: keys[1],
+        data: values,
+        backgroundColor: 'rgba(0, 170, 102, 0.6)',
+        borderColor: 'rgba(0, 170, 102, 1)',
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          beginAtZero: true
+        }
+      }
+    }
+  });
+}
+
+// Tab switching
+function switchResultsTab(tab) {
+  document.querySelectorAll('.results-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === tab);
+  });
+
+  const contentEl = document.getElementById('results-content');
+
+  if (tab === 'table') {
+    contentEl.querySelector('.results-table')?.parentElement.style.display = 'block';
+    contentEl.querySelector('.results-chart-container')?.style.display = 'none';
+  } else if (tab === 'chart') {
+    contentEl.querySelector('.results-table')?.parentElement.style.display = 'none';
+    contentEl.querySelector('.results-chart-container')?.style.display = 'block';
+  }
+}
+
+// Export functions
+async function exportResult(format) {
+  if (!currentResult) return;
+
+  try {
+    const response = await fetch(`/api/analyses/results/${currentResult.id}/export?format=${format}`);
+
+    if (!response.ok) {
+      throw new Error('Export failed');
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+
+    const ext = format === 'jupyter' ? 'ipynb' : format;
+    a.download = `analysis_${currentResult.id}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+
+    window.toast(`Exported as ${format.toUpperCase()}`, 'success');
+  } catch (error) {
+    window.toast('Export failed: ' + error.message, 'error');
+  }
+}
+
+// Import notebook
+async function importNotebook(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const response = await fetch('/api/analyses/import-notebook', {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      window.toast(`Imported ${data.count} scripts from notebook`, 'success');
+      await loadScripts();
+    } else {
+      window.toast('Import failed: ' + data.message, 'error');
+    }
+  } catch (error) {
+    window.toast('Import error: ' + error.message, 'error');
+  }
+}
+
+// Event listeners
+document.addEventListener('DOMContentLoaded', () => {
+  initializeEditor();
+  loadScripts();
+
+  // Run button
+  document.getElementById('run-script-btn').addEventListener('click', runScript);
+
+  // Results tabs
+  document.querySelectorAll('.results-tab').forEach(tab => {
+    tab.addEventListener('click', () => switchResultsTab(tab.dataset.tab));
+  });
+
+  // Export buttons
+  document.getElementById('export-csv-btn').addEventListener('click', () => exportResult('csv'));
+  document.getElementById('export-json-btn').addEventListener('click', () => exportResult('json'));
+  document.getElementById('export-jupyter-btn').addEventListener('click', () => exportResult('jupyter'));
+
+  // Import button
+  document.getElementById('import-notebook-btn').addEventListener('click', () => {
+    document.getElementById('notebook-file-input').click();
+  });
+
+  document.getElementById('notebook-file-input').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      importNotebook(file);
+      e.target.value = ''; // Reset input
+    }
+  });
+
+  // Language selector
+  document.getElementById('language-selector').addEventListener('change', (e) => {
+    updateEditorMode(e.target.value);
+  });
+
+  // Script search
+  document.getElementById('script-search').addEventListener('input', (e) => {
+    const query = e.target.value.toLowerCase();
+    const filtered = allScripts.filter(script =>
+      script.name.toLowerCase().includes(query) ||
+      script.description.toLowerCase().includes(query) ||
+      script.tags.some(tag => tag.toLowerCase().includes(query))
+    );
+    renderScriptList(filtered);
+  });
+});
+</script>
+{% endblock %}
