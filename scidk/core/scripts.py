@@ -446,7 +446,12 @@ class ScriptsManager:
     ) -> List[Dict[str, Any]]:
         """Execute a Cypher query."""
         if not neo4j_driver:
-            raise ValueError("Neo4j driver required for Cypher execution")
+            raise ValueError(
+                "Neo4j driver required for Cypher execution. "
+                "SciDK is running in in-memory mode. "
+                "To run Cypher scripts, configure Neo4j connection via Settings or environment variables "
+                "(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)."
+            )
 
         with neo4j_driver.session() as session:
             result = session.run(script.code, parameters)

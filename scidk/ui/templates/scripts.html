@@ -709,6 +709,14 @@ function renderScriptList(scripts) {
   const listEl = document.getElementById('script-list');
   const categoryFilter = document.getElementById('category-filter').value;
 
+  // Deduplicate by ID (in case backend returns duplicates)
+  const seenIds = new Set();
+  scripts = scripts.filter(s => {
+    if (seenIds.has(s.id)) return false;
+    seenIds.add(s.id);
+    return true;
+  });
+
   // Filter by category if selected
   if (categoryFilter) {
     scripts = scripts.filter(s => s.category === categoryFilter);
