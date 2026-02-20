@@ -511,6 +511,8 @@
       <div class="editor-controls">
         <button class="btn btn-sm" id="plugin-palette-btn">📦 Snippets</button>
         <button class="btn btn-sm" id="validate-script-btn" disabled>🔍 Validate</button>
+        <button class="btn btn-sm" id="activate-script-btn" disabled style="display: none;">✅ Activate</button>
+        <button class="btn btn-sm" id="deactivate-script-btn" disabled style="display: none;">⏸ Deactivate</button>
         <button class="btn btn-sm" id="save-script-btn" disabled>💾 Save</button>
         <button class="btn btn-sm" id="delete-script-btn" disabled>🗑 Delete</button>
         <button class="btn btn-sm btn-primary" id="run-script-btn" disabled>▶ Run</button>
@@ -825,6 +827,9 @@ function displayScript(script) {
 
   // Update validation status badge
   updateValidationBadge(script);
+
+  // Update activation buttons
+  updateActivationButtons();
 }
 
 // Update validation status badge
@@ -986,6 +991,99 @@ async function validateScript() {
     statusEl.className = 'editor-status error';
     window.toast('Error validating script: ' + error.message, 'error');
   }
+}
+
+// Activate script
+async function activateScript() {
+  if (!currentScript) return;
+
+  const statusEl = document.getElementById('editor-status');
+
+  statusEl.textContent = 'Activating...';
+  statusEl.className = 'editor-status running';
+
+  try {
+    const response = await fetch(`/api/scripts/scripts/${currentScript.id}/activate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      currentScript.is_active = true;
+      updateValidationBadge(currentScript);
+      updateActivationButtons();
+
+      statusEl.textContent = '✅ Activated';
+      statusEl.className = 'editor-status success';
+      window.toast('Script activated successfully!', 'success');
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    statusEl.textContent = 'Activation error';
+    statusEl.className = 'editor-status error';
+    window.toast('Error activating script: ' + error.message, 'error');
+  }
+}
+
+// Deactivate script
+async function deactivateScript() {
+  if (!currentScript) return;
+
+  const statusEl = document.getElementById('editor-status');
+
+  statusEl.textContent = 'Deactivating...';
+  statusEl.className = 'editor-status running';
+
+  try {
+    const response = await fetch(`/api/scripts/scripts/${currentScript.id}/deactivate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      currentScript.is_active = false;
+      updateValidationBadge(currentScript);
+      updateActivationButtons();
+
+      statusEl.textContent = '⏸ Deactivated';
+      statusEl.className = 'editor-status';
+      window.toast('Script deactivated', 'success');
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    statusEl.textContent = 'Deactivation error';
+    statusEl.className = 'editor-status error';
+    window.toast('Error deactivating script: ' + error.message, 'error');
+  }
+}
+
+// Update activation button visibility
+function updateActivationButtons() {
+  const activateBtn = document.getElementById('activate-script-btn');
+  const deactivateBtn = document.getElementById('deactivate-script-btn');
+
+  if (!currentScript) {
+    activateBtn.style.display = 'none';
+    deactivateBtn.style.display = 'none';
+    return;
+  }
+
+  const isValidated = currentScript.validation_status === 'validated';
+  const isActive = currentScript.is_active;
+
+  // Show activate button if validated but not active
+  activateBtn.style.display = isValidated && !isActive ? 'inline-block' : 'none';
+  activateBtn.disabled = !isValidated || isActive;
+
+  // Show deactivate button if active
+  deactivateBtn.style.display = isActive ? 'inline-block' : 'none';
+  deactivateBtn.disabled = !isActive;
 }
 
 // Display validation results
@@ -1254,6 +1352,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Validate button
   document.getElementById('validate-script-btn').addEventListener('click', validateScript);
+
+  // Activate/Deactivate buttons
+  document.getElementById('activate-script-btn').addEventListener('click', activateScript);
+  document.getElementById('deactivate-script-btn').addEventListener('click', deactivateScript);
 
   // Results tabs
   document.querySelectorAll('.results-tab').forEach(tab => {

@@ -96,6 +96,38 @@ def list_scripts():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@bp.route("/scripts/active", methods=["GET"])
+def list_active_scripts():
+    """List only validated + active scripts for Settings panels.
+
+    Query Parameters:
+        category (str): Filter by category (interpreters, links, plugins, api)
+
+    Returns:
+        JSON response with list of active scripts
+    """
+    try:
+        category = request.args.get("category")
+
+        manager = _get_scripts_manager()
+        all_scripts = manager.list_scripts(category=category)
+
+        # Filter for validated + active scripts only
+        active_scripts = [
+            s for s in all_scripts
+            if s.validation_status == 'validated' and s.is_active
+        ]
+
+        return jsonify({
+            "status": "ok",
+            "scripts": [s.to_dict() for s in active_scripts],
+            "count": len(active_scripts)
+        })
+    except Exception as e:
+        logger.exception("Error listing active scripts")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @bp.route("/scripts/<script_id>", methods=["GET"])
 def get_script(script_id: str):
     """Get a single script by ID.
@@ -325,6 +357,74 @@ def validate_script(script_id: str):
 
     except Exception as e:
         logger.exception(f"Error validating script {script_id}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@bp.route("/scripts/<script_id>/activate", methods=["POST"])
+def activate_script(script_id: str):
+    """Activate a validated script.
+
+    Only validated scripts can be activated. Activated scripts appear in
+    Settings dropdowns and are available for use.
+
+    Returns:
+        JSON response with activation status
+    """
+    try:
+        manager = _get_scripts_manager()
+        script = manager.get_script(script_id)
+
+        if not script:
+            return jsonify({"status": "error", "message": "Script not found"}), 404
+
+        if script.validation_status != 'validated':
+            return jsonify({
+                "status": "error",
+                "message": "Script must be validated before activation"
+            }), 400
+
+        script.is_active = True
+        manager.update_script(script)
+
+        return jsonify({
+            "status": "ok",
+            "message": "Script activated successfully",
+            "script": script.to_dict()
+        })
+
+    except Exception as e:
+        logger.exception(f"Error activating script {script_id}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@bp.route("/scripts/<script_id>/deactivate", methods=["POST"])
+def deactivate_script(script_id: str):
+    """Deactivate an active script.
+
+    Deactivated scripts are removed from Settings dropdowns but remain
+    in the Scripts library.
+
+    Returns:
+        JSON response with deactivation status
+    """
+    try:
+        manager = _get_scripts_manager()
+        script = manager.get_script(script_id)
+
+        if not script:
+            return jsonify({"status": "error", "message": "Script not found"}), 404
+
+        script.is_active = False
+        manager.update_script(script)
+
+        return jsonify({
+            "status": "ok",
+            "message": "Script deactivated successfully",
+            "script": script.to_dict()
+        })
+
+    except Exception as e:
+        logger.exception(f"Error deactivating script {script_id}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
