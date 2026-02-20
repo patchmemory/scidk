@@ -1588,6 +1588,84 @@ function renderParameters(parameters) {
 
   section.innerHTML = html;
   section.style.display = 'block';
+
+  // After rendering, populate label selectors for node parameters
+  populateLabelSelectors();
+}
+
+// Populate label selectors with available Neo4j labels
+async function populateLabelSelectors() {
+  const labelSelectors = document.querySelectorAll('.label-selector');
+  if (labelSelectors.length === 0) return;
+
+  try {
+    const response = await fetch('/api/graph/schema/combined?source=neo4j');
+    const data = await response.json();
+
+    // Extract unique labels from schema
+    const labels = new Set();
+    if (data.labels) {
+      data.labels.forEach(label => labels.add(label.name));
+    }
+
+    // Populate each selector
+    labelSelectors.forEach(selector => {
+      const sortedLabels = Array.from(labels).sort();
+      sortedLabels.forEach(label => {
+        const option = document.createElement('option');
+        option.value = label;
+        option.textContent = label;
+        selector.appendChild(option);
+      });
+    });
+  } catch (error) {
+    console.error('Failed to load labels:', error);
+  }
+}
+
+// Load nodes for selected label
+async function loadNodesForLabel(paramName) {
+  const fieldId = `param-${paramName}`;
+  const selectorId = `${fieldId}-label-selector`;
+  const selector = document.getElementById(selectorId);
+  const textarea = document.getElementById(fieldId);
+  const nodeInfo = document.getElementById(`${fieldId}-node-info`);
+
+  if (!selector || !textarea) return;
+
+  const selectedLabel = selector.value;
+  if (!selectedLabel) {
+    window.toast('Please select a label first', 'error');
+    return;
+  }
+
+  try {
+    // Show loading state
+    nodeInfo.style.display = 'block';
+    nodeInfo.innerHTML = '<span style="color: #666;">Loading nodes...</span>';
+
+    const response = await fetch(`/api/graph/instances?label=${encodeURIComponent(selectedLabel)}&limit=100`);
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    // Format nodes as JSON
+    const nodes = data.rows || [];
+    const formattedJson = JSON.stringify(nodes, null, 2);
+    textarea.value = formattedJson;
+
+    // Update info
+    nodeInfo.innerHTML = `<span style="color: #00aa66;">✓ ${nodes.length} nodes loaded from "${selectedLabel}"</span>`;
+    window.toast(`Loaded ${nodes.length} nodes`, 'success');
+
+  } catch (error) {
+    console.error('Failed to load nodes:', error);
+    nodeInfo.style.display = 'block';
+    nodeInfo.innerHTML = `<span style="color: #d00;">Error: ${error.message}</span>`;
+    window.toast('Failed to load nodes: ' + error.message, 'error');
+  }
 }
 
 // Render individual parameter field based on type
@@ -1598,6 +1676,37 @@ function renderParameterField(param) {
     `<div class="field-description">${escapeHtml(param.description)}</div>` : '';
 
   let inputHtml = '';
+
+  // Special handling for Link script node parameters
+  if (param.name === 'source_nodes' || param.name === 'target_nodes') {
+    const nodeType = param.name === 'source_nodes' ? 'source' : 'target';
+    return `
+      <div class="parameter-field node-selector-field" data-param-name="${param.name}">
+        <label for="${fieldId}">
+          ${escapeHtml(param.label || param.name)}${required}
+          <span style="font-size: 0.75em; color: #999; font-weight: normal; margin-left: 0.25rem;">(${param.name})</span>
+        </label>
+        <div>
+          <div class="node-selector-controls">
+            <select id="${fieldId}-label-selector" class="label-selector" data-node-type="${nodeType}" style="margin-bottom: 0.5rem;">
+              <option value="">Select a label...</option>
+            </select>
+            <button type="button" class="btn btn-sm" onclick="loadNodesForLabel('${param.name}')" style="margin-left: 0.5rem;">Load Nodes</button>
+          </div>
+          <div id="${fieldId}-node-info" class="node-info" style="font-size: 0.85em; color: #666; margin: 0.5rem 0; display: none;">
+            <span class="node-count">0 nodes loaded</span>
+          </div>
+          <textarea id="${fieldId}" name="${param.name}"
+                   rows="6"
+                   placeholder="Select a label and click 'Load Nodes', or paste JSON array manually"
+                   ${param.required ? 'required' : ''}
+                   >${escapeHtml(param.default || '')}</textarea>
+          ${description}
+          <div class="field-error" style="display:none;"></div>
+        </div>
+      </div>
+    `;
+  }
 
   // Handle different parameter types
   switch (param.type) {
@@ -2350,17 +2459,17 @@ def create_links(source_nodes: list, target_nodes: list) -> list:
       {
         name: 'source_nodes',
         type: 'textarea',
-        label: 'Source Nodes (JSON)',
-        description: 'List of source nodes as JSON array',
-        default: '[{"id": "node1", "name": "A"}]',
+        label: 'Source Nodes',
+        description: 'Select a label from the dropdown to load nodes from Neo4j, or paste JSON array manually',
+        default: '[]',
         required: true
       },
       {
         name: 'target_nodes',
         type: 'textarea',
-        label: 'Target Nodes (JSON)',
-        description: 'List of target nodes as JSON array',
-        default: '[{"id": "node2", "name": "B"}]',
+        label: 'Target Nodes',
+        description: 'Select a label from the dropdown to load nodes from Neo4j, or paste JSON array manually',
+        default: '[]',
         required: true
       }
     ],
