@@ -15,10 +15,10 @@ parameters:
 ---
 """
 MATCH (f:File)
-WHERE f.size IS NOT NULL
+WHERE f.size_bytes IS NOT NULL
 RETURN f.path as path,
-       f.size as size_bytes,
+       f.size_bytes as size_bytes,
        f.extension as extension,
-       f.modified_time as modified
-ORDER BY f.size DESC
+       f.modified as modified
+ORDER BY f.size_bytes DESC
 LIMIT $limit

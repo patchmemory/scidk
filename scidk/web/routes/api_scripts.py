@@ -103,12 +103,12 @@ def list_scripts():
         language = request.args.get("language")
 
         manager = _get_scripts_manager()
-        scripts = manager.list_scripts(category=category, language=language)
 
         # Add built-in scripts if not already in database
         if not category or category == 'builtin':
             _ensure_builtin_scripts(manager)
-            scripts = manager.list_scripts(category=category, language=language)
+
+        scripts = manager.list_scripts(category=category, language=language)
 
         return jsonify({
             "status": "ok",
@@ -658,26 +658,19 @@ def import_notebook():
 # Helper functions
 
 def _ensure_builtin_scripts(manager: ScriptsManager):
-    """Ensure built-in scripts are in the database and up-to-date."""
+    """Ensure built-in scripts are in the database.
+
+    Creates builtin scripts if they don't exist. Does not update existing builtins
+    to avoid conflicts with database state.
+    """
     try:
-        # Get all scripts (not just category='builtin') to find builtins by ID
         all_scripts = manager.list_scripts()
-        existing_scripts = {s.id: s for s in all_scripts if s.id.startswith('builtin-')}
+        existing_ids = {s.id for s in all_scripts if s.id.startswith('builtin-')}
 
         for script in get_builtin_scripts():
-            if script.id in existing_scripts:
-                # Update existing builtin with latest code/parameters
-                existing = existing_scripts[script.id]
-                existing.code = script.code
-                existing.description = script.description
-                existing.parameters = script.parameters
-                existing.tags = script.tags
-                manager.update_script(existing)
-                logger.debug(f"Updated builtin script: {script.id}")
-            else:
-                # Create new builtin
+            if script.id not in existing_ids:
                 manager.create_script(script)
                 logger.debug(f"Created builtin script: {script.id}")
     except Exception:
-        # Don't fail if we can't add/update built-in scripts
+        # Don't fail if we can't add built-in scripts
         logger.warning("Failed to ensure built-in scripts", exc_info=True)
