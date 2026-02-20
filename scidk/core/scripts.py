@@ -524,6 +524,7 @@ class ScriptsManager:
         """Execute a Python script."""
         # Prepare safe execution environment
         import pandas as pd
+        from pathlib import Path
 
         # Global namespace for script execution
         global_namespace = {
@@ -531,7 +532,9 @@ class ScriptsManager:
             'neo4j_driver': neo4j_driver,
             'pd': pd,
             'json': json,
-            'results': []  # Script should populate this
+            'results': [],  # Script should populate this
+            '__file__': '<script>',  # Provide __file__ for scripts that need it
+            'Path': Path  # Provide Path class for convenience
         }
 
         # Execute script

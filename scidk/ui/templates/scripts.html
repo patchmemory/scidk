@@ -261,13 +261,72 @@
   }
 
   .validation-tests {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    margin-top: 0.5rem;
+    margin-top: 1rem;
   }
 
   .validation-test-item {
+    padding: 0.75rem;
+    margin: 0.5rem 0;
+    border-radius: 4px;
+    border-left: 4px solid #ccc;
+    background: white;
+  }
+
+  .validation-test-item.passed {
+    background: #f0fdf4;
+    border-left-color: #10b981;
+  }
+
+  .validation-test-item.failed {
+    background: #fef2f2;
+    border-left-color: #ef4444;
+  }
+
+  .test-status {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+  }
+
+  .test-hint {
+    font-size: 0.85em;
+    color: #6b7280;
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background: #f9fafb;
+    border-radius: 3px;
+    font-family: 'Monaco', 'Menlo', monospace;
+  }
+
+  .validation-errors {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #fef2f2;
+    border-radius: 4px;
+  }
+
+  .validation-errors h4 {
+    color: #991b1b;
+    margin-top: 0;
+  }
+
+  .validation-errors ul {
+    color: #991b1b;
+  }
+
+  .validation-warnings {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #fffbeb;
+    border-radius: 4px;
+  }
+
+  .validation-warnings h4 {
+    color: #92400e;
+    margin-top: 0;
+  }
+
+  /* Edit warning banner (duplicates removed) */
+  .edit-warning-banner {
     padding: 0.25rem 0.5rem;
     display: flex;
     align-items: center;
@@ -1614,6 +1673,41 @@ function updateActivationButtons() {
 }
 
 // Display validation results
+// Helper: Get human-readable test description
+function getTestDescription(testName) {
+  const descriptions = {
+    'valid_syntax': 'Valid Python syntax',
+    'executes_without_error': 'Executes without errors',
+    'has_interpret_function': 'Has interpret() function',
+    'interpret_has_parameter': 'interpret() accepts file_path parameter',
+    'returns_dict': 'Returns dict type',
+    'returns_status_key': "Returns dict with 'status' key",
+    'handles_missing_file': 'Handles missing files gracefully',
+    'has_create_links_function': 'Has create_links() function',
+    'create_links_has_two_parameters': 'create_links() accepts 2 parameters',
+    'returns_list': 'Returns list type',
+    'handles_empty_inputs': 'Handles empty inputs gracefully'
+  };
+  return descriptions[testName] || testName.replace(/_/g, ' ');
+}
+
+// Helper: Get fix hint for failed test
+function getFixHint(testName) {
+  const hints = {
+    'has_interpret_function': "Add function: def interpret(file_path: Path) -> dict:",
+    'interpret_has_parameter': "Function signature should be: def interpret(file_path: Path)",
+    'returns_status_key': "Return dict must include 'status' key: {'status': 'success', 'data': {...}}",
+    'handles_missing_file': "Check if file exists: if not file_path.exists(): return {'status': 'error', ...}",
+    'has_create_links_function': "Add function: def create_links(source_nodes: list, target_nodes: list) -> list:",
+    'create_links_has_two_parameters': "Function signature should be: def create_links(source_nodes: list, target_nodes: list)",
+    'returns_list': "Return a list, not dict or other type",
+    'handles_empty_inputs': "Check for empty inputs: if not source_nodes or not target_nodes: return []",
+    'returns_dict': "Function must return a dict, not list or other type",
+    'executes_without_error': "Fix runtime errors shown below"
+  };
+  return hints[testName] || '';
+}
+
 function displayValidationResults(validation) {
   const contentEl = document.getElementById('results-content');
 
@@ -1629,19 +1723,24 @@ function displayValidationResults(validation) {
   html += `<p>${validation.passed_count} of ${validation.test_count} tests passed</p>`;
   html += '</div>';
 
-  // Test results
+  // Test results with detailed breakdown
   html += '<div class="validation-tests">';
   html += '<h4>Test Results:</h4>';
-  html += '<ul style="list-style: none; padding: 0;">';
 
   for (const [testName, passed] of Object.entries(validation.test_results)) {
     const icon = passed ? '✅' : '❌';
-    const color = passed ? '#065f46' : '#991b1b';
-    const testLabel = testName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-    html += `<li style="padding: 0.5rem 0; color: ${color};">${icon} ${testLabel}</li>`;
+    const cssClass = passed ? 'passed' : 'failed';
+    const description = getTestDescription(testName);
+    const fixHint = !passed ? getFixHint(testName) : '';
+
+    html += `<div class="validation-test-item ${cssClass}">`;
+    html += `<div class="test-status">${icon} ${description}</div>`;
+    if (fixHint) {
+      html += `<div class="test-hint">💡 ${fixHint}</div>`;
+    }
+    html += `</div>`;
   }
 
-  html += '</ul>';
   html += '</div>';
 
   // Errors
