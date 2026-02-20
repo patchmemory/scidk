@@ -53,12 +53,13 @@ def list_links():
     logger.warning("DEPRECATED: /api/links endpoint called. Use /api/integrations instead.")
     try:
         service = _get_link_service()
-        links = service.list_link_definitions()
+        links = service.list_all_links()  # NEW: Uses unified method
         return jsonify({
             'status': 'success',
             'links': links
         }), 200
     except Exception as e:
+        logger.exception("Failed to list links")
         return jsonify({
             'status': 'error',
             'error': str(e)

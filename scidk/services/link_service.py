@@ -30,6 +30,58 @@ class LinkService:
         from ..core import path_index_sqlite as pix
         return pix.connect()
 
+    def list_all_links(self) -> List[Dict[str, Any]]:
+        """
+        Get links from both link_definitions (wizard) and analyses_scripts (code).
+
+        Returns normalized list of all links regardless of source.
+        """
+        # Get wizard links
+        wizard_links = self.list_link_definitions()
+
+        # Get script links (category='links')
+        from ..core.scripts import ScriptsManager
+        scripts_mgr = ScriptsManager()
+        script_links = scripts_mgr.list_scripts(category='links')
+
+        all_links = []
+
+        # Normalize wizard links
+        for link in wizard_links:
+            all_links.append({
+                'id': link['id'],
+                'name': link['name'],
+                'source_label': link.get('source_label', ''),
+                'target_label': link.get('target_label', ''),
+                'relationship_type': link.get('relationship_type', ''),
+                'type': 'wizard',
+                'match_strategy': link.get('match_strategy', ''),
+                'created_at': link.get('created_at', 0),
+                'updated_at': link.get('updated_at', 0)
+            })
+
+        # Normalize script links
+        # NOTE: Use description instead of trying to infer labels from parameters.
+        # This avoids fragile parsing and "Custom → Custom" inconsistencies.
+        for script in script_links:
+            all_links.append({
+                'id': script['id'],
+                'name': script['name'],
+                'description': script.get('description', ''),
+                'source_label': None,  # Not inferred
+                'target_label': None,  # Not inferred
+                'relationship_type': 'Dynamic',  # Defined in code
+                'type': 'script',
+                'match_strategy': 'custom_code',
+                'created_at': script.get('created_at', 0),
+                'updated_at': script.get('updated_at', 0),
+                'validation_status': script.get('validation_status', 'draft'),
+                'is_active': script.get('is_active', False)
+            })
+
+        # Sort by most recently updated
+        return sorted(all_links, key=lambda x: x.get('updated_at', 0), reverse=True)
+
     def list_link_definitions(self) -> List[Dict[str, Any]]:
         """
         Get all link definitions from SQLite.
