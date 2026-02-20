@@ -41,6 +41,9 @@ ALLOWED_IMPORTS = [
     'pickle',  # Needed for BO plugin and state persistence
                # Security: Only allowed for files within managed directories
                # Risk accepted for MVP - subprocess isolation mitigates arbitrary code execution
+    'scidk',  # Core framework - interpreters/links/plugins need access to Manager, context, etc.
+              # Security: Scripts validated before activation, subprocess isolation limits risk
+    'argparse',  # For CLI-style parameter parsing in scripts
 ]
 
 
