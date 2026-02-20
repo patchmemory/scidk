@@ -660,7 +660,9 @@ def import_notebook():
 def _ensure_builtin_scripts(manager: ScriptsManager):
     """Ensure built-in scripts are in the database and up-to-date."""
     try:
-        existing_scripts = {s.id: s for s in manager.list_scripts(category='builtin')}
+        # Get all scripts (not just category='builtin') to find builtins by ID
+        all_scripts = manager.list_scripts()
+        existing_scripts = {s.id: s for s in all_scripts if s.id.startswith('builtin-')}
 
         for script in get_builtin_scripts():
             if script.id in existing_scripts:
@@ -671,9 +673,11 @@ def _ensure_builtin_scripts(manager: ScriptsManager):
                 existing.parameters = script.parameters
                 existing.tags = script.tags
                 manager.update_script(existing)
+                logger.debug(f"Updated builtin script: {script.id}")
             else:
                 # Create new builtin
                 manager.create_script(script)
+                logger.debug(f"Created builtin script: {script.id}")
     except Exception:
         # Don't fail if we can't add/update built-in scripts
         logger.warning("Failed to ensure built-in scripts", exc_info=True)
