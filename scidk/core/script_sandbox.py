@@ -18,18 +18,19 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 # Whitelist of allowed imports for script execution
-# Safe read-only libraries that don't allow file I/O, network, or subprocess access
-# Note: sys is allowed for basic operations (stderr, stdout) but dangerous sys functions
-# like sys.exit() are acceptable risks in subprocess isolation
+# These imports are safe within subprocess isolation with timeout enforcement
 ALLOWED_IMPORTS = [
+    # Data handling
     'json',
     'csv',
+    'pandas',
+    'numpy',
+
+    # Standard library - data structures and utilities
     're',
     'pathlib',
     'datetime',
     'time',
-    'pandas',
-    'numpy',
     'ast',
     'typing',
     'collections',
@@ -37,13 +38,25 @@ ALLOWED_IMPORTS = [
     'functools',
     'math',
     'statistics',
-    'sys',  # Needed for stderr/stdout access in scripts
-    'pickle',  # Needed for BO plugin and state persistence
-               # Security: Only allowed for files within managed directories
-               # Risk accepted for MVP - subprocess isolation mitigates arbitrary code execution
-    'scidk',  # Core framework - interpreters/links/plugins need access to Manager, context, etc.
-              # Security: Scripts validated before activation, subprocess isolation limits risk
-    'argparse',  # For CLI-style parameter parsing in scripts
+
+    # File system operations (safe in subprocess)
+    'os',      # File paths, environment vars, directory operations
+    'shutil',  # File operations (copy, move, remove)
+
+    # System access (limited risk in subprocess)
+    'sys',     # stderr/stdout, basic system info
+    'pickle',  # State persistence (only for managed directories)
+
+    # Database
+    'sqlite3', # Local database operations (common for analysis)
+
+    # CLI parsing
+    'argparse',
+    'click',
+
+    # Framework
+    'scidk',   # Core framework access for interpreters/links/plugins
+               # Security: Validated before activation, subprocess isolated
 ]
 
 
