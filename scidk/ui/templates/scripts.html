@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}-SciDK-> Analyses{% endblock %}
+{% block title %}-SciDK-> Scripts{% endblock %}
 {% block head %}
 <!-- CodeMirror for syntax highlighting -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
@@ -14,7 +14,7 @@
 <style>
   main { max-width: 100% !important; padding: 0 !important; }
 
-  .analyses-container {
+  .scripts-container {
     display: flex;
     height: calc(100vh - 60px);
     gap: 0;
@@ -355,7 +355,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="analyses-container">
+<div class="scripts-container">
   <!-- Script Library Panel -->
   <div class="script-library" id="script-library">
     <div class="script-library-header">
@@ -380,7 +380,7 @@
   <!-- Editor Panel -->
   <div class="editor-panel" id="editor-panel">
     <div class="editor-header">
-      <h3 id="editor-title">Analysis Editor</h3>
+      <h3 id="editor-title">Script Editor</h3>
       <div class="editor-controls">
         <select id="language-selector">
           <option value="cypher">Cypher</option>
@@ -433,7 +433,7 @@
 
     <div class="results-content" id="results-content">
       <div class="empty-state">
-        <p>Run an analysis script to see results</p>
+        <p>Run a script to see results</p>
       </div>
     </div>
 
@@ -469,7 +469,7 @@ function initializeEditor() {
 // Load scripts from API
 async function loadScripts() {
   try {
-    const response = await fetch('/api/analyses/scripts');
+    const response = await fetch('/api/scripts/scripts');
     const data = await response.json();
 
     if (data.status === 'ok') {
@@ -530,7 +530,7 @@ function renderScriptList(scripts) {
 // Load and display a script
 async function loadScript(scriptId) {
   try {
-    const response = await fetch(`/api/analyses/scripts/${scriptId}`);
+    const response = await fetch(`/api/scripts/scripts/${scriptId}`);
     const data = await response.json();
 
     if (data.status === 'ok') {
@@ -627,7 +627,7 @@ async function runScript() {
   });
 
   try {
-    const response = await fetch(`/api/analyses/scripts/${currentScript.id}/run`, {
+    const response = await fetch(`/api/scripts/scripts/${currentScript.id}/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ parameters })
@@ -779,7 +779,7 @@ async function exportResult(format) {
   if (!currentResult) return;
 
   try {
-    const response = await fetch(`/api/analyses/results/${currentResult.id}/export?format=${format}`);
+    const response = await fetch(`/api/scripts/results/${currentResult.id}/export?format=${format}`);
 
     if (!response.ok) {
       throw new Error('Export failed');
@@ -791,7 +791,7 @@ async function exportResult(format) {
     a.href = url;
 
     const ext = format === 'jupyter' ? 'ipynb' : format;
-    a.download = `analysis_${currentResult.id}.${ext}`;
+    a.download = `script_${currentResult.id}.${ext}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -809,7 +809,7 @@ async function importNotebook(file) {
   formData.append('file', file);
 
   try {
-    const response = await fetch('/api/analyses/import-notebook', {
+    const response = await fetch('/api/scripts/import-notebook', {
       method: 'POST',
       body: formData
     });

@@ -562,6 +562,40 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 16)
             version = 16
 
+        # v17: Rename analyses_* tables to scripts_* and add file-based storage columns
+        if version < 17:
+            # Rename tables
+            cur.execute("ALTER TABLE analyses_scripts RENAME TO scripts;")
+            cur.execute("ALTER TABLE analyses_results RENAME TO script_executions;")
+
+            # Add new columns for file-based storage
+            cur.execute("ALTER TABLE scripts ADD COLUMN file_path TEXT;")
+            cur.execute("ALTER TABLE scripts ADD COLUMN is_file_based INTEGER DEFAULT 0;")
+
+            # Create new indexes
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scripts_file_path ON scripts(file_path);")
+
+            # Recreate indexes with new table names
+            cur.execute("DROP INDEX IF EXISTS idx_analyses_scripts_category;")
+            cur.execute("DROP INDEX IF EXISTS idx_analyses_scripts_language;")
+            cur.execute("DROP INDEX IF EXISTS idx_analyses_scripts_created_by;")
+            cur.execute("DROP INDEX IF EXISTS idx_analyses_results_script;")
+            cur.execute("DROP INDEX IF EXISTS idx_analyses_results_executed_at;")
+            cur.execute("DROP INDEX IF EXISTS idx_analyses_results_executed_by;")
+            cur.execute("DROP INDEX IF EXISTS idx_analyses_results_status;")
+
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scripts_category ON scripts(category);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scripts_language ON scripts(language);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scripts_created_by ON scripts(created_by);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_script_executions_script ON script_executions(script_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_script_executions_executed_at ON script_executions(executed_at DESC);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_script_executions_executed_by ON script_executions(executed_by);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_script_executions_status ON script_executions(status);")
+
+            conn.commit()
+            _set_version(conn, 17)
+            version = 17
+
         return version
     finally:
         if own:

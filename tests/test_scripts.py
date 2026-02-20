@@ -1,4 +1,4 @@
-"""Tests for analyses module."""
+"""Tests for scripts module."""
 import json
 import sqlite3
 import tempfile
@@ -9,16 +9,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scidk.core.analyses import (
-    AnalysesManager,
-    AnalysisResult,
-    AnalysisScript,
+from scidk.core.scripts import (
+    ScriptsManager,
+    ScriptExecution,
+    Script,
     export_to_csv,
     export_to_json,
     export_to_jupyter,
     import_from_jupyter,
 )
-from scidk.core.builtin_analyses import get_builtin_scripts
+from scidk.core.builtin_scripts import get_builtin_scripts
 
 
 @pytest.fixture
@@ -29,9 +29,9 @@ def temp_db():
 
     conn = sqlite3.connect(db_path)
 
-    # Create schema
+    # Create schema (with v17 columns)
     conn.execute("""
-        CREATE TABLE analyses_scripts (
+        CREATE TABLE scripts (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             description TEXT,
@@ -42,12 +42,14 @@ def temp_db():
             tags TEXT,
             created_at REAL NOT NULL,
             created_by TEXT,
-            updated_at REAL NOT NULL
+            updated_at REAL NOT NULL,
+            file_path TEXT,
+            is_file_based INTEGER DEFAULT 0
         )
     """)
 
     conn.execute("""
-        CREATE TABLE analyses_results (
+        CREATE TABLE script_executions (
             id TEXT PRIMARY KEY,
             script_id TEXT NOT NULL,
             executed_at REAL NOT NULL,
@@ -68,9 +70,9 @@ def temp_db():
     Path(db_path).unlink()
 
 
-def test_analysis_script_creation():
-    """Test creating an AnalysisScript."""
-    script = AnalysisScript(
+def test_script_creation():
+    """Test creating a Script."""
+    script = Script(
         id='test-1',
         name='Test Script',
         language='cypher',
@@ -89,9 +91,9 @@ def test_analysis_script_creation():
     assert len(script.tags) == 2
 
 
-def test_analysis_script_to_dict():
-    """Test converting AnalysisScript to dictionary."""
-    script = AnalysisScript(
+def test_script_to_dict():
+    """Test converting Script to dictionary."""
+    script = Script(
         id='test-1',
         name='Test Script',
         language='python',
@@ -108,8 +110,8 @@ def test_analysis_script_to_dict():
     assert data['code'] == 'print("hello")'
 
 
-def test_analysis_script_from_dict():
-    """Test creating AnalysisScript from dictionary."""
+def test_script_from_dict():
+    """Test creating Script from dictionary."""
     data = {
         'id': 'test-1',
         'name': 'Test Script',
@@ -121,7 +123,7 @@ def test_analysis_script_from_dict():
         'tags': ['test']
     }
 
-    script = AnalysisScript.from_dict(data)
+    script = Script.from_dict(data)
 
     assert script.id == 'test-1'
     assert script.name == 'Test Script'
@@ -130,9 +132,9 @@ def test_analysis_script_from_dict():
 
 def test_create_script(temp_db):
     """Test creating a script in the database."""
-    manager = AnalysesManager(conn=temp_db)
+    manager = ScriptsManager(conn=temp_db, use_file_registry=False)
 
-    script = AnalysisScript(
+    script = Script(
         id='test-1',
         name='Test Script',
         language='cypher',
@@ -148,9 +150,9 @@ def test_create_script(temp_db):
 
 def test_get_script(temp_db):
     """Test retrieving a script by ID."""
-    manager = AnalysesManager(conn=temp_db)
+    manager = ScriptsManager(conn=temp_db, use_file_registry=False)
 
-    script = AnalysisScript(
+    script = Script(
         id='test-1',
         name='Test Script',
         language='cypher',
@@ -168,7 +170,7 @@ def test_get_script(temp_db):
 
 def test_get_nonexistent_script(temp_db):
     """Test getting a script that doesn't exist."""
-    manager = AnalysesManager(conn=temp_db)
+    manager = ScriptsManager(conn=temp_db, use_file_registry=False)
     result = manager.get_script('nonexistent')
 
     assert result is None
@@ -176,9 +178,9 @@ def test_get_nonexistent_script(temp_db):
 
 def test_list_scripts(temp_db):
     """Test listing all scripts."""
-    manager = AnalysesManager(conn=temp_db)
+    manager = ScriptsManager(conn=temp_db, use_file_registry=False)
 
-    script1 = AnalysisScript(
+    script1 = Script(
         id='test-1',
         name='Script 1',
         language='cypher',
@@ -186,7 +188,7 @@ def test_list_scripts(temp_db):
         code='MATCH (n) RETURN n'
     )
 
-    script2 = AnalysisScript(
+    script2 = Script(
         id='test-2',
         name='Script 2',
         language='python',
@@ -204,9 +206,9 @@ def test_list_scripts(temp_db):
 
 def test_list_scripts_by_category(temp_db):
     """Test filtering scripts by category."""
-    manager = AnalysesManager(conn=temp_db)
+    manager = ScriptsManager(conn=temp_db, use_file_registry=False)
 
-    script1 = AnalysisScript(
+    script1 = Script(
         id='test-1',
         name='Script 1',
         language='cypher',
@@ -214,7 +216,7 @@ def test_list_scripts_by_category(temp_db):
         code='MATCH (n) RETURN n'
     )
 
-    script2 = AnalysisScript(
+    script2 = Script(
         id='test-2',
         name='Script 2',
         language='python',
@@ -236,9 +238,9 @@ def test_list_scripts_by_category(temp_db):
 
 def test_update_script(temp_db):
     """Test updating an existing script."""
-    manager = AnalysesManager(conn=temp_db)
+    manager = ScriptsManager(conn=temp_db, use_file_registry=False)
 
-    script = AnalysisScript(
+    script = Script(
         id='test-1',
         name='Original Name',
         language='cypher',
@@ -263,9 +265,9 @@ def test_update_script(temp_db):
 
 def test_delete_script(temp_db):
     """Test deleting a script."""
-    manager = AnalysesManager(conn=temp_db)
+    manager = ScriptsManager(conn=temp_db, use_file_registry=False)
 
-    script = AnalysisScript(
+    script = Script(
         id='test-1',
         name='Test Script',
         language='cypher',
@@ -284,9 +286,9 @@ def test_delete_script(temp_db):
 
 def test_execute_cypher_script(temp_db):
     """Test executing a Cypher script."""
-    manager = AnalysesManager(conn=temp_db)
+    manager = ScriptsManager(conn=temp_db, use_file_registry=False)
 
-    script = AnalysisScript(
+    script = Script(
         id='test-1',
         name='Count Nodes',
         language='cypher',
@@ -316,9 +318,9 @@ def test_execute_cypher_script(temp_db):
 
 def test_execute_python_script(temp_db):
     """Test executing a Python script."""
-    manager = AnalysesManager(conn=temp_db)
+    manager = ScriptsManager(conn=temp_db, use_file_registry=False)
 
-    script = AnalysisScript(
+    script = Script(
         id='test-1',
         name='Python Test',
         language='python',
@@ -342,9 +344,9 @@ results = [
 
 def test_execute_script_error(temp_db):
     """Test handling errors during script execution."""
-    manager = AnalysesManager(conn=temp_db)
+    manager = ScriptsManager(conn=temp_db, use_file_registry=False)
 
-    script = AnalysisScript(
+    script = Script(
         id='test-1',
         name='Bad Script',
         language='python',
@@ -363,9 +365,9 @@ def test_execute_script_error(temp_db):
 
 def test_save_and_retrieve_result(temp_db):
     """Test saving and retrieving execution results."""
-    manager = AnalysesManager(conn=temp_db)
+    manager = ScriptsManager(conn=temp_db, use_file_registry=False)
 
-    result = AnalysisResult(
+    result = ScriptExecution(
         id='result-1',
         script_id='script-1',
         executed_at=time.time(),
@@ -386,9 +388,9 @@ def test_save_and_retrieve_result(temp_db):
 
 def test_list_results(temp_db):
     """Test listing execution results."""
-    manager = AnalysesManager(conn=temp_db)
+    manager = ScriptsManager(conn=temp_db, use_file_registry=False)
 
-    result1 = AnalysisResult(
+    result1 = ScriptExecution(
         id='result-1',
         script_id='script-1',
         executed_at=time.time(),
@@ -397,7 +399,7 @@ def test_list_results(temp_db):
         execution_time_ms=100
     )
 
-    result2 = AnalysisResult(
+    result2 = ScriptExecution(
         id='result-2',
         script_id='script-1',
         executed_at=time.time() + 1,
@@ -448,16 +450,16 @@ def test_export_to_json():
 
 def test_export_to_jupyter():
     """Test generating Jupyter notebook."""
-    script = AnalysisScript(
+    script = Script(
         id='test-1',
-        name='Test Analysis',
+        name='Test Script',
         language='cypher',
         category='custom',
         code='MATCH (n) RETURN count(n) as count',
         description='Count all nodes'
     )
 
-    result = AnalysisResult(
+    result = ScriptExecution(
         id='result-1',
         script_id='test-1',
         executed_at=time.time(),
@@ -476,7 +478,7 @@ def test_export_to_jupyter():
 
     assert notebook['nbformat'] == 4
     assert len(notebook['cells']) > 0
-    assert any('Test Analysis' in str(cell.get('source', '')) for cell in notebook['cells'])
+    assert any('Test Script' in str(cell.get('source', '')) for cell in notebook['cells'])
 
 
 def test_import_from_jupyter(tmp_path):

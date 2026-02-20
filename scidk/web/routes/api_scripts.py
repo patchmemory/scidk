@@ -1,4 +1,4 @@
-"""API routes for Analysis page - script management and execution."""
+"""API routes for Scripts page - script management and execution."""
 
 import json
 import logging
@@ -10,24 +10,24 @@ from typing import Any, Dict
 
 from flask import Blueprint, current_app, jsonify, request, send_file
 
-from scidk.core.analyses import (
-    AnalysesManager,
-    AnalysisScript,
+from scidk.core.scripts import (
+    ScriptsManager,
+    Script,
     export_to_csv,
     export_to_json,
     export_to_jupyter,
     import_from_jupyter
 )
-from scidk.core.builtin_analyses import get_builtin_scripts
+from scidk.core.builtin_scripts import get_builtin_scripts
 
 logger = logging.getLogger(__name__)
 
-bp = Blueprint("api_analyses", __name__, url_prefix="/api/analyses")
+bp = Blueprint("scripts_api", __name__, url_prefix="/api/scripts")
 
 
-def _get_analyses_manager():
-    """Get AnalysesManager instance."""
-    return AnalysesManager()
+def _get_scripts_manager():
+    """Get ScriptsManager instance."""
+    return ScriptsManager()
 
 
 def _get_neo4j_driver():
@@ -65,7 +65,7 @@ def _get_current_user():
 
 @bp.route("/scripts", methods=["GET"])
 def list_scripts():
-    """List all analysis scripts with optional filters.
+    """List all scripts with optional filters.
 
     Query Parameters:
         category (str): Filter by category (builtin, custom)
@@ -78,7 +78,7 @@ def list_scripts():
         category = request.args.get("category")
         language = request.args.get("language")
 
-        manager = _get_analyses_manager()
+        manager = _get_scripts_manager()
         scripts = manager.list_scripts(category=category, language=language)
 
         # Add built-in scripts if not already in database
@@ -104,7 +104,7 @@ def get_script(script_id: str):
         JSON response with script details
     """
     try:
-        manager = _get_analyses_manager()
+        manager = _get_scripts_manager()
         script = manager.get_script(script_id)
 
         if not script:
@@ -121,7 +121,7 @@ def get_script(script_id: str):
 
 @bp.route("/scripts", methods=["POST"])
 def create_script():
-    """Create a new custom analysis script.
+    """Create a new custom script.
 
     Request Body:
         name (str): Script name
@@ -138,7 +138,7 @@ def create_script():
         data = request.get_json()
 
         script_id = str(uuid.uuid4())
-        script = AnalysisScript(
+        script = Script(
             id=script_id,
             name=data['name'],
             description=data.get('description', ''),
@@ -150,7 +150,7 @@ def create_script():
             created_by=_get_current_user()
         )
 
-        manager = _get_analyses_manager()
+        manager = _get_scripts_manager()
         created_script = manager.create_script(script)
 
         return jsonify({
@@ -179,7 +179,7 @@ def update_script(script_id: str):
         JSON response with updated script
     """
     try:
-        manager = _get_analyses_manager()
+        manager = _get_scripts_manager()
         script = manager.get_script(script_id)
 
         if not script:
@@ -216,7 +216,7 @@ def delete_script(script_id: str):
         JSON response confirming deletion
     """
     try:
-        manager = _get_analyses_manager()
+        manager = _get_scripts_manager()
         script = manager.get_script(script_id)
 
         if not script:
@@ -240,7 +240,7 @@ def delete_script(script_id: str):
 
 @bp.route("/scripts/<script_id>/run", methods=["POST"])
 def run_script(script_id: str):
-    """Execute an analysis script.
+    """Execute a script.
 
     Request Body:
         parameters (dict): Optional parameters for the script
@@ -252,7 +252,7 @@ def run_script(script_id: str):
         data = request.get_json() or {}
         parameters = data.get('parameters', {})
 
-        manager = _get_analyses_manager()
+        manager = _get_scripts_manager()
         neo4j_driver = _get_neo4j_driver()
 
         result = manager.execute_script(
@@ -290,7 +290,7 @@ def list_results():
         script_id = request.args.get("script_id")
         limit = int(request.args.get("limit", 50))
 
-        manager = _get_analyses_manager()
+        manager = _get_scripts_manager()
         results = manager.list_results(script_id=script_id, limit=limit)
 
         return jsonify({
@@ -311,7 +311,7 @@ def get_result(result_id: str):
         JSON response with result details
     """
     try:
-        manager = _get_analyses_manager()
+        manager = _get_scripts_manager()
         result = manager.get_result(result_id)
 
         if not result:
@@ -334,7 +334,7 @@ def delete_result(result_id: str):
         JSON response confirming deletion
     """
     try:
-        manager = _get_analyses_manager()
+        manager = _get_scripts_manager()
 
         if not manager.delete_result(result_id):
             return jsonify({"status": "error", "message": "Result not found"}), 404
@@ -363,7 +363,7 @@ def export_result(result_id: str):
     try:
         format_type = request.args.get("format", "csv").lower()
 
-        manager = _get_analyses_manager()
+        manager = _get_scripts_manager()
         result = manager.get_result(result_id)
 
         if not result:
@@ -381,7 +381,7 @@ def export_result(result_id: str):
                 temp_path,
                 mimetype='text/csv',
                 as_attachment=True,
-                download_name=f'analysis_{result_id}.csv'
+                download_name=f'script_{result_id}.csv'
             )
 
         elif format_type == "json":
@@ -395,7 +395,7 @@ def export_result(result_id: str):
                 temp_path,
                 mimetype='application/json',
                 as_attachment=True,
-                download_name=f'analysis_{result_id}.json'
+                download_name=f'script_{result_id}.json'
             )
 
         elif format_type == "jupyter":
@@ -454,7 +454,7 @@ def import_notebook():
         scripts = import_from_jupyter(temp_path)
 
         # Save to database
-        manager = _get_analyses_manager()
+        manager = _get_scripts_manager()
         saved_scripts = []
         for script in scripts:
             script.created_by = _get_current_user()
@@ -477,7 +477,7 @@ def import_notebook():
 
 # Helper functions
 
-def _ensure_builtin_scripts(manager: AnalysesManager):
+def _ensure_builtin_scripts(manager: ScriptsManager):
     """Ensure built-in scripts are in the database."""
     try:
         existing_ids = {s.id for s in manager.list_scripts(category='builtin')}

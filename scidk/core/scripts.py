@@ -1,11 +1,12 @@
 """
-Core analyses module for running analytical scripts on the knowledge graph.
+Core scripts module for running scripts on the knowledge graph.
 
 Supports:
 - Script registry (built-in and custom scripts)
 - Script execution (Cypher, Python)
 - Results storage and export
 - Jupyter notebook generation
+- File-based storage with hot-reload
 """
 import json
 import sqlite3
@@ -15,10 +16,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from . import path_index_sqlite as pix
+from .script_registry import ScriptRegistry
 
 
-class AnalysisScript:
-    """Represents an analysis script with metadata and execution logic."""
+class Script:
+    """Represents a script with metadata and execution logic."""
 
     def __init__(
         self,
@@ -63,7 +65,7 @@ class AnalysisScript:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'AnalysisScript':
+    def from_dict(cls, data: Dict[str, Any]) -> 'Script':
         """Create from dictionary."""
         return cls(
             id=data['id'],
@@ -80,8 +82,8 @@ class AnalysisScript:
         )
 
 
-class AnalysisResult:
-    """Represents the result of executing an analysis script."""
+class ScriptExecution:
+    """Represents the result of executing a script."""
 
     def __init__(
         self,
@@ -120,16 +122,42 @@ class AnalysisResult:
         }
 
 
-class AnalysesManager:
-    """Manages analysis scripts and execution."""
+class ScriptsManager:
+    """Manages scripts and execution. Supports both file-based and database storage."""
 
-    def __init__(self, conn: Optional[sqlite3.Connection] = None):
-        """Initialize with optional database connection."""
+    def __init__(
+        self,
+        conn: Optional[sqlite3.Connection] = None,
+        scripts_dir: Optional[Path] = None,
+        use_file_registry: bool = True
+    ):
+        """
+        Initialize with optional database connection and scripts directory.
+
+        Args:
+            conn: Database connection (optional, will create if not provided)
+            scripts_dir: Path to scripts/ directory for file-based storage
+            use_file_registry: Whether to use file-based registry (default: True)
+        """
         self.conn = conn
         self._own_conn = False
         if self.conn is None:
             self.conn = pix.connect()
             self._own_conn = True
+
+        # File-based registry
+        self.use_file_registry = use_file_registry
+        self.registry = None
+        if use_file_registry:
+            if scripts_dir is None:
+                # Default to scripts/ directory in project root
+                import scidk
+                project_root = Path(scidk.__file__).parent.parent
+                scripts_dir = project_root / 'scripts'
+
+            self.registry = ScriptRegistry(scripts_dir)
+            if scripts_dir.exists():
+                self.registry.load_all()
 
     def __del__(self):
         """Close connection if we own it."""
@@ -141,12 +169,12 @@ class AnalysesManager:
 
     # Script CRUD operations
 
-    def create_script(self, script: AnalysisScript) -> AnalysisScript:
-        """Save a new analysis script to the database."""
+    def create_script(self, script: Script) -> Script:
+        """Save a new script to the database."""
         cur = self.conn.cursor()
         cur.execute(
             """
-            INSERT INTO analyses_scripts
+            INSERT INTO scripts
             (id, name, description, language, category, code, parameters, tags, created_at, created_by, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
@@ -167,11 +195,18 @@ class AnalysesManager:
         self.conn.commit()
         return script
 
-    def get_script(self, script_id: str) -> Optional[AnalysisScript]:
-        """Retrieve a script by ID."""
+    def get_script(self, script_id: str) -> Optional[Script]:
+        """Retrieve a script by ID. Checks file registry first, then database."""
+        # Try file registry first
+        if self.use_file_registry and self.registry:
+            script = self.registry.get_script(script_id)
+            if script:
+                return script
+
+        # Fall back to database
         cur = self.conn.cursor()
         row = cur.execute(
-            "SELECT * FROM analyses_scripts WHERE id = ?",
+            "SELECT * FROM scripts WHERE id = ?",
             (script_id,)
         ).fetchone()
 
@@ -185,11 +220,18 @@ class AnalysesManager:
         category: Optional[str] = None,
         language: Optional[str] = None,
         created_by: Optional[str] = None
-    ) -> List[AnalysisScript]:
-        """List all scripts with optional filters."""
-        cur = self.conn.cursor()
+    ) -> List[Script]:
+        """List all scripts with optional filters. Combines file and database scripts."""
+        scripts = []
 
-        query = "SELECT * FROM analyses_scripts WHERE 1=1"
+        # Get file-based scripts
+        if self.use_file_registry and self.registry:
+            file_scripts = self.registry.list_scripts(category=category, language=language)
+            scripts.extend(file_scripts)
+
+        # Get database scripts
+        cur = self.conn.cursor()
+        query = "SELECT * FROM scripts WHERE is_file_based = 0"
         params = []
 
         if category:
@@ -205,15 +247,21 @@ class AnalysesManager:
         query += " ORDER BY category, name"
 
         rows = cur.execute(query, params).fetchall()
-        return [self._row_to_script(row) for row in rows]
+        db_scripts = [self._row_to_script(row) for row in rows]
+        scripts.extend(db_scripts)
 
-    def update_script(self, script: AnalysisScript) -> AnalysisScript:
+        # Sort combined results
+        scripts.sort(key=lambda s: (s.category, s.name))
+
+        return scripts
+
+    def update_script(self, script: Script) -> Script:
         """Update an existing script."""
         script.updated_at = time.time()
         cur = self.conn.cursor()
         cur.execute(
             """
-            UPDATE analyses_scripts
+            UPDATE scripts
             SET name = ?, description = ?, language = ?, category = ?,
                 code = ?, parameters = ?, tags = ?, updated_at = ?
             WHERE id = ?
@@ -236,18 +284,18 @@ class AnalysesManager:
     def delete_script(self, script_id: str) -> bool:
         """Delete a script and its results."""
         cur = self.conn.cursor()
-        cur.execute("DELETE FROM analyses_scripts WHERE id = ?", (script_id,))
+        cur.execute("DELETE FROM scripts WHERE id = ?", (script_id,))
         self.conn.commit()
         return cur.rowcount > 0
 
     # Result operations
 
-    def save_result(self, result: AnalysisResult) -> AnalysisResult:
+    def save_result(self, result: ScriptExecution) -> ScriptExecution:
         """Save an execution result."""
         cur = self.conn.cursor()
         cur.execute(
             """
-            INSERT INTO analyses_results
+            INSERT INTO script_executions
             (id, script_id, executed_at, executed_by, parameters, results, execution_time_ms, status, error)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
@@ -266,11 +314,11 @@ class AnalysesManager:
         self.conn.commit()
         return result
 
-    def get_result(self, result_id: str) -> Optional[AnalysisResult]:
+    def get_result(self, result_id: str) -> Optional[ScriptExecution]:
         """Retrieve a result by ID."""
         cur = self.conn.cursor()
         row = cur.execute(
-            "SELECT * FROM analyses_results WHERE id = ?",
+            "SELECT * FROM script_executions WHERE id = ?",
             (result_id,)
         ).fetchone()
 
@@ -284,11 +332,11 @@ class AnalysesManager:
         script_id: Optional[str] = None,
         executed_by: Optional[str] = None,
         limit: int = 50
-    ) -> List[AnalysisResult]:
+    ) -> List[ScriptExecution]:
         """List execution results with optional filters."""
         cur = self.conn.cursor()
 
-        query = "SELECT * FROM analyses_results WHERE 1=1"
+        query = "SELECT * FROM script_executions WHERE 1=1"
         params = []
 
         if script_id:
@@ -307,7 +355,7 @@ class AnalysesManager:
     def delete_result(self, result_id: str) -> bool:
         """Delete a result."""
         cur = self.conn.cursor()
-        cur.execute("DELETE FROM analyses_results WHERE id = ?", (result_id,))
+        cur.execute("DELETE FROM script_executions WHERE id = ?", (result_id,))
         self.conn.commit()
         return cur.rowcount > 0
 
@@ -319,8 +367,8 @@ class AnalysesManager:
         parameters: Optional[Dict[str, Any]] = None,
         neo4j_driver=None,
         executed_by: Optional[str] = None
-    ) -> AnalysisResult:
-        """Execute an analysis script and return the result."""
+    ) -> ScriptExecution:
+        """Execute a script and return the result."""
         script = self.get_script(script_id)
         if not script:
             raise ValueError(f"Script not found: {script_id}")
@@ -340,7 +388,7 @@ class AnalysesManager:
 
             execution_time_ms = int((time.time() - start_time) * 1000)
 
-            result = AnalysisResult(
+            result = ScriptExecution(
                 id=result_id,
                 script_id=script_id,
                 executed_at=time.time(),
@@ -352,7 +400,7 @@ class AnalysesManager:
             )
         except Exception as e:
             execution_time_ms = int((time.time() - start_time) * 1000)
-            result = AnalysisResult(
+            result = ScriptExecution(
                 id=result_id,
                 script_id=script_id,
                 executed_at=time.time(),
@@ -369,7 +417,7 @@ class AnalysesManager:
 
     def _execute_cypher(
         self,
-        script: AnalysisScript,
+        script: Script,
         parameters: Dict[str, Any],
         neo4j_driver
     ) -> List[Dict[str, Any]]:
@@ -383,7 +431,7 @@ class AnalysesManager:
 
     def _execute_python(
         self,
-        script: AnalysisScript,
+        script: Script,
         parameters: Dict[str, Any],
         neo4j_driver
     ) -> List[Dict[str, Any]]:
@@ -414,9 +462,9 @@ class AnalysesManager:
 
     # Helper methods
 
-    def _row_to_script(self, row: Tuple) -> AnalysisScript:
-        """Convert database row to AnalysisScript."""
-        return AnalysisScript(
+    def _row_to_script(self, row: Tuple) -> Script:
+        """Convert database row to Script."""
+        return Script(
             id=row[0],
             name=row[1],
             description=row[2] or '',
@@ -430,9 +478,9 @@ class AnalysesManager:
             updated_at=row[10]
         )
 
-    def _row_to_result(self, row: Tuple) -> AnalysisResult:
-        """Convert database row to AnalysisResult."""
-        return AnalysisResult(
+    def _row_to_result(self, row: Tuple) -> ScriptExecution:
+        """Convert database row to ScriptExecution."""
+        return ScriptExecution(
             id=row[0],
             script_id=row[1],
             executed_at=row[2],
@@ -468,16 +516,16 @@ def export_to_json(results: List[Dict[str, Any]]) -> str:
 
 
 def export_to_jupyter(
-    script: AnalysisScript,
-    result: Optional[AnalysisResult] = None,
+    script: Script,
+    result: Optional[ScriptExecution] = None,
     neo4j_config: Optional[Dict[str, str]] = None
 ) -> Dict[str, Any]:
     """Generate a Jupyter notebook (.ipynb) with the script and optionally results."""
     cells = []
 
     # Cell 1: Setup and imports
-    setup_code = """# Analysis Script: {name}
-# Generated by SciDK Analysis Page
+    setup_code = """# Script: {name}
+# Generated by SciDK Scripts Page
 
 import json
 """.format(name=script.name)
@@ -592,8 +640,8 @@ driver.close()
     return notebook
 
 
-def import_from_jupyter(notebook_path: Path) -> List[AnalysisScript]:
-    """Extract analysis scripts from a Jupyter notebook."""
+def import_from_jupyter(notebook_path: Path) -> List[Script]:
+    """Extract scripts from a Jupyter notebook."""
     with open(notebook_path, 'r') as f:
         notebook = json.load(f)
 
@@ -612,7 +660,7 @@ def import_from_jupyter(notebook_path: Path) -> List[AnalysisScript]:
             script_id = f"imported-{notebook_path.stem}-{idx}"
             name = f"Imported: {notebook_path.stem} Cell {idx}"
 
-            scripts.append(AnalysisScript(
+            scripts.append(Script(
                 id=script_id,
                 name=name,
                 language='cypher',
@@ -626,7 +674,7 @@ def import_from_jupyter(notebook_path: Path) -> List[AnalysisScript]:
             script_id = f"imported-{notebook_path.stem}-{idx}"
             name = f"Imported: {notebook_path.stem} Cell {idx}"
 
-            scripts.append(AnalysisScript(
+            scripts.append(Script(
                 id=script_id,
                 name=name,
                 language='python',
