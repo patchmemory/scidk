@@ -11,7 +11,7 @@ scripts/
 │   └── custom/       # User-created analyses
 ├── interpreters/     # File interpretation logic
 ├── plugins/          # Plugin implementations
-├── integrations/     # External service integrations
+├── links/            # External service integrations and data connections
 └── api/             # Custom API endpoints
 ```
 
@@ -50,8 +50,8 @@ File parsing/interpretation logic. Must implement `interpret(file_path)` functio
 ### 🔌 Plugins
 Modular extensions with `__init__.py`. Can define custom labels, routes, settings UI.
 
-### 🔗 Integrations
-External service connectors. OAuth/API key configuration, webhook handlers.
+### 🔗 Links
+External service integrations and data connections. OAuth/API key configuration, webhook handlers, relationship definitions.
 
 ### 🌐 API Endpoints
 Custom REST API routes. Auto-registered from Python functions with decorators.

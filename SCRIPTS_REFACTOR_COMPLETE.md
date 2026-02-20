@@ -36,7 +36,7 @@
   │   └── custom/     # User scripts
   ├── interpreters/   # File interpretation logic
   ├── plugins/        # Plugin implementations
-  ├── integrations/   # External service connectors
+  ├── links/   # External service connectors
   └── api/            # Custom API endpoints
   ```
 
@@ -209,7 +209,7 @@ tests/test_scripts.py
 
 # Gitignore:
 scripts/custom/              # User scripts (optional)
-scripts/integrations/        # May contain secrets
+scripts/links/        # May contain secrets
 ```
 
 ### Environment Setup
@@ -259,7 +259,7 @@ python3 -m scidk.app
 This refactor transforms the Scripts page from a simple analysis tool into a comprehensive extensibility platform. The foundation is solid for:
 - Custom interpreters
 - Plugin development
-- External integrations
+- External links
 - API endpoint creation
 - Advanced automation
 

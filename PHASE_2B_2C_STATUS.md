@@ -21,7 +21,7 @@ All rename and file-based storage complete. System now:
 5. **🌐 API** - Custom endpoints (needs auto-registration)
 
 ###Current State:
-- ✅ Directory structure exists: `scripts/{analyses,interpreters,plugins,integrations,api}/`
+- ✅ Directory structure exists: `scripts/{analyses,interpreters,plugins,links,api}/`
 - ✅ ScriptRegistry can load from any category
 - ❌ No category-specific UI yet (all treated as analyses)
 - ❌ No category-specific validation
