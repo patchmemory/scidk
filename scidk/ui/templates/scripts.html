@@ -177,6 +177,12 @@
     justify-content: space-between;
   }
 
+  .editor-status-container {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
   .editor-status {
     font-size: 0.9em;
     color: #666;
@@ -185,6 +191,35 @@
   .editor-status.running { color: #0a6; }
   .editor-status.error { color: #d00; }
   .editor-status.success { color: #0a6; }
+
+  /* Status badges */
+  .status-badge {
+    font-size: 0.85em;
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+    font-weight: 500;
+  }
+
+  .status-badge.draft {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  .status-badge.validated {
+    background: #d1fae5;
+    color: #065f46;
+  }
+
+  .status-badge.failed {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+
+  .status-badge.active {
+    background: #dbeafe;
+    color: #1e40af;
+    border: 1px solid #3b82f6;
+  }
 
   /* Results Panel (Right) */
   .results-panel {
@@ -351,6 +386,57 @@
   .parameter-row input {
     flex: 1;
   }
+
+  /* Plugin Palette Modal */
+  .snippet-category {
+    margin-bottom: 2rem;
+  }
+
+  .snippet-category h4 {
+    margin: 0 0 1rem 0;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #00aa66;
+    color: #00aa66;
+  }
+
+  .snippet-item {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    overflow: hidden;
+  }
+
+  .snippet-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .snippet-code {
+    margin: 0;
+    padding: 1rem;
+    background: #1e293b;
+    color: #e2e8f0;
+    font-family: 'Courier New', monospace;
+    font-size: 0.85em;
+    overflow-x: auto;
+    line-height: 1.5;
+  }
+
+  .copy-snippet-btn {
+    background: #00aa66;
+    color: white;
+    border: none;
+    cursor: pointer;
+  }
+
+  .copy-snippet-btn:hover {
+    background: #008855;
+  }
 </style>
 {% endblock %}
 
@@ -418,8 +504,13 @@
     </div>
 
     <div class="editor-footer">
-      <div class="editor-status" id="editor-status">Ready</div>
+      <div class="editor-status-container">
+        <div class="editor-status" id="editor-status">Ready</div>
+        <span class="status-badge" id="status-badge" style="display: none;">🟡 Draft</span>
+      </div>
       <div class="editor-controls">
+        <button class="btn btn-sm" id="plugin-palette-btn">📦 Snippets</button>
+        <button class="btn btn-sm" id="validate-script-btn" disabled>🔍 Validate</button>
         <button class="btn btn-sm" id="save-script-btn" disabled>💾 Save</button>
         <button class="btn btn-sm" id="delete-script-btn" disabled>🗑 Delete</button>
         <button class="btn btn-sm btn-primary" id="run-script-btn" disabled>▶ Run</button>
@@ -437,6 +528,7 @@
       <div class="results-tabs">
         <button class="results-tab active" data-tab="table">Table</button>
         <button class="results-tab" data-tab="chart">Chart</button>
+        <button class="results-tab" data-tab="validation">Validation</button>
       </div>
     </div>
 
@@ -452,6 +544,124 @@
       <button class="btn btn-sm" id="export-jupyter-btn">📓 Jupyter</button>
       <div style="flex: 1"></div>
       <span class="small" id="results-count">0 rows</span>
+    </div>
+  </div>
+</div>
+
+<!-- Plugin Palette Modal -->
+<div id="plugin-palette-modal" class="modal" style="display: none;">
+  <div class="modal-content" style="max-width: 800px; max-height: 80vh; overflow-y: auto;">
+    <div class="modal-header">
+      <h3>Plugin Code Snippets</h3>
+      <button class="btn-close" id="close-palette-btn">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="color: #666; margin-bottom: 1rem;">
+        Click a snippet to copy it to your clipboard, then paste into your script.
+      </p>
+
+      <div class="snippet-category">
+        <h4>Interpreter Contract</h4>
+        <div class="snippet-item" data-snippet="interpreter-basic">
+          <div class="snippet-header">
+            <strong>Basic Interpreter Template</strong>
+            <button class="btn btn-sm copy-snippet-btn">📋 Copy</button>
+          </div>
+          <pre class="snippet-code">def interpret(file_path: Path) -> dict:
+    """
+    Parse file and return structured data.
+
+    Returns:
+        dict with keys:
+        - status: 'ok' or 'error'
+        - data: parsed content (list/dict)
+        - message: error message if status='error'
+    """
+    try:
+        # Your parsing logic here
+        data = []
+        return {'status': 'ok', 'data': data}
+    except Exception as e:
+        return {'status': 'error', 'message': str(e)}</pre>
+        </div>
+      </div>
+
+      <div class="snippet-category">
+        <h4>Link Script Contract</h4>
+        <div class="snippet-item" data-snippet="link-basic">
+          <div class="snippet-header">
+            <strong>Basic Link Script Template</strong>
+            <button class="btn btn-sm copy-snippet-btn">📋 Copy</button>
+          </div>
+          <pre class="snippet-code">def create_links(source_nodes: list, target_nodes: list) -> list:
+    """
+    Create relationships between source and target nodes.
+
+    Args:
+        source_nodes: List of dicts with node data
+        target_nodes: List of dicts with node data
+
+    Returns:
+        List of tuples: (source_id, target_id, relationship_type, properties)
+    """
+    links = []
+    for source in source_nodes:
+        for target in target_nodes:
+            if matches(source, target):
+                links.append((
+                    source['id'],
+                    target['id'],
+                    'RELATED_TO',
+                    {'confidence': 1.0}
+                ))
+    return links</pre>
+        </div>
+      </div>
+
+      <div class="snippet-category">
+        <h4>Common Patterns</h4>
+        <div class="snippet-item" data-snippet="fuzzy-match">
+          <div class="snippet-header">
+            <strong>Fuzzy String Matching</strong>
+            <button class="btn btn-sm copy-snippet-btn">📋 Copy</button>
+          </div>
+          <pre class="snippet-code">from difflib import SequenceMatcher
+
+def fuzzy_match(str1: str, str2: str, threshold: float = 0.8) -> bool:
+    """Check if two strings match with fuzzy logic."""
+    ratio = SequenceMatcher(None, str1.lower(), str2.lower()).ratio()
+    return ratio >= threshold</pre>
+        </div>
+
+        <div class="snippet-item" data-snippet="csv-reader">
+          <div class="snippet-header">
+            <strong>CSV Reader</strong>
+            <button class="btn btn-sm copy-snippet-btn">📋 Copy</button>
+          </div>
+          <pre class="snippet-code">import csv
+from pathlib import Path
+
+def read_csv(file_path: Path) -> list:
+    """Read CSV file and return list of dicts."""
+    with open(file_path, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        return list(reader)</pre>
+        </div>
+
+        <div class="snippet-item" data-snippet="json-reader">
+          <div class="snippet-header">
+            <strong>JSON Reader</strong>
+            <button class="btn btn-sm copy-snippet-btn">📋 Copy</button>
+          </div>
+          <pre class="snippet-code">import json
+from pathlib import Path
+
+def read_json(file_path: Path) -> dict:
+    """Read JSON file and return parsed data."""
+    with open(file_path, 'r', encoding='utf-8') as f:
+        return json.load(f)</pre>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -608,9 +818,44 @@ function displayScript(script) {
   document.getElementById('run-script-btn').disabled = false;
   document.getElementById('save-script-btn').disabled = script.category === 'builtin';
   document.getElementById('delete-script-btn').disabled = script.category === 'builtin';
+  document.getElementById('validate-script-btn').disabled = script.category === 'builtin';
 
   document.getElementById('editor-status').textContent = 'Ready';
   document.getElementById('editor-status').className = 'editor-status';
+
+  // Update validation status badge
+  updateValidationBadge(script);
+}
+
+// Update validation status badge
+function updateValidationBadge(script) {
+  const badge = document.getElementById('status-badge');
+  const status = script.validation_status || 'draft';
+
+  badge.style.display = 'inline-block';
+  badge.className = 'status-badge ' + status;
+
+  if (script.is_active) {
+    badge.textContent = '🟢 Active';
+    badge.className = 'status-badge active';
+  } else if (status === 'validated') {
+    const timestamp = script.validation_timestamp;
+    const timeAgo = timestamp ? getTimeAgo(timestamp) : '';
+    badge.textContent = `🟢 Validated ${timeAgo}`;
+  } else if (status === 'failed') {
+    badge.textContent = '🔴 Failed';
+  } else {
+    badge.textContent = '🟡 Draft';
+  }
+}
+
+// Get human-readable time ago
+function getTimeAgo(timestamp) {
+  const seconds = Math.floor(Date.now() / 1000 - timestamp);
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
 }
 
 // Render parameter inputs
@@ -688,6 +933,121 @@ async function runScript() {
   }
 }
 
+// Validate script
+async function validateScript() {
+  if (!currentScript) return;
+
+  const statusEl = document.getElementById('editor-status');
+  const badge = document.getElementById('status-badge');
+
+  statusEl.textContent = 'Validating...';
+  statusEl.className = 'editor-status running';
+
+  try {
+    const response = await fetch(`/api/scripts/scripts/${currentScript.id}/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      const validation = data.validation;
+
+      // Update current script with new validation status
+      currentScript.validation_status = validation.passed ? 'validated' : 'failed';
+      currentScript.validation_errors = validation.errors;
+      currentScript.validation_timestamp = Date.now() / 1000;
+
+      // Update badge
+      updateValidationBadge(currentScript);
+
+      // Display validation results in Validation tab
+      displayValidationResults(validation);
+
+      // Switch to Validation tab
+      switchResultsTab('validation');
+
+      // Update status
+      if (validation.passed) {
+        statusEl.textContent = `✅ Validated (${validation.passed_count}/${validation.test_count} tests passed)`;
+        statusEl.className = 'editor-status success';
+        window.toast('Script validation passed!', 'success');
+      } else {
+        statusEl.textContent = `❌ Validation failed (${validation.failed_count} errors)`;
+        statusEl.className = 'editor-status error';
+        window.toast(`Validation failed: ${validation.errors[0]}`, 'error');
+      }
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    statusEl.textContent = 'Validation error';
+    statusEl.className = 'editor-status error';
+    window.toast('Error validating script: ' + error.message, 'error');
+  }
+}
+
+// Display validation results
+function displayValidationResults(validation) {
+  const contentEl = document.getElementById('results-content');
+
+  let html = '<div class="validation-results">';
+
+  // Overall status
+  html += '<div class="validation-summary">';
+  if (validation.passed) {
+    html += '<h3 style="color: #065f46;">✅ Validation Passed</h3>';
+  } else {
+    html += '<h3 style="color: #991b1b;">❌ Validation Failed</h3>';
+  }
+  html += `<p>${validation.passed_count} of ${validation.test_count} tests passed</p>`;
+  html += '</div>';
+
+  // Test results
+  html += '<div class="validation-tests">';
+  html += '<h4>Test Results:</h4>';
+  html += '<ul style="list-style: none; padding: 0;">';
+
+  for (const [testName, passed] of Object.entries(validation.test_results)) {
+    const icon = passed ? '✅' : '❌';
+    const color = passed ? '#065f46' : '#991b1b';
+    const testLabel = testName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    html += `<li style="padding: 0.5rem 0; color: ${color};">${icon} ${testLabel}</li>`;
+  }
+
+  html += '</ul>';
+  html += '</div>';
+
+  // Errors
+  if (validation.errors && validation.errors.length > 0) {
+    html += '<div class="validation-errors">';
+    html += '<h4>Errors:</h4>';
+    html += '<ul style="color: #991b1b;">';
+    validation.errors.forEach(error => {
+      html += `<li style="padding: 0.25rem 0;">${error}</li>`;
+    });
+    html += '</ul>';
+    html += '</div>';
+  }
+
+  // Warnings
+  if (validation.warnings && validation.warnings.length > 0) {
+    html += '<div class="validation-warnings">';
+    html += '<h4>Warnings:</h4>';
+    html += '<ul style="color: #92400e;">';
+    validation.warnings.forEach(warning => {
+      html += `<li style="padding: 0.25rem 0;">⚠️ ${warning}</li>`;
+    });
+    html += '</ul>';
+    html += '</div>';
+  }
+
+  html += '</div>';
+
+  contentEl.innerHTML = html;
+}
+
 // Display results
 function displayResults(results) {
   const contentEl = document.getElementById('results-content');
@@ -735,6 +1095,26 @@ function renderResultsTable(results) {
 
   html += '</tbody></table>';
   contentEl.innerHTML = html;
+}
+
+// Plugin palette functions
+function openPluginPalette() {
+  const modal = document.getElementById('plugin-palette-modal');
+  modal.style.display = 'flex';
+}
+
+function closePluginPalette() {
+  const modal = document.getElementById('plugin-palette-modal');
+  modal.style.display = 'none';
+}
+
+async function copySnippetToClipboard(snippetCode) {
+  try {
+    await navigator.clipboard.writeText(snippetCode);
+    window.toast('Code snippet copied to clipboard!', 'success');
+  } catch (error) {
+    window.toast('Failed to copy: ' + error.message, 'error');
+  }
 }
 
 // Prepare chart (bar chart for now)
@@ -799,9 +1179,15 @@ function switchResultsTab(tab) {
   if (tab === 'table') {
     contentEl.querySelector('.results-table')?.parentElement.style.display = 'block';
     contentEl.querySelector('.results-chart-container')?.style.display = 'none';
+    contentEl.querySelector('.validation-results')?.style.display = 'none';
   } else if (tab === 'chart') {
     contentEl.querySelector('.results-table')?.parentElement.style.display = 'none';
     contentEl.querySelector('.results-chart-container')?.style.display = 'block';
+    contentEl.querySelector('.validation-results')?.style.display = 'none';
+  } else if (tab === 'validation') {
+    contentEl.querySelector('.results-table')?.parentElement.style.display = 'none';
+    contentEl.querySelector('.results-chart-container')?.style.display = 'none';
+    contentEl.querySelector('.validation-results')?.style.display = 'block';
   }
 }
 
@@ -866,6 +1252,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Run button
   document.getElementById('run-script-btn').addEventListener('click', runScript);
 
+  // Validate button
+  document.getElementById('validate-script-btn').addEventListener('click', validateScript);
+
   // Results tabs
   document.querySelectorAll('.results-tab').forEach(tab => {
     tab.addEventListener('click', () => switchResultsTab(tab.dataset.tab));
@@ -909,6 +1298,27 @@ document.addEventListener('DOMContentLoaded', () => {
   // Category filter
   document.getElementById('category-filter').addEventListener('change', () => {
     renderScriptList(allScripts);
+  });
+
+  // Plugin palette
+  document.getElementById('plugin-palette-btn').addEventListener('click', openPluginPalette);
+  document.getElementById('close-palette-btn').addEventListener('click', closePluginPalette);
+
+  // Copy snippet buttons
+  document.querySelectorAll('.copy-snippet-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const snippetItem = e.target.closest('.snippet-item');
+      const codeElement = snippetItem.querySelector('.snippet-code');
+      const code = codeElement.textContent.trim();
+      copySnippetToClipboard(code);
+    });
+  });
+
+  // Close modal when clicking outside
+  document.getElementById('plugin-palette-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'plugin-palette-modal') {
+      closePluginPalette();
+    }
   });
 });
 </script>
