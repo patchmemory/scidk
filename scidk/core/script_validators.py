@@ -143,11 +143,27 @@ class BaseValidator:
             errors.append(f"Syntax error: {e}")
 
         # Test 2: Can execute without crashing (in sandbox)
+        # For Scripts page scripts, provide minimal execution context
         if tests.get('valid_syntax', False):
-            result = run_sandboxed(script.code, timeout=self.timeout)
+            # Wrap script with minimal execution environment
+            wrapped_code = f"""
+import json
+import pandas as pd
+from pathlib import Path
+
+# Provide minimal context that scripts expect
+parameters = {{}}
+neo4j_driver = None
+results = []
+__file__ = '<script>'  # Provide __file__ for scripts that need it
+
+# Execute the script
+{script.code}
+"""
+            result = run_sandboxed(wrapped_code, timeout=self.timeout)
             tests['executes_without_error'] = result['returncode'] == 0
             if result['returncode'] != 0:
-                errors.append(f"Execution error: {result['stderr'][:200]}")
+                errors.append(f"Script execution failed: {result['stderr'][:200]}")
             if result['timed_out']:
                 warnings.append(f"Execution took longer than {self.timeout}s (timeout)")
         else:
