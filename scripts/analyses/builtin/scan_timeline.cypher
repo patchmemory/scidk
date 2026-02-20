@@ -4,7 +4,7 @@ id: builtin-scan-timeline
 name: Scan Timeline & Volume
 description: Show scan history with file counts and timestamps. Useful for tracking data ingestion over time.
 language: cypher
-category: builtin
+category: analyses/builtin
 tags: [scans, timeline, history]
 parameters:
   - name: limit

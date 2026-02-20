@@ -4,7 +4,7 @@ id: builtin-interpretation-rates
 name: Interpretation Success Rates
 description: Analyze interpreter performance by type. Shows success vs failure rates for each interpreter.
 language: cypher
-category: builtin
+category: analyses/builtin
 tags: [interpreters, statistics, quality]
 ---
 """

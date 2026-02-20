@@ -360,7 +360,16 @@
   <div class="script-library" id="script-library">
     <div class="script-library-header">
       <h3>Script Library</h3>
-      <input type="text" class="script-search" id="script-search" placeholder="Search scripts...">
+      <input type="text" class="script-search" id="script-search" placeholder="Search scripts..." style="margin-bottom: 0.5rem;">
+      <select class="script-search" id="category-filter">
+        <option value="">All Categories</option>
+        <option value="analyses/builtin">📊 Built-in Analyses</option>
+        <option value="analyses/custom">📊 Custom Analyses</option>
+        <option value="interpreters">🔧 Interpreters</option>
+        <option value="plugins">🔌 Plugins</option>
+        <option value="integrations">🔗 Integrations</option>
+        <option value="api">🌐 API Endpoints</option>
+      </select>
     </div>
 
     <div class="script-list" id="script-list">
@@ -486,18 +495,40 @@ async function loadScripts() {
 // Render script list
 function renderScriptList(scripts) {
   const listEl = document.getElementById('script-list');
+  const categoryFilter = document.getElementById('category-filter').value;
 
-  const categorized = {
-    builtin: scripts.filter(s => s.category === 'builtin'),
-    custom: scripts.filter(s => s.category === 'custom')
+  // Filter by category if selected
+  if (categoryFilter) {
+    scripts = scripts.filter(s => s.category === categoryFilter);
+  }
+
+  // Group by category
+  const categoryGroups = {};
+  scripts.forEach(script => {
+    const cat = script.category;
+    if (!categoryGroups[cat]) categoryGroups[cat] = [];
+    categoryGroups[cat].push(script);
+  });
+
+  // Category icons and labels
+  const categoryMeta = {
+    'builtin': { icon: '📦', label: 'Built-in' },
+    'custom': { icon: '📝', label: 'Custom' },
+    'analyses/builtin': { icon: '📊', label: 'Built-in Analyses' },
+    'analyses/custom': { icon: '📊', label: 'Custom Analyses' },
+    'interpreters': { icon: '🔧', label: 'Interpreters' },
+    'plugins': { icon: '🔌', label: 'Plugins' },
+    'integrations': { icon: '🔗', label: 'Integrations' },
+    'api': { icon: '🌐', label: 'API Endpoints' }
   };
 
   let html = '';
 
-  for (const [category, items] of Object.entries(categorized)) {
+  for (const [category, items] of Object.entries(categoryGroups)) {
     if (items.length > 0) {
+      const meta = categoryMeta[category] || { icon: '📄', label: category };
       html += `<div class="script-category">`;
-      html += `<div class="script-category-header">${category === 'builtin' ? '📦 Built-in' : '📝 Custom'}</div>`;
+      html += `<div class="script-category-header">${meta.icon} ${meta.label}</div>`;
 
       items.forEach(script => {
         html += `
@@ -864,6 +895,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Script search
+  // Search filter
   document.getElementById('script-search').addEventListener('input', (e) => {
     const query = e.target.value.toLowerCase();
     const filtered = allScripts.filter(script =>
@@ -872,6 +904,11 @@ document.addEventListener('DOMContentLoaded', () => {
       script.tags.some(tag => tag.toLowerCase().includes(query))
     );
     renderScriptList(filtered);
+  });
+
+  // Category filter
+  document.getElementById('category-filter').addEventListener('change', () => {
+    renderScriptList(allScripts);
   });
 });
 </script>

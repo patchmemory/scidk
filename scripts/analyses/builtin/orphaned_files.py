@@ -4,7 +4,7 @@ id: builtin-orphaned-files
 name: Orphaned Files
 description: Find files that were scanned but never committed to Neo4j. Uses SQL on local SQLite index.
 language: python
-category: builtin
+category: analyses/builtin
 tags: [files, quality, sync]
 ---
 """

@@ -4,7 +4,7 @@ id: builtin-largest-files
 name: Largest Files
 description: Find the largest files in the knowledge graph by size. Helps identify storage-heavy files.
 language: cypher
-category: builtin
+category: analyses/builtin
 tags: [files, size, storage]
 parameters:
   - name: limit

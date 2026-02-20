@@ -4,7 +4,7 @@ id: builtin-schema-drift
 name: Schema Drift Detection
 description: Compare defined labels in SciDK with actual labels in Neo4j. Identifies missing or extra labels.
 language: python
-category: builtin
+category: analyses/builtin
 tags: [schema, neo4j, quality, drift]
 ---
 """

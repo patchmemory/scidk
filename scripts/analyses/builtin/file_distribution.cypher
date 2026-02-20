@@ -4,7 +4,7 @@ id: builtin-file-distribution
 name: File Distribution by Extension
 description: Analyze file types across all scans. Shows count of files per extension as a table and bar chart.
 language: cypher
-category: builtin
+category: analyses/builtin
 tags: [files, statistics, distribution]
 parameters:
   - name: limit
