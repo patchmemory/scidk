@@ -163,25 +163,39 @@ def run_sandboxed(
             'timed_out': False
         }
 
-    # Run in subprocess with timeout
+    # Write code to temp file so __file__ is properly set by Python
+    # This is necessary because scripts may use __file__ at module level
+    import tempfile
     try:
-        result = subprocess.run(
-            [sys.executable, '-c', code],
-            capture_output=True,
-            timeout=timeout,
-            text=True,
-            input=input_data,
-            cwd=working_dir,
-            # Don't inherit environment vars that might have credentials
-            env={'PATH': subprocess.os.environ.get('PATH', '')}
-        )
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            f.write(code)
+            temp_file = f.name
 
-        return {
-            'stdout': result.stdout,
-            'stderr': result.stderr,
-            'returncode': result.returncode,
-            'timed_out': False
-        }
+        try:
+            result = subprocess.run(
+                [sys.executable, temp_file],
+                capture_output=True,
+                timeout=timeout,
+                text=True,
+                input=input_data,
+                cwd=working_dir,
+                # Don't inherit environment vars that might have credentials
+                env={'PATH': subprocess.os.environ.get('PATH', '')}
+            )
+
+            return {
+                'stdout': result.stdout,
+                'stderr': result.stderr,
+                'returncode': result.returncode,
+                'timed_out': False
+            }
+        finally:
+            # Clean up temp file
+            import os
+            try:
+                os.unlink(temp_file)
+            except Exception:
+                pass  # Best effort cleanup
 
     except subprocess.TimeoutExpired:
         return {

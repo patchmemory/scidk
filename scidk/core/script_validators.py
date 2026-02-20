@@ -146,18 +146,20 @@ class BaseValidator:
         # For Scripts page scripts, provide minimal execution context
         if tests.get('valid_syntax', False):
             # Wrap script with minimal execution environment
+            # Note: Code is written to a temp file so __file__ is automatically set by Python
             wrapped_code = f"""
+# Setup execution environment (runs before script code)
 import json
 import pandas as pd
 from pathlib import Path
+import sys
 
 # Provide minimal context that scripts expect
 parameters = {{}}
 neo4j_driver = None
 results = []
-__file__ = '<script>'  # Provide __file__ for scripts that need it
 
-# Execute the script
+# Execute the script code
 {script.code}
 """
             result = run_sandboxed(wrapped_code, timeout=self.timeout)
