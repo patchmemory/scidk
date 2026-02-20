@@ -1,69 +1,31 @@
-# Scripts Directory
+# SciDK Scripts
 
-This directory contains all user-extensible scripts for SciDK.
+This directory contains user-defined scripts organized by category.
 
-## Structure
+## Directory Structure
 
-```
-scripts/
-├── analyses/          # Ad-hoc analysis scripts
-│   ├── builtin/      # Built-in analyses (shipped with SciDK)
-│   └── custom/       # User-created analyses
-├── interpreters/     # File interpretation logic
-├── plugins/          # Plugin implementations
-├── links/            # External service integrations and data connections
-└── api/             # Custom API endpoints
-```
+- **interpreters/**: File format interpreters that parse data files
+- **links/**: Scripts that create relationships between nodes
+- **plugins/**: Reusable plugin components
+- **api/**: Custom API endpoint handlers
+- **analyses/**: Data analysis scripts
+  - **builtin/**: Pre-installed analysis templates
+  - **custom/**: User-created analyses
 
-## Script Format
+## Script Validation
 
-Scripts use YAML frontmatter for metadata:
+All scripts must be validated before activation:
 
-```python
-"""
----
-id: my-script
-name: My Script
-description: Does something useful
-language: python
-category: analyses/custom
-tags: [example, demo]
-parameters:
-  - name: limit
-    type: integer
-    default: 100
-    label: Max results
-    required: false
----
-"""
-# Your code here
-```
+1. **Draft**: Initial state, can be edited
+2. **Validate**: Run contract tests to ensure correctness
+3. **Activate**: Make available in Settings dropdowns
 
-## Categories
+## Getting Started
 
-### 📊 Analyses
-Ad-hoc queries and reports. Run button executes and shows results.
+Use the Scripts page UI to:
+- Create new scripts
+- Validate against category contracts
+- Browse code snippets from the Plugin Palette
+- Activate for production use
 
-### 🔧 Interpreters
-File parsing/interpretation logic. Must implement `interpret(file_path)` function.
-
-### 🔌 Plugins
-Modular extensions with `__init__.py`. Can define custom labels, routes, settings UI.
-
-### 🔗 Links
-External service integrations and data connections. OAuth/API key configuration, webhook handlers, relationship definitions.
-
-### 🌐 API Endpoints
-Custom REST API routes. Auto-registered from Python functions with decorators.
-
-## Usage
-
-1. Create a new script file in the appropriate category directory
-2. Add YAML frontmatter with metadata
-3. Write your code
-4. Save the file - SciDK will hot-reload automatically
-5. Access from the Scripts page at `/scripts`
-
-## Version Control
-
-All scripts are version controlled via git. The `custom/` directories are gitignored by default.
+See the Scripts page for templates and examples.
