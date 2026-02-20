@@ -532,7 +532,7 @@ class ScriptsManager:
             'neo4j_driver': neo4j_driver,
             'pd': pd,
             'json': json,
-            'results': [],  # Script should populate this
+            'results': [],  # Script should populate this (old pattern)
             '__file__': '<script>',  # Provide __file__ for scripts that need it
             'Path': Path  # Provide Path class for convenience
         }
@@ -540,12 +540,47 @@ class ScriptsManager:
         # Execute script
         exec(script.code, global_namespace)
 
-        # Extract results
-        results = global_namespace.get('results', [])
+        # Check if script defines a run() function (new plugin pattern)
+        if 'run' in global_namespace and callable(global_namespace['run']):
+            # New pattern: call run(context) and extract data
+            context = {
+                'parameters': parameters,
+                'neo4j_driver': neo4j_driver
+            }
+            result = global_namespace['run'](context)
 
-        # Convert pandas DataFrame to list of dicts if needed
-        if isinstance(results, pd.DataFrame):
-            results = results.to_dict('records')
+            # Extract data from result
+            if isinstance(result, dict):
+                # Check for 'data' key (standard pattern)
+                if 'data' in result:
+                    data = result['data']
+                    if isinstance(data, list):
+                        results = data
+                    elif isinstance(data, pd.DataFrame):
+                        results = data.to_dict('records')
+                    else:
+                        # Single item, wrap in list
+                        results = [data]
+                elif 'status' in result and result.get('status') == 'error':
+                    # Error result, show error message
+                    results = [{'error': result.get('error', 'Unknown error')}]
+                else:
+                    # Return entire dict as single row
+                    results = [result]
+            elif isinstance(result, list):
+                results = result
+            elif isinstance(result, pd.DataFrame):
+                results = result.to_dict('records')
+            else:
+                # Unexpected return type, wrap it
+                results = [{'result': str(result)}]
+        else:
+            # Old pattern: script populates results[] array
+            results = global_namespace.get('results', [])
+
+            # Convert pandas DataFrame to list of dicts if needed
+            if isinstance(results, pd.DataFrame):
+                results = results.to_dict('records')
 
         return results
 
