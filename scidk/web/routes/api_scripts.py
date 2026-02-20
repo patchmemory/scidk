@@ -19,6 +19,7 @@ from scidk.core.scripts import (
     import_from_jupyter
 )
 from scidk.core.builtin_scripts import get_builtin_scripts
+from scidk.web.decorators import require_admin
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +203,7 @@ def get_script(script_id: str):
 
 
 @bp.route("/scripts", methods=["POST"])
+@require_admin
 def create_script():
     """Create a new custom script.
 
@@ -247,6 +249,7 @@ def create_script():
 
 
 @bp.route("/scripts/<script_id>", methods=["PUT"])
+@require_admin
 def update_script(script_id: str):
     """Update an existing custom script.
 
@@ -291,6 +294,7 @@ def update_script(script_id: str):
 
 
 @bp.route("/scripts/<script_id>", methods=["DELETE"])
+@require_admin
 def delete_script(script_id: str):
     """Delete a custom script.
 
@@ -412,11 +416,15 @@ def validate_script(script_id: str):
 
 
 @bp.route("/scripts/<script_id>/activate", methods=["POST"])
+@require_admin
 def activate_script(script_id: str):
-    """Activate a validated script.
+    """Activate a validated script (admin only).
 
     Only validated scripts can be activated. Activated scripts appear in
     Settings dropdowns and are available for use.
+
+    Security: Requires admin role because activated scripts have full
+    system access (filesystem, database, etc.).
 
     Returns:
         JSON response with activation status
@@ -449,8 +457,9 @@ def activate_script(script_id: str):
 
 
 @bp.route("/scripts/<script_id>/deactivate", methods=["POST"])
+@require_admin
 def deactivate_script(script_id: str):
-    """Deactivate an active script.
+    """Deactivate an active script (admin only).
 
     Deactivated scripts are removed from Settings dropdowns but remain
     in the Scripts library.
