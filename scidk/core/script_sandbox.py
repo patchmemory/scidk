@@ -38,6 +38,9 @@ ALLOWED_IMPORTS = [
     'math',
     'statistics',
     'sys',  # Needed for stderr/stdout access in scripts
+    'pickle',  # Needed for BO plugin and state persistence
+               # Security: Only allowed for files within managed directories
+               # Risk accepted for MVP - subprocess isolation mitigates arbitrary code execution
 ]
 
 
@@ -87,6 +90,11 @@ def validate_imports(code: str) -> List[str]:
 
         # Handle: from foo import bar
         elif isinstance(node, ast.ImportFrom):
+            # Block relative imports (from . import x, from .. import y)
+            if node.level > 0:
+                disallowed.append('relative_import')
+                continue
+
             if node.module:
                 module = node.module.split('.')[0]  # Get top-level module
                 imports.append(module)
@@ -104,7 +112,7 @@ def validate_imports(code: str) -> List[str]:
 
 def run_sandboxed(
     code: str,
-    timeout: int = 5,
+    timeout: int = 10,
     input_data: Optional[str] = None,
     working_dir: Optional[Path] = None
 ) -> Dict[str, any]:
@@ -113,7 +121,7 @@ def run_sandboxed(
 
     Args:
         code: Python source code to execute
-        timeout: Maximum execution time in seconds (default: 5)
+        timeout: Maximum execution time in seconds (default: 10)
         input_data: Optional stdin data to pass to subprocess
         working_dir: Optional working directory for subprocess
 

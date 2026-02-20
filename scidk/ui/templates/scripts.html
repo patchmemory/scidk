@@ -221,6 +221,166 @@
     border: 1px solid #3b82f6;
   }
 
+  /* Edit Warning Banner */
+  .edit-warning {
+    padding: 0.75rem 1rem;
+    background: #fef3c7;
+    border: 1px solid #f59e0b;
+    border-left: 4px solid #f59e0b;
+    color: #92400e;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* Validation Results Panel */
+  .validation-results {
+    padding: 1rem;
+    background: #f9fafb;
+    border-bottom: 1px solid #e0e0e0;
+    font-size: 0.9em;
+  }
+
+  .validation-results.passed {
+    background: #f0fdf4;
+    border-color: #86efac;
+  }
+
+  .validation-results.failed {
+    background: #fef2f2;
+    border-color: #fca5a5;
+  }
+
+  .validation-summary {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .validation-tests {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+  }
+
+  .validation-test-item {
+    padding: 0.25rem 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85em;
+  }
+
+  .validation-test-item.passed {
+    color: #166534;
+  }
+
+  .validation-test-item.failed {
+    color: #991b1b;
+  }
+
+  .validation-errors {
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background: #fff;
+    border: 1px solid #fca5a5;
+    border-radius: 4px;
+    max-height: 150px;
+    overflow-y: auto;
+  }
+
+  .validation-error {
+    color: #991b1b;
+    font-size: 0.85em;
+    margin: 0.25rem 0;
+  }
+
+  /* Plugin Palette Sidebar */
+  .plugin-palette-sidebar {
+    position: fixed;
+    right: 0;
+    top: 60px;
+    bottom: 0;
+    width: 320px;
+    background: #fff;
+    border-left: 1px solid #e0e0e0;
+    box-shadow: -2px 0 8px rgba(0,0,0,0.1);
+    transform: translateX(100%);
+    transition: transform 0.3s ease;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .plugin-palette-sidebar.open {
+    transform: translateX(0);
+  }
+
+  .plugin-palette-header {
+    padding: 1rem;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #f9fafb;
+  }
+
+  .plugin-palette-header h4 {
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  .plugin-palette-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem;
+  }
+
+  .plugin-item {
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .plugin-item:hover {
+    background: #f9fafb;
+    border-color: var(--accent);
+  }
+
+  .plugin-item-name {
+    font-weight: 600;
+    font-size: 0.9em;
+    margin-bottom: 0.25rem;
+  }
+
+  .plugin-item-desc {
+    font-size: 0.85em;
+    color: #666;
+    margin-bottom: 0.5rem;
+  }
+
+  .plugin-item-docstring {
+    font-size: 0.8em;
+    color: #888;
+    font-style: italic;
+    max-height: 60px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .plugin-item-copy {
+    font-size: 0.75em;
+    color: var(--accent);
+    margin-top: 0.5rem;
+  }
+
   /* Results Panel (Right) */
   .results-panel {
     width: 450px;
@@ -589,6 +749,25 @@
         <div class="editor-meta-label">Tags:</div>
         <div class="editor-meta-value" id="script-tags">-</div>
       </div>
+      <div class="editor-meta-row">
+        <div class="editor-meta-label">Status:</div>
+        <div class="editor-meta-value">
+          <span class="status-badge" id="validation-status-badge">🟡 Draft</span>
+          <span class="status-badge active" id="active-status-badge" style="display: none;">✓ Active</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Warning Banner -->
+    <div class="edit-warning" id="edit-warning" style="display: none;">
+      ⚠️ Editing will reset validation status. Save & re-validate to activate.
+    </div>
+
+    <!-- Validation Results Panel -->
+    <div class="validation-results" id="validation-results" style="display: none;">
+      <div class="validation-summary" id="validation-summary"></div>
+      <div class="validation-tests" id="validation-tests"></div>
+      <div class="validation-errors" id="validation-errors" style="display: none;"></div>
     </div>
 
     <div class="parameters-section" id="parameters-section" style="display: none;">
@@ -761,6 +940,18 @@ def read_json(file_path: Path) -> dict:
         return json.load(f)</pre>
         </div>
       </div>
+
+      <!-- Available Plugins Section -->
+      <div class="snippet-category">
+        <h4>📦 Available Plugins</h4>
+        <p style="font-size: 0.9em; color: #666; margin-bottom: 0.75rem;">
+          Validated plugins you can call from your scripts. Click to copy load_plugin() call.
+        </p>
+        <div id="available-plugins-list">
+          <!-- Dynamically loaded from /api/plugins/available -->
+          <div style="color: #999; font-style: italic;">Loading plugins...</div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -783,6 +974,21 @@ function initializeEditor() {
     theme: 'monokai',
     lineNumbers: true,
     readOnly: false
+  });
+
+  // Detect when code is edited to show warning banner
+  codeMirrorEditor.on('change', function() {
+    if (!currentScript) return;
+
+    // Check if script was validated or failed before edit
+    if (currentScript.validation_status === 'validated' ||
+        currentScript.validation_status === 'failed') {
+      // Show edit warning
+      const editWarning = document.getElementById('edit-warning');
+      if (editWarning) {
+        editWarning.style.display = 'flex';
+      }
+    }
   });
 }
 
@@ -1425,6 +1631,57 @@ function displayValidationResults(validation) {
   contentEl.innerHTML = html;
 }
 
+// Load available plugins for palette
+async function loadAvailablePlugins() {
+  try {
+    const response = await fetch('/api/plugins/available');
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      displayAvailablePlugins(data.plugins);
+    }
+  } catch (error) {
+    console.error('Failed to load plugins:', error);
+    const listEl = document.getElementById('available-plugins-list');
+    if (listEl) {
+      listEl.innerHTML = '<div style="color: #d00;">Failed to load plugins</div>';
+    }
+  }
+}
+
+// Display available plugins in modal
+function displayAvailablePlugins(plugins) {
+  const container = document.getElementById('available-plugins-list');
+  if (!container) return;
+
+  if (plugins.length === 0) {
+    container.innerHTML = '<div style="color: #999; font-style: italic;">No validated plugins available yet.</div>';
+    return;
+  }
+
+  container.innerHTML = plugins.map(plugin => `
+    <div class="snippet-item plugin-item" data-plugin-id="${plugin.id}">
+      <div class="snippet-header">
+        <strong>${plugin.name}</strong>
+        <button class="btn btn-sm copy-plugin-btn" data-plugin-id="${plugin.id}">📋 Copy</button>
+      </div>
+      <div class="plugin-item-desc">${plugin.description || 'No description'}</div>
+      ${plugin.docstring ? `<div class="plugin-item-docstring">${plugin.docstring}</div>` : ''}
+      <pre class="snippet-code" style="margin-top: 0.5rem;">load_plugin('${plugin.id}', manager, context={'param': 'value'})</pre>
+    </div>
+  `).join('');
+
+  // Add click handlers to copy buttons
+  document.querySelectorAll('.copy-plugin-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const pluginId = btn.dataset.pluginId;
+      const snippet = `load_plugin('${pluginId}', manager, context={'param': 'value'})`;
+      copySnippetToClipboard(snippet);
+    });
+  });
+}
+
 // Display results
 function displayResults(results) {
   const contentEl = document.getElementById('results-content');
@@ -1690,6 +1947,7 @@ function restoreColumnWidths() {
 function openPluginPalette() {
   const modal = document.getElementById('plugin-palette-modal');
   modal.style.display = 'flex';
+  loadAvailablePlugins(); // Refresh plugins list when modal opens
 }
 
 function closePluginPalette() {

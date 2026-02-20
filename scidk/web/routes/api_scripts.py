@@ -152,6 +152,32 @@ def list_active_scripts():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@bp.route("/plugins/available", methods=["GET"])
+def list_available_plugins():
+    """List all available (validated + active) plugins for plugin palette.
+
+    Returns lightweight metadata for plugins that can be loaded by other scripts.
+    Used by the plugin palette sidebar in Scripts page.
+
+    Returns:
+        JSON response with list of available plugins (metadata only, no code)
+    """
+    try:
+        from scidk.core.script_plugin_loader import list_available_plugins
+
+        manager = _get_scripts_manager()
+        plugins = list_available_plugins(manager)
+
+        return jsonify({
+            "status": "ok",
+            "plugins": plugins,
+            "count": len(plugins)
+        })
+    except Exception as e:
+        logger.exception("Error listing available plugins")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @bp.route("/scripts/<script_id>", methods=["GET"])
 def get_script(script_id: str):
     """Get a single script by ID.

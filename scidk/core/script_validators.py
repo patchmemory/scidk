@@ -6,7 +6,7 @@ Implements compositional validation hierarchy where:
 - InterpreterValidator: Extends Plugin + interpret(Path) signature
 - LinkValidator: Extends Plugin + create_links() signature
 
-Each validator runs contract tests in sandbox and returns ValidationResult.
+Each validators runs contract tests in sandbox and returns ValidationResult.
 """
 import ast
 import time
@@ -17,6 +17,38 @@ from .script_sandbox import run_sandboxed
 
 if TYPE_CHECKING:
     from .scripts import Script
+
+
+def extract_docstring(code: str) -> str:
+    """
+    Extract module-level docstring from Python code.
+
+    Uses AST parsing to get the first string literal in the module,
+    which is the docstring by Python convention.
+
+    Args:
+        code: Python source code
+
+    Returns:
+        Extracted docstring or empty string if none found
+    """
+    try:
+        tree = ast.parse(code)
+        # Get module docstring (first Expr node with a Str/Constant value)
+        if (tree.body and
+            isinstance(tree.body[0], ast.Expr) and
+            isinstance(tree.body[0].value, (ast.Str, ast.Constant))):
+
+            # Handle both ast.Str (Python <3.8) and ast.Constant (Python >=3.8)
+            if isinstance(tree.body[0].value, ast.Str):
+                return tree.body[0].value.s
+            elif isinstance(tree.body[0].value, ast.Constant) and isinstance(tree.body[0].value.value, str):
+                return tree.body[0].value.value
+
+        return ''
+    except (SyntaxError, AttributeError):
+        # If code has syntax errors or unexpected structure, return empty string
+        return ''
 
 
 class ValidationResult:

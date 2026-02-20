@@ -59,7 +59,29 @@ class Script:
         self.validation_errors = validation_errors or []
         self.validation_timestamp = validation_timestamp
         self.is_active = is_active  # Only validated scripts can be active
-        self.docstring = docstring  # Extracted from code
+
+        # Auto-extract docstring if not provided and code is available
+        if not docstring and code:
+            from .script_validators import extract_docstring
+            self.docstring = extract_docstring(code)
+        else:
+            self.docstring = docstring or ''
+
+    def mark_as_edited(self):
+        """
+        Mark script as edited, resetting validation status and deactivating.
+
+        This enforces the lifecycle rule: editing a validated script requires
+        re-validation before it can be activated again.
+        """
+        self.validation_status = 'draft'
+        self.validation_errors = []
+        self.validation_timestamp = None
+        self.is_active = False
+
+        # Re-extract docstring from current code
+        from .script_validators import extract_docstring
+        self.docstring = extract_docstring(self.code)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -279,14 +301,35 @@ class ScriptsManager:
         return scripts
 
     def update_script(self, script: Script) -> Script:
-        """Update an existing script."""
+        """
+        Update an existing script.
+
+        Note: This enforces the lifecycle rule - if code has changed,
+        the script is marked as edited (validation reset, deactivated).
+        Caller should check if validation_status changed from validated→draft.
+        """
         script.updated_at = time.time()
+
+        # Mark as edited if code changed (resets validation & deactivates)
+        # This is already done by mark_as_edited() if caller called it,
+        # but we auto-detect here for safety
         cur = self.conn.cursor()
+        existing_row = cur.execute(
+            "SELECT code FROM scripts WHERE id = ?",
+            (script.id,)
+        ).fetchone()
+
+        if existing_row and existing_row[0] != script.code:
+            # Code changed - enforce lifecycle rule
+            script.mark_as_edited()
+
         cur.execute(
             """
             UPDATE scripts
             SET name = ?, description = ?, language = ?, category = ?,
-                code = ?, parameters = ?, tags = ?, updated_at = ?
+                code = ?, parameters = ?, tags = ?, updated_at = ?,
+                validation_status = ?, validation_errors = ?,
+                validation_timestamp = ?, is_active = ?, docstring = ?
             WHERE id = ?
             """,
             (
@@ -298,6 +341,11 @@ class ScriptsManager:
                 json.dumps(script.parameters),
                 json.dumps(script.tags),
                 script.updated_at,
+                script.validation_status,
+                json.dumps(script.validation_errors),
+                script.validation_timestamp,
+                1 if script.is_active else 0,
+                script.docstring,
                 script.id
             )
         )
