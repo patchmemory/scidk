@@ -510,6 +510,7 @@
       </div>
       <div class="editor-controls">
         <button class="btn btn-sm" id="plugin-palette-btn">📦 Snippets</button>
+        <button class="btn btn-sm" id="clone-script-btn" disabled style="display: none;">📋 Clone</button>
         <button class="btn btn-sm" id="validate-script-btn" disabled>🔍 Validate</button>
         <button class="btn btn-sm" id="activate-script-btn" disabled style="display: none;">✅ Activate</button>
         <button class="btn btn-sm" id="deactivate-script-btn" disabled style="display: none;">⏸ Deactivate</button>
@@ -813,9 +814,9 @@ function displayScript(script) {
   langSelect.value = script.language;
   updateEditorMode(script.language);
 
-  // Set code
+  // Set code - always allow editing (builtins can be cloned)
   codeMirrorEditor.setValue(script.code);
-  codeMirrorEditor.setOption('readOnly', script.category === 'builtin');
+  codeMirrorEditor.setOption('readOnly', false);
 
   // Update parameters
   if (script.parameters && script.parameters.length > 0) {
@@ -824,11 +825,32 @@ function displayScript(script) {
     document.getElementById('parameters-section').style.display = 'none';
   }
 
-  // Update buttons
+  // Update buttons based on whether it's builtin
+  const isBuiltin = script.category === 'builtin' || script.category === 'analyses/builtin';
+
   document.getElementById('run-script-btn').disabled = false;
-  document.getElementById('save-script-btn').disabled = script.category === 'builtin';
-  document.getElementById('delete-script-btn').disabled = script.category === 'builtin';
-  document.getElementById('validate-script-btn').disabled = script.category === 'builtin';
+
+  // Show Clone button for builtins, hide Save/Delete/Validate
+  const cloneBtn = document.getElementById('clone-script-btn');
+  const saveBtn = document.getElementById('save-script-btn');
+  const deleteBtn = document.getElementById('delete-script-btn');
+  const validateBtn = document.getElementById('validate-script-btn');
+
+  if (isBuiltin) {
+    cloneBtn.style.display = 'inline-block';
+    cloneBtn.disabled = false;
+    saveBtn.style.display = 'none';
+    deleteBtn.style.display = 'none';
+    validateBtn.style.display = 'none';
+  } else {
+    cloneBtn.style.display = 'none';
+    saveBtn.style.display = 'inline-block';
+    saveBtn.disabled = false;
+    deleteBtn.style.display = 'inline-block';
+    deleteBtn.disabled = false;
+    validateBtn.style.display = 'inline-block';
+    validateBtn.disabled = false;
+  }
 
   document.getElementById('editor-status').textContent = 'Ready';
   document.getElementById('editor-status').className = 'editor-status';
@@ -1075,6 +1097,42 @@ async function deactivateScript() {
     statusEl.textContent = 'Deactivation error';
     statusEl.className = 'editor-status error';
     window.toast('Error deactivating script: ' + error.message, 'error');
+  }
+}
+
+// Clone script (create custom copy of builtin)
+async function cloneScript() {
+  if (!currentScript) return;
+
+  const newName = prompt('Enter name for cloned script:', currentScript.name + ' (Custom)');
+  if (!newName) return;
+
+  try {
+    const response = await fetch('/api/scripts/scripts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: newName,
+        description: currentScript.description + ' (cloned from builtin)',
+        language: currentScript.language,
+        category: 'custom',
+        code: codeMirrorEditor.getValue(),
+        parameters: currentScript.parameters,
+        tags: [...currentScript.tags, 'cloned']
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      window.toast('Script cloned successfully!', 'success');
+      await loadScripts();
+      await loadScript(data.script.id);
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    window.toast('Error cloning script: ' + error.message, 'error');
   }
 }
 
@@ -1376,6 +1434,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Validate button
   document.getElementById('validate-script-btn').addEventListener('click', validateScript);
+
+  // Clone button
+  document.getElementById('clone-script-btn').addEventListener('click', cloneScript);
 
   // Activate/Deactivate buttons
   document.getElementById('activate-script-btn').addEventListener('click', activateScript);
