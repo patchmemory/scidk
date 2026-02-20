@@ -596,6 +596,23 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 17)
             version = 17
 
+        # v18: Add validation and activation columns for Script Validation & Plugin Architecture
+        if version < 18:
+            # Add validation status and activation columns
+            cur.execute("ALTER TABLE scripts ADD COLUMN validation_status TEXT;")
+            cur.execute("ALTER TABLE scripts ADD COLUMN validation_timestamp REAL;")
+            cur.execute("ALTER TABLE scripts ADD COLUMN validation_errors TEXT;")
+            cur.execute("ALTER TABLE scripts ADD COLUMN is_active INTEGER DEFAULT 0;")
+            cur.execute("ALTER TABLE scripts ADD COLUMN docstring TEXT;")
+
+            # Create index for active scripts
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scripts_validation_status ON scripts(validation_status);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scripts_is_active ON scripts(is_active);")
+
+            conn.commit()
+            _set_version(conn, 18)
+            version = 18
+
         return version
     finally:
         if own:
