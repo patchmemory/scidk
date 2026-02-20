@@ -1275,17 +1275,26 @@ function switchResultsTab(tab) {
   const contentEl = document.getElementById('results-content');
 
   if (tab === 'table') {
-    contentEl.querySelector('.results-table')?.parentElement.style.display = 'block';
-    contentEl.querySelector('.results-chart-container')?.style.display = 'none';
-    contentEl.querySelector('.validation-results')?.style.display = 'none';
+    const table = contentEl.querySelector('.results-table');
+    if (table && table.parentElement) table.parentElement.style.display = 'block';
+    const chart = contentEl.querySelector('.results-chart-container');
+    if (chart) chart.style.display = 'none';
+    const validation = contentEl.querySelector('.validation-results');
+    if (validation) validation.style.display = 'none';
   } else if (tab === 'chart') {
-    contentEl.querySelector('.results-table')?.parentElement.style.display = 'none';
-    contentEl.querySelector('.results-chart-container')?.style.display = 'block';
-    contentEl.querySelector('.validation-results')?.style.display = 'none';
+    const table = contentEl.querySelector('.results-table');
+    if (table && table.parentElement) table.parentElement.style.display = 'none';
+    const chart = contentEl.querySelector('.results-chart-container');
+    if (chart) chart.style.display = 'block';
+    const validation = contentEl.querySelector('.validation-results');
+    if (validation) validation.style.display = 'none';
   } else if (tab === 'validation') {
-    contentEl.querySelector('.results-table')?.parentElement.style.display = 'none';
-    contentEl.querySelector('.results-chart-container')?.style.display = 'none';
-    contentEl.querySelector('.validation-results')?.style.display = 'block';
+    const table = contentEl.querySelector('.results-table');
+    if (table && table.parentElement) table.parentElement.style.display = 'none';
+    const chart = contentEl.querySelector('.results-chart-container');
+    if (chart) chart.style.display = 'none';
+    const validation = contentEl.querySelector('.validation-results');
+    if (validation) validation.style.display = 'block';
   }
 }
 
