@@ -274,6 +274,7 @@
     width: 100%;
     border-collapse: collapse;
     font-size: 0.9em;
+    table-layout: fixed;
   }
 
   .results-table th,
@@ -281,6 +282,10 @@
     padding: 0.5rem;
     text-align: left;
     border-bottom: 1px solid #eee;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    position: relative;
   }
 
   .results-table th {
@@ -288,6 +293,44 @@
     font-weight: 600;
     position: sticky;
     top: 0;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .results-table th:hover {
+    background: #f0f0f0;
+  }
+
+  .results-table th .sort-indicator {
+    margin-left: 0.25rem;
+    font-size: 0.7em;
+    color: #999;
+  }
+
+  .results-table th.sorted-asc .sort-indicator::after {
+    content: '↑';
+    color: #333;
+  }
+
+  .results-table th.sorted-desc .sort-indicator::after {
+    content: '↓';
+    color: #333;
+  }
+
+  .results-table th .resize-handle {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 5px;
+    cursor: col-resize;
+    user-select: none;
+    z-index: 1;
+  }
+
+  .results-table th .resize-handle:hover,
+  .results-table th .resize-handle.resizing {
+    background: #007bff;
   }
 
   .results-chart-container {
@@ -896,9 +939,16 @@ function getTimeAgo(timestamp) {
 // Render parameter inputs
 function renderParameters(parameters) {
   const section = document.getElementById('parameters-section');
-  let html = '<h4 style="margin: 0 0 0.75rem 0; font-size: 0.9em;">Parameters:</h4>';
+  const isBuiltin = currentScript?.category === 'builtin' || currentScript?.category === 'analyses/builtin';
 
-  parameters.forEach(param => {
+  let html = `
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+      <h4 style="margin: 0; font-size: 0.9em;">Parameters:</h4>
+      ${!isBuiltin ? '<button type="button" onclick="toggleEditParameterLabels()" class="btn-secondary" id="edit-labels-btn" style="font-size: 0.8em; padding: 0.25rem 0.5rem;">Edit Labels</button>' : ''}
+    </div>
+  `;
+
+  parameters.forEach((param, index) => {
     const label = param.label || param.name;
     const varName = `$${param.name}`;
     const tooltip = `Query variable: ${varName}`;
@@ -906,7 +956,10 @@ function renderParameters(parameters) {
     html += `
       <div class="parameter-row">
         <label title="${tooltip}">
-          ${label}
+          <span class="param-label"
+                data-param-index="${index}"
+                data-param-name="${param.name}"
+                data-original-label="${label}">${label}</span>
           <span style="color: #888; font-size: 0.85em; font-family: monospace;">${varName}</span>:
         </label>
         <input
@@ -923,6 +976,95 @@ function renderParameters(parameters) {
 
   section.innerHTML = html;
   section.style.display = 'block';
+  window.parameterLabelsEditMode = false;
+}
+
+// Toggle parameter label editing mode
+window.toggleEditParameterLabels = function() {
+  const btn = document.getElementById('edit-labels-btn');
+  const labels = document.querySelectorAll('.param-label');
+
+  window.parameterLabelsEditMode = !window.parameterLabelsEditMode;
+
+  if (window.parameterLabelsEditMode) {
+    btn.textContent = 'Save Labels';
+    btn.classList.add('btn-primary');
+    btn.classList.remove('btn-secondary');
+
+    labels.forEach(label => {
+      label.contentEditable = 'true';
+      label.style.border = '1px dashed #007bff';
+      label.style.padding = '2px 4px';
+      label.style.borderRadius = '3px';
+      label.style.cursor = 'text';
+    });
+  } else {
+    // Save mode
+    btn.textContent = 'Edit Labels';
+    btn.classList.remove('btn-primary');
+    btn.classList.add('btn-secondary');
+
+    labels.forEach(label => {
+      label.contentEditable = 'false';
+      label.style.border = 'none';
+      label.style.padding = '0';
+      label.style.cursor = 'default';
+    });
+
+    saveParameterLabels();
+  }
+}
+
+// Save parameter label changes
+async function saveParameterLabels() {
+  if (!currentScript) return;
+
+  const labels = document.querySelectorAll('.param-label');
+  const updatedParameters = [...currentScript.parameters];
+  let hasChanges = false;
+
+  labels.forEach(label => {
+    const index = parseInt(label.dataset.paramIndex);
+    const newLabel = label.textContent.trim();
+    const originalLabel = label.dataset.originalLabel;
+
+    if (newLabel !== originalLabel && newLabel !== '') {
+      updatedParameters[index].label = newLabel;
+      hasChanges = true;
+    }
+  });
+
+  if (!hasChanges) return;
+
+  try {
+    const response = await fetch(`/api/scripts/scripts/${currentScript.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: currentScript.name,
+        description: currentScript.description,
+        code: codeMirrorEditor.getValue(),
+        parameters: updatedParameters,
+        tags: currentScript.tags
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      currentScript.parameters = updatedParameters;
+      window.toast('Parameter labels saved successfully', 'success');
+
+      // Update original labels
+      labels.forEach(label => {
+        label.dataset.originalLabel = label.textContent.trim();
+      });
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    window.toast('Error saving parameter labels: ' + error.message, 'error');
+  }
 }
 
 // Update editor mode based on language
@@ -1258,23 +1400,196 @@ function renderResultsTable(results) {
 
   const keys = Object.keys(results[0]);
 
+  // Store results for sorting
+  window.currentTableData = results;
+  window.currentTableKeys = keys;
+  window.currentSortColumn = null;
+  window.currentSortDirection = 'asc';
+
   let html = '<table class="results-table"><thead><tr>';
-  keys.forEach(key => {
-    html += `<th>${key}</th>`;
+  keys.forEach((key, index) => {
+    html += `
+      <th data-column="${key}" data-index="${index}">
+        <span class="column-name">${key}</span>
+        <span class="sort-indicator"></span>
+        <div class="resize-handle"></div>
+      </th>
+    `;
   });
-  html += '</tr></thead><tbody>';
+  html += '</tr></thead><tbody id="table-body">';
 
   results.forEach(row => {
     html += '<tr>';
     keys.forEach(key => {
       const value = row[key];
-      html += `<td>${value !== null && value !== undefined ? value : '-'}</td>`;
+      html += `<td title="${value !== null && value !== undefined ? value : '-'}">${value !== null && value !== undefined ? value : '-'}</td>`;
     });
     html += '</tr>';
   });
 
   html += '</tbody></table>';
   contentEl.innerHTML = html;
+
+  // Initialize table features
+  initializeTableSorting();
+  initializeColumnResizing();
+  restoreColumnWidths();
+}
+
+// Initialize table sorting
+function initializeTableSorting() {
+  const table = document.querySelector('.results-table');
+  if (!table) return;
+
+  const headers = table.querySelectorAll('th');
+  headers.forEach(header => {
+    header.addEventListener('click', (e) => {
+      // Don't sort if clicking on resize handle
+      if (e.target.classList.contains('resize-handle')) return;
+
+      const column = header.dataset.column;
+      sortTable(column);
+    });
+  });
+}
+
+// Sort table by column
+function sortTable(column) {
+  if (!window.currentTableData) return;
+
+  const headers = document.querySelectorAll('.results-table th');
+
+  // Update sort direction
+  if (window.currentSortColumn === column) {
+    window.currentSortDirection = window.currentSortDirection === 'asc' ? 'desc' : 'asc';
+  } else {
+    window.currentSortColumn = column;
+    window.currentSortDirection = 'asc';
+  }
+
+  // Remove sort indicators from all headers
+  headers.forEach(h => {
+    h.classList.remove('sorted-asc', 'sorted-desc');
+  });
+
+  // Add sort indicator to current column
+  const currentHeader = Array.from(headers).find(h => h.dataset.column === column);
+  if (currentHeader) {
+    currentHeader.classList.add(`sorted-${window.currentSortDirection}`);
+  }
+
+  // Sort data
+  const sortedData = [...window.currentTableData].sort((a, b) => {
+    let aVal = a[column];
+    let bVal = b[column];
+
+    // Handle null/undefined
+    if (aVal === null || aVal === undefined) return 1;
+    if (bVal === null || bVal === undefined) return -1;
+
+    // Detect and sort numbers
+    if (!isNaN(aVal) && !isNaN(bVal)) {
+      aVal = parseFloat(aVal);
+      bVal = parseFloat(bVal);
+      return window.currentSortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+    }
+
+    // Sort strings
+    aVal = String(aVal).toLowerCase();
+    bVal = String(bVal).toLowerCase();
+    if (window.currentSortDirection === 'asc') {
+      return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+    } else {
+      return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
+    }
+  });
+
+  // Re-render table body
+  const tbody = document.getElementById('table-body');
+  if (!tbody) return;
+
+  let html = '';
+  sortedData.forEach(row => {
+    html += '<tr>';
+    window.currentTableKeys.forEach(key => {
+      const value = row[key];
+      html += `<td title="${value !== null && value !== undefined ? value : '-'}">${value !== null && value !== undefined ? value : '-'}</td>`;
+    });
+    html += '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+// Initialize column resizing
+function initializeColumnResizing() {
+  const table = document.querySelector('.results-table');
+  if (!table) return;
+
+  const handles = table.querySelectorAll('.resize-handle');
+  let currentHandle = null;
+  let startX = 0;
+  let startWidth = 0;
+
+  handles.forEach(handle => {
+    handle.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      currentHandle = handle;
+      const th = handle.parentElement;
+      startX = e.pageX;
+      startWidth = th.offsetWidth;
+      handle.classList.add('resizing');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    });
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!currentHandle) return;
+
+    const th = currentHandle.parentElement;
+    const diff = e.pageX - startX;
+    const newWidth = Math.max(50, startWidth + diff);
+    th.style.width = newWidth + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (currentHandle) {
+      currentHandle.classList.remove('resizing');
+      const th = currentHandle.parentElement;
+      saveColumnWidth(th.dataset.column, th.offsetWidth);
+      currentHandle = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+  });
+}
+
+// Save column width to localStorage
+function saveColumnWidth(column, width) {
+  const scriptId = currentScript?.id;
+  if (!scriptId) return;
+
+  const key = `table-column-widths-${scriptId}`;
+  const widths = JSON.parse(localStorage.getItem(key) || '{}');
+  widths[column] = width;
+  localStorage.setItem(key, JSON.stringify(widths));
+}
+
+// Restore column widths from localStorage
+function restoreColumnWidths() {
+  const scriptId = currentScript?.id;
+  if (!scriptId) return;
+
+  const key = `table-column-widths-${scriptId}`;
+  const widths = JSON.parse(localStorage.getItem(key) || '{}');
+
+  const headers = document.querySelectorAll('.results-table th');
+  headers.forEach(th => {
+    const column = th.dataset.column;
+    if (widths[column]) {
+      th.style.width = widths[column] + 'px';
+    }
+  });
 }
 
 // Plugin palette functions
