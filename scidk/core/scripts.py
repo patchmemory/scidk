@@ -547,7 +547,10 @@ class ScriptsManager:
                 'parameters': parameters,
                 'neo4j_driver': neo4j_driver
             }
+            import sys
+            print(f"DEBUG: Calling run(context) with parameters: {parameters}", file=sys.stderr)
             result = global_namespace['run'](context)
+            print(f"DEBUG: run() returned: {result}", file=sys.stderr)
 
             # Extract data from result
             if isinstance(result, dict):

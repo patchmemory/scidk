@@ -1784,6 +1784,7 @@ async function runScript() {
 
   // Collect and validate parameters
   const parameters = collectParameterValues();
+  console.log('Collected parameters:', parameters);
   const validationErrors = validateParameterValues(currentScript.parameters || [], parameters);
 
   if (validationErrors.length > 0) {
