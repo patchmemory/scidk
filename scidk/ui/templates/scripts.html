@@ -899,13 +899,22 @@ function renderParameters(parameters) {
   let html = '<h4 style="margin: 0 0 0.75rem 0; font-size: 0.9em;">Parameters:</h4>';
 
   parameters.forEach(param => {
+    const label = param.label || param.name;
+    const varName = `$${param.name}`;
+    const tooltip = `Query variable: ${varName}`;
+
     html += `
       <div class="parameter-row">
-        <label>${param.label || param.name}:</label>
+        <label title="${tooltip}">
+          ${label}
+          <span style="color: #888; font-size: 0.85em; font-family: monospace;">${varName}</span>:
+        </label>
         <input
           type="${param.type === 'integer' ? 'number' : 'text'}"
           data-param-name="${param.name}"
           value="${param.default || ''}"
+          placeholder="${param.default || ''}"
+          title="${tooltip}"
           ${param.required ? 'required' : ''}
         >
       </div>
