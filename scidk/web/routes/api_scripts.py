@@ -31,16 +31,40 @@ def _get_scripts_manager():
 
 
 def _get_neo4j_driver():
-    """Get Neo4j driver if available."""
+    """Get Neo4j driver using same connection params as Chat and Maps.
+
+    Uses get_neo4j_params() to check Settings UI first, then environment variables.
+    Returns driver only (for backward compatibility).
+    """
+    driver, _database = _get_neo4j_driver_and_database()
+    return driver
+
+
+def _get_neo4j_driver_and_database():
+    """Get Neo4j driver and database name.
+
+    Uses get_neo4j_params() to check Settings UI first, then environment variables.
+    Returns tuple of (driver, database).
+    """
     try:
-        ext = current_app.extensions.get('scidk')
-        if ext and 'graph' in ext:
-            graph = ext['graph']
-            if hasattr(graph, 'driver') and graph.driver:
-                return graph.driver
-    except Exception:
-        pass
-    return None
+        from scidk.services.neo4j_client import get_neo4j_params
+        from neo4j import GraphDatabase
+
+        uri, user, pwd, database, auth_mode = get_neo4j_params(current_app)
+
+        if not uri:
+            return None, None
+
+        # Create auth based on auth mode
+        auth = None if auth_mode == 'none' else (user, pwd)
+
+        # Create and return driver
+        driver = GraphDatabase.driver(uri, auth=auth)
+        return driver, database
+
+    except Exception as e:
+        logger.warning(f"Failed to create Neo4j driver: {e}")
+        return None, None
 
 
 def _get_neo4j_config():
@@ -285,12 +309,13 @@ def run_script(script_id: str):
         parameters = data.get('parameters', {})
 
         manager = _get_scripts_manager()
-        neo4j_driver = _get_neo4j_driver()
+        neo4j_driver, neo4j_database = _get_neo4j_driver_and_database()
 
         result = manager.execute_script(
             script_id=script_id,
             parameters=parameters,
             neo4j_driver=neo4j_driver,
+            neo4j_database=neo4j_database,
             executed_by=_get_current_user()
         )
 

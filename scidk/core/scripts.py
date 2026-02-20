@@ -389,6 +389,7 @@ class ScriptsManager:
         script_id: str,
         parameters: Optional[Dict[str, Any]] = None,
         neo4j_driver=None,
+        neo4j_database: Optional[str] = None,
         executed_by: Optional[str] = None
     ) -> ScriptExecution:
         """Execute a script and return the result."""
@@ -403,7 +404,7 @@ class ScriptsManager:
         try:
             # Execute based on language
             if script.language == 'cypher':
-                results = self._execute_cypher(script, parameters, neo4j_driver)
+                results = self._execute_cypher(script, parameters, neo4j_driver, neo4j_database)
             elif script.language == 'python':
                 results = self._execute_python(script, parameters, neo4j_driver)
             else:
@@ -442,7 +443,8 @@ class ScriptsManager:
         self,
         script: Script,
         parameters: Dict[str, Any],
-        neo4j_driver
+        neo4j_driver,
+        neo4j_database: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Execute a Cypher query."""
         if not neo4j_driver:
@@ -453,9 +455,17 @@ class ScriptsManager:
                 "(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)."
             )
 
-        with neo4j_driver.session() as session:
+        # Create session with database if specified
+        if neo4j_database:
+            session = neo4j_driver.session(database=neo4j_database)
+        else:
+            session = neo4j_driver.session()
+
+        try:
             result = session.run(script.code, parameters)
             return [dict(record) for record in result]
+        finally:
+            session.close()
 
     def _execute_python(
         self,
