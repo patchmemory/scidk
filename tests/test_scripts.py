@@ -313,7 +313,7 @@ def test_execute_cypher_script(temp_db):
     assert result.status == 'success'
     assert len(result.results) == 1
     assert result.results[0]['count'] == 42
-    assert result.execution_time_ms > 0
+    assert result.execution_time_ms >= 0  # Can be 0ms for very fast queries
 
 
 def test_execute_python_script(temp_db):
@@ -525,7 +525,7 @@ def test_builtin_scripts():
         assert script.id.startswith('builtin-')
         assert script.name
         assert script.language in ['cypher', 'python']
-        assert script.category == 'builtin'
+        assert script.category == 'analyses/builtin'
         assert script.code
         assert isinstance(script.tags, list)
 
