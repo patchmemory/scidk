@@ -648,20 +648,23 @@
   }
 
   .parameter-field {
-    margin-bottom: 1rem;
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.65rem;
   }
 
   .parameter-field label {
-    display: block;
-    font-size: 0.9em;
+    font-size: 0.85em;
     font-weight: 500;
-    margin-bottom: 0.25rem;
-    color: #333;
+    color: #555;
+    text-align: right;
+    padding-right: 0.5rem;
   }
 
   .parameter-field label .required {
     color: #dc2626;
-    margin-left: 0.25rem;
   }
 
   .parameter-field input[type="text"],
@@ -669,35 +672,42 @@
   .parameter-field select,
   .parameter-field textarea {
     width: 100%;
-    max-width: 400px;
-    padding: 0.5rem;
+    max-width: 350px;
+    padding: 0.4rem 0.6rem;
     border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 0.9em;
+    border-radius: 3px;
+    font-size: 0.85em;
     font-family: inherit;
   }
 
   .parameter-field input[type="checkbox"] {
     width: auto;
-    margin-right: 0.5rem;
+    margin: 0;
   }
 
   .parameter-field textarea {
     resize: vertical;
-    min-height: 80px;
+    min-height: 60px;
   }
 
   .field-description {
-    font-size: 0.85em;
-    color: #666;
-    margin-top: 0.25rem;
+    grid-column: 2;
+    font-size: 0.75em;
+    color: #888;
+    margin-top: -0.4rem;
+    margin-bottom: 0.2rem;
   }
 
   .field-error {
-    font-size: 0.85em;
+    grid-column: 2;
+    font-size: 0.75em;
     color: #dc2626;
-    margin-top: 0.25rem;
     font-weight: 500;
+  }
+
+  /* Special layout for checkbox */
+  .parameter-field.checkbox-field {
+    grid-template-columns: 140px auto 1fr;
   }
 
   .parameter-row input {
@@ -1432,17 +1442,14 @@ function renderParameterField(param) {
       break;
 
     case 'boolean':
-      inputHtml = `<label style="display: flex; align-items: center; font-weight: normal;">
-                   <input type="checkbox" id="${fieldId}" name="${param.name}"
-                   ${param.default ? 'checked' : ''} />
-                   <span style="margin-left: 0.5rem;">${escapeHtml(param.label || param.name)}</span>
-                   </label>`;
-      // For boolean, we show label inline with checkbox, so skip the outer label
+      // For checkbox, use special 3-column layout
       return `
-        <div class="parameter-field">
-          ${inputHtml}
-          ${description}
-          <div class="field-error" style="display:none;"></div>
+        <div class="parameter-field checkbox-field">
+          <label style="text-align: right;">${escapeHtml(param.label || param.name)}</label>
+          <input type="checkbox" id="${fieldId}" name="${param.name}" ${param.default ? 'checked' : ''} />
+          <div style="font-size: 0.75em; color: #888;">${param.description || ''}</div>
+          <div></div>
+          <div class="field-error" style="display:none; grid-column: 2 / 4;"></div>
         </div>
       `;
 
@@ -1467,13 +1474,12 @@ function renderParameterField(param) {
 
   return `
     <div class="parameter-field">
-      <label for="${fieldId}">
-        ${escapeHtml(param.label || param.name)}
-        ${required}
-      </label>
-      ${inputHtml}
-      ${description}
-      <div class="field-error" style="display:none;"></div>
+      <label for="${fieldId}">${escapeHtml(param.label || param.name)}${required}</label>
+      <div>
+        ${inputHtml}
+        ${description}
+        <div class="field-error" style="display:none;"></div>
+      </div>
     </div>
   `;
 }
@@ -2360,18 +2366,28 @@ function closePluginPalette() {
 // Parameter Editor Functions
 let parameterEditorData = [];
 
-function openParameterEditor() {
-  if (!currentScript) return;
+window.openParameterEditor = function() {
+  console.log('openParameterEditor called', currentScript);
+  if (!currentScript) {
+    console.error('No current script');
+    return;
+  }
 
   // Load current parameters
   parameterEditorData = JSON.parse(JSON.stringify(currentScript.parameters || []));
+  console.log('Loaded parameters:', parameterEditorData);
 
   // Render parameter editor
   renderParameterEditor();
 
   // Show modal
   const modal = document.getElementById('parameter-editor-modal');
+  if (!modal) {
+    console.error('Modal not found');
+    return;
+  }
   modal.style.display = 'flex';
+  console.log('Modal opened');
 }
 
 function closeParameterEditor() {
