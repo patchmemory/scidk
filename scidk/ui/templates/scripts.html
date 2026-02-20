@@ -1518,7 +1518,10 @@ function renderParameterField(param) {
       // For checkbox, use special 3-column layout
       return `
         <div class="parameter-field checkbox-field">
-          <label style="text-align: right;">${escapeHtml(param.label || param.name)}</label>
+          <label style="text-align: right;">
+            ${escapeHtml(param.label || param.name)}
+            <span style="font-size: 0.75em; color: #999; font-weight: normal; margin-left: 0.25rem;">(${param.name})</span>
+          </label>
           <input type="checkbox" id="${fieldId}" name="${param.name}" ${param.default ? 'checked' : ''} />
           <div style="font-size: 0.75em; color: #888;">${param.description || ''}</div>
           <div></div>
@@ -1547,7 +1550,10 @@ function renderParameterField(param) {
 
   return `
     <div class="parameter-field">
-      <label for="${fieldId}">${escapeHtml(param.label || param.name)}${required}</label>
+      <label for="${fieldId}">
+        ${escapeHtml(param.label || param.name)}${required}
+        <span style="font-size: 0.75em; color: #999; font-weight: normal; margin-left: 0.25rem;">(${param.name})</span>
+      </label>
       <div>
         ${inputHtml}
         ${description}
@@ -2638,8 +2644,14 @@ async function saveParameters() {
       window.toast('Parameters saved successfully!', 'success');
       closeParameterEditor();
 
-      // Re-render parameter form
-      renderParameters(currentScript.parameters);
+      // Reload script from server to get fresh data
+      const scriptResponse = await fetch(`/api/scripts/scripts/${currentScript.id}`);
+      const scriptData = await scriptResponse.json();
+      if (scriptData.status === 'ok') {
+        currentScript = scriptData.script;
+        // Re-render parameter form with fresh data
+        renderParameters(currentScript.parameters);
+      }
     } else {
       throw new Error(data.message);
     }
