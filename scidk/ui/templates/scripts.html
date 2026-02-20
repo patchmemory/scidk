@@ -3845,6 +3845,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Initialize panel resizing
   initializePanelResizing();
+
+  // Handle deep links from other pages
+  const urlParams = new URLSearchParams(window.location.search);
+
+  // Load specific script if ?script=<id> provided
+  if (urlParams.has('script')) {
+    const scriptId = urlParams.get('script');
+    // Wait for scripts to load, then open the specified script
+    setTimeout(() => {
+      const script = allScripts.find(s => s.id === scriptId);
+      if (script) {
+        selectScript(scriptId);
+      } else {
+        showToast(`Script "${scriptId}" not found`, 'error');
+      }
+    }, 500);
+  }
+
+  // Create new link script if ?new=link provided
+  if (urlParams.has('new') && urlParams.get('new') === 'link') {
+    // Wait for scripts to load, then open new script modal with links category
+    setTimeout(() => {
+      openNewScriptModal();
+      document.getElementById('new-script-category').value = 'links';
+    }, 300);
+  }
 });
 </script>
 {% endblock %}
