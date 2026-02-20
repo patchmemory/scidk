@@ -1994,6 +1994,93 @@ async function cloneScript() {
   }
 }
 
+// Save script changes
+async function saveScript() {
+  if (!currentScript) return;
+
+  const statusEl = document.getElementById('editor-status');
+
+  statusEl.textContent = 'Saving...';
+  statusEl.className = 'editor-status running';
+
+  try {
+    const response = await fetch(`/api/scripts/scripts/${currentScript.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: currentScript.name,
+        description: currentScript.description,
+        code: codeMirrorEditor.getValue(),  // Get current code from editor
+        parameters: currentScript.parameters,
+        tags: currentScript.tags
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      // Update currentScript with saved data
+      currentScript = data.script;
+
+      statusEl.textContent = '✅ Saved';
+      statusEl.className = 'editor-status success';
+      window.toast('Script saved successfully!', 'success');
+
+      // Reload script list to reflect any changes
+      await loadScripts();
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    statusEl.textContent = 'Save error';
+    statusEl.className = 'editor-status error';
+    window.toast('Error saving script: ' + error.message, 'error');
+  }
+}
+
+// Delete script
+async function deleteScript() {
+  if (!currentScript) return;
+
+  if (!confirm(`Are you sure you want to delete "${currentScript.name}"? This cannot be undone.`)) {
+    return;
+  }
+
+  const statusEl = document.getElementById('editor-status');
+
+  statusEl.textContent = 'Deleting...';
+  statusEl.className = 'editor-status running';
+
+  try {
+    const response = await fetch(`/api/scripts/scripts/${currentScript.id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      window.toast('Script deleted successfully!', 'success');
+
+      // Clear editor
+      currentScript = null;
+      codeMirrorEditor.setValue('');
+      document.getElementById('script-name').textContent = '';
+      document.getElementById('script-description').textContent = '';
+      document.getElementById('parameters-section').style.display = 'none';
+
+      // Reload script list
+      await loadScripts();
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    statusEl.textContent = 'Delete error';
+    statusEl.className = 'editor-status error';
+    window.toast('Error deleting script: ' + error.message, 'error');
+  }
+}
+
 // Update activation button visibility
 function updateActivationButtons() {
   const activateBtn = document.getElementById('activate-script-btn');
@@ -3075,6 +3162,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Run button
   document.getElementById('run-script-btn').addEventListener('click', runScript);
+
+  // Save button
+  document.getElementById('save-script-btn').addEventListener('click', saveScript);
+
+  // Delete button
+  document.getElementById('delete-script-btn').addEventListener('click', deleteScript);
 
   // Validate button
   document.getElementById('validate-script-btn').addEventListener('click', validateScript);
