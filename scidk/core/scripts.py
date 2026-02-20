@@ -521,12 +521,12 @@ class ScriptsManager:
         parameters: Dict[str, Any],
         neo4j_driver
     ) -> List[Dict[str, Any]]:
-        """Execute a Python script."""
+        """Execute a Python script with category-specific context."""
         # Prepare safe execution environment
         import pandas as pd
         from pathlib import Path
 
-        # Global namespace for script execution
+        # Global namespace for script execution (common to all categories)
         global_namespace = {
             'parameters': parameters,
             'neo4j_driver': neo4j_driver,
@@ -537,53 +537,115 @@ class ScriptsManager:
             'Path': Path  # Provide Path class for convenience
         }
 
-        # Execute script
+        # Execute script code
         exec(script.code, global_namespace)
 
-        # Check if script defines a run() function (new plugin pattern)
-        if 'run' in global_namespace and callable(global_namespace['run']):
-            # New pattern: call run(context) and extract data
-            context = {
-                'parameters': parameters,
-                'neo4j_driver': neo4j_driver
-            }
-            import sys
-            print(f"DEBUG: Calling run(context) with parameters: {parameters}", file=sys.stderr)
-            result = global_namespace['run'](context)
-            print(f"DEBUG: run() returned: {result}", file=sys.stderr)
+        # Determine execution pattern based on script category
+        category = script.category.lower() if script.category else ''
 
-            # Extract data from result
-            if isinstance(result, dict):
-                # Check for 'data' key (standard pattern)
-                if 'data' in result:
-                    data = result['data']
-                    if isinstance(data, list):
-                        results = data
-                    elif isinstance(data, pd.DataFrame):
-                        results = data.to_dict('records')
+        # INTERPRETER PATTERN: interpret(file_path: Path) -> dict
+        if category == 'interpreters' or 'interpreter' in category:
+            if 'interpret' in global_namespace and callable(global_namespace['interpret']):
+                # Get file_path from parameters
+                file_path_str = parameters.get('file_path', '/tmp/test.txt')
+                file_path = Path(file_path_str)
+
+                # Call interpret function
+                result = global_namespace['interpret'](file_path)
+
+                # Extract data from interpreter result: {'status': 'success|error', 'data': {...}}
+                if isinstance(result, dict):
+                    if result.get('status') == 'success' and 'data' in result:
+                        # Success: return data
+                        data = result['data']
+                        return [data] if isinstance(data, dict) else data
+                    elif result.get('status') == 'error':
+                        # Error: return error info
+                        return [result]
                     else:
-                        # Single item, wrap in list
-                        results = [data]
-                elif 'status' in result and result.get('status') == 'error':
-                    # Error result, show error message
-                    results = [{'error': result.get('error', 'Unknown error')}]
+                        # Unexpected format
+                        return [result]
                 else:
-                    # Return entire dict as single row
-                    results = [result]
-            elif isinstance(result, list):
-                results = result
-            elif isinstance(result, pd.DataFrame):
-                results = result.to_dict('records')
+                    return [{'error': f'Interpreter returned unexpected type: {type(result).__name__}'}]
             else:
-                # Unexpected return type, wrap it
-                results = [{'result': str(result)}]
-        else:
-            # Old pattern: script populates results[] array
-            results = global_namespace.get('results', [])
+                return [{'error': 'Interpreter script must define interpret(file_path) function'}]
 
-            # Convert pandas DataFrame to list of dicts if needed
-            if isinstance(results, pd.DataFrame):
-                results = results.to_dict('records')
+        # LINK PATTERN: create_links(source_nodes: list, target_nodes: list) -> list
+        elif category == 'links' or 'link' in category:
+            if 'create_links' in global_namespace and callable(global_namespace['create_links']):
+                # Get node lists from parameters
+                source_nodes = parameters.get('source_nodes', [])
+                target_nodes = parameters.get('target_nodes', [])
+
+                # Call create_links function
+                links = global_namespace['create_links'](source_nodes, target_nodes)
+
+                # Convert list of tuples/dicts to displayable format
+                if isinstance(links, list):
+                    formatted_links = []
+                    for link in links:
+                        if isinstance(link, tuple) and len(link) >= 3:
+                            # Tuple format: (source_id, target_id, rel_type, properties)
+                            formatted_links.append({
+                                'source_id': link[0],
+                                'target_id': link[1],
+                                'relationship_type': link[2],
+                                'properties': link[3] if len(link) > 3 else {}
+                            })
+                        elif isinstance(link, dict):
+                            # Already a dict
+                            formatted_links.append(link)
+                        else:
+                            formatted_links.append({'link': str(link)})
+                    return formatted_links
+                else:
+                    return [{'error': f'create_links() must return list, got: {type(links).__name__}'}]
+            else:
+                return [{'error': 'Link script must define create_links(source_nodes, target_nodes) function'}]
+
+        # PLUGIN PATTERN: run(context) OR results[] array (default)
+        else:
+            # Check if script defines a run() function (new plugin pattern)
+            if 'run' in global_namespace and callable(global_namespace['run']):
+                # New pattern: call run(context) and extract data
+                context = {
+                    'parameters': parameters,
+                    'neo4j_driver': neo4j_driver
+                }
+                result = global_namespace['run'](context)
+
+                # Extract data from result
+                if isinstance(result, dict):
+                    # Check for 'data' key (standard pattern)
+                    if 'data' in result:
+                        data = result['data']
+                        if isinstance(data, list):
+                            results = data
+                        elif isinstance(data, pd.DataFrame):
+                            results = data.to_dict('records')
+                        else:
+                            # Single item, wrap in list
+                            results = [data]
+                    elif 'status' in result and result.get('status') == 'error':
+                        # Error result, show error message
+                        results = [{'error': result.get('error', 'Unknown error')}]
+                    else:
+                        # Return entire dict as single row
+                        results = [result]
+                elif isinstance(result, list):
+                    results = result
+                elif isinstance(result, pd.DataFrame):
+                    results = result.to_dict('records')
+                else:
+                    # Unexpected return type, wrap it
+                    results = [{'result': str(result)}]
+            else:
+                # Old pattern: script populates results[] array
+                results = global_namespace.get('results', [])
+
+                # Convert pandas DataFrame to list of dicts if needed
+                if isinstance(results, pd.DataFrame):
+                    results = results.to_dict('records')
 
         return results
 

@@ -292,19 +292,55 @@ Click "Activate" → Script becomes available system-wide
 
 ## Execution Context
 
-All scripts run with these variables available:
+### Common Context (All Categories)
+
+All scripts run with these variables available in the global namespace:
 
 ```python
-parameters = {}        # Parameters passed to script
+parameters = {}        # Parameters passed to script (dict)
 neo4j_driver = None   # Database driver (if available)
-results = []          # Output list for Scripts page
-__file__              # File path (set automatically)
+results = []          # Output list for Scripts page (legacy pattern)
+__file__              # File path (set to '<script>')
 
 # Pre-imported modules
 import json
 import pandas as pd
 from pathlib import Path
-import sys
+```
+
+### Category-Specific Execution
+
+The execution pattern differs based on script category:
+
+**Plugins (default):**
+- Called with `run(context)` function
+- Context includes: `{'parameters': {...}, 'neo4j_driver': ...}`
+- Returns: dict, list, or DataFrame (auto-wrapped in SciDKData)
+
+**Interpreters:**
+- Called with `interpret(file_path)` function
+- `file_path` comes from `parameters['file_path']` (Path object)
+- Returns: `{'status': 'success'|'error', 'data': {...}}`
+
+**Links:**
+- Called with `create_links(source_nodes, target_nodes)` function
+- `source_nodes` and `target_nodes` come from `parameters` (lists of dicts)
+- Returns: list of tuples `(source_id, target_id, rel_type, properties)`
+
+Example parameter sets for testing:
+
+```python
+# Plugin parameters
+{'key': 'value', 'mode': 'test'}
+
+# Interpreter parameters
+{'file_path': '/path/to/file.csv'}
+
+# Link parameters
+{
+    'source_nodes': [{'id': 'node1', 'name': 'A'}],
+    'target_nodes': [{'id': 'node2', 'name': 'B'}]
+}
 ```
 
 ---
