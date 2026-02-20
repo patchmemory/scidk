@@ -319,18 +319,20 @@
 
   .results-table th .resize-handle {
     position: absolute;
-    right: 0;
+    right: -3px;
     top: 0;
     bottom: 0;
-    width: 5px;
+    width: 10px;
     cursor: col-resize;
     user-select: none;
-    z-index: 1;
+    z-index: 10;
+    background: transparent;
   }
 
   .results-table th .resize-handle:hover,
   .results-table th .resize-handle.resizing {
-    background: #007bff;
+    background: rgba(0, 123, 255, 0.3);
+    border-right: 2px solid #007bff;
   }
 
   .results-chart-container {
@@ -479,6 +481,57 @@
 
   .copy-snippet-btn:hover {
     background: #008855;
+  }
+
+  /* Context Menu */
+  .column-context-menu {
+    position: fixed;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    padding: 0.25rem 0;
+    z-index: 1000;
+    min-width: 150px;
+  }
+
+  .column-context-menu-item {
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background 0.1s;
+  }
+
+  .column-context-menu-item:hover {
+    background: #f0f0f0;
+  }
+
+  .column-context-menu-item.disabled {
+    color: #999;
+    cursor: not-allowed;
+  }
+
+  .column-context-menu-item.disabled:hover {
+    background: white;
+  }
+
+  /* Grouped table styling */
+  .results-table.grouped {
+    table-layout: auto;
+  }
+
+  .results-table .grouped-list {
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: monospace;
+    font-size: 0.85em;
+  }
+
+  .results-table .count-column {
+    font-weight: 600;
+    color: #00aa66;
   }
 </style>
 {% endblock %}
@@ -719,6 +772,8 @@ let currentResult = null;
 let codeMirrorEditor = null;
 let allScripts = [];
 let currentChart = null;
+let groupedByColumn = null;
+let originalTableData = null;
 
 // Initialize CodeMirror
 function initializeEditor() {
@@ -1443,12 +1498,23 @@ function initializeTableSorting() {
 
   const headers = table.querySelectorAll('th');
   headers.forEach(header => {
+    // Left click - sort
     header.addEventListener('click', (e) => {
-      // Don't sort if clicking on resize handle
-      if (e.target.classList.contains('resize-handle')) return;
+      // Don't sort if clicking on resize handle or its child elements
+      if (e.target.classList.contains('resize-handle') ||
+          e.target.closest('.resize-handle')) {
+        return;
+      }
 
       const column = header.dataset.column;
       sortTable(column);
+    });
+
+    // Right click - context menu
+    header.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const column = header.dataset.column;
+      showColumnContextMenu(e.clientX, e.clientY, column);
     });
   });
 }
@@ -1487,6 +1553,22 @@ function sortTable(column) {
     if (aVal === null || aVal === undefined) return 1;
     if (bVal === null || bVal === undefined) return -1;
 
+    // Handle arrays (for grouped data) - sort by length or first element
+    if (Array.isArray(aVal) && Array.isArray(bVal)) {
+      const aLen = aVal.length;
+      const bLen = bVal.length;
+      if (aLen !== bLen) {
+        return window.currentSortDirection === 'asc' ? aLen - bLen : bLen - aLen;
+      }
+      // If same length, compare first elements
+      aVal = aVal[0] || '';
+      bVal = bVal[0] || '';
+    } else if (Array.isArray(aVal)) {
+      aVal = aVal[0] || '';
+    } else if (Array.isArray(bVal)) {
+      bVal = bVal[0] || '';
+    }
+
     // Detect and sort numbers
     if (!isNaN(aVal) && !isNaN(bVal)) {
       aVal = parseFloat(aVal);
@@ -1513,7 +1595,19 @@ function sortTable(column) {
     html += '<tr>';
     window.currentTableKeys.forEach(key => {
       const value = row[key];
-      html += `<td title="${value !== null && value !== undefined ? value : '-'}">${value !== null && value !== undefined ? value : '-'}</td>`;
+
+      // Handle grouped data display
+      if (key === '_count') {
+        html += `<td class="count-column">${value}</td>`;
+      } else if (Array.isArray(value)) {
+        const displayValue = value.length === 0 ? '-' :
+                           value.length <= 3 ? value.join(', ') :
+                           value.slice(0, 3).join(', ') + ` (+${value.length - 3} more)`;
+        const fullValue = value.join(', ');
+        html += `<td class="grouped-list" title="${fullValue}">${displayValue}</td>`;
+      } else {
+        html += `<td title="${value !== null && value !== undefined ? value : '-'}">${value !== null && value !== undefined ? value : '-'}</td>`;
+      }
     });
     html += '</tr>';
   });
@@ -1748,6 +1842,268 @@ async function importNotebook(file) {
   }
 }
 
+// Show column context menu
+function showColumnContextMenu(x, y, column) {
+  // Remove existing menu if any
+  const existingMenu = document.querySelector('.column-context-menu');
+  if (existingMenu) existingMenu.remove();
+
+  // Create menu
+  const menu = document.createElement('div');
+  menu.className = 'column-context-menu';
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+
+  // Menu items
+  const items = [];
+
+  if (groupedByColumn === null) {
+    items.push({
+      label: `📊 Group By "${column}"`,
+      action: () => groupByColumn(column)
+    });
+  } else {
+    items.push({
+      label: '↩️ Ungroup (Show All Rows)',
+      action: () => ungroupTable()
+    });
+    if (groupedByColumn !== column) {
+      items.push({
+        label: `📊 Re-group By "${column}"`,
+        action: () => {
+          ungroupTable();
+          setTimeout(() => groupByColumn(column), 50);
+        }
+      });
+    }
+  }
+
+  items.forEach(item => {
+    const menuItem = document.createElement('div');
+    menuItem.className = 'column-context-menu-item';
+    menuItem.textContent = item.label;
+    menuItem.addEventListener('click', () => {
+      item.action();
+      menu.remove();
+    });
+    menu.appendChild(menuItem);
+  });
+
+  document.body.appendChild(menu);
+
+  // Close menu on outside click
+  const closeMenu = (e) => {
+    if (!menu.contains(e.target)) {
+      menu.remove();
+      document.removeEventListener('click', closeMenu);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', closeMenu), 0);
+}
+
+// Group table by column
+function groupByColumn(column) {
+  if (!window.currentTableData) return;
+
+  // Save original data if not already saved
+  if (!originalTableData) {
+    originalTableData = window.currentTableData;
+  }
+
+  groupedByColumn = column;
+
+  // Group data
+  const grouped = {};
+  originalTableData.forEach(row => {
+    const key = row[column];
+    if (!grouped[key]) {
+      grouped[key] = [];
+    }
+    grouped[key].push(row);
+  });
+
+  // Convert to array of grouped rows
+  const groupedData = Object.entries(grouped).map(([key, rows]) => {
+    const groupedRow = { [column]: key, _count: rows.length };
+
+    // Aggregate other columns as arrays
+    window.currentTableKeys.forEach(k => {
+      if (k !== column) {
+        const values = rows.map(r => r[k]).filter(v => v !== null && v !== undefined);
+        // Remove duplicates and limit display
+        const uniqueValues = [...new Set(values)];
+        groupedRow[k] = uniqueValues;
+      }
+    });
+
+    return groupedRow;
+  });
+
+  // Update current data
+  window.currentTableData = groupedData;
+  window.currentTableKeys = [column, '_count', ...window.currentTableKeys.filter(k => k !== column)];
+
+  // Re-render table
+  renderGroupedTable(groupedData);
+
+  window.toast(`Grouped by "${column}" - ${groupedData.length} unique values`, 'success');
+}
+
+// Ungroup table
+function ungroupTable() {
+  if (!originalTableData) return;
+
+  groupedByColumn = null;
+  window.currentTableData = originalTableData;
+  window.currentTableKeys = Object.keys(originalTableData[0]);
+  originalTableData = null;
+
+  // Re-render as normal table
+  renderResultsTable(window.currentTableData);
+
+  window.toast('Ungrouped - showing all rows', 'success');
+}
+
+// Render grouped table
+function renderGroupedTable(groupedData) {
+  const contentEl = document.getElementById('results-content');
+
+  if (groupedData.length === 0) {
+    contentEl.innerHTML = '<div class="empty-state">No results</div>';
+    return;
+  }
+
+  const keys = window.currentTableKeys;
+
+  let html = '<table class="results-table grouped"><thead><tr>';
+  keys.forEach((key, index) => {
+    const displayName = key === '_count' ? 'Count' : key;
+    html += `
+      <th data-column="${key}" data-index="${index}">
+        <span class="column-name">${displayName}</span>
+        <span class="sort-indicator"></span>
+        <div class="resize-handle"></div>
+      </th>
+    `;
+  });
+  html += '</tr></thead><tbody id="table-body">';
+
+  groupedData.forEach(row => {
+    html += '<tr>';
+    keys.forEach(key => {
+      const value = row[key];
+
+      if (key === '_count') {
+        html += `<td class="count-column">${value}</td>`;
+      } else if (Array.isArray(value)) {
+        const displayValue = value.length === 0 ? '-' :
+                           value.length <= 3 ? value.join(', ') :
+                           value.slice(0, 3).join(', ') + ` (+${value.length - 3} more)`;
+        const fullValue = value.join(', ');
+        html += `<td class="grouped-list" title="${fullValue}">${displayValue}</td>`;
+      } else {
+        html += `<td title="${value !== null && value !== undefined ? value : '-'}">${value !== null && value !== undefined ? value : '-'}</td>`;
+      }
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  contentEl.innerHTML = html;
+
+  // Re-initialize table features
+  initializeTableSorting();
+  initializeColumnResizing();
+  restoreColumnWidths();
+}
+
+// Initialize panel resizing
+function initializePanelResizing() {
+  const libraryPanel = document.getElementById('script-library');
+  const resultsPanel = document.getElementById('results-panel');
+  const libraryResizer = document.getElementById('resize-library');
+  const resultsResizer = document.getElementById('resize-results');
+  const container = document.querySelector('.scripts-container');
+
+  if (!libraryPanel || !resultsPanel || !libraryResizer || !resultsResizer || !container) {
+    console.warn('Panel resize elements not found');
+    return;
+  }
+
+  let isResizingLibrary = false;
+  let isResizingResults = false;
+  let startX = 0;
+  let startWidth = 0;
+
+  // Library panel resizing
+  libraryResizer.addEventListener('mousedown', (e) => {
+    isResizingLibrary = true;
+    startX = e.clientX;
+    startWidth = libraryPanel.offsetWidth;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  // Results panel resizing
+  resultsResizer.addEventListener('mousedown', (e) => {
+    isResizingResults = true;
+    startX = e.clientX;
+    startWidth = resultsPanel.offsetWidth;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  // Mouse move handler
+  document.addEventListener('mousemove', (e) => {
+    if (isResizingLibrary) {
+      const deltaX = e.clientX - startX;
+      const newWidth = startWidth + deltaX;
+      const minWidth = 200;
+      const maxWidth = 500;
+
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        libraryPanel.style.width = newWidth + 'px';
+      }
+    } else if (isResizingResults) {
+      const deltaX = startX - e.clientX; // Inverted for right panel
+      const newWidth = startWidth + deltaX;
+      const minWidth = 300;
+      const maxWidth = 800;
+
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        resultsPanel.style.width = newWidth + 'px';
+      }
+    }
+  });
+
+  // Mouse up handler
+  document.addEventListener('mouseup', () => {
+    if (isResizingLibrary || isResizingResults) {
+      isResizingLibrary = false;
+      isResizingResults = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+
+      // Save panel widths to localStorage
+      localStorage.setItem('scripts-library-width', libraryPanel.offsetWidth);
+      localStorage.setItem('scripts-results-width', resultsPanel.offsetWidth);
+    }
+  });
+
+  // Restore saved widths
+  const savedLibraryWidth = localStorage.getItem('scripts-library-width');
+  const savedResultsWidth = localStorage.getItem('scripts-results-width');
+
+  if (savedLibraryWidth) {
+    libraryPanel.style.width = savedLibraryWidth + 'px';
+  }
+  if (savedResultsWidth) {
+    resultsPanel.style.width = savedResultsWidth + 'px';
+  }
+}
+
 // Event listeners
 document.addEventListener('DOMContentLoaded', () => {
   initializeEditor();
@@ -1831,6 +2187,9 @@ document.addEventListener('DOMContentLoaded', () => {
       closePluginPalette();
     }
   });
+
+  // Initialize panel resizing
+  initializePanelResizing();
 });
 </script>
 {% endblock %}
