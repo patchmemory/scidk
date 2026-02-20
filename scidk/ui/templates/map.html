@@ -472,8 +472,8 @@
       }},
       { selector: 'edge', style: {
           'curve-style': 'bezier',
-          'line-color': ele => sourceColors[ele.data('edgeSource')] || '#999',
-          'target-arrow-color': ele => sourceColors[ele.data('edgeSource')] || '#999',
+          'line-color': ele => sourceColors[ele.data('edgeSource')] || '#999999',
+          'target-arrow-color': ele => sourceColors[ele.data('edgeSource')] || '#999999',
           'target-arrow-shape': 'triangle',
           'width': ele => Math.max(1, Math.log(1 + (ele.data('count')||1))) * edgeMul,
           'label': 'data(type)', 'font-size': () => labelFont, 'color': '#555', 'text-rotation': 'autorotate', 'text-margin-x': 2, 'text-margin-y': 2, 'text-outline-color': () => (highContrast ? '#fff' : 'transparent'), 'text-outline-width': () => (highContrast ? 3 : 0)
@@ -483,6 +483,7 @@
   });
   function runLayout(name){
     if (name === 'manual') return; // don't run a layout in manual mode
+    if (cy.nodes().length === 0) return; // don't run layout on empty graph
     cy.layout({ name: name || 'cose', animate: false }).run();
   }
   function render(newData){
@@ -508,7 +509,7 @@
   function loadPositions(){
     const pos = JSON.parse(localStorage.getItem(keyPos) || '{}');
     const ids = Object.keys(pos);
-    if (ids.length){
+    if (ids.length && cy.nodes().length > 0){
       cy.nodes().positions(n => pos[n.id()] || n.position());
       cy.layout({ name: 'preset' }).run();
     }
@@ -1218,8 +1219,8 @@
             selector: 'edge',
             style: {
               'width': 2,
-              'line-color': '#999',
-              'target-arrow-color': '#999',
+              'line-color': '#999999',
+              'target-arrow-color': '#999999',
               'target-arrow-shape': 'triangle',
               'curve-style': 'bezier',
               'label': 'data(label)',
@@ -1317,14 +1318,16 @@
       cy.elements().remove();
       cy.add(elements);
 
-      // Apply layout
-      cy.layout({
-        name: 'cose',
-        animate: true,
-        animationDuration: 500,
-        nodeRepulsion: 8000,
-        idealEdgeLength: 100
-      }).run();
+      // Apply layout (only if elements exist)
+      if (elements.length > 0) {
+        cy.layout({
+          name: 'cose',
+          animate: true,
+          animationDuration: 500,
+          nodeRepulsion: 8000,
+          idealEdgeLength: 100
+        }).run();
+      }
 
     } catch (error) {
       console.error('Error rendering schema:', error);
@@ -1373,10 +1376,18 @@
 
       // Helper to format display label based on per-label/per-type settings
       function formatDisplayLabel(baseLabel, config, propName, propValue) {
-        if (!propName || propValue === undefined) return baseLabel;
+        if (!propName || propValue == null) return baseLabel;
 
-        // Get display name if configured (use renamed label)
-        const displayName = (window.labelDisplayNames && window.labelDisplayNames[baseLabel]) || baseLabel;
+        // Get display name if configured (use renamed label, fallback to baseLabel if empty)
+        let displayName = (window.labelDisplayNames && window.labelDisplayNames[baseLabel]) || baseLabel;
+        // Sanitize display name: trim whitespace, replace newlines, limit length
+        if (displayName) {
+          displayName = String(displayName).trim().replace(/[\r\n]+/g, ' ');
+          if (displayName.length > 100) displayName = displayName.substring(0, 97) + '...';
+          if (displayName.length === 0) displayName = baseLabel; // Fallback if empty after trim
+        } else {
+          displayName = baseLabel;
+        }
 
         // Get display settings from config
         const showLabel = config && config.showLabel !== false; // default true
@@ -1409,7 +1420,7 @@
 
               // Check if this label has expansion configured
               const config = expansionConfig.nodes[label];
-              if (config && config.property && val.properties && val.properties[config.property] !== undefined) {
+              if (config && config.property && val.properties && val.properties[config.property] != null) {
                 const propValue = val.properties[config.property];
                 displayLabel = formatDisplayLabel(label, config, config.property, propValue);
                 uniqueKey = `${label}|${config.property}|${propValue}`; // Unique storage key
@@ -1442,7 +1453,7 @@
 
               // Check if start label has expansion
               const startConfig = expansionConfig.nodes[startNode.labels[0]];
-              if (startConfig && startConfig.property && startNode.properties && startNode.properties[startConfig.property] !== undefined) {
+              if (startConfig && startConfig.property && startNode.properties && startNode.properties[startConfig.property] != null) {
                 const propValue = startNode.properties[startConfig.property];
                 startDisplayLabel = formatDisplayLabel(startNode.labels[0], startConfig, startConfig.property, propValue);
                 startUniqueKey = `${startNode.labels[0]}|${startConfig.property}|${propValue}`;
@@ -1452,7 +1463,7 @@
               let endDisplayLabel = endNode.labels[0];
               let endUniqueKey = endNode.labels[0];
               const endConfig = expansionConfig.nodes[endNode.labels[0]];
-              if (endConfig && endConfig.property && endNode.properties && endNode.properties[endConfig.property] !== undefined) {
+              if (endConfig && endConfig.property && endNode.properties && endNode.properties[endConfig.property] != null) {
                 const propValue = endNode.properties[endConfig.property];
                 endDisplayLabel = formatDisplayLabel(endNode.labels[0], endConfig, endConfig.property, propValue);
                 endUniqueKey = `${endNode.labels[0]}|${endConfig.property}|${propValue}`;
@@ -1532,29 +1543,31 @@
       cy.elements().remove();
       cy.add(elements);
 
-      // Apply selected layout algorithm
-      const layoutMode = document.getElementById('layout-mode')?.value || 'cose';
-      const layoutConfig = {
-        name: layoutMode,
-        animate: true,
-        animationDuration: 500
-      };
+      // Apply selected layout algorithm (only if elements exist)
+      if (elements.length > 0) {
+        const layoutMode = document.getElementById('layout-mode')?.value || 'cose';
+        const layoutConfig = {
+          name: layoutMode,
+          animate: true,
+          animationDuration: 500
+        };
 
-      // Add hierarchical-specific options
-      if (layoutMode === 'breadthfirst') {
-        const orientation = document.getElementById('layout-orientation')?.value || 'TB';
-        layoutConfig.directed = true;
-        layoutConfig.spacingFactor = 1.5;
-        layoutConfig.padding = 30;
-        // Map orientation: TB=top-to-bottom, BT=bottom-to-top, LR=left-to-right, RL=right-to-left
-        layoutConfig.roots = cy.nodes().filter(n => n.indegree() === 0);
-        if (orientation === 'TB') layoutConfig.grid = false;
-        else if (orientation === 'BT') { layoutConfig.grid = false; layoutConfig.transform = (node, pos) => ({ x: pos.x, y: -pos.y }); }
-        else if (orientation === 'LR') { layoutConfig.grid = false; layoutConfig.transform = (node, pos) => ({ x: pos.y, y: pos.x }); }
-        else if (orientation === 'RL') { layoutConfig.grid = false; layoutConfig.transform = (node, pos) => ({ x: -pos.y, y: pos.x }); }
+        // Add hierarchical-specific options
+        if (layoutMode === 'breadthfirst') {
+          const orientation = document.getElementById('layout-orientation')?.value || 'TB';
+          layoutConfig.directed = true;
+          layoutConfig.spacingFactor = 1.5;
+          layoutConfig.padding = 30;
+          // Map orientation: TB=top-to-bottom, BT=bottom-to-top, LR=left-to-right, RL=right-to-left
+          layoutConfig.roots = cy.nodes().filter(n => n.indegree() === 0);
+          if (orientation === 'TB') layoutConfig.grid = false;
+          else if (orientation === 'BT') { layoutConfig.grid = false; layoutConfig.transform = (node, pos) => ({ x: pos.x, y: -pos.y }); }
+          else if (orientation === 'LR') { layoutConfig.grid = false; layoutConfig.transform = (node, pos) => ({ x: pos.y, y: pos.x }); }
+          else if (orientation === 'RL') { layoutConfig.grid = false; layoutConfig.transform = (node, pos) => ({ x: -pos.y, y: pos.x }); }
+        }
+
+        cy.layout(layoutConfig).run();
       }
-
-      cy.layout(layoutConfig).run();
 
       console.log(`Rendered schema: ${labelNodes.size} nodes, ${labelTriples.size} edges`);
 
@@ -1691,14 +1704,16 @@
       cy.elements().remove();
       cy.add(elements);
 
-      // Apply layout
-      cy.layout({
-        name: 'cose',
-        animate: true,
-        animationDuration: 500,
-        nodeRepulsion: 8000,
-        idealEdgeLength: 100
-      }).run();
+      // Apply layout (only if elements exist)
+      if (elements.length > 0) {
+        cy.layout({
+          name: 'cose',
+          animate: true,
+          animationDuration: 500,
+          nodeRepulsion: 8000,
+          idealEdgeLength: 100
+        }).run();
+      }
 
       // Apply formatting and labels after rendering
       setTimeout(() => {
@@ -1727,8 +1742,8 @@
         .selector('edge')
         .style({
           'width': 2,
-          'line-color': '#999',
-          'target-arrow-color': '#999',
+          'line-color': '#999999',
+          'target-arrow-color': '#999999',
           'target-arrow-shape': 'triangle',
           'curve-style': 'bezier',
           'label': 'data(label)',
@@ -1853,6 +1868,12 @@
       saveMapBtn.onclick = async () => {
         const query = getQueryText().trim();
 
+        // Validate: warn if query is empty (allow saving but inform user)
+        if (!query) {
+          const proceed = confirm('Warning: You are saving a map with no query.\n\nClick OK to proceed, or Cancel to go back and add a query.');
+          if (!proceed) return;
+        }
+
         // Check if savedMaps is available (should be populated by loadSavedMaps)
         const existingMaps = window.savedMaps || [];
 
@@ -1948,7 +1969,8 @@
             alert(`Failed to save map: ${data.message || data.error || 'Unknown error'}`);
           }
         } catch (err) {
-          alert(`Failed to save map: ${err.message}`);
+          console.error('Error saving map:', err);
+          alert(`Failed to save map: ${err.message}\n\nPlease check your network connection and try again.`);
         }
       };
     }
@@ -2471,12 +2493,19 @@
             }
           }
 
-          // Apply connection selection
+          // Apply connection selection (validate connection exists)
           if (viz.connection) {
             const connectionSelect = document.getElementById('neo4j-connection-select');
             if (connectionSelect) {
-              connectionSelect.value = viz.connection;
-              connectionSelect.dispatchEvent(new Event('change'));
+              // Check if the connection exists in the dropdown
+              const optionExists = Array.from(connectionSelect.options).some(opt => opt.value === viz.connection);
+              if (optionExists) {
+                connectionSelect.value = viz.connection;
+                connectionSelect.dispatchEvent(new Event('change'));
+              } else {
+                console.warn(`⚠️ Connection "${viz.connection}" not found. Using default connection.`);
+                alert(`Warning: Saved connection "${viz.connection}" not found. Please select a connection manually.`);
+              }
             }
           }
 
@@ -2600,7 +2629,7 @@
       }
     } catch (error) {
       console.error('Error loading map:', error);
-      alert('Failed to load map');
+      alert(`Failed to load map: ${error.message}\n\nPlease check your network connection and try again.`);
     }
   }
 
@@ -2877,13 +2906,15 @@
             }
             const labelData = nodeData.get(label);
 
-            // Track property values
+            // Track property values (exclude null/undefined)
             if (val.properties) {
               Object.entries(val.properties).forEach(([propName, propValue]) => {
-                if (!labelData.properties.has(propName)) {
-                  labelData.properties.set(propName, new Set());
+                if (propValue != null) { // Filter out null and undefined
+                  if (!labelData.properties.has(propName)) {
+                    labelData.properties.set(propName, new Set());
+                  }
+                  labelData.properties.get(propName).add(propValue);
                 }
-                labelData.properties.get(propName).add(propValue);
               });
             }
           });
@@ -2897,13 +2928,15 @@
           }
           const typeData = relData.get(relType);
 
-          // Track property values
+          // Track property values (exclude null/undefined)
           if (val.properties) {
             Object.entries(val.properties).forEach(([propName, propValue]) => {
-              if (!typeData.properties.has(propName)) {
-                typeData.properties.set(propName, new Set());
+              if (propValue != null) { // Filter out null and undefined
+                if (!typeData.properties.has(propName)) {
+                  typeData.properties.set(propName, new Set());
+                }
+                typeData.properties.get(propName).add(propValue);
               }
-              typeData.properties.get(propName).add(propValue);
             });
           }
         }
@@ -3015,7 +3048,7 @@
     if (relListEl && relData.size > 0) {
       // Initialize relationship formatting config
       window.relationshipFormattingConfig = window.relationshipFormattingConfig || {};
-      const defaultRelColor = '#999';
+      const defaultRelColor = '#999999';
 
       let html = '';
       Array.from(relData.keys()).sort().forEach(relType => {
@@ -3174,9 +3207,12 @@
       document.querySelectorAll('.label-display-name-input').forEach(input => {
         input.addEventListener('change', (e) => {
           const label = e.target.dataset.label;
-          const displayName = e.target.value.trim();
+          let displayName = e.target.value.trim();
+          // Sanitize: remove newlines, limit length, fallback to original label if empty
+          displayName = displayName.replace(/[\r\n]+/g, ' ');
+          if (displayName.length > 100) displayName = displayName.substring(0, 97) + '...';
           window.labelDisplayNames[label] = displayName || label;
-          console.log(`✏️ Label renamed: ${label} -> ${displayName}`);
+          console.log(`✏️ Label renamed: ${label} -> ${window.labelDisplayNames[label]}`);
           if (window.applyGraphFormatting) window.applyGraphFormatting();
         });
       });
@@ -3186,9 +3222,12 @@
       document.querySelectorAll('.rel-display-name-input').forEach(input => {
         input.addEventListener('change', (e) => {
           const relType = e.target.dataset.type;
-          const displayName = e.target.value.trim();
+          let displayName = e.target.value.trim();
+          // Sanitize: remove newlines, limit length, fallback to original type if empty
+          displayName = displayName.replace(/[\r\n]+/g, ' ');
+          if (displayName.length > 100) displayName = displayName.substring(0, 97) + '...';
           window.relationshipDisplayNames[relType] = displayName || relType;
-          console.log(`✏️ Relationship renamed: ${relType} -> ${displayName}`);
+          console.log(`✏️ Relationship renamed: ${relType} -> ${window.relationshipDisplayNames[relType]}`);
           if (window.applyGraphFormatting) window.applyGraphFormatting();
         });
       });
@@ -3496,6 +3535,12 @@ window.populateInstancesTable = async function(results, tabId) {
         return;
       }
 
+      // Don't run layout on empty graph
+      if (cy.nodes().length === 0) {
+        console.log('No nodes to layout');
+        return;
+      }
+
       const layoutOptions = {
         name: layoutName,
         animate: true,
@@ -3721,7 +3766,7 @@ window.populateInstancesTable = async function(results, tabId) {
 
       cy.nodes().forEach(node => {
         const label = node.data('fullLabel') || node.data('labels')?.[0] || 'Unknown';
-        const color = colorMap.get(label) || '#999';
+        const color = colorMap.get(label) || '#999999';
         node.style('background-color', color);
       });
 
