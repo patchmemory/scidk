@@ -930,7 +930,14 @@ async function runScript() {
       if (currentResult.status === 'success') {
         statusEl.textContent = `Success (${currentResult.execution_time_ms}ms)`;
         statusEl.className = 'editor-status success';
+
+        // Switch to table tab to show results
+        switchResultsTab('table');
+
+        // Display results
         displayResults(currentResult.results);
+
+        window.toast(`Query returned ${currentResult.results?.length || 0} rows`, 'success');
       } else {
         statusEl.textContent = `Error: ${currentResult.error}`;
         statusEl.className = 'editor-status error';
