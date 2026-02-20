@@ -76,6 +76,9 @@
   .link-item.focused {
     box-shadow: 0 0 0 2px #2196f3;
   }
+  .dropdown-item:hover {
+    background: #f5f5f5;
+  }
   .wizard-steps {
     display: flex;
     justify-content: space-between;
@@ -228,7 +231,22 @@
   <div class="links-list" id="links-list">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
       <h3 class="small" style="margin: 0;">Definitions</h3>
-      <button id="btn-new-link" class="btn btn-sm btn-primary" data-testid="new-link-btn">New Link</button>
+      <div style="display: inline-flex; gap: 0;">
+        <button class="btn btn-sm btn-primary" id="btn-new-wizard-link" style="border-radius: 4px 0 0 4px;">+ New Link</button>
+        <div class="dropdown" style="display: inline-block;">
+          <button class="btn btn-sm btn-primary" id="link-type-dropdown-btn" style="border-radius: 0 4px 4px 0; border-left: 1px solid rgba(255,255,255,0.3); padding: 0.375rem 0.5rem;">▼</button>
+          <div class="dropdown-menu" id="link-type-dropdown-menu" style="display: none; position: absolute; background: white; border: 1px solid #ddd; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 1000; min-width: 200px; margin-top: 0.25rem;">
+            <a href="#" class="dropdown-item" id="menu-wizard-link" style="display: block; padding: 0.5rem 1rem; color: #333; text-decoration: none; border-bottom: 1px solid #eee;">
+              <strong style="color: #2196f3;">Wizard Link</strong>
+              <div style="font-size: 0.85em; color: #666; margin-top: 0.25rem;">Visual form-based editor</div>
+            </a>
+            <a href="#" class="dropdown-item" id="menu-script-link" style="display: block; padding: 0.5rem 1rem; color: #333; text-decoration: none;">
+              <strong style="color: #9c27b0;">Script Link</strong>
+              <div style="font-size: 0.85em; color: #666; margin-top: 0.25rem;">Custom Python code</div>
+            </a>
+          </div>
+        </div>
+      </div>
     </div>
     <div id="link-list" data-testid="link-list">
       <div class="empty-state small">No link definitions</div>
@@ -497,10 +515,41 @@ function populateLabelDropdowns() {
 }
 
 function initializeEventListeners() {
-  // New link button
-  document.getElementById('btn-new-link').addEventListener('click', () => {
+  // New wizard link button (primary action)
+  document.getElementById('btn-new-wizard-link').addEventListener('click', () => {
     resetWizard();
     showWizard();
+  });
+
+  // Dropdown toggle
+  const dropdownBtn = document.getElementById('link-type-dropdown-btn');
+  const dropdownMenu = document.getElementById('link-type-dropdown-menu');
+
+  dropdownBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dropdownMenu.style.display = dropdownMenu.style.display === 'none' ? 'block' : 'none';
+  });
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!dropdownBtn.contains(e.target) && !dropdownMenu.contains(e.target)) {
+      dropdownMenu.style.display = 'none';
+    }
+  });
+
+  // Wizard link option
+  document.getElementById('menu-wizard-link').addEventListener('click', (e) => {
+    e.preventDefault();
+    dropdownMenu.style.display = 'none';
+    resetWizard();
+    showWizard();
+  });
+
+  // Script link option - redirect to Scripts page
+  document.getElementById('menu-script-link').addEventListener('click', (e) => {
+    e.preventDefault();
+    dropdownMenu.style.display = 'none';
+    window.location.href = '/scripts?new=link';
   });
 
   // Wizard navigation
@@ -560,21 +609,53 @@ function renderLinkList() {
   }
 
   container.innerHTML = validLinks.map((link, index) => {
-    const sourceDisplay = link.source_label || link.source_type || 'Unknown';
-    const targetDisplay = link.target_label || link.target_type || 'Unknown';
     const isActive = currentLink && currentLink.id === link.id;
     const isFocused = lastFocusedIndex === index;
     const classes = ['link-item', isActive && 'active', isFocused && 'focused'].filter(Boolean).join(' ');
 
+    // Type badge
+    const typeBadge = link.type === 'script'
+      ? '<span class="badge" style="background: #9c27b0; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px;">SCRIPT</span>'
+      : '<span class="badge" style="background: #2196f3; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px;">WIZARD</span>';
+
+    // Status badge for scripts
+    let statusBadge = '';
+    if (link.type === 'script') {
+      const statusColors = {
+        'validated': '#4caf50',
+        'failed': '#f44336',
+        'draft': '#ff9800'
+      };
+      const status = link.validation_status || 'draft';
+      const color = statusColors[status] || '#999';
+      statusBadge = `<span class="badge" style="background: ${color}; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${status.toUpperCase()}</span>`;
+    }
+
+    // Description line: for wizard show labels, for script show description
+    let descLine = '';
+    if (link.type === 'wizard') {
+      const sourceDisplay = link.source_label || link.source_type || '?';
+      const targetDisplay = link.target_label || link.target_type || '?';
+      descLine = `${escapeHtml(sourceDisplay)} → ${escapeHtml(targetDisplay)}`;
+    } else {
+      // Use script description (user-controlled, always accurate)
+      descLine = escapeHtml(link.description || 'Custom matching logic');
+    }
+
     return `
       <div class="${classes}"
            data-link-id="${link.id}"
+           data-link-type="${link.type || 'wizard'}"
            data-index="${index}"
            data-testid="link-item"
            tabindex="${isFocused ? '0' : '-1'}">
-        <div style="font-weight: 500;">${link.name || 'Unnamed'}</div>
-        <div class="small" style="color: #666;">
-          ${sourceDisplay} → ${targetDisplay} (${link.relationship_type || 'RELATED'})
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+          <strong style="font-size: 0.95em;">${escapeHtml(link.name || 'Unnamed')}</strong>
+          <div>${typeBadge}${statusBadge}</div>
+        </div>
+        <div style="font-size: 0.85em; color: #666;">
+          ${descLine}
+          ${link.relationship_type ? `<br><small style="color: #999;">${escapeHtml(link.relationship_type)}</small>` : ''}
         </div>
       </div>
     `;
@@ -584,11 +665,25 @@ function renderLinkList() {
   container.querySelectorAll('.link-item').forEach(item => {
     item.addEventListener('click', () => {
       const linkId = item.dataset.linkId;
+      const linkType = item.dataset.linkType;
       const index = parseInt(item.dataset.index);
       lastFocusedIndex = index;
-      loadLinkDefinition(linkId);
+
+      if (linkType === 'script') {
+        openScriptLink(linkId);
+      } else {
+        loadLinkDefinition(linkId);
+      }
     });
   });
+}
+
+// Helper to escape HTML (XSS protection)
+function escapeHtml(text) {
+  if (!text) return '';
+  const div = document.createElement('div');
+  div.textContent = String(text);
+  return div.innerHTML;
 }
 
 function loadLinkDefinition(linkId) {
@@ -602,6 +697,100 @@ function loadLinkDefinition(linkId) {
       }
     })
     .catch(err => showToast('Failed to load link definition', 'error'));
+}
+
+// Handle script link selection
+function openScriptLink(scriptId) {
+  const wizardEl = document.getElementById('link-wizard');
+
+  // Find the script in linkDefinitions
+  const scriptLink = linkDefinitions.find(l => l.id === scriptId && l.type === 'script');
+
+  if (!scriptLink) {
+    showToast('Script link not found', 'error');
+    return;
+  }
+
+  const statusColor = {
+    'validated': '#4caf50',
+    'failed': '#f44336',
+    'draft': '#ff9800'
+  }[scriptLink.validation_status || 'draft'] || '#999';
+
+  wizardEl.innerHTML = `
+    <div class="script-link-view">
+      <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
+        <div>
+          <h3 style="margin: 0 0 0.5rem 0;">${escapeHtml(scriptLink.name)}</h3>
+          <p style="color: #666; margin: 0;">${escapeHtml(scriptLink.description || 'No description')}</p>
+        </div>
+        <span class="badge" style="background: #9c27b0; color: white; padding: 0.5em 1em;">SCRIPT LINK</span>
+      </div>
+
+      <div style="background: #f0f7ff; border-left: 4px solid #2196f3; padding: 1rem; margin-bottom: 1.5rem; border-radius: 4px;">
+        <strong style="color: #1976d2;">💡 Script-Based Link</strong>
+        <p style="margin: 0.5rem 0 0 0; font-size: 0.9em; color: #555;">
+          This link is defined using custom Python code with a <code>create_links()</code> function.
+          All editing and execution happens in the Scripts page.
+        </p>
+      </div>
+
+      <div style="background: #f9f9f9; padding: 1rem; border-radius: 4px; margin-bottom: 1.5rem;">
+        <div style="display: grid; grid-template-columns: 150px 1fr; gap: 0.75rem; font-size: 0.9em;">
+          <strong>Status:</strong>
+          <span style="color: ${statusColor}; font-weight: 600;">${(scriptLink.validation_status || 'draft').toUpperCase()}</span>
+
+          <strong>Relationship:</strong>
+          <span>${scriptLink.relationship_type}</span>
+
+          <strong>Match Strategy:</strong>
+          <span>Custom Python Logic</span>
+
+          <strong>Active:</strong>
+          <span>${scriptLink.is_active ? '✓ Yes' : '✗ No (must validate first)'}</span>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 0.5rem;">
+        <button class="btn btn-primary" onclick="redirectToScript('${scriptLink.id}')">
+          ✏️ Edit in Scripts Page
+        </button>
+        <button class="btn btn-outline-secondary" onclick="hideScriptLink()">
+          Cancel
+        </button>
+      </div>
+
+      <hr style="margin: 1.5rem 0;">
+
+      <div style="font-size: 0.9em; color: #666;">
+        <h5 style="margin: 0 0 0.5rem 0;">How Script Links Work</h5>
+        <ul style="margin: 0; padding-left: 1.5rem;">
+          <li>Define custom matching logic using Python</li>
+          <li>Full control over relationship criteria</li>
+          <li>Must be validated before execution</li>
+          <li>Can use parameters for source/target node selection</li>
+          <li>Returns list of relationships to create</li>
+        </ul>
+      </div>
+    </div>
+  `;
+
+  wizardEl.style.display = 'block';
+
+  // Mark this script link as active in the list
+  document.querySelectorAll('.link-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.linkId === scriptId);
+  });
+}
+
+function redirectToScript(scriptId) {
+  // Deep link to Scripts page with this script open
+  window.location.href = `/scripts?script=${scriptId}`;
+}
+
+function hideScriptLink() {
+  document.getElementById('link-wizard').style.display = 'none';
+  document.querySelectorAll('.link-item').forEach(el => el.classList.remove('active'));
 }
 
 function populateWizardFromLink(link) {
