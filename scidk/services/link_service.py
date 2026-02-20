@@ -17,6 +17,7 @@ import uuid
 import csv
 import io
 import requests
+import re
 
 
 class LinkService:
@@ -24,6 +25,38 @@ class LinkService:
 
     def __init__(self, app):
         self.app = app
+
+    @staticmethod
+    def _validate_relationship_type(rel_type: str) -> str:
+        """
+        Validate and sanitize relationship type for Cypher queries.
+
+        Prevents Cypher injection by ensuring relationship type matches Neo4j naming conventions.
+        Valid relationship types: alphanumeric, underscores only (e.g., HAS_CHILD, RELATED_TO).
+
+        Args:
+            rel_type: Relationship type string
+
+        Returns:
+            Validated relationship type
+
+        Raises:
+            ValueError: If relationship type contains invalid characters
+        """
+        if not rel_type or not isinstance(rel_type, str):
+            raise ValueError("Relationship type must be a non-empty string")
+
+        # Neo4j relationship type naming rules:
+        # - Must start with letter or underscore
+        # - Can contain letters, digits, underscores
+        # - Typically UPPER_CASE by convention
+        if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', rel_type):
+            raise ValueError(
+                f"Invalid relationship type '{rel_type}'. "
+                "Must contain only letters, digits, and underscores, and start with a letter or underscore."
+            )
+
+        return rel_type
 
     def _get_conn(self):
         """Get a database connection."""
@@ -726,7 +759,7 @@ class LinkService:
             matches = self._match_with_targets(definition, source_data, limit=len(source_data))
 
             # Create relationships in batches
-            relationship_type = definition.get('relationship_type', '')
+            relationship_type = self._validate_relationship_type(definition.get('relationship_type', ''))
             relationship_props = definition.get('relationship_props', {})
 
             batch_size = 1000
@@ -842,7 +875,7 @@ class LinkService:
                 return
 
             # Create relationships in batches
-            relationship_type = definition.get('relationship_type', '')
+            relationship_type = self._validate_relationship_type(definition.get('relationship_type', ''))
             relationship_props = definition.get('relationship_props', {})
 
             batch_size = 1000
