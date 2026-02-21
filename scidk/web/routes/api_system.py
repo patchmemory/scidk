@@ -12,7 +12,7 @@ All endpoints use authentication if enabled.
 """
 import logging
 from flask import Blueprint, jsonify, request, current_app
-from scidk.web.decorators import require_auth
+# Auth decorators available if needed: require_admin, require_role
 
 logger = logging.getLogger(__name__)
 

@@ -87,8 +87,8 @@ Two intelligence types coexist:
 
 ---
 
-### Files Page (Partial - API Complete, UI Pending)
-**Status:** 🚧 API Complete, UI Pending
+### Files Page
+**Status:** ✅ Complete (API + UI Implemented)
 
 **When file has interpreter results:**
 ```
@@ -107,20 +107,30 @@ Interpreted by: FASTQ Interpreter ↗
 📄 unknown_file.xyz
 ─────────────────────────
 ⚠️ No interpreter assigned
-   Click to explore available interpreters
+[Assign Interpreter] button
 ─────────────────────────
 🔬 Interpreters          [▼]
 ```
 
 **Interpreter Modal Flow:**
-1. User selects file → sidebar shows metadata + interpreter accordion
-2. Click accordion → modal opens with validated interpreters
-3. Select interpreter → **Preview** → see metadata without commit
-4. Click **Commit** → writes to graph with hash verification, updates sidebar
+1. User selects file → sidebar shows metadata + interpreter section
+2. Click "Assign Interpreter" → modal opens with validated interpreters
+3. Select interpreter → **Run Preview** → see metadata without commit
+4. Click **Commit to Graph** → writes to graph with hash verification, closes modal
+5. Sidebar updates automatically → shows "Interpreted by" attribution
 
-**API Endpoints:**
-- `POST /api/files/interpret` - Preview interpreter results
-- `POST /api/files/interpret/commit` - Commit to graph with hash verification
+**Implementation:**
+- **Modal Component:** `scidk/ui/templates/files/_interpreter_modal.html` (~550 lines)
+- **Integration:** Included in `datasets.html`, integrated with `showFileDetails()`
+- **API Endpoints:**
+  - `POST /api/files/interpret` - Preview interpreter results
+  - `POST /api/files/interpret/commit` - Commit to graph with hash verification
+- **Features:**
+  - Accordion-style interpreter list
+  - Non-destructive preview workflow
+  - Hash verification prevents race conditions
+  - Error handling with user-friendly messages
+  - Sidebar updates after successful commit
 
 **Configuration:**
 - Interpreter assignment (extension rules) stays in Settings

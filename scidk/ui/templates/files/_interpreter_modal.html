@@ -1,0 +1,707 @@
+<!-- Interpreter Modal Component for Files Page -->
+<!-- This component provides interpreter transparency layer integration -->
+
+<style>
+  /* Interpreter Accordion in Right Sidebar */
+  .interpreter-section {
+    border-top: 1px solid #eee;
+    margin-top: 1rem;
+    padding-top: 1rem;
+  }
+
+  .interpreter-accordion {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    user-select: none;
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+
+  .interpreter-accordion:hover {
+    color: var(--accent);
+  }
+
+  .interpreter-accordion .toggle-icon {
+    transition: transform 0.2s;
+  }
+
+  .interpreter-accordion.expanded .toggle-icon {
+    transform: rotate(180deg);
+  }
+
+  .interpreter-info {
+    background: #f8f9fa;
+    border-left: 3px solid var(--accent);
+    padding: 0.75rem;
+    margin: 0.5rem 0;
+    border-radius: 4px;
+    font-size: 0.875rem;
+  }
+
+  .interpreter-info-label {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+    display: block;
+  }
+
+  .interpreter-info-value {
+    color: #666;
+  }
+
+  .interpreter-info-link {
+    color: var(--accent);
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .interpreter-info-link:hover {
+    text-decoration: underline;
+  }
+
+  .no-interpreter-warning {
+    background: #fff3cd;
+    border-left: 3px solid #ffc107;
+    padding: 0.75rem;
+    margin: 0.5rem 0;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    color: #856404;
+  }
+
+  /* Interpreter Modal Overlay */
+  .interpreter-modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .interpreter-modal-overlay.active {
+    display: flex;
+  }
+
+  .interpreter-modal {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    max-width: 600px;
+    width: 90%;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .interpreter-modal-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .interpreter-modal-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+  }
+
+  .interpreter-modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #999;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+  }
+
+  .interpreter-modal-close:hover {
+    background: #f0f0f0;
+    color: #333;
+  }
+
+  .interpreter-modal-body {
+    padding: 1.5rem;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .interpreter-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .interpreter-item {
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .interpreter-item:hover {
+    border-color: var(--accent);
+    background: #f8f9fa;
+  }
+
+  .interpreter-item.selected {
+    border-color: var(--accent);
+    border-width: 2px;
+    background: #e3f2fd;
+  }
+
+  .interpreter-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .interpreter-item-name {
+    font-weight: 600;
+    font-size: 1rem;
+  }
+
+  .interpreter-item-badge {
+    font-size: 0.75rem;
+    padding: 0.125rem 0.5rem;
+    border-radius: 10px;
+  }
+
+  .badge-validated {
+    background: #d4edda;
+    color: #155724;
+  }
+
+  .badge-draft {
+    background: #fff3cd;
+    color: #856404;
+  }
+
+  .interpreter-item-description {
+    font-size: 0.875rem;
+    color: #666;
+  }
+
+  .interpreter-preview {
+    background: #f8f9fa;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 1rem;
+    margin-top: 1rem;
+  }
+
+  .interpreter-preview-header {
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .interpreter-preview-content {
+    font-family: monospace;
+    font-size: 0.875rem;
+    background: white;
+    padding: 0.75rem;
+    border-radius: 4px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .interpreter-preview-metadata {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .interpreter-preview-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.25rem 0;
+    border-bottom: 1px solid #eee;
+  }
+
+  .interpreter-preview-item:last-child {
+    border-bottom: none;
+  }
+
+  .interpreter-preview-key {
+    font-weight: 600;
+    color: #333;
+  }
+
+  .interpreter-preview-value {
+    color: #666;
+    text-align: right;
+  }
+
+  .interpreter-modal-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #eee;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+  }
+
+  .interpreter-modal-footer button {
+    padding: 0.5rem 1.25rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  .btn-cancel {
+    background: #f0f0f0;
+    color: #333;
+  }
+
+  .btn-cancel:hover {
+    background: #e0e0e0;
+  }
+
+  .btn-preview {
+    background: #2196f3;
+    color: white;
+  }
+
+  .btn-preview:hover {
+    background: #1976d2;
+  }
+
+  .btn-preview:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+  }
+
+  .btn-commit {
+    background: var(--accent);
+    color: white;
+  }
+
+  .btn-commit:hover {
+    background: #085;
+  }
+
+  .btn-commit:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+  }
+
+  .interpreter-loading {
+    text-align: center;
+    padding: 2rem;
+    color: #666;
+  }
+
+  .interpreter-error {
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+    padding: 0.75rem;
+    border-radius: 4px;
+    margin-top: 1rem;
+  }
+</style>
+
+<!-- Interpreter Section in Right Sidebar (to be inserted into datasets.html) -->
+<div id="interpreter-section" class="interpreter-section" style="display: none;">
+  <!-- Interpreted File Display -->
+  <div id="interpreter-info" style="display: none;">
+    <div class="interpreter-info">
+      <span class="interpreter-info-label">Entity Type:</span>
+      <span class="interpreter-info-value" id="interpreter-entity-type">-</span>
+    </div>
+    <div class="interpreter-info">
+      <span class="interpreter-info-label">Interpreted by:</span>
+      <a href="#" class="interpreter-info-link" id="interpreter-link">-</a>
+    </div>
+    <div id="interpreter-metadata" class="interpreter-info">
+      <!-- Metadata items will be inserted here -->
+    </div>
+  </div>
+
+  <!-- No Interpreter Warning -->
+  <div id="no-interpreter-warning" class="no-interpreter-warning" style="display: none;">
+    ⚠️ No interpreter assigned<br>
+    <small>Click below to explore available interpreters</small>
+  </div>
+
+  <!-- Interpreter Accordion Button -->
+  <div class="interpreter-accordion" id="interpreter-accordion">
+    <span>🔬 Interpreters</span>
+    <span class="toggle-icon">▼</span>
+  </div>
+</div>
+
+<!-- Interpreter Modal -->
+<div id="interpreter-modal-overlay" class="interpreter-modal-overlay">
+  <div class="interpreter-modal">
+    <div class="interpreter-modal-header">
+      <h3>🔬 Interpret File</h3>
+      <button class="interpreter-modal-close" id="interpreter-modal-close">&times;</button>
+    </div>
+
+    <div class="interpreter-modal-body">
+      <p style="margin-top: 0; color: #666; font-size: 0.875rem;">
+        Select an interpreter to run on: <strong id="interpreter-modal-filename">-</strong>
+      </p>
+
+      <!-- Loading State -->
+      <div id="interpreter-loading" class="interpreter-loading">
+        Loading interpreters...
+      </div>
+
+      <!-- Interpreter List -->
+      <div id="interpreter-list" class="interpreter-list" style="display: none;">
+        <!-- Interpreter items will be inserted here -->
+      </div>
+
+      <!-- Preview Results -->
+      <div id="interpreter-preview" class="interpreter-preview" style="display: none;">
+        <div class="interpreter-preview-header">
+          ✓ Preview Results
+        </div>
+        <div class="interpreter-preview-content">
+          <div class="interpreter-preview-metadata" id="interpreter-preview-metadata">
+            <!-- Preview items will be inserted here -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Error Display -->
+      <div id="interpreter-error" class="interpreter-error" style="display: none;">
+        <!-- Error message will be inserted here -->
+      </div>
+    </div>
+
+    <div class="interpreter-modal-footer">
+      <button class="btn-cancel" id="interpreter-btn-cancel">Cancel</button>
+      <button class="btn-preview" id="interpreter-btn-preview" disabled>Run Preview</button>
+      <button class="btn-commit" id="interpreter-btn-commit" style="display: none;" disabled>Commit to Graph</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Interpreter Modal JavaScript
+(function() {
+  'use strict';
+
+  // State
+  let currentFilePath = null;
+  let selectedInterpreter = null;
+  let previewData = null;
+  let previewHash = null;
+
+  // DOM Elements
+  const modalOverlay = document.getElementById('interpreter-modal-overlay');
+  const modal = modalOverlay?.querySelector('.interpreter-modal');
+  const modalClose = document.getElementById('interpreter-modal-close');
+  const accordion = document.getElementById('interpreter-accordion');
+  const btnCancel = document.getElementById('interpreter-btn-cancel');
+  const btnPreview = document.getElementById('interpreter-btn-preview');
+  const btnCommit = document.getElementById('interpreter-btn-commit');
+  const interpreterList = document.getElementById('interpreter-list');
+  const interpreterLoading = document.getElementById('interpreter-loading');
+  const interpreterPreview = document.getElementById('interpreter-preview');
+  const interpreterError = document.getElementById('interpreter-error');
+  const modalFilename = document.getElementById('interpreter-modal-filename');
+  const interpreterSection = document.getElementById('interpreter-section');
+  const interpreterInfo = document.getElementById('interpreter-info');
+  const noInterpreterWarning = document.getElementById('no-interpreter-warning');
+
+  // Open modal
+  function openInterpreterModal(filePath) {
+    if (!filePath) return;
+
+    currentFilePath = filePath;
+    selectedInterpreter = null;
+    previewData = null;
+    previewHash = null;
+
+    // Reset UI
+    interpreterLoading.style.display = 'block';
+    interpreterList.style.display = 'none';
+    interpreterPreview.style.display = 'none';
+    interpreterError.style.display = 'none';
+    btnPreview.disabled = true;
+    btnCommit.style.display = 'none';
+
+    // Set filename
+    const filename = filePath.split('/').pop();
+    modalFilename.textContent = filename;
+
+    // Show modal
+    modalOverlay.classList.add('active');
+    document.body.style.overflow = 'hidden';
+
+    // Load interpreters
+    loadInterpreters();
+  }
+
+  // Close modal
+  function closeInterpreterModal() {
+    modalOverlay.classList.remove('active');
+    document.body.style.overflow = '';
+    currentFilePath = null;
+    selectedInterpreter = null;
+    previewData = null;
+    previewHash = null;
+  }
+
+  // Load available interpreters
+  async function loadInterpreters() {
+    try {
+      const response = await fetch('/api/scripts/active?category=interpreters');
+      const data = await response.json();
+
+      interpreterLoading.style.display = 'none';
+
+      if (!data.scripts || data.scripts.length === 0) {
+        interpreterList.innerHTML = '<p style="color: #999; font-style: italic;">No validated interpreters available.</p>';
+        interpreterList.style.display = 'block';
+        return;
+      }
+
+      // Render interpreter list
+      interpreterList.innerHTML = data.scripts.map(script => `
+        <div class="interpreter-item" data-interpreter-id="${script.id}">
+          <div class="interpreter-item-header">
+            <span class="interpreter-item-name">${script.name}</span>
+            <span class="interpreter-item-badge badge-validated">✅ Validated</span>
+          </div>
+          <div class="interpreter-item-description">
+            ${script.description || script.docstring || 'No description'}
+          </div>
+        </div>
+      `).join('');
+
+      interpreterList.style.display = 'block';
+
+      // Add click handlers
+      interpreterList.querySelectorAll('.interpreter-item').forEach(item => {
+        item.addEventListener('click', () => selectInterpreter(item.dataset.interpreterId));
+      });
+
+    } catch (error) {
+      console.error('Failed to load interpreters:', error);
+      interpreterLoading.style.display = 'none';
+      showError('Failed to load interpreters: ' + error.message);
+    }
+  }
+
+  // Select interpreter
+  function selectInterpreter(interpreterId) {
+    selectedInterpreter = interpreterId;
+
+    // Update UI
+    interpreterList.querySelectorAll('.interpreter-item').forEach(item => {
+      item.classList.toggle('selected', item.dataset.interpreterId === interpreterId);
+    });
+
+    // Enable preview button
+    btnPreview.disabled = false;
+
+    // Reset preview state
+    previewData = null;
+    previewHash = null;
+    interpreterPreview.style.display = 'none';
+    btnCommit.style.display = 'none';
+  }
+
+  // Run preview
+  async function runPreview() {
+    if (!selectedInterpreter || !currentFilePath) return;
+
+    btnPreview.disabled = true;
+    btnPreview.textContent = 'Running...';
+    interpreterError.style.display = 'none';
+    interpreterPreview.style.display = 'none';
+
+    try {
+      const response = await fetch('/api/files/interpret', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file_path: currentFilePath,
+          interpreter_id: selectedInterpreter
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.status === 'success') {
+        // Store preview data
+        previewData = data.preview;
+        previewHash = data.preview_hash;
+
+        // Display preview
+        displayPreview(previewData);
+
+        // Show commit button
+        btnCommit.style.display = 'inline-block';
+        btnCommit.disabled = false;
+
+      } else {
+        showError(data.error || 'Preview failed');
+      }
+
+    } catch (error) {
+      console.error('Preview error:', error);
+      showError('Preview failed: ' + error.message);
+    } finally {
+      btnPreview.disabled = false;
+      btnPreview.textContent = 'Run Preview';
+    }
+  }
+
+  // Display preview results
+  function displayPreview(preview) {
+    const metadataEl = document.getElementById('interpreter-preview-metadata');
+
+    // Build preview display
+    const items = [
+      { key: 'Entity Type', value: preview.entity_type || 'File' },
+      ...Object.entries(preview.metadata || {}).map(([k, v]) => ({
+        key: k,
+        value: JSON.stringify(v)
+      }))
+    ];
+
+    metadataEl.innerHTML = items.map(item => `
+      <div class="interpreter-preview-item">
+        <span class="interpreter-preview-key">${item.key}:</span>
+        <span class="interpreter-preview-value">${item.value}</span>
+      </div>
+    `).join('');
+
+    interpreterPreview.style.display = 'block';
+  }
+
+  // Commit to graph
+  async function commitToGraph() {
+    if (!previewHash || !selectedInterpreter || !currentFilePath) return;
+
+    btnCommit.disabled = true;
+    btnCommit.textContent = 'Committing...';
+    interpreterError.style.display = 'none';
+
+    try {
+      const response = await fetch('/api/files/interpret/commit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file_path: currentFilePath,
+          interpreter_id: selectedInterpreter,
+          preview_hash: previewHash
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.status === 'success') {
+        window.toast('✓ Interpreter results committed to graph', 'success');
+
+        // Update file details sidebar if available
+        updateFileSidebar(previewData, selectedInterpreter);
+
+        closeInterpreterModal();
+      } else {
+        showError(data.error || 'Commit failed');
+      }
+
+    } catch (error) {
+      console.error('Commit error:', error);
+      showError('Commit failed: ' + error.message);
+    } finally {
+      btnCommit.disabled = false;
+      btnCommit.textContent = 'Commit to Graph';
+    }
+  }
+
+  // Update file sidebar with interpreter results
+  function updateFileSidebar(preview, interpreterId) {
+    if (!interpreterSection || !interpreterInfo) return;
+
+    // Show interpreter section
+    interpreterSection.style.display = 'block';
+    interpreterInfo.style.display = 'block';
+    noInterpreterWarning.style.display = 'none';
+
+    // Update entity type
+    const entityTypeEl = document.getElementById('interpreter-entity-type');
+    if (entityTypeEl) {
+      entityTypeEl.textContent = preview.entity_type || 'File';
+    }
+
+    // Update interpreter link
+    const interpreterLinkEl = document.getElementById('interpreter-link');
+    if (interpreterLinkEl) {
+      interpreterLinkEl.textContent = interpreterId;
+      interpreterLinkEl.href = `/scripts#script-${interpreterId}`;
+    }
+
+    // Update metadata display
+    const metadataEl = document.getElementById('interpreter-metadata');
+    if (metadataEl && preview.metadata) {
+      const metadataItems = Object.entries(preview.metadata).map(([k, v]) =>
+        `<div><strong>${k}:</strong> ${JSON.stringify(v)}</div>`
+      ).join('');
+      metadataEl.innerHTML = metadataItems;
+    }
+  }
+
+  // Show error
+  function showError(message) {
+    interpreterError.textContent = message;
+    interpreterError.style.display = 'block';
+  }
+
+  // Event Listeners
+  if (accordion) {
+    accordion.addEventListener('click', () => {
+      // Get current file path from somewhere in your app
+      // This is a placeholder - you'll need to hook into your file selection logic
+      const filePath = window.selectedFilePath || null;
+      if (filePath) {
+        openInterpreterModal(filePath);
+      } else {
+        window.toast('Please select a file first', 'error');
+      }
+    });
+  }
+
+  if (modalClose) modalClose.addEventListener('click', closeInterpreterModal);
+  if (btnCancel) btnCancel.addEventListener('click', closeInterpreterModal);
+  if (btnPreview) btnPreview.addEventListener('click', runPreview);
+  if (btnCommit) btnCommit.addEventListener('click', commitToGraph);
+
+  // Close on overlay click (but not modal click)
+  if (modalOverlay) {
+    modalOverlay.addEventListener('click', (e) => {
+      if (e.target === modalOverlay) closeInterpreterModal();
+    });
+  }
+
+  // Expose open function globally
+  window.openInterpreterModal = openInterpreterModal;
+
+})();
+</script>

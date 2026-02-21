@@ -472,6 +472,9 @@
   </div>
 </div>
 
+<!-- Include Interpreter Modal Component -->
+{% include 'files/_interpreter_modal.html' %}
+
 <!-- RO-Crate Viewer (optional, feature-flagged) -->
 {% if files_viewer == 'rocrate' %}
 <div style="margin-top: 1rem;">
@@ -1112,6 +1115,9 @@ window.addEventListener('DOMContentLoaded', () => {
   function showFileDetails(file) {
     selectedFile = file;
 
+    // Set global file path for interpreter modal
+    window.selectedFilePath = file.id;
+
     // Expand right panel if collapsed
     if (details.classList.contains('collapsed')) {
       collapseRight.click();
@@ -1134,7 +1140,13 @@ window.addEventListener('DOMContentLoaded', () => {
           🔍 Scan This Folder
         </button>
       ` : ''}
+      <div id="file-interpreter-section"></div>
     `;
+
+    // Show interpreter section for files
+    if (file.type === 'file' && window.updateFileInterpreterSection) {
+      window.updateFileInterpreterSection(file.id);
+    }
   }
 
   function showServerDetails(serverId) {
