@@ -47,6 +47,7 @@ def register_blueprints(app):
     from . import api_plugins
     from . import api_maps
     from . import api_scripts
+    from . import api_system
 
     # Register UI blueprint
     app.register_blueprint(ui.bp)
@@ -74,3 +75,4 @@ def register_blueprints(app):
     app.register_blueprint(api_alerts.bp)
     app.register_blueprint(api_logs.bp)
     app.register_blueprint(api_plugins.bp)
+    app.register_blueprint(api_system.bp)  # Chat self-awareness tools

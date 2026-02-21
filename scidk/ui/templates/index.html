@@ -87,8 +87,6 @@
     <a href="#providers" class="settings-sidebar-item" data-section="providers">File Providers</a>
     <a href="#neo4j" class="settings-sidebar-item" data-section="neo4j">Neo4j</a>
     <a href="#chat" class="settings-sidebar-item" data-section="chat">Chat</a>
-    <a href="#interpreters" class="settings-sidebar-item" data-section="interpreters">Interpreters</a>
-    <a href="#plugins" class="settings-sidebar-item" data-section="plugins">Plugins</a>
     <a href="#rclone" class="settings-sidebar-item" data-section="rclone">Rclone</a>
     <a href="#integrations" class="settings-sidebar-item" data-section="integrations">Integrations</a>
     <a href="#alerts" class="settings-sidebar-item" data-section="alerts">Alerts</a>
@@ -102,8 +100,8 @@
     {% include 'settings/_providers.html' %}
     {% include 'settings/_neo4j.html' %}
     {% include 'settings/_chat.html' %}
-    {% include 'settings/_interpreters.html' %}
-    {% include 'settings/_plugins.html' %}
+    <!-- Interpreters moved to Files page sidebar -->
+    <!-- Plugins moved to dedicated /plugins page -->
     {% include 'settings/_rclone.html' %}
     {% include 'settings/_integrations.html' %}
     {% include 'settings/_alerts.html' %}

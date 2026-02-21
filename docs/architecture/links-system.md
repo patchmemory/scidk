@@ -325,9 +325,52 @@ pytest tests/test_links_integration.py -v
 
 ---
 
+## Transparency Layer Integration
+
+The Links page is part of SciDK's transparency layer architecture, making intelligence sources visible at the point of use.
+
+**Two Intelligence Types Visible:**
+- **Wizard Links**: Declarative rules shown in form fields
+- **Script Links**: Code-based with validation status badges
+
+**Transparency Mechanisms:**
+- Filter tabs show source (Wizard | Script | All)
+- Validation badges (🟢 Validated | 🟡 Draft | 🔴 Failed) for scripts
+- Preview/Execute with safety confirmations
+- "Created by" attribution for both types
+
+**Design Principle:** Users can see *what* created each link and *how* it was validated without leaving the page.
+
+See [docs/architecture/transparency-layers.md](./transparency-layers.md) for the full architecture.
+
+---
+
+## Interpreter Integration
+
+**Context:** Interpreters run on Files page, Links run on graph nodes.
+
+**Relationship:**
+- Interpreters extract metadata and assign entity types to files
+- Entity types become node labels in the knowledge graph
+- Links connect these labeled nodes based on relationships
+- Both use script validation architecture (contract testing, sandboxing)
+
+**Example Flow:**
+1. FASTQ Interpreter runs on `sample_R1.fastq` → creates node with `SequencingFile` label
+2. Sample Manifest Link script reads CSV → creates `Sample` nodes
+3. Links script connects `Sample` → `SequencingFile` based on sample ID
+
+**Shared Infrastructure:**
+- Both use `ScriptsManager` and validation workflow
+- Both support plugin dependencies (`load_plugin()`)
+- Both tracked in `script_dependencies` for "Used by" display
+
+---
+
 ## Questions?
 
 - **Link contract details:** See `scripts/contracts/LINKS.md`
 - **Sample scripts:** See `scripts/links/` directory
 - **API docs:** See `/api/links` and `/api/scripts` endpoints
 - **Tests:** See `tests/test_links_integration.py`
+- **Transparency architecture:** See [docs/architecture/transparency-layers.md](./transparency-layers.md)
