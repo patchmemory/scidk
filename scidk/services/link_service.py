@@ -571,7 +571,14 @@ class LinkService:
         source_type = definition.get('source_type')
         source_config = definition.get('source_config', {})
 
-        if source_type == 'graph':
+        # 'label' type: Fetch nodes by label from Neo4j (new Label→Label format)
+        if source_type == 'label':
+            source_label = definition.get('source_label')
+            if not source_label:
+                raise ValueError("source_label is required when source_type is 'label'")
+            # Convert to graph query format
+            return self._fetch_graph_source({'label': source_label})
+        elif source_type == 'graph':
             return self._fetch_graph_source(source_config)
         elif source_type == 'csv':
             return self._fetch_csv_source(source_config)
