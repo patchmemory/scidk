@@ -150,8 +150,23 @@ def workbook_view(dataset_id):
 
 @bp.get('/plugins')
 def plugins():
-    """Redirect to landing page plugins section."""
-    return redirect(url_for('ui.index') + '#plugins')
+    """Plugins transparency layer - show active, inactive, and draft plugins."""
+    from scidk.core.scripts import ScriptsManager
+
+    manager = ScriptsManager()
+    all_scripts = manager.list_scripts()
+
+    # Filter and categorize scripts
+    active_plugins = [s for s in all_scripts if s.validation_status == 'validated' and s.is_active]
+    inactive_plugins = [s for s in all_scripts if s.validation_status == 'validated' and not s.is_active]
+    draft_failed_plugins = [s for s in all_scripts if s.validation_status in ('draft', 'failed')]
+
+    return render_template(
+        'plugins.html',
+        active_plugins=active_plugins,
+        inactive_plugins=inactive_plugins,
+        draft_failed_plugins=draft_failed_plugins
+    )
 
 
 @bp.get('/interpreters')

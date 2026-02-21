@@ -794,3 +794,49 @@ def publish_plugin_label(instance_id):
             'status': 'error',
             'error': str(e)
         }), 500
+
+
+# ============================================================================
+# Plugin Dependency Tracking (for "Used by" transparency layer)
+# ============================================================================
+
+@bp.get('/dependencies/<plugin_id>')
+def get_plugin_dependencies(plugin_id):
+    """Get scripts that depend on a plugin (for "Used by" display).
+
+    Args:
+        plugin_id: Plugin identifier
+
+    Returns:
+        JSON response with list of dependent scripts
+    """
+    try:
+        from scidk.core.scripts import ScriptsManager
+
+        manager = ScriptsManager()
+        dependents = manager.get_dependents(plugin_id)
+
+        # Enrich with script names
+        enriched = []
+        for dep in dependents:
+            script = manager.get_script(dep['id'])
+            enriched.append({
+                'id': dep['id'],
+                'name': script.name if script else dep['id'],
+                'type': dep['type'],
+                'category': script.category if script else 'unknown'
+            })
+
+        return jsonify({
+            'status': 'success',
+            'plugin_id': plugin_id,
+            'used_by': enriched,
+            'count': len(enriched)
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting plugin dependencies: {e}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500

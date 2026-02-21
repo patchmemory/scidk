@@ -275,12 +275,20 @@ def update_script(script_id: str):
 
         data = request.get_json()
 
+        # Check if code is being changed
+        code_changed = 'code' in data and data['code'] != script.code
+
         # Update fields
         script.name = data.get('name', script.name)
         script.description = data.get('description', script.description)
         script.code = data.get('code', script.code)
         script.parameters = data.get('parameters', script.parameters)
         script.tags = data.get('tags', script.tags)
+
+        # If code changed, mark as edited (resets validation and clears dependencies)
+        if code_changed:
+            script.mark_as_edited()
+            manager.clear_dependencies(script.id)
 
         updated_script = manager.update_script(script)
 
@@ -376,7 +384,7 @@ def validate_script(script_id: str):
     """
     try:
         from scidk.core.script_testing import ScriptTestRunner
-        from scidk.core.script_validators import get_validator_for_category
+        from scidk.core.script_validators import get_validator_for_category, extract_plugin_dependencies
 
         manager = _get_scripts_manager()
         script = manager.get_script(script_id)
@@ -399,6 +407,18 @@ def validate_script(script_id: str):
 
         # Save updated script
         manager.update_script(script)
+
+        # Track dependencies if validation passed
+        if result.passed and script.language == 'python':
+            dependencies = extract_plugin_dependencies(script.code)
+            manager.write_dependencies(
+                script.id,
+                script.category,  # 'interpreter', 'link', 'plugin'
+                dependencies
+            )
+        else:
+            # Clear dependencies if validation failed or not Python
+            manager.clear_dependencies(script.id)
 
         return jsonify({
             "status": "ok",

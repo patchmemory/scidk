@@ -51,6 +51,45 @@ def extract_docstring(code: str) -> str:
         return ''
 
 
+def extract_plugin_dependencies(code: str) -> List[str]:
+    """
+    Extract plugin dependencies from Python code by scanning for load_plugin() calls.
+
+    Uses AST parsing to find all load_plugin('plugin_id') function calls.
+    Handles both ast.Str (Python <3.8) and ast.Constant (Python >=3.8) for string literals.
+
+    Args:
+        code: Python source code
+
+    Returns:
+        List of plugin IDs referenced in load_plugin() calls
+    """
+    try:
+        tree = ast.parse(code)
+        dependencies = []
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                # Check if function name is 'load_plugin'
+                if isinstance(node.func, ast.Name) and node.func.id == 'load_plugin':
+                    # Check if first argument is a string literal
+                    if node.args and isinstance(node.args[0], (ast.Str, ast.Constant)):
+                        # Handle both ast.Str (Python <3.8) and ast.Constant (Python >=3.8)
+                        if isinstance(node.args[0], ast.Str):
+                            value = node.args[0].s
+                        else:
+                            value = node.args[0].value
+
+                        # Only add if it's a string
+                        if isinstance(value, str):
+                            dependencies.append(value)
+
+        return dependencies
+    except (SyntaxError, AttributeError):
+        # If code has syntax errors or unexpected structure, return empty list
+        return []
+
+
 class ValidationResult:
     """Result of validation tests with compositional merge support."""
 

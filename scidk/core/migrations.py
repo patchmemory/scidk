@@ -613,6 +613,25 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 18)
             version = 18
 
+        if version < 19:
+            # Add script_dependencies table for tracking plugin usage
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS script_dependencies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    dependent_id TEXT NOT NULL,
+                    dependency_id TEXT NOT NULL,
+                    dependent_type TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    UNIQUE(dependent_id, dependency_id)
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_dependencies_dependency ON script_dependencies(dependency_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_dependencies_dependent ON script_dependencies(dependent_id);")
+
+            conn.commit()
+            _set_version(conn, 19)
+            version = 19
+
         return version
     finally:
         if own:

@@ -649,6 +649,97 @@ class ScriptsManager:
 
         return results
 
+    # Dependency tracking methods
+
+    def clear_dependencies(self, script_id: str) -> None:
+        """
+        Clear all dependencies for a script.
+
+        Called when a script is edited (reset to draft status).
+
+        Args:
+            script_id: ID of the script whose dependencies should be cleared
+        """
+        cur = self.conn.cursor()
+        cur.execute(
+            "DELETE FROM script_dependencies WHERE dependent_id = ?",
+            (script_id,)
+        )
+        self.conn.commit()
+
+    def write_dependencies(
+        self,
+        script_id: str,
+        script_type: str,
+        dependencies: List[str]
+    ) -> None:
+        """
+        Write dependencies for a script after successful validation.
+
+        Clears existing dependencies first, then inserts new ones.
+        This respects the UNIQUE(dependent_id, dependency_id) constraint.
+
+        Args:
+            script_id: ID of the dependent script
+            script_type: Type of script ('interpreter', 'link', 'plugin')
+            dependencies: List of plugin IDs this script depends on
+        """
+        # Clear existing dependencies
+        self.clear_dependencies(script_id)
+
+        # Insert new dependencies
+        if dependencies:
+            cur = self.conn.cursor()
+            timestamp = time.time()
+            for dep_id in dependencies:
+                cur.execute(
+                    """
+                    INSERT INTO script_dependencies
+                    (dependent_id, dependency_id, dependent_type, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (script_id, dep_id, script_type, timestamp)
+                )
+            self.conn.commit()
+
+    def get_dependencies(self, script_id: str) -> List[str]:
+        """
+        Get all plugin dependencies for a script.
+
+        Args:
+            script_id: ID of the script
+
+        Returns:
+            List of plugin IDs this script depends on
+        """
+        cur = self.conn.cursor()
+        rows = cur.execute(
+            "SELECT dependency_id FROM script_dependencies WHERE dependent_id = ?",
+            (script_id,)
+        ).fetchall()
+        return [row[0] for row in rows]
+
+    def get_dependents(self, plugin_id: str) -> List[Dict[str, str]]:
+        """
+        Get all scripts that depend on a plugin (for "Used by" display).
+
+        Args:
+            plugin_id: ID of the plugin
+
+        Returns:
+            List of dicts with 'id' and 'type' keys for each dependent script
+        """
+        cur = self.conn.cursor()
+        rows = cur.execute(
+            """
+            SELECT dependent_id, dependent_type
+            FROM script_dependencies
+            WHERE dependency_id = ?
+            """,
+            (plugin_id,)
+        ).fetchall()
+        return [{'id': row[0], 'type': row[1]} for row in rows]
+
     # Helper methods
 
     def _row_to_script(self, row: Tuple) -> Script:
