@@ -633,11 +633,24 @@ function loadLinkDefinitions() {
     .catch(err => showToast('Failed to load link definitions', 'error'));
 }
 
+function updateFilterTabCounts() {
+  const validLinks = linkDefinitions.filter(link => link && link.id);
+  const wizardCount = validLinks.filter(l => l.type === 'wizard' || !l.type).length;
+  const scriptCount = validLinks.filter(l => l.type === 'script').length;
+
+  document.querySelector('[data-filter="all"]').textContent = `All (${validLinks.length})`;
+  document.querySelector('[data-filter="wizard"]').textContent = `Wizard (${wizardCount})`;
+  document.querySelector('[data-filter="script"]').textContent = `Script (${scriptCount})`;
+}
+
 function renderLinkList() {
   const container = document.getElementById('link-list');
 
   // Filter out links without IDs (data integrity issue)
   let validLinks = linkDefinitions.filter(link => link && link.id);
+
+  // Update filter tab counts
+  updateFilterTabCounts();
 
   // Apply type filter
   if (currentFilter === 'wizard') {
@@ -797,7 +810,7 @@ function openScriptLink(scriptId) {
 
       <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
         ${scriptLink.validation_status === 'validated' ? `
-          <button class="btn btn-success" onclick="executeScriptLink('${scriptLink.id}')">
+          <button class="btn btn-success" onclick="confirmAndExecuteScriptLink('${scriptLink.id}')">
             ▶️ Execute Link
           </button>
           <button class="btn btn-outline-primary" onclick="previewScriptLink('${scriptLink.id}')">
@@ -854,6 +867,28 @@ function redirectToScript(scriptId) {
 function hideScriptLink() {
   document.getElementById('link-wizard').style.display = 'none';
   document.querySelectorAll('.link-item').forEach(el => el.classList.remove('active'));
+}
+
+async function confirmAndExecuteScriptLink(scriptId) {
+  const scriptLink = linkDefinitions.find(l => l.id === scriptId && l.type === 'script');
+
+  if (!scriptLink) {
+    showToast('Script not found', 'error');
+    return;
+  }
+
+  // Confirmation dialog for Neo4j write operation
+  const confirmed = confirm(
+    `Execute "${escapeHtml(scriptLink.name)}"?\n\n` +
+    `This will create relationships in your Neo4j knowledge graph.\n\n` +
+    `Tip: Use Preview first to see what will be created.`
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  await executeScriptLink(scriptId, false);
 }
 
 async function executeScriptLink(scriptId, preview = false) {
