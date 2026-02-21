@@ -77,6 +77,12 @@ def map_page():
     return render_template('map.html', schema_summary=schema_summary)
 
 
+@bp.get('/results')
+def results():
+    """Results page - transparency layer for analyses."""
+    return render_template('results.html')
+
+
 @bp.get('/scripts')
 def scripts_page():
     """Scripts page with script library and executor."""

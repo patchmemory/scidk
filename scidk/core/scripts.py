@@ -449,12 +449,29 @@ class ScriptsManager:
         result_id = str(uuid.uuid4())
         parameters = parameters or {}
 
+        # For analyses category, create AnalysisContext
+        analysis_context = None
+        if script.category == 'analyses':
+            from .analysis_context import AnalysisContext
+            analysis_context = AnalysisContext(
+                script_id=script_id,
+                execution_id=result_id,
+                neo4j_driver=neo4j_driver,
+                neo4j_database=neo4j_database,
+                parameters=parameters
+            )
+
         try:
             # Execute based on language
             if script.language == 'cypher':
                 results = self._execute_cypher(script, parameters, neo4j_driver, neo4j_database)
             elif script.language == 'python':
-                results = self._execute_python(script, parameters, neo4j_driver)
+                if script.category == 'analyses' and analysis_context:
+                    # Pass AnalysisContext for analyses
+                    results = self._execute_python_analysis(script, analysis_context)
+                else:
+                    # Standard execution for other categories
+                    results = self._execute_python(script, parameters, neo4j_driver)
             else:
                 raise ValueError(f"Unsupported language: {script.language}")
 
@@ -470,6 +487,11 @@ class ScriptsManager:
                 results=results,
                 execution_time_ms=execution_time_ms
             )
+
+            # Flush analysis panels on success
+            if analysis_context:
+                analysis_context._flush_panels(script.name)
+
         except Exception as e:
             execution_time_ms = int((time.time() - start_time) * 1000)
             result = ScriptExecution(
@@ -648,6 +670,48 @@ class ScriptsManager:
                     results = results.to_dict('records')
 
         return results
+
+    def _execute_python_analysis(
+        self,
+        script: Script,
+        context
+    ) -> List[Dict[str, Any]]:
+        """Execute a Python analysis script with AnalysisContext."""
+        import pandas as pd
+        from pathlib import Path
+
+        # Global namespace for analysis execution
+        global_namespace = {
+            'context': context,
+            'pd': pd,
+            'json': json,
+            'Path': Path,
+            '__file__': '<script>'
+        }
+
+        # Execute script code
+        exec(script.code, global_namespace)
+
+        # Call run(context) function (required for analyses)
+        if 'run' in global_namespace and callable(global_namespace['run']):
+            result = global_namespace['run'](context)
+
+            # Analysis scripts should register panels via context, not return data
+            # But if they do return data, we'll handle it
+            if result is not None:
+                if isinstance(result, list):
+                    return result
+                elif isinstance(result, pd.DataFrame):
+                    return result.to_dict('records')
+                elif isinstance(result, dict):
+                    return [result]
+                else:
+                    return [{'result': str(result)}]
+            else:
+                # No return value - analysis used context.register_panel()
+                return [{'status': 'success', 'message': 'Analysis completed'}]
+        else:
+            return [{'error': 'Analysis script must define run(context) function'}]
 
     # Dependency tracking methods
 

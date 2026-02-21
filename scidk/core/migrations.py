@@ -632,6 +632,33 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 19)
             version = 19
 
+        # v20: Add analysis_panels table for Results page
+        if version < 20:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS analysis_panels (
+                    id TEXT PRIMARY KEY,
+                    script_id TEXT NOT NULL,
+                    execution_id TEXT NOT NULL,
+                    script_name TEXT,
+                    ran_at REAL NOT NULL,
+                    panel_type TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    panel_data TEXT NOT NULL,
+                    visualization TEXT,
+                    status TEXT DEFAULT 'success',
+                    error_message TEXT,
+                    FOREIGN KEY (script_id) REFERENCES scripts(id) ON DELETE CASCADE,
+                    FOREIGN KEY (execution_id) REFERENCES script_executions(id) ON DELETE CASCADE
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_analysis_panels_ran_at ON analysis_panels(ran_at DESC);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_analysis_panels_script ON analysis_panels(script_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_analysis_panels_execution ON analysis_panels(execution_id);")
+
+            conn.commit()
+            _set_version(conn, 20)
+            version = 20
+
         return version
     finally:
         if own:
