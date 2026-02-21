@@ -98,18 +98,18 @@ class LinkService:
         # This avoids fragile parsing and "Custom → Custom" inconsistencies.
         for script in script_links:
             all_links.append({
-                'id': script['id'],
-                'name': script['name'],
-                'description': script.get('description', ''),
+                'id': script.id,
+                'name': script.name,
+                'description': script.description or '',
                 'source_label': None,  # Not inferred
                 'target_label': None,  # Not inferred
                 'relationship_type': 'Dynamic',  # Defined in code
                 'type': 'script',
                 'match_strategy': 'custom_code',
-                'created_at': script.get('created_at', 0),
-                'updated_at': script.get('updated_at', 0),
-                'validation_status': script.get('validation_status', 'draft'),
-                'is_active': script.get('is_active', False)
+                'created_at': script.created_at or 0,
+                'updated_at': script.updated_at or 0,
+                'validation_status': script.validation_status or 'draft',
+                'is_active': script.is_active if script.is_active is not None else False
             })
 
         # Sort by most recently updated
