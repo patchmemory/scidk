@@ -751,9 +751,15 @@ function loadLinkDefinition(linkId) {
         currentLink = data.link;
         populateWizardFromLink(currentLink);
         showWizard();
+      } else {
+        console.error('Failed to load link:', data);
+        showToast(`Failed to load link: ${data.error || 'Unknown error'}`, 'error');
       }
     })
-    .catch(err => showToast('Failed to load link definition', 'error'));
+    .catch(err => {
+      console.error('Error loading link definition:', err);
+      showToast('Failed to load link definition', 'error');
+    });
 }
 
 // Handle script link selection
