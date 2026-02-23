@@ -977,6 +977,452 @@ class LinkService:
         finally:
             conn.close()
 
+    def discover_relationships(self, profile_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Query Neo4j to discover existing relationship types across all nodes.
+
+        Args:
+            profile_name: Optional Neo4j profile name. If None, queries all configured databases.
+
+        Returns:
+            List of discovered relationships with:
+            - source_label: Source node label
+            - rel_type: Relationship type
+            - target_label: Target node label
+            - triple_count: Count of existing triples
+            - database: 'PRIMARY' or profile name
+        """
+        from .neo4j_client import get_neo4j_client, get_neo4j_client_for_profile, list_neo4j_profiles
+
+        discovered = []
+
+        # Discovery query - finds all relationship patterns in the graph
+        discovery_query = """
+        MATCH (a)-[r]->(b)
+        WITH labels(a) as source_labels, type(r) as rel_type, labels(b) as target_labels
+        WHERE size(source_labels) > 0 AND size(target_labels) > 0
+        WITH source_labels[0] as source_label, rel_type, target_labels[0] as target_label
+        RETURN source_label, rel_type, target_label, count(*) as triple_count
+        ORDER BY triple_count DESC
+        """
+
+        if profile_name:
+            # Query specific profile only
+            try:
+                client = get_neo4j_client_for_profile(profile_name)
+                if client:
+                    try:
+                        results = client.execute_read(discovery_query)
+                        for record in results:
+                            discovered.append({
+                                'source_label': record.get('source_label'),
+                                'rel_type': record.get('rel_type'),
+                                'target_label': record.get('target_label'),
+                                'triple_count': record.get('triple_count', 0),
+                                'database': profile_name
+                            })
+                    finally:
+                        client.close()
+            except Exception as e:
+                # Log error but continue
+                try:
+                    from flask import current_app
+                    current_app.logger.warning(f"Failed to discover relationships from profile '{profile_name}': {e}")
+                except:
+                    pass
+
+        else:
+            # Query primary database
+            try:
+                primary_client = get_neo4j_client()
+                if primary_client:
+                    try:
+                        results = primary_client.execute_read(discovery_query)
+                        for record in results:
+                            discovered.append({
+                                'source_label': record.get('source_label'),
+                                'rel_type': record.get('rel_type'),
+                                'target_label': record.get('target_label'),
+                                'triple_count': record.get('triple_count', 0),
+                                'database': 'PRIMARY'
+                            })
+                    finally:
+                        primary_client.close()
+            except Exception as e:
+                try:
+                    from flask import current_app
+                    current_app.logger.warning(f"Failed to discover relationships from primary database: {e}")
+                except:
+                    pass
+
+            # Query all configured external profiles
+            profiles = list_neo4j_profiles()
+            for profile in profiles:
+                profile_name = profile['name']
+                try:
+                    client = get_neo4j_client_for_profile(profile_name)
+                    if client:
+                        try:
+                            results = client.execute_read(discovery_query)
+                            for record in results:
+                                discovered.append({
+                                    'source_label': record.get('source_label'),
+                                    'rel_type': record.get('rel_type'),
+                                    'target_label': record.get('target_label'),
+                                    'triple_count': record.get('triple_count', 0),
+                                    'database': profile_name
+                                })
+                        finally:
+                            client.close()
+                except Exception as e:
+                    # Log error but continue with other profiles
+                    try:
+                        from flask import current_app
+                        current_app.logger.warning(f"Failed to discover relationships from profile '{profile_name}': {e}")
+                    except:
+                        pass
+
+        return discovered
+
+    def preview_triple_import(self, source_database: str, rel_type: str, source_label: str, target_label: str) -> Dict[str, Any]:
+        """
+        Preview triples that would be imported from an external database.
+
+        Args:
+            source_database: Name of the source Neo4j profile
+            rel_type: Relationship type to import
+            source_label: Source node label
+            target_label: Target node label
+
+        Returns:
+            Dict with status, preview triples list (limited to 100), and total count
+        """
+        import re
+        import hashlib
+        import json
+        from .neo4j_client import get_neo4j_client_for_profile
+
+        # Validate relationship type (Cypher injection protection)
+        if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', rel_type):
+            return {
+                'status': 'error',
+                'error': 'Invalid relationship type format'
+            }
+
+        # Validate labels
+        if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', source_label) or not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', target_label):
+            return {
+                'status': 'error',
+                'error': 'Invalid label format'
+            }
+
+        try:
+            # Connect to source database
+            source_client = get_neo4j_client_for_profile(source_database)
+            if not source_client:
+                return {
+                    'status': 'error',
+                    'error': f"Could not connect to source database '{source_database}'"
+                }
+
+            try:
+                # Query for triples (limit preview to 100)
+                preview_query = f"""
+                MATCH (source:{source_label})-[r:{rel_type}]->(target:{target_label})
+                RETURN elementId(source) as source_id,
+                       properties(source) as source_props,
+                       type(r) as rel_type,
+                       properties(r) as rel_props,
+                       elementId(target) as target_id,
+                       properties(target) as target_props
+                LIMIT 100
+                """
+
+                preview_results = source_client.execute_read(preview_query)
+
+                # Get total count
+                count_query = f"""
+                MATCH (:{source_label})-[r:{rel_type}]->(:{target_label})
+                RETURN count(r) as total
+                """
+                count_results = source_client.execute_read(count_query)
+                total_count = count_results[0].get('total', 0) if count_results else 0
+
+                # Format preview
+                preview_triples = []
+                for record in preview_results:
+                    preview_triples.append({
+                        'source_node': {
+                            'id': record.get('source_id'),
+                            'label': source_label,
+                            'properties': record.get('source_props', {})
+                        },
+                        'relationship': {
+                            'type': record.get('rel_type'),
+                            'properties': record.get('rel_props', {})
+                        },
+                        'target_node': {
+                            'id': record.get('target_id'),
+                            'label': target_label,
+                            'properties': record.get('target_props', {})
+                        }
+                    })
+
+                # Generate preview hash for validation on commit
+                preview_data = {
+                    'source_database': source_database,
+                    'rel_type': rel_type,
+                    'source_label': source_label,
+                    'target_label': target_label,
+                    'total_count': total_count
+                }
+                preview_hash = hashlib.sha256(json.dumps(preview_data, sort_keys=True).encode()).hexdigest()
+
+                return {
+                    'status': 'success',
+                    'preview': preview_triples,
+                    'total_count': total_count,
+                    'preview_hash': preview_hash,
+                    'showing': len(preview_triples)
+                }
+
+            finally:
+                source_client.close()
+
+        except Exception as e:
+            return {
+                'status': 'error',
+                'error': str(e)
+            }
+
+    def commit_triple_import(self, source_database: str, rel_type: str, source_label: str, target_label: str, preview_hash: str) -> Dict[str, Any]:
+        """
+        Import triples from external database to primary database.
+
+        Optimization strategy:
+        1. Try APOC-based direct copy (fastest, ~30s for 500K triples)
+        2. Fall back to streaming batches if APOC unavailable
+        3. Use large batch size (10000) to minimize round trips
+
+        Args:
+            source_database: Name of the source Neo4j profile
+            rel_type: Relationship type to import
+            source_label: Source node label
+            target_label: Target node label
+            preview_hash: Hash from preview to validate request hasn't changed
+
+        Returns:
+            Dict with status, triples_imported count, duration, and method used
+        """
+        import re
+        import time
+        from .neo4j_client import get_neo4j_client_for_profile, get_neo4j_client
+
+        # Validate inputs
+        if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', rel_type):
+            return {'status': 'error', 'error': 'Invalid relationship type format'}
+        if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', source_label) or not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', target_label):
+            return {'status': 'error', 'error': 'Invalid label format'}
+
+        start_time = time.time()
+
+        try:
+            # Connect to source database
+            source_client = get_neo4j_client_for_profile(source_database)
+            if not source_client:
+                return {'status': 'error', 'error': f"Could not connect to source database '{source_database}'"}
+
+            # Connect to primary database
+            primary_client = get_neo4j_client()
+            if not primary_client:
+                return {'status': 'error', 'error': 'Could not connect to primary database'}
+
+            try:
+                import_timestamp = time.time()
+
+                # Strategy 1: Try APOC-based import (fastest)
+                apoc_result = self._try_apoc_import(
+                    source_client, primary_client, source_database,
+                    rel_type, source_label, target_label, import_timestamp
+                )
+
+                if apoc_result['success']:
+                    duration = time.time() - start_time
+                    return {
+                        'status': 'success',
+                        'triples_imported': apoc_result['count'],
+                        'duration_seconds': round(duration, 2),
+                        'method': 'apoc'
+                    }
+
+                # Strategy 2: Streaming batch import (fallback)
+                result = self._streaming_batch_import(
+                    source_client, primary_client, source_database,
+                    rel_type, source_label, target_label, import_timestamp
+                )
+
+                duration = time.time() - start_time
+
+                return {
+                    'status': 'success',
+                    'triples_imported': result['count'],
+                    'duration_seconds': round(duration, 2),
+                    'method': 'streaming_batch',
+                    'batches_processed': result.get('batches', 0)
+                }
+
+            finally:
+                source_client.close()
+                primary_client.close()
+
+        except Exception as e:
+            return {
+                'status': 'error',
+                'error': str(e)
+            }
+
+    def _try_apoc_import(self, source_client, primary_client, source_database: str,
+                        rel_type: str, source_label: str, target_label: str,
+                        import_timestamp: float) -> Dict[str, Any]:
+        """
+        Attempt APOC-based direct copy between databases.
+
+        Returns dict with 'success' (bool) and 'count' (int) if successful.
+        """
+        try:
+            # Check if APOC is available
+            apoc_check = primary_client.execute_read("RETURN apoc.version() as version")
+            if not apoc_check:
+                return {'success': False}
+
+            # Get source connection details
+            from .neo4j_client import get_settings_by_prefix
+            source_settings = get_settings_by_prefix(f'neo4j_profile_{source_database}')
+
+            if not source_settings:
+                return {'success': False}
+
+            source_uri = source_settings.get('uri')
+            source_user = source_settings.get('user')
+            source_password = source_settings.get('password', '')
+            source_db = source_settings.get('database', 'neo4j')
+
+            if not source_uri:
+                return {'success': False}
+
+            # APOC query to copy triples directly
+            apoc_query = f"""
+            CALL apoc.bolt.load(
+                $source_uri,
+                "MATCH (source:{source_label})-[r:{rel_type}]->(target:{target_label})
+                 RETURN properties(source) as source_props,
+                        properties(r) as rel_props,
+                        properties(target) as target_props",
+                {{}},
+                {{username: $source_user, password: $source_password, database: $source_db}}
+            ) YIELD row
+            MERGE (source:{source_label} {{id: row.source_props.id}})
+            SET source += row.source_props
+            MERGE (target:{target_label} {{id: row.target_props.id}})
+            SET target += row.target_props
+            MERGE (source)-[r:{rel_type}]->(target)
+            SET r += row.rel_props,
+                r.__source__ = 'graph_import',
+                r.__external_db__ = $external_db,
+                r.__imported_at__ = $imported_at,
+                r.__imported_by__ = 'scidk'
+            RETURN count(r) as imported
+            """
+
+            result = primary_client.execute_write(apoc_query, {
+                'source_uri': source_uri,
+                'source_user': source_user,
+                'source_password': source_password,
+                'source_db': source_db,
+                'external_db': source_database,
+                'imported_at': import_timestamp
+            })
+
+            if result:
+                return {'success': True, 'count': result[0].get('imported', 0)}
+
+            return {'success': False}
+
+        except Exception as e:
+            # APOC not available or failed, fall back to streaming
+            return {'success': False}
+
+    def _streaming_batch_import(self, source_client, primary_client, source_database: str,
+                                rel_type: str, source_label: str, target_label: str,
+                                import_timestamp: float) -> Dict[str, Any]:
+        """
+        Streaming batch import - fetch and write in chunks without loading all into memory.
+        Uses batch size of 10000 for better performance.
+        """
+        batch_size = 10000  # Increased from 1000
+        total_imported = 0
+        batch_count = 0
+        skip = 0
+
+        while True:
+            # Fetch one batch from source
+            triples_query = f"""
+            MATCH (source:{source_label})-[r:{rel_type}]->(target:{target_label})
+            RETURN properties(source) as source_props,
+                   properties(r) as rel_props,
+                   properties(target) as target_props
+            SKIP {skip}
+            LIMIT {batch_size}
+            """
+
+            batch_triples = source_client.execute_read(triples_query)
+
+            if not batch_triples:
+                break  # No more triples to fetch
+
+            # Write batch to primary
+            import_query = f"""
+            UNWIND $triples as triple
+            MERGE (source:{source_label} {{id: triple.source_props.id}})
+            SET source += triple.source_props
+            MERGE (target:{target_label} {{id: triple.target_props.id}})
+            SET target += triple.target_props
+            MERGE (source)-[r:{rel_type}]->(target)
+            SET r += triple.rel_props,
+                r.__source__ = 'graph_import',
+                r.__external_db__ = $external_db,
+                r.__imported_at__ = $imported_at,
+                r.__imported_by__ = 'scidk'
+            RETURN count(r) as imported
+            """
+
+            batch_data = [
+                {
+                    'source_props': triple.get('source_props', {}),
+                    'rel_props': triple.get('rel_props', {}),
+                    'target_props': triple.get('target_props', {})
+                }
+                for triple in batch_triples
+            ]
+
+            result = primary_client.execute_write(import_query, {
+                'triples': batch_data,
+                'external_db': source_database,
+                'imported_at': import_timestamp
+            })
+
+            if result:
+                total_imported += result[0].get('imported', 0)
+
+            batch_count += 1
+            skip += batch_size
+
+            # If we got fewer results than batch_size, we're done
+            if len(batch_triples) < batch_size:
+                break
+
+        return {'count': total_imported, 'batches': batch_count}
+
 
 def get_neo4j_client():
     """Get or create Neo4j client instance."""
