@@ -1311,20 +1311,27 @@ class LinkService:
                 return {'success': False}
 
             # APOC query to copy triples directly
+            # Use elementId with database prefix for unique identification
             apoc_query = f"""
             CALL apoc.bolt.load(
                 $source_uri,
                 "MATCH (source:{source_label})-[r:{rel_type}]->(target:{target_label})
-                 RETURN properties(source) as source_props,
+                 RETURN elementId(source) as source_id,
+                        properties(source) as source_props,
                         properties(r) as rel_props,
+                        elementId(target) as target_id,
                         properties(target) as target_props",
                 {{}},
                 {{username: $source_user, password: $source_password, database: $source_db}}
             ) YIELD row
-            MERGE (source:{source_label} {{id: row.source_props.id}})
-            SET source += row.source_props
-            MERGE (target:{target_label} {{id: row.target_props.id}})
-            SET target += row.target_props
+            WITH row, $external_db + '::' + row.source_id as prefixed_source_id,
+                      $external_db + '::' + row.target_id as prefixed_target_id
+            MERGE (source:{source_label} {{__import_id__: prefixed_source_id}})
+            SET source += row.source_props,
+                source.__source_db__ = $external_db
+            MERGE (target:{target_label} {{__import_id__: prefixed_target_id}})
+            SET target += row.target_props,
+                target.__source_db__ = $external_db
             MERGE (source)-[r:{rel_type}]->(target)
             SET r += row.rel_props,
                 r.__source__ = 'graph_import',
@@ -1365,11 +1372,13 @@ class LinkService:
         skip = 0
 
         while True:
-            # Fetch one batch from source
+            # Fetch one batch from source with Neo4j element IDs
             triples_query = f"""
             MATCH (source:{source_label})-[r:{rel_type}]->(target:{target_label})
-            RETURN properties(source) as source_props,
+            RETURN elementId(source) as source_id,
+                   properties(source) as source_props,
                    properties(r) as rel_props,
+                   elementId(target) as target_id,
                    properties(target) as target_props
             SKIP {skip}
             LIMIT {batch_size}
@@ -1381,12 +1390,15 @@ class LinkService:
                 break  # No more triples to fetch
 
             # Write batch to primary
+            # Use prefixed elementId for unique identification across databases
             import_query = f"""
             UNWIND $triples as triple
-            MERGE (source:{source_label} {{id: triple.source_props.id}})
-            SET source += triple.source_props
-            MERGE (target:{target_label} {{id: triple.target_props.id}})
-            SET target += triple.target_props
+            MERGE (source:{source_label} {{__import_id__: triple.source_id}})
+            SET source += triple.source_props,
+                source.__source_db__ = $external_db
+            MERGE (target:{target_label} {{__import_id__: triple.target_id}})
+            SET target += triple.target_props,
+                target.__source_db__ = $external_db
             MERGE (source)-[r:{rel_type}]->(target)
             SET r += triple.rel_props,
                 r.__source__ = 'graph_import',
@@ -1398,8 +1410,10 @@ class LinkService:
 
             batch_data = [
                 {
+                    'source_id': f"{source_database}::{triple.get('source_id')}",
                     'source_props': triple.get('source_props', {}),
                     'rel_props': triple.get('rel_props', {}),
+                    'target_id': f"{source_database}::{triple.get('target_id')}",
                     'target_props': triple.get('target_props', {})
                 }
                 for triple in batch_triples
