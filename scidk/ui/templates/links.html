@@ -827,15 +827,22 @@ function renderLinkList() {
     }).join('');
 
     // Add click handlers for discovered relationships from external databases
+    console.log('[Links] Adding click handlers to', container.querySelectorAll('.link-item[data-discovered="true"]').length, 'discovered items');
     container.querySelectorAll('.link-item[data-discovered="true"]').forEach(item => {
       const index = parseInt(item.dataset.index);
       const rel = discoveredRelationships[index];
 
+      console.log('[Links] Discovered item', index, ':', rel);
+
       // Only make external relationships clickable
-      if (rel.database !== 'PRIMARY') {
+      if (rel && rel.database !== 'PRIMARY') {
+        console.log('[Links] Adding click handler for', rel.database, rel.source_label, rel.rel_type, rel.target_label);
         item.addEventListener('click', () => {
+          console.log('[Links] Click detected! Opening wizard for:', rel);
           openImportWizardForRelationship(rel);
         });
+      } else {
+        console.log('[Links] Skipping PRIMARY or undefined rel');
       }
     });
     return;
@@ -1885,7 +1892,10 @@ function returnFocusToSidePanel() {
 // openImportWizardForRelationship is now the main entry point for clicking discovered relationships
 
 function openImportWizardForRelationship(rel) {
+  console.log('[Links] openImportWizardForRelationship called with:', rel);
+
   // Reset wizard to clean state
+  console.log('[Links] Calling resetWizard()');
   resetWizard();
 
   // Pre-fill Step 1: Source Label
