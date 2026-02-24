@@ -220,8 +220,10 @@ class ScriptsManager:
         cur.execute(
             """
             INSERT INTO scripts
-            (id, name, description, language, category, code, parameters, tags, created_at, created_by, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, name, description, language, category, code, parameters, tags,
+             created_at, created_by, updated_at, validation_status, validation_errors,
+             validation_timestamp, is_active, docstring, is_file_based)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 script.id,
@@ -234,7 +236,13 @@ class ScriptsManager:
                 json.dumps(script.tags),
                 script.created_at,
                 script.created_by,
-                script.updated_at
+                script.updated_at,
+                script.validation_status,
+                json.dumps(script.validation_errors),
+                script.validation_timestamp,
+                1 if script.is_active else 0,
+                script.docstring,
+                0  # is_file_based = 0 for database scripts
             )
         )
         self.conn.commit()
@@ -322,6 +330,8 @@ class ScriptsManager:
         if existing_row and existing_row[0] != script.code:
             # Code changed - enforce lifecycle rule
             script.mark_as_edited()
+            # Clear dependencies when code changes (they become stale until revalidation)
+            self.clear_dependencies(script.id)
 
         cur.execute(
             """
@@ -356,6 +366,20 @@ class ScriptsManager:
         """Delete a script and its results."""
         cur = self.conn.cursor()
         cur.execute("DELETE FROM scripts WHERE id = ?", (script_id,))
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def deactivate_script(self, script_id: str) -> bool:
+        """Deactivate a script (set is_active = False)."""
+        cur = self.conn.cursor()
+        cur.execute("UPDATE scripts SET is_active = 0 WHERE id = ?", (script_id,))
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def activate_script(self, script_id: str) -> bool:
+        """Activate a script (set is_active = True)."""
+        cur = self.conn.cursor()
+        cur.execute("UPDATE scripts SET is_active = 1 WHERE id = ?", (script_id,))
         self.conn.commit()
         return cur.rowcount > 0
 
@@ -807,7 +831,15 @@ class ScriptsManager:
     # Helper methods
 
     def _row_to_script(self, row: Tuple) -> Script:
-        """Convert database row to Script."""
+        """Convert database row to Script.
+
+        Row columns (from migrations.py v18):
+        0: id, 1: name, 2: description, 3: language, 4: category, 5: code,
+        6: parameters, 7: tags, 8: created_at, 9: created_by, 10: updated_at,
+        11: file_path, 12: is_file_based,
+        13: validation_status, 14: validation_timestamp, 15: validation_errors,
+        16: is_active, 17: docstring
+        """
         return Script(
             id=row[0],
             name=row[1],
@@ -819,7 +851,13 @@ class ScriptsManager:
             tags=json.loads(row[7]) if row[7] else [],
             created_at=row[8],
             created_by=row[9],
-            updated_at=row[10]
+            updated_at=row[10],
+            # Transparency layer columns (added in migration v18)
+            validation_status=row[13] if len(row) > 13 and row[13] else 'draft',
+            validation_timestamp=row[14] if len(row) > 14 else None,
+            validation_errors=json.loads(row[15]) if len(row) > 15 and row[15] else [],
+            is_active=bool(row[16]) if len(row) > 16 else False,
+            docstring=row[17] if len(row) > 17 else ''
         )
 
     def _row_to_result(self, row: Tuple) -> ScriptExecution:

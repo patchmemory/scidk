@@ -708,12 +708,13 @@ def get_label_instances(name):
     Query params:
     - limit: max number of instances (default: 100)
     - offset: pagination offset (default: 0)
+    - with_relationships: include 1-hop relationships (default: false)
 
     Returns:
     {
         "status": "success",
         "instances": [
-            {"id": "...", "properties": {"name": "John", "age": 30}},
+            {"id": "...", "properties": {"name": "John", "age": 30}, "relatedTo": [...]},
             ...
         ],
         "total": 150,
@@ -725,8 +726,9 @@ def get_label_instances(name):
         service = _get_label_service()
         limit = int(request.args.get('limit', 100))
         offset = int(request.args.get('offset', 0))
+        with_relationships = request.args.get('with_relationships', 'false').lower() == 'true'
 
-        result = service.get_label_instances(name, limit=limit, offset=offset)
+        result = service.get_label_instances(name, limit=limit, offset=offset, with_relationships=with_relationships)
 
         if result.get('status') == 'error':
             return jsonify(result), 500
@@ -1050,6 +1052,44 @@ def label_transfer_cancel(name):
                 'status': 'error',
                 'error': f'No active transfer found for {name}'
             }), 404
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/labels/<name>/property-values/<property_name>', methods=['GET'])
+def get_property_values(name, property_name):
+    """
+    Get distinct values for a property on a label.
+    Returns up to 100 most common values.
+
+    Query params:
+    - limit: max number of values to return (default 100)
+    """
+    try:
+        service = _get_label_service()
+        limit = request.args.get('limit', 100, type=int)
+
+        # Query Neo4j for distinct property values
+        query = f"""
+        MATCH (n:{name})
+        WHERE n.{property_name} IS NOT NULL
+        RETURN DISTINCT n.{property_name} as value, count(*) as count
+        ORDER BY count DESC
+        LIMIT {limit}
+        """
+
+        results = service.neo4j_client.execute_query(query)
+        values = [record['value'] for record in results]
+
+        return jsonify({
+            'status': 'success',
+            'property': property_name,
+            'values': values,
+            'count': len(values)
+        }), 200
     except Exception as e:
         return jsonify({
             'status': 'error',

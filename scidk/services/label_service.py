@@ -652,7 +652,7 @@ class LabelService:
                 'error': str(e)
             }
 
-    def get_label_instances(self, name: str, limit: int = 100, offset: int = 0) -> Dict[str, Any]:
+    def get_label_instances(self, name: str, limit: int = 100, offset: int = 0, with_relationships: bool = False) -> Dict[str, Any]:
         """
         Get instances of a label from Neo4j.
 
@@ -663,6 +663,7 @@ class LabelService:
             name: Label name
             limit: Maximum number of instances to return
             offset: Pagination offset
+            with_relationships: If True, include 1-hop relationships for each node
 
         Returns:
             Dict with status, instances list, and pagination info
@@ -712,21 +713,53 @@ class LabelService:
 
             try:
                 # Query for instances of this label
-                query = f"""
-                MATCH (n:{name})
-                RETURN elementId(n) as id, properties(n) as properties
-                SKIP $offset
-                LIMIT $limit
-                """
+                if with_relationships:
+                    # Include 1-hop relationships (both incoming and outgoing)
+                    # Must collect all relationships in a single aggregation to avoid Neo4j grouping issues
+                    query = f"""
+                    MATCH (n:{name})
+                    OPTIONAL MATCH (n)-[r_out]->(out_neighbor)
+                    OPTIONAL MATCH (in_neighbor)-[r_in]->(n)
+                    WITH n,
+                         collect(DISTINCT {{
+                            neighbor_id: elementId(out_neighbor),
+                            rel_type: type(r_out),
+                            direction: 'out',
+                            properties: properties(r_out),
+                            neighbor_labels: labels(out_neighbor)
+                         }}) + collect(DISTINCT {{
+                            neighbor_id: elementId(in_neighbor),
+                            rel_type: type(r_in),
+                            direction: 'in',
+                            properties: properties(r_in),
+                            neighbor_labels: labels(in_neighbor)
+                         }}) as all_relationships
+                    RETURN elementId(n) as id, properties(n) as properties,
+                           [rel in all_relationships WHERE rel.neighbor_id IS NOT NULL][0..100] as relatedTo
+                    SKIP $offset
+                    LIMIT $limit
+                    """
+                else:
+                    query = f"""
+                    MATCH (n:{name})
+                    RETURN elementId(n) as id, properties(n) as properties
+                    SKIP $offset
+                    LIMIT $limit
+                    """
 
                 results = neo4j_client.execute_read(query, {'offset': offset, 'limit': limit})
 
                 instances = []
                 for r in results:
-                    instances.append({
+                    instance = {
                         'id': r.get('id'),
                         'properties': r.get('properties', {})
-                    })
+                    }
+                    if with_relationships:
+                        # Filter out None relationships (from OPTIONAL MATCH)
+                        related = r.get('relatedTo', [])
+                        instance['relatedTo'] = [rel for rel in related if rel.get('neighbor_id')]
+                    instances.append(instance)
 
                 # Get total count
                 count_query = f"MATCH (n:{name}) RETURN count(n) as total"

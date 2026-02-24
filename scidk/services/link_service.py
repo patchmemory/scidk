@@ -1479,6 +1479,64 @@ class LinkService:
         else:
             raise Exception(result.get('error', 'Unknown error during import'))
 
+    def create_validated_relationships(self, link_id: str, matches: List[Dict[str, Any]]) -> int:
+        """
+        Create relationships for human-validated matches from CSV import.
+
+        Args:
+            link_id: The link definition ID
+            matches: List of validated matches with source_id, target_id, match_score
+
+        Returns:
+            Number of relationships created
+        """
+        try:
+            link = self.get_link(link_id)
+            if not link:
+                raise ValueError(f"Link {link_id} not found")
+
+            rel_type = link.get('relationship_type')
+            rel_props = link.get('relationship_props', {})
+
+            relationships_created = 0
+
+            with self.neo4j_client.driver.session(database=self.neo4j_client.database) as session:
+                for match in matches:
+                    source_id = match.get('source_id')
+                    target_id = match.get('target_id')
+                    match_score = match.get('match_score', '')
+
+                    if not source_id or not target_id:
+                        continue
+
+                    # Build relationship properties
+                    props = dict(rel_props)
+                    props['__source__'] = 'csv_validation'
+                    props['__validated_at__'] = datetime.now().isoformat()
+                    if match_score:
+                        props['__match_score__'] = match_score
+
+                    # Create relationship using Neo4j element IDs
+                    query = f"""
+                    MATCH (s), (t)
+                    WHERE elementId(s) = $source_id AND elementId(t) = $target_id
+                    MERGE (s)-[r:`{rel_type}`]->(t)
+                    SET r += $props
+                    RETURN count(r) as created
+                    """
+
+                    result = session.run(query, source_id=source_id, target_id=target_id, props=props)
+                    record = result.single()
+                    if record and record['created'] > 0:
+                        relationships_created += 1
+
+            logger.info(f"Created {relationships_created} validated relationships for link {link_id}")
+            return relationships_created
+
+        except Exception as e:
+            logger.exception(f"Failed to create validated relationships for link {link_id}")
+            raise
+
 
 def get_neo4j_client():
     """Get or create Neo4j client instance."""

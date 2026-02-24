@@ -70,3 +70,8 @@ dev/code-imports/nc3rsEDA/
 
 # Backups are for local work, not the repository
 backups/
+
+# Documentation cleanup - archived and temporary docs
+dev/test-runs/tmp/
+dev/code-imports/
+docs/archive/

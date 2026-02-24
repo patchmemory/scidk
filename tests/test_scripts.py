@@ -29,39 +29,11 @@ def temp_db():
 
     conn = sqlite3.connect(db_path)
 
-    # Create schema (with v17 columns)
-    conn.execute("""
-        CREATE TABLE scripts (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            description TEXT,
-            language TEXT NOT NULL,
-            category TEXT NOT NULL,
-            code TEXT NOT NULL,
-            parameters TEXT,
-            tags TEXT,
-            created_at REAL NOT NULL,
-            created_by TEXT,
-            updated_at REAL NOT NULL,
-            file_path TEXT,
-            is_file_based INTEGER DEFAULT 0
-        )
-    """)
+    # Use migrations to create schema with all columns including transparency layer
+    from scidk.core.migrations import migrate
+    migrate(conn)
 
-    conn.execute("""
-        CREATE TABLE script_executions (
-            id TEXT PRIMARY KEY,
-            script_id TEXT NOT NULL,
-            executed_at REAL NOT NULL,
-            executed_by TEXT,
-            parameters TEXT,
-            results TEXT,
-            execution_time_ms INTEGER,
-            status TEXT NOT NULL,
-            error TEXT
-        )
-    """)
-
+    # Migrations already create scripts, script_executions, and script_dependencies tables
     conn.commit()
 
     yield conn
@@ -298,7 +270,7 @@ def test_execute_cypher_script(temp_db):
 
     manager.create_script(script)
 
-    # Mock Neo4j driver
+    # Mock Neo4j driver (code doesn't use context manager)
     mock_driver = MagicMock()
     mock_session = MagicMock()
     mock_result = MagicMock()
@@ -306,7 +278,7 @@ def test_execute_cypher_script(temp_db):
     mock_result.__iter__ = lambda self: iter([mock_record])
 
     mock_session.run.return_value = mock_result
-    mock_driver.session.return_value.__enter__.return_value = mock_session
+    mock_driver.session.return_value = mock_session
 
     result = manager.execute_script('test-1', neo4j_driver=mock_driver)
 
@@ -549,4 +521,4 @@ def test_builtin_largest_files_script():
 
     assert largest.name == 'Largest Files'
     assert largest.language == 'cypher'
-    assert 'ORDER BY f.size DESC' in largest.code
+    assert 'ORDER BY f.size_bytes DESC' in largest.code

@@ -211,6 +211,11 @@ def get_file_interpreter(file_path):
     try:
         from pathlib import Path
 
+        # Flask's path converter strips leading slash for absolute paths
+        # Add it back if this looks like an absolute path
+        if not file_path.startswith('/') and (file_path.startswith('home/') or file_path.startswith('data/') or file_path.startswith('tmp/')):
+            file_path = '/' + file_path
+
         # Get interpreter registry
         ext = _get_ext()
         registry = ext.get('registry')

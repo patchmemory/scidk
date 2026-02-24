@@ -49,12 +49,12 @@ from typing import Dict, List
             validate_imports(code)
         assert 'socket' in str(exc_info.value)
 
-    def test_disallowed_os_blocked(self):
-        """os import should be blocked (file/system access)."""
-        code = "import os"
+    def test_disallowed_subprocess_blocked(self):
+        """subprocess import should be blocked (system access)."""
+        code = "import subprocess"
         with pytest.raises(ImportValidationError) as exc_info:
             validate_imports(code)
-        assert 'os' in str(exc_info.value)
+        assert 'subprocess' in str(exc_info.value)
 
     def test_sys_allowed_for_stderr(self):
         """sys import should be allowed (needed for stderr/stdout)."""
@@ -289,6 +289,6 @@ class TestWhitelistCompleteness:
         """socket should NOT be in whitelist."""
         assert 'socket' not in ALLOWED_IMPORTS
 
-    def test_os_not_whitelisted(self):
-        """os should NOT be in whitelist."""
-        assert 'os' not in ALLOWED_IMPORTS
+    def test_subprocess_not_whitelisted(self):
+        """subprocess should NOT be in whitelist (dangerous)."""
+        assert 'subprocess' not in ALLOWED_IMPORTS

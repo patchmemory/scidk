@@ -219,6 +219,100 @@ class Neo4jClient:
             }
 
 
+def get_neo4j_client_for_profile(profile_name: str) -> Optional['Neo4jClient']:
+    """Get Neo4j client for a specific named profile.
+
+    Args:
+        profile_name: Name of the Neo4j profile (e.g., 'Read-Only Source')
+
+    Returns:
+        Connected Neo4jClient instance or None if profile not found
+
+    Raises:
+        ValueError: If profile configuration is invalid
+    """
+    try:
+        from flask import current_app
+        from ..core.settings import get_setting
+        import json
+
+        # Normalize profile name for key lookup
+        profile_key = f'neo4j_profile_{profile_name.replace(" ", "_")}'
+        profile_json = get_setting(profile_key)
+
+        if not profile_json:
+            raise ValueError(f"Neo4j profile '{profile_name}' not found in settings")
+
+        profile = json.loads(profile_json)
+
+        # Load password
+        password_key = f'neo4j_profile_password_{profile_name.replace(" ", "_")}'
+        password = get_setting(password_key)
+
+        uri = profile.get('uri')
+        user = profile.get('user')
+        database = profile.get('database')
+        auth_mode = 'basic'  # Default for profiles
+
+        if not uri:
+            raise ValueError(f"Neo4j profile '{profile_name}' has no URI configured")
+
+        client = Neo4jClient(uri, user, password, database, auth_mode)
+        client.connect()
+        return client
+
+    except Exception as e:
+        try:
+            from flask import current_app
+            current_app.logger.error(f"Failed to create Neo4j client for profile '{profile_name}': {e}")
+        except:
+            pass
+        return None
+
+
+def list_neo4j_profiles() -> List[Dict[str, Any]]:
+    """List all configured Neo4j profiles.
+
+    Returns:
+        List of profile dicts with keys: name, uri, user, database, role
+    """
+    try:
+        from ..core.settings import get_settings_by_prefix
+        import json
+
+        profiles = []
+        settings = get_settings_by_prefix('neo4j_profile_')
+
+        # Find all neo4j_profile_* settings
+        for key, value in settings.items():
+            if not key.endswith('_password'):
+                # Extract profile name from key
+                profile_name_normalized = key.replace('neo4j_profile_', '')
+                profile_name = profile_name_normalized.replace('_', ' ')
+
+                try:
+                    profile_data = json.loads(value)
+                    profiles.append({
+                        'name': profile_name,
+                        'uri': profile_data.get('uri', ''),
+                        'user': profile_data.get('user', ''),
+                        'database': profile_data.get('database', 'neo4j'),
+                        'role': profile_data.get('role', 'unknown')
+                    })
+                except:
+                    continue
+
+        return profiles
+
+    except Exception as e:
+        try:
+            from flask import current_app
+            current_app.logger.error(f"Failed to list Neo4j profiles: {e}")
+        except:
+            pass
+        return []
+
+
 def get_neo4j_client(role: Optional[str] = None):
     """Get or create Neo4j client instance.
 
