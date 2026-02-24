@@ -356,6 +356,7 @@
             <button class="btn btn-sm btn-outline-primary match-strategy-btn" data-strategy="fuzzy" title="Fuzzy string matching">~ Fuzzy</button>
             <button class="btn btn-sm btn-outline-primary match-strategy-btn" data-strategy="table_import" title="Import from CSV/Excel">📊 Table</button>
             <button class="btn btn-sm btn-outline-primary match-strategy-btn" data-strategy="api_endpoint" title="Fetch from API">🔌 API</button>
+            <button class="btn btn-sm btn-outline-primary match-strategy-btn" data-strategy="data_import" title="Import triples from external Neo4j database">📥 Data Import</button>
           </div>
         </div>
 
@@ -409,6 +410,55 @@
           </div>
           <small class="small text-muted">Note: Advanced API endpoints can be configured in Settings > Links</small>
         </div>
+
+        <!-- Data Import Config -->
+        <div id="match-data-import" class="match-config" style="display: none;">
+          <div class="form-group">
+            <label class="form-label small" for="data-import-source-db">Source Database</label>
+            <select id="data-import-source-db" class="form-control form-control-sm">
+              <option value="">Select external database...</option>
+            </select>
+            <small class="small text-muted">Choose which Neo4j database to import triples from</small>
+          </div>
+
+          <!-- Visual Triple Pattern -->
+          <div class="form-group">
+            <label class="form-label small">Triple Pattern</label>
+            <div style="padding: 1.5rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+              <div style="display: flex; align-items: center; justify-content: center; gap: 1.5rem; font-size: 1.1rem; font-weight: 500;">
+                <div style="padding: 0.75rem 1.25rem; background: rgba(255,255,255,0.2); border-radius: 6px; backdrop-filter: blur(10px);">
+                  <div style="font-size: 0.7rem; opacity: 0.9; margin-bottom: 0.25rem;">SOURCE</div>
+                  <div id="data-import-source-label-display">-</div>
+                </div>
+                <div style="font-size: 1.5rem;">→</div>
+                <div style="padding: 0.75rem 1.25rem; background: rgba(255,255,255,0.2); border-radius: 6px; backdrop-filter: blur(10px);">
+                  <div style="font-size: 0.7rem; opacity: 0.9; margin-bottom: 0.25rem;">RELATIONSHIP</div>
+                  <div id="data-import-rel-type-display">-</div>
+                </div>
+                <div style="font-size: 1.5rem;">→</div>
+                <div style="padding: 0.75rem 1.25rem; background: rgba(255,255,255,0.2); border-radius: 6px; backdrop-filter: blur(10px);">
+                  <div style="font-size: 0.7rem; opacity: 0.9; margin-bottom: 0.25rem;">TARGET</div>
+                  <div id="data-import-target-label-display">-</div>
+                </div>
+              </div>
+            </div>
+            <small class="small text-muted">This pattern will import all matching triples from the source database</small>
+          </div>
+
+          <!-- Import Stats -->
+          <div id="data-import-stats" style="display: none; padding: 1rem; background: #f8f8f8; border-radius: 4px; margin-top: 1rem;">
+            <div style="display: flex; gap: 2rem;">
+              <div>
+                <div style="font-size: 0.75rem; color: #666; text-transform: uppercase; margin-bottom: 0.25rem;">Triples Found</div>
+                <div id="data-import-count" style="font-size: 1.5rem; font-weight: bold; color: #2196f3;">-</div>
+              </div>
+              <div>
+                <div style="font-size: 0.75rem; color: #666; text-transform: uppercase; margin-bottom: 0.25rem;">Import Method</div>
+                <div id="data-import-method" style="font-size: 0.9rem; color: #666;">-</div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Step 3: Target Label & Relationship -->
@@ -458,57 +508,6 @@
   </div>
 </div>
 
-<!-- Import Wizard Modal -->
-<div id="import-wizard-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center;">
-  <div style="background: white; border-radius: 8px; max-width: 800px; width: 90%; max-height: 90vh; overflow-y: auto; padding: 2rem;">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-      <h3 style="margin: 0;">Import Triples from External Graph</h3>
-      <button id="btn-close-import-modal" style="border: none; background: none; font-size: 1.5rem; cursor: pointer; color: #999;">×</button>
-    </div>
-
-    <!-- Step 1: Select Source Database -->
-    <div id="import-step-1" class="import-step">
-      <h4>Step 1: Select Source Database</h4>
-      <select id="import-source-db" class="form-control" style="margin-bottom: 1rem;">
-        <option value="">Loading...</option>
-      </select>
-      <button id="btn-import-next-1" class="btn btn-primary">Next →</button>
-    </div>
-
-    <!-- Step 2: Select Relationship -->
-    <div id="import-step-2" class="import-step" style="display: none;">
-      <h4>Step 2: Select Relationship to Import</h4>
-      <div id="import-relationships-list" style="max-height: 300px; overflow-y: auto;">
-        <div class="empty-state small">Select a source database first</div>
-      </div>
-      <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
-        <button id="btn-import-back-2" class="btn btn-outline-secondary">← Back</button>
-        <button id="btn-import-next-2" class="btn btn-primary" disabled>Preview →</button>
-      </div>
-    </div>
-
-    <!-- Step 3: Preview -->
-    <div id="import-step-3" class="import-step" style="display: none;">
-      <h4>Step 3: Preview Import</h4>
-      <div id="import-preview-summary" style="margin-bottom: 1rem; padding: 1rem; background: #f8f8f8; border-radius: 4px;"></div>
-      <div id="import-preview-triples" style="max-height: 300px; overflow-y: auto; border: 1px solid #eee; border-radius: 4px;">
-        <div class="empty-state small">Loading preview...</div>
-      </div>
-      <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
-        <button id="btn-import-back-3" class="btn btn-outline-secondary">← Back</button>
-        <button id="btn-import-commit" class="btn btn-success">Import to Primary</button>
-      </div>
-    </div>
-
-    <!-- Step 4: Complete -->
-    <div id="import-step-4" class="import-step" style="display: none;">
-      <h4>Import Complete</h4>
-      <div id="import-complete-message" style="padding: 2rem; text-align: center;"></div>
-      <button id="btn-import-done" class="btn btn-primary">Done</button>
-    </div>
-  </div>
-</div>
-
 <script>
 // State management (Label→Label refactor)
 let currentLink = null;
@@ -518,13 +517,6 @@ let discoveredRelationships = []; // Discovered relationships from Neo4j
 let availableLabels = [];
 let lastFocusedIndex = -1; // For keyboard navigation
 let currentFilter = 'all'; // Filter state: 'all', 'wizard', 'script', 'discovered'
-let importWizardData = {
-  step: 1,
-  sourceDatabase: null,
-  selectedRelationship: null,
-  previewData: null,
-  previewHash: null
-};
 let wizardData = {
   id: null,
   name: '',
@@ -680,11 +672,27 @@ function initializeEventListeners() {
     window.location.href = '/scripts?new=link';
   });
 
-  // Import link option - open import wizard
+  // Import link option - open wizard with data_import strategy
   document.getElementById('menu-import-link').addEventListener('click', (e) => {
     e.preventDefault();
     dropdownMenu.style.display = 'none';
-    openImportWizard();
+    startNewWizardLink();
+
+    // Pre-select data_import strategy
+    wizardData.match_strategy = 'data_import';
+    document.querySelectorAll('.match-strategy-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.strategy === 'data_import');
+    });
+
+    // Navigate to Step 2 to show data import config
+    navigateToStep(2);
+    showMatchConfig('data_import');
+
+    // Show wizard panel
+    document.getElementById('link-wizard').style.display = 'block';
+    document.getElementById('wizard-title').textContent = 'New Data Import Link';
+
+    showToast('Select discovered relationship from left panel or configure manually', 'info');
   });
 
   // Wizard navigation
@@ -697,10 +705,18 @@ function initializeEventListeners() {
   // Label selection dropdowns
   document.getElementById('source-label-select').addEventListener('change', (e) => {
     wizardData.source_label = e.target.value;
+    // Update data import visual display if on that strategy
+    if (wizardData.match_strategy === 'data_import') {
+      updateDataImportVisualDisplay();
+    }
   });
 
   document.getElementById('target-label-select').addEventListener('change', (e) => {
     wizardData.target_label = e.target.value;
+    // Update data import visual display if on that strategy
+    if (wizardData.match_strategy === 'data_import') {
+      updateDataImportVisualDisplay();
+    }
   });
 
   // Match strategy buttons
@@ -715,6 +731,14 @@ function initializeEventListeners() {
 
   // Add relationship property button
   document.getElementById('btn-add-rel-prop').addEventListener('click', addRelationshipProperty);
+
+  // Relationship type input - update visual display for data_import
+  document.getElementById('rel-type').addEventListener('input', (e) => {
+    wizardData.relationship_type = e.target.value;
+    if (wizardData.match_strategy === 'data_import') {
+      updateDataImportVisualDisplay();
+    }
+  });
 
   // Preview button
   document.getElementById('btn-load-preview').addEventListener('click', loadPreview);
@@ -1218,6 +1242,10 @@ function populateWizardFromLink(link) {
   } else if (link.match_strategy === 'api_endpoint') {
     document.getElementById('api-url').value = link.match_config.url || link.source_config.url || '';
     document.getElementById('api-jsonpath').value = link.match_config.json_path || link.source_config.json_path || '';
+  } else if (link.match_strategy === 'data_import') {
+    // Populate data import fields
+    document.getElementById('data-import-source-db').value = link.match_config.source_database || '';
+    // Update visual display will be called by showMatchConfig
   }
 
   // Populate Step 3: Target Label & Relationship
@@ -1342,13 +1370,15 @@ function updateStepSummary(stepNum) {
       'property': '=',
       'fuzzy': '~',
       'table_import': '📊',
-      'api_endpoint': '🔌'
+      'api_endpoint': '🔌',
+      'data_import': '📥'
     };
     const strategyNames = {
       'property': 'Property Match',
       'fuzzy': 'Fuzzy Match',
       'table_import': 'Table Import',
-      'api_endpoint': 'API Endpoint'
+      'api_endpoint': 'API Endpoint',
+      'data_import': 'Data Import'
     };
     if (strategy) {
       circle.textContent = strategyIcons[strategy] || strategy;
@@ -1370,6 +1400,48 @@ function showMatchConfig(strategy) {
   const matchEl = document.getElementById(`match-${strategy.replace('_', '-')}`);
   if (matchEl) {
     matchEl.style.display = 'block';
+  }
+
+  // If data_import, populate database dropdown
+  if (strategy === 'data_import') {
+    populateDataImportDatabases();
+    updateDataImportVisualDisplay();
+  }
+}
+
+function populateDataImportDatabases() {
+  const select = document.getElementById('data-import-source-db');
+
+  // Get unique external databases from discovered relationships
+  const externalDbs = discoveredRelationships
+    .map(r => r.database)
+    .filter((db, index, self) => db !== 'PRIMARY' && self.indexOf(db) === index);
+
+  if (externalDbs.length === 0) {
+    select.innerHTML = '<option value="">No external databases configured</option>';
+  } else {
+    select.innerHTML = '<option value="">Select external database...</option>' +
+      externalDbs.map(db => `<option value="${db}">${db}</option>`).join('');
+  }
+}
+
+function updateDataImportVisualDisplay() {
+  // Update visual triple pattern display based on current wizard data
+  const sourceLabel = wizardData.source_label || document.getElementById('source-label-select').value || '-';
+  const targetLabel = wizardData.target_label || document.getElementById('target-label-select').value || '-';
+  const relType = wizardData.relationship_type || document.getElementById('rel-type').value || '-';
+
+  document.getElementById('data-import-source-label-display').textContent = sourceLabel;
+  document.getElementById('data-import-target-label-display').textContent = targetLabel;
+  document.getElementById('data-import-rel-type-display').textContent = relType;
+
+  // Show stats if we have match_config with triple count
+  if (wizardData.match_config && wizardData.match_config.triple_count) {
+    document.getElementById('data-import-stats').style.display = 'block';
+    document.getElementById('data-import-count').textContent = wizardData.match_config.triple_count.toLocaleString();
+    document.getElementById('data-import-method').textContent = 'Streaming batch import (10K per batch)';
+  } else {
+    document.getElementById('data-import-stats').style.display = 'none';
   }
 }
 
@@ -1425,6 +1497,12 @@ function collectWizardData() {
     wizardData.match_config = {
       url: document.getElementById('api-url').value.trim(),
       json_path: document.getElementById('api-jsonpath').value.trim()
+    };
+  } else if (wizardData.match_strategy === 'data_import') {
+    // Data import configuration - preserve existing match_config but update source_database
+    wizardData.match_config = {
+      ...wizardData.match_config,
+      source_database: document.getElementById('data-import-source-db').value.trim()
     };
   }
 
@@ -1753,255 +1831,59 @@ function returnFocusToSidePanel() {
 
 // ===== Import Wizard Functions =====
 
-async function openImportWizard() {
-  importWizardData = { step: 1, sourceDatabase: null, selectedRelationship: null, previewData: null, previewHash: null };
+// openImportWizardForRelationship is now the main entry point for clicking discovered relationships
 
-  // Load available profiles
-  const profiles = discoveredRelationships
-    .map(r => r.database)
-    .filter((db, index, self) => db !== 'PRIMARY' && self.indexOf(db) === index);
+function openImportWizardForRelationship(rel) {
+  // Reset wizard to clean state
+  startNewWizardLink();
 
-  const select = document.getElementById('import-source-db');
-  if (profiles.length === 0) {
-    select.innerHTML = '<option value="">No external databases configured</option>';
-  } else {
-    select.innerHTML = '<option value="">Select a database...</option>' +
-      profiles.map(p => `<option value="${p}">${p}</option>`).join('');
-  }
+  // Pre-fill Step 1: Source Label
+  wizardData.source_label = rel.source_label;
+  document.getElementById('source-label-select').value = rel.source_label;
 
-  showImportStep(1);
-  document.getElementById('import-wizard-modal').style.display = 'flex';
-}
-
-async function openImportWizardForRelationship(rel) {
-  // Pre-fill wizard with clicked relationship
-  importWizardData = {
-    step: 2,
-    sourceDatabase: rel.database,
-    selectedRelationship: rel,
-    previewData: null,
-    previewHash: null
+  // Pre-fill Step 2: Match Strategy = data_import
+  wizardData.match_strategy = 'data_import';
+  wizardData.match_config = {
+    source_database: rel.database,
+    rel_type: rel.rel_type,
+    source_label: rel.source_label,
+    target_label: rel.target_label,
+    triple_count: rel.triple_count
   };
 
-  // Skip directly to preview step
-  try {
-    const resp = await fetch('/api/links/import-triples/preview', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        source_database: rel.database,
-        rel_type: rel.rel_type,
-        source_label: rel.source_label,
-        target_label: rel.target_label
-      })
-    });
+  // Update UI to show data_import selected
+  document.querySelectorAll('.match-strategy-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.strategy === 'data_import');
+  });
 
-    if (!resp.ok) {
-      const err = await resp.json();
-      showToast(err.error || 'Failed to load preview', 'error');
-      return;
-    }
+  // Show data import config
+  showMatchConfig('data_import');
 
-    const data = await resp.json();
-    importWizardData.previewData = data.preview;
-    importWizardData.previewHash = data.preview_hash;
+  // Pre-select source database in dropdown
+  document.getElementById('data-import-source-db').value = rel.database;
 
-    // Render preview
-    const previewContainer = document.getElementById('import-preview-list');
-    const totalCount = data.total_count;
-    const showingCount = data.showing || data.preview.length;
+  // Pre-fill Step 3: Target Label & Relationship
+  wizardData.target_label = rel.target_label;
+  wizardData.relationship_type = rel.rel_type;
+  document.getElementById('target-label-select').value = rel.target_label;
+  document.getElementById('rel-type').value = rel.rel_type;
 
-    previewContainer.innerHTML = `
-      <div style="margin-bottom: 1rem; padding: 0.75rem; background: #e3f2fd; border-radius: 4px;">
-        <strong>${rel.source_label} → ${rel.rel_type} → ${rel.target_label}</strong>
-        <div style="margin-top: 0.5rem; font-size: 0.9rem;">
-          From: <span style="color: #1976d2;">${rel.database}</span> •
-          Total: <strong>${totalCount.toLocaleString()}</strong> triples •
-          Showing: <strong>${showingCount}</strong>
-        </div>
-      </div>
-      ${data.preview.slice(0, 20).map(triple => `
-        <div style="padding: 0.75rem; border-bottom: 1px solid #eee;">
-          <div style="display: flex; align-items: center; gap: 1rem; font-size: 0.9rem;">
-            <div style="flex: 1; overflow: hidden; text-overflow: ellipsis;">
-              <strong>${triple.source_node.label}</strong>
-              <div style="color: #666; font-size: 0.85rem;">${Object.entries(triple.source_node.properties).slice(0, 2).map(([k, v]) => `${k}: ${v}`).join(', ')}</div>
-            </div>
-            <div style="color: #1976d2; font-weight: bold;">→ ${triple.relationship.type} →</div>
-            <div style="flex: 1; overflow: hidden; text-overflow: ellipsis;">
-              <strong>${triple.target_node.label}</strong>
-              <div style="color: #666; font-size: 0.85rem;">${Object.entries(triple.target_node.properties).slice(0, 2).map(([k, v]) => `${k}: ${v}`).join(', ')}</div>
-            </div>
-          </div>
-        </div>
-      `).join('')}
-      ${data.preview.length > 20 ? `<div style="padding: 1rem; text-align: center; color: #666;">... and ${data.preview.length - 20} more in preview</div>` : ''}
-    `;
+  // Update wizard title
+  document.getElementById('wizard-title').textContent = `Import: ${rel.source_label} → ${rel.rel_type} → ${rel.target_label}`;
 
-    // Show modal at step 3 (preview)
-    showImportStep(3);
-    document.getElementById('import-wizard-modal').style.display = 'flex';
-  } catch (error) {
-    console.error('Failed to open import wizard:', error);
-    showToast('Failed to load relationship preview', 'error');
-  }
+  // Navigate to Step 2 to show the visual triple pattern
+  navigateToStep(2);
+
+  // Show wizard panel
+  document.getElementById('link-wizard').style.display = 'block';
+
+  // Update visual display
+  updateDataImportVisualDisplay();
+
+  // Toast confirmation
+  showToast(`Opened wizard for ${rel.triple_count.toLocaleString()} triples from ${rel.database}`, 'info');
 }
 
-function showImportStep(step) {
-  document.querySelectorAll('.import-step').forEach(s => s.style.display = 'none');
-  document.getElementById(`import-step-${step}`).style.display = 'block';
-  importWizardData.step = step;
-}
-
-document.getElementById('btn-close-import-modal').addEventListener('click', () => {
-  document.getElementById('import-wizard-modal').style.display = 'none';
-});
-
-document.getElementById('btn-import-next-1').addEventListener('click', () => {
-  const selectedDb = document.getElementById('import-source-db').value;
-  if (!selectedDb) {
-    showToast('Please select a source database', 'error');
-    return;
-  }
-  importWizardData.sourceDatabase = selectedDb;
-
-  // Load relationships for this database
-  const relationships = discoveredRelationships.filter(r => r.database === selectedDb);
-  const list = document.getElementById('import-relationships-list');
-
-  if (relationships.length === 0) {
-    list.innerHTML = '<div class="empty-state small">No relationships found in this database</div>';
-  } else {
-    list.innerHTML = relationships.map((rel, i) => `
-      <div class="link-item" style="cursor: pointer;" data-rel-index="${i}">
-        <strong>${rel.source_label} → ${rel.target_label}</strong>
-        <div style="font-size: 0.85em; color: #666;">
-          ${rel.rel_type} (${rel.triple_count.toLocaleString()} triples)
-        </div>
-      </div>
-    `).join('');
-
-    // Add click handlers
-    list.querySelectorAll('.link-item').forEach(item => {
-      item.addEventListener('click', () => {
-        list.querySelectorAll('.link-item').forEach(i => i.classList.remove('active'));
-        item.classList.add('active');
-        const index = parseInt(item.dataset.relIndex);
-        importWizardData.selectedRelationship = relationships[index];
-        document.getElementById('btn-import-next-2').disabled = false;
-      });
-    });
-  }
-
-  showImportStep(2);
-});
-
-document.getElementById('btn-import-back-2').addEventListener('click', () => showImportStep(1));
-
-document.getElementById('btn-import-next-2').addEventListener('click', async () => {
-  if (!importWizardData.selectedRelationship) return;
-
-  showImportStep(3);
-  document.getElementById('import-preview-triples').innerHTML = '<div class="empty-state small">Loading preview...</div>';
-
-  try {
-    const response = await fetch('/api/links/import-triples/preview', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        source_database: importWizardData.sourceDatabase,
-        rel_type: importWizardData.selectedRelationship.rel_type,
-        source_label: importWizardData.selectedRelationship.source_label,
-        target_label: importWizardData.selectedRelationship.target_label
-      })
-    });
-
-    const result = await response.json();
-
-    if (result.status === 'success') {
-      importWizardData.previewData = result.preview;
-      importWizardData.previewHash = result.preview_hash;
-
-      document.getElementById('import-preview-summary').innerHTML = `
-        <strong>Importing:</strong> ${result.total_count.toLocaleString()} triples<br>
-        <strong>From:</strong> ${importWizardData.sourceDatabase}<br>
-        <strong>Relationship:</strong> ${importWizardData.selectedRelationship.source_label} -[:${importWizardData.selectedRelationship.rel_type}]-> ${importWizardData.selectedRelationship.target_label}<br>
-        <strong>Preview:</strong> Showing first ${result.showing} of ${result.total_count.toLocaleString()}
-      `;
-
-      document.getElementById('import-preview-triples').innerHTML = result.preview.map(triple => `
-        <div style="padding: 0.75rem; border-bottom: 1px solid #eee; font-size: 0.85em;">
-          <div><strong>${triple.source_node.label}:</strong> ${JSON.stringify(triple.source_node.properties).substring(0, 80)}...</div>
-          <div style="color: #666; margin: 0.25rem 0;">→ [${triple.relationship.type}]</div>
-          <div><strong>${triple.target_node.label}:</strong> ${JSON.stringify(triple.target_node.properties).substring(0, 80)}...</div>
-        </div>
-      `).join('');
-    } else {
-      showToast('Error loading preview: ' + result.error, 'error');
-      showImportStep(2);
-    }
-  } catch (e) {
-    showToast('Network error: ' + e.message, 'error');
-    showImportStep(2);
-  }
-});
-
-document.getElementById('btn-import-back-3').addEventListener('click', () => showImportStep(2));
-
-document.getElementById('btn-import-commit').addEventListener('click', async () => {
-  if (!importWizardData.previewHash) return;
-
-  document.getElementById('btn-import-commit').disabled = true;
-  showToast('Importing triples...', 'info');
-
-  try {
-    const response = await fetch('/api/links/import-triples/commit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        source_database: importWizardData.sourceDatabase,
-        rel_type: importWizardData.selectedRelationship.rel_type,
-        source_label: importWizardData.selectedRelationship.source_label,
-        target_label: importWizardData.selectedRelationship.target_label,
-        preview_hash: importWizardData.previewHash
-      })
-    });
-
-    const result = await response.json();
-
-    if (result.status === 'success') {
-      const triplesPerSec = Math.round(result.triples_imported / result.duration_seconds);
-      const methodBadge = result.method === 'apoc'
-        ? '<span style="background: #4caf50; color: white; padding: 0.25rem 0.5rem; border-radius: 3px; font-size: 0.85rem; margin-left: 0.5rem;">APOC</span>'
-        : '<span style="background: #2196f3; color: white; padding: 0.25rem 0.5rem; border-radius: 3px; font-size: 0.85rem; margin-left: 0.5rem;">Streaming</span>';
-
-      const batchInfo = result.batches_processed
-        ? `<div style="margin-top: 0.5rem; color: #666; font-size: 0.9rem;">${result.batches_processed} batches processed</div>`
-        : '';
-
-      document.getElementById('import-complete-message').innerHTML = `
-        <div style="font-size: 3rem; color: #4caf50; margin-bottom: 1rem;">✓</div>
-        <h3>Import Successful! ${methodBadge}</h3>
-        <p><strong>${result.triples_imported.toLocaleString()}</strong> triples imported in <strong>${result.duration_seconds}s</strong></p>
-        <div style="color: #666; font-size: 0.9rem;">~${triplesPerSec.toLocaleString()} triples/sec</div>
-        ${batchInfo}
-      `;
-      showImportStep(4);
-      showToast(`Imported ${result.triples_imported.toLocaleString()} triples in ${result.duration_seconds}s`, 'success');
-    } else {
-      showToast('Error importing: ' + result.error, 'error');
-      document.getElementById('btn-import-commit').disabled = false;
-    }
-  } catch (e) {
-    showToast('Network error: ' + e.message, 'error');
-    document.getElementById('btn-import-commit').disabled = false;
-  }
-});
-
-document.getElementById('btn-import-done').addEventListener('click', () => {
-  document.getElementById('import-wizard-modal').style.display = 'none';
-  // Refresh discovered relationships to show newly imported data
-  loadDiscoveredRelationships();
-});
+// Old modal handlers removed - now using unified wizard workflow
 </script>
 {% endblock %}

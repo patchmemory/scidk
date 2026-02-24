@@ -836,6 +836,10 @@ class LinkService:
             definition: Link definition
             task: Task dict to update with progress
         """
+        # Special handling for data_import strategy
+        if definition.get('match_strategy') == 'data_import':
+            return self._execute_data_import_with_progress(job_id, definition, task)
+
         conn = self._get_conn()
         try:
             from .neo4j_client import get_neo4j_client
@@ -1436,6 +1440,44 @@ class LinkService:
                 break
 
         return {'count': total_imported, 'batches': batch_count}
+
+    def _execute_data_import_with_progress(self, job_id: str, definition: Dict[str, Any], task: Dict[str, Any]):
+        """
+        Execute data import with progress tracking.
+
+        Args:
+            job_id: Job ID for database tracking
+            definition: Link definition with match_strategy='data_import'
+            task: Task dict to update with progress
+        """
+        import time
+
+        # Extract config
+        match_config = definition.get('match_config', {})
+        source_database = match_config.get('source_database')
+        rel_type = definition.get('relationship_type')
+        source_label = definition.get('source_label')
+        target_label = definition.get('target_label')
+
+        if not all([source_database, rel_type, source_label, target_label]):
+            raise ValueError("Missing required data_import configuration")
+
+        task['status_message'] = f'Importing {match_config.get("triple_count", "?")} triples from {source_database}...'
+
+        # Use commit_triple_import with empty hash (no preview validation needed for saved links)
+        result = self.commit_triple_import(
+            source_database=source_database,
+            rel_type=rel_type,
+            source_label=source_label,
+            target_label=target_label,
+            preview_hash=''  # Skip hash validation for saved link execution
+        )
+
+        if result['status'] == 'success':
+            task['relationships_created'] = result['triples_imported']
+            task['status_message'] = f'Imported {result["triples_imported"]} triples in {result["duration_seconds"]}s using {result["method"]}'
+        else:
+            raise Exception(result.get('error', 'Unknown error during import'))
 
 
 def get_neo4j_client():
