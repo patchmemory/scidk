@@ -676,7 +676,7 @@ function initializeEventListeners() {
   document.getElementById('menu-import-link').addEventListener('click', (e) => {
     e.preventDefault();
     dropdownMenu.style.display = 'none';
-    startNewWizardLink();
+    resetWizard();
 
     // Pre-select data_import strategy
     wizardData.match_strategy = 'data_import';
@@ -1835,7 +1835,7 @@ function returnFocusToSidePanel() {
 
 function openImportWizardForRelationship(rel) {
   // Reset wizard to clean state
-  startNewWizardLink();
+  resetWizard();
 
   // Pre-fill Step 1: Source Label
   wizardData.source_label = rel.source_label;
