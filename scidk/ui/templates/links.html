@@ -1661,44 +1661,95 @@ function executeLink() {
     return;
   }
 
-  showToast('Starting execution...', 'info');
+  // Show progress indicator in preview container
+  document.getElementById('preview-container').innerHTML = `
+    <div style="padding: 2rem; text-align: center;">
+      <div style="font-size: 2rem; margin-bottom: 1rem;">⚙️</div>
+      <div style="font-weight: bold; margin-bottom: 0.5rem;">Starting execution...</div>
+      <div id="task-progress-message" style="color: #666; font-size: 0.9rem;">Initializing...</div>
+      <div id="task-progress-bar" style="width: 100%; height: 8px; background: #eee; border-radius: 4px; margin: 1rem 0; overflow: hidden;">
+        <div id="task-progress-fill" style="width: 0%; height: 100%; background: #2196f3; transition: width 0.3s ease;"></div>
+      </div>
+      <div id="task-progress-stats" style="font-size: 0.85rem; color: #999;"></div>
+    </div>
+  `;
 
   fetch(`/api/links/${wizardData.id}/execute`, { method: 'POST' })
     .then(r => r.json())
     .then(result => {
       if (result.status === 'success') {
-        const jobId = result.job_id;
-        showToast('Execution started, polling for status...', 'info');
-        pollJobStatus(jobId);
+        const taskId = result.job_id;  // This is actually the task_id from background task system
+        pollTaskStatus(taskId);
       } else {
-        showToast(`Execution failed: ${result.error}`, 'error');
+        document.getElementById('preview-container').innerHTML = `<div class="empty-state small" style="color: #f44336;">Execution failed: ${result.error}</div>`;
       }
     })
-    .catch(err => showToast('Failed to execute link', 'error'));
+    .catch(err => {
+      document.getElementById('preview-container').innerHTML = `<div class="empty-state small" style="color: #f44336;">Failed to start execution</div>`;
+    });
 }
 
-function pollJobStatus(jobId) {
+function pollTaskStatus(taskId) {
   const interval = setInterval(() => {
-    fetch(`/api/links/jobs/${jobId}`)
+    fetch(`/api/tasks/${taskId}`)
       .then(r => r.json())
-      .then(result => {
-        if (result.status === 'success') {
-          const job = result.job;
+      .then(task => {
+        // Update progress UI
+        const progressMsg = document.getElementById('task-progress-message');
+        const progressFill = document.getElementById('task-progress-fill');
+        const progressStats = document.getElementById('task-progress-stats');
 
-          if (job.status === 'completed') {
-            clearInterval(interval);
-            showToast(`Execution completed! Created ${job.executed_count} relationships.`, 'success');
-          } else if (job.status === 'failed') {
-            clearInterval(interval);
-            showToast(`Execution failed: ${job.error}`, 'error');
-          }
+        if (progressMsg) {
+          progressMsg.textContent = task.status_message || 'Processing...';
+        }
+
+        if (progressFill && task.progress !== undefined) {
+          progressFill.style.width = `${Math.round(task.progress * 100)}%`;
+        }
+
+        if (progressStats && task.processed && task.total) {
+          progressStats.textContent = `${task.processed.toLocaleString()} / ${task.total.toLocaleString()} processed`;
+        }
+
+        // Check completion status
+        if (task.status === 'completed') {
+          clearInterval(interval);
+          const relCount = task.relationships_created || task.executed_count || 0;
+          document.getElementById('preview-container').innerHTML = `
+            <div style="padding: 2rem; text-align: center;">
+              <div style="font-size: 3rem; color: #4caf50; margin-bottom: 1rem;">✓</div>
+              <div style="font-weight: bold; font-size: 1.2rem; margin-bottom: 0.5rem;">Execution Complete!</div>
+              <div style="color: #666;">${relCount.toLocaleString()} relationships created</div>
+              ${task.status_message ? `<div style="margin-top: 1rem; font-size: 0.85rem; color: #999;">${task.status_message}</div>` : ''}
+            </div>
+          `;
+          showToast(`Completed! ${relCount.toLocaleString()} relationships created`, 'success');
+        } else if (task.status === 'error' || task.status === 'failed') {
+          clearInterval(interval);
+          document.getElementById('preview-container').innerHTML = `
+            <div style="padding: 2rem; text-align: center;">
+              <div style="font-size: 3rem; color: #f44336; margin-bottom: 1rem;">✗</div>
+              <div style="font-weight: bold; font-size: 1.2rem; margin-bottom: 0.5rem;">Execution Failed</div>
+              <div style="color: #666; font-size: 0.9rem;">${task.error || 'Unknown error'}</div>
+            </div>
+          `;
+          showToast(`Execution failed: ${task.error || 'Unknown error'}`, 'error');
+        } else if (task.status === 'canceled') {
+          clearInterval(interval);
+          document.getElementById('preview-container').innerHTML = `
+            <div style="padding: 2rem; text-align: center;">
+              <div style="font-size: 3rem; color: #ff9800; margin-bottom: 1rem;">⊘</div>
+              <div style="font-weight: bold; font-size: 1.2rem;">Execution Canceled</div>
+            </div>
+          `;
+          showToast('Execution canceled', 'info');
         }
       })
       .catch(err => {
         clearInterval(interval);
-        showToast('Failed to poll job status', 'error');
+        document.getElementById('preview-container').innerHTML = `<div class="empty-state small" style="color: #f44336;">Failed to poll status</div>`;
       });
-  }, 2000);
+  }, 1000);  // Poll every second for responsive progress updates
 }
 
 // Global keyboard navigation handler
