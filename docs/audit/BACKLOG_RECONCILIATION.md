@@ -105,3 +105,21 @@ Several tasks show backend implementation complete but UI unclear:
 - Annotations ✅ backend
 
 **Recommendation**: Quick UI verification pass in Links settings tabs to close out these tasks.
+
+---
+
+## Terminology Decision — 2026-02-24
+
+**Links vs Integrations:**
+- Page name: **Links** (correct, confirmed in nav)
+- Settings panel name: **Integrations** (correct — refers to integration 
+  features within Links: API endpoints, table formats, fuzzy matching)
+- These are distinct and both intentional. No rename needed.
+- Risk: Low. If confusion arises later, it is a single file rename in 
+  `settings/_integrations.html`.
+
+**Rationale:**
+The "Integrations" settings panel configures how Links integrates with external 
+data sources (APIs, CSV files) and how it matches/links data (fuzzy matching 
+algorithms). This is semantically different from the Links page itself, which 
+is the workspace for creating and managing link definitions.
