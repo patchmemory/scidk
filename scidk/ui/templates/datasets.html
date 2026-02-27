@@ -338,6 +338,57 @@
   .task-progress-fill.running {
     background: #2196f3;
   }
+
+  /* Snapshot List Items */
+  .snapshot-item {
+    margin: 0.375rem 0;
+    padding: 0.5rem;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .snapshot-item:hover {
+    background: #f8f9fa;
+    border-color: #2196f3;
+  }
+  .snapshot-item.active {
+    background: #e3f2fd;
+    border-color: #2196f3;
+  }
+  .snapshot-item .snapshot-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.25rem;
+  }
+  .snapshot-item .snapshot-name {
+    font-weight: 600;
+    color: #333;
+  }
+  .snapshot-item .snapshot-meta {
+    color: #666;
+    font-size: 0.7rem;
+  }
+  .snapshot-item .snapshot-actions {
+    display: flex;
+    gap: 0.25rem;
+    margin-top: 0.25rem;
+  }
+  .snapshot-item .snapshot-actions button {
+    font-size: 0.65rem;
+    padding: 0.125rem 0.375rem;
+  }
+  .snapshot-item.scanning {
+    border-color: #2196f3;
+    background: #e8f4fd;
+  }
+  .snapshot-item.error {
+    border-color: #e53935;
+    background: #ffebee;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -380,8 +431,22 @@
       </div>
 
       <div class="tree-section">
-        <div class="tree-section-header">BACKGROUND TASKS</div>
-        <div id="tasks-list"></div>
+        <div class="tree-section-header">ACTIVITY</div>
+        <div id="activity-panel">
+          <!-- Active background tasks -->
+          <div id="tasks-list"></div>
+
+          <!-- Snapshots section -->
+          <div style="margin-top: 1rem;">
+            <div style="font-weight: 600; font-size: 0.75rem; text-transform: uppercase; color: #666; padding: 0.5rem 0.25rem 0.25rem;">
+              SNAPSHOTS
+            </div>
+            <div id="snapshots-list"></div>
+            <button class="btn btn-sm btn-outline-primary w-100 mt-2" id="new-snapshot-btn" style="font-size: 0.75rem;">
+              + New Snapshot
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -1331,8 +1396,12 @@ window.addEventListener('DOMContentLoaded', () => {
       scansTree.getCurrentNodes = () => scansData;
       scansTree.nodes = scansData;
       scansTree.refresh();
+
+      // Also render snapshots in Activity Panel
+      renderSnapshots(scans);
     } catch (e) {
       document.getElementById('scans-tree').innerHTML = '<div class="small text-danger">Failed to load scans</div>';
+      snapshotsList.innerHTML = '<div class="small text-danger">Failed to load snapshots</div>';
     }
   }
 
@@ -1517,10 +1586,12 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // ===== Background Tasks =====
   const tasksList = document.getElementById('tasks-list');
+  const snapshotsList = document.getElementById('snapshots-list');
+  let activeSnapshotId = null;
 
   function renderTasks(tasks) {
     if (!tasks || tasks.length === 0) {
-      tasksList.innerHTML = '<div class="small text-muted">No tasks</div>';
+      tasksList.innerHTML = '';  // Empty, not "No tasks" - we have snapshots below now
       return;
     }
 
@@ -1564,6 +1635,119 @@ window.addEventListener('DOMContentLoaded', () => {
     } catch (e) {
       // Ignore fetch errors
     }
+  }
+
+  // ===== Snapshots List in Activity Panel =====
+  function renderSnapshots(scans) {
+    if (!scans || scans.length === 0) {
+      snapshotsList.innerHTML = '<div class="small text-muted" style="padding: 0.25rem;">No snapshots yet</div>';
+      return;
+    }
+
+    snapshotsList.innerHTML = scans.slice(0, 10).map(s => {
+      const isActive = (activeSnapshotId === s.id);
+      const statusClass = s.committed ? '' : 'scanning';
+
+      // Format date
+      let dateStr = '';
+      try {
+        if (s.started || s.ended) {
+          const ts = s.ended || s.started;
+          const d = new Date(ts * 1000);
+          dateStr = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        }
+      } catch (e) {
+        dateStr = 'Unknown date';
+      }
+
+      // Provider label
+      const providerLabel = s.provider_id || 'local';
+      const fileCount = s.file_count || 0;
+
+      return `<div class="snapshot-item ${isActive ? 'active' : ''} ${statusClass}" data-scan-id="${s.id}">
+        <div class="snapshot-header">
+          <div class="snapshot-name">📷 ${providerLabel}</div>
+        </div>
+        <div class="snapshot-meta">${dateStr}</div>
+        <div class="snapshot-meta">${fileCount} files</div>
+        ${!s.committed ? `
+          <div class="task-progress-bar" style="margin-top: 0.25rem;">
+            <div class="task-progress-fill running" style="width: 100%;"></div>
+          </div>
+        ` : ''}
+        <div class="snapshot-actions">
+          <button class="btn btn-outline-secondary snapshot-refresh" data-scan-id="${s.id}" title="Refresh snapshot">
+            ↻ Refresh
+          </button>
+          <button class="btn btn-outline-primary snapshot-reconfig" data-scan-id="${s.id}" title="Reconfigure snapshot">
+            ⚙ Reconfigure
+          </button>
+        </div>
+      </div>`;
+    }).join('');
+
+    // Attach click handlers for snapshot items
+    snapshotsList.querySelectorAll('.snapshot-item').forEach(item => {
+      const scanId = item.getAttribute('data-scan-id');
+
+      // Click on item itself (not buttons) to load snapshot
+      item.addEventListener('click', (e) => {
+        if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+        activeSnapshotId = scanId;
+        currentScan = scanId;
+        browseSnapshot(scanId);
+        showScanDetails(scanId);
+        commitScanBtn.style.display = 'inline-block';
+
+        // Update active state
+        snapshotsList.querySelectorAll('.snapshot-item').forEach(si => si.classList.remove('active'));
+        item.classList.add('active');
+      });
+    });
+
+    // Attach refresh button handlers
+    snapshotsList.querySelectorAll('.snapshot-refresh').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const scanId = btn.getAttribute('data-scan-id');
+        if (!confirm(`Refresh snapshot #${scanId} with same configuration?`)) return;
+
+        btn.disabled = true;
+        btn.textContent = 'Refreshing...';
+
+        try {
+          const r = await fetch(`/api/scans/${scanId}/rescan`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+
+          if (r.ok) {
+            const result = await r.json();
+            showMessage(`Refresh started: new scan #${result.scan_id}`, 'success');
+            fetchTasks();
+            loadScans();
+          } else {
+            const err = await r.json();
+            showMessage('Refresh failed: ' + (err.error || r.status), 'error');
+          }
+        } catch (err) {
+          showMessage('Refresh failed: ' + err.message, 'error');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = '↻ Refresh';
+        }
+      });
+    });
+
+    // Attach reconfigure button handlers (Phase 5)
+    snapshotsList.querySelectorAll('.snapshot-reconfig').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const scanId = btn.getAttribute('data-scan-id');
+        showMessage('Reconfigure modal coming in Phase 5', 'info');
+        // TODO Phase 5: Open reconfigure modal with diff visualization
+      });
+    });
   }
 
   // ===== Neo4j Status =====
@@ -1803,6 +1987,15 @@ window.addEventListener('DOMContentLoaded', () => {
     loadScans();  // Always poll scans to keep the tree updated
     fetchNeo4jStatus();
   }, 2000);
+
+  // ===== New Snapshot Button =====
+  const newSnapshotBtn = document.getElementById('new-snapshot-btn');
+  if (newSnapshotBtn) {
+    newSnapshotBtn.addEventListener('click', () => {
+      showMessage('New Snapshot modal coming in Phase 5', 'info');
+      // TODO Phase 5: Open new snapshot configuration modal
+    });
+  }
 
   // ===== Initialization =====
   loadServers();
