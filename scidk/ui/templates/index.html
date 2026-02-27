@@ -165,9 +165,12 @@
       <span>Security</span>
       <span class="chevron">▸</span>
     </div>
-    <div class="settings-subsection-list">
-      <a href="#security/users" class="settings-sidebar-item" data-section="security-users">Users</a>
-      <a href="#security/audit-log" class="settings-sidebar-item" data-section="security-audit-log">Audit Log</a>
+    <div class="settings-subsection-list" id="security-subsection-list">
+      <a href="#security/users" class="settings-sidebar-item admin-only" data-section="security-users">Users</a>
+      <a href="#security/audit-log" class="settings-sidebar-item admin-only" data-section="security-audit-log">Audit Log</a>
+      <div class="settings-sidebar-item non-admin-message" style="display: none; color: #999; cursor: default; font-style: italic;">
+        Admin access required
+      </div>
     </div>
 
     <!-- Modules Section -->
@@ -222,10 +225,47 @@
 
 <script>
   // Settings navigation - hierarchical collapsible sections
-  document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', async () => {
     const sectionHeaders = document.querySelectorAll('.settings-section-header');
     const navItems = document.querySelectorAll('.settings-sidebar-item');
     const sections = document.querySelectorAll('.settings-section');
+
+    // Check auth status and apply admin-only restrictions
+    try {
+      const response = await fetch('/api/auth/status');
+      const authData = await response.json();
+      const isAdmin = authData.role === 'admin';
+
+      // Handle admin-only elements
+      const adminOnlyItems = document.querySelectorAll('.admin-only');
+      const nonAdminMessage = document.querySelector('.non-admin-message');
+
+      if (!isAdmin) {
+        // Hide admin-only items and show message
+        adminOnlyItems.forEach(item => {
+          item.style.display = 'none';
+        });
+        if (nonAdminMessage) {
+          nonAdminMessage.style.display = 'block';
+        }
+      } else {
+        // Show admin items (default, but explicit for clarity)
+        adminOnlyItems.forEach(item => {
+          item.style.display = 'block';
+        });
+        if (nonAdminMessage) {
+          nonAdminMessage.style.display = 'none';
+        }
+      }
+    } catch (err) {
+      console.error('Failed to check auth status:', err);
+      // On error, assume non-admin (safe default)
+      document.querySelectorAll('.admin-only').forEach(item => item.style.display = 'none');
+      const nonAdminMessage = document.querySelector('.non-admin-message');
+      if (nonAdminMessage) {
+        nonAdminMessage.style.display = 'block';
+      }
+    }
 
     // Section header click - toggle expand/collapse
     sectionHeaders.forEach(header => {
