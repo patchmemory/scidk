@@ -12,6 +12,15 @@
     <h3 style="margin-top: 2rem;">What are Links?</h3>
     <p>Links create relationships between nodes using matching rules, fuzzy string similarity, API data, or imported tables. Each link defines a matching strategy (exact, Levenshtein, Jaro-Winkler, etc.), threshold parameters, and writes relationship edges to the graph with confidence scores and provenance metadata. Links enable cross-referencing between datasets and entity resolution across data sources.</p>
 
+    <h2 style="margin-top: 2rem;">Link Script Registry</h2>
+    <div id="links-registry-container" style="margin-top: 1rem;">
+      <p class="small" style="color: #999;"><em>Loading link script registry...</em></p>
+    </div>
+
+    <div id="links-registry-footer" style="margin-top: 0.5rem; text-align: right; display: none;">
+      <a href="#" id="links-resync-link" class="small" style="color: #666; text-decoration: none;">Re-sync built-ins</a>
+    </div>
+
     <h2 style="margin-top: 2rem;">Algorithm Configuration</h2>
     <!-- Algorithm Explorer -->
     <div style="background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 4px; padding: 1.5rem; margin-bottom: 2rem;">
@@ -807,14 +816,154 @@
     }
   }
 
+  async function loadLinksRegistry() {
+    const container = document.getElementById('links-registry-container');
+    const footer = document.getElementById('links-registry-footer');
+
+    try {
+      const response = await fetch('/api/scripts/scripts');
+      const data = await response.json();
+
+      if (data.status === 'ok' && data.scripts) {
+        const links = data.scripts.filter(s => s.category === 'links');
+
+        if (links.length === 0) {
+          container.innerHTML = `
+            <div style="padding: 2rem; background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 4px; text-align: center;">
+              <p style="margin: 0 0 0.5rem 0;">No link scripts registered yet.</p>
+              <p class="small text-muted" style="margin: 0 0 1rem 0;">Import built-in link scripts to get started.</p>
+              <button id="import-links-btn" class="btn btn-primary btn-sm">Import Built-in Links</button>
+              <p id="import-status" class="small" style="margin-top: 0.5rem; color: #666;"></p>
+            </div>
+          `;
+          document.getElementById('import-links-btn')?.addEventListener('click', async () => {
+            const btn = document.getElementById('import-links-btn');
+            const status = document.getElementById('import-status');
+            btn.disabled = true;
+            btn.textContent = 'Importing...';
+            try {
+              const resp = await fetch('/api/scripts/links/bootstrap', { method: 'POST' });
+              const result = await resp.json();
+              if (result.status === 'ok') {
+                status.textContent = `✓ Imported ${result.imported} link scripts. Reloading...`;
+                status.style.color = '#28a745';
+                setTimeout(() => { loadLinksRegistry(); loadLinksStatus(); }, 1000);
+              } else {
+                status.textContent = `✗ ${result.message}`;
+                status.style.color = '#e74c3c';
+                btn.disabled = false;
+                btn.textContent = 'Import Built-in Links';
+              }
+            } catch (err) {
+              status.textContent = `✗ ${err.message}`;
+              status.style.color = '#e74c3c';
+              btn.disabled = false;
+              btn.textContent = 'Import Built-in Links';
+            }
+          });
+          return;
+        }
+
+        footer.style.display = 'block';
+        links.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+        let html = `<table style="width: 100%; border-collapse: collapse; background: white; border: 1px solid #ddd; border-radius: 4px;">
+          <thead><tr style="background: #f0f0f0; border-bottom: 2px solid #ccc;">
+            <th style="padding: 0.75rem; text-align: left;">Name</th>
+            <th style="padding: 0.75rem; text-align: left; width: 20%;">Matching Strategy</th>
+            <th style="padding: 0.75rem; text-align: left; width: 12%;">Source</th>
+            <th style="padding: 0.75rem; text-align: left; width: 12%;">Validation</th>
+            <th style="padding: 0.75rem; text-align: left; width: 12%;">Last Tested</th>
+            <th style="padding: 0.75rem; text-align: left; width: 18%;">Actions</th>
+          </tr></thead><tbody>`;
+
+        links.forEach((link, i) => {
+          const border = i < links.length - 1 ? 'border-bottom: 1px solid #e0e0e0;' : '';
+          const sourceBadge = link.source === 'built-in'
+            ? (link.modified ? '<span class="badge" style="background: #ffc107; color: #000;">built-in ✎</span>' : '<span class="badge" style="background: #19c37d; color: white;">built-in</span>')
+            : '<span class="badge" style="background: #6c757d; color: white;">custom</span>';
+          const validationBadge = link.validation_status === 'queued' ? '<span class="badge" style="background: #6c757d; color: white;">Queued</span>'
+            : link.validation_status === 'running' ? '<span class="badge" style="background: #17a2b8; color: white;">Running ⟳</span>'
+            : (link.validation_status === 'passed' || link.validation_status === 'validated') ? '<span class="badge" style="background: #28a745; color: white;">Passed ✅</span>'
+            : link.validation_status === 'failed' ? '<span class="badge" style="background: #e74c3c; color: white;">Failed ❌</span>'
+            : '<span class="badge" style="background: #999; color: white;">Not run</span>';
+          const lastTested = link.validation_timestamp ? new Date(link.validation_timestamp * 1000).toLocaleDateString() : '—';
+          const strategy = link.metadata?.algorithm || '—';
+          let actions = `<a href="/scripts?script=${encodeURIComponent(link.id)}" class="btn btn-xs btn-outline-secondary">Edit →</a>`;
+          if (link.source === 'built-in' && link.modified) {
+            actions += ` <button class="btn btn-xs btn-outline-warning" onclick="restoreLink('${link.id}')">Restore</button>`;
+          }
+          html += `<tr style="${border}">
+            <td style="padding: 0.75rem; font-size: 0.9em;">${escapeHtml(link.name)}</td>
+            <td style="padding: 0.75rem; font-size: 0.85em; color: #666;">${escapeHtml(strategy)}</td>
+            <td style="padding: 0.75rem;">${sourceBadge}</td>
+            <td style="padding: 0.75rem;">${validationBadge}</td>
+            <td style="padding: 0.75rem; font-size: 0.85em; color: #666;">${lastTested}</td>
+            <td style="padding: 0.75rem;">${actions}</td>
+          </tr>`;
+        });
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
+      }
+    } catch (err) {
+      console.error('Failed to load links registry:', err);
+      container.innerHTML = '<p class="small" style="color: #f48771;">Error loading registry</p>';
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  }
+
+  window.restoreLink = async function(scriptId) {
+    if (!confirm('Replace with original built-in version? This cannot be undone.')) return;
+    try {
+      const resp = await fetch(`/api/scripts/links/restore/${scriptId}`, { method: 'POST' });
+      const result = await resp.json();
+      if (result.status === 'ok') {
+        alert('✓ Restored');
+        loadLinksRegistry();
+        loadLinksStatus();
+      } else {
+        alert(`✗ ${result.message}`);
+      }
+    } catch (err) {
+      alert(`✗ ${err.message}`);
+    }
+  };
+
+  document.getElementById('links-resync-link')?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    const link = e.target;
+    link.textContent = 'Syncing...';
+    try {
+      const resp = await fetch('/api/scripts/links/bootstrap', { method: 'POST' });
+      const result = await resp.json();
+      if (result.status === 'ok') {
+        result.imported > 0 ? (alert(`✓ Imported ${result.imported}`), loadLinksRegistry(), loadLinksStatus()) : alert('All synced');
+      } else {
+        alert(`✗ ${result.message}`);
+      }
+    } catch (err) {
+      alert(`✗ ${err.message}`);
+    } finally {
+      link.textContent = 'Re-sync built-ins';
+    }
+  });
+
   // Initialize on page load
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
       loadLinksStatus();
+      loadLinksRegistry();
       initFuzzyMatching();
     });
   } else {
     loadLinksStatus();
+    loadLinksRegistry();
     initFuzzyMatching();
   }
 </script>
