@@ -38,8 +38,12 @@
 
     // Save chat behavior settings
     saveBtn.addEventListener('click', async () => {
+      // TODO: Implement /api/chat/config endpoint or use environment variables
+      // Verbose mode is currently controlled by SCIDK_GRAPHRAG_VERBOSE environment variable
+      toast('Chat behavior settings are currently controlled via environment variables (see Advanced section)', 'info');
+      /*
       try {
-        const resp = await fetch('/api/settings/chat/config', {
+        const resp = await fetch('/api/chat/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ verbose: verboseCheck.checked })
@@ -53,12 +57,16 @@
       } catch (err) {
         toast('Error saving settings: ' + err.message, 'error');
       }
+      */
     });
 
     // Load current settings
     async function loadChatBehavior() {
+      // TODO: Load from /api/chat/config when endpoint is implemented
+      // For now, check is disabled since settings are environment-based
+      /*
       try {
-        const resp = await fetch('/api/settings/chat/config');
+        const resp = await fetch('/api/chat/config');
         if (resp.ok) {
           const data = await resp.json();
           if (data.verbose !== undefined) {
@@ -68,6 +76,7 @@
       } catch (err) {
         console.error('Failed to load chat settings:', err);
       }
+      */
     }
 
     loadChatBehavior();
