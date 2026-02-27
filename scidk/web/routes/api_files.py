@@ -872,9 +872,14 @@ def api_servers():
         if not ext:
             return jsonify([]), 200  # Return empty list if no extensions
 
-        provs = ext.get('providers', {})
-        logger.info(f"api_servers: provs keys = {list(provs.keys()) if provs else None}")
+        provs = ext.get('providers')
         if not provs:
+            return jsonify([]), 200  # Return empty list if no providers
+
+        # ProviderRegistry has a .providers dict attribute
+        providers_dict = getattr(provs, 'providers', {}) if hasattr(provs, 'providers') else provs
+        logger.info(f"api_servers: provs keys = {list(providers_dict.keys()) if providers_dict else None}")
+        if not providers_dict:
             return jsonify([]), 200  # Return empty list if no providers
 
         servers = []
@@ -924,8 +929,8 @@ def api_servers():
             pass
 
         # Build server list with scan metadata
-        logger.info(f"api_servers: Building server list from {len(provs)} providers")
-        for prov_id, prov in provs.items():
+        logger.info(f"api_servers: Building server list from {len(providers_dict)} providers")
+        for prov_id, prov in providers_dict.items():
             try:
                 logger.info(f"api_servers: Processing provider {prov_id}")
                 # Get provider display name
