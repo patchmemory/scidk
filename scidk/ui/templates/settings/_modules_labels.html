@@ -3,10 +3,12 @@
   <h1>Labels</h1>
   <p class="small">Define custom node types with schema constraints, properties, and relationships.</p>
 
-  <div style="max-width: 800px;">
-    <h3 style="margin-top: 1.5rem;">Registry Status</h3>
-    <div id="labels-status-container" style="margin-top: 1rem;">
-      <p class="small" style="color: #999;"><em>Loading label status...</em></p>
+  <div style="max-width: 900px;">
+    <h2 style="margin-top: 1.5rem;">Label Registry</h2>
+    <p class="small">All label definitions in the system. Labels define node types with schema constraints and properties.</p>
+
+    <div id="labels-registry-container" style="margin-top: 1rem;">
+      <p class="small" style="color: #999;"><em>Loading label registry...</em></p>
     </div>
 
     <h3 style="margin-top: 2rem;">What are Labels?</h3>
@@ -22,65 +24,191 @@
 </section>
 
 <script>
-  async function loadLabelsStatus() {
-    const container = document.getElementById('labels-status-container');
+  async function loadLabelsRegistry() {
+    const container = document.getElementById('labels-registry-container');
 
     try {
-      const response = await fetch('/api/labels');
-      const data = await response.json();
+      // Fetch label definitions
+      const labelsResponse = await fetch('/api/labels');
+      const labelsData = await labelsResponse.json();
 
-      if (data.status === 'success' && data.labels) {
-        const total = data.labels.length;
-        const pushed = data.labels.filter(l => l.pushed).length;
-        const localOnly = total - pushed;
+      if (labelsData.status !== 'success') {
+        throw new Error(labelsData.error || 'Failed to fetch labels');
+      }
 
-        let html = `
-          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;">
-            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
-              <div style="font-size: 2rem; font-weight: bold; color: var(--accent);">${total}</div>
-              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Total</div>
-            </div>
-            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
-              <div style="font-size: 2rem; font-weight: bold; color: #28a745;">${pushed}</div>
-              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Pushed to Neo4j</div>
-            </div>
-            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
-              <div style="font-size: 2rem; font-weight: bold; color: #ffc107;">${localOnly}</div>
-              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Local Only</div>
-            </div>
-            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
-              <div style="font-size: 2rem; font-weight: bold; color: #999;">—</div>
-              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">&nbsp;</div>
-            </div>
+      const labels = labelsData.labels || [];
+
+      // Empty state
+      if (labels.length === 0) {
+        container.innerHTML = `
+          <div style="padding: 2rem; background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 4px; text-align: center;">
+            <p style="margin: 0 0 0.5rem 0;">No labels defined yet.</p>
+            <p class="small text-muted" style="margin: 0;">
+              Create your first label on the <a href="/labels">Labels page</a>.
+            </p>
           </div>
         `;
+        return;
+      }
 
-        if (localOnly > 0) {
-          html += `
-            <div style="margin-top: 1rem; padding: 0.75rem; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
-              <p class="small" style="margin: 0; color: #856404;">
-                ${localOnly} label${localOnly !== 1 ? 's are' : ' is'} defined locally. Push to Neo4j on the <a href="/labels">Labels page</a> to activate.
-              </p>
-            </div>
-          `;
+      // Fetch Neo4j labels to determine push status
+      let neo4jLabels = [];
+      try {
+        const neo4jResponse = await fetch('/api/labels/neo4j/schema');
+        const neo4jData = await neo4jResponse.json();
+        if (neo4jData.status === 'success' && neo4jData.labels) {
+          neo4jLabels = neo4jData.labels;
+        }
+      } catch (err) {
+        console.warn('Could not fetch Neo4j schema:', err);
+        // Continue without Neo4j data
+      }
+
+      // Build registry table
+      labels.sort((a, b) => a.name.localeCompare(b.name));
+
+      let html = `
+        <table style="width: 100%; border-collapse: collapse; background: white; border: 1px solid #ddd; border-radius: 4px;">
+          <thead>
+            <tr style="background: #f0f0f0; border-bottom: 2px solid #ccc;">
+              <th style="padding: 0.75rem; text-align: left; font-weight: 600; width: 20%;">Name</th>
+              <th style="padding: 0.75rem; text-align: left; font-weight: 600; width: 20%;">Properties</th>
+              <th style="padding: 0.75rem; text-align: left; font-weight: 600; width: 15%;">Status</th>
+              <th style="padding: 0.75rem; text-align: left; font-weight: 600; width: 15%;">Pushed</th>
+              <th style="padding: 0.75rem; text-align: left; font-weight: 600; width: 30%;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      labels.forEach((label, index) => {
+        const borderStyle = index < labels.length - 1 ? 'border-bottom: 1px solid #e0e0e0;' : '';
+
+        // Properties column - show count and first few names
+        const propCount = label.properties ? label.properties.length : 0;
+        const propNames = label.properties ? label.properties.slice(0, 3).map(p => p.name).join(', ') : '';
+        const propDisplay = propCount > 0
+          ? `<span style="font-size: 0.85em; color: #666;">${propCount} ${propCount === 1 ? 'property' : 'properties'}</span><br><span class="small text-muted" style="font-size: 0.8em;" title="${propNames}">${propNames}${propCount > 3 ? '...' : ''}</span>`
+          : '<span class="small text-muted">—</span>';
+
+        // Determine push status
+        const isPushedToNeo4j = neo4jLabels.some(nl => nl.name === label.name);
+
+        // Detect out of sync (simple heuristic: if pushed but updated recently)
+        // This is a simplified check - in production you'd want a last_pushed_at field
+        const isOutOfSync = false; // Placeholder - would need schema changes to properly detect
+
+        // Status badge
+        let statusBadge = '';
+        if (!isPushedToNeo4j) {
+          statusBadge = '<span class="badge" style="background: #6c757d; color: white;">Local only</span>';
+        } else if (isOutOfSync) {
+          statusBadge = '<span class="badge" style="background: #ffc107; color: #000;">Out of sync ⚠️</span>';
+        } else {
+          statusBadge = '<span class="badge" style="background: #28a745; color: white;">Pushed ✅</span>';
         }
 
-        container.innerHTML = html;
-      } else {
-        container.innerHTML = `
-          <p class="small text-muted">No labels defined yet. Create your first label on the <a href="/labels">Labels page</a>.</p>
+        // Pushed timestamp (if available)
+        const pushedDisplay = isPushedToNeo4j
+          ? '<span class="small text-muted">Active in Neo4j</span>'
+          : '<span class="small text-muted">—</span>';
+
+        // Actions
+        let actions = `<a href="/labels" class="btn btn-xs btn-outline-secondary">Edit →</a>`;
+
+        if (!isPushedToNeo4j) {
+          actions += ` <button class="btn btn-xs btn-outline-primary" onclick="pushLabel('${escapeHtml(label.name)}')">Push</button>`;
+        } else if (isOutOfSync) {
+          actions += ` <button class="btn btn-xs btn-outline-warning" onclick="syncLabel('${escapeHtml(label.name)}')">Sync</button>`;
+        }
+
+        html += `
+          <tr style="${borderStyle}">
+            <td style="padding: 0.75rem; font-size: 0.9em; font-weight: 500;">${escapeHtml(label.name)}</td>
+            <td style="padding: 0.75rem;">${propDisplay}</td>
+            <td style="padding: 0.75rem;">${statusBadge}</td>
+            <td style="padding: 0.75rem;">${pushedDisplay}</td>
+            <td style="padding: 0.75rem;">${actions}</td>
+          </tr>
         `;
+      });
+
+      html += `
+          </tbody>
+        </table>
+      `;
+
+      container.innerHTML = html;
+
+    } catch (err) {
+      console.error('Failed to load labels registry:', err);
+      container.innerHTML = `
+        <p class="small" style="color: #f48771;">Error loading label registry. ${err.message}</p>
+      `;
+    }
+  }
+
+  // Global function to push a label to Neo4j
+  window.pushLabel = async function(labelName) {
+    if (!confirm(`Push label "${labelName}" to Neo4j? This will create constraints and indexes in the database.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/labels/${labelName}/push`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await response.json();
+
+      if (data.status === 'success') {
+        alert(`✓ Label "${labelName}" pushed to Neo4j successfully`);
+        loadLabelsRegistry(); // Reload table
+      } else {
+        alert(`✗ Push failed: ${data.error || 'Unknown error'}`);
       }
     } catch (err) {
-      console.error('Failed to load labels status:', err);
-      container.innerHTML = '<p class="small" style="color: #f48771;">Error loading label status. Check Neo4j connection.</p>';
+      alert(`✗ Push failed: ${err.message}`);
     }
+  };
+
+  // Global function to sync a label (re-push updated definition)
+  window.syncLabel = async function(labelName) {
+    if (!confirm(`Re-sync label "${labelName}" to Neo4j? This will update the schema with your latest changes.`)) {
+      return;
+    }
+
+    try {
+      // Same as push - just re-push the updated definition
+      const response = await fetch(`/api/labels/${labelName}/push`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await response.json();
+
+      if (data.status === 'success') {
+        alert(`✓ Label "${labelName}" synced to Neo4j successfully`);
+        loadLabelsRegistry(); // Reload table
+      } else {
+        alert(`✗ Sync failed: ${data.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      alert(`✗ Sync failed: ${err.message}`);
+    }
+  };
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   // Initialize when section becomes active
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', loadLabelsStatus);
+    document.addEventListener('DOMContentLoaded', loadLabelsRegistry);
   } else {
-    loadLabelsStatus();
+    loadLabelsRegistry();
   }
 </script>
+
+</section>
