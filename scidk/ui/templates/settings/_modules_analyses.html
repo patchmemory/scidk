@@ -194,18 +194,21 @@
             sourceBadge = '<span class="badge" style="background: #6c757d; color: white;">custom</span>';
           }
 
-          // Validation state badge
+          // Validation state badge (clickable to open modal)
           let validationBadge = '';
+          const badgeStyle = 'cursor: pointer; transition: opacity 0.2s;';
+          const onClickHandler = `onclick="showValidationModal('${analysis.id}', '${escapeHtml(analysis.name)}')" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'" title="Click to view validation details"`;
+
           if (analysis.validation_status === 'queued') {
-            validationBadge = '<span class="badge" style="background: #6c757d; color: white;">Queued</span>';
+            validationBadge = `<span class="badge" style="background: #6c757d; color: white; ${badgeStyle}" ${onClickHandler}>Queued</span>`;
           } else if (analysis.validation_status === 'running') {
-            validationBadge = '<span class="badge" style="background: #17a2b8; color: white;">Running ⟳</span>';
+            validationBadge = `<span class="badge" style="background: #17a2b8; color: white; ${badgeStyle}" ${onClickHandler}>Running ⟳</span>`;
           } else if (analysis.validation_status === 'passed' || analysis.validation_status === 'validated') {
-            validationBadge = '<span class="badge" style="background: #28a745; color: white;">Passed ✅</span>';
+            validationBadge = `<span class="badge" style="background: #28a745; color: white; ${badgeStyle}" ${onClickHandler}>Passed ✅</span>`;
           } else if (analysis.validation_status === 'failed') {
-            validationBadge = '<span class="badge" style="background: #e74c3c; color: white;">Failed ❌</span>';
+            validationBadge = `<span class="badge" style="background: #e74c3c; color: white; ${badgeStyle}" ${onClickHandler}>Failed ❌</span>`;
           } else {
-            validationBadge = '<span class="badge" style="background: #999; color: white;">Not run</span>';
+            validationBadge = `<span class="badge" style="background: #999; color: white; ${badgeStyle}" ${onClickHandler}>Not run</span>`;
           }
 
           // Last tested
@@ -312,3 +315,8 @@
     loadAnalysesRegistry();
   }
 </script>
+
+<!-- Include shared validation modal -->
+{% include 'settings/_validation_modal.html' %}
+
+</section>
