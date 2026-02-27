@@ -862,7 +862,14 @@ def api_servers():
     Used by Files page Live Servers mode to show which servers have been scanned before.
     """
     try:
-        provs = _get_ext().get('providers', {})
+        ext = _get_ext()
+        if not ext:
+            return jsonify([]), 200  # Return empty list if no extensions
+
+        provs = ext.get('providers', {})
+        if not provs:
+            return jsonify([]), 200  # Return empty list if no providers
+
         servers = []
 
         # Get scan history from SQLite
@@ -1371,6 +1378,8 @@ def api_scans():
                         'committed_at': (extra_obj or {}).get('committed_at'),
                         'status': status,
                         'rescan_of': (extra_obj or {}).get('rescan_of'),
+                        'provider_id': (extra_obj or {}).get('provider_id', 'local_fs'),
+                        'root_id': (extra_obj or {}).get('root_id', '/'),
                     })
                 # Merge in-memory committed flags to reflect immediate commits
                 try:
@@ -1407,6 +1416,8 @@ def api_scans():
                 'checksum_count': len(s.get('checksums') or []),
                 'committed': bool(s.get('committed', False)),
                 'committed_at': s.get('committed_at'),
+                'provider_id': s.get('provider_id', 'local_fs'),
+                'root_id': s.get('root_id', '/'),
             }
             for s in scans
         ]

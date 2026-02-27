@@ -1761,15 +1761,25 @@ window.addEventListener('DOMContentLoaded', () => {
       }
       const scans = await r.json();
 
+      console.log('Scans API response:', scans);
+
       if (!Array.isArray(scans)) {
         console.error('Scans API returned non-array:', scans);
         throw new Error('Invalid response format');
       }
 
+      if (scans.length === 0) {
+        console.log('No scans found - showing empty state');
+        document.getElementById('servers-tree').innerHTML = '<div class="small text-muted">No snapshots yet</div>';
+        return;
+      }
+
       // Group scans by provider_id to build server-like entries
       const grouped = {};
       for (const scan of scans) {
-        const providerId = scan.provider_id || 'local';
+        const providerId = scan.provider_id || 'local_fs';
+        console.log('Processing scan:', scan.id, 'provider:', providerId);
+
         if (!grouped[providerId]) {
           grouped[providerId] = {
             id: providerId,
@@ -1782,6 +1792,8 @@ window.addEventListener('DOMContentLoaded', () => {
         }
         grouped[providerId].scans.push(scan);
       }
+
+      console.log('Grouped scans:', grouped);
 
       // Format as tree nodes with snapshot metadata
       serversData = Object.values(grouped).map(s => {
