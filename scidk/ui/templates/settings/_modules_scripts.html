@@ -45,7 +45,7 @@
             </div>
             <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
               <div style="font-size: 2rem; font-weight: bold; color: #28a745;">${validated}</div>
-              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Validated</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;" title="Passed syntax and contract checks — ready to run">Validated</div>
             </div>
             <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
               <div style="font-size: 2rem; font-weight: bold; color: #ffc107;">${draft}</div>
@@ -57,6 +57,35 @@
             </div>
           </div>
         `;
+
+        // Add category breakdown
+        const categoryCounts = {};
+        scripts.forEach(s => {
+          const cat = s.category || 'uncategorized';
+          categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+        });
+
+        const categoryParts = [];
+        if (categoryCounts['analyses/builtin']) categoryParts.push(`Analyses (${categoryCounts['analyses/builtin']})`);
+        if (categoryCounts['links']) categoryParts.push(`Links (${categoryCounts['links']})`);
+        if (categoryCounts['custom']) categoryParts.push(`Custom (${categoryCounts['custom']})`);
+
+        // Sum up any other categories as "Other"
+        const otherCount = Object.keys(categoryCounts).reduce((sum, cat) => {
+          if (!['analyses/builtin', 'links', 'custom'].includes(cat)) {
+            return sum + categoryCounts[cat];
+          }
+          return sum;
+        }, 0);
+        if (otherCount > 0) categoryParts.push(`Other (${otherCount})`);
+
+        if (categoryParts.length > 0) {
+          html += `
+            <p class="small" style="margin-top: 1rem; color: #666;">
+              By category: ${categoryParts.join(' · ')}
+            </p>
+          `;
+        }
 
         if (failed > 0) {
           html += `

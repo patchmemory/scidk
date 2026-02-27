@@ -31,9 +31,8 @@
 
       if (data.status === 'success' && data.labels) {
         const total = data.labels.length;
-        const validated = data.labels.filter(l => l.pushed).length;
-        const draft = total - validated;
-        const failed = 0; // Labels don't have a failed state
+        const pushed = data.labels.filter(l => l.pushed).length;
+        const localOnly = total - pushed;
 
         let html = `
           <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;">
@@ -42,25 +41,25 @@
               <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Total</div>
             </div>
             <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
-              <div style="font-size: 2rem; font-weight: bold; color: #28a745;">${validated}</div>
-              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Validated</div>
+              <div style="font-size: 2rem; font-weight: bold; color: #28a745;">${pushed}</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Pushed to Neo4j</div>
             </div>
             <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
-              <div style="font-size: 2rem; font-weight: bold; color: #ffc107;">${draft}</div>
-              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Draft</div>
+              <div style="font-size: 2rem; font-weight: bold; color: #ffc107;">${localOnly}</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Local Only</div>
             </div>
             <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
-              <div style="font-size: 2rem; font-weight: bold; color: #e74c3c;">${failed}</div>
-              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Failed</div>
+              <div style="font-size: 2rem; font-weight: bold; color: #999;">—</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">&nbsp;</div>
             </div>
           </div>
         `;
 
-        if (draft > 0) {
+        if (localOnly > 0) {
           html += `
             <div style="margin-top: 1rem; padding: 0.75rem; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
               <p class="small" style="margin: 0; color: #856404;">
-                ${draft} label${draft !== 1 ? 's are' : ' is'} in draft state. Push to Neo4j on the <a href="/labels">Labels page</a>.
+                ${localOnly} label${localOnly !== 1 ? 's are' : ' is'} defined locally. Push to Neo4j on the <a href="/labels">Labels page</a> to activate.
               </p>
             </div>
           `;
