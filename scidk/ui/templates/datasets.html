@@ -1044,19 +1044,27 @@ window.addEventListener('DOMContentLoaded', () => {
   modeLive.addEventListener('change', () => {
     if (modeLive.checked) {
       currentMode = 'live';
+      // In Live mode: show server list in servers section
+      document.querySelector('#servers-section .tree-section-header').textContent = 'SERVERS';
       serversSection.style.display = 'block';
       snapshotsSection.style.display = 'none';
       scanFolderBtn.style.display = 'inline-block';
       commitScanBtn.style.display = 'none';
+      // Reload servers
+      loadServers();
     }
   });
 
   modeSnapshot.addEventListener('change', () => {
     if (modeSnapshot.checked) {
       currentMode = 'snapshot';
-      serversSection.style.display = 'none';
-      snapshotsSection.style.display = 'block';
+      // In Snapshots mode: populate servers section with snapshot-derived entries
+      document.querySelector('#servers-section .tree-section-header').textContent = 'SNAPSHOTS';
+      serversSection.style.display = 'block';
+      snapshotsSection.style.display = 'none'; // Keep hidden - we use servers section instead
       scanFolderBtn.style.display = 'none';
+      // Load snapshots into the servers tree
+      loadSnapshotsAsServers();
     }
   });
 
@@ -1096,7 +1104,16 @@ window.addEventListener('DOMContentLoaded', () => {
   async function loadServers() {
     try {
       const r = await fetch('/api/servers');
+      if (!r.ok) {
+        throw new Error(`API returned ${r.status}`);
+      }
       const servers = await r.json();
+
+      // Check if response is an array
+      if (!Array.isArray(servers)) {
+        console.error('Servers API returned non-array:', servers);
+        throw new Error('Invalid response format');
+      }
 
       // Format scan timestamp for display
       function fmtLastScanned(timestamp) {
@@ -1178,7 +1195,8 @@ window.addEventListener('DOMContentLoaded', () => {
         await loadRootsAndBrowse(currentServer);
       }
     } catch (e) {
-      document.getElementById('servers-tree').innerHTML = '<div class="small text-danger">Failed to load servers</div>';
+      console.error('loadServers error:', e);
+      document.getElementById('servers-tree').innerHTML = `<div class="small text-danger">Failed to load servers: ${e.message}</div>`;
     }
   }
 
@@ -1733,6 +1751,89 @@ window.addEventListener('DOMContentLoaded', () => {
       browseLive(currentServer, currentRoot, currentPath);
     }
   };
+
+  // ===== Load Snapshots as Server Entries (for Snapshots mode) =====
+  async function loadSnapshotsAsServers() {
+    try {
+      const r = await fetch('/api/scans');
+      if (!r.ok) {
+        throw new Error(`API returned ${r.status}`);
+      }
+      const scans = await r.json();
+
+      if (!Array.isArray(scans)) {
+        console.error('Scans API returned non-array:', scans);
+        throw new Error('Invalid response format');
+      }
+
+      // Group scans by provider_id to build server-like entries
+      const grouped = {};
+      for (const scan of scans) {
+        const providerId = scan.provider_id || 'local';
+        if (!grouped[providerId]) {
+          grouped[providerId] = {
+            id: providerId,
+            label: providerId,
+            type: 'server',
+            icon: '📷', // Camera icon to distinguish from Live mode
+            hasChildren: false,
+            scans: []
+          };
+        }
+        grouped[providerId].scans.push(scan);
+      }
+
+      // Format as tree nodes with snapshot metadata
+      serversData = Object.values(grouped).map(s => {
+        const latestScan = s.scans[0]; // Scans are already sorted by date
+        const scanDate = latestScan.ended || latestScan.started;
+        let dateStr = '';
+        try {
+          if (scanDate) {
+            const d = new Date(scanDate * 1000);
+            const now = Date.now() / 1000;
+            const diff = now - scanDate;
+            const days = Math.floor(diff / 86400);
+            if (days === 0) {
+              dateStr = ' (Today)';
+            } else if (days === 1) {
+              dateStr = ' (Yesterday)';
+            } else if (days < 7) {
+              dateStr = ` (${days}d ago)`;
+            } else {
+              dateStr = ` (${d.toLocaleDateString()})`;
+            }
+          }
+        } catch (e) {
+          dateStr = '';
+        }
+
+        return {
+          ...s,
+          displayLabel: s.label + dateStr,
+          label: s.label + dateStr
+        };
+      });
+
+      serversTree.onSelect = (node) => {
+        // When a snapshot server is selected, show its latest scan
+        const provider = serversData.find(sd => sd.id === node.id);
+        if (provider && provider.scans.length > 0) {
+          const latestScan = provider.scans[0];
+          currentScan = latestScan.id;
+          browseSnapshot(latestScan.id);
+          showScanDetails(latestScan.id);
+          commitScanBtn.style.display = 'inline-block';
+        }
+      };
+
+      serversTree.nodes = serversData;
+      serversTree.refresh();
+    } catch (e) {
+      console.error('loadSnapshotsAsServers error:', e);
+      document.getElementById('servers-tree').innerHTML = `<div class="small text-danger">Failed to load snapshots: ${e.message}</div>`;
+    }
+  }
 
   // ===== Scans List (Tree) =====
   async function loadScans() {
