@@ -218,6 +218,94 @@ class Neo4jClient:
                 'db_verified': bool(scan_exists and (files_cnt > 0 or folders_cnt > 0)),
             }
 
+    def write_declared_nodes(self, nodes: List[Dict[str, Any]], relationships: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Write interpreter-declared nodes and relationships at commit time.
+
+        Args:
+            nodes: List of node declarations with format:
+                   [{'label': 'ImagingDataset', 'key_property': 'path', 'properties': {...}}]
+            relationships: List of relationship declarations with format:
+                          [{'type': 'METADATA_SOURCE', 'from_label': 'X', 'from_match': {...},
+                            'to_label': 'Y', 'to_match': {...}}]
+
+        Returns:
+            Dict with keys: written_nodes (int), written_relationships (int), errors (list)
+        """
+        result = {'written_nodes': 0, 'written_relationships': 0, 'errors': []}
+
+        with self._session() as sess:
+            # Write nodes using MERGE on key property
+            for node_decl in nodes:
+                try:
+                    label = node_decl.get('label')
+                    key_prop = node_decl.get('key_property')
+                    props = node_decl.get('properties', {})
+
+                    if not label or not key_prop or key_prop not in props:
+                        result['errors'].append(f"Invalid node declaration: missing label, key_property, or key in properties")
+                        continue
+
+                    # Build MERGE query with key property, SET all other properties
+                    key_val = props[key_prop]
+                    other_props = {k: v for k, v in props.items() if k != key_prop}
+
+                    # Cypher parameter construction
+                    params = {'key_val': key_val}
+                    set_clauses = []
+                    for idx, (k, v) in enumerate(other_props.items()):
+                        param_name = f'prop_{idx}'
+                        params[param_name] = v
+                        set_clauses.append(f'n.{k} = ${param_name}')
+
+                    set_clause = ', '.join(set_clauses) if set_clauses else ''
+                    cypher = f"MERGE (n:{label} {{{key_prop}: $key_val}})"
+                    if set_clause:
+                        cypher += f" SET {set_clause}"
+                    cypher += " RETURN elementId(n) as node_id"
+
+                    sess.run(cypher, **params).consume()
+                    result['written_nodes'] += 1
+
+                except Exception as e:
+                    result['errors'].append(f"Failed to write node {node_decl.get('label')}: {str(e)}")
+
+            # Write relationships using MATCH by key properties
+            for rel_decl in relationships:
+                try:
+                    rel_type = rel_decl.get('type')
+                    from_label = rel_decl.get('from_label')
+                    from_match = rel_decl.get('from_match', {})
+                    to_label = rel_decl.get('to_label')
+                    to_match = rel_decl.get('to_match', {})
+
+                    if not rel_type or not from_label or not to_label or not from_match or not to_match:
+                        result['errors'].append(f"Invalid relationship declaration: missing required fields")
+                        continue
+
+                    # Build MATCH clauses with provided properties
+                    from_props_str = ', '.join([f'{k}: $from_{k}' for k in from_match.keys()])
+                    to_props_str = ', '.join([f'{k}: $to_{k}' for k in to_match.keys()])
+
+                    params = {}
+                    for k, v in from_match.items():
+                        params[f'from_{k}'] = v
+                    for k, v in to_match.items():
+                        params[f'to_{k}'] = v
+
+                    cypher = (
+                        f"MATCH (from:{from_label} {{{from_props_str}}}) "
+                        f"MATCH (to:{to_label} {{{to_props_str}}}) "
+                        f"MERGE (from)-[:{rel_type}]->(to)"
+                    )
+
+                    sess.run(cypher, **params).consume()
+                    result['written_relationships'] += 1
+
+                except Exception as e:
+                    result['errors'].append(f"Failed to write relationship {rel_decl.get('type')}: {str(e)}")
+
+        return result
+
 
 def get_neo4j_client_for_profile(profile_name: str) -> Optional['Neo4jClient']:
     """Get Neo4j client for a specific named profile.

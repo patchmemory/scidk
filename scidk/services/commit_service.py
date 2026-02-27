@@ -127,3 +127,60 @@ class CommitService:
             pass
 
         return rows, folder_rows
+
+    # --- Declared nodes extraction (Phase 1: Interpreter Contract Extension) ---
+    def extract_declared_nodes_from_scan(self, scan_id: str) -> Tuple[List[Dict], List[Dict]]:
+        """Extract interpreter-declared nodes and relationships from a scan's interpretation payloads.
+
+        Reads the SQLite files table for the given scan_id, loads interpretation_json,
+        and extracts any 'nodes' and 'relationships' keys declared by interpreters.
+
+        Args:
+            scan_id: The scan ID to extract declared nodes from
+
+        Returns:
+            Tuple of (nodes_list, relationships_list) where each is a list of declarations
+        """
+        from ..core import path_index_sqlite as pix
+        import json as _json
+
+        all_nodes = []
+        all_relationships = []
+
+        try:
+            conn = pix.connect()
+            pix.init_db(conn)
+            try:
+                cur = conn.cursor()
+                # Query all files in this scan that have interpretation data
+                cur.execute(
+                    "SELECT interpretation_json FROM files WHERE scan_id = ? AND interpretation_json IS NOT NULL",
+                    (scan_id,)
+                )
+
+                for (interp_json,) in cur.fetchall():
+                    try:
+                        payload = _json.loads(interp_json) if interp_json else {}
+
+                        # Extract declared nodes
+                        nodes = payload.get('nodes', [])
+                        if isinstance(nodes, list):
+                            all_nodes.extend(nodes)
+
+                        # Extract declared relationships
+                        rels = payload.get('relationships', [])
+                        if isinstance(rels, list):
+                            all_relationships.extend(rels)
+
+                    except Exception:
+                        # Skip malformed interpretation JSON
+                        continue
+
+            finally:
+                conn.close()
+
+        except Exception:
+            # If SQLite query fails, return empty lists (non-fatal)
+            pass
+
+        return all_nodes, all_relationships
