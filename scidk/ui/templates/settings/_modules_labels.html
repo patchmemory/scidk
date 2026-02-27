@@ -1,11 +1,81 @@
 <!-- Modules > Labels Section -->
 <section id="modules-labels-section" class="settings-section">
   <h1>Labels</h1>
-  <p class="small">Schema-level global settings for label types.</p>
+  <p class="small">Label definitions provide schema structure for your graph by defining custom node types with properties, constraints, and relationships.</p>
 
-  <div style="max-width: 720px;">
-    <p class="small text-muted">
-      Label definitions and management are handled on the <a href="/labels">Labels page</a>.
-    </p>
+  <div style="max-width: 800px;">
+    <h3>What are Labels?</h3>
+    <p>Labels define the types of nodes in your Neo4j graph. Each label specifies a set of properties, data types, and validation rules. Labels enable schema enforcement, indexing, and structured querying across your knowledge graph.</p>
+
+    <h3 style="margin-top: 1.5rem;">Label Registry Status</h3>
+    <div id="labels-status-container" style="margin-top: 1rem;">
+      <p class="small" style="color: #999;"><em>Loading label status...</em></p>
+    </div>
+
+    <div style="margin-top: 2rem; padding: 1rem; background: #f9f9f9; border-radius: 4px;">
+      <h4 style="margin-top: 0;">Authoring &amp; Management</h4>
+      <p class="small" style="margin-bottom: 0.5rem;">Label definitions are created, edited, and managed on the <strong><a href="/labels">Labels page</a></strong>.</p>
+      <p class="small" style="margin: 0;">From there you can define properties, set constraints, push schema to Neo4j, and import/export label definitions.</p>
+    </div>
   </div>
 </section>
+
+<script>
+  async function loadLabelsStatus() {
+    const container = document.getElementById('labels-status-container');
+
+    try {
+      const response = await fetch('/api/labels');
+      const data = await response.json();
+
+      if (data.status === 'success' && data.labels) {
+        const total = data.labels.length;
+        const active = data.labels.filter(l => l.pushed).length;
+        const draft = total - active;
+
+        let html = `
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px;">
+              <div style="font-size: 2rem; font-weight: bold; color: var(--accent);">${total}</div>
+              <div class="small text-muted">Total Labels Defined</div>
+            </div>
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px;">
+              <div style="font-size: 2rem; font-weight: bold; color: #28a745;">${active}</div>
+              <div class="small text-muted">Pushed to Neo4j</div>
+            </div>
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px;">
+              <div style="font-size: 2rem; font-weight: bold; color: #ffc107;">${draft}</div>
+              <div class="small text-muted">Draft (Local Only)</div>
+            </div>
+          </div>
+        `;
+
+        if (draft > 0) {
+          html += `
+            <div style="margin-top: 1rem; padding: 0.75rem; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
+              <p class="small" style="margin: 0; color: #856404;">
+                <strong>Note:</strong> ${draft} label${draft !== 1 ? 's are' : ' is'} in draft state. Push them to Neo4j on the <a href="/labels">Labels page</a> to activate.
+              </p>
+            </div>
+          `;
+        }
+
+        container.innerHTML = html;
+      } else {
+        container.innerHTML = `
+          <p class="small text-muted">No labels defined yet. Create your first label on the <a href="/labels">Labels page</a>.</p>
+        `;
+      }
+    } catch (err) {
+      console.error('Failed to load labels status:', err);
+      container.innerHTML = '<p class="small" style="color: #f48771;">Error loading label status. Check Neo4j connection.</p>';
+    }
+  }
+
+  // Initialize when section becomes active
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadLabelsStatus);
+  } else {
+    loadLabelsStatus();
+  }
+</script>
