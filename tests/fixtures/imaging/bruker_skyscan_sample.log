@@ -1,0 +1,26 @@
+[System]
+Skyscan 1272 Version 1.1
+
+[Acquisition]
+Voxel size (um)=5.00000
+Source Voltage (kV)=70
+Source Current (uA)=142
+Exposure (ms)=1200
+Rotation Step (deg)=0.400
+Number of Files=847
+Image Pixel Size (um)=5.00000
+Camera Pixel Size (um)=11.54
+Object to Source (mm)=170.456
+Camera to Source (mm)=393.632
+Filter=Al 1mm
+Scanning position=45.123
+
+[Reconstruction]
+Depth (mm)=10.5
+Number of Rows=2016
+Number of Columns=1344
+
+[Sample]
+Sample name=Sample_001
+Operator=Anonymous
+Scan date=2026-01-15

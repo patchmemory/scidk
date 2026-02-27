@@ -15,6 +15,7 @@ from .yaml_interpreter import YamlInterpreter
 from .ipynb_interpreter import IpynbInterpreter
 from .txt_interpreter import TxtInterpreter
 from .xlsx_interpreter import XlsxInterpreter
+from .bruker_skyscan_log import BrukerSkyScanLogInterpreter
 
 # Centralized interpreter registry
 INTERPRETERS = [
@@ -25,6 +26,7 @@ INTERPRETERS = [
     IpynbInterpreter,
     TxtInterpreter,
     XlsxInterpreter,
+    BrukerSkyScanLogInterpreter,
 ]
 
 
