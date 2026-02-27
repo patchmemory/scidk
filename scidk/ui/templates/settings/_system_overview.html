@@ -1,0 +1,22 @@
+<!-- System Overview Section -->
+<section id="system-overview-section" class="settings-section active">
+  <h1>System Overview</h1>
+  <p class="small">Basic runtime information and counts for this SciDK instance.</p>
+
+  <div style="max-width: 720px;">
+    <h3>Runtime Information</h3>
+    <ul>
+      <li><strong>Host:</strong> {{ info.host }}</li>
+      <li><strong>Port:</strong> {{ info.port }}</li>
+      <li><strong>Debug Mode:</strong> {{ info.debug }}</li>
+      <li><strong>Datasets:</strong> {{ info.dataset_count }}</li>
+      <li><strong>Interpreters:</strong> {{ info.interpreter_count }}</li>
+    </ul>
+
+    <div class="small" style="margin: 1.5rem 0;">
+      <span class="badge">Channel: {{ info.channel or 'stable' }}</span>
+      <span class="badge" title="Active Providers">Providers: {{ info.providers }}</span>
+      <span class="badge" title="Files viewer mode">Files viewer: {{ info.files_viewer or '(default)' }}</span>
+    </div>
+  </div>
+</section>

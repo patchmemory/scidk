@@ -1,0 +1,102 @@
+<!-- Security > Audit Log Section -->
+<section id="security-audit-log-section" class="settings-section">
+  <h1>Audit Log</h1>
+  <p class="small">Security and user action logs. <span class="badge" style="background:#ffc107; color:#000">Admin Only</span></p>
+
+  <div style="background:#f9f9f9; border:1px solid #e0e0e0; border-radius:4px; padding:1rem; max-width:900px">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem">
+      <h3 style="margin:0">Recent Activity</h3>
+      <button id="btn-refresh-audit" style="padding:0.5rem 1rem; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer">Refresh</button>
+    </div>
+    <div id="audit-log-container">
+      <p class="small" style="color:#666">Loading audit log...</p>
+    </div>
+  </div>
+</section>
+
+<script>
+  function initAuditLog() {
+    const refreshBtn = document.getElementById('btn-refresh-audit');
+    const auditLogContainer = document.getElementById('audit-log-container');
+
+    if (!auditLogContainer) return;
+
+    // Load audit log
+    async function loadAuditLog() {
+      try {
+        const response = await fetch('/api/audit-log?limit=50');
+        if (response.ok) {
+          const data = await response.json();
+          renderAuditLog(data.entries || []);
+        } else if (response.status === 403) {
+          auditLogContainer.innerHTML = '<p class="small" style="color:#b00">Access denied. Admin role required.</p>';
+        } else {
+          auditLogContainer.innerHTML = '<p class="small" style="color:#b00">Failed to load audit log.</p>';
+        }
+      } catch (error) {
+        console.error('Failed to load audit log:', error);
+        auditLogContainer.innerHTML = '<p class="small" style="color:#b00">Connection error.</p>';
+      }
+    }
+
+    // Render audit log
+    function renderAuditLog(entries) {
+      if (entries.length === 0) {
+        auditLogContainer.innerHTML = '<p class="small" style="color:#666">No audit entries found.</p>';
+        return;
+      }
+
+      const table = document.createElement('table');
+      table.style.cssText = 'width:100%; border-collapse:collapse';
+      table.innerHTML = `
+        <thead>
+          <tr style="border-bottom:2px solid #ddd; text-align:left">
+            <th style="padding:0.5rem; font-size:0.9em">Timestamp</th>
+            <th style="padding:0.5rem; font-size:0.9em">User</th>
+            <th style="padding:0.5rem; font-size:0.9em">Action</th>
+            <th style="padding:0.5rem; font-size:0.9em">Details</th>
+            <th style="padding:0.5rem; font-size:0.9em">IP Address</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${entries.map(entry => `
+            <tr style="border-bottom:1px solid #eee">
+              <td style="padding:0.5rem; font-size:0.85em">${new Date(entry.timestamp * 1000).toLocaleString()}</td>
+              <td style="padding:0.5rem; font-size:0.85em">${escapeHtml(entry.username)}</td>
+              <td style="padding:0.5rem; font-size:0.85em">
+                <code style="background:#f5f5f5; padding:0.1rem 0.3rem; border-radius:3px">${escapeHtml(entry.action)}</code>
+              </td>
+              <td style="padding:0.5rem; font-size:0.85em">${escapeHtml(entry.details || '')}</td>
+              <td style="padding:0.5rem; font-size:0.85em">${escapeHtml(entry.ip_address || '')}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      `;
+
+      auditLogContainer.innerHTML = '';
+      auditLogContainer.appendChild(table);
+    }
+
+    // Helper function to escape HTML
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Refresh button
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', loadAuditLog);
+    }
+
+    // Load initial audit log
+    loadAuditLog();
+  }
+
+  // Initialize on page load
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initAuditLog);
+  } else {
+    initAuditLog();
+  }
+</script>

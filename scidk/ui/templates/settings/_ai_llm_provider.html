@@ -1,0 +1,230 @@
+<!-- AI & Chat > LLM Provider Section -->
+<section id="ai-chat-llm-provider-section" class="settings-section">
+  <h1>LLM Provider</h1>
+  <p class="small">Configure API keys, model selection, and provider settings for chat functionality.</p>
+
+  <h3>Provider Selection</h3>
+  <div class="row g-2" style="max-width:720px; margin-bottom:2rem">
+    <div class="col-12 col-md-6">
+      <label class="form-label small" for="chat-llm-provider">Default LLM Provider</label>
+      <select id="chat-llm-provider" class="form-select form-select-sm">
+        <option value="anthropic">Anthropic (Claude)</option>
+        <option value="openai">OpenAI (GPT)</option>
+        <option value="ollama">Ollama (Local)</option>
+        <option value="none">None (Pattern-based only)</option>
+      </select>
+      <small class="form-text text-muted">Choose which LLM to use for entity extraction and query generation.</small>
+    </div>
+  </div>
+
+  <!-- Anthropic Settings -->
+  <div id="anthropic-settings" class="llm-provider-settings">
+    <h4 class="small">Anthropic API Configuration</h4>
+    <div class="row g-2" style="max-width:720px; margin-bottom:1rem">
+      <div class="col-12 col-md-8">
+        <label class="form-label small" for="chat-anthropic-key">API Key</label>
+        <div style="display:flex; gap:.5rem; align-items:center">
+          <input id="chat-anthropic-key" type="password" class="form-control form-control-sm" placeholder="sk-ant-api..." />
+          <div class="form-check">
+            <input id="chat-anthropic-key-show" type="checkbox" class="form-check-input" />
+            <label class="form-check-label small" for="chat-anthropic-key-show">Show</label>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-md-4">
+        <label class="form-label small" for="chat-anthropic-model">Model</label>
+        <select id="chat-anthropic-model" class="form-select form-select-sm">
+          <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+          <option value="claude-3-opus-20240229">Claude 3 Opus</option>
+          <option value="claude-3-haiku-20240307">Claude 3 Haiku</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- OpenAI Settings -->
+  <div id="openai-settings" class="llm-provider-settings" style="display:none">
+    <h4 class="small">OpenAI API Configuration</h4>
+    <div class="row g-2" style="max-width:720px; margin-bottom:1rem">
+      <div class="col-12 col-md-8">
+        <label class="form-label small" for="chat-openai-key">API Key</label>
+        <div style="display:flex; gap:.5rem; align-items:center">
+          <input id="chat-openai-key" type="password" class="form-control form-control-sm" placeholder="sk-proj..." />
+          <div class="form-check">
+            <input id="chat-openai-key-show" type="checkbox" class="form-check-input" />
+            <label class="form-check-label small" for="chat-openai-key-show">Show</label>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-md-4">
+        <label class="form-label small" for="chat-openai-model">Model</label>
+        <select id="chat-openai-model" class="form-select form-select-sm">
+          <option value="gpt-4-turbo-preview">GPT-4 Turbo</option>
+          <option value="gpt-4">GPT-4</option>
+          <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ollama Settings -->
+  <div id="ollama-settings" class="llm-provider-settings" style="display:none">
+    <h4 class="small">Ollama Configuration</h4>
+    <div class="row g-2" style="max-width:720px; margin-bottom:1rem">
+      <div class="col-12 col-md-8">
+        <label class="form-label small" for="chat-ollama-url">Ollama URL</label>
+        <input id="chat-ollama-url" type="text" class="form-control form-control-sm" placeholder="http://localhost:11434" value="http://localhost:11434" />
+      </div>
+      <div class="col-12 col-md-4">
+        <label class="form-label small" for="chat-ollama-model">Model</label>
+        <select id="chat-ollama-model" class="form-select form-select-sm">
+          <option value="llama2">Llama 2</option>
+          <option value="mistral">Mistral</option>
+          <option value="codellama">Code Llama</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:1rem">
+    <button id="chat-save-llm-config" class="btn btn-sm btn-primary">Save LLM Configuration</button>
+    <span id="chat-llm-status" class="small text-muted" style="margin-left: 1rem;"></span>
+  </div>
+</section>
+
+<script>
+  function initLLMProvider() {
+    const llmProviderSelect = document.getElementById('chat-llm-provider');
+    const saveLLMConfigBtn = document.getElementById('chat-save-llm-config');
+    const statusSpan = document.getElementById('chat-llm-status');
+
+    // LLM provider settings panels
+    const anthropicSettings = document.getElementById('anthropic-settings');
+    const openaiSettings = document.getElementById('openai-settings');
+    const ollamaSettings = document.getElementById('ollama-settings');
+
+    if (!llmProviderSelect) return;
+
+    // Handle LLM provider switching
+    llmProviderSelect.addEventListener('change', () => {
+      const provider = llmProviderSelect.value;
+
+      // Hide all provider settings
+      anthropicSettings.style.display = 'none';
+      openaiSettings.style.display = 'none';
+      ollamaSettings.style.display = 'none';
+
+      // Show selected provider settings
+      if (provider === 'anthropic') {
+        anthropicSettings.style.display = 'block';
+      } else if (provider === 'openai') {
+        openaiSettings.style.display = 'block';
+      } else if (provider === 'ollama') {
+        ollamaSettings.style.display = 'block';
+      }
+    });
+
+    // Show/hide API key toggles
+    ['anthropic', 'openai'].forEach(provider => {
+      const keyInput = document.getElementById(`chat-${provider}-key`);
+      const keyShowCheck = document.getElementById(`chat-${provider}-key-show`);
+
+      if (keyShowCheck && keyInput) {
+        keyShowCheck.addEventListener('change', () => {
+          keyInput.type = keyShowCheck.checked ? 'text' : 'password';
+        });
+      }
+    });
+
+    // Save LLM configuration
+    if (saveLLMConfigBtn) {
+      saveLLMConfigBtn.addEventListener('click', async () => {
+        const provider = llmProviderSelect.value;
+        const config = {
+          provider: provider
+        };
+
+        // Add provider-specific settings
+        if (provider === 'anthropic') {
+          config.anthropic_api_key = document.getElementById('chat-anthropic-key').value.trim();
+          config.anthropic_model = document.getElementById('chat-anthropic-model').value;
+        } else if (provider === 'openai') {
+          config.openai_api_key = document.getElementById('chat-openai-key').value.trim();
+          config.openai_model = document.getElementById('chat-openai-model').value;
+        } else if (provider === 'ollama') {
+          config.ollama_url = document.getElementById('chat-ollama-url').value.trim();
+          config.ollama_model = document.getElementById('chat-ollama-model').value;
+        }
+
+        try {
+          saveLLMConfigBtn.disabled = true;
+          saveLLMConfigBtn.textContent = 'Saving...';
+          if (statusSpan) statusSpan.textContent = '';
+
+          const resp = await fetch('/api/settings/chat/llm-config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+          });
+          const data = await resp.json();
+
+          if (data.status === 'success' || resp.ok) {
+            toast('LLM configuration saved successfully', 'success');
+            if (statusSpan) statusSpan.textContent = '✓ Saved';
+          } else {
+            toast('Failed to save configuration: ' + (data.error || 'unknown'), 'error');
+            if (statusSpan) statusSpan.textContent = '✗ Failed';
+          }
+        } catch (err) {
+          toast('Error saving configuration: ' + err.message, 'error');
+          if (statusSpan) statusSpan.textContent = '✗ Error';
+        } finally {
+          saveLLMConfigBtn.disabled = false;
+          saveLLMConfigBtn.textContent = 'Save LLM Configuration';
+        }
+      });
+    }
+
+    // Load current LLM configuration
+    async function loadLLMConfig() {
+      try {
+        const resp = await fetch('/api/settings/chat/llm-config');
+        if (resp.ok) {
+          const data = await resp.json();
+
+          // Set provider
+          if (data.provider && llmProviderSelect) {
+            llmProviderSelect.value = data.provider;
+            // Trigger change event to show correct settings panel
+            llmProviderSelect.dispatchEvent(new Event('change'));
+          }
+
+          // Load provider-specific settings
+          if (data.anthropic_model) {
+            document.getElementById('chat-anthropic-model').value = data.anthropic_model;
+          }
+          if (data.openai_model) {
+            document.getElementById('chat-openai-model').value = data.openai_model;
+          }
+          if (data.ollama_url) {
+            document.getElementById('chat-ollama-url').value = data.ollama_url;
+          }
+          if (data.ollama_model) {
+            document.getElementById('chat-ollama-model').value = data.ollama_model;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load LLM config:', err);
+      }
+    }
+
+    loadLLMConfig();
+  }
+
+  // Initialize on page load
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initLLMProvider);
+  } else {
+    initLLMProvider();
+  }
+</script>

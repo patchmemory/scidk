@@ -1,0 +1,81 @@
+<!-- Modules > Plugins Section -->
+<section id="modules-plugins-section" class="settings-section">
+  <h1>Plugins</h1>
+  <p class="small">Active plugin count, health state, and plugin-registered API endpoints (read-only).</p>
+
+  <div style="max-width: 900px;">
+    <h3>Plugin Status</h3>
+    <p class="small text-muted">Plugin management is handled on the <a href="/plugins">Plugins page</a>.</p>
+
+    <h3 style="margin-top: 2rem;">Plugin-Registered API Endpoints</h3>
+    <p class="small">Endpoints automatically registered by installed plugins. These cannot be edited manually.</p>
+    <div id="plugin-endpoints-list">
+      <p class="small" style="color: #999;"><em>Loading plugin endpoints...</em></p>
+    </div>
+  </div>
+</section>
+
+<script>
+  async function loadPluginEndpoints() {
+    const container = document.getElementById('plugin-endpoints-list');
+
+    try {
+      const response = await fetch('/api/settings/plugin-endpoints');
+      const data = await response.json();
+
+      if (data.status === 'success' && data.endpoints && data.endpoints.length > 0) {
+        container.innerHTML = `
+          <table class="table table-sm" style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="border-bottom: 2px solid #ddd;">
+                <th style="padding: 0.5rem; font-size: 0.9em;">Name</th>
+                <th style="padding: 0.5rem; font-size: 0.9em;">Endpoint</th>
+                <th style="padding: 0.5rem; font-size: 0.9em;">Label Type</th>
+                <th style="padding: 0.5rem; font-size: 0.9em;">Plugin</th>
+                <th style="padding: 0.5rem; font-size: 0.9em;">Description</th>
+              </tr>
+            </thead>
+            <tbody id="plugin-endpoints-table-body">
+            </tbody>
+          </table>
+        `;
+
+        const tbody = document.getElementById('plugin-endpoints-table-body');
+        data.endpoints.forEach(endpoint => {
+          const row = document.createElement('tr');
+          row.style.borderBottom = '1px solid #eee';
+          const authBadge = endpoint.auth_required ?
+            '<span class="badge" style="background: #ff9800; color: white; margin-left: 0.25rem;">Auth Required</span>' : '';
+
+          row.innerHTML = `
+            <td style="padding: 0.5rem; font-size: 0.9em;">${escapeHtml(endpoint.name)}${authBadge}</td>
+            <td style="padding: 0.5rem; font-size: 0.9em;"><code class="small">${escapeHtml(endpoint.endpoint)}</code></td>
+            <td style="padding: 0.5rem; font-size: 0.9em;"><span class="badge">${escapeHtml(endpoint.label_type)}</span></td>
+            <td style="padding: 0.5rem; font-size: 0.9em;"><span class="small text-muted">${escapeHtml(endpoint.plugin)}</span></td>
+            <td style="padding: 0.5rem; font-size: 0.9em;"><span class="small">${escapeHtml(endpoint.description || '—')}</span></td>
+          `;
+          tbody.appendChild(row);
+        });
+      } else {
+        container.innerHTML = '<p class="small" style="color: #999;"><em>No plugin endpoints registered</em></p>';
+      }
+    } catch (err) {
+      console.error('Failed to load plugin endpoints:', err);
+      container.innerHTML = '<p class="small" style="color: #e53935;"><em>Failed to load plugin endpoints</em></p>';
+    }
+  }
+
+  // Helper function to escape HTML
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Initialize on page load
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadPluginEndpoints);
+  } else {
+    loadPluginEndpoints();
+  }
+</script>

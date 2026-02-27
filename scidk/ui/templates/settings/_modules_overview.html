@@ -1,0 +1,47 @@
+<!-- Modules > Overview Section -->
+<section id="modules-overview-section" class="settings-section">
+  <h1>Modules Overview</h1>
+  <p class="small">Reference guide for SciDK's module types and their contracts.</p>
+
+  <div style="max-width: 900px;">
+    <p>SciDK uses a modular architecture where different types of components handle specific tasks. Each module type has a well-defined contract specifying inputs, outputs, and runtime requirements.</p>
+
+    <h3>Module Types</h3>
+
+    <div style="background: #f9f9f9; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+      <h4>Interpreters</h4>
+      <p class="small">Transform raw files into structured graph data. Each interpreter handles specific file types (CSV, JSON, Python, etc.) and extracts metadata.</p>
+      <p class="small"><strong>Authoring:</strong> <a href="/scripts">Scripts page</a> | <strong>Settings:</strong> <a href="#modules/interpreters">Modules &gt; Interpreters</a></p>
+    </div>
+
+    <div style="background: #f9f9f9; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+      <h4>Plugins</h4>
+      <p class="small">Extend SciDK with custom endpoints, label types, and external integrations. Plugins can register API endpoints and publish custom labels.</p>
+      <p class="small"><strong>Authoring:</strong> <a href="/plugins">Plugins page</a> | <strong>Settings:</strong> <a href="#modules/plugins">Modules &gt; Plugins</a></p>
+    </div>
+
+    <div style="background: #f9f9f9; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+      <h4>Links</h4>
+      <p class="small">Create relationships between nodes using matching rules, API data, or imported tables. Links enable cross-referencing between datasets.</p>
+      <p class="small"><strong>Authoring:</strong> <a href="/links">Links page</a> | <strong>Settings:</strong> <a href="#modules/links">Modules &gt; Links</a></p>
+    </div>
+
+    <div style="background: #f9f9f9; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+      <h4>Labels</h4>
+      <p class="small">Define custom node types with properties, constraints, and relationships. Labels provide schema structure for your graph.</p>
+      <p class="small"><strong>Authoring:</strong> <a href="/labels">Labels page</a> | <strong>Settings:</strong> <a href="#modules/labels">Modules &gt; Labels</a></p>
+    </div>
+
+    <div style="background: #f9f9f9; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+      <h4>Analyses</h4>
+      <p class="small">Run analytical scripts over your graph to extract insights, generate reports, or perform calculations.</p>
+      <p class="small"><strong>Authoring:</strong> <a href="/scripts">Scripts page</a> | <strong>Results:</strong> <a href="/results">Results page</a> | <strong>Settings:</strong> <a href="#modules/analyses">Modules &gt; Analyses</a></p>
+    </div>
+
+    <div style="background: #f9f9f9; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+      <h4>Scripts</h4>
+      <p class="small">General-purpose Cypher queries and Python scripts for graph operations, data transformations, and automation.</p>
+      <p class="small"><strong>Authoring:</strong> <a href="/scripts">Scripts page</a> | <strong>Settings:</strong> <a href="#modules/scripts">Modules &gt; Scripts</a></p>
+    </div>
+  </div>
+</section>

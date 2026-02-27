@@ -1,0 +1,570 @@
+<!-- Modules > Links Section -->
+<section id="modules-links-section" class="settings-section">
+  <h1>Links</h1>
+  <p class="small">Configure fuzzy matching algorithms for automatic link creation between nodes. Links connect related entities based on string similarity (e.g., sample IDs, project names, or identifiers that may have typos or variations).</p>
+
+  <div style="max-width: 900px;">
+    <!-- Algorithm Explorer -->
+    <div style="background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 4px; padding: 1.5rem; margin-bottom: 2rem;">
+      <h2 style="margin-top: 0;">Algorithm Explorer</h2>
+      <p class="small">Try different matching algorithms with sample data to understand how they work before configuring defaults.</p>
+
+      <!-- Sample Data Display -->
+      <div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 1rem; margin-bottom: 1rem;">
+        <h3 style="margin-top: 0; font-size: 1em;">Sample Data Pairs</h3>
+        <p class="small text-muted">Realistic scientific data examples with variations:</p>
+        <table style="width: 100%; font-size: 0.9em; border-collapse: collapse;">
+          <thead>
+            <tr style="border-bottom: 1px solid #ddd;">
+              <th style="padding: 0.5rem; text-align: left;">String A</th>
+              <th style="padding: 0.5rem; text-align: left;">String B</th>
+              <th style="padding: 0.5rem; text-align: left;">Notes</th>
+            </tr>
+          </thead>
+          <tbody id="sample-data-table">
+            <tr style="border-bottom: 1px solid #eee;">
+              <td style="padding: 0.5rem;"><code>Sample_2024_001</code></td>
+              <td style="padding: 0.5rem;"><code>Sample_2024_01</code></td>
+              <td style="padding: 0.5rem;" class="small text-muted">Leading zero variation</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #eee;">
+              <td style="padding: 0.5rem;"><code>PROJ-ALZ-2024</code></td>
+              <td style="padding: 0.5rem;"><code>PROJ-ALZ-2O24</code></td>
+              <td style="padding: 0.5rem;" class="small text-muted">Typo: O instead of 0</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #eee;">
+              <td style="padding: 0.5rem;"><code>John Smith</code></td>
+              <td style="padding: 0.5rem;"><code>Jon Smith</code></td>
+              <td style="padding: 0.5rem;" class="small text-muted">Name spelling variation</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #eee;">
+              <td style="padding: 0.5rem;"><code>Alzheimer Disease</code></td>
+              <td style="padding: 0.5rem;"><code>Alzheimers Disease</code></td>
+              <td style="padding: 0.5rem;" class="small text-muted">Apostrophe omitted</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #eee;">
+              <td style="padding: 0.5rem;"><code>EXP_CTRL_A1</code></td>
+              <td style="padding: 0.5rem;"><code>EXP_CONTROL_A1</code></td>
+              <td style="padding: 0.5rem;" class="small text-muted">Abbreviation vs full word</td>
+            </tr>
+            <tr>
+              <td style="padding: 0.5rem;"><code>metadata_v1.2</code></td>
+              <td style="padding: 0.5rem;"><code>metadata_v1.20</code></td>
+              <td style="padding: 0.5rem;" class="small text-muted">Version number formatting</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Algorithm Selection for Demo -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+        <div>
+          <label for="demo-algorithm" class="form-label small">Algorithm</label>
+          <select id="demo-algorithm" class="form-control form-control-sm">
+            <optgroup label="Local Matching (rapidfuzz)">
+              <option value="exact">Exact</option>
+              <option value="levenshtein" selected>Levenshtein</option>
+              <option value="jaro_winkler">Jaro-Winkler</option>
+              <option value="phonetic">Phonetic</option>
+            </optgroup>
+            <optgroup label="Graph Matching (Neo4j APOC)">
+              <option value="apoc_levenshtein">APOC Levenshtein</option>
+              <option value="apoc_jaro_winkler">APOC Jaro-Winkler</option>
+              <option value="apoc_sorensen_dice">APOC Sorensen-Dice</option>
+            </optgroup>
+            <optgroup label="Hybrid Approaches">
+              <option value="hybrid">Hybrid: APOC filter → local rank</option>
+            </optgroup>
+          </select>
+          <small class="form-text text-muted">
+            <a href="#" class="tutorial-link" data-algorithm-info="all" style="color:#007bff; text-decoration:none">ℹ️ Approach comparison</a>
+          </small>
+        </div>
+
+        <div>
+          <label for="demo-threshold" class="form-label small">Threshold: <span id="demo-threshold-value">0.85</span></label>
+          <input type="range" id="demo-threshold" class="form-range" min="0" max="100" value="85" step="1" />
+          <small class="form-text text-muted">Minimum similarity to create a link</small>
+        </div>
+
+        <div style="display: flex; align-items: end;">
+          <button id="demo-try-button" class="btn btn-sm btn-primary" style="width: 100%;">Try It</button>
+        </div>
+      </div>
+
+      <!-- Algorithm Approach Explanations -->
+      <div style="margin-bottom: 1rem; padding: 0.75rem; background: #fff; border: 1px solid #ddd; border-radius: 4px;">
+        <p class="small" style="margin: 0;"><strong>Matching Approaches:</strong></p>
+        <ul class="small" style="margin: 0.5rem 0 0 1.5rem; padding: 0;">
+          <li><strong>Local matching (rapidfuzz):</strong> Fast, in-memory string comparison using Python. Best for small-to-medium datasets where all comparisons fit in RAM.</li>
+          <li><strong>Graph matching (Neo4j APOC):</strong> Runs similarity functions directly in Neo4j using APOC procedures. Best for large graphs where data is already stored in the database.</li>
+          <li><strong>Hybrid:</strong> Combines both approaches — uses APOC to filter candidates in the graph, then ranks them locally with rapidfuzz. Best for large graphs with high selectivity requirements.</li>
+        </ul>
+      </div>
+
+      <!-- Demo Results -->
+      <div id="demo-results" style="display: none; background: #fff; border: 1px solid #28a745; border-radius: 4px; padding: 1rem;">
+        <h3 style="margin-top: 0; font-size: 1em; color: #28a745;">Results</h3>
+        <div id="demo-results-content"></div>
+      </div>
+    </div>
+
+    <!-- Default Matching Settings -->
+    <div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 1.5rem;">
+      <h2 style="margin-top: 0;">Default Matching Settings</h2>
+      <p class="small">Configure the default fuzzy matching algorithm and threshold for automatic link creation in the graph.</p>
+
+      <form id="fuzzy-matching-form">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+          <div>
+            <label for="fuzzy-algorithm" class="form-label">Default Algorithm</label>
+            <select id="fuzzy-algorithm" class="form-control">
+              <optgroup label="Local Matching (rapidfuzz)">
+                <option value="exact">Exact</option>
+                <option value="levenshtein" selected>Levenshtein</option>
+                <option value="jaro_winkler">Jaro-Winkler</option>
+                <option value="phonetic">Phonetic</option>
+              </optgroup>
+              <optgroup label="Graph Matching (Neo4j APOC)">
+                <option value="apoc_levenshtein">APOC Levenshtein</option>
+                <option value="apoc_jaro_winkler">APOC Jaro-Winkler</option>
+                <option value="apoc_sorensen_dice">APOC Sorensen-Dice</option>
+              </optgroup>
+              <optgroup label="Hybrid Approaches">
+                <option value="hybrid">Hybrid: APOC filter → local rank</option>
+              </optgroup>
+            </select>
+            <small class="form-text text-muted">
+              Levenshtein is recommended for most use cases.
+              <a href="#" class="tutorial-link" data-algorithm="levenshtein" style="color:#007bff; text-decoration:none">Learn more →</a>
+            </small>
+          </div>
+
+          <div>
+            <label for="fuzzy-threshold" class="form-label">Default Threshold: <span id="fuzzy-threshold-value">0.85</span></label>
+            <input type="range" id="fuzzy-threshold" class="form-range" min="0" max="100" value="85" step="1" />
+            <small class="form-text text-muted">Minimum similarity score (0.0 - 1.0) to create a link</small>
+          </div>
+        </div>
+
+        <!-- Normalization Options -->
+        <div style="margin-bottom: 1rem;">
+          <label class="form-label">Text Normalization</label>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="fuzzy-case-insensitive" checked>
+            <label class="form-check-label small" for="fuzzy-case-insensitive">
+              Case-insensitive matching (convert to lowercase before comparison)
+            </label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="fuzzy-strip-whitespace" checked>
+            <label class="form-check-label small" for="fuzzy-strip-whitespace">
+              Strip leading/trailing whitespace
+            </label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="fuzzy-remove-punctuation">
+            <label class="form-check-label small" for="fuzzy-remove-punctuation">
+              Remove punctuation before comparison
+            </label>
+          </div>
+        </div>
+
+        <!-- Advanced Options -->
+        <details style="margin-bottom: 1rem;">
+          <summary class="small" style="cursor: pointer; color: #007bff;">Advanced Options</summary>
+          <div style="margin-top: 0.5rem; padding: 0.75rem; background: #f9f9f9; border-radius: 4px;">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="fuzzy-bidirectional">
+              <label class="form-check-label small" for="fuzzy-bidirectional">
+                Create bidirectional links (A→B and B→A)
+              </label>
+            </div>
+            <div style="margin-top: 0.5rem;">
+              <label for="fuzzy-batch-size" class="form-label small">Batch Size</label>
+              <input type="number" id="fuzzy-batch-size" class="form-control form-control-sm" value="1000" min="100" max="10000" step="100" style="max-width: 150px;" />
+              <small class="form-text text-muted">Number of comparisons per batch (affects memory usage)</small>
+            </div>
+          </div>
+        </details>
+
+        <div style="display: flex; gap: 0.5rem;">
+          <button type="submit" class="btn btn-primary">Save Settings</button>
+          <button type="button" id="fuzzy-reset" class="btn btn-outline-secondary">Reset to Defaults</button>
+        </div>
+        <div id="fuzzy-status" class="small" style="margin-top: 0.5rem;"></div>
+      </form>
+    </div>
+  </div>
+</section>
+
+<script>
+  function initFuzzyMatching() {
+    // Demo controls
+    const demoAlgorithm = document.getElementById('demo-algorithm');
+    const demoThreshold = document.getElementById('demo-threshold');
+    const demoThresholdValue = document.getElementById('demo-threshold-value');
+    const demoTryButton = document.getElementById('demo-try-button');
+    const demoResults = document.getElementById('demo-results');
+    const demoResultsContent = document.getElementById('demo-results-content');
+
+    // Default settings controls
+    const form = document.getElementById('fuzzy-matching-form');
+    const algorithmSelect = document.getElementById('fuzzy-algorithm');
+    const thresholdSlider = document.getElementById('fuzzy-threshold');
+    const thresholdValue = document.getElementById('fuzzy-threshold-value');
+    const caseInsensitive = document.getElementById('fuzzy-case-insensitive');
+    const stripWhitespace = document.getElementById('fuzzy-strip-whitespace');
+    const removePunctuation = document.getElementById('fuzzy-remove-punctuation');
+    const bidirectional = document.getElementById('fuzzy-bidirectional');
+    const batchSize = document.getElementById('fuzzy-batch-size');
+    const resetBtn = document.getElementById('fuzzy-reset');
+    const statusDiv = document.getElementById('fuzzy-status');
+
+    // Sample data for demo
+    const samplePairs = [
+      { a: 'Sample_2024_001', b: 'Sample_2024_01', note: 'Leading zero variation' },
+      { a: 'PROJ-ALZ-2024', b: 'PROJ-ALZ-2O24', note: 'Typo: O instead of 0' },
+      { a: 'John Smith', b: 'Jon Smith', note: 'Name spelling variation' },
+      { a: 'Alzheimer Disease', b: 'Alzheimers Disease', note: 'Apostrophe omitted' },
+      { a: 'EXP_CTRL_A1', b: 'EXP_CONTROL_A1', note: 'Abbreviation vs full word' },
+      { a: 'metadata_v1.2', b: 'metadata_v1.20', note: 'Version number formatting' }
+    ];
+
+    // Algorithm tutorial data
+    const algorithmTutorials = {
+      exact: {
+        title: 'Exact Matching',
+        description: 'Matches only when strings are identical (after normalization).',
+        examples: [
+          { a: 'Sample_001', b: 'Sample_001', match: true, reason: 'Identical strings' },
+          { a: 'Sample_001', b: 'Sample_01', match: false, reason: 'Different characters' }
+        ]
+      },
+      levenshtein: {
+        title: 'Levenshtein Distance',
+        description: 'Measures the minimum number of single-character edits (insertions, deletions, substitutions) needed to transform one string into another. Good for typos and small variations.',
+        examples: [
+          { a: 'Sample_001', b: 'Sample_01', match: true, score: 0.91, reason: 'One deletion (0)' },
+          { a: 'PROJ-ALZ', b: 'PROJ-ALX', match: false, score: 0.89, reason: 'One substitution (Z→X)' }
+        ]
+      },
+      jaro_winkler: {
+        title: 'Jaro-Winkler Distance',
+        description: 'Measures string similarity with extra weight given to matching prefixes. Excellent for short strings and names where the beginning matters more.',
+        examples: [
+          { a: 'John Smith', b: 'Jon Smith', match: true, score: 0.96, reason: 'Common prefix, minor edit' },
+          { a: 'Sample_001', b: '001_Sample', match: false, score: 0.73, reason: 'Different prefixes' }
+        ]
+      },
+      phonetic: {
+        title: 'Phonetic Matching',
+        description: 'Uses phonetic algorithms (like Soundex or Metaphone) to match strings that sound similar. Best for names and words with alternative spellings.',
+        examples: [
+          { a: 'Smith', b: 'Smyth', match: true, reason: 'Sound similar' },
+          { a: 'Catherine', b: 'Katherine', match: true, reason: 'Same pronunciation' }
+        ]
+      },
+      apoc_levenshtein: {
+        title: 'APOC Levenshtein (Graph-based)',
+        description: 'Same as Levenshtein but executed within Neo4j using APOC procedures. Best for large graphs where filtering happens in the database.',
+        examples: [
+          { a: 'Sample_001', b: 'Sample_01', match: true, score: 0.91, reason: 'One deletion (0)' }
+        ]
+      },
+      apoc_jaro_winkler: {
+        title: 'APOC Jaro-Winkler (Graph-based)',
+        description: 'Same as Jaro-Winkler but executed within Neo4j. Good for name matching in large graphs.',
+        examples: [
+          { a: 'John Smith', b: 'Jon Smith', match: true, score: 0.96, reason: 'Common prefix' }
+        ]
+      },
+      apoc_sorensen_dice: {
+        title: 'APOC Sørensen-Dice (Graph-based)',
+        description: 'Measures overlap of character bigrams (two-character pairs). Good for longer strings and scientific terminology.',
+        examples: [
+          { a: 'Alzheimer', b: 'Alzheimers', match: true, score: 0.90, reason: 'High bigram overlap' }
+        ]
+      },
+      hybrid: {
+        title: 'Hybrid: APOC Filter → Local Rank',
+        description: 'Uses APOC in Neo4j to filter candidates broadly, then ranks them precisely using local rapidfuzz. Combines database efficiency with Python precision.',
+        examples: [
+          { a: 'Sample_001', b: 'Sample_01', match: true, reason: 'APOC finds similar, rapidfuzz confirms' }
+        ]
+      }
+    };
+
+    // Update demo threshold display
+    demoThreshold.addEventListener('input', () => {
+      demoThresholdValue.textContent = (demoThreshold.value / 100).toFixed(2);
+    });
+
+    // Update default threshold display
+    thresholdSlider.addEventListener('input', () => {
+      thresholdValue.textContent = (thresholdSlider.value / 100).toFixed(2);
+    });
+
+    // Tutorial link click handlers
+    document.querySelectorAll('.tutorial-link').forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const algorithmKey = link.dataset.algorithm || link.dataset.algorithmInfo;
+        if (algorithmKey === 'all') {
+          showApproachComparisonModal();
+        } else {
+          showTutorialModal(algorithmKey);
+        }
+      });
+    });
+
+    function showApproachComparisonModal() {
+      const modal = document.createElement('div');
+      modal.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:9999';
+
+      modal.innerHTML = `
+        <div style="background:#fff; border-radius:8px; padding:2rem; max-width:700px; width:90%; max-height:80vh; overflow-y:auto">
+          <h3 style="margin-top:0">Matching Approach Comparison</h3>
+
+          <div style="margin-bottom:1.5rem">
+            <h4 style="font-size:1em; margin-bottom:0.5rem; color:#007bff">Local Matching (rapidfuzz)</h4>
+            <p class="small" style="margin:0 0 0.5rem 0">
+              Executes in Python using the rapidfuzz library. All string comparisons happen in memory.
+            </p>
+            <p class="small" style="margin:0">
+              <strong>Best for:</strong> Small-to-medium datasets (thousands to tens of thousands of nodes), batch processing, when data is not yet in Neo4j.
+            </p>
+          </div>
+
+          <div style="margin-bottom:1.5rem">
+            <h4 style="font-size:1em; margin-bottom:0.5rem; color:#007bff">Graph Matching (Neo4j APOC)</h4>
+            <p class="small" style="margin:0 0 0.5rem 0">
+              Executes directly in Neo4j using APOC procedures. Queries run on the database server.
+            </p>
+            <p class="small" style="margin:0">
+              <strong>Best for:</strong> Large graphs (hundreds of thousands to millions of nodes), real-time matching, when data is already in Neo4j and you want to avoid loading everything into Python.
+            </p>
+          </div>
+
+          <div style="margin-bottom:1.5rem">
+            <h4 style="font-size:1em; margin-bottom:0.5rem; color:#007bff">Hybrid Approach</h4>
+            <p class="small" style="margin:0 0 0.5rem 0">
+              Combines both: uses APOC to filter candidates in Neo4j (broad pass), then ranks them with rapidfuzz (precise ranking).
+            </p>
+            <p class="small" style="margin:0">
+              <strong>Best for:</strong> Large graphs with high precision requirements. Reduces data transfer while maintaining quality.
+            </p>
+          </div>
+
+          <div style="display:flex; justify-content:flex-end; margin-top:1.5rem">
+            <button id="close-comparison-modal" class="btn btn-sm btn-primary">Close</button>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(modal);
+
+      document.getElementById('close-comparison-modal').addEventListener('click', () => {
+        document.body.removeChild(modal);
+      });
+
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          document.body.removeChild(modal);
+        }
+      });
+    }
+
+    function showTutorialModal(algorithm) {
+      const tutorial = algorithmTutorials[algorithm];
+      if (!tutorial) return;
+
+      const modal = document.createElement('div');
+      modal.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:9999';
+
+      modal.innerHTML = `
+        <div style="background:#fff; border-radius:8px; padding:2rem; max-width:600px; width:90%; max-height:80vh; overflow-y:auto">
+          <h3 style="margin-top:0">${tutorial.title}</h3>
+          <p class="small">${tutorial.description}</p>
+
+          <h4 style="font-size:1em; margin-top:1.5rem">Examples:</h4>
+          ${tutorial.examples.map(ex => `
+            <div style="background:#f9f9f9; border-radius:4px; padding:0.75rem; margin-bottom:0.5rem">
+              <div style="display:flex; justify-content:space-between; align-items:center">
+                <div>
+                  <code>${escapeHtml(ex.a)}</code> ↔ <code>${escapeHtml(ex.b)}</code>
+                </div>
+                <div>
+                  <span class="badge" style="background:${ex.match ? '#28a745' : '#dc3545'}; color:#fff">
+                    ${ex.match ? '✓ Match' : '✗ No Match'}
+                  </span>
+                </div>
+              </div>
+              ${ex.score ? `<div class="small text-muted" style="margin-top:0.25rem">Score: ${ex.score}</div>` : ''}
+              <div class="small text-muted" style="margin-top:0.25rem">${ex.reason}</div>
+            </div>
+          `).join('')}
+
+          <div style="display:flex; justify-content:flex-end; margin-top:1.5rem">
+            <button id="close-tutorial-modal" class="btn btn-sm btn-primary">Close</button>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(modal);
+
+      document.getElementById('close-tutorial-modal').addEventListener('click', () => {
+        document.body.removeChild(modal);
+      });
+
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          document.body.removeChild(modal);
+        }
+      });
+    }
+
+    // Demo "Try It" button
+    demoTryButton.addEventListener('click', async () => {
+      const algorithm = demoAlgorithm.value;
+      const threshold = parseFloat(demoThreshold.value) / 100;
+
+      demoResults.style.display = 'block';
+      demoResultsContent.innerHTML = '<p class="small text-muted">Computing matches...</p>';
+
+      try {
+        const response = await fetch('/api/settings/fuzzy-matching/demo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pairs: samplePairs,
+            algorithm: algorithm,
+            threshold: threshold
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'success' && data.results) {
+          const results = data.results;
+          let html = '<table style="width:100%; font-size:0.9em; border-collapse:collapse">';
+          html += '<thead><tr style="border-bottom:1px solid #ddd"><th style="padding:0.5rem; text-align:left">String A</th><th style="padding:0.5rem; text-align:left">String B</th><th style="padding:0.5rem; text-align:left">Score</th><th style="padding:0.5rem; text-align:left">Match?</th></tr></thead>';
+          html += '<tbody>';
+
+          results.forEach(result => {
+            const match = result.score >= threshold;
+            html += `
+              <tr style="border-bottom:1px solid #eee">
+                <td style="padding:0.5rem"><code>${escapeHtml(result.a)}</code></td>
+                <td style="padding:0.5rem"><code>${escapeHtml(result.b)}</code></td>
+                <td style="padding:0.5rem">${result.score.toFixed(3)}</td>
+                <td style="padding:0.5rem">
+                  <span class="badge" style="background:${match ? '#28a745' : '#6c757d'}; color:#fff">
+                    ${match ? '✓ Match' : '✗ No Match'}
+                  </span>
+                </td>
+              </tr>
+            `;
+          });
+
+          html += '</tbody></table>';
+          html += `<p class="small text-muted" style="margin-top:0.75rem">Matched ${results.filter(r => r.score >= threshold).length} of ${results.length} pairs at threshold ${threshold.toFixed(2)}</p>`;
+          demoResultsContent.innerHTML = html;
+        } else {
+          demoResultsContent.innerHTML = `<p class="small text-danger">Failed to compute matches: ${data.error || 'Unknown error'}</p>`;
+        }
+      } catch (err) {
+        demoResultsContent.innerHTML = `<p class="small text-danger">Error: ${err.message}</p>`;
+      }
+    });
+
+    // Load current settings
+    async function loadSettings() {
+      try {
+        const response = await fetch('/api/settings/fuzzy-matching');
+        const data = await response.json();
+
+        if (data.status === 'success') {
+          algorithmSelect.value = data.algorithm || 'levenshtein';
+          thresholdSlider.value = (data.threshold || 0.85) * 100;
+          thresholdValue.textContent = (data.threshold || 0.85).toFixed(2);
+          caseInsensitive.checked = data.case_insensitive !== false;
+          stripWhitespace.checked = data.strip_whitespace !== false;
+          removePunctuation.checked = data.remove_punctuation || false;
+          bidirectional.checked = data.bidirectional || false;
+          batchSize.value = data.batch_size || 1000;
+        }
+      } catch (err) {
+        console.error('Failed to load fuzzy matching settings:', err);
+      }
+    }
+
+    // Save settings
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      statusDiv.textContent = 'Saving...';
+      statusDiv.className = 'small text-muted';
+
+      const settings = {
+        algorithm: algorithmSelect.value,
+        threshold: parseFloat(thresholdSlider.value) / 100,
+        case_insensitive: caseInsensitive.checked,
+        strip_whitespace: stripWhitespace.checked,
+        remove_punctuation: removePunctuation.checked,
+        bidirectional: bidirectional.checked,
+        batch_size: parseInt(batchSize.value)
+      };
+
+      try {
+        const response = await fetch('/api/settings/fuzzy-matching', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(settings)
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'success') {
+          statusDiv.textContent = '✓ Settings saved successfully';
+          statusDiv.className = 'small text-success';
+          setTimeout(() => { statusDiv.textContent = ''; }, 3000);
+        } else {
+          statusDiv.textContent = '✗ Failed to save: ' + (data.error || 'Unknown error');
+          statusDiv.className = 'small text-danger';
+        }
+      } catch (err) {
+        statusDiv.textContent = '✗ Error: ' + err.message;
+        statusDiv.className = 'small text-danger';
+      }
+    });
+
+    // Reset to defaults
+    resetBtn.addEventListener('click', () => {
+      algorithmSelect.value = 'levenshtein';
+      thresholdSlider.value = 85;
+      thresholdValue.textContent = '0.85';
+      caseInsensitive.checked = true;
+      stripWhitespace.checked = true;
+      removePunctuation.checked = false;
+      bidirectional.checked = false;
+      batchSize.value = 1000;
+      statusDiv.textContent = 'Reset to defaults (not saved)';
+      statusDiv.className = 'small text-muted';
+    });
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    loadSettings();
+  }
+
+  // Initialize on page load
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initFuzzyMatching);
+  } else {
+    initFuzzyMatching();
+  }
+</script>
