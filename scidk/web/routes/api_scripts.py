@@ -203,6 +203,69 @@ def get_script(script_id: str):
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@bp.route("/scripts/<script_id>/validation-result", methods=["GET"])
+def get_validation_result(script_id: str):
+    """Get stored validation results for a script without executing validation.
+
+    This endpoint reads the validation_output, validation_status, validation_timestamp,
+    and validation_errors fields from the script record and returns them for display
+    in the validation modal. It does NOT trigger a new validation run.
+
+    Args:
+        script_id: The script ID to fetch validation results for
+
+    Returns:
+        JSON response with validation result data:
+        {
+            "status": "ok",
+            "script_id": "...",
+            "script_name": "...",
+            "validation_status": "passed|failed|running|queued|not_run",
+            "validation_output": {...},  // parsed JSON if available
+            "validation_timestamp": 1234567890,
+            "validation_errors": [...]
+        }
+    """
+    try:
+        manager = _get_scripts_manager()
+        script = manager.get_script(script_id)
+
+        if not script:
+            return jsonify({"status": "error", "message": "Script not found"}), 404
+
+        # Parse validation_output if it's stored as JSON string
+        validation_output = None
+        if script.validation_output:
+            try:
+                validation_output = json.loads(script.validation_output)
+            except (json.JSONDecodeError, TypeError):
+                # If not JSON, keep as string
+                validation_output = script.validation_output
+
+        # Map internal status values to display values
+        status_map = {
+            'validated': 'passed',
+            'draft': 'not_run',
+            'failed': 'failed',
+            'queued': 'queued',
+            'running': 'running'
+        }
+        display_status = status_map.get(script.validation_status, script.validation_status)
+
+        return jsonify({
+            "status": "ok",
+            "script_id": script.id,
+            "script_name": script.name,
+            "validation_status": display_status,
+            "validation_output": validation_output,
+            "validation_timestamp": script.validation_timestamp,
+            "validation_errors": script.validation_errors or []
+        })
+    except Exception as e:
+        logger.exception(f"Error getting validation result for script {script_id}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @bp.route("/scripts", methods=["POST"])
 @require_admin
 def create_script():
