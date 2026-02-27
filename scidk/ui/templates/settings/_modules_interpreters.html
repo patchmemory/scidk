@@ -92,11 +92,11 @@
       <p class="small" style="color: #999;"><em>Loading formats...</em></p>
     </div>
 
-    <h2 style="margin-top: 2rem;">Default File Extension Assignments</h2>
-    <p class="small">Shows which interpreter handles which file extensions by default. Per-file overrides can be set on the <a href="/files">Files page</a>.</p>
+    <h2 style="margin-top: 2rem;">Interpreter Registry</h2>
+    <p class="small">All interpreter scripts registered in the system. Built-in interpreters can be edited on the <a href="/scripts">Scripts page</a>. Per-file overrides can be set on the <a href="/files">Files page</a>.</p>
 
-    <div id="extension-assignments-container" style="margin-top: 1rem;">
-      <p class="small" style="color: #999;"><em>Loading extension assignments...</em></p>
+    <div id="interpreter-registry-container" style="margin-top: 1rem;">
+      <p class="small" style="color: #999;"><em>Loading interpreter registry...</em></p>
     </div>
 
     <!-- Action Footer -->
@@ -550,87 +550,89 @@
     loadFormats();
   }
 
-  async function loadExtensionAssignments() {
-    const container = document.getElementById('extension-assignments-container');
+  async function loadInterpreterRegistry() {
+    const container = document.getElementById('interpreter-registry-container');
 
     try {
-      const response = await fetch('/api/interpreters');
-      const interpreters = await response.json();
+      const response = await fetch('/api/scripts/scripts');
+      const data = await response.json();
 
-      // Build extension -> interpreter mapping
-      const extensionMap = {};
-      interpreters.forEach(interp => {
-        if (interp.extensions && interp.extensions.length > 0) {
-          interp.extensions.forEach(ext => {
-            if (!extensionMap[ext]) {
-              extensionMap[ext] = [];
-            }
-            extensionMap[ext].push({
-              name: interp.name,
-              id: interp.id,
-              enabled: interp.enabled
-            });
-          });
+      if (data.status === 'ok' && data.scripts) {
+        // Filter for interpreter scripts
+        const interpreters = data.scripts.filter(s => s.category === 'interpreters');
+
+        if (interpreters.length === 0) {
+          container.innerHTML = '<p class="small" style="color: #999;"><em>No interpreters found</em></p>';
+          return;
         }
-      });
 
-      // Sort extensions alphabetically
-      const sortedExtensions = Object.keys(extensionMap).sort();
+        // Sort by name
+        interpreters.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
-      if (sortedExtensions.length === 0) {
-        container.innerHTML = '<p class="small" style="color: #999;"><em>No extension assignments found</em></p>';
-        return;
-      }
+        // Render table
+        let html = `
+          <table style="width: 100%; border-collapse: collapse; background: white; border: 1px solid #ddd; border-radius: 4px;">
+            <thead>
+              <tr style="background: #f0f0f0; border-bottom: 2px solid #ccc;">
+                <th style="padding: 0.75rem; text-align: left; font-weight: 600; width: 20%;">File Extension(s)</th>
+                <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Interpreter Name</th>
+                <th style="padding: 0.75rem; text-align: left; font-weight: 600; width: 15%;">Status</th>
+                <th style="padding: 0.75rem; text-align: left; font-weight: 600; width: 15%;">Validation State</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
 
-      // Render table
-      let html = `
-        <table style="width: 100%; border-collapse: collapse; background: white; border: 1px solid #ddd; border-radius: 4px;">
-          <thead>
-            <tr style="background: #f0f0f0; border-bottom: 2px solid #ccc;">
-              <th style="padding: 0.75rem; text-align: left; font-weight: 600; width: 25%;">File Extension</th>
-              <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Assigned Interpreter(s)</th>
-              <th style="padding: 0.75rem; text-align: left; font-weight: 600; width: 15%;">Status</th>
+        interpreters.forEach((interp, index) => {
+          const borderStyle = index < interpreters.length - 1 ? 'border-bottom: 1px solid #e0e0e0;' : '';
+
+          // Extract extensions from metadata if available
+          const extensions = interp.metadata?.extensions || [];
+          const extensionsDisplay = extensions.length > 0
+            ? extensions.map(ext => `<code style="font-size: 0.85em;">${escapeHtml(ext)}</code>`).join(', ')
+            : '<span class="text-muted small">—</span>';
+
+          // Status badge
+          const statusBadge = interp.is_active
+            ? '<span class="badge" style="background: #28a745; color: white;">Active</span>'
+            : '<span class="badge" style="background: #6c757d; color: white;">Inactive</span>';
+
+          // Validation state badge
+          let validationBadge = '';
+          if (interp.validation_status === 'validated') {
+            validationBadge = '<span class="badge" style="background: #28a745; color: white;">Validated</span>';
+          } else if (interp.validation_status === 'draft') {
+            validationBadge = '<span class="badge" style="background: #ffc107; color: #000;">Draft</span>';
+          } else if (interp.validation_status === 'failed') {
+            validationBadge = '<span class="badge" style="background: #e74c3c; color: white;">Failed</span>';
+          } else {
+            validationBadge = '<span class="badge" style="background: #6c757d; color: white;">Unknown</span>';
+          }
+
+          html += `
+            <tr style="${borderStyle}">
+              <td style="padding: 0.75rem; font-size: 0.9em;">${extensionsDisplay}</td>
+              <td style="padding: 0.75rem; font-size: 0.9em;">
+                <a href="/scripts?script=${encodeURIComponent(interp.id)}" style="color: #007bff; text-decoration: none;" title="Open in Scripts page">${escapeHtml(interp.name)}</a>
+              </td>
+              <td style="padding: 0.75rem;">${statusBadge}</td>
+              <td style="padding: 0.75rem;">${validationBadge}</td>
             </tr>
-          </thead>
-          <tbody>
-      `;
-
-      sortedExtensions.forEach((ext, index) => {
-        const interpreters = extensionMap[ext];
-        const borderStyle = index < sortedExtensions.length - 1 ? 'border-bottom: 1px solid #e0e0e0;' : '';
-
-        const interpreterNames = interpreters.map(interp => {
-          const statusColor = interp.enabled ? '#28a745' : '#6c757d';
-          return `<a href="/scripts?script=${encodeURIComponent(interp.id)}" style="color: ${statusColor}; text-decoration: none;" title="Open ${escapeHtml(interp.name)} in Scripts page">${escapeHtml(interp.name)}</a>`;
-        }).join(', ');
-
-        const allEnabled = interpreters.every(i => i.enabled);
-        const someEnabled = interpreters.some(i => i.enabled);
-        const statusBadge = allEnabled
-          ? '<span class="badge" style="background: #28a745; color: white;">Active</span>'
-          : someEnabled
-            ? '<span class="badge" style="background: #ffc107; color: #000;">Partial</span>'
-            : '<span class="badge" style="background: #6c757d; color: white;">Disabled</span>';
+          `;
+        });
 
         html += `
-          <tr style="${borderStyle}">
-            <td style="padding: 0.75rem; font-family: 'Courier New', monospace; font-size: 0.9em;">${escapeHtml(ext)}</td>
-            <td style="padding: 0.75rem; font-size: 0.9em;">${interpreterNames}</td>
-            <td style="padding: 0.75rem;">${statusBadge}</td>
-          </tr>
+            </tbody>
+          </table>
         `;
-      });
 
-      html += `
-          </tbody>
-        </table>
-      `;
-
-      container.innerHTML = html;
-
+        container.innerHTML = html;
+      } else {
+        container.innerHTML = '<p class="small" style="color: #999;"><em>No interpreters found</em></p>';
+      }
     } catch (err) {
-      console.error('Failed to load extension assignments:', err);
-      container.innerHTML = '<p class="small" style="color: #f48771;">Error loading extension assignments</p>';
+      console.error('Failed to load interpreter registry:', err);
+      container.innerHTML = '<p class="small" style="color: #f48771;">Error loading interpreter registry</p>';
     }
 
     function escapeHtml(text) {
@@ -645,11 +647,11 @@
     document.addEventListener('DOMContentLoaded', () => {
       loadInterpretersStatus();
       initTableFormats();
-      loadExtensionAssignments();
+      loadInterpreterRegistry();
     });
   } else {
     loadInterpretersStatus();
     initTableFormats();
-    loadExtensionAssignments();
+    loadInterpreterRegistry();
   }
 </script>

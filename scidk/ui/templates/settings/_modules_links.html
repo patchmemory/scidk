@@ -751,8 +751,8 @@
       const data = await response.json();
 
       if (data.status === 'ok' && data.scripts) {
-        // Filter for link scripts - check both 'links' and 'link' categories
-        const links = data.scripts.filter(s => s.category === 'links' || s.category === 'link');
+        // Filter for link scripts
+        const links = data.scripts.filter(s => s.category === 'links');
         const total = links.length;
         const validated = links.filter(s => s.validation_status === 'validated' && s.is_active).length;
         const draft = links.filter(s => s.validation_status === 'draft').length;
