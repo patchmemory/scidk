@@ -87,8 +87,9 @@
           <small class="form-text text-muted">Minimum similarity to create a link</small>
         </div>
 
-        <div style="display: flex; align-items: end;">
+        <div style="display: flex; flex-direction: column; gap: 0.5rem; justify-content: end;">
           <button id="demo-try-button" class="btn btn-sm btn-primary" style="width: 100%;">Try It</button>
+          <button id="demo-reset-button" class="btn btn-sm btn-outline-secondary" style="width: 100%;">Reset Sample Data</button>
         </div>
       </div>
 
@@ -553,15 +554,24 @@
 
       // Check if algorithm requires server-side processing
       if (algorithm.startsWith('apoc_') || algorithm === 'hybrid') {
+        const isHybrid = algorithm === 'hybrid';
+        const approachName = isHybrid ? 'Hybrid' : 'Graph-based';
+        const performanceBenefit = isHybrid
+          ? 'This approach combines Neo4j's filtering efficiency with Python's ranking precision, reducing data transfer while maintaining match quality. It's ideal for large graphs (millions of nodes) with high accuracy requirements.'
+          : 'Running similarity functions directly in Neo4j eliminates the need to load data into Python memory. This provides significant performance benefits for large graphs (hundreds of thousands to millions of nodes) where data is already stored in the database.';
+
         demoResultsContent.innerHTML = `
-          <p class="small text-muted">
-            <strong>${algorithm === 'hybrid' ? 'Hybrid' : 'Graph'} matching runs server-side</strong> —
-            it requires Neo4j and cannot be demonstrated in this client-side preview.
-          </p>
-          <p class="small text-muted">
-            Configure your default settings below and test ${algorithm === 'hybrid' ? 'hybrid' : 'graph'} matching
-            via the <a href="#links" style="color:#007bff">Links page</a> with real data.
-          </p>
+          <div style="background: #d1ecf1; border-left: 4px solid #17a2b8; border-radius: 4px; padding: 1rem;">
+            <h4 style="margin: 0 0 0.5rem 0; font-size: 1em; color: #0c5460;">
+              ℹ️ ${approachName} Matching Runs Server-Side
+            </h4>
+            <p class="small" style="margin: 0 0 0.75rem 0; color: #0c5460;">
+              <strong>Why server-side?</strong> ${performanceBenefit}
+            </p>
+            <p class="small" style="margin: 0; color: #0c5460;">
+              <strong>How to test:</strong> Configure your default settings below, then test ${isHybrid ? 'hybrid' : 'graph-based'} matching with real data on the <a href="/links" style="color: #0c5460; text-decoration: underline;">Links page</a>. The server will execute the matching algorithm and return results.
+            </p>
+          </div>
         `;
         return;
       }
@@ -600,6 +610,37 @@
         html += `<p class="small text-muted" style="margin-top:0.75rem">Matched ${results.filter(r => r.score >= threshold).length} of ${results.length} pairs at threshold ${threshold.toFixed(2)}</p>`;
         demoResultsContent.innerHTML = html;
       }, 100);
+    });
+
+    // Reset sample data button
+    const demoResetButton = document.getElementById('demo-reset-button');
+    const sampleDataTableBody = document.getElementById('sample-data-table');
+    const defaultSamplePairs = [
+      { a: 'Sample_2024_001', b: 'Sample_2024_01', note: 'Leading zero variation' },
+      { a: 'PROJ-ALZ-2024', b: 'PROJ-ALZ-2O24', note: 'Typo: O instead of 0' },
+      { a: 'John Smith', b: 'Jon Smith', note: 'Name spelling variation' },
+      { a: 'Alzheimer Disease', b: 'Alzheimers Disease', note: 'Apostrophe omitted' },
+      { a: 'EXP_CTRL_A1', b: 'EXP_CONTROL_A1', note: 'Abbreviation vs full word' },
+      { a: 'metadata_v1.2', b: 'metadata_v1.20', note: 'Version number formatting' }
+    ];
+
+    demoResetButton.addEventListener('click', () => {
+      // Restore sample pairs to defaults
+      samplePairs.length = 0;
+      samplePairs.push(...defaultSamplePairs);
+
+      // Re-render the table
+      sampleDataTableBody.innerHTML = defaultSamplePairs.map((pair, idx) => `
+        <tr style="border-bottom: ${idx < defaultSamplePairs.length - 1 ? '1px solid #eee' : 'none'};">
+          <td style="padding: 0.5rem;"><code>${escapeHtml(pair.a)}</code></td>
+          <td style="padding: 0.5rem;"><code>${escapeHtml(pair.b)}</code></td>
+          <td style="padding: 0.5rem;" class="small text-muted">${pair.note}</td>
+        </tr>
+      `).join('');
+
+      // Clear results
+      demoResults.style.display = 'none';
+      demoResultsContent.innerHTML = '';
     });
 
     // Load current settings
