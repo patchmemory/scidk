@@ -882,11 +882,15 @@
           const sourceBadge = link.source === 'built-in'
             ? (link.modified ? '<span class="badge" style="background: #ffc107; color: #000;">built-in ✎</span>' : '<span class="badge" style="background: #19c37d; color: white;">built-in</span>')
             : '<span class="badge" style="background: #6c757d; color: white;">custom</span>';
-          const validationBadge = link.validation_status === 'queued' ? '<span class="badge" style="background: #6c757d; color: white;">Queued</span>'
-            : link.validation_status === 'running' ? '<span class="badge" style="background: #17a2b8; color: white;">Running ⟳</span>'
-            : (link.validation_status === 'passed' || link.validation_status === 'validated') ? '<span class="badge" style="background: #28a745; color: white;">Passed ✅</span>'
-            : link.validation_status === 'failed' ? '<span class="badge" style="background: #e74c3c; color: white;">Failed ❌</span>'
-            : '<span class="badge" style="background: #999; color: white;">Not run</span>';
+
+          // Validation badge (clickable to open modal)
+          const badgeStyle = 'cursor: pointer; transition: opacity 0.2s;';
+          const onClickHandler = `onclick="showValidationModal('${link.id}', '${escapeHtml(link.name)}')" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'" title="Click to view validation details"`;
+          const validationBadge = link.validation_status === 'queued' ? `<span class="badge" style="background: #6c757d; color: white; ${badgeStyle}" ${onClickHandler}>Queued</span>`
+            : link.validation_status === 'running' ? `<span class="badge" style="background: #17a2b8; color: white; ${badgeStyle}" ${onClickHandler}>Running ⟳</span>`
+            : (link.validation_status === 'passed' || link.validation_status === 'validated') ? `<span class="badge" style="background: #28a745; color: white; ${badgeStyle}" ${onClickHandler}>Passed ✅</span>`
+            : link.validation_status === 'failed' ? `<span class="badge" style="background: #e74c3c; color: white; ${badgeStyle}" ${onClickHandler}>Failed ❌</span>`
+            : `<span class="badge" style="background: #999; color: white; ${badgeStyle}" ${onClickHandler}>Not run</span>`;
           const lastTested = link.validation_timestamp ? new Date(link.validation_timestamp * 1000).toLocaleDateString() : '—';
           const strategy = link.metadata?.algorithm || '—';
           let actions = `<a href="/scripts?script=${encodeURIComponent(link.id)}" class="btn btn-xs btn-outline-secondary">Edit →</a>`;
@@ -967,3 +971,8 @@
     initFuzzyMatching();
   }
 </script>
+
+<!-- Include shared validation modal -->
+{% include 'settings/_validation_modal.html' %}
+
+</section>
