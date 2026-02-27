@@ -874,28 +874,78 @@ window.addEventListener('DOMContentLoaded', () => {
   // ===== Servers List (Tree) =====
   async function loadServers() {
     try {
-      const r = await fetch('/api/providers');
-      const providers = await r.json();
+      const r = await fetch('/api/servers');
+      const servers = await r.json();
 
-      serversData = providers.map(p => ({
-        id: p.id,
-        label: p.display_name,
-        type: 'server',
-        icon: '💻',
-        hasChildren: true  // Show roots (first level)
-      }));
+      // Format scan timestamp for display
+      function fmtLastScanned(timestamp) {
+        if (!timestamp) return null;
+        const now = Date.now() / 1000;
+        const diff = now - timestamp;
+        const days = Math.floor(diff / 86400);
+        const hours = Math.floor(diff / 3600);
+        const mins = Math.floor(diff / 60);
+
+        if (days > 0) return `${days}d ago`;
+        if (hours > 0) return `${hours}h ago`;
+        if (mins > 0) return `${mins}m ago`;
+        return 'just now';
+      }
+
+      // Group servers by provider ID
+      const grouped = {};
+      for (const server of servers) {
+        if (!grouped[server.id]) {
+          grouped[server.id] = {
+            id: server.id,
+            label: server.display_name,
+            type: 'server',
+            icon: server.connected ? '💻' : '⚠️',
+            connected: server.connected,
+            hasChildren: true,
+            roots: []
+          };
+        }
+        grouped[server.id].roots.push(server);
+      }
+
+      serversData = Object.values(grouped).map(s => {
+        // Add scan metadata to label
+        const hasScans = s.roots.some(r => r.scanned);
+        let metadata = '';
+        if (hasScans) {
+          const latest = s.roots.reduce((max, r) =>
+            (r.last_scanned && r.last_scanned > (max?.last_scanned || 0)) ? r : max
+          , null);
+          if (latest) {
+            metadata = ` (Last: ${fmtLastScanned(latest.last_scanned)})`;
+          }
+        } else {
+          metadata = ' (Not scanned)';
+        }
+
+        return {
+          ...s,
+          displayLabel: s.label + metadata,
+          metadata: metadata
+        };
+      });
 
       serversTree.getCurrentNodes = () => {
         return serversData.map(s => {
           const children = serversTree.nodeCache.get(`server:${s.id}`) || null;
-          return { ...s, children };
+          return {
+            ...s,
+            label: s.displayLabel, // Use label with metadata
+            children
+          };
         });
       };
       serversTree.nodes = serversData;
       serversTree.refresh();
 
-      if (providers.length > 0) {
-        currentServer = providers[0].id;
+      if (serversData.length > 0) {
+        currentServer = serversData[0].id;
         await loadRootsAndBrowse(currentServer);
       }
     } catch (e) {
@@ -1062,7 +1112,11 @@ window.addEventListener('DOMContentLoaded', () => {
       const size = e.type === 'folder' ? '' : fmtBytes(e.size || 0);
       const created = e.ctime ? fmtTime(e.ctime) : '';
       const modified = e.mtime ? fmtTime(e.mtime) : '';
-      const scanned = '';  // Live files not scanned
+
+      // In Live mode, show scan status for each file/folder
+      // For now, show "—" (not scanned) - will be enhanced in later phases
+      // to query actual scan status from SQLite
+      const scanned = '<span class="text-muted">—</span>';
 
       return `<tr data-id="${e.id}" data-type="${e.type}" data-name="${e.name}">
         <td>${icon} ${e.name}</td>
@@ -1240,14 +1294,36 @@ window.addEventListener('DOMContentLoaded', () => {
       const r = await fetch('/api/scans');
       const scans = await r.json();
 
+      // Format scan timestamp for "Snapshot from: [date]" display
+      function fmtSnapshotDate(timestamp) {
+        if (!timestamp) return 'Unknown date';
+        try {
+          const d = new Date(timestamp * 1000);
+          const now = new Date();
+          const diffMs = now - d;
+          const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+          if (diffDays === 0) return 'Today';
+          if (diffDays === 1) return 'Yesterday';
+          if (diffDays < 7) return `${diffDays} days ago`;
+          return d.toLocaleDateString();
+        } catch (e) {
+          return 'Unknown date';
+        }
+      }
+
       scansData = scans.map(s => {
-        const shortPath = s.path.length > 40 ? '...' + s.path.slice(-37) : s.path;
+        // Get provider/server name from scan metadata
+        const providerLabel = s.provider_id || 'Unknown';
+        const snapshotDate = fmtSnapshotDate(s.started || s.ended);
+
         return {
           id: s.id,
-          label: `#${s.id}: ${shortPath}`,
+          label: `📷 ${providerLabel} — ${snapshotDate}`,
           type: 'scan',
-          icon: '📸',
+          icon: '📷', // Camera icon for snapshots
           count: s.file_count,
+          snapshotDate: snapshotDate,
           hasChildren: false
         };
       });

@@ -854,6 +854,115 @@ def api_interpret():
         return jsonify({"status": "ok", "results": results}), 200
 
 
+@bp.get('/servers')
+def api_servers():
+    """Get list of all accessible servers/providers with scan metadata.
+
+    Returns servers with connection status, last scanned timestamp, and scan counts.
+    Used by Files page Live Servers mode to show which servers have been scanned before.
+    """
+    try:
+        provs = _get_ext().get('providers', {})
+        servers = []
+
+        # Get scan history from SQLite
+        scan_history = {}
+        try:
+            from ...core import path_index_sqlite as pix
+            from ...core import migrations as _migs
+            import json as _json
+            conn = pix.connect()
+            try:
+                _migs.migrate(conn)
+                cur = conn.cursor()
+                # Aggregate scans by provider+root
+                cur.execute("""
+                    SELECT extra_json, completed
+                    FROM scans
+                    WHERE extra_json IS NOT NULL
+                    ORDER BY completed DESC
+                """)
+                for (extra_json, completed) in cur.fetchall():
+                    try:
+                        extra = _json.loads(extra_json) if extra_json else {}
+                        provider_id = extra.get('provider_id', 'local_fs')
+                        root_id = extra.get('root_id', '/')
+                        key = f"{provider_id}:{root_id}"
+
+                        if key not in scan_history or (completed and completed > scan_history[key].get('last_scanned', 0)):
+                            scan_history[key] = {
+                                'last_scanned': completed or 0,
+                                'file_count': extra.get('file_count', 0),
+                                'scanned': True
+                            }
+                    except Exception:
+                        continue
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Build server list with scan metadata
+        for prov_id, prov in provs.items():
+            try:
+                # Get provider display name
+                display_name = getattr(prov, 'display_name', prov_id)
+
+                # Check connection status (simple check - provider is accessible if it's loaded)
+                connected = True  # If provider is in the dict, it's accessible
+
+                # Get roots for this provider
+                try:
+                    roots = prov.list_roots()
+                    if not isinstance(roots, list):
+                        roots = []
+                except Exception:
+                    roots = []
+
+                # If no roots, create a default entry
+                if not roots:
+                    roots = [{'id': '/', 'path': '/'}]
+
+                # For each root, check scan history
+                for root in roots:
+                    root_id = root.get('id', '/')
+                    key = f"{prov_id}:{root_id}"
+                    scan_info = scan_history.get(key, {})
+
+                    server_entry = {
+                        'id': prov_id,
+                        'display_name': display_name,
+                        'root_id': root_id,
+                        'root_path': root.get('path', root_id),
+                        'connected': connected,
+                        'scanned': scan_info.get('scanned', False),
+                        'last_scanned': scan_info.get('last_scanned', None),
+                        'file_count': scan_info.get('file_count', 0)
+                    }
+                    servers.append(server_entry)
+
+            except Exception as e:
+                # If provider fails, mark as disconnected
+                servers.append({
+                    'id': prov_id,
+                    'display_name': prov_id,
+                    'root_id': '/',
+                    'root_path': '/',
+                    'connected': False,
+                    'scanned': False,
+                    'last_scanned': None,
+                    'file_count': 0,
+                    'error': str(e)
+                })
+
+        return jsonify(servers), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @bp.get('/browse')
 def api_browse():
         prov_id = (request.args.get('provider_id') or 'local_fs').strip() or 'local_fs'
