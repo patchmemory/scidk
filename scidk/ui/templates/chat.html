@@ -21,6 +21,10 @@
           <input type="checkbox" id="verbose-mode" />
           Verbose
         </label>
+        <div id="schema-cache-status" style="font-size: 0.75em; color: #666; margin-left: 0.5rem; display: inline-flex; align-items: center; gap: 0.25rem;" title="Schema cache status">
+          <span id="schema-cache-text">Schema: checking...</span>
+          <button id="schema-refresh-btn" class="btn btn-sm btn-outline-secondary" style="padding: 0.1rem 0.4rem; font-size: 0.75em;" title="Refresh schema cache">🔄</button>
+        </div>
       </div>
     </div>
 
@@ -1446,6 +1450,162 @@
     });
 
     let lastUserQuery = ''; // Store last query for feedback
+    const llmSelector = document.getElementById('llm-selector');
+    let currentStreamedMessage = ''; // Track streaming message
+
+    // Load and check provider status on page load
+    async function checkProviderStatus() {
+      try {
+        const resp = await fetch('/api/chat/providers');
+        const data = await resp.json();
+        const providers = data.providers || {};
+
+        // Update LLM selector with status indicators and hardware info
+        Array.from(llmSelector.options).forEach(option => {
+          const providerValue = option.value;
+          if (providerValue === 'none') return; // Skip pattern-only
+
+          const providerInfo = providers[providerValue];
+          if (providerInfo) {
+            let baseText = option.textContent.split('(')[0].replace(/❌|⚙️|✅/, '').trim();
+
+            if (providerInfo.status === 'ok') {
+              // Add hardware info for Local provider
+              if (providerValue === 'ollama' && providerInfo.available_models) {
+                const modelCount = providerInfo.available_models.length;
+                option.textContent = `✅ ${baseText} (${modelCount} models)`;
+                option.title = `Available models: ${providerInfo.available_models.slice(0, 5).join(', ')}${modelCount > 5 ? '...' : ''}`;
+              } else {
+                option.textContent = `✅ ${baseText}`;
+              }
+              option.disabled = false;
+            } else if (providerInfo.status === 'not_configured') {
+              option.textContent = `⚙️ ${baseText}`;
+              option.title = providerInfo.hint || 'Not configured';
+              option.disabled = true;
+            } else {
+              option.textContent = `❌ ${baseText}`;
+              option.title = providerInfo.error || 'Not available';
+              option.disabled = true;
+            }
+          }
+        });
+
+        // Fetch hardware info separately for more details
+        try {
+          const healthResp = await fetch('/api/health');
+          const healthData = await healthResp.json();
+
+          if (healthData.hardware && healthData.hardware.gpu) {
+            const gpuInfo = healthData.hardware.gpu;
+            const ollamaOption = Array.from(llmSelector.options).find(opt => opt.value === 'ollama');
+            if (ollamaOption && providers.ollama && providers.ollama.status === 'ok') {
+              const gpuCount = gpuInfo.length;
+              const totalVRAM = gpuInfo.reduce((sum, gpu) => sum + (gpu.vram_total_gb || 0), 0);
+              const baseText = ollamaOption.textContent.split('(')[0].replace(/✅|❌|⚙️/, '').trim();
+              ollamaOption.textContent = `✅ ${baseText} (${gpuCount}× GPU, ${Math.round(totalVRAM)}GB)`;
+              ollamaOption.title = gpuInfo.map(g => `${g.name}: ${g.vram_total_gb}GB`).join('\n');
+            }
+          }
+        } catch (healthErr) {
+          // Hardware info is optional, don't fail if not available
+          console.log('Hardware info not available:', healthErr);
+        }
+      } catch (err) {
+        console.error('Failed to check provider status:', err);
+      }
+    }
+
+    // Check provider status on load, then restore saved preference
+    checkProviderStatus().then(() => {
+      // Load saved provider preference
+      const savedProvider = localStorage.getItem('chat_preferred_provider');
+      if (savedProvider) {
+        const option = Array.from(llmSelector.options).find(opt => opt.value === savedProvider);
+        // Only restore if provider is available (not disabled)
+        if (option && !option.disabled) {
+          llmSelector.value = savedProvider;
+        }
+      }
+    });
+
+    // Save provider selection when changed
+    llmSelector.addEventListener('change', () => {
+      localStorage.setItem('chat_preferred_provider', llmSelector.value);
+    });
+
+    // Schema cache status
+    const schemaCacheText = document.getElementById('schema-cache-text');
+    const schemaRefreshBtn = document.getElementById('schema-refresh-btn');
+
+    async function checkSchemaCache() {
+      try {
+        const resp = await fetch('/api/chat/schema/cache/stats');
+        const data = await resp.json();
+
+        if (data.size > 0 && data.timestamps) {
+          const keys = Object.keys(data.timestamps);
+          if (keys.length > 0) {
+            const latestKey = keys[0];
+            const timestamp = new Date(data.timestamps[latestKey]);
+            const ageMinutes = Math.floor((Date.now() - timestamp.getTime()) / 60000);
+
+            if (ageMinutes === 0) {
+              schemaCacheText.textContent = `Schema: cached (just now)`;
+              schemaCacheText.style.color = '#28a745';
+            } else if (ageMinutes < 5) {
+              schemaCacheText.textContent = `Schema: cached (${ageMinutes} min ago)`;
+              schemaCacheText.style.color = '#28a745';
+            } else {
+              schemaCacheText.textContent = `Schema: cached (${ageMinutes} min ago, expiring soon)`;
+              schemaCacheText.style.color = '#ff9800';
+            }
+          } else {
+            schemaCacheText.textContent = 'Schema: not cached';
+            schemaCacheText.style.color = '#999';
+          }
+        } else {
+          schemaCacheText.textContent = 'Schema: not cached';
+          schemaCacheText.style.color = '#999';
+        }
+      } catch (err) {
+        schemaCacheText.textContent = 'Schema: unknown';
+        schemaCacheText.style.color = '#999';
+        console.error('Failed to check schema cache:', err);
+      }
+    }
+
+    schemaRefreshBtn.addEventListener('click', async () => {
+      schemaRefreshBtn.disabled = true;
+      schemaRefreshBtn.textContent = '⏳';
+      schemaCacheText.textContent = 'Schema: refreshing...';
+      schemaCacheText.style.color = '#666';
+
+      try {
+        const resp = await fetch('/api/chat/schema/refresh', { method: 'POST' });
+        if (resp.ok) {
+          schemaCacheText.textContent = 'Schema: refreshed!';
+          schemaCacheText.style.color = '#28a745';
+          setTimeout(() => {
+            checkSchemaCache();
+          }, 1000);
+        } else {
+          schemaCacheText.textContent = 'Schema: refresh failed';
+          schemaCacheText.style.color = '#dc3545';
+        }
+      } catch (err) {
+        schemaCacheText.textContent = 'Schema: refresh error';
+        schemaCacheText.style.color = '#dc3545';
+        console.error('Failed to refresh schema:', err);
+      } finally {
+        schemaRefreshBtn.disabled = false;
+        schemaRefreshBtn.textContent = '🔄';
+      }
+    });
+
+    // Check schema cache on load and periodically
+    checkSchemaCache();
+    setInterval(checkSchemaCache, 60000); // Update every minute
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -1455,31 +1615,144 @@
       // Store query for feedback
       lastUserQuery = message;
 
+      // Get selected provider
+      const selectedProvider = llmSelector.value;
+      const provider = selectedProvider !== 'none' ? selectedProvider : undefined;
+
       // Add user message immediately
       appendMessage('user', message);
       input.value = '';
 
+      // Add thinking indicator
+      const thinkingMsg = appendThinkingMessage();
+
       try {
-        const resp = await fetch('/api/chat/graphrag', {
+        // Use streaming endpoint for better UX
+        const resp = await fetch('/api/chat/graphrag/v2/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message })
+          body: JSON.stringify({ message, provider })
         });
-        const data = await resp.json();
 
-        if (data.status === 'ok') {
-          const metadata = data.metadata || null;
-          appendMessage('assistant', data.reply, metadata, lastUserQuery);
-
-          // Update data panel with results
-          updateDataPanel(data);
-        } else {
-          appendMessage('assistant', `Error: ${data.error || 'Unknown error'}`, null, lastUserQuery);
+        if (!resp.ok) {
+          removeThinkingMessage(thinkingMsg);
+          const errorData = await resp.json();
+          appendMessage('assistant', `Error: ${errorData.error || 'Unknown error'}`, null, lastUserQuery);
+          return;
         }
+
+        // Handle streaming response
+        currentStreamedMessage = '';
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let assistantMsgEl = null;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const event = JSON.parse(line.slice(6));
+
+                if (event.type === 'token') {
+                  // Remove thinking indicator on first token
+                  if (assistantMsgEl === null) {
+                    removeThinkingMessage(thinkingMsg);
+                    assistantMsgEl = appendStreamingMessage();
+                  }
+                  currentStreamedMessage += event.content;
+                  updateStreamingMessage(assistantMsgEl, currentStreamedMessage);
+
+                } else if (event.type === 'done') {
+                  // Finalize message with metadata
+                  const metadata = event.metadata || {};
+                  finalizeStreamingMessage(assistantMsgEl, currentStreamedMessage, metadata, lastUserQuery);
+
+                } else if (event.type === 'error') {
+                  removeThinkingMessage(thinkingMsg);
+                  appendMessage('assistant', `Error: ${event.error}`, null, lastUserQuery);
+                  break;
+                }
+              } catch (parseErr) {
+                console.error('Failed to parse SSE event:', parseErr);
+              }
+            }
+          }
+        }
+
       } catch (err) {
+        removeThinkingMessage(thinkingMsg);
         appendMessage('assistant', `Error: ${err.message}`, null, lastUserQuery);
       }
     });
+
+    // Streaming UI helpers
+    function appendThinkingMessage() {
+      const thinkingEl = document.createElement('div');
+      thinkingEl.className = 'chat-message assistant';
+      thinkingEl.innerHTML = `
+        <div class="chat-message-role">🤖 Assistant</div>
+        <div class="chat-message-content" style="color:#999; font-style:italic;">
+          <span class="thinking-dots">Thinking</span>
+        </div>
+      `;
+      history.appendChild(thinkingEl);
+      history.scrollTop = history.scrollHeight;
+
+      // Animate thinking dots
+      const dots = thinkingEl.querySelector('.thinking-dots');
+      let dotCount = 0;
+      const interval = setInterval(() => {
+        dotCount = (dotCount + 1) % 4;
+        dots.textContent = 'Thinking' + '.'.repeat(dotCount);
+      }, 500);
+      thinkingEl._interval = interval;
+
+      return thinkingEl;
+    }
+
+    function removeThinkingMessage(thinkingEl) {
+      if (thinkingEl && thinkingEl._interval) {
+        clearInterval(thinkingEl._interval);
+        thinkingEl.remove();
+      }
+    }
+
+    function appendStreamingMessage() {
+      const msgEl = document.createElement('div');
+      msgEl.className = 'chat-message assistant';
+      msgEl.innerHTML = `
+        <div class="chat-message-role">🤖 Assistant</div>
+        <div class="chat-message-content"></div>
+      `;
+      history.appendChild(msgEl);
+      history.scrollTop = history.scrollHeight;
+      return msgEl;
+    }
+
+    function updateStreamingMessage(msgEl, content) {
+      if (msgEl) {
+        const contentEl = msgEl.querySelector('.chat-message-content');
+        contentEl.textContent = content;
+        history.scrollTop = history.scrollHeight;
+      }
+    }
+
+    function finalizeStreamingMessage(msgEl, content, metadata, query) {
+      // Add to localStorage
+      const messages = JSON.parse(localStorage.getItem('chat_messages') || '[]');
+      const msg = { role: 'assistant', content, metadata, query, timestamp: Date.now() };
+      messages.push(msg);
+      localStorage.setItem('chat_messages', JSON.stringify(messages));
+
+      // Re-render to show feedback buttons and full formatting
+      renderHistory();
+    }
 
     function appendMessage(role, content, metadata = null, query = null) {
       const messages = JSON.parse(localStorage.getItem('chat_messages') || '[]');
@@ -1608,16 +1881,16 @@
       return div.innerHTML;
     }
 
-    // ========== Feedback Functions ==========
+    // ========== Feedback Functions (Global) ==========
 
-    function toggleDetailedFeedback(msgIdx) {
+    window.toggleDetailedFeedback = function(msgIdx) {
       const detailsEl = document.getElementById(`feedback-detailed-${msgIdx}`);
       if (detailsEl) {
         detailsEl.style.display = detailsEl.style.display === 'none' ? 'block' : 'none';
       }
-    }
+    };
 
-    async function submitQuickFeedback(msgIdx, answeredQuestion) {
+    window.submitQuickFeedback = async function(msgIdx, answeredQuestion) {
       const messages = JSON.parse(localStorage.getItem('chat_messages') || '[]');
       const msg = messages[msgIdx];
 
@@ -1654,7 +1927,7 @@
       }
     }
 
-    async function submitDetailedFeedback(msgIdx) {
+    window.submitDetailedFeedback = async function(msgIdx) {
       const messages = JSON.parse(localStorage.getItem('chat_messages') || '[]');
       const msg = messages[msgIdx];
 
