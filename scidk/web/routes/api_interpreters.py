@@ -127,8 +127,28 @@ def api_interpreters_toggle(interpreter_id):
         return jsonify({'status': 'updated', 'enabled': enabled}), 200
 
 
-@bp.post('/settings/rclone-interpret')
-def api_settings_rclone_interpret_set():
+@bp.route('/settings/rclone-interpret', methods=['GET', 'POST'])
+def api_settings_rclone_interpret():
+        if request.method == 'GET':
+            # Load current settings
+            try:
+                from ...core import path_index_sqlite as pix
+                from ...core import migrations as _migs
+                conn = pix.connect()
+                try:
+                    _migs.migrate(conn)
+                    cur = conn.cursor()
+                    suggest_row = cur.execute("SELECT value FROM settings WHERE key = ?", ('rclone.interpret.suggest_mount_threshold',)).fetchone()
+                    batch_row = cur.execute("SELECT value FROM settings WHERE key = ?", ('rclone.interpret.max_files_per_batch',)).fetchone()
+                    suggest = int(suggest_row[0]) if suggest_row else 400
+                    max_batch = int(batch_row[0]) if batch_row else 1000
+                finally:
+                    conn.close()
+                return jsonify({'suggest_mount_threshold': suggest, 'max_files_per_batch': max_batch}), 200
+            except Exception as e:
+                return jsonify({'suggest_mount_threshold': 400, 'max_files_per_batch': 1000}), 200
+
+        # POST: Save settings
         data = request.get_json(force=True, silent=True) or {}
         try:
             suggest = int(data.get('suggest_mount_threshold')) if data.get('suggest_mount_threshold') not in (None, '') else None

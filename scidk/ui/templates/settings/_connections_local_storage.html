@@ -59,7 +59,7 @@
     const status = document.getElementById('local-files-status');
 
     // Load current setting
-    fetch('/api/settings/providers')
+    fetch('/api/providers')
       .then(r => r.json())
       .then(data => {
         if (data.local_files_base) {
@@ -75,7 +75,7 @@
       status.className = 'small text-muted';
 
       try {
-        const r = await fetch('/api/settings/providers', {
+        const r = await fetch('/api/providers', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

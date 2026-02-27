@@ -161,7 +161,7 @@
           saveLLMConfigBtn.textContent = 'Saving...';
           if (statusSpan) statusSpan.textContent = '';
 
-          const resp = await fetch('/api/settings/chat/llm-config', {
+          const resp = await fetch('/api/chat/providers', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(config)
@@ -188,7 +188,7 @@
     // Load current LLM configuration
     async function loadLLMConfig() {
       try {
-        const resp = await fetch('/api/settings/chat/llm-config');
+        const resp = await fetch('/api/chat/providers');
         if (resp.ok) {
           const data = await resp.json();
 
