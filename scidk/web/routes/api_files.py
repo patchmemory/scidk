@@ -13,7 +13,7 @@ bp = Blueprint('files', __name__, url_prefix='/api')
 
 def _get_ext():
     """Get SciDK extensions from current Flask current_app."""
-    return current_app.extensions['scidk']
+    return current_app.extensions.get('scidk')
 
 @bp.post('/scan/dry-run')
 def api_scan_dry_run():
@@ -861,12 +861,19 @@ def api_servers():
     Returns servers with connection status, last scanned timestamp, and scan counts.
     Used by Files page Live Servers mode to show which servers have been scanned before.
     """
+    import traceback
+    import logging
+    logger = logging.getLogger(__name__)
+
     try:
+        logger.info("api_servers: Starting")
         ext = _get_ext()
+        logger.info(f"api_servers: ext = {ext is not None}")
         if not ext:
             return jsonify([]), 200  # Return empty list if no extensions
 
         provs = ext.get('providers', {})
+        logger.info(f"api_servers: provs keys = {list(provs.keys()) if provs else None}")
         if not provs:
             return jsonify([]), 200  # Return empty list if no providers
 
@@ -875,6 +882,7 @@ def api_servers():
         # Get scan history from SQLite
         scan_history = {}
         try:
+            logger.info("api_servers: Loading scan history")
             from ...core import path_index_sqlite as pix
             from ...core import migrations as _migs
             import json as _json
@@ -902,19 +910,24 @@ def api_servers():
                                 'file_count': extra.get('file_count', 0),
                                 'scanned': True
                             }
-                    except Exception:
+                    except Exception as e:
+                        logger.warning(f"api_servers: Error parsing scan entry: {e}")
                         continue
             finally:
                 try:
                     conn.close()
                 except Exception:
                     pass
-        except Exception:
+            logger.info(f"api_servers: Loaded {len(scan_history)} scan history entries")
+        except Exception as e:
+            logger.warning(f"api_servers: Error loading scan history: {e}")
             pass
 
         # Build server list with scan metadata
+        logger.info(f"api_servers: Building server list from {len(provs)} providers")
         for prov_id, prov in provs.items():
             try:
+                logger.info(f"api_servers: Processing provider {prov_id}")
                 # Get provider display name
                 display_name = getattr(prov, 'display_name', prov_id)
 
@@ -924,9 +937,11 @@ def api_servers():
                 # Get roots for this provider
                 try:
                     roots = prov.list_roots()
+                    logger.info(f"api_servers: Provider {prov_id} returned {len(roots) if roots else 0} roots")
                     if not isinstance(roots, list):
                         roots = []
-                except Exception:
+                except Exception as e:
+                    logger.warning(f"api_servers: Provider {prov_id} list_roots error: {e}")
                     roots = []
 
                 # If no roots, create a default entry
@@ -950,8 +965,10 @@ def api_servers():
                         'file_count': scan_info.get('file_count', 0)
                     }
                     servers.append(server_entry)
+                    logger.info(f"api_servers: Added server entry for {prov_id}:{root_id}")
 
             except Exception as e:
+                logger.error(f"api_servers: Error processing provider {prov_id}: {e}\n{traceback.format_exc()}")
                 # If provider fails, mark as disconnected
                 servers.append({
                     'id': prov_id,
@@ -965,8 +982,10 @@ def api_servers():
                     'error': str(e)
                 })
 
+        logger.info(f"api_servers: Returning {len(servers)} servers")
         return jsonify(servers), 200
     except Exception as e:
+        logger.error(f"api_servers: Fatal error: {e}\n{traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 
