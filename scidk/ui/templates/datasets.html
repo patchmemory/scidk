@@ -1050,7 +1050,8 @@ window.addEventListener('DOMContentLoaded', () => {
       snapshotsSection.style.display = 'none';
       scanFolderBtn.style.display = 'inline-block';
       commitScanBtn.style.display = 'none';
-      // Reload servers
+      // Update handler and reload servers
+      updateServersTreeHandler();
       loadServers();
     }
   });
@@ -1063,7 +1064,8 @@ window.addEventListener('DOMContentLoaded', () => {
       serversSection.style.display = 'block';
       snapshotsSection.style.display = 'none'; // Keep hidden - we use servers section instead
       scanFolderBtn.style.display = 'none';
-      // Load snapshots into the servers tree
+      // Update handler and load snapshots into the servers tree
+      updateServersTreeHandler();
       loadSnapshotsAsServers();
     }
   });
@@ -1074,24 +1076,45 @@ window.addEventListener('DOMContentLoaded', () => {
   let serversData = [];
   let scansData = [];
 
-  serversTree.onSelect = (node) => {
-    console.log('Tree node selected:', node);
+  // Set serversTree onSelect handler based on current mode
+  function updateServersTreeHandler() {
+    if (currentMode === 'live') {
+      serversTree.onSelect = (node) => {
+        console.log('Tree node selected (live):', node);
 
-    if (node.type === 'server') {
-      currentServer = node.id;
-      showServerDetails(node.id);
-      // Don't auto-browse, just expand to show roots
-    } else if (node.type === 'root') {
-      // Root selected - load it in the file browser
-      console.log('Loading root:', node);
-      currentServer = node.providerId;
-      currentRoot = node.id;
-      currentPath = node.id;
-      browseLive(node.providerId, node.id, node.id);
-    } else {
-      console.warn('Unknown node type:', node.type);
+        if (node.type === 'server') {
+          currentServer = node.id;
+          showServerDetails(node.id);
+          // Don't auto-browse, just expand to show roots
+        } else if (node.type === 'root') {
+          // Root selected - load it in the file browser
+          console.log('Loading root:', node);
+          currentServer = node.providerId;
+          currentRoot = node.id;
+          currentPath = node.id;
+          browseLive(node.providerId, node.id, node.id);
+        } else {
+          console.warn('Unknown node type:', node.type);
+        }
+      };
+    } else if (currentMode === 'snapshot') {
+      serversTree.onSelect = (node) => {
+        console.log('Tree node selected (snapshot):', node);
+        // When a snapshot server is selected, show its latest scan
+        const provider = serversData.find(sd => sd.id === node.id);
+        if (provider && provider.scans && provider.scans.length > 0) {
+          const latestScan = provider.scans[0];
+          currentScan = latestScan.id;
+          browseSnapshot(latestScan.id);
+          showScanDetails(latestScan.id);
+          commitScanBtn.style.display = 'inline-block';
+        }
+      };
     }
-  };
+  }
+
+  // Initialize handler for live mode
+  updateServersTreeHandler();
 
   scansTree.onSelect = (node) => {
     currentScan = node.id;
@@ -1827,18 +1850,7 @@ window.addEventListener('DOMContentLoaded', () => {
         };
       });
 
-      serversTree.onSelect = (node) => {
-        // When a snapshot server is selected, show its latest scan
-        const provider = serversData.find(sd => sd.id === node.id);
-        if (provider && provider.scans.length > 0) {
-          const latestScan = provider.scans[0];
-          currentScan = latestScan.id;
-          browseSnapshot(latestScan.id);
-          showScanDetails(latestScan.id);
-          commitScanBtn.style.display = 'inline-block';
-        }
-      };
-
+      // Don't reassign onSelect here - it's handled by updateServersTreeHandler()
       serversTree.nodes = serversData;
       serversTree.refresh();
     } catch (e) {
