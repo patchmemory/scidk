@@ -287,6 +287,34 @@
     background: #e3f2fd;
   }
 
+  /* Selection mode */
+  .selection-checkbox {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    accent-color: #2196f3;
+  }
+  .file-table.selection-mode .checkbox-col {
+    display: table-cell;
+  }
+  .file-table:not(.selection-mode) .checkbox-col {
+    display: none;
+  }
+  .selection-toolbar {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.5rem;
+    background: #e3f2fd;
+    border: 1px solid #2196f3;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+  }
+  .selection-toolbar .selection-count {
+    font-weight: 600;
+    color: #1976d2;
+  }
+
   /* Neo4j status indicator */
   .neo4j-status {
     display: flex;
@@ -463,6 +491,14 @@
     <!-- Breadcrumb Navigation -->
     <div class="breadcrumb-nav" id="breadcrumb-nav"></div>
 
+    <!-- Selection Toolbar (shown when in selection mode) -->
+    <div id="selection-toolbar" class="selection-toolbar" style="display: none;">
+      <span class="selection-count" id="selection-count">0 items selected</span>
+      <button id="clear-selection-btn" class="btn btn-sm btn-outline-secondary">Clear</button>
+      <button id="scan-selected-btn" class="btn btn-sm btn-primary">Scan Selected</button>
+      <button id="exit-selection-btn" class="btn btn-sm btn-outline-secondary">Exit Selection Mode</button>
+    </div>
+
     <!-- Advanced Options (Collapsed by default) -->
     <details style="margin-bottom: 0.75rem;">
       <summary class="small" style="cursor: pointer; user-select: none;">Advanced Options</summary>
@@ -491,10 +527,13 @@
     </details>
 
     <!-- File List Table -->
-    <div class="file-table">
+    <div class="file-table" id="file-table">
       <table class="table table-sm table-hover">
         <thead>
           <tr>
+            <th class="checkbox-col" style="width: 40px;">
+              <input type="checkbox" id="select-all-checkbox" class="selection-checkbox" title="Select all">
+            </th>
             <th>Name</th>
             <th>Type</th>
             <th>Size</th>
@@ -505,13 +544,16 @@
           </tr>
         </thead>
         <tbody id="file-list">
-          <tr><td colspan="7" class="small text-muted">Select a server to browse files</td></tr>
+          <tr><td colspan="8" class="small text-muted">Select a server to browse files</td></tr>
         </tbody>
       </table>
     </div>
 
     <!-- Actions -->
     <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem; align-items: center;">
+      <button id="toggle-selection-btn" class="btn btn-sm btn-outline-primary">
+        ☑ Select Files
+      </button>
       <button id="scan-folder-btn" class="btn btn-sm btn-primary" disabled>
         🔍 Scan Current Folder
       </button>
@@ -877,6 +919,14 @@ window.addEventListener('DOMContentLoaded', () => {
   let currentScan = null;
   let selectedFile = null;
 
+  // ===== Selection Mode State =====
+  let selectionMode = false;
+  let selectedItems = new Set(); // Set of file/folder IDs that are selected
+  let folderContents = new Map(); // Map of folder ID -> Set of child IDs (for recursive selection)
+  let itemTypes = new Map(); // Map of item ID -> 'file' or 'folder'
+  let itemParents = new Map(); // Map of item ID -> parent folder ID
+  let lastClickedIndex = -1; // For shift-click range selection
+
   // ===== Mode Switching =====
   const modeLive = document.getElementById('mode-live');
   const modeSnapshot = document.getElementById('mode-snapshot');
@@ -1042,6 +1092,174 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // ===== Selection Mode Functions =====
+  function toggleSelectionMode() {
+    selectionMode = !selectionMode;
+    const fileTable = document.getElementById('file-table');
+    const toggleBtn = document.getElementById('toggle-selection-btn');
+    const selectionToolbar = document.getElementById('selection-toolbar');
+    const scanFolderBtn = document.getElementById('scan-folder-btn');
+
+    if (selectionMode) {
+      fileTable.classList.add('selection-mode');
+      toggleBtn.textContent = '☑ Exit Selection';
+      toggleBtn.classList.add('active');
+      selectionToolbar.style.display = 'flex';
+      scanFolderBtn.style.display = 'none';
+      updateSelectionCount();
+    } else {
+      fileTable.classList.remove('selection-mode');
+      toggleBtn.textContent = '☑ Select Files';
+      toggleBtn.classList.remove('active');
+      selectionToolbar.style.display = 'none';
+      scanFolderBtn.style.display = 'inline-block';
+      selectedItems.clear();
+      lastClickedIndex = -1;
+    }
+  }
+
+  function updateSelectionCount() {
+    const count = selectedItems.size;
+    const countEl = document.getElementById('selection-count');
+    if (countEl) {
+      countEl.textContent = `${count} item${count !== 1 ? 's' : ''} selected`;
+    }
+  }
+
+  async function toggleItemSelection(itemId, checked, isFolder) {
+    if (checked) {
+      selectedItems.add(itemId);
+      if (isFolder) {
+        // Show loading indicator
+        showMessage('Loading folder contents...', 'info');
+        // Recursively select all children
+        await selectFolderRecursive(itemId, true);
+      }
+    } else {
+      selectedItems.delete(itemId);
+      if (isFolder) {
+        // Recursively deselect all children
+        await selectFolderRecursive(itemId, false);
+      }
+    }
+    updateSelectionCount();
+    updateIndeterminateStates();
+  }
+
+  async function selectFolderRecursive(folderId, select) {
+    // When selecting/deselecting a folder, we need to fetch its contents
+    // and recursively select/deselect all children
+    // For Live browsing, we'll make this async and fetch the folder contents
+
+    if (select) {
+      selectedItems.add(folderId);
+      // Fetch folder contents and recursively select
+      try {
+        const qs = new URLSearchParams({
+          provider_id: currentServer || 'local_fs',
+          root_id: currentRoot || '/',
+          path: folderId
+        });
+
+        const r = await fetch('/api/browse?' + qs.toString());
+        const data = await r.json();
+
+        if (data.entries && Array.isArray(data.entries)) {
+          // Track this folder's children
+          const children = new Set();
+          folderContents.set(folderId, children);
+
+          for (const entry of data.entries) {
+            children.add(entry.id);
+            selectedItems.add(entry.id);
+            itemTypes.set(entry.id, entry.type);
+            itemParents.set(entry.id, folderId);
+
+            // If it's a folder, recursively fetch its contents too
+            if (entry.type === 'folder') {
+              await selectFolderRecursive(entry.id, true);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to fetch folder contents for selection:', e);
+      }
+    } else {
+      selectedItems.delete(folderId);
+      // Recursively deselect children
+      const children = folderContents.get(folderId);
+      if (children) {
+        for (const childId of children) {
+          selectedItems.delete(childId);
+          if (itemTypes.get(childId) === 'folder') {
+            await selectFolderRecursive(childId, false);
+          }
+        }
+      }
+    }
+  }
+
+  function updateIndeterminateStates() {
+    // Update checkbox visual states based on selection
+    // For folders: if some (but not all) children are selected, show indeterminate state
+
+    fileList.querySelectorAll('.selection-checkbox').forEach(cb => {
+      const itemId = cb.getAttribute('data-id');
+      const tr = cb.closest('tr');
+      const type = tr?.getAttribute('data-type');
+      const isFolder = (type === 'folder');
+
+      const isSelected = selectedItems.has(itemId);
+      let isIndeterminate = false;
+
+      if (isFolder) {
+        // Check if this folder has children tracked
+        const children = folderContents.get(itemId);
+        if (children && children.size > 0) {
+          const selectedChildren = Array.from(children).filter(cid => selectedItems.has(cid));
+          if (selectedChildren.length > 0 && selectedChildren.length < children.size) {
+            // Some but not all children selected -> indeterminate
+            isIndeterminate = true;
+          }
+        } else if (isSelected) {
+          // Folder is selected but we haven't loaded its children yet
+          // This is fine - it means "select recursively"
+          isIndeterminate = false;
+        }
+      }
+
+      cb.checked = isSelected && !isIndeterminate;
+      cb.indeterminate = isIndeterminate;
+    });
+
+    // Update select-all checkbox
+    const selectAllCb = document.getElementById('select-all-checkbox');
+    if (selectAllCb) {
+      const visibleCheckboxes = Array.from(fileList.querySelectorAll('.selection-checkbox'));
+      const allChecked = visibleCheckboxes.every(cb => cb.checked || cb.indeterminate);
+      const someChecked = visibleCheckboxes.some(cb => cb.checked || cb.indeterminate);
+
+      selectAllCb.checked = allChecked && visibleCheckboxes.length > 0 && someChecked;
+      selectAllCb.indeterminate = someChecked && !allChecked;
+    }
+  }
+
+  function clearSelection() {
+    selectedItems.clear();
+    lastClickedIndex = -1;
+    updateSelectionCount();
+    updateIndeterminateStates();
+  }
+
+  function selectAll() {
+    fileList.querySelectorAll('tr[data-id]').forEach(tr => {
+      const itemId = tr.getAttribute('data-id');
+      selectedItems.add(itemId);
+    });
+    updateSelectionCount();
+    updateIndeterminateStates();
+  }
+
   // ===== File Browsing =====
   const fileList = document.getElementById('file-list');
   const breadcrumbNav = document.getElementById('breadcrumb-nav');
@@ -1168,22 +1386,32 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function renderFileList(entries, providerId) {
     if (!entries || entries.length === 0) {
-      fileList.innerHTML = '<tr><td colspan="7" class="small text-muted">Empty folder</td></tr>';
+      fileList.innerHTML = '<tr><td colspan="8" class="small text-muted">Empty folder</td></tr>';
       return;
     }
 
-    fileList.innerHTML = entries.map(e => {
+    // Build folder hierarchy for selection tracking
+    itemTypes.clear();
+    itemParents.clear();
+    entries.forEach(e => {
+      itemTypes.set(e.id, e.type);
+      // Parent tracking will be updated when navigating folders
+    });
+
+    fileList.innerHTML = entries.map((e, idx) => {
       const icon = e.type === 'folder' ? '📁' : '📄';
       const size = e.type === 'folder' ? '' : fmtBytes(e.size || 0);
       const created = e.ctime ? fmtTime(e.ctime) : '';
       const modified = e.mtime ? fmtTime(e.mtime) : '';
 
       // In Live mode, show scan status for each file/folder
-      // For now, show "—" (not scanned) - will be enhanced in later phases
-      // to query actual scan status from SQLite
       const scanned = '<span class="text-muted">—</span>';
 
-      return `<tr data-id="${e.id}" data-type="${e.type}" data-name="${e.name}">
+      const isSelected = selectedItems.has(e.id);
+      const checkboxHtml = `<input type="checkbox" class="selection-checkbox" data-id="${e.id}" data-index="${idx}" ${isSelected ? 'checked' : ''}>`;
+
+      return `<tr data-id="${e.id}" data-type="${e.type}" data-name="${e.name}" data-index="${idx}">
+        <td class="checkbox-col">${checkboxHtml}</td>
         <td>${icon} ${e.name}</td>
         <td>${e.type}</td>
         <td>${size}</td>
@@ -1194,9 +1422,48 @@ window.addEventListener('DOMContentLoaded', () => {
       </tr>`;
     }).join('');
 
-    // Attach click handlers
+    // Attach checkbox handlers (must be before tr click handlers)
+    fileList.querySelectorAll('.selection-checkbox').forEach(cb => {
+      cb.addEventListener('change', async (e) => {
+        e.stopPropagation();
+        const itemId = cb.getAttribute('data-id');
+        const tr = cb.closest('tr');
+        const type = tr?.getAttribute('data-type');
+        const isFolder = (type === 'folder');
+        const index = parseInt(cb.getAttribute('data-index'));
+
+        // Handle shift-click for range selection
+        if (e.shiftKey && lastClickedIndex >= 0 && lastClickedIndex !== index) {
+          const start = Math.min(lastClickedIndex, index);
+          const end = Math.max(lastClickedIndex, index);
+          const allCheckboxes = Array.from(fileList.querySelectorAll('.selection-checkbox'));
+          for (let i = start; i <= end; i++) {
+            if (allCheckboxes[i]) {
+              const id = allCheckboxes[i].getAttribute('data-id');
+              const tr = allCheckboxes[i].closest('tr');
+              const t = tr?.getAttribute('data-type');
+              if (cb.checked) {
+                selectedItems.add(id);
+                allCheckboxes[i].checked = true;
+              }
+            }
+          }
+          updateSelectionCount();
+          updateIndeterminateStates();
+        } else {
+          await toggleItemSelection(itemId, cb.checked, isFolder);
+        }
+
+        lastClickedIndex = index;
+      });
+    });
+
+    // Attach click handlers for rows (not checkboxes)
     fileList.querySelectorAll('tr').forEach(tr => {
-      tr.addEventListener('click', () => {
+      tr.addEventListener('click', (e) => {
+        // Don't trigger if clicking checkbox
+        if (e.target.type === 'checkbox' || e.target.closest('.checkbox-col')) return;
+
         const id = tr.getAttribute('data-id');
         const type = tr.getAttribute('data-type');
         const name = tr.getAttribute('data-name');
@@ -1987,6 +2254,111 @@ window.addEventListener('DOMContentLoaded', () => {
     loadScans();  // Always poll scans to keep the tree updated
     fetchNeo4jStatus();
   }, 2000);
+
+  // ===== Selection Mode Event Handlers =====
+  const toggleSelectionBtn = document.getElementById('toggle-selection-btn');
+  const exitSelectionBtn = document.getElementById('exit-selection-btn');
+  const clearSelectionBtn = document.getElementById('clear-selection-btn');
+  const scanSelectedBtn = document.getElementById('scan-selected-btn');
+  const selectAllCheckbox = document.getElementById('select-all-checkbox');
+
+  if (toggleSelectionBtn) {
+    toggleSelectionBtn.addEventListener('click', toggleSelectionMode);
+  }
+
+  if (exitSelectionBtn) {
+    exitSelectionBtn.addEventListener('click', toggleSelectionMode);
+  }
+
+  if (clearSelectionBtn) {
+    clearSelectionBtn.addEventListener('click', clearSelection);
+  }
+
+  if (selectAllCheckbox) {
+    selectAllCheckbox.addEventListener('change', (e) => {
+      if (e.target.checked) {
+        selectAll();
+      } else {
+        clearSelection();
+      }
+    });
+  }
+
+  if (scanSelectedBtn) {
+    scanSelectedBtn.addEventListener('click', async () => {
+      if (selectedItems.size === 0) {
+        alert('Please select files or folders to scan');
+        return;
+      }
+
+      // Build selection rules from selected items
+      const rules = Array.from(selectedItems).map(itemId => {
+        const type = itemTypes.get(itemId);
+        return {
+          action: 'include',
+          path: itemId,
+          recursive: (type === 'folder'), // Folders are recursive by default
+          node_type: type
+        };
+      });
+
+      const selection = {
+        rules: rules,
+        use_ignore: true,
+        allow_override_ignores: true
+      };
+
+      scanSelectedBtn.disabled = true;
+      scanSelectedBtn.textContent = 'Starting scan...';
+
+      try {
+        const payload = {
+          type: 'scan',
+          path: currentPath || currentRoot,
+          recursive: true,
+          provider_id: currentServer,
+          root_id: currentRoot,
+          selection: selection
+        };
+
+        const r = await fetch('/api/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (r.ok) {
+          const result = await r.json();
+          showMessage(`Scan started for ${selectedItems.size} selected items`, 'success');
+          fetchTasks();
+          loadScans();
+          toggleSelectionMode(); // Exit selection mode after scan
+        } else {
+          const j = await r.json();
+          showMessage('Scan error: ' + (j.error || r.status), 'error');
+        }
+      } catch (err) {
+        showMessage('Scan error: ' + err.message, 'error');
+      } finally {
+        scanSelectedBtn.disabled = false;
+        scanSelectedBtn.textContent = 'Scan Selected';
+      }
+    });
+  }
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    // Ctrl/Cmd + A: Select all (when in selection mode)
+    if ((e.ctrlKey || e.metaKey) && e.key === 'a' && selectionMode) {
+      e.preventDefault();
+      selectAll();
+    }
+
+    // Escape: Exit selection mode
+    if (e.key === 'Escape' && selectionMode) {
+      toggleSelectionMode();
+    }
+  });
 
   // ===== New Snapshot Button =====
   const newSnapshotBtn = document.getElementById('new-snapshot-btn');
