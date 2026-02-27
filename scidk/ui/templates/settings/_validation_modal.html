@@ -1,0 +1,459 @@
+<!-- Shared Validation Modal Partial -->
+<!-- Usage: Include this in any settings module that displays script validation status -->
+<!-- Call window.showValidationModal(scriptId, scriptName) to open -->
+
+<div id="validation-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); z-index: 9999; align-items: center; justify-content: center;">
+  <div id="validation-modal-content" style="background: #fff; border-radius: 8px; max-width: 800px; width: 90%; max-height: 85vh; overflow-y: auto; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);">
+    <!-- Header -->
+    <div style="padding: 1.5rem; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center;">
+      <div>
+        <h3 id="validation-modal-title" style="margin: 0; font-size: 1.25rem;">Validation Results</h3>
+        <p id="validation-modal-script-name" class="small text-muted" style="margin: 0.25rem 0 0 0;"></p>
+      </div>
+      <button onclick="closeValidationModal()" style="background: none; border: none; font-size: 1.5rem; color: #666; cursor: pointer; padding: 0; width: 32px; height: 32px; line-height: 1;" title="Close">&times;</button>
+    </div>
+
+    <!-- Status Section -->
+    <div style="padding: 1.5rem; border-bottom: 1px solid #eee;">
+      <div style="display: flex; align-items: center; gap: 0.75rem;">
+        <span style="font-weight: 600;">Status:</span>
+        <span id="validation-modal-status-badge"></span>
+      </div>
+      <p id="validation-modal-timestamp" class="small text-muted" style="margin: 0.5rem 0 0 0;"></p>
+    </div>
+
+    <!-- Content Section -->
+    <div id="validation-modal-body" style="padding: 1.5rem;">
+      <!-- Content populated dynamically based on status -->
+    </div>
+
+    <!-- Advanced Section (collapsed by default) -->
+    <div style="padding: 0 1.5rem 1.5rem 1.5rem;">
+      <details>
+        <summary style="cursor: pointer; font-weight: 500; color: #007bff; padding: 0.5rem 0;">Advanced: Raw Output</summary>
+        <div style="margin-top: 1rem; padding: 1rem; background: #f5f5f5; border-radius: 4px; max-height: 300px; overflow-y: auto;">
+          <pre id="validation-modal-raw-output" style="margin: 0; font-size: 0.85em; white-space: pre-wrap; word-wrap: break-word;"><code></code></pre>
+        </div>
+      </details>
+    </div>
+
+    <!-- Footer -->
+    <div style="padding: 1rem 1.5rem; border-top: 1px solid #eee; display: flex; justify-content: flex-end;">
+      <button onclick="closeValidationModal()" class="btn btn-sm btn-secondary">Close</button>
+    </div>
+  </div>
+</div>
+
+<style>
+  #validation-modal {
+    display: none;
+  }
+
+  #validation-modal.show {
+    display: flex !important;
+  }
+
+  #validation-modal-content {
+    animation: modal-slide-in 0.2s ease-out;
+  }
+
+  @keyframes modal-slide-in {
+    from {
+      transform: translateY(-20px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes pulse-animation {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.6;
+    }
+  }
+
+  .validation-pulse {
+    animation: pulse-animation 1.5s ease-in-out infinite;
+  }
+
+  /* Badge styles matching registry table */
+  .validation-badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: 500;
+  }
+
+  .validation-badge.queued {
+    background: #6c757d;
+    color: white;
+  }
+
+  .validation-badge.running {
+    background: #17a2b8;
+    color: white;
+  }
+
+  .validation-badge.passed {
+    background: #28a745;
+    color: white;
+  }
+
+  .validation-badge.failed {
+    background: #e74c3c;
+    color: white;
+  }
+
+  .validation-badge.not_run {
+    background: #999;
+    color: white;
+  }
+
+  /* Test output styling */
+  .test-output-section {
+    margin-bottom: 1rem;
+    padding: 1rem;
+    background: #f9f9f9;
+    border-radius: 4px;
+    border-left: 4px solid #ddd;
+  }
+
+  .test-output-section h4 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1em;
+    font-weight: 600;
+  }
+
+  .test-output-section pre {
+    margin: 0;
+    padding: 0.75rem;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.9em;
+    overflow-x: auto;
+  }
+
+  .test-output-section.success {
+    border-left-color: #28a745;
+  }
+
+  .test-output-section.error {
+    border-left-color: #e74c3c;
+  }
+</style>
+
+<script>
+  let validationModalPollingInterval = null;
+
+  /**
+   * Opens the validation modal and fetches validation data for the specified script.
+   * @param {string} scriptId - The script ID to fetch validation results for
+   * @param {string} scriptName - The script name to display in the modal header
+   */
+  window.showValidationModal = async function(scriptId, scriptName) {
+    const modal = document.getElementById('validation-modal');
+    const titleEl = document.getElementById('validation-modal-script-name');
+    const bodyEl = document.getElementById('validation-modal-body');
+
+    // Show modal
+    modal.classList.add('show');
+    titleEl.textContent = scriptName || scriptId;
+
+    // Show loading state
+    bodyEl.innerHTML = '<p class="small text-muted"><em>Loading validation results...</em></p>';
+
+    // Fetch validation data
+    await fetchAndDisplayValidation(scriptId);
+  };
+
+  /**
+   * Closes the validation modal and stops any active polling.
+   */
+  window.closeValidationModal = function() {
+    const modal = document.getElementById('validation-modal');
+    modal.classList.remove('show');
+
+    // Stop polling if active
+    if (validationModalPollingInterval) {
+      clearInterval(validationModalPollingInterval);
+      validationModalPollingInterval = null;
+    }
+  };
+
+  /**
+   * Fetches validation data from the GET endpoint and displays it in the modal.
+   * @param {string} scriptId - The script ID to fetch validation results for
+   */
+  async function fetchAndDisplayValidation(scriptId) {
+    try {
+      const response = await fetch(`/api/scripts/${scriptId}/validation-result`);
+      const data = await response.json();
+
+      if (data.status === 'ok') {
+        displayValidationData(data);
+
+        // Start polling if status is queued or running
+        if (data.validation_status === 'queued' || data.validation_status === 'running') {
+          startValidationPolling(scriptId);
+        }
+      } else {
+        displayValidationError(data.message || 'Failed to load validation results');
+      }
+    } catch (err) {
+      console.error('Failed to fetch validation results:', err);
+      displayValidationError(err.message);
+    }
+  }
+
+  /**
+   * Displays validation data in the modal based on status.
+   * @param {object} data - Validation result data from API
+   */
+  function displayValidationData(data) {
+    const statusBadge = document.getElementById('validation-modal-status-badge');
+    const timestamp = document.getElementById('validation-modal-timestamp');
+    const body = document.getElementById('validation-modal-body');
+    const rawOutput = document.getElementById('validation-modal-raw-output');
+
+    // Update status badge
+    const statusText = {
+      'queued': 'Queued',
+      'running': 'Running ⟳',
+      'passed': 'Passed ✅',
+      'failed': 'Failed ❌',
+      'not_run': 'Not run'
+    }[data.validation_status] || data.validation_status;
+
+    statusBadge.className = `validation-badge ${data.validation_status}`;
+    statusBadge.textContent = statusText;
+
+    // Add pulse animation for running status
+    if (data.validation_status === 'running') {
+      statusBadge.classList.add('validation-pulse');
+    } else {
+      statusBadge.classList.remove('validation-pulse');
+    }
+
+    // Update timestamp
+    if (data.validation_timestamp) {
+      const date = new Date(data.validation_timestamp * 1000);
+      timestamp.textContent = `Last tested: ${date.toLocaleString()}`;
+    } else {
+      timestamp.textContent = '';
+    }
+
+    // Update body based on status
+    if (data.validation_status === 'queued') {
+      body.innerHTML = `
+        <div style="padding: 2rem; text-align: center; color: #666;">
+          <p style="margin: 0; font-size: 1.1em;">⏳ Waiting to be validated...</p>
+          <p class="small text-muted" style="margin: 0.5rem 0 0 0;">This script is queued for validation and will run shortly.</p>
+        </div>
+      `;
+    } else if (data.validation_status === 'running') {
+      body.innerHTML = `
+        <div style="padding: 2rem; text-align: center; color: #17a2b8;">
+          <p style="margin: 0; font-size: 1.1em;" class="validation-pulse">⟳ Validation in progress...</p>
+          <p class="small text-muted" style="margin: 0.5rem 0 0 0;">This page will update automatically when validation completes.</p>
+        </div>
+      `;
+    } else if (data.validation_status === 'not_run') {
+      body.innerHTML = `
+        <div style="padding: 2rem; text-align: center; color: #666;">
+          <p style="margin: 0; font-size: 1.1em;">This script has not been validated yet.</p>
+          <p class="small text-muted" style="margin: 0.5rem 0 0 0;">Trigger validation from the Scripts page to see test results.</p>
+        </div>
+      `;
+    } else if (data.validation_status === 'passed' || data.validation_status === 'failed') {
+      // Display full test output
+      body.innerHTML = renderTestOutput(data);
+    }
+
+    // Update raw output section
+    if (data.validation_output) {
+      rawOutput.textContent = JSON.stringify(data.validation_output, null, 2);
+    } else if (data.validation_errors && data.validation_errors.length > 0) {
+      rawOutput.textContent = data.validation_errors.join('\n');
+    } else {
+      rawOutput.textContent = 'No raw output available';
+    }
+  }
+
+  /**
+   * Renders test output section for passed/failed validations.
+   * @param {object} data - Validation result data
+   * @returns {string} HTML string for test output
+   */
+  function renderTestOutput(data) {
+    const isPassed = data.validation_status === 'passed';
+    const output = data.validation_output || {};
+
+    let html = '';
+
+    // If validation_output is structured, display it nicely
+    if (typeof output === 'object' && output !== null) {
+      // Input section
+      if (output.input || output.test_input) {
+        const input = output.input || output.test_input;
+        html += `
+          <div class="test-output-section">
+            <h4>Test Input</h4>
+            <pre><code>${escapeHtml(typeof input === 'string' ? input : JSON.stringify(input, null, 2))}</code></pre>
+          </div>
+        `;
+      }
+
+      // Output section
+      if (output.output || output.actual_output) {
+        const actualOutput = output.output || output.actual_output;
+        html += `
+          <div class="test-output-section ${isPassed ? 'success' : ''}">
+            <h4>Actual Output</h4>
+            <pre><code>${escapeHtml(typeof actualOutput === 'string' ? actualOutput : JSON.stringify(actualOutput, null, 2))}</code></pre>
+          </div>
+        `;
+      }
+
+      // Expected output section (if available)
+      if (output.expected_output || output.expected) {
+        const expectedOutput = output.expected_output || output.expected;
+        html += `
+          <div class="test-output-section">
+            <h4>Expected Output</h4>
+            <pre><code>${escapeHtml(typeof expectedOutput === 'string' ? expectedOutput : JSON.stringify(expectedOutput, null, 2))}</code></pre>
+          </div>
+        `;
+      }
+
+      // Error section (for failed validations)
+      if (!isPassed && (output.error || output.errors || data.validation_errors)) {
+        const errors = output.error || output.errors || data.validation_errors;
+        html += `
+          <div class="test-output-section error">
+            <h4>Errors</h4>
+            <pre><code>${escapeHtml(Array.isArray(errors) ? errors.join('\n') : String(errors))}</code></pre>
+          </div>
+        `;
+      }
+
+      // Success message section
+      if (isPassed && (output.message || output.success)) {
+        html += `
+          <div class="test-output-section success">
+            <h4>✓ Validation Passed</h4>
+            <p style="margin: 0;">${escapeHtml(output.message || output.success || 'All tests passed successfully.')}</p>
+          </div>
+        `;
+      }
+    } else {
+      // Fallback: display raw output
+      html = `
+        <div class="test-output-section ${isPassed ? 'success' : 'error'}">
+          <h4>${isPassed ? '✓ Validation Passed' : '✗ Validation Failed'}</h4>
+          <pre><code>${escapeHtml(String(output))}</code></pre>
+        </div>
+      `;
+    }
+
+    // If no structured output, show errors
+    if (!html && data.validation_errors && data.validation_errors.length > 0) {
+      html = `
+        <div class="test-output-section error">
+          <h4>Errors</h4>
+          <pre><code>${escapeHtml(data.validation_errors.join('\n'))}</code></pre>
+        </div>
+      `;
+    }
+
+    // If still no content, show generic message
+    if (!html) {
+      html = `
+        <div style="padding: 1rem; text-align: center; color: #666;">
+          <p style="margin: 0;">No detailed test output available.</p>
+        </div>
+      `;
+    }
+
+    return html;
+  }
+
+  /**
+   * Displays an error message in the modal body.
+   * @param {string} message - Error message to display
+   */
+  function displayValidationError(message) {
+    const body = document.getElementById('validation-modal-body');
+    body.innerHTML = `
+      <div style="padding: 2rem; text-align: center;">
+        <p style="margin: 0; color: #e74c3c; font-size: 1.1em;">✗ Error loading validation results</p>
+        <p class="small text-muted" style="margin: 0.5rem 0 0 0;">${escapeHtml(message)}</p>
+      </div>
+    `;
+  }
+
+  /**
+   * Starts polling for validation updates (for queued/running scripts).
+   * @param {string} scriptId - The script ID to poll
+   */
+  function startValidationPolling(scriptId) {
+    // Stop any existing polling
+    if (validationModalPollingInterval) {
+      clearInterval(validationModalPollingInterval);
+    }
+
+    // Poll every 2 seconds
+    validationModalPollingInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/scripts/${scriptId}/validation-result`);
+        const data = await response.json();
+
+        if (data.status === 'ok') {
+          displayValidationData(data);
+
+          // Stop polling if terminal state reached
+          if (data.validation_status !== 'queued' && data.validation_status !== 'running') {
+            clearInterval(validationModalPollingInterval);
+            validationModalPollingInterval = null;
+          }
+        }
+      } catch (err) {
+        console.error('Polling error:', err);
+        // Don't stop polling on error - network might be temporarily down
+      }
+    }, 2000);
+  }
+
+  /**
+   * Escapes HTML special characters.
+   * @param {string} text - Text to escape
+   * @returns {string} Escaped text
+   */
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Close modal on backdrop click
+  document.addEventListener('click', function(e) {
+    const modal = document.getElementById('validation-modal');
+    if (e.target === modal) {
+      closeValidationModal();
+    }
+  });
+
+  // Close modal on Escape key
+  document.addEventListener('keydown', function(e) {
+    const modal = document.getElementById('validation-modal');
+    if (e.key === 'Escape' && modal.classList.contains('show')) {
+      closeValidationModal();
+    }
+  });
+</script>
