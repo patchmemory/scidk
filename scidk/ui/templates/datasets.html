@@ -1493,18 +1493,30 @@ window.addEventListener('DOMContentLoaded', () => {
   // ===== Neo4j Status =====
   async function fetchNeo4jStatus() {
     try {
-      const r = await fetch('/api/settings/neo4j');
+      const r = await fetch('/api/health/comprehensive');
       const j = await r.json();
       const light = document.getElementById('neo4j-light');
       const txt = document.getElementById('neo4j-status-text');
-      const ok = !!(j && j.connected);
+
+      // Check Neo4j component status from health check
+      const neo4jStatus = j?.components?.neo4j?.status || 'unavailable';
+      const ok = (neo4jStatus === 'connected');
+      const error = j?.components?.neo4j?.error;
 
       if (light) {
         light.classList.toggle('connected', ok);
         light.title = ok ? 'Connected' : 'Disconnected';
       }
       if (txt) {
-        txt.textContent = ok ? 'Neo4j: Connected' : (j && j.last_error ? ('Neo4j: Error — ' + j.last_error) : 'Neo4j: Not connected');
+        if (ok) {
+          txt.textContent = 'Neo4j: Connected';
+        } else if (neo4jStatus === 'not_configured') {
+          txt.textContent = 'Neo4j: Not configured';
+        } else if (error) {
+          txt.textContent = 'Neo4j: Error — ' + error;
+        } else {
+          txt.textContent = 'Neo4j: Not connected';
+        }
       }
     } catch (e) {
       const txt = document.getElementById('neo4j-status-text');
