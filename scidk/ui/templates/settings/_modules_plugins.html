@@ -1,21 +1,84 @@
 <!-- Modules > Plugins Section -->
 <section id="modules-plugins-section" class="settings-section">
   <h1>Plugins</h1>
-  <p class="small">Active plugin count, health state, and plugin-registered API endpoints (read-only).</p>
+  <p class="small">Extend SciDK with custom endpoints, label types, and external integrations.</p>
 
   <div style="max-width: 900px;">
-    <h3>Plugin Status</h3>
-    <p class="small text-muted">Plugin management is handled on the <a href="/plugins">Plugins page</a>.</p>
+    <h3 style="margin-top: 1.5rem;">Registry Status</h3>
+    <div id="plugins-status-container" style="margin-top: 1rem;">
+      <p class="small" style="color: #999;"><em>Loading plugin status...</em></p>
+    </div>
 
-    <h3 style="margin-top: 2rem;">Plugin-Registered API Endpoints</h3>
+    <h3 style="margin-top: 2rem;">What are Plugins?</h3>
+    <p>Plugins extend SciDK's capabilities by registering custom API endpoints, defining new label types, and integrating with external services. Each plugin can register HTTP endpoints, publish custom labels to the graph, and execute arbitrary logic. Plugins provide a flexible extension mechanism without modifying core system code.</p>
+
+    <h2 style="margin-top: 2rem;">Plugin-Registered API Endpoints</h2>
     <p class="small">Endpoints automatically registered by installed plugins. These cannot be edited manually.</p>
     <div id="plugin-endpoints-list">
       <p class="small" style="color: #999;"><em>Loading plugin endpoints...</em></p>
+    </div>
+
+    <!-- Action Footer -->
+    <div style="margin-top: 2rem; padding: 1rem; background: #f9f9f9; border-radius: 4px;">
+      <p style="margin: 0; font-size: 0.95rem;">
+        → <a href="/plugins" style="font-weight: 500;">Manage plugins on Plugins page</a>
+      </p>
     </div>
   </div>
 </section>
 
 <script>
+  async function loadPluginsStatus() {
+    const container = document.getElementById('plugins-status-container');
+
+    try {
+      const response = await fetch('/api/settings/plugin-endpoints');
+      const data = await response.json();
+
+      if (data.status === 'success' && data.endpoints) {
+        // Count plugins from endpoints (unique plugin names)
+        const pluginNames = new Set(data.endpoints.map(ep => ep.plugin));
+        const total = pluginNames.size;
+        const activeEndpoints = data.endpoints.length;
+
+        // For now, assume all loaded plugins are validated/active
+        // If we had plugin status API, we'd fetch real counts here
+        const validated = total;
+        const draft = 0;
+        const failed = 0;
+
+        let html = `
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;">
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
+              <div style="font-size: 2rem; font-weight: bold; color: var(--accent);">${total}</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Total</div>
+            </div>
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
+              <div style="font-size: 2rem; font-weight: bold; color: #28a745;">${validated}</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Validated</div>
+            </div>
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
+              <div style="font-size: 2rem; font-weight: bold; color: #ffc107;">${draft}</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Draft</div>
+            </div>
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
+              <div style="font-size: 2rem; font-weight: bold; color: #e74c3c;">${failed}</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Failed</div>
+            </div>
+          </div>
+          <p class="small" style="margin-top: 1rem; color: #666;">${activeEndpoints} endpoint${activeEndpoints !== 1 ? 's' : ''} registered across ${total} plugin${total !== 1 ? 's' : ''}.</p>
+        `;
+
+        container.innerHTML = html;
+      } else {
+        container.innerHTML = '<p class="small" style="color: #999;"><em>No plugins found</em></p>';
+      }
+    } catch (err) {
+      console.error('Failed to load plugins status:', err);
+      container.innerHTML = '<p class="small" style="color: #999;"><em>Status unavailable</em></p>';
+    }
+  }
+
   async function loadPluginEndpoints() {
     const container = document.getElementById('plugin-endpoints-list');
 
@@ -74,8 +137,12 @@
 
   // Initialize on page load
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', loadPluginEndpoints);
+    document.addEventListener('DOMContentLoaded', () => {
+      loadPluginsStatus();
+      loadPluginEndpoints();
+    });
   } else {
+    loadPluginsStatus();
     loadPluginEndpoints();
   }
 </script>

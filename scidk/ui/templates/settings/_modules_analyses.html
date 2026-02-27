@@ -1,21 +1,23 @@
 <!-- Modules > Analyses Section -->
 <section id="modules-analyses-section" class="settings-section">
   <h1>Analyses</h1>
-  <p class="small">Analytical scripts that run computations over your graph to extract insights, generate reports, or perform calculations.</p>
+  <p class="small">Run analytical computations over graph data to extract insights, generate reports, or perform calculations.</p>
 
   <div style="max-width: 800px;">
-    <h3>What are Analyses?</h3>
-    <p>Analysis modules are specialized scripts (Cypher queries or Python code) that read from the graph, perform computations, and write results back as nodes or properties. They enable reproducible analytical workflows, automated reporting, and data quality checks.</p>
-
-    <h3 style="margin-top: 1.5rem;">Analysis Registry Status</h3>
+    <h3 style="margin-top: 1.5rem;">Registry Status</h3>
     <div id="analyses-status-container" style="margin-top: 1rem;">
       <p class="small" style="color: #999;"><em>Loading analysis status...</em></p>
     </div>
 
+    <h3 style="margin-top: 2rem;">What are Analyses?</h3>
+    <p>Analysis modules are specialized scripts (Cypher queries or Python code) that read from the graph, perform computations, and write results back as nodes or properties. They enable reproducible analytical workflows, automated reporting, and data quality checks. Analyses run on-demand and store their output for review.</p>
+
+    <!-- Action Footer -->
     <div style="margin-top: 2rem; padding: 1rem; background: #f9f9f9; border-radius: 4px;">
-      <h4 style="margin-top: 0;">Authoring &amp; Execution</h4>
-      <p class="small" style="margin-bottom: 0.5rem;">Analysis scripts are created and executed on the <strong><a href="/scripts">Scripts page</a></strong>.</p>
-      <p class="small" style="margin: 0;">Results are viewed on the <strong><a href="/results">Results page</a></strong>, where you can see output data, execution history, and performance metrics.</p>
+      <p style="margin: 0; font-size: 0.95rem;">
+        → <a href="/scripts" style="font-weight: 500;">Author analyses on Scripts page</a><br>
+        → <a href="/results" style="font-weight: 500;">View results on Results page</a>
+      </p>
     </div>
   </div>
 </section>
@@ -37,25 +39,23 @@
         const failed = analyses.filter(s => s.validation_status === 'failed').length;
 
         let html = `
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
-            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px;">
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;">
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
               <div style="font-size: 2rem; font-weight: bold; color: var(--accent);">${total}</div>
-              <div class="small text-muted">Total Analyses</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Total</div>
             </div>
-            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px;">
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
               <div style="font-size: 2rem; font-weight: bold; color: #28a745;">${validated}</div>
-              <div class="small text-muted">Validated</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Validated</div>
             </div>
-            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px;">
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
               <div style="font-size: 2rem; font-weight: bold; color: #ffc107;">${draft}</div>
-              <div class="small text-muted">Draft</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Draft</div>
             </div>
-            ${failed > 0 ? `
-            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px;">
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
               <div style="font-size: 2rem; font-weight: bold; color: #e74c3c;">${failed}</div>
-              <div class="small text-muted">Failed/Error</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Failed</div>
             </div>
-            ` : ''}
           </div>
         `;
 
@@ -63,7 +63,7 @@
           html += `
             <div style="margin-top: 1rem; padding: 0.75rem; background: #f8d7da; border-left: 4px solid #e74c3c; border-radius: 4px;">
               <p class="small" style="margin: 0; color: #721c24;">
-                <strong>Warning:</strong> ${failed} analysis script${failed !== 1 ? 's have' : ' has'} failed validation or execution. Review on the <a href="/scripts">Scripts page</a>.
+                ${failed} analysis script${failed !== 1 ? 's have' : ' has'} failed validation. Review on the <a href="/scripts">Scripts page</a>.
               </p>
             </div>
           `;
@@ -71,7 +71,7 @@
           html += `
             <div style="margin-top: 1rem; padding: 0.75rem; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
               <p class="small" style="margin: 0; color: #856404;">
-                <strong>Note:</strong> ${draft} analysis script${draft !== 1 ? 's are' : ' is'} in draft state. Validate before running.
+                ${draft} analysis script${draft !== 1 ? 's are' : ' is'} in draft state. Validate on the <a href="/scripts">Scripts page</a>.
               </p>
             </div>
           `;

@@ -1,21 +1,22 @@
 <!-- Modules > Scripts Section -->
 <section id="modules-scripts-section" class="settings-section">
   <h1>Scripts</h1>
-  <p class="small">General-purpose Cypher queries and Python scripts for graph operations, data transformations, and automation.</p>
+  <p class="small">All registered scripts across all categories: analyses, links, interpreters, and general-purpose automation.</p>
 
   <div style="max-width: 800px;">
-    <h3>What are Scripts?</h3>
-    <p>Scripts are flexible execution modules that can perform any graph operation: data imports, schema migrations, batch updates, custom algorithms, or administrative tasks. Unlike analyses (which focus on read-only computations), scripts can modify the graph structure and are run on-demand rather than automatically.</p>
-
-    <h3 style="margin-top: 1.5rem;">Script Registry Status</h3>
+    <h3 style="margin-top: 1.5rem;">Registry Status</h3>
     <div id="scripts-status-container" style="margin-top: 1rem;">
       <p class="small" style="color: #999;"><em>Loading script status...</em></p>
     </div>
 
+    <h3 style="margin-top: 2rem;">What are Scripts?</h3>
+    <p>Scripts are flexible execution modules that perform graph operations, data transformations, analysis computations, file interpretation, or link creation. This registry includes all script types: analyses (read-only computations), interpreters (file parsing), links (relationship creation), and general-purpose automation. Scripts run on-demand and can modify the graph structure.</p>
+
+    <!-- Action Footer -->
     <div style="margin-top: 2rem; padding: 1rem; background: #f9f9f9; border-radius: 4px;">
-      <h4 style="margin-top: 0;">Authoring &amp; Execution</h4>
-      <p class="small" style="margin-bottom: 0.5rem;">Scripts are created, validated, and executed on the <strong><a href="/scripts">Scripts page</a></strong>.</p>
-      <p class="small" style="margin: 0;">You can write Cypher queries or Python code, define parameters, and track execution history.</p>
+      <p style="margin: 0; font-size: 0.95rem;">
+        → <a href="/scripts" style="font-weight: 500;">Open Scripts page</a>
+      </p>
     </div>
   </div>
 </section>
@@ -29,35 +30,31 @@
       const data = await response.json();
 
       if (data.status === 'ok' && data.scripts) {
-        // Filter for general scripts (exclude analyses/* and interpreters categories)
-        const scripts = data.scripts.filter(s =>
-          s.category && !s.category.startsWith('analyses/') && s.category !== 'interpreters'
-        );
+        // Show ALL scripts across all categories
+        const scripts = data.scripts;
         const total = scripts.length;
         const validated = scripts.filter(s => s.validation_status === 'validated' && s.is_active).length;
         const draft = scripts.filter(s => s.validation_status === 'draft').length;
         const failed = scripts.filter(s => s.validation_status === 'failed').length;
 
         let html = `
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
-            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px;">
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;">
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
               <div style="font-size: 2rem; font-weight: bold; color: var(--accent);">${total}</div>
-              <div class="small text-muted">Total Scripts</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Total</div>
             </div>
-            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px;">
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
               <div style="font-size: 2rem; font-weight: bold; color: #28a745;">${validated}</div>
-              <div class="small text-muted">Validated</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Validated</div>
             </div>
-            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px;">
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
               <div style="font-size: 2rem; font-weight: bold; color: #ffc107;">${draft}</div>
-              <div class="small text-muted">Draft</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Draft</div>
             </div>
-            ${failed > 0 ? `
-            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px;">
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
               <div style="font-size: 2rem; font-weight: bold; color: #e74c3c;">${failed}</div>
-              <div class="small text-muted">Failed/Error</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Failed</div>
             </div>
-            ` : ''}
           </div>
         `;
 
@@ -65,7 +62,7 @@
           html += `
             <div style="margin-top: 1rem; padding: 0.75rem; background: #f8d7da; border-left: 4px solid #e74c3c; border-radius: 4px;">
               <p class="small" style="margin: 0; color: #721c24;">
-                <strong>Warning:</strong> ${failed} script${failed !== 1 ? 's have' : ' has'} failed validation or execution. Review on the <a href="/scripts">Scripts page</a>.
+                ${failed} script${failed !== 1 ? 's have' : ' has'} failed validation. Review on the <a href="/scripts">Scripts page</a>.
               </p>
             </div>
           `;
@@ -73,7 +70,7 @@
           html += `
             <div style="margin-top: 1rem; padding: 0.75rem; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
               <p class="small" style="margin: 0; color: #856404;">
-                <strong>Note:</strong> ${draft} script${draft !== 1 ? 's are' : ' is'} in draft state. Validate before running.
+                ${draft} script${draft !== 1 ? 's are' : ' is'} in draft state. Validate on the <a href="/scripts">Scripts page</a>.
               </p>
             </div>
           `;

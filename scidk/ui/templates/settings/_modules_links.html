@@ -1,9 +1,18 @@
 <!-- Modules > Links Section -->
 <section id="modules-links-section" class="settings-section">
   <h1>Links</h1>
-  <p class="small">Configure fuzzy matching algorithms for automatic link creation between nodes. Links connect related entities based on string similarity (e.g., sample IDs, project names, or identifiers that may have typos or variations).</p>
+  <p class="small">Create relationships between nodes based on matching rules, string similarity, and external data sources.</p>
 
   <div style="max-width: 900px;">
+    <h3 style="margin-top: 1.5rem;">Registry Status</h3>
+    <div id="links-status-container" style="margin-top: 1rem;">
+      <p class="small" style="color: #999;"><em>Loading link script status...</em></p>
+    </div>
+
+    <h3 style="margin-top: 2rem;">What are Links?</h3>
+    <p>Links create relationships between nodes using matching rules, fuzzy string similarity, API data, or imported tables. Each link defines a matching strategy (exact, Levenshtein, Jaro-Winkler, etc.), threshold parameters, and writes relationship edges to the graph with confidence scores and provenance metadata. Links enable cross-referencing between datasets and entity resolution across data sources.</p>
+
+    <h2 style="margin-top: 2rem;">Algorithm Configuration</h2>
     <!-- Algorithm Explorer -->
     <div style="background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 4px; padding: 1.5rem; margin-bottom: 2rem;">
       <h2 style="margin-top: 0;">Algorithm Explorer</h2>
@@ -195,6 +204,14 @@
         </div>
         <div id="fuzzy-status" class="small" style="margin-top: 0.5rem;"></div>
       </form>
+    </div>
+
+    <!-- Action Footer -->
+    <div style="margin-top: 2rem; padding: 1rem; background: #f9f9f9; border-radius: 4px;">
+      <p style="margin: 0; font-size: 0.95rem;">
+        → <a href="/links" style="font-weight: 500;">View links on Links page</a><br>
+        → <a href="/scripts" style="font-weight: 500;">Author link scripts on Scripts page</a>
+      </p>
     </div>
   </div>
 </section>
@@ -726,10 +743,78 @@
     loadSettings();
   }
 
+  async function loadLinksStatus() {
+    const container = document.getElementById('links-status-container');
+
+    try {
+      const response = await fetch('/api/scripts/scripts');
+      const data = await response.json();
+
+      if (data.status === 'ok' && data.scripts) {
+        // Filter for link scripts
+        const links = data.scripts.filter(s => s.category === 'links');
+        const total = links.length;
+        const validated = links.filter(s => s.validation_status === 'validated' && s.is_active).length;
+        const draft = links.filter(s => s.validation_status === 'draft').length;
+        const failed = links.filter(s => s.validation_status === 'failed').length;
+
+        let html = `
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;">
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
+              <div style="font-size: 2rem; font-weight: bold; color: var(--accent);">${total}</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Total</div>
+            </div>
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
+              <div style="font-size: 2rem; font-weight: bold; color: #28a745;">${validated}</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Validated</div>
+            </div>
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
+              <div style="font-size: 2rem; font-weight: bold; color: #ffc107;">${draft}</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Draft</div>
+            </div>
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
+              <div style="font-size: 2rem; font-weight: bold; color: #e74c3c;">${failed}</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Failed</div>
+            </div>
+          </div>
+        `;
+
+        if (failed > 0) {
+          html += `
+            <div style="margin-top: 1rem; padding: 0.75rem; background: #f8d7da; border-left: 4px solid #e74c3c; border-radius: 4px;">
+              <p class="small" style="margin: 0; color: #721c24;">
+                ${failed} link script${failed !== 1 ? 's have' : ' has'} failed validation. Review on the <a href="/scripts">Scripts page</a>.
+              </p>
+            </div>
+          `;
+        } else if (draft > 0) {
+          html += `
+            <div style="margin-top: 1rem; padding: 0.75rem; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
+              <p class="small" style="margin: 0; color: #856404;">
+                ${draft} link script${draft !== 1 ? 's are' : ' is'} in draft state. Validate on the <a href="/scripts">Scripts page</a>.
+              </p>
+            </div>
+          `;
+        }
+
+        container.innerHTML = html;
+      } else {
+        container.innerHTML = '<p class="small" style="color: #999;"><em>No link scripts found</em></p>';
+      }
+    } catch (err) {
+      console.error('Failed to load links status:', err);
+      container.innerHTML = '<p class="small" style="color: #999;"><em>Status unavailable</em></p>';
+    }
+  }
+
   // Initialize on page load
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initFuzzyMatching);
+    document.addEventListener('DOMContentLoaded', () => {
+      loadLinksStatus();
+      initFuzzyMatching();
+    });
   } else {
+    loadLinksStatus();
     initFuzzyMatching();
   }
 </script>
