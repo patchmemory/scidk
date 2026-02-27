@@ -41,6 +41,14 @@
           <select id="table-format-target-label" class="form-control" data-testid="table-format-target-label">
             <option value="">-- Select Label --</option>
           </select>
+          <div id="custom-label-note" style="display: none;"></div>
+          <div style="margin-top: 0.5rem;">
+            <label class="form-check-label small" style="cursor: pointer;">
+              <input type="checkbox" id="use-custom-label" class="form-check-input" style="margin-right: 0.25rem;">
+              or enter custom label name
+            </label>
+            <input type="text" id="custom-label-name" class="form-control form-control-sm" placeholder="Enter label name..." style="display: none; margin-top: 0.25rem;" data-testid="custom-label-name">
+          </div>
         </div>
         <div style="display: flex; align-items: end; gap: 0.5rem;">
           <div class="form-check">
@@ -102,6 +110,22 @@
     const previewDiv = document.getElementById('table-format-preview');
     const previewContent = document.getElementById('table-format-preview-content');
 
+    // Custom label toggle
+    const useCustomLabel = document.getElementById('use-custom-label');
+    const customLabelName = document.getElementById('custom-label-name');
+
+    useCustomLabel.addEventListener('change', () => {
+      if (useCustomLabel.checked) {
+        customLabelName.style.display = 'block';
+        targetLabelSelect.disabled = true;
+        targetLabelSelect.value = '';
+      } else {
+        customLabelName.style.display = 'none';
+        targetLabelSelect.disabled = false;
+        customLabelName.value = '';
+      }
+    });
+
     // Update delimiter placeholder based on file type
     fileTypeSelect.addEventListener('change', () => {
       const fileType = fileTypeSelect.value;
@@ -118,10 +142,13 @@
     });
 
     async function loadLabels() {
+      const customLabelNote = document.getElementById('custom-label-note');
+
       try {
         const response = await fetch('/api/labels');
         const data = await response.json();
-        if (data.status === 'success' && data.labels) {
+
+        if (data.status === 'success' && data.labels && data.labels.length > 0) {
           targetLabelSelect.innerHTML = '<option value="">-- Select Label --</option>';
           data.labels.forEach(label => {
             const option = document.createElement('option');
@@ -129,9 +156,37 @@
             option.textContent = label.name;
             targetLabelSelect.appendChild(option);
           });
+
+          if (customLabelNote) {
+            customLabelNote.style.display = 'none';
+          }
+        } else {
+          // No labels found
+          targetLabelSelect.innerHTML = '<option value="">-- No labels available --</option>';
+
+          if (customLabelNote) {
+            customLabelNote.style.display = 'block';
+            customLabelNote.innerHTML = `
+              <p class="small text-muted" style="margin: 0.5rem 0 0 0">
+                No labels found. Make sure Neo4j is connected and labels have been defined on the
+                <a href="#labels" style="color:#007bff">Labels page</a>.
+                You can also enter a custom label name below.
+              </p>
+            `;
+          }
         }
       } catch (err) {
         console.error('Failed to load labels:', err);
+        targetLabelSelect.innerHTML = '<option value="">-- Error loading labels --</option>';
+
+        if (customLabelNote) {
+          customLabelNote.style.display = 'block';
+          customLabelNote.innerHTML = `
+            <p class="small text-warning" style="margin: 0.5rem 0 0 0">
+              Could not load labels from Neo4j. Check your connection or enter a custom label name below.
+            </p>
+          `;
+        }
       }
     }
 
@@ -195,6 +250,10 @@
       delimiterInput.disabled = false;
       encodingSelect.value = 'utf-8';
       targetLabelSelect.value = '';
+      targetLabelSelect.disabled = false;
+      useCustomLabel.checked = false;
+      customLabelName.value = '';
+      customLabelName.style.display = 'none';
       hasHeaderCheck.checked = true;
       descriptionInput.value = '';
       btnSave.textContent = 'Save Format';
@@ -213,6 +272,9 @@
         return;
       }
 
+      // Use custom label if toggled, otherwise use dropdown
+      const targetLabel = useCustomLabel.checked ? customLabelName.value.trim() : targetLabelSelect.value;
+
       const formatData = {
         name: name,
         file_type: fileType,
@@ -220,7 +282,7 @@
         encoding: encodingSelect.value,
         has_header: hasHeaderCheck.checked,
         header_row: hasHeaderCheck.checked ? 0 : null,
-        target_label: targetLabelSelect.value || null,
+        target_label: targetLabel || null,
         description: descriptionInput.value.trim() || null
       };
 
@@ -327,9 +389,32 @@
           fileTypeSelect.value = format.file_type;
           delimiterInput.value = format.delimiter || '';
           encodingSelect.value = format.encoding;
-          targetLabelSelect.value = format.target_label || '';
           hasHeaderCheck.checked = format.has_header;
           descriptionInput.value = format.description || '';
+
+          // Handle target label - check if it exists in dropdown or use custom
+          if (format.target_label) {
+            const labelExists = Array.from(targetLabelSelect.options).some(opt => opt.value === format.target_label);
+            if (labelExists) {
+              targetLabelSelect.value = format.target_label;
+              useCustomLabel.checked = false;
+              customLabelName.style.display = 'none';
+              targetLabelSelect.disabled = false;
+            } else {
+              // Label not in dropdown, use custom input
+              useCustomLabel.checked = true;
+              customLabelName.value = format.target_label;
+              customLabelName.style.display = 'block';
+              targetLabelSelect.disabled = true;
+              targetLabelSelect.value = '';
+            }
+          } else {
+            targetLabelSelect.value = '';
+            useCustomLabel.checked = false;
+            customLabelName.style.display = 'none';
+            targetLabelSelect.disabled = false;
+          }
+
           btnSave.textContent = 'Update Format';
           btnCancel.style.display = 'inline-block';
           messageDiv.textContent = 'Editing: ' + format.name;

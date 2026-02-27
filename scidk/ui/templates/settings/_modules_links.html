@@ -424,58 +424,182 @@
       });
     }
 
+    // Client-side matching functions
+    function levenshteinDistance(a, b) {
+      const matrix = [];
+      for (let i = 0; i <= b.length; i++) {
+        matrix[i] = [i];
+      }
+      for (let j = 0; j <= a.length; j++) {
+        matrix[0][j] = j;
+      }
+      for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+          if (b.charAt(i - 1) === a.charAt(j - 1)) {
+            matrix[i][j] = matrix[i - 1][j - 1];
+          } else {
+            matrix[i][j] = Math.min(
+              matrix[i - 1][j - 1] + 1,
+              matrix[i][j - 1] + 1,
+              matrix[i - 1][j] + 1
+            );
+          }
+        }
+      }
+      return matrix[b.length][a.length];
+    }
+
+    function levenshteinSimilarity(a, b) {
+      const distance = levenshteinDistance(a, b);
+      const maxLen = Math.max(a.length, b.length);
+      return maxLen === 0 ? 1.0 : 1.0 - (distance / maxLen);
+    }
+
+    function jaroWinklerSimilarity(s1, s2) {
+      // Simplified Jaro-Winkler implementation
+      const m1 = s1.length;
+      const m2 = s2.length;
+
+      if (m1 === 0 && m2 === 0) return 1.0;
+      if (m1 === 0 || m2 === 0) return 0.0;
+
+      const matchDistance = Math.floor(Math.max(m1, m2) / 2) - 1;
+      const s1Matches = new Array(m1).fill(false);
+      const s2Matches = new Array(m2).fill(false);
+
+      let matches = 0;
+      for (let i = 0; i < m1; i++) {
+        const start = Math.max(0, i - matchDistance);
+        const end = Math.min(i + matchDistance + 1, m2);
+
+        for (let j = start; j < end; j++) {
+          if (s2Matches[j] || s1[i] !== s2[j]) continue;
+          s1Matches[i] = true;
+          s2Matches[j] = true;
+          matches++;
+          break;
+        }
+      }
+
+      if (matches === 0) return 0.0;
+
+      let transpositions = 0;
+      let k = 0;
+      for (let i = 0; i < m1; i++) {
+        if (!s1Matches[i]) continue;
+        while (!s2Matches[k]) k++;
+        if (s1[i] !== s2[k]) transpositions++;
+        k++;
+      }
+
+      const jaro = (matches / m1 + matches / m2 + (matches - transpositions / 2) / matches) / 3;
+
+      // Winkler modification
+      let prefix = 0;
+      for (let i = 0; i < Math.min(m1, m2, 4); i++) {
+        if (s1[i] === s2[i]) prefix++;
+        else break;
+      }
+
+      return jaro + prefix * 0.1 * (1 - jaro);
+    }
+
+    function soundex(s) {
+      // Simplified Soundex algorithm
+      const code = s.toUpperCase().replace(/[^A-Z]/g, '');
+      if (code.length === 0) return '0000';
+
+      const first = code[0];
+      const coded = code.slice(1).replace(/[AEIOUHWY]/g, '0')
+        .replace(/[BFPV]/g, '1')
+        .replace(/[CGJKQSXZ]/g, '2')
+        .replace(/[DT]/g, '3')
+        .replace(/[L]/g, '4')
+        .replace(/[MN]/g, '5')
+        .replace(/[R]/g, '6');
+
+      return (first + coded + '0000').replace(/(\d)\1+/g, '$1').slice(0, 4);
+    }
+
+    function phoneticSimilarity(a, b) {
+      return soundex(a) === soundex(b) ? 1.0 : 0.0;
+    }
+
+    function computeSimilarity(a, b, algorithm) {
+      // Normalize strings
+      a = a.toLowerCase().trim();
+      b = b.toLowerCase().trim();
+
+      switch (algorithm) {
+        case 'exact':
+          return a === b ? 1.0 : 0.0;
+        case 'levenshtein':
+          return levenshteinSimilarity(a, b);
+        case 'jaro_winkler':
+          return jaroWinklerSimilarity(a, b);
+        case 'phonetic':
+          return phoneticSimilarity(a, b);
+        default:
+          return 0.0;
+      }
+    }
+
     // Demo "Try It" button
-    demoTryButton.addEventListener('click', async () => {
+    demoTryButton.addEventListener('click', () => {
       const algorithm = demoAlgorithm.value;
       const threshold = parseFloat(demoThreshold.value) / 100;
 
       demoResults.style.display = 'block';
+
+      // Check if algorithm requires server-side processing
+      if (algorithm.startsWith('apoc_') || algorithm === 'hybrid') {
+        demoResultsContent.innerHTML = `
+          <p class="small text-muted">
+            <strong>${algorithm === 'hybrid' ? 'Hybrid' : 'Graph'} matching runs server-side</strong> —
+            it requires Neo4j and cannot be demonstrated in this client-side preview.
+          </p>
+          <p class="small text-muted">
+            Configure your default settings below and test ${algorithm === 'hybrid' ? 'hybrid' : 'graph'} matching
+            via the <a href="#links" style="color:#007bff">Links page</a> with real data.
+          </p>
+        `;
+        return;
+      }
+
       demoResultsContent.innerHTML = '<p class="small text-muted">Computing matches...</p>';
 
-      try {
-        const response = await fetch('/api/settings/fuzzy-matching/demo', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            pairs: samplePairs,
-            algorithm: algorithm,
-            threshold: threshold
-          })
+      // Compute matches client-side
+      setTimeout(() => {
+        const results = samplePairs.map(pair => ({
+          a: pair.a,
+          b: pair.b,
+          score: computeSimilarity(pair.a, pair.b, algorithm)
+        }));
+
+        let html = '<table style="width:100%; font-size:0.9em; border-collapse:collapse">';
+        html += '<thead><tr style="border-bottom:1px solid #ddd"><th style="padding:0.5rem; text-align:left">String A</th><th style="padding:0.5rem; text-align:left">String B</th><th style="padding:0.5rem; text-align:left">Score</th><th style="padding:0.5rem; text-align:left">Match?</th></tr></thead>';
+        html += '<tbody>';
+
+        results.forEach(result => {
+          const match = result.score >= threshold;
+          html += `
+            <tr style="border-bottom:1px solid #eee">
+              <td style="padding:0.5rem"><code>${escapeHtml(result.a)}</code></td>
+              <td style="padding:0.5rem"><code>${escapeHtml(result.b)}</code></td>
+              <td style="padding:0.5rem">${result.score.toFixed(3)}</td>
+              <td style="padding:0.5rem">
+                <span class="badge" style="background:${match ? '#28a745' : '#6c757d'}; color:#fff">
+                  ${match ? '✓ Match' : '✗ No Match'}
+                </span>
+              </td>
+            </tr>
+          `;
         });
 
-        const data = await response.json();
-
-        if (data.status === 'success' && data.results) {
-          const results = data.results;
-          let html = '<table style="width:100%; font-size:0.9em; border-collapse:collapse">';
-          html += '<thead><tr style="border-bottom:1px solid #ddd"><th style="padding:0.5rem; text-align:left">String A</th><th style="padding:0.5rem; text-align:left">String B</th><th style="padding:0.5rem; text-align:left">Score</th><th style="padding:0.5rem; text-align:left">Match?</th></tr></thead>';
-          html += '<tbody>';
-
-          results.forEach(result => {
-            const match = result.score >= threshold;
-            html += `
-              <tr style="border-bottom:1px solid #eee">
-                <td style="padding:0.5rem"><code>${escapeHtml(result.a)}</code></td>
-                <td style="padding:0.5rem"><code>${escapeHtml(result.b)}</code></td>
-                <td style="padding:0.5rem">${result.score.toFixed(3)}</td>
-                <td style="padding:0.5rem">
-                  <span class="badge" style="background:${match ? '#28a745' : '#6c757d'}; color:#fff">
-                    ${match ? '✓ Match' : '✗ No Match'}
-                  </span>
-                </td>
-              </tr>
-            `;
-          });
-
-          html += '</tbody></table>';
-          html += `<p class="small text-muted" style="margin-top:0.75rem">Matched ${results.filter(r => r.score >= threshold).length} of ${results.length} pairs at threshold ${threshold.toFixed(2)}</p>`;
-          demoResultsContent.innerHTML = html;
-        } else {
-          demoResultsContent.innerHTML = `<p class="small text-danger">Failed to compute matches: ${data.error || 'Unknown error'}</p>`;
-        }
-      } catch (err) {
-        demoResultsContent.innerHTML = `<p class="small text-danger">Error: ${err.message}</p>`;
-      }
+        html += '</tbody></table>';
+        html += `<p class="small text-muted" style="margin-top:0.75rem">Matched ${results.filter(r => r.score >= threshold).length} of ${results.length} pairs at threshold ${threshold.toFixed(2)}</p>`;
+        demoResultsContent.innerHTML = html;
+      }, 100);
     });
 
     // Load current settings
