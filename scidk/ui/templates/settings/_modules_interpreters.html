@@ -521,7 +521,7 @@
 
         const interpreterNames = interpreters.map(interp => {
           const statusColor = interp.enabled ? '#28a745' : '#6c757d';
-          return `<span style="color: ${statusColor};">${escapeHtml(interp.name)}</span>`;
+          return `<a href="/scripts?script=${encodeURIComponent(interp.id)}" style="color: ${statusColor}; text-decoration: none;" title="Open ${escapeHtml(interp.name)} in Scripts page">${escapeHtml(interp.name)}</a>`;
         }).join(', ');
 
         const allEnabled = interpreters.every(i => i.enabled);

@@ -28,16 +28,15 @@
       const response = await fetch('/api/scripts/scripts');
       const data = await response.json();
 
-      if (data.status === 'success' && data.scripts) {
-        // Filter for general scripts (exclude analyses/interpreters)
+      if (data.status === 'ok' && data.scripts) {
+        // Filter for general scripts (exclude analyses/* and interpreters categories)
         const scripts = data.scripts.filter(s =>
-          (s.category !== 'analysis' && s.type !== 'analysis') &&
-          (s.category !== 'interpreter' && s.type !== 'interpreter')
+          s.category && !s.category.startsWith('analyses/') && s.category !== 'interpreters'
         );
         const total = scripts.length;
-        const validated = scripts.filter(s => s.status === 'validated' || s.status === 'active').length;
-        const draft = scripts.filter(s => s.status === 'draft').length;
-        const failed = scripts.filter(s => s.status === 'failed' || s.status === 'error').length;
+        const validated = scripts.filter(s => s.validation_status === 'validated' && s.is_active).length;
+        const draft = scripts.filter(s => s.validation_status === 'draft').length;
+        const failed = scripts.filter(s => s.validation_status === 'failed').length;
 
         let html = `
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
