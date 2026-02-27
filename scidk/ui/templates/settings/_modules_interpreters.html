@@ -85,9 +85,10 @@
     </div>
 
     <h2 style="margin-top: 2rem;">Default File Extension Assignments</h2>
-    <p class="small">Configure which interpreter handles which file extensions by default. Per-file overrides can be set on the Files page.</p>
-    <div style="padding: 1rem; background: #f9f9f9; border-radius: 4px; margin-top: 1rem;">
-      <p class="small text-muted">Default extension mappings feature coming soon. Currently, interpreters are auto-detected based on file extension and MIME type.</p>
+    <p class="small">Shows which interpreter handles which file extensions by default. Per-file overrides can be set on the <a href="/files">Files page</a>.</p>
+
+    <div id="extension-assignments-container" style="margin-top: 1rem;">
+      <p class="small" style="color: #999;"><em>Loading extension assignments...</em></p>
     </div>
   </div>
 </section>
@@ -469,10 +470,98 @@
     loadFormats();
   }
 
+  async function loadExtensionAssignments() {
+    const container = document.getElementById('extension-assignments-container');
+
+    try {
+      const response = await fetch('/api/interpreters');
+      const interpreters = await response.json();
+
+      // Build extension -> interpreter mapping
+      const extensionMap = {};
+      interpreters.forEach(interp => {
+        if (interp.extensions && interp.extensions.length > 0) {
+          interp.extensions.forEach(ext => {
+            if (!extensionMap[ext]) {
+              extensionMap[ext] = [];
+            }
+            extensionMap[ext].push({
+              name: interp.name,
+              id: interp.id,
+              enabled: interp.enabled
+            });
+          });
+        }
+      });
+
+      // Sort extensions alphabetically
+      const sortedExtensions = Object.keys(extensionMap).sort();
+
+      if (sortedExtensions.length === 0) {
+        container.innerHTML = '<p class="small" style="color: #999;"><em>No extension assignments found</em></p>';
+        return;
+      }
+
+      // Render table
+      let html = `
+        <table style="width: 100%; border-collapse: collapse; background: white; border: 1px solid #ddd; border-radius: 4px;">
+          <thead>
+            <tr style="background: #f0f0f0; border-bottom: 2px solid #ccc;">
+              <th style="padding: 0.75rem; text-align: left; font-weight: 600; width: 25%;">File Extension</th>
+              <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Assigned Interpreter(s)</th>
+              <th style="padding: 0.75rem; text-align: left; font-weight: 600; width: 15%;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      sortedExtensions.forEach((ext, index) => {
+        const interpreters = extensionMap[ext];
+        const borderStyle = index < sortedExtensions.length - 1 ? 'border-bottom: 1px solid #e0e0e0;' : '';
+
+        const interpreterNames = interpreters.map(interp => {
+          const statusColor = interp.enabled ? '#28a745' : '#6c757d';
+          return `<span style="color: ${statusColor};">${escapeHtml(interp.name)}</span>`;
+        }).join(', ');
+
+        const allEnabled = interpreters.every(i => i.enabled);
+        const someEnabled = interpreters.some(i => i.enabled);
+        const statusBadge = allEnabled
+          ? '<span class="badge" style="background: #28a745; color: white;">Active</span>'
+          : someEnabled
+            ? '<span class="badge" style="background: #ffc107; color: #000;">Partial</span>'
+            : '<span class="badge" style="background: #6c757d; color: white;">Disabled</span>';
+
+        html += `
+          <tr style="${borderStyle}">
+            <td style="padding: 0.75rem; font-family: 'Courier New', monospace; font-size: 0.9em;">${escapeHtml(ext)}</td>
+            <td style="padding: 0.75rem; font-size: 0.9em;">${interpreterNames}</td>
+            <td style="padding: 0.75rem;">${statusBadge}</td>
+          </tr>
+        `;
+      });
+
+      html += `
+          </tbody>
+        </table>
+      `;
+
+      container.innerHTML = html;
+
+    } catch (err) {
+      console.error('Failed to load extension assignments:', err);
+      container.innerHTML = '<p class="small" style="color: #f48771;">Error loading extension assignments</p>';
+    }
+  }
+
   // Initialize on page load
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initTableFormats);
+    document.addEventListener('DOMContentLoaded', () => {
+      initTableFormats();
+      loadExtensionAssignments();
+    });
   } else {
     initTableFormats();
+    loadExtensionAssignments();
   }
 </script>
