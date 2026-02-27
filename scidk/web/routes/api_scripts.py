@@ -270,9 +270,6 @@ def update_script(script_id: str):
         if not script:
             return jsonify({"status": "error", "message": "Script not found"}), 404
 
-        if script.category == 'builtin':
-            return jsonify({"status": "error", "message": "Cannot modify built-in scripts"}), 403
-
         data = request.get_json()
 
         # Check if code is being changed
@@ -289,6 +286,11 @@ def update_script(script_id: str):
         if code_changed:
             script.mark_as_edited()
             manager.clear_dependencies(script.id)
+
+            # If this is a built-in script, mark it as modified
+            if script.source == 'built-in':
+                script.modified = True
+                script.validation_status = 'queued'  # Queue for revalidation
 
         updated_script = manager.update_script(script)
 

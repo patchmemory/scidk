@@ -38,9 +38,13 @@ class Script:
         # Validation and activation fields
         validation_status: str = 'draft',  # draft, validated, failed
         validation_errors: Optional[List[str]] = None,
+        validation_output: Optional[str] = None,  # Complete test run output
         validation_timestamp: Optional[float] = None,
         is_active: bool = False,
-        docstring: str = ''
+        docstring: str = '',
+        # Module registry pattern fields
+        source: str = 'custom',  # 'built-in' or 'custom'
+        modified: bool = False  # True if built-in script has been edited
     ):
         self.id = id
         self.name = name
@@ -57,8 +61,13 @@ class Script:
         # Validation and activation
         self.validation_status = validation_status  # draft, validated, failed
         self.validation_errors = validation_errors or []
+        self.validation_output = validation_output  # Full test results
         self.validation_timestamp = validation_timestamp
         self.is_active = is_active  # Only validated scripts can be active
+
+        # Module registry pattern
+        self.source = source  # 'built-in' or 'custom'
+        self.modified = modified  # Tracks if built-in has been edited
 
         # Auto-extract docstring if not provided and code is available
         if not docstring and code:
@@ -99,9 +108,12 @@ class Script:
             'updated_at': self.updated_at,
             'validation_status': self.validation_status,
             'validation_errors': self.validation_errors,
+            'validation_output': self.validation_output,
             'validation_timestamp': self.validation_timestamp,
             'is_active': self.is_active,
-            'docstring': self.docstring
+            'docstring': self.docstring,
+            'source': self.source,
+            'modified': self.modified
         }
 
     @classmethod
@@ -121,9 +133,12 @@ class Script:
             updated_at=data.get('updated_at'),
             validation_status=data.get('validation_status', 'draft'),
             validation_errors=data.get('validation_errors', []),
+            validation_output=data.get('validation_output'),
             validation_timestamp=data.get('validation_timestamp'),
             is_active=data.get('is_active', False),
-            docstring=data.get('docstring', '')
+            docstring=data.get('docstring', ''),
+            source=data.get('source', 'custom'),
+            modified=data.get('modified', False)
         )
 
 
@@ -222,8 +237,9 @@ class ScriptsManager:
             INSERT INTO scripts
             (id, name, description, language, category, code, parameters, tags,
              created_at, created_by, updated_at, validation_status, validation_errors,
-             validation_timestamp, is_active, docstring, is_file_based)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             validation_output, validation_timestamp, is_active, docstring, is_file_based,
+             source, modified)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 script.id,
@@ -239,10 +255,13 @@ class ScriptsManager:
                 script.updated_at,
                 script.validation_status,
                 json.dumps(script.validation_errors),
+                script.validation_output,
                 script.validation_timestamp,
                 1 if script.is_active else 0,
                 script.docstring,
-                0  # is_file_based = 0 for database scripts
+                0,  # is_file_based = 0 for database scripts
+                script.source,
+                1 if script.modified else 0
             )
         )
         self.conn.commit()
@@ -338,8 +357,9 @@ class ScriptsManager:
             UPDATE scripts
             SET name = ?, description = ?, language = ?, category = ?,
                 code = ?, parameters = ?, tags = ?, updated_at = ?,
-                validation_status = ?, validation_errors = ?,
-                validation_timestamp = ?, is_active = ?, docstring = ?
+                validation_status = ?, validation_errors = ?, validation_output = ?,
+                validation_timestamp = ?, is_active = ?, docstring = ?,
+                source = ?, modified = ?
             WHERE id = ?
             """,
             (
@@ -353,9 +373,12 @@ class ScriptsManager:
                 script.updated_at,
                 script.validation_status,
                 json.dumps(script.validation_errors),
+                script.validation_output,
                 script.validation_timestamp,
                 1 if script.is_active else 0,
                 script.docstring,
+                script.source,
+                1 if script.modified else 0,
                 script.id
             )
         )
@@ -833,12 +856,12 @@ class ScriptsManager:
     def _row_to_script(self, row: Tuple) -> Script:
         """Convert database row to Script.
 
-        Row columns (from migrations.py v18):
+        Row columns (from migrations.py v21):
         0: id, 1: name, 2: description, 3: language, 4: category, 5: code,
         6: parameters, 7: tags, 8: created_at, 9: created_by, 10: updated_at,
         11: file_path, 12: is_file_based,
         13: validation_status, 14: validation_timestamp, 15: validation_errors,
-        16: is_active, 17: docstring
+        16: is_active, 17: docstring, 18: source, 19: modified, 20: validation_output
         """
         return Script(
             id=row[0],
@@ -852,12 +875,16 @@ class ScriptsManager:
             created_at=row[8],
             created_by=row[9],
             updated_at=row[10],
-            # Transparency layer columns (added in migration v18)
+            # Validation and activation columns (added in migration v18)
             validation_status=row[13] if len(row) > 13 and row[13] else 'draft',
             validation_timestamp=row[14] if len(row) > 14 else None,
             validation_errors=json.loads(row[15]) if len(row) > 15 and row[15] else [],
             is_active=bool(row[16]) if len(row) > 16 else False,
-            docstring=row[17] if len(row) > 17 else ''
+            docstring=row[17] if len(row) > 17 else '',
+            # Module registry pattern columns (added in migration v21)
+            source=row[18] if len(row) > 18 and row[18] else 'custom',
+            modified=bool(row[19]) if len(row) > 19 else False,
+            validation_output=row[20] if len(row) > 20 else None
         )
 
     def _row_to_result(self, row: Tuple) -> ScriptExecution:

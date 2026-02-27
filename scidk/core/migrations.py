@@ -659,6 +659,26 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 20)
             version = 20
 
+        # v21: Add source, modified, validation_output fields for Universal Module Registry Pattern
+        if version < 21:
+            # Add source tracking for built-in vs custom scripts
+            cur.execute("ALTER TABLE scripts ADD COLUMN source TEXT DEFAULT 'custom';")
+
+            # Add modified flag to track if built-in scripts have been edited
+            cur.execute("ALTER TABLE scripts ADD COLUMN modified INTEGER DEFAULT 0;")
+
+            # Add validation_output to store complete test run results
+            # (separate from validation_errors which only stores error messages)
+            cur.execute("ALTER TABLE scripts ADD COLUMN validation_output TEXT;")
+
+            # Create indexes for efficient filtering
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scripts_source ON scripts(source);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scripts_modified ON scripts(modified);")
+
+            conn.commit()
+            _set_version(conn, 21)
+            version = 21
+
         return version
     finally:
         if own:
