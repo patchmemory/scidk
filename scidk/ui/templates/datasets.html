@@ -315,6 +315,15 @@
     color: #1976d2;
   }
 
+  /* Snapshot config diff visualization */
+  .row-config-unchanged {
+    background: #d4edda !important;
+  }
+  .row-config-removed {
+    background: #e0e0e0 !important;
+  }
+  /* row-config-new and default (no class) have no special background */
+
   /* Neo4j status indicator */
   .neo4j-status {
     display: flex;
@@ -581,6 +590,80 @@
 
 <!-- Include Interpreter Modal Component -->
 {% include 'files/_interpreter_modal.html' %}
+
+<!-- Snapshot Configuration Modal -->
+<div class="modal fade" id="snapshot-config-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="snapshot-config-modal-title">New Snapshot</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <!-- Diff Legend (only shown in Reconfigure mode) -->
+        <div id="snapshot-diff-legend" class="alert alert-info" style="display: none; font-size: 0.875rem;">
+          <strong>Selection Changes:</strong>
+          <span style="background: #d4edda; padding: 0.125rem 0.375rem; border-radius: 3px; margin-left: 0.5rem;">☑ Green</span> = Unchanged (in saved config)
+          <span style="padding: 0.125rem 0.375rem; margin-left: 0.5rem;">☑ No tint</span> = New addition
+          <span style="background: #e0e0e0; padding: 0.125rem 0.375rem; border-radius: 3px; margin-left: 0.5rem;">☐ Grey</span> = Removed (was in saved config)
+          <span style="padding: 0.125rem 0.375rem; margin-left: 0.5rem;">☐ No tint</span> = Not selected
+        </div>
+
+        <!-- Snapshot Name -->
+        <div class="mb-3">
+          <label for="snapshot-name-input" class="form-label">Snapshot Name</label>
+          <input type="text" class="form-control" id="snapshot-name-input" placeholder="e.g., Lab Data - Core Files">
+        </div>
+
+        <!-- Server Selection -->
+        <div class="mb-3">
+          <label for="snapshot-server-select" class="form-label">Server</label>
+          <select class="form-select" id="snapshot-server-select">
+            <option value="">Select a server...</option>
+          </select>
+        </div>
+
+        <!-- File Browser (reuses Phase 4 checkbox infrastructure) -->
+        <div style="border: 1px solid #dee2e6; border-radius: 4px; padding: 1rem; max-height: 400px; overflow-y: auto;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <h6 style="margin: 0;">Select Files and Folders</h6>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="modal-select-all-btn">Select All</button>
+          </div>
+
+          <!-- Breadcrumb for modal -->
+          <div id="modal-breadcrumb" class="small text-muted mb-2"></div>
+
+          <!-- File table in modal -->
+          <div class="file-table selection-mode" id="modal-file-table">
+            <table class="table table-sm table-hover">
+              <thead>
+                <tr>
+                  <th class="checkbox-col" style="width: 40px;">
+                    <input type="checkbox" id="modal-select-all-checkbox" class="selection-checkbox" title="Select all">
+                  </th>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th style="width: 100px;">Size</th>
+                </tr>
+              </thead>
+              <tbody id="modal-file-list">
+                <tr><td colspan="4" class="small text-muted">Select a server to browse files</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Selection count in modal -->
+          <div class="small text-muted mt-2" id="modal-selection-count">0 items selected</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-outline-primary" id="snapshot-save-config-btn">Save Config Only</button>
+        <button type="button" class="btn btn-primary" id="snapshot-save-scan-btn">Create and Scan Now</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- RO-Crate Viewer (optional, feature-flagged) -->
 {% if files_viewer == 'rocrate' %}
@@ -2006,13 +2089,12 @@ window.addEventListener('DOMContentLoaded', () => {
       });
     });
 
-    // Attach reconfigure button handlers (Phase 5)
+    // Attach reconfigure button handlers
     snapshotsList.querySelectorAll('.snapshot-reconfig').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const scanId = btn.getAttribute('data-scan-id');
-        showMessage('Reconfigure modal coming in Phase 5', 'info');
-        // TODO Phase 5: Open reconfigure modal with diff visualization
+        openSnapshotModal('reconfigure', scanId);
       });
     });
   }
@@ -2360,14 +2442,489 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // ===== New Snapshot Button =====
+  // ===== Snapshot Configuration Modal =====
+  let modalMode = 'new'; // 'new' or 'reconfigure'
+  let modalScanId = null; // Scan ID when reconfiguring
+  let modalSelectedItems = new Set(); // Separate selection state for modal
+  let modalFolderContents = new Map();
+  let modalItemTypes = new Map();
+  let modalSavedConfig = new Set(); // Items in saved config (for reconfigure diff)
+  let modalCurrentPath = '';
+  let modalCurrentServer = null;
+  let modalCurrentRoot = null;
+
+  function openSnapshotModal(mode, scanId = null) {
+    modalMode = mode;
+    modalScanId = scanId;
+    modalSelectedItems.clear();
+    modalFolderContents.clear();
+    modalItemTypes.clear();
+    modalSavedConfig.clear();
+
+    const modal = new bootstrap.Modal(document.getElementById('snapshot-config-modal'));
+    const title = document.getElementById('snapshot-config-modal-title');
+    const legend = document.getElementById('snapshot-diff-legend');
+    const nameInput = document.getElementById('snapshot-name-input');
+    const serverSelect = document.getElementById('snapshot-server-select');
+    const saveConfigBtn = document.getElementById('snapshot-save-config-btn');
+    const saveScanBtn = document.getElementById('snapshot-save-scan-btn');
+
+    if (mode === 'new') {
+      title.textContent = 'New Snapshot';
+      legend.style.display = 'none';
+      nameInput.value = '';
+      serverSelect.disabled = false;
+      saveConfigBtn.textContent = 'Save Config Only';
+      saveScanBtn.textContent = 'Create and Scan Now';
+
+      // Populate server dropdown
+      populateModalServerSelect();
+    } else if (mode === 'reconfigure') {
+      title.textContent = 'Reconfigure Snapshot';
+      legend.style.display = 'block';
+      saveConfigBtn.textContent = 'Save Config Only';
+      saveScanBtn.textContent = 'Save and Rescan';
+
+      // Load existing scan config
+      loadScanConfigForReconfigure(scanId);
+    }
+
+    modal.show();
+  }
+
+  async function populateModalServerSelect() {
+    try {
+      const r = await fetch('/api/servers');
+      const servers = await r.json();
+      const serverSelect = document.getElementById('snapshot-server-select');
+
+      serverSelect.innerHTML = '<option value="">Select a server...</option>';
+      servers.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.display_name || s.id;
+        serverSelect.appendChild(opt);
+      });
+
+      // Auto-select current server if available
+      if (currentServer) {
+        serverSelect.value = currentServer;
+        await loadModalFileList(currentServer, currentRoot, currentPath);
+      }
+    } catch (e) {
+      console.error('Failed to load servers:', e);
+    }
+  }
+
+  async function loadScanConfigForReconfigure(scanId) {
+    try {
+      // Fetch scan details
+      const scanResp = await fetch(`/api/scans/${scanId}`);
+      const scan = await scanResp.json();
+
+      // Fetch saved config
+      const configResp = await fetch(`/api/scans/${scanId}/config`);
+      const config = await configResp.json();
+
+      const nameInput = document.getElementById('snapshot-name-input');
+      const serverSelect = document.getElementById('snapshot-server-select');
+
+      // Populate form
+      nameInput.value = `${scan.provider_id || 'Snapshot'} - Reconfigured`;
+      modalCurrentServer = scan.provider_id || currentServer;
+      modalCurrentRoot = scan.root_id || currentRoot;
+      modalCurrentPath = scan.path || currentPath;
+
+      // Populate servers and select the correct one
+      await populateModalServerSelect();
+      serverSelect.value = modalCurrentServer;
+      serverSelect.disabled = true; // Can't change server when reconfiguring
+
+      // Parse saved config rules
+      if (config.rules && Array.isArray(config.rules)) {
+        config.rules.forEach(rule => {
+          modalSavedConfig.add(rule.path);
+          modalSelectedItems.add(rule.path); // Start with saved config selected
+        });
+      }
+
+      // Load file list
+      await loadModalFileList(modalCurrentServer, modalCurrentRoot, modalCurrentPath);
+    } catch (e) {
+      console.error('Failed to load scan config:', e);
+      showMessage('Failed to load snapshot configuration', 'error');
+    }
+  }
+
+  async function loadModalFileList(providerId, rootId, path) {
+    const modalFileList = document.getElementById('modal-file-list');
+    const modalBreadcrumb = document.getElementById('modal-breadcrumb');
+
+    try {
+      const qs = new URLSearchParams({
+        provider_id: providerId || 'local_fs',
+        root_id: rootId || '/',
+        path: path || rootId || '/'
+      });
+
+      const r = await fetch('/api/browse?' + qs.toString());
+      const data = await r.json();
+
+      // Update breadcrumb
+      modalBreadcrumb.textContent = path || rootId || '/';
+
+      // Render file list
+      if (!data.entries || data.entries.length === 0) {
+        modalFileList.innerHTML = '<tr><td colspan="4" class="small text-muted">Empty folder</td></tr>';
+        return;
+      }
+
+      modalFileList.innerHTML = data.entries.map((e, idx) => {
+        const icon = e.type === 'folder' ? '📁' : '📄';
+        const size = e.type === 'folder' ? '' : fmtBytes(e.size || 0);
+        const isSelected = modalSelectedItems.has(e.id);
+        const wasInConfig = modalSavedConfig.has(e.id);
+
+        modalItemTypes.set(e.id, e.type);
+
+        // Determine diff class for reconfigure mode
+        let rowClass = '';
+        if (modalMode === 'reconfigure') {
+          if (isSelected && wasInConfig) {
+            rowClass = 'row-config-unchanged'; // Green tint
+          } else if (!isSelected && wasInConfig) {
+            rowClass = 'row-config-removed'; // Grey tint
+          } else if (isSelected && !wasInConfig) {
+            rowClass = 'row-config-new'; // No tint (new addition)
+          }
+          // else: not selected, not in config = no class (default)
+        }
+
+        return `<tr class="${rowClass}" data-id="${e.id}" data-type="${e.type}" data-name="${e.name}" data-index="${idx}">
+          <td class="checkbox-col">
+            <input type="checkbox" class="selection-checkbox modal-checkbox" data-id="${e.id}" data-index="${idx}" ${isSelected ? 'checked' : ''}>
+          </td>
+          <td>${icon} ${e.name}</td>
+          <td>${e.type}</td>
+          <td>${size}</td>
+        </tr>`;
+      }).join('');
+
+      // Attach modal checkbox handlers
+      attachModalCheckboxHandlers();
+      updateModalSelectionCount();
+    } catch (e) {
+      console.error('Failed to load modal file list:', e);
+      modalFileList.innerHTML = '<tr><td colspan="4" class="small text-danger">Failed to load files</td></tr>';
+    }
+  }
+
+  function attachModalCheckboxHandlers() {
+    const modalFileList = document.getElementById('modal-file-list');
+
+    modalFileList.querySelectorAll('.modal-checkbox').forEach(cb => {
+      cb.addEventListener('change', async (e) => {
+        e.stopPropagation();
+        const itemId = cb.getAttribute('data-id');
+        const tr = cb.closest('tr');
+        const type = tr?.getAttribute('data-type');
+        const isFolder = (type === 'folder');
+
+        if (cb.checked) {
+          modalSelectedItems.add(itemId);
+          if (isFolder) {
+            await selectModalFolderRecursive(itemId, true);
+          }
+        } else {
+          modalSelectedItems.delete(itemId);
+          if (isFolder) {
+            await selectModalFolderRecursive(itemId, false);
+          }
+        }
+
+        updateModalSelectionCount();
+        updateModalDiffClasses();
+      });
+    });
+
+    // Attach row click handlers for folder navigation
+    modalFileList.querySelectorAll('tr[data-type="folder"]').forEach(tr => {
+      tr.addEventListener('dblclick', async () => {
+        const folderId = tr.getAttribute('data-id');
+        modalCurrentPath = folderId;
+        await loadModalFileList(modalCurrentServer, modalCurrentRoot, folderId);
+      });
+    });
+  }
+
+  async function selectModalFolderRecursive(folderId, select) {
+    // Reuse the same recursive logic as main selection
+    if (select) {
+      modalSelectedItems.add(folderId);
+      try {
+        const qs = new URLSearchParams({
+          provider_id: modalCurrentServer || 'local_fs',
+          root_id: modalCurrentRoot || '/',
+          path: folderId
+        });
+
+        const r = await fetch('/api/browse?' + qs.toString());
+        const data = await r.json();
+
+        if (data.entries && Array.isArray(data.entries)) {
+          const children = new Set();
+          modalFolderContents.set(folderId, children);
+
+          for (const entry of data.entries) {
+            children.add(entry.id);
+            modalSelectedItems.add(entry.id);
+            modalItemTypes.set(entry.id, entry.type);
+
+            if (entry.type === 'folder') {
+              await selectModalFolderRecursive(entry.id, true);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to fetch folder contents:', e);
+      }
+    } else {
+      modalSelectedItems.delete(folderId);
+      const children = modalFolderContents.get(folderId);
+      if (children) {
+        for (const childId of children) {
+          modalSelectedItems.delete(childId);
+          if (modalItemTypes.get(childId) === 'folder') {
+            await selectModalFolderRecursive(childId, false);
+          }
+        }
+      }
+    }
+  }
+
+  function updateModalSelectionCount() {
+    const countEl = document.getElementById('modal-selection-count');
+    const count = modalSelectedItems.size;
+    countEl.textContent = `${count} item${count !== 1 ? 's' : ''} selected`;
+  }
+
+  function updateModalDiffClasses() {
+    // Update row classes based on current selection vs saved config (reconfigure mode only)
+    if (modalMode !== 'reconfigure') return;
+
+    const modalFileList = document.getElementById('modal-file-list');
+    modalFileList.querySelectorAll('tr[data-id]').forEach(tr => {
+      const itemId = tr.getAttribute('data-id');
+      const isSelected = modalSelectedItems.has(itemId);
+      const wasInConfig = modalSavedConfig.has(itemId);
+
+      // Remove all diff classes
+      tr.classList.remove('row-config-unchanged', 'row-config-new', 'row-config-removed');
+
+      // Apply appropriate class
+      if (isSelected && wasInConfig) {
+        tr.classList.add('row-config-unchanged'); // Green
+      } else if (!isSelected && wasInConfig) {
+        tr.classList.add('row-config-removed'); // Grey
+      } else if (isSelected && !wasInConfig) {
+        tr.classList.add('row-config-new'); // No tint (explicitly setting, though it does nothing)
+      }
+      // else: not selected, not in config = no class
+    });
+  }
+
+  // Modal action buttons
+  const snapshotSaveConfigBtn = document.getElementById('snapshot-save-config-btn');
+  const snapshotSaveScanBtn = document.getElementById('snapshot-save-scan-btn');
+  const modalSelectAllCheckbox = document.getElementById('modal-select-all-checkbox');
+  const modalSelectAllBtn = document.getElementById('modal-select-all-btn');
+  const snapshotServerSelect = document.getElementById('snapshot-server-select');
+
+  if (snapshotServerSelect) {
+    snapshotServerSelect.addEventListener('change', async (e) => {
+      const serverId = e.target.value;
+      if (!serverId) return;
+
+      modalCurrentServer = serverId;
+      modalCurrentRoot = '/'; // Default root
+      modalCurrentPath = '/';
+      await loadModalFileList(serverId, modalCurrentRoot, modalCurrentPath);
+    });
+  }
+
+  if (modalSelectAllBtn) {
+    modalSelectAllBtn.addEventListener('click', () => {
+      const modalFileList = document.getElementById('modal-file-list');
+      modalFileList.querySelectorAll('tr[data-id]').forEach(tr => {
+        const itemId = tr.getAttribute('data-id');
+        modalSelectedItems.add(itemId);
+        const cb = tr.querySelector('.modal-checkbox');
+        if (cb) cb.checked = true;
+      });
+      updateModalSelectionCount();
+      updateModalDiffClasses();
+    });
+  }
+
+  if (modalSelectAllCheckbox) {
+    modalSelectAllCheckbox.addEventListener('change', (e) => {
+      const modalFileList = document.getElementById('modal-file-list');
+      if (e.target.checked) {
+        modalFileList.querySelectorAll('tr[data-id]').forEach(tr => {
+          const itemId = tr.getAttribute('data-id');
+          modalSelectedItems.add(itemId);
+          const cb = tr.querySelector('.modal-checkbox');
+          if (cb) cb.checked = true;
+        });
+      } else {
+        modalSelectedItems.clear();
+        modalFileList.querySelectorAll('.modal-checkbox').forEach(cb => {
+          cb.checked = false;
+        });
+      }
+      updateModalSelectionCount();
+      updateModalDiffClasses();
+    });
+  }
+
+  if (snapshotSaveConfigBtn) {
+    snapshotSaveConfigBtn.addEventListener('click', async () => {
+      // Save config without scanning
+      await saveSnapshotConfig(false);
+    });
+  }
+
+  if (snapshotSaveScanBtn) {
+    snapshotSaveScanBtn.addEventListener('click', async () => {
+      // Save config and start scan
+      await saveSnapshotConfig(true);
+    });
+  }
+
+  async function saveSnapshotConfig(startScan) {
+    const nameInput = document.getElementById('snapshot-name-input');
+    const name = nameInput.value.trim();
+
+    if (!name) {
+      alert('Please enter a snapshot name');
+      return;
+    }
+
+    if (modalSelectedItems.size === 0) {
+      alert('Please select at least one file or folder');
+      return;
+    }
+
+    // Build selection rules
+    const rules = Array.from(modalSelectedItems).map(itemId => {
+      const type = modalItemTypes.get(itemId);
+      return {
+        action: 'include',
+        path: itemId,
+        recursive: (type === 'folder'),
+        node_type: type
+      };
+    });
+
+    const selection = {
+      rules: rules,
+      use_ignore: true,
+      allow_override_ignores: true
+    };
+
+    try {
+      if (modalMode === 'reconfigure') {
+        // Update existing scan config
+        const configResp = await fetch(`/api/scans/${modalScanId}/config`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(selection)
+        });
+
+        if (!configResp.ok) throw new Error('Failed to save config');
+
+        if (startScan) {
+          // Trigger rescan
+          const rescanResp = await fetch(`/api/scans/${modalScanId}/rescan`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+
+          if (rescanResp.ok) {
+            const result = await rescanResp.json();
+            showMessage(`Rescan started: new scan #${result.scan_id}`, 'success');
+            fetchTasks();
+            loadScans();
+          } else {
+            throw new Error('Rescan failed');
+          }
+        } else {
+          showMessage('Snapshot configuration updated', 'success');
+        }
+      } else {
+        // New snapshot: create and optionally scan
+        const payload = {
+          type: 'scan',
+          path: modalCurrentPath || modalCurrentRoot,
+          recursive: true,
+          provider_id: modalCurrentServer,
+          root_id: modalCurrentRoot,
+          selection: selection
+        };
+
+        if (startScan) {
+          const scanResp = await fetch('/api/scan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          if (scanResp.ok) {
+            const result = await scanResp.json();
+            showMessage(`Snapshot scan started: #${result.scan_id}`, 'success');
+            fetchTasks();
+            loadScans();
+          } else {
+            throw new Error('Scan failed');
+          }
+        } else {
+          // Save config only (no immediate scan)
+          // TODO: Need API endpoint for this - for now just show message
+          showMessage('Config-only save not yet implemented - scanning instead', 'info');
+
+          const scanResp = await fetch('/api/scan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          if (scanResp.ok) {
+            const result = await scanResp.json();
+            showMessage(`Snapshot created: #${result.scan_id}`, 'success');
+            fetchTasks();
+            loadScans();
+          }
+        }
+      }
+
+      // Close modal
+      bootstrap.Modal.getInstance(document.getElementById('snapshot-config-modal')).hide();
+    } catch (e) {
+      console.error('Failed to save snapshot config:', e);
+      showMessage('Failed to save snapshot: ' + e.message, 'error');
+    }
+  }
+
+  // ===== Wire up Snapshot Action Buttons =====
   const newSnapshotBtn = document.getElementById('new-snapshot-btn');
   if (newSnapshotBtn) {
     newSnapshotBtn.addEventListener('click', () => {
-      showMessage('New Snapshot modal coming in Phase 5', 'info');
-      // TODO Phase 5: Open new snapshot configuration modal
+      openSnapshotModal('new');
     });
   }
+
+  // Reconfigure buttons already wired in renderSnapshots() function
+  // (see lines where .snapshot-reconfig handlers are attached)
 
   // ===== Initialization =====
   loadServers();
