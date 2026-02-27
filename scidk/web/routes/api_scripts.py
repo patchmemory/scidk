@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict
@@ -275,12 +276,20 @@ def update_script(script_id: str):
         # Check if code is being changed
         code_changed = 'code' in data and data['code'] != script.code
 
-        # Update fields
+        # Preserve source from database - never trust request payload for this
+        original_source = script.source
+        original_modified = script.modified
+
+        # Update fields (only user-editable fields)
         script.name = data.get('name', script.name)
         script.description = data.get('description', script.description)
         script.code = data.get('code', script.code)
         script.parameters = data.get('parameters', script.parameters)
         script.tags = data.get('tags', script.tags)
+
+        # Restore source/modified from database (prevent spoofing)
+        script.source = original_source
+        script.modified = original_modified
 
         # If code changed, mark as edited (resets validation and clears dependencies)
         if code_changed:
@@ -709,6 +718,209 @@ def import_notebook():
 
     except Exception as e:
         logger.exception("Error importing notebook")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# Module Registry Pattern endpoints (Analyses)
+
+@bp.route("/analyses/bootstrap", methods=["POST"])
+@require_admin
+def bootstrap_analyses():
+    """
+    Bootstrap built-in analysis scripts into the registry.
+
+    Seeds built-in analysis scripts with:
+    - source = 'built-in'
+    - modified = False
+    - validation_status = 'queued'
+
+    Idempotent: skips existing scripts, never overwrites modified ones.
+
+    Returns:
+        JSON with summary: {imported: N, skipped: N, already_existed: N}
+    """
+    try:
+        manager = _get_scripts_manager()
+        builtin_scripts = get_builtin_scripts()
+
+        # Filter for analyses scripts only
+        analyses_scripts = [s for s in builtin_scripts if s.category and s.category.startswith('analyses/')]
+
+        imported = 0
+        skipped = 0
+        already_existed = 0
+
+        for script in analyses_scripts:
+            existing = manager.get_script(script.id)
+
+            if existing:
+                # Skip if already exists and has been modified
+                if existing.source == 'built-in' and existing.modified:
+                    skipped += 1
+                    continue
+
+                # Skip if already exists and hasn't changed
+                if existing.code == script.code:
+                    already_existed += 1
+                    continue
+
+            # Set registry pattern fields
+            script.source = 'built-in'
+            script.modified = False
+            script.validation_status = 'queued'
+            script.is_active = False
+            script.created_by = _get_current_user()
+
+            if existing:
+                # Update existing unmodified built-in
+                script.updated_at = time.time()
+                manager.update_script(script)
+            else:
+                # Create new
+                manager.create_script(script)
+
+            imported += 1
+
+        return jsonify({
+            "status": "ok",
+            "imported": imported,
+            "skipped": skipped,
+            "already_existed": already_existed
+        })
+
+    except Exception as e:
+        logger.exception("Error bootstrapping analyses")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@bp.route("/analyses/validate/<script_id>", methods=["POST"])
+@require_admin
+def validate_analysis(script_id: str):
+    """
+    Run validation tests on an analysis script.
+
+    Sets validation_status = 'running', executes embedded test fixture,
+    captures full output to validation_output field, sets final status.
+
+    Returns:
+        JSON with validation results
+    """
+    try:
+        from scidk.core.script_testing import ScriptTestRunner
+
+        manager = _get_scripts_manager()
+        script = manager.get_script(script_id)
+
+        if not script:
+            return jsonify({"status": "error", "message": "Script not found"}), 404
+
+        if not (script.category and script.category.startswith('analyses/')):
+            return jsonify({"status": "error", "message": "Not an analysis script"}), 400
+
+        # Set status to running
+        script.validation_status = 'running'
+        script.validation_timestamp = time.time()
+        manager.update_script(script)
+
+        # Run validation
+        test_runner = ScriptTestRunner()
+        result = test_runner.run_tests(script)
+
+        # Update script with results
+        script.validation_status = 'passed' if result.passed else 'failed'
+        script.validation_errors = result.errors
+        script.validation_output = json.dumps({
+            'passed': result.passed,
+            'errors': result.errors,
+            'output': result.output,
+            'test_results': result.test_results,
+            'execution_time_ms': result.execution_time_ms
+        })
+        script.validation_timestamp = time.time()
+
+        updated = manager.update_script(script)
+
+        return jsonify({
+            "status": "ok",
+            "validation_status": updated.validation_status,
+            "validation_output": updated.validation_output,
+            "script": updated.to_dict()
+        })
+
+    except Exception as e:
+        logger.exception(f"Error validating analysis {script_id}")
+        # Mark as failed
+        try:
+            script.validation_status = 'failed'
+            script.validation_errors = [str(e)]
+            script.validation_timestamp = time.time()
+            manager.update_script(script)
+        except:
+            pass
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@bp.route("/analyses/restore/<script_id>", methods=["POST"])
+@require_admin
+def restore_analysis(script_id: str):
+    """
+    Restore a modified built-in analysis script to its canonical version.
+
+    Only works on scripts where source='built-in' and modified=True.
+    Replaces script body with original, resets modified=False,
+    sets validation_status='queued', queues revalidation.
+
+    Returns:
+        JSON with restored script
+    """
+    try:
+        manager = _get_scripts_manager()
+        script = manager.get_script(script_id)
+
+        if not script:
+            return jsonify({"status": "error", "message": "Script not found"}), 404
+
+        if script.source != 'built-in':
+            return jsonify({"status": "error", "message": "Only built-in scripts can be restored"}), 400
+
+        if not script.modified:
+            return jsonify({"status": "error", "message": "Script has not been modified"}), 400
+
+        # Find canonical built-in version
+        builtin_scripts = get_builtin_scripts()
+        canonical = next((s for s in builtin_scripts if s.id == script_id), None)
+
+        if not canonical:
+            return jsonify({"status": "error", "message": "Canonical version not found"}), 404
+
+        # Restore to canonical version
+        script.code = canonical.code
+        script.name = canonical.name
+        script.description = canonical.description
+        script.parameters = canonical.parameters
+        script.tags = canonical.tags
+        script.modified = False
+        script.validation_status = 'queued'
+        script.validation_errors = []
+        script.validation_output = None
+        script.validation_timestamp = None
+        script.is_active = False
+        script.updated_at = time.time()
+
+        # Re-extract docstring
+        from scidk.core.script_validators import extract_docstring
+        script.docstring = extract_docstring(script.code)
+
+        restored = manager.update_script(script)
+
+        return jsonify({
+            "status": "ok",
+            "message": "Script restored to canonical version",
+            "script": restored.to_dict()
+        })
+
+    except Exception as e:
+        logger.exception(f"Error restoring analysis {script_id}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
