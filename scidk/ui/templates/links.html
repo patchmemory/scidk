@@ -2669,7 +2669,7 @@ function populateWizardFromLink(link) {
     discoveredImportConfig.relationship.import_properties = link.match_config.import_rel_properties !== false;
 
     // Show the discovered import triple bar
-    renderDiscoveredImportTriple();
+    updateDiscoveredImportDisplay();
   }
 
   // Update visual display
