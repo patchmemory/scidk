@@ -939,7 +939,7 @@ def get_link_sync_status(link_id):
     {
         "status": "success",
         "sync_supported": true,
-        "last_synced_count": 526288,
+        "primary_count": 526288,
         "last_synced_at": "2026-02-28T15:30:00",
         "current_source_count": 526291,
         "new_since_sync": 3,
@@ -953,7 +953,7 @@ def get_link_sync_status(link_id):
     }
     """
     try:
-        from ...services.neo4j_client import get_neo4j_client_for_profile
+        from ...services.neo4j_client import get_neo4j_client_for_profile, get_neo4j_client
         from datetime import datetime
 
         service = _get_link_service()
@@ -977,7 +977,6 @@ def get_link_sync_status(link_id):
             }), 200
 
         # This is an import link - get sync status
-        last_synced_count = link.get('last_synced_count', 0)
         last_synced_at = link.get('last_synced_at')
 
         # Query source database for current count
@@ -986,32 +985,41 @@ def get_link_sync_status(link_id):
         rel_type = link.get('relationship_type')
 
         try:
-            client = get_neo4j_client_for_profile(source_database)
-            if not client:
+            # Query source database for current count
+            source_client = get_neo4j_client_for_profile(source_database)
+            if not source_client:
                 return jsonify({
                     'status': 'error',
                     'error': f'Source database "{source_database}" not found'
                 }), 404
 
-            # Query current relationship count in source database
-            query = f"""
+            source_query = f"""
             MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
             RETURN count(r) as current_count
             """
-            results = client.execute_read(query)
-            current_source_count = results[0]['current_count'] if results else 0
+            source_results = source_client.execute_read(source_query)
+            current_source_count = source_results[0]['current_count'] if source_results else 0
 
-            client.close()
+            source_client.close()
+
+            # Query primary database for actual count
+            primary_client = get_neo4j_client()
+            primary_query = f"""
+            MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
+            RETURN count(r) as primary_count
+            """
+            primary_results = primary_client.execute_read(primary_query)
+            primary_count = primary_results[0]['primary_count'] if primary_results else 0
 
         except Exception as e:
-            logger.exception(f"Failed to query source database {source_database}")
+            logger.exception(f"Failed to query databases")
             return jsonify({
                 'status': 'error',
-                'error': f'Failed to query source database: {str(e)}'
+                'error': f'Failed to query databases: {str(e)}'
             }), 500
 
         # Calculate new relationships since last sync
-        new_since_sync = max(0, current_source_count - last_synced_count)
+        new_since_sync = max(0, current_source_count - primary_count)
 
         # Format last_synced_at as ISO string
         last_synced_at_str = None
@@ -1025,7 +1033,7 @@ def get_link_sync_status(link_id):
         return jsonify({
             'status': 'success',
             'sync_supported': True,
-            'last_synced_count': last_synced_count,
+            'primary_count': primary_count,
             'last_synced_at': last_synced_at_str,
             'current_source_count': current_source_count,
             'new_since_sync': new_since_sync,

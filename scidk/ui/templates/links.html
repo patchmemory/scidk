@@ -4252,12 +4252,21 @@ async function showSyncStatusForActiveImportLink(linkId) {
 
     // Import link - show sync status
     const lastSyncedAt = data.last_synced_at;
-    const lastSyncedCount = data.last_synced_count || 0;
+    const primaryCount = data.primary_count || 0;
     const currentSourceCount = data.current_source_count || 0;
     const newSinceSync = data.new_since_sync || 0;
     const sourceDatabase = data.source_database || 'Unknown';
 
-    const lastSyncedStr = lastSyncedAt ? formatDateTime(lastSyncedAt) : 'Not yet synced';
+    // Show "unknown" if there's data in primary but no sync timestamp
+    let lastSyncedStr;
+    if (lastSyncedAt) {
+      lastSyncedStr = formatDateTime(lastSyncedAt);
+    } else if (primaryCount > 0) {
+      lastSyncedStr = 'unknown (relationships exist in primary)';
+    } else {
+      lastSyncedStr = 'Not yet synced';
+    }
+
     const syncStatusColor = newSinceSync === 0 ? '#4caf50' : '#ff9800';
     const syncStatusIcon = newSinceSync === 0 ? '✓' : '⚠';
     const syncStatusText = newSinceSync === 0 ? 'Up to date' : `${newSinceSync.toLocaleString()} new since last sync`;
@@ -4272,7 +4281,7 @@ async function showSyncStatusForActiveImportLink(linkId) {
         <div style="background: white; padding: 1rem; border-radius: 4px; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
           <div style="font-size: 0.9em; color: #666; margin-bottom: 0.75rem;">
             <div style="margin-bottom: 0.5rem;"><strong>Last synced:</strong> ${lastSyncedStr}</div>
-            <div style="margin-bottom: 0.5rem;"><strong>${lastSyncedCount.toLocaleString()} relationships</strong> in primary</div>
+            <div style="margin-bottom: 0.5rem;"><strong>${primaryCount.toLocaleString()} relationships</strong> in primary</div>
           </div>
 
           <div style="border-top: 1px solid #e0e0e0; padding-top: 0.75rem; margin-top: 0.75rem;">
