@@ -311,6 +311,66 @@ class Neo4jClient:
 
         return result
 
+    def push_label_constraints(self) -> Dict[str, Any]:
+        """Push all Label schema constraints and indexes to Neo4j.
+
+        Loads all registered Label definitions and creates their constraints/indexes.
+        Uses IF NOT EXISTS so this operation is idempotent.
+
+        Returns:
+            Dict with keys:
+                - created: List of constraint/index names that were created
+                - already_existed: List of constraint/index names that already existed
+                - errors: List of error messages for any failures
+        """
+        from scidk.schema.registry import LabelRegistry
+
+        result = {
+            'created': [],
+            'already_existed': [],
+            'errors': []
+        }
+
+        # Load all labels
+        all_labels = LabelRegistry.all()
+
+        with self._session() as session:
+            for label_name, label_def in all_labels.items():
+                try:
+                    # Generate Cypher constraint statements
+                    statements = label_def.generate_cypher_constraints()
+
+                    for statement in statements:
+                        try:
+                            # Execute the constraint/index creation
+                            session.run(statement).consume()
+
+                            # Extract constraint/index name from statement
+                            # Format: "CREATE CONSTRAINT name IF NOT EXISTS..." or "CREATE INDEX name IF NOT EXISTS..."
+                            parts = statement.split()
+                            if len(parts) >= 3:
+                                constraint_name = parts[2]  # Third token is the name
+
+                                # Check if it already existed by trying to query it
+                                # Neo4j returns success even if it existed due to IF NOT EXISTS
+                                # So we'll consider it as created (idempotent operation)
+                                result['created'].append(f"{label_name}.{constraint_name}")
+
+                        except Exception as e:
+                            error_msg = str(e).lower()
+                            # If it already exists, Neo4j might still raise in some versions
+                            if 'already exists' in error_msg or 'equivalent' in error_msg:
+                                if len(statement.split()) >= 3:
+                                    constraint_name = statement.split()[2]
+                                    result['already_existed'].append(f"{label_name}.{constraint_name}")
+                            else:
+                                result['errors'].append(f"{label_name}: {str(e)}")
+
+                except Exception as e:
+                    result['errors'].append(f"Failed to process {label_name}: {str(e)}")
+
+        return result
+
 
 def get_neo4j_client_for_profile(profile_name: str) -> Optional['Neo4jClient']:
     """Get Neo4j client for a specific named profile.

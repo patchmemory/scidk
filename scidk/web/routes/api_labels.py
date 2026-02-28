@@ -310,6 +310,61 @@ def push_label_to_neo4j(name):
         }), 500
 
 
+@bp.route('/labels/push-all', methods=['POST'])
+def push_all_labels_to_neo4j():
+    """
+    Push all Label schema constraints and indexes to Neo4j.
+
+    This bulk operation creates constraints and indexes for all registered
+    Label definitions. Uses IF NOT EXISTS so it's safe to run multiple times.
+
+    Returns:
+    {
+        "status": "success",
+        "created": ["Sample.sample_sample_id_unique", "ImagingDataset.imagingdataset_path_unique"],
+        "already_existed": [],
+        "errors": [],
+        "summary": {
+            "total_labels": 3,
+            "total_created": 2,
+            "total_already_existed": 0,
+            "total_errors": 0
+        }
+    }
+    """
+    try:
+        from ...services.neo4j_client import get_neo4j_client
+
+        # Get Neo4j client
+        neo4j_client = get_neo4j_client()
+        if not neo4j_client:
+            return jsonify({
+                'status': 'error',
+                'error': 'Neo4j connection not configured'
+            }), 500
+
+        # Push all constraints
+        result = neo4j_client.push_label_constraints()
+
+        # Add summary stats
+        result['summary'] = {
+            'total_labels': len(result['created']) + len(result['already_existed']) + len(result['errors']),
+            'total_created': len(result['created']),
+            'total_already_existed': len(result['already_existed']),
+            'total_errors': len(result['errors'])
+        }
+
+        result['status'] = 'success' if len(result['errors']) == 0 else 'partial'
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
 @bp.route('/labels/<name>/pull', methods=['POST'])
 def pull_label_from_neo4j(name):
     """
