@@ -2228,7 +2228,8 @@ function renderFlatLinks(validLinks, container) {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const linkId = btn.dataset.linkId;
-      openScriptLink(linkId);
+      // Navigate to Scripts page with script ID (which is the filename)
+      window.location.href = `/scripts?script=${linkId}`;
     });
   });
 
@@ -3655,7 +3656,7 @@ function adoptDiscoveredAsDefinition(rel) {
     name: linkName,
     source_label: rel.source_label,
     target_label: rel.target_label,
-    relationship_type: rel.rel_type,
+    rel_type: rel.rel_type,
     match_strategy: 'id',  // Default to ID-based matching
     match_config: {},
     source_config: {},

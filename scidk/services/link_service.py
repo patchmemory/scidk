@@ -1287,25 +1287,6 @@ class LinkService:
             raise ValueError("Primary database not connected")
 
         try:
-            # Fetch all relationships from source database
-            if import_rel_properties:
-                fetch_query = f"""
-                MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
-                WHERE a.{source_uid_property} IS NOT NULL AND b.{target_uid_property} IS NOT NULL
-                RETURN a.{source_uid_property} as source_uid,
-                       b.{target_uid_property} as target_uid,
-                       properties(r) as rel_props
-                """
-            else:
-                fetch_query = f"""
-                MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
-                WHERE a.{source_uid_property} IS NOT NULL AND b.{target_uid_property} IS NOT NULL
-                RETURN a.{source_uid_property} as source_uid,
-                       b.{target_uid_property} as target_uid
-                """
-
-            relationships = source_client.execute_read(fetch_query)
-
             # Track statistics
             source_nodes_created = 0
             source_nodes_merged = 0
@@ -1313,9 +1294,43 @@ class LinkService:
             target_nodes_merged = 0
             relationships_created = 0
 
-            # Import in batches
-            for i in range(0, len(relationships), batch_size):
-                batch = relationships[i:i + batch_size]
+            # Use streaming/pagination to avoid loading all relationships into memory at once
+            # This prevents hitting any implicit or explicit limits
+            skip = 0
+            total_fetched = 0
+
+            logger.info(f"[Import] Starting streaming import from '{source_database}' - batch_size={batch_size}")
+
+            while True:
+                # Fetch one batch from source database
+                if import_rel_properties:
+                    fetch_query = f"""
+                    MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
+                    WHERE a.{source_uid_property} IS NOT NULL AND b.{target_uid_property} IS NOT NULL
+                    RETURN a.{source_uid_property} as source_uid,
+                           b.{target_uid_property} as target_uid,
+                           properties(r) as rel_props
+                    SKIP {skip}
+                    LIMIT {batch_size}
+                    """
+                else:
+                    fetch_query = f"""
+                    MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
+                    WHERE a.{source_uid_property} IS NOT NULL AND b.{target_uid_property} IS NOT NULL
+                    RETURN a.{source_uid_property} as source_uid,
+                           b.{target_uid_property} as target_uid
+                    SKIP {skip}
+                    LIMIT {batch_size}
+                    """
+
+                batch = source_client.execute_read(fetch_query)
+
+                if not batch:
+                    # No more relationships to fetch
+                    break
+
+                total_fetched += len(batch)
+                logger.info(f"[Import] Fetched batch of {len(batch)} relationships (total so far: {total_fetched})")
 
                 # Build UNWIND query for batch import
                 if import_rel_properties:
@@ -1369,6 +1384,14 @@ class LinkService:
                     target_nodes_created += stats.get('targets_created', 0)
                     target_nodes_merged += stats.get('targets_merged', 0)
                     relationships_created += stats.get('rels_created', 0)
+
+                # Move to next batch
+                skip += batch_size
+
+                # If we got fewer results than batch_size, we've reached the end
+                if len(batch) < batch_size:
+                    logger.info(f"[Import] Completed - fetched {total_fetched} total relationships")
+                    break
 
             # Clean up _imported_stub flags
             cleanup_query = f"""
@@ -1679,6 +1702,8 @@ class LinkService:
         total_imported = 0
         batch_count = 0
         skip = 0
+
+        logger.info(f"[Import] Reading from source database '{source_database}', writing to PRIMARY")
 
         while True:
             # Fetch one batch from source with Neo4j element IDs
