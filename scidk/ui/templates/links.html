@@ -462,11 +462,9 @@
       <input id="link-name" type="text" class="form-control form-control-sm" placeholder="e.g., Person to File via email" data-testid="link-name" />
     </div>
 
-    <!-- Preview & Execute Section -->
-    <div style="margin-top: 2rem; padding: 1rem; background: #f8f8f8; border-radius: 4px;">
-      <h5 class="small" style="font-weight: bold; margin-bottom: 0.5rem;">Preview & Execute</h5>
-      <button id="btn-load-preview" class="btn btn-sm btn-primary" data-testid="load-preview-btn">Load Preview</button>
-      <span id="preview-loading" style="margin-left: 0.5rem; display: none;">Loading...</span>
+    <!-- View & Download Section -->
+    <div id="preview-execute-section" style="margin-top: 2rem; padding: 1rem; background: #f8f8f8; border-radius: 4px;">
+      <h5 id="preview-execute-header" class="small" style="font-weight: bold; margin-bottom: 0.5rem;">View & Download</h5>
       <div id="preview-container" style="margin-top: 1rem;">
         <div class="empty-state small">Configure all three components to preview matches</div>
       </div>
@@ -619,13 +617,11 @@ function updateMainTripleDisplay() {
                         tripleBuilder.relationship.match_strategy &&
                         tripleBuilder.target.label;
 
-  const btnLoadPreview = document.getElementById('btn-load-preview');
   const btnExecute = document.getElementById('btn-execute');
   const btnSaveDef = document.getElementById('btn-save-def');
   const btnExportCsv = document.getElementById('btn-export-csv');
   const btnImportCsv = document.getElementById('btn-import-csv');
 
-  if (btnLoadPreview) btnLoadPreview.disabled = !allConfigured;
   if (btnExecute) btnExecute.disabled = !allConfigured;
   if (btnSaveDef) btnSaveDef.disabled = !allConfigured;
 
@@ -1622,10 +1618,6 @@ function initializeEventListeners() {
       if (typeof updateVisualPattern === 'function') updateVisualPattern();
     });
   }
-
-  // Preview button (legacy)
-  const btnLoadPreview = document.getElementById('btn-load-preview');
-  if (btnLoadPreview) btnLoadPreview.addEventListener('click', loadPreview);
 }
 
 function loadLinkDefinitions() {
@@ -2736,6 +2728,10 @@ function populateWizardFromLink(link) {
 
     // If this is an Active import link, fetch and show sync status
     if (link.status === 'active') {
+      // Hide the Preview & Execute section for Active links
+      const previewExecuteSection = document.getElementById('preview-execute-section');
+      if (previewExecuteSection) previewExecuteSection.style.display = 'none';
+
       showSyncStatusForActiveImportLink(link.id);
     }
 
@@ -2789,7 +2785,7 @@ function resetWizard() {
   // Clear preview
   const previewContainer = document.getElementById('preview-container');
   if (previewContainer) {
-    previewContainer.innerHTML = '<div class="empty-state small">Click "Load Preview" to see sample matches</div>';
+    previewContainer.innerHTML = '<div class="empty-state small">Configure all three components to preview matches</div>';
   }
 
   // Hide delete button
@@ -3656,7 +3652,7 @@ async function openImportWizardForRelationship(rel) {
   // Show empty preview - user must click "Load Preview" explicitly
   const previewContainer = document.getElementById('preview-container');
   if (previewContainer) {
-    previewContainer.innerHTML = '<div class="empty-state small">Click "Load Preview" to see sample matches</div>';
+    previewContainer.innerHTML = '<div class="empty-state small">Configure all three components to preview matches</div>';
   }
 }
 
@@ -3860,7 +3856,7 @@ function resetWizardPanel() {
 
   // Clear preview container
   const previewContainer = document.getElementById('preview-container');
-  if (previewContainer) previewContainer.innerHTML = '<div class="empty-state small">Click "Load Preview" to see sample matches</div>';
+  if (previewContainer) previewContainer.innerHTML = '<div class="empty-state small">Configure all three components to preview matches</div>';
 
   // Reset link name field
   const linkName = document.getElementById('link-name');
@@ -3870,13 +3866,15 @@ function resetWizardPanel() {
   const wizardTitle = document.getElementById('wizard-title');
   if (wizardTitle) wizardTitle.textContent = 'New Link Definition';
 
+  // Show View & Download section (hidden for Active links only)
+  const previewExecuteSection = document.getElementById('preview-execute-section');
+  if (previewExecuteSection) previewExecuteSection.style.display = '';
+
   // Show standard wizard controls (in case discovered import controls were shown)
   const btnSaveDefinition = document.getElementById('btn-save-definition');
-  const btnLoadPreview = document.getElementById('btn-load-preview');
   const btnExecute = document.getElementById('btn-execute');
 
   if (btnSaveDefinition) btnSaveDefinition.style.display = '';
-  if (btnLoadPreview) btnLoadPreview.style.display = '';
   if (btnExecute) btnExecute.style.display = '';
 }
 
@@ -4215,9 +4213,9 @@ async function showSyncStatusForActiveImportLink(linkId) {
     }
 
     if (!data.sync_supported) {
-      // Non-import link (algorithmic/script)
+      // Non-import link (algorithmic/script) - skip Sync Status, but show index
       previewContainer.innerHTML = `
-        <div style="padding: 1.5rem; background: #f5f5f5; border-radius: 6px;">
+        <div style="padding: 1.5rem; background: #f5f5f5; border-radius: 6px; margin-bottom: 1.5rem;">
           <h5 style="margin: 0 0 0.75rem 0; color: #333;">Algorithmic Link</h5>
           <div style="font-size: 0.9em; color: #666; margin-bottom: 1rem;">
             <div>Last run: ${formatLastRun(currentLink.updated_at)}</div>
@@ -4225,7 +4223,14 @@ async function showSyncStatusForActiveImportLink(linkId) {
           <button class="btn btn-sm btn-primary" onclick="executeLink()">Re-run</button>
           <button class="btn btn-sm btn-outline-secondary" style="margin-left: 0.5rem;" onclick="loadLinkDefinition('${linkId}')">View Definition</button>
         </div>
+        <div id="active-link-index-container"></div>
       `;
+
+      // Show relationship index below algorithmic link info
+      await showRelationshipIndex(linkId, {
+        containerId: 'active-link-index-container',
+        rel_type: currentLink?.relationship_type || ''
+      });
       return;
     }
 
