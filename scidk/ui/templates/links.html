@@ -403,17 +403,17 @@
     <!-- Filter Tabs with Refresh Button -->
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
       <div class="link-filter-tabs" style="display: flex; gap: 0.25rem; flex: 1; border-bottom: 2px solid #eee;">
-        <button class="link-filter-tab active" data-filter="wizard" style="flex: 1; padding: 0.5rem; border: none; background: none; cursor: pointer; font-size: 0.85em; font-weight: 500; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px;">
-          Wizard
+        <button class="link-filter-tab active" data-filter="active" style="flex: 1; padding: 0.5rem; border: none; background: none; cursor: pointer; font-size: 0.85em; font-weight: 500; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px;">
+          Active
         </button>
-        <button class="link-filter-tab" data-filter="script" style="flex: 1; padding: 0.5rem; border: none; background: none; cursor: pointer; font-size: 0.85em; font-weight: 500; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px;">
-          Script
+        <button class="link-filter-tab" data-filter="pending" style="flex: 1; padding: 0.5rem; border: none; background: none; cursor: pointer; font-size: 0.85em; font-weight: 500; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px;">
+          Pending
         </button>
-        <button class="link-filter-tab" data-filter="discovered" style="flex: 1; padding: 0.5rem; border: none; background: none; cursor: pointer; font-size: 0.85em; font-weight: 500; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px;">
-          🔍 Discovered
+        <button class="link-filter-tab" data-filter="available" style="flex: 1; padding: 0.5rem; border: none; background: none; cursor: pointer; font-size: 0.85em; font-weight: 500; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px;">
+          Available
         </button>
       </div>
-      <button id="btn-refresh-discovered" class="btn btn-sm" style="display: none; margin-left: 0.5rem; padding: 0.25rem 0.5rem; font-size: 0.85em;" title="Refresh discovered relationships">
+      <button id="btn-refresh-available" class="btn btn-sm" style="display: none; margin-left: 0.5rem; padding: 0.25rem 0.5rem; font-size: 0.85em;" title="Refresh available relationships">
         🔄
       </button>
     </div>
@@ -497,7 +497,7 @@ let linkDefinitions = [];
 let discoveredRelationships = []; // Discovered relationships from Neo4j
 let availableLabels = [];
 let lastFocusedIndex = -1; // For keyboard navigation
-let currentFilter = 'wizard'; // Filter state: 'wizard', 'script', 'discovered'
+let currentFilter = 'active'; // Filter state: 'active', 'pending', 'available'
 
 // Legacy wizardData (to be phased out)
 let wizardData = {
@@ -1439,9 +1439,9 @@ function initializeEventListeners() {
       // Update filter and re-render
       currentFilter = tab.dataset.filter;
 
-      // Show/hide refresh button when on discovered tab
-      const refreshBtn = document.getElementById('btn-refresh-discovered');
-      if (currentFilter === 'discovered') {
+      // Show/hide refresh button when on available tab
+      const refreshBtn = document.getElementById('btn-refresh-available');
+      if (currentFilter === 'available') {
         refreshBtn.style.display = 'block';
       } else {
         refreshBtn.style.display = 'none';
@@ -1451,10 +1451,10 @@ function initializeEventListeners() {
     });
   });
 
-  // Refresh discovered relationships button
-  document.getElementById('btn-refresh-discovered').addEventListener('click', () => {
+  // Refresh available relationships button
+  document.getElementById('btn-refresh-available').addEventListener('click', () => {
     loadDiscoveredRelationships();
-    showToast('Refreshing discovered relationships...', 'info');
+    showToast('Refreshing available relationships...', 'info');
   });
 
   // Dropdown toggle
@@ -1493,16 +1493,16 @@ function initializeEventListeners() {
     e.preventDefault();
     dropdownMenu.style.display = 'none';
 
-    // Switch to Discovered filter tab
-    currentFilter = 'discovered';
+    // Switch to Available filter tab
+    currentFilter = 'available';
     renderLinkList();
 
     // Update tab styling
     document.querySelectorAll('.link-filter-tab').forEach(tab => {
-      tab.classList.toggle('active', tab.dataset.filter === 'discovered');
+      tab.classList.toggle('active', tab.dataset.filter === 'available');
     });
 
-    showToast('Click on a discovered relationship to import it, or create a new Wizard Link and select "Data Import (External Graph)" as the match strategy', 'info');
+    showToast('Click on an available relationship to adopt it as a link definition', 'info');
   });
 
   // Wizard navigation buttons (if they exist - legacy support)
@@ -1620,13 +1620,13 @@ function loadDiscoveredRelationships() {
 
 function updateFilterTabCounts() {
   const validLinks = linkDefinitions.filter(link => link && link.id);
-  const wizardCount = validLinks.filter(l => l.type === 'wizard' || !l.type).length;
-  const scriptCount = validLinks.filter(l => l.type === 'script').length;
-  const discoveredCount = discoveredRelationships.length;
+  const activeCount = validLinks.filter(l => l.status === 'active').length;
+  const pendingCount = validLinks.filter(l => l.status === 'pending' || !l.status).length;
+  const availableCount = discoveredRelationships.length;
 
-  document.querySelector('[data-filter="wizard"]').textContent = `Wizard (${wizardCount})`;
-  document.querySelector('[data-filter="script"]').textContent = `Script (${scriptCount})`;
-  document.querySelector('[data-filter="discovered"]').textContent = `🔍 Discovered (${discoveredCount})`;
+  document.querySelector('[data-filter="active"]').textContent = `Active (${activeCount})`;
+  document.querySelector('[data-filter="pending"]').textContent = `Pending (${pendingCount})`;
+  document.querySelector('[data-filter="available"]').textContent = `Available (${availableCount})`;
 }
 
 function renderLinkList() {
@@ -1635,8 +1635,8 @@ function renderLinkList() {
   // Update filter tab counts
   updateFilterTabCounts();
 
-  // Handle discovered relationships with full filtering
-  if (currentFilter === 'discovered') {
+  // Handle available (discovered) relationships with full filtering
+  if (currentFilter === 'available') {
     renderDiscoveredRelationships(container);
     return;
   }
@@ -1647,11 +1647,11 @@ function renderLinkList() {
   let validLinks = linkDefinitions.filter(link => link && link.id);
   const totalCount = validLinks.length;
 
-  // 2. Apply tab filter (wizard/script/all)
-  if (currentFilter === 'wizard') {
-    validLinks = validLinks.filter(link => link.type === 'wizard' || !link.type);
-  } else if (currentFilter === 'script') {
-    validLinks = validLinks.filter(link => link.type === 'script');
+  // 2. Apply status tab filter (active/pending)
+  if (currentFilter === 'active') {
+    validLinks = validLinks.filter(link => link.status === 'active');
+  } else if (currentFilter === 'pending') {
+    validLinks = validLinks.filter(link => link.status === 'pending' || !link.status);
   }
 
   // 3. Apply search query
@@ -1912,8 +1912,8 @@ function renderDiscoveredRelationships(container) {
   }
 
   container.innerHTML = validRels.map((rel, index) => {
-    // Badge for discovered type
-    const typeBadge = '<span class="badge" style="background: #ff9800; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px;">DISCOVERED</span>';
+    // Badge for available status
+    const statusBadge = '<span class="badge" style="background: #999; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px;">AVAILABLE</span>';
 
     // Show all databases if merged from multiple sources
     const databases = rel.databases || [rel.database];
@@ -1939,14 +1939,14 @@ function renderDiscoveredRelationships(container) {
            style="padding: 0.5rem; margin-bottom: 0.25rem; cursor: pointer; border-radius: 4px; border: 1px solid transparent;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
           <strong style="font-size: 0.95em;">${linkName}</strong>
-          <div>${typeBadge}${databaseBadges}${countBadge}</div>
+          <div>${statusBadge}${databaseBadges}${countBadge}</div>
         </div>
         <div style="font-size: 0.85em; color: #666;">
           ${descLine}
         </div>
         <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
-          <button class="btn btn-sm btn-outline-secondary btn-save-discovered" data-index="${index}" style="font-size: 0.75em;">
-            Save
+          <button class="btn btn-sm btn-outline-primary btn-adopt-discovered" data-index="${index}" style="font-size: 0.75em;">
+            Adopt as Definition
           </button>
           <button class="btn btn-sm btn-outline-secondary btn-view-discovered" data-index="${index}" style="font-size: 0.75em;">
             View Details
@@ -1957,12 +1957,12 @@ function renderDiscoveredRelationships(container) {
   }).join('');
 
   // Add event listeners
-  container.querySelectorAll('.btn-save-discovered').forEach(btn => {
+  container.querySelectorAll('.btn-adopt-discovered').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const index = parseInt(btn.dataset.index);
       const rel = discoveredRelationships[index];
-      if (rel) saveDiscoveredAsDefinition(rel);
+      if (rel) adoptDiscoveredAsDefinition(rel);
     });
   });
 
@@ -2031,8 +2031,8 @@ function renderGroupedDiscoveredRelationships(validRels, container) {
     }
 
     const groupItems = rels.map((rel, index) => {
-      // Badge for discovered type
-      const typeBadge = '<span class="badge" style="background: #ff9800; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px;">DISCOVERED</span>';
+      // Badge for available status
+      const statusBadge = '<span class="badge" style="background: #999; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px;">AVAILABLE</span>';
 
       // Show all databases if merged from multiple sources
       const databases = rel.databases || [rel.database];
@@ -2064,14 +2064,14 @@ function renderGroupedDiscoveredRelationships(validRels, container) {
         <div class="link-item" data-testid="discovered-item" style="padding: 0.5rem; margin-bottom: 0.25rem; margin-left: 1rem; border-left: 2px solid #e0e0e0;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
             <strong style="font-size: 0.95em;">${linkName}</strong>
-            <div>${typeBadge}${databaseBadges}${countBadge}</div>
+            <div>${statusBadge}${databaseBadges}${countBadge}</div>
           </div>
           <div style="font-size: 0.85em; color: #666;">
             ${descLine}
           </div>
           <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
-            <button class="btn btn-sm btn-outline-secondary btn-save-discovered" data-index="${originalIndex}" style="font-size: 0.75em;">
-              Save
+            <button class="btn btn-sm btn-outline-primary btn-adopt-discovered" data-index="${originalIndex}" style="font-size: 0.75em;">
+              Adopt as Definition
             </button>
             <button class="btn btn-sm btn-outline-secondary btn-view-discovered" data-index="${originalIndex}" style="font-size: 0.75em;">
               View Details
@@ -2098,12 +2098,12 @@ function renderGroupedDiscoveredRelationships(validRels, container) {
   });
 
   // Add event listeners for discovered items
-  container.querySelectorAll('.btn-save-discovered').forEach(btn => {
+  container.querySelectorAll('.btn-adopt-discovered').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const index = parseInt(btn.dataset.index);
       const rel = discoveredRelationships[index];
-      if (rel) saveDiscoveredAsDefinition(rel);
+      if (rel) adoptDiscoveredAsDefinition(rel);
     });
   });
 
@@ -2132,17 +2132,19 @@ function renderFlatLinks(validLinks, container) {
     const isFocused = lastFocusedIndex === index;
     const classes = ['link-item', isActive && 'active', isFocused && 'focused'].filter(Boolean).join(' ');
 
-    const typeBadge = link.type === 'script'
-      ? '<span class="badge" style="background: #9c27b0; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px;">SCRIPT</span>'
-      : '<span class="badge" style="background: #2196f3; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px;">WIZARD</span>';
+    // Status badge (Active/Pending) with appropriate colors
+    const status = link.status || 'pending';
+    const statusColors = {
+      'active': '#4caf50',    // Green
+      'pending': '#ff9800',   // Yellow/Orange
+      'available': '#999'     // Gray
+    };
+    const color = statusColors[status] || '#999';
+    const statusBadge = `<span class="badge" style="background: ${color}; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px;">${status.toUpperCase()}</span>`;
 
-    let statusBadge = '';
-    if (link.type === 'script') {
-      const statusColors = { 'validated': '#4caf50', 'failed': '#f44336', 'draft': '#ff9800' };
-      const status = link.validation_status || 'draft';
-      const color = statusColors[status] || '#999';
-      statusBadge = `<span class="badge" style="background: ${color}; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${status.toUpperCase()}</span>`;
-    }
+    // Format badge (Cypher/Python) - moved to secondary position
+    const format = link.type === 'script' ? 'Python' : 'Cypher';
+    const formatBadge = `<span class="badge" style="background: #666; color: white; font-size: 0.65em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${format}</span>`;
 
     let descLine = '';
     if (link.type === 'wizard') {
@@ -2195,7 +2197,7 @@ function renderFlatLinks(validLinks, container) {
            tabindex="${isFocused ? '0' : '-1'}">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
           <strong style="font-size: 0.95em;">${linkName}</strong>
-          <div>${typeBadge}${statusBadge}</div>
+          <div>${statusBadge}${formatBadge}</div>
         </div>
         <div style="font-size: 0.85em; color: #666;">
           ${descLine}
@@ -2289,17 +2291,19 @@ function renderGroupedLinks(validLinks, container) {
       const isActive = currentLink && currentLink.id === link.id;
       const classes = ['link-item', isActive && 'active'].filter(Boolean).join(' ');
 
-      const typeBadge = link.type === 'script'
-        ? '<span class="badge" style="background: #9c27b0; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px;">SCRIPT</span>'
-        : '<span class="badge" style="background: #2196f3; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px;">WIZARD</span>';
+      // Status badge (Active/Pending)
+      const status = link.status || 'pending';
+      const statusColors = {
+        'active': '#4caf50',
+        'pending': '#ff9800',
+        'available': '#999'
+      };
+      const color = statusColors[status] || '#999';
+      const statusBadge = `<span class="badge" style="background: ${color}; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px;">${status.toUpperCase()}</span>`;
 
-      let statusBadge = '';
-      if (link.type === 'script') {
-        const statusColors = { 'validated': '#4caf50', 'failed': '#f44336', 'draft': '#ff9800' };
-        const status = link.validation_status || 'draft';
-        const color = statusColors[status] || '#999';
-        statusBadge = `<span class="badge" style="background: ${color}; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${status.toUpperCase()}</span>`;
-      }
+      // Format badge (Cypher/Python)
+      const format = link.type === 'script' ? 'Python' : 'Cypher';
+      const formatBadge = `<span class="badge" style="background: #666; color: white; font-size: 0.65em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${format}</span>`;
 
       const sourceDisplay = link.source_label || link.source_type || '?';
       const targetDisplay = link.target_label || link.target_type || '?';
@@ -2317,7 +2321,7 @@ function renderGroupedLinks(validLinks, container) {
              style="padding: 0.5rem; margin-left: 1rem; border-left: 2px solid #e0e0e0;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
             <strong style="font-size: 0.9em;">${linkName}</strong>
-            <div>${typeBadge}${statusBadge}</div>
+            <div>${statusBadge}${formatBadge}</div>
           </div>
           <div style="font-size: 0.8em; color: #666;">
             ${descLine}
@@ -3641,35 +3645,28 @@ async function loadDiscoveredInstances() {
   }
 }
 
-function saveDiscoveredAsDefinition(rel) {
-  console.log('[Links] saveDiscoveredAsDefinition called with:', rel);
+function adoptDiscoveredAsDefinition(rel) {
+  console.log('[Links] adoptDiscoveredAsDefinition called with:', rel);
 
-  // Use first database if merged from multiple sources
-  const database = rel.databases ? rel.databases[0] : rel.database;
-  const linkName = `${rel.source_label} → ${rel.rel_type} → ${rel.target_label} (${database})`;
+  const linkName = `${rel.source_label} ${rel.rel_type} ${rel.target_label}`;
 
-  // Build link definition from discovered relationship
+  // Adopt as a new link definition with 'pending' status
   const data = {
     name: linkName,
     source_label: rel.source_label,
-    source_filters: [],
     target_label: rel.target_label,
-    target_filters: [],
     relationship_type: rel.rel_type,
-    match_strategy: 'table_import',
-    match_config: {
-      source_database: database,
-      rel_type: rel.rel_type,
-      source_label: rel.source_label,
-      target_label: rel.target_label,
-      triple_count: rel.count || rel.triple_count || 0
-    },
-    relationship_props: {}
+    match_strategy: 'id',  // Default to ID-based matching
+    match_config: {},
+    source_config: {},
+    target_config: {},
+    relationship_props: {},
+    status: 'pending'  // New links default to pending
   };
 
-  showToast('Saving discovered relationship...', 'info');
+  showToast('Adopting relationship as definition...', 'info');
 
-  fetch('/api/links', {
+  fetch('/api/links/discovered/adopt', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
@@ -3681,13 +3678,25 @@ function saveDiscoveredAsDefinition(rel) {
         throw new Error(result.detail || result.error || `HTTP ${response.status}`);
       }
 
-      showToast('Link definition saved!', 'success');
+      showToast('Relationship adopted! Now in Pending tab.', 'success');
       loadLinkDefinitions();
+
+      // Switch to pending tab to show the newly adopted link
+      currentFilter = 'pending';
+      document.querySelectorAll('.link-filter-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.filter === 'pending');
+      });
+      renderLinkList();
     })
     .catch(err => {
-      console.error('Failed to save discovered relationship:', err);
-      showToast(`Failed to save: ${err.message}`, 'error');
+      console.error('Failed to adopt relationship:', err);
+      showToast(`Failed to adopt: ${err.message}`, 'error');
     });
+}
+
+// Legacy function kept for backward compatibility
+function saveDiscoveredAsDefinition(rel) {
+  adoptDiscoveredAsDefinition(rel);
 }
 
 // ===== Discovered Import Configuration =====

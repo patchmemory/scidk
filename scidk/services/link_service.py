@@ -130,7 +130,7 @@ class LinkService:
                 """
                 SELECT id, name, source_label, target_label, source_type, source_config,
                        target_type, target_config, match_strategy, match_config,
-                       relationship_type, relationship_props, created_at, updated_at
+                       relationship_type, relationship_props, created_at, updated_at, status
                 FROM link_definitions
                 ORDER BY updated_at DESC
                 """
@@ -140,7 +140,7 @@ class LinkService:
             definitions = []
             for row in rows:
                 (id, name, source_label, target_label, source_type, source_config, target_type, target_config,
-                 match_strategy, match_config, rel_type, rel_props, created_at, updated_at) = row
+                 match_strategy, match_config, rel_type, rel_props, created_at, updated_at, status) = row
                 definitions.append({
                     'id': id,
                     'name': name,
@@ -155,7 +155,8 @@ class LinkService:
                     'relationship_type': rel_type,
                     'relationship_props': json.loads(rel_props) if rel_props else {},
                     'created_at': created_at,
-                    'updated_at': updated_at
+                    'updated_at': updated_at,
+                    'status': status or 'pending'
                 })
             return definitions
         finally:
@@ -178,7 +179,7 @@ class LinkService:
                 """
                 SELECT id, name, source_label, target_label, source_type, source_config,
                        target_type, target_config, match_strategy, match_config,
-                       relationship_type, relationship_props, created_at, updated_at
+                       relationship_type, relationship_props, created_at, updated_at, status
                 FROM link_definitions
                 WHERE id = ?
                 """,
@@ -190,7 +191,7 @@ class LinkService:
                 return None
 
             (id, name, source_label, target_label, source_type, source_config, target_type, target_config,
-             match_strategy, match_config, rel_type, rel_props, created_at, updated_at) = row
+             match_strategy, match_config, rel_type, rel_props, created_at, updated_at, status) = row
             return {
                 'id': id,
                 'name': name,
@@ -205,7 +206,8 @@ class LinkService:
                 'relationship_type': rel_type,
                 'relationship_props': json.loads(rel_props) if rel_props else {},
                 'created_at': created_at,
-                'updated_at': updated_at
+                'updated_at': updated_at,
+                'status': status or 'pending'
             }
         finally:
             conn.close()
@@ -259,6 +261,9 @@ class LinkService:
         match_config = json.dumps(definition.get('match_config', {}))
         relationship_props = json.dumps(definition.get('relationship_props', {}))
 
+        # Default status to 'pending' for new links
+        status = definition.get('status', 'pending')
+
         now = time.time()
 
         # Check if link exists
@@ -268,31 +273,33 @@ class LinkService:
         try:
             cursor = conn.cursor()
             if existing:
-                # Update
+                # Update - preserve status if not explicitly provided
+                if 'status' not in definition:
+                    status = existing.get('status', 'pending')
                 cursor.execute(
                     """
                     UPDATE link_definitions
                     SET name = ?, source_label = ?, target_label = ?, source_type = ?, source_config = ?,
                         target_type = ?, target_config = ?, match_strategy = ?, match_config = ?,
-                        relationship_type = ?, relationship_props = ?, updated_at = ?
+                        relationship_type = ?, relationship_props = ?, updated_at = ?, status = ?
                     WHERE id = ?
                     """,
                     (name, source_label, target_label, source_type, source_config, target_type, target_config,
-                     match_strategy, match_config, relationship_type, relationship_props, now, link_id)
+                     match_strategy, match_config, relationship_type, relationship_props, now, status, link_id)
                 )
                 created_at = existing['created_at']
             else:
-                # Insert
+                # Insert - new links default to 'pending'
                 cursor.execute(
                     """
                     INSERT INTO link_definitions
                     (id, name, source_label, target_label, source_type, source_config, target_type, target_config,
                      match_strategy, match_config, relationship_type, relationship_props,
-                     created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     created_at, updated_at, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (link_id, name, source_label, target_label, source_type, source_config, target_type, target_config,
-                     match_strategy, match_config, relationship_type, relationship_props, now, now)
+                     match_strategy, match_config, relationship_type, relationship_props, now, now, status)
                 )
                 created_at = now
 
@@ -312,7 +319,8 @@ class LinkService:
                 'relationship_type': relationship_type,
                 'relationship_props': json.loads(relationship_props),
                 'created_at': created_at,
-                'updated_at': now
+                'updated_at': now,
+                'status': status
             }
         finally:
             conn.close()
@@ -810,6 +818,19 @@ class LinkService:
                 """,
                 ('completed', total_created, time.time(), job_id)
             )
+
+            # Update link definition status to 'active' after successful execution
+            link_def_id = definition.get('id')
+            if link_def_id and total_created > 0:
+                cursor.execute(
+                    """
+                    UPDATE link_definitions
+                    SET status = ?
+                    WHERE id = ?
+                    """,
+                    ('active', link_def_id)
+                )
+
             conn.commit()
         except Exception as e:
             # Update job with error
@@ -960,6 +981,19 @@ class LinkService:
                 """,
                 ('completed', total_created, time.time(), job_id)
             )
+
+            # Update link definition status to 'active' after successful execution
+            link_def_id = definition.get('id')
+            if link_def_id and total_created > 0:
+                cursor.execute(
+                    """
+                    UPDATE link_definitions
+                    SET status = ?
+                    WHERE id = ?
+                    """,
+                    ('active', link_def_id)
+                )
+
             conn.commit()
 
             task['relationships_created'] = total_created

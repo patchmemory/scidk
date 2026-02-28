@@ -34,6 +34,9 @@ def list_links():
 
     **DEPRECATED**: Use /api/integrations instead.
 
+    Query params:
+    - status: Optional status filter ('active', 'pending', 'available')
+
     Returns:
     {
         "status": "success",
@@ -45,6 +48,7 @@ def list_links():
                 "target_type": "label",
                 "match_strategy": "property",
                 "relationship_type": "AUTHORED",
+                "status": "active",
                 ...
             }
         ]
@@ -54,6 +58,12 @@ def list_links():
     try:
         service = _get_link_service()
         links = service.list_all_links()  # NEW: Uses unified method
+
+        # Filter by status if requested
+        status_filter = request.args.get('status')
+        if status_filter:
+            links = [link for link in links if link.get('status') == status_filter]
+
         return jsonify({
             'status': 'success',
             'links': links
@@ -485,6 +495,61 @@ def preview_discovered_import():
         }), 200
     except Exception as e:
         logger.exception("Failed to preview discovered import")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/links/discovered/adopt', methods=['POST'])
+def adopt_discovered_as_definition():
+    """
+    Adopt a discovered relationship as a formal link definition.
+
+    Creates a new link definition in 'pending' status that can be
+    edited and run like any other link.
+
+    Request body:
+    {
+        "source_label": "Person",
+        "target_label": "File",
+        "rel_type": "AUTHORED",
+        "name": "Optional custom name"
+    }
+
+    Returns the created link definition.
+    """
+    try:
+        data = request.json
+        service = _get_link_service()
+
+        source_label = data['source_label']
+        target_label = data['target_label']
+        rel_type = data['rel_type']
+        name = data.get('name') or f"{source_label} {rel_type} {target_label}"
+
+        # Create link definition with 'pending' status
+        link_definition = {
+            'name': name,
+            'source_label': source_label,
+            'target_label': target_label,
+            'relationship_type': rel_type,
+            'match_strategy': 'id',  # Default to ID-based matching
+            'match_config': {},
+            'source_config': {},
+            'target_config': {},
+            'relationship_props': {},
+            'status': 'pending'
+        }
+
+        link = service.save_link_definition(link_definition)
+
+        return jsonify({
+            'status': 'success',
+            'link': link
+        }), 200
+    except Exception as e:
+        logger.exception("Failed to adopt discovered relationship")
         return jsonify({
             'status': 'error',
             'error': str(e)
