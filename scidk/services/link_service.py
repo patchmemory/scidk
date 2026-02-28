@@ -1554,6 +1554,20 @@ class LinkService:
             raise ValueError("Primary database not connected")
 
         try:
+            # Get total count upfront for accurate progress tracking
+            logger.info(f"[Import] Counting total relationships in '{source_database}'...")
+            count_query = f"""
+            MATCH (:{source_label})-[r:{rel_type}]->(:{target_label})
+            RETURN count(r) as total
+            """
+            count_result = source_client.execute_read(count_query)
+            total_relationships = count_result[0].get('total', 0) if count_result else 0
+            logger.info(f"[Import] Total relationships to import: {total_relationships}")
+
+            # Report initial progress
+            if progress_callback:
+                progress_callback(0, total_relationships, f"Starting import of {total_relationships:,} relationships...")
+
             # Track statistics
             source_nodes_created = 0
             source_nodes_merged = 0
@@ -1662,12 +1676,10 @@ class LinkService:
 
                     # Report progress if callback provided
                     if progress_callback:
-                        # We don't know total count upfront, so report current progress
-                        # The UI will show "Importing... X relationships processed"
                         progress_callback(
                             relationships_created,
-                            total_fetched,  # Use fetched count as rough total estimate
-                            f"Importing... {relationships_created:,} / ~{total_fetched:,} relationships"
+                            total_relationships,
+                            f"Importing... {relationships_created:,} / {total_relationships:,} relationships"
                         )
 
                 # Move to next batch
