@@ -2347,6 +2347,9 @@ function attachLinkClickHandlers(container) {
 }
 
 function loadLinkDefinition(linkId) {
+  // Reset wizard panel to clean state (prevents state bleed)
+  resetWizardPanel();
+
   // Remove script banner if present (switching from script to wizard link)
   const existingBanner = document.querySelector('.script-info-banner');
   if (existingBanner) {
@@ -2638,6 +2641,21 @@ function populateWizardFromLink(link) {
   const btnDeleteDef = document.getElementById('btn-delete-def');
   if (btnDeleteDef) {
     btnDeleteDef.style.display = 'inline-block';
+  }
+
+  // Check if this is a discovered import link (has source_database in match_config)
+  if (link.match_config && link.match_config.source_database) {
+    // This is a discovered import link - show the triple bar with UID info
+    discoveredImportConfig.database = link.match_config.source_database;
+    discoveredImportConfig.source.label = link.source_label;
+    discoveredImportConfig.source.uid_property = link.match_config.source_uid_property;
+    discoveredImportConfig.target.label = link.target_label;
+    discoveredImportConfig.target.uid_property = link.match_config.target_uid_property;
+    discoveredImportConfig.relationship.type = link.relationship_type;
+    discoveredImportConfig.relationship.import_properties = link.match_config.import_rel_properties !== false;
+
+    // Show the discovered import triple bar
+    renderDiscoveredImportTriple();
   }
 
   // Update visual display
@@ -3421,6 +3439,9 @@ function returnFocusToSidePanel() {
 async function openImportWizardForRelationship(rel) {
   console.log('[Links] openImportWizardForRelationship called with:', rel);
 
+  // Reset wizard panel to clean state (prevents state bleed)
+  resetWizardPanel();
+
   // Each rel now has exactly one database (no more merging)
   const database = rel.database;
 
@@ -3700,6 +3721,55 @@ let discoveredImportConfig = {
     available_properties: []
   }
 };
+
+// Reset wizard panel to clean state (prevents state bleed between link selections)
+function resetWizardPanel() {
+  // Clear discovered import config
+  discoveredImportConfig = {
+    rel: null,
+    database: null,
+    source: {
+      label: null,
+      uid_property: null,
+      available_properties: []
+    },
+    target: {
+      label: null,
+      uid_property: null,
+      available_properties: []
+    },
+    relationship: {
+      type: null,
+      import_properties: true,
+      available_properties: []
+    }
+  };
+
+  // Hide discovered import triple bar
+  const tripleBar = document.getElementById('discovered-import-triple');
+  if (tripleBar) tripleBar.style.display = 'none';
+
+  // Clear preview container
+  const previewContainer = document.getElementById('preview-container');
+  if (previewContainer) previewContainer.innerHTML = '<div class="empty-state small">Click "Load Preview" to see sample matches</div>';
+
+  // Reset link name field
+  const linkName = document.getElementById('link-name');
+  if (linkName) linkName.value = '';
+
+  // Reset wizard title
+  const wizardTitle = document.getElementById('wizard-title');
+  if (wizardTitle) wizardTitle.textContent = 'New Link Definition';
+
+  // Show standard wizard controls (in case discovered import controls were shown)
+  const btnSaveDefinition = document.getElementById('btn-save-definition');
+  const btnLoadPreview = document.getElementById('btn-load-preview');
+  const btnExecute = document.getElementById('btn-execute');
+
+  if (btnSaveDefinition) btnSaveDefinition.style.display = '';
+  if (btnLoadPreview) btnLoadPreview.style.display = '';
+  if (btnExecute) btnExecute.style.display = '';
+}
 
 // Auto-detect best UID property from available properties
 function autoDetectUidProperty(properties) {
