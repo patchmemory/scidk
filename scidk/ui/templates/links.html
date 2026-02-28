@@ -3460,6 +3460,12 @@ async function openImportWizardForRelationship(rel) {
   // Show wizard panel
   showWizard();
 
+  // Auto-populate link name
+  const linkNameInput = document.getElementById('link-name');
+  if (linkNameInput) {
+    linkNameInput.value = `${rel.source_label} ${rel.rel_type} ${rel.target_label}`;
+  }
+
   // Show loading state in triple display
   const mainTripleDisplay = document.getElementById('main-triple-display');
   if (mainTripleDisplay) {
@@ -3481,6 +3487,20 @@ async function openImportWizardForRelationship(rel) {
     // Auto-detect UID properties
     discoveredImportConfig.source.uid_property = autoDetectUidProperty(sourceProps);
     discoveredImportConfig.target.uid_property = autoDetectUidProperty(targetProps);
+
+    // Show guidance toast based on auto-detection results
+    const sourceUid = discoveredImportConfig.source.uid_property;
+    const targetUid = discoveredImportConfig.target.uid_property;
+
+    if (sourceUid && targetUid) {
+      showToast(`Auto-selected UID properties: source.${sourceUid}, target.${targetUid}`, 'success');
+    } else if (!sourceUid && !targetUid) {
+      showToast('Please configure Source and Target UID properties', 'warning');
+    } else if (!sourceUid) {
+      showToast('Please configure Source UID property', 'warning');
+    } else if (!targetUid) {
+      showToast('Please configure Target UID property', 'warning');
+    }
 
     // Update the clickable triple display
     updateDiscoveredImportDisplay();
@@ -3513,8 +3533,14 @@ async function loadDiscoveredInstances() {
     target_label: config.target.label
   });
 
-  if (!sourceUid || !targetUid) {
-    showToast('Please complete all required fields', 'error');
+  if (!sourceUid && !targetUid) {
+    showToast('Please configure Source and Target UID properties', 'error');
+    return;
+  } else if (!sourceUid) {
+    showToast('Please configure Source UID property', 'error');
+    return;
+  } else if (!targetUid) {
+    showToast('Please configure Target UID property', 'error');
     return;
   }
 
@@ -3679,6 +3705,8 @@ let discoveredImportConfig = {
 
 // Auto-detect best UID property from available properties
 function autoDetectUidProperty(properties) {
+  console.log('[Links] autoDetectUidProperty - available properties:', properties);
+
   const priorityOrder = ['uid', 'uuid', 'id', '_id', 'name'];
   for (const uid of priorityOrder) {
     const found = properties.find(p => {
@@ -3686,11 +3714,19 @@ function autoDetectUidProperty(properties) {
       return propName.toLowerCase() === uid;
     });
     if (found) {
-      return typeof found === 'string' ? found : found.name;
+      const selectedProp = typeof found === 'string' ? found : found.name;
+      console.log(`[Links] autoDetectUidProperty - found priority match: ${selectedProp}`);
+      return selectedProp;
     }
   }
   // Return first property if no priority match
-  return properties.length > 0 ? (typeof properties[0] === 'string' ? properties[0] : properties[0].name) : null;
+  if (properties.length > 0) {
+    const fallbackProp = typeof properties[0] === 'string' ? properties[0] : properties[0].name;
+    console.log(`[Links] autoDetectUidProperty - no priority match, using first property: ${fallbackProp}`);
+    return fallbackProp;
+  }
+  console.log('[Links] autoDetectUidProperty - no properties available, returning null');
+  return null;
 }
 
 // Fetch properties for a label from external database
