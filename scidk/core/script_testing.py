@@ -43,7 +43,19 @@ class ScriptTestRunner:
         Returns:
             ValidationResult with pass/fail status and details
         """
-        # First check basic execution in sandbox
+        # DEBUG: Log script language and category at validation entry point
+        import logging
+        logging.getLogger(__name__).warning(f"run_tests: language={script.language!r} category={script.category!r}")
+
+        # Skip sandbox execution for Cypher scripts (they need Neo4j, not Python sandbox)
+        if script.language == 'cypher':
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"ScriptTestRunner: Detected Cypher script '{script.id}', skipping sandbox execution")
+            # Go directly to validator which has proper Cypher handling
+            return validator.validate(script)
+
+        # For Python scripts: First check basic execution in sandbox
         result = run_sandboxed(script.code, timeout=self.timeout)
 
         if result['returncode'] != 0 and not result['timed_out']:

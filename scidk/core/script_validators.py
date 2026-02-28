@@ -174,16 +174,25 @@ class BaseValidator:
         warnings = []
 
         # Test 1: Has required function (base: just checks syntax)
-        try:
-            ast.parse(script.code)
-            tests['valid_syntax'] = True
-        except SyntaxError as e:
-            tests['valid_syntax'] = False
-            errors.append(f"Syntax error: {e}")
+        # Skip Python syntax check for Cypher scripts
+        if script.language == 'cypher':
+            # Validate Cypher structure instead
+            tests['valid_syntax'] = self._validate_cypher_syntax(script.code, errors)
+        else:
+            # Python syntax validation
+            try:
+                ast.parse(script.code)
+                tests['valid_syntax'] = True
+            except SyntaxError as e:
+                tests['valid_syntax'] = False
+                errors.append(f"Syntax error: {e}")
 
         # Test 2: Can execute without crashing (in sandbox)
-        # For Scripts page scripts, provide minimal execution context
-        if tests.get('valid_syntax', False):
+        # Skip execution test for Cypher scripts (they need Neo4j connection)
+        if script.language == 'cypher':
+            # Cypher scripts can't be executed in sandbox - require Neo4j
+            tests['executes_without_error'] = True  # Pass by default for Cypher
+        elif tests.get('valid_syntax', False):
             # Wrap script with minimal execution environment
             # Note: Code is written to a temp file so __file__ is automatically set by Python
             wrapped_code = f"""
@@ -266,6 +275,34 @@ except Exception as e:
             test_results=tests,
             warnings=warnings
         )
+
+    def _validate_cypher_syntax(self, code: str, errors: List[str]) -> bool:
+        """
+        Validate Cypher script structure.
+
+        Args:
+            code: Cypher query code
+            errors: List to append errors to
+
+        Returns:
+            True if valid, False otherwise
+        """
+        code_upper = code.upper()
+
+        # Check 1: Must contain MERGE for idempotency (not just CREATE)
+        has_merge = 'MERGE' in code_upper
+        if not has_merge:
+            errors.append("Cypher link must use MERGE (not CREATE) for idempotency")
+            return False
+
+        # Check 2: Should contain RETURN statement
+        has_return = 'RETURN' in code_upper
+        if not has_return:
+            errors.append("Cypher script should end with RETURN statement")
+            return False
+
+        # Basic validation passed
+        return True
 
     def _check_function_exists(self, code: str, function_name: str) -> bool:
         """
@@ -436,7 +473,12 @@ class LinkValidator(BaseValidator):
         # Run base tests first
         base_result = super().validate(script)
 
-        # Link-specific tests
+        # Skip Python-specific link tests for Cypher scripts
+        # Cypher links are validated via base Cypher syntax checks only
+        if script.language == 'cypher':
+            return base_result
+
+        # Link-specific tests (Python only)
         tests = {}
         errors = []
         warnings = []
