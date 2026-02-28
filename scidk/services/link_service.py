@@ -1290,7 +1290,7 @@ class LinkService:
             if source_client and source_database != 'PRIMARY':
                 source_client.close()
 
-    def execute_discovered_import(
+    def execute_discovered_import_with_task(
         self,
         source_label: str,
         target_label: str,
@@ -1300,6 +1300,220 @@ class LinkService:
         target_uid_property: str,
         import_rel_properties: bool = True,
         batch_size: int = 100
+    ) -> str:
+        """
+        Execute discovered import as background task with progress tracking.
+        Automatically creates/updates Link Definition for reusability.
+
+        Returns:
+            Task ID for polling progress
+        """
+        import hashlib
+        from flask import current_app
+
+        now = time.time()
+        tid_src = f"discovered_import|{source_database}|{source_label}|{rel_type}|{target_label}|{now}"
+        task_id = hashlib.sha1(tid_src.encode()).hexdigest()[:12]
+
+        # Auto-create or update Link Definition for this import
+        # This allows the user to rerun the import later from the Active tab
+        link_def_id = self._get_or_create_discovered_link_definition(
+            source_label=source_label,
+            target_label=target_label,
+            rel_type=rel_type,
+            source_database=source_database,
+            source_uid_property=source_uid_property,
+            target_uid_property=target_uid_property,
+            import_rel_properties=import_rel_properties
+        )
+
+        # Create task record
+        task = {
+            'id': task_id,
+            'type': 'discovered_import',
+            'status': 'running',
+            'link_def_id': link_def_id,
+            'source_database': source_database,
+            'source_label': source_label,
+            'target_label': target_label,
+            'rel_type': rel_type,
+            'started': now,
+            'ended': None,
+            'total': 0,  # Will be updated as we discover total
+            'processed': 0,
+            'progress': 0.0,
+            'error': None,
+            'status_message': 'Initializing import...',
+            'relationships_created': 0,
+            'source_nodes_created': 0,
+            'target_nodes_created': 0,
+        }
+        current_app.extensions['scidk'].setdefault('tasks', {})[task_id] = task
+
+        # Run in background thread
+        import threading
+        app = current_app._get_current_object()
+
+        def _worker():
+            with app.app_context():
+                try:
+                    self._execute_discovered_import_with_progress(
+                        task=task,
+                        source_label=source_label,
+                        target_label=target_label,
+                        rel_type=rel_type,
+                        source_database=source_database,
+                        source_uid_property=source_uid_property,
+                        target_uid_property=target_uid_property,
+                        import_rel_properties=import_rel_properties,
+                        batch_size=batch_size,
+                        link_def_id=link_def_id
+                    )
+                    task['ended'] = time.time()
+                    task['status'] = 'completed'
+                    task['progress'] = 1.0
+                    task['status_message'] = f'Imported {task["relationships_created"]} relationships. Link Definition saved in Active tab.'
+                except Exception as e:
+                    logger.exception("Discovered import failed")
+                    task['ended'] = time.time()
+                    task['status'] = 'error'
+                    task['error'] = str(e)
+
+        threading.Thread(target=_worker, daemon=True).start()
+        return task_id
+
+    def _get_or_create_discovered_link_definition(
+        self,
+        source_label: str,
+        target_label: str,
+        rel_type: str,
+        source_database: str,
+        source_uid_property: str,
+        target_uid_property: str,
+        import_rel_properties: bool
+    ) -> str:
+        """
+        Create or update a Link Definition for a discovered relationship import.
+        This allows the import to be rerun later.
+        """
+        # Check if definition already exists for this exact pattern
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, status FROM link_definitions
+                WHERE source_label = ? AND target_label = ? AND relationship_type = ?
+                AND json_extract(match_config, '$.source_database') = ?
+                LIMIT 1
+                """,
+                (source_label, target_label, rel_type, source_database)
+            )
+            existing = cursor.fetchone()
+
+            link_def_id = existing[0] if existing else str(uuid.uuid4())
+            link_name = f"{source_label} → {rel_type} → {target_label} ({source_database})"
+
+            match_config = {
+                'source_database': source_database,
+                'source_uid_property': source_uid_property,
+                'target_uid_property': target_uid_property,
+                'import_rel_properties': import_rel_properties
+            }
+
+            now = time.time()
+
+            if existing:
+                # Update existing - set to active since import is running
+                cursor.execute(
+                    """
+                    UPDATE link_definitions
+                    SET match_config = ?, updated_at = ?, status = 'active'
+                    WHERE id = ?
+                    """,
+                    (json.dumps(match_config), now, link_def_id)
+                )
+            else:
+                # Create new - start as pending, will become active on completion
+                cursor.execute(
+                    """
+                    INSERT INTO link_definitions
+                    (id, name, source_label, target_label, source_type, source_config, target_type, target_config,
+                     match_strategy, match_config, relationship_type, relationship_props,
+                     created_at, updated_at, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (link_def_id, link_name, source_label, target_label, 'label', '{}', 'label', '{}',
+                     'id', json.dumps(match_config), rel_type, '{}', now, now, 'pending')
+                )
+
+            conn.commit()
+            return link_def_id
+        finally:
+            conn.close()
+
+    def _execute_discovered_import_with_progress(
+        self,
+        task: Dict[str, Any],
+        source_label: str,
+        target_label: str,
+        rel_type: str,
+        source_database: str,
+        source_uid_property: str,
+        target_uid_property: str,
+        import_rel_properties: bool,
+        batch_size: int,
+        link_def_id: str
+    ):
+        """Execute discovered import with live progress updates to task dict."""
+        # This wraps the existing execute_discovered_import logic with progress tracking
+        result = self.execute_discovered_import(
+            source_label=source_label,
+            target_label=target_label,
+            rel_type=rel_type,
+            source_database=source_database,
+            source_uid_property=source_uid_property,
+            target_uid_property=target_uid_property,
+            import_rel_properties=import_rel_properties,
+            batch_size=batch_size,
+            progress_callback=lambda current, total, msg: self._update_task_progress(task, current, total, msg)
+        )
+
+        # Update final task state
+        task['relationships_created'] = result.get('relationships_created', 0)
+        task['source_nodes_created'] = result.get('source_nodes_created', 0)
+        task['target_nodes_created'] = result.get('target_nodes_created', 0)
+
+        # Mark Link Definition as active on successful completion
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE link_definitions SET status = 'active', updated_at = ? WHERE id = ?",
+                (time.time(), link_def_id)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _update_task_progress(self, task: Dict[str, Any], current: int, total: int, message: str):
+        """Update task progress dict (called from import worker thread)."""
+        task['processed'] = current
+        task['total'] = total
+        task['progress'] = current / total if total > 0 else 0
+        task['status_message'] = message
+
+    def execute_discovered_import(
+        self,
+        source_label: str,
+        target_label: str,
+        rel_type: str,
+        source_database: str,
+        source_uid_property: str,
+        target_uid_property: str,
+        import_rel_properties: bool = True,
+        batch_size: int = 100,
+        progress_callback=None
     ) -> Dict[str, Any]:
         """
         Import stub nodes and relationships from discovered relationship.
@@ -1445,6 +1659,16 @@ class LinkService:
                     target_nodes_merged += stats.get('targets_merged', 0)
                     relationships_created += stats.get('rels_created', 0)
                     logger.info(f"[Import] Batch processed - relationships_created so far: {relationships_created}")
+
+                    # Report progress if callback provided
+                    if progress_callback:
+                        # We don't know total count upfront, so report current progress
+                        # The UI will show "Importing... X relationships processed"
+                        progress_callback(
+                            relationships_created,
+                            total_fetched,  # Use fetched count as rough total estimate
+                            f"Importing... {relationships_created:,} / ~{total_fetched:,} relationships"
+                        )
 
                 # Move to next batch
                 skip += batch_size

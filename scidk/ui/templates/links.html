@@ -4064,28 +4064,24 @@ async function executeDiscoveredImport() {
       throw new Error(result.error || 'Import failed');
     }
 
-    // Display success results
+    // Show progress UI and start polling
+    const taskId = result.task_id;
     const previewContainer = document.getElementById('preview-container');
-    const summary = result.summary || {};
 
     previewContainer.innerHTML = `
-      <div style="background: #e8f5e9; border-left: 4px solid #4caf50; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
-        <h5 style="margin: 0 0 0.5rem 0;">✓ Import Complete!</h5>
-        <div style="font-size: 0.9em;">
-          <div><strong>Source Nodes:</strong> ${summary.source_nodes_created || 0} created, ${summary.source_nodes_merged || 0} merged</div>
-          <div><strong>Target Nodes:</strong> ${summary.target_nodes_created || 0} created, ${summary.target_nodes_merged || 0} merged</div>
-          <div><strong>Relationships:</strong> ${summary.relationships_created || 0} created</div>
-          ${summary.duration_seconds ? `<div><strong>Duration:</strong> ${summary.duration_seconds.toFixed(1)}s</div>` : ''}
+      <div style="padding: 1.5rem;">
+        <div id="task-progress-message" style="margin-bottom: 1rem; font-weight: 500;">Initializing import...</div>
+        <div style="background: #e0e0e0; border-radius: 4px; height: 24px; overflow: hidden; margin-bottom: 0.5rem;">
+          <div id="task-progress-fill" style="background: #4caf50; height: 100%; width: 0%; transition: width 0.3s ease;"></div>
         </div>
-        <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid rgba(76,175,80,0.3); font-size: 0.85em; color: #666;">
-          Next steps: Visit the <a href="/labels">Labels page</a> to enrich ${config.source.label} and ${config.target.label} nodes with full properties.
-        </div>
+        <div id="task-progress-stats" style="font-size: 0.85em; color: #666;"></div>
       </div>
     `;
 
-    showToast(`Successfully imported ${summary.relationships_created || 0} relationships`, 'success');
+    showToast('Import started - tracking progress...', 'info');
+    pollDiscoveredImportStatus(taskId, config);
   } catch (err) {
-    console.error('Import failed:', err);
+    console.error('Import failed to start:', err);
     showToast(`Import failed: ${err.message}`, 'error');
 
     if (executeBtn) {
@@ -4093,6 +4089,74 @@ async function executeDiscoveredImport() {
       executeBtn.textContent = 'Import to Primary Graph';
     }
   }
+}
+
+// Poll discovered import task status
+function pollDiscoveredImportStatus(taskId, config) {
+  const interval = setInterval(() => {
+    fetch(`/api/tasks/${taskId}`)
+      .then(r => r.json())
+      .then(task => {
+        // Update progress UI
+        const progressMsg = document.getElementById('task-progress-message');
+        const progressFill = document.getElementById('task-progress-fill');
+        const progressStats = document.getElementById('task-progress-stats');
+
+        if (progressMsg) {
+          progressMsg.textContent = task.status_message || 'Processing...';
+        }
+
+        if (progressFill && task.progress !== undefined) {
+          progressFill.style.width = `${Math.round(task.progress * 100)}%`;
+        }
+
+        if (progressStats && task.processed && task.total) {
+          progressStats.textContent = `${task.processed.toLocaleString()} / ${task.total.toLocaleString()} relationships`;
+        }
+
+        // Check completion status
+        if (task.status === 'completed') {
+          clearInterval(interval);
+          const relCount = task.relationships_created || 0;
+          const sourceCreated = task.source_nodes_created || 0;
+          const targetCreated = task.target_nodes_created || 0;
+
+          document.getElementById('preview-container').innerHTML = `
+            <div style="background: #e8f5e9; border-left: 4px solid #4caf50; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+              <h5 style="margin: 0 0 0.5rem 0;">✓ Import Complete!</h5>
+              <div style="font-size: 0.9em;">
+                <div><strong>Relationships:</strong> ${relCount.toLocaleString()} imported</div>
+                <div><strong>Nodes:</strong> ${sourceCreated} ${config.source.label} + ${targetCreated} ${config.target.label} created</div>
+              </div>
+              <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid rgba(76,175,80,0.3); font-size: 0.85em; color: #4caf50;">
+                ✓ Link Definition saved — find it in the Active tab to rerun this import later
+              </div>
+              <div style="margin-top: 0.5rem; font-size: 0.85em; color: #666;">
+                Next: Visit <a href="/labels">Labels page</a> to enrich nodes with full properties
+              </div>
+            </div>
+          `;
+          showToast(`Import complete! ${relCount.toLocaleString()} relationships created`, 'success');
+
+          // Refresh link definitions to show the new/updated definition
+          loadLinkDefinitions();
+        } else if (task.status === 'error' || task.status === 'failed') {
+          clearInterval(interval);
+          document.getElementById('preview-container').innerHTML = `
+            <div style="padding: 2rem; text-align: center;">
+              <div style="font-size: 3rem; color: #f44336; margin-bottom: 1rem;">✗</div>
+              <div style="font-weight: bold; font-size: 1.2rem; margin-bottom: 0.5rem;">Import Failed</div>
+              <div style="color: #666; font-size: 0.9rem;">${task.error || 'Unknown error'}</div>
+            </div>
+          `;
+          showToast(`Import failed: ${task.error || 'Unknown error'}`, 'error');
+        }
+      })
+      .catch(err => {
+        clearInterval(interval);
+        document.getElementById('preview-container').innerHTML = `<div class="empty-state small" style="color: #f44336;">Failed to poll import status</div>`;
+      });
+  }, 2000);  // Poll every 2 seconds
 }
 
 // CSV Export/Import Functions for Human Validation

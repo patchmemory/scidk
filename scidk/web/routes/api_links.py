@@ -559,11 +559,13 @@ def adopt_discovered_as_definition():
 @bp.route('/links/discovered/import', methods=['POST'])
 def execute_discovered_import():
     """
-    Import stub nodes and relationships from discovered relationship.
+    Import stub nodes and relationships from discovered relationship as background task.
 
     Creates lightweight stub nodes with only UID property, then creates
     relationships between them. Full node enrichment happens later via
     Labels page.
+
+    Automatically creates/updates a Link Definition so the import can be rerun later.
 
     Request body:
     {
@@ -577,13 +579,13 @@ def execute_discovered_import():
         "batch_size": 100
     }
 
-    Returns summary of nodes and relationships created/merged.
+    Returns task_id for polling progress.
     """
     try:
         data = request.json
         service = _get_link_service()
 
-        summary = service.execute_discovered_import(
+        task_id = service.execute_discovered_import_with_task(
             source_label=data['source_label'],
             target_label=data['target_label'],
             rel_type=data['rel_type'],
@@ -596,10 +598,10 @@ def execute_discovered_import():
 
         return jsonify({
             'status': 'success',
-            'summary': summary
+            'task_id': task_id
         }), 200
     except Exception as e:
-        logger.exception("Failed to execute discovered import")
+        logger.exception("Failed to start discovered import")
         return jsonify({
             'status': 'error',
             'error': str(e)
