@@ -93,13 +93,17 @@ class LinkService:
                 'type': 'wizard',
                 'match_strategy': link.get('match_strategy', ''),
                 'created_at': link.get('created_at', 0),
-                'updated_at': link.get('updated_at', 0)
+                'updated_at': link.get('updated_at', 0),
+                'status': link.get('status', 'pending')
             })
 
         # Normalize script links
         # NOTE: Use description instead of trying to infer labels from parameters.
         # This avoids fragile parsing and "Custom → Custom" inconsistencies.
         for script in script_links:
+            # Map script is_active to link status for consistent filtering
+            status = 'active' if (script.is_active if script.is_active is not None else False) else 'draft'
+
             all_links.append({
                 'id': script.id,
                 'name': script.name,
@@ -112,7 +116,8 @@ class LinkService:
                 'created_at': script.created_at or 0,
                 'updated_at': script.updated_at or 0,
                 'validation_status': script.validation_status or 'draft',
-                'is_active': script.is_active if script.is_active is not None else False
+                'is_active': script.is_active if script.is_active is not None else False,
+                'status': status
             })
 
         # Sort by most recently updated
