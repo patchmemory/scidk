@@ -282,6 +282,49 @@ def execute_link(link_id):
         }), 500
 
 
+@bp.route('/links/<link_id>/job-status', methods=['GET'])
+def get_link_job_status(link_id):
+    """
+    Check if there's a running job for this link definition.
+
+    Returns:
+    {
+        "running": true,
+        "task_id": "abc123",
+        "progress": { task progress dict }
+    }
+    or
+    {
+        "running": false
+    }
+    """
+    try:
+        tasks = current_app.extensions.get('scidk', {}).get('tasks', {})
+
+        # Find any running task for this link_def_id
+        for task_id, task in tasks.items():
+            if task.get('link_def_id') == link_id and task.get('status') == 'running':
+                return jsonify({
+                    'running': True,
+                    'task_id': task_id,
+                    'progress': {
+                        'processed': task.get('processed', 0),
+                        'total': task.get('total', 0),
+                        'progress': task.get('progress', 0),
+                        'status_message': task.get('status_message', ''),
+                        'relationships_created': task.get('relationships_created', 0)
+                    }
+                }), 200
+
+        return jsonify({'running': False}), 200
+    except Exception as e:
+        logger.exception("Failed to check job status")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
 @bp.route('/links/jobs/<job_id>', methods=['GET'])
 def get_job_status(job_id):
     """

@@ -2347,6 +2347,8 @@ function attachLinkClickHandlers(container) {
 }
 
 function loadLinkDefinition(linkId) {
+  console.log('[loadLinkDefinition] Loading link:', linkId);
+
   // Reset wizard panel to clean state (prevents state bleed)
   resetWizardPanel();
 
@@ -2359,17 +2361,29 @@ function loadLinkDefinition(linkId) {
   fetch(`/api/links/${linkId}`)
     .then(r => r.json())
     .then(data => {
+      console.log('[loadLinkDefinition] Response:', JSON.stringify(data, null, 2));
+
       if (data.status === 'success') {
         currentLink = data.link;
-        populateWizardFromLink(currentLink);
-        showWizard();
+        console.log('[loadLinkDefinition] Link loaded:', JSON.stringify(currentLink, null, 2));
+
+        try {
+          populateWizardFromLink(currentLink);
+          showWizard();
+
+          // Check if there's a running job for this link (Bug 2 fix)
+          checkAndResumeRunningJob(linkId);
+        } catch (err) {
+          console.error('[loadLinkDefinition] Error in populateWizardFromLink:', err);
+          showToast(`Failed to populate wizard: ${err.message}`, 'error');
+        }
       } else {
-        console.error('Failed to load link:', data);
+        console.error('[loadLinkDefinition] Failed to load link:', data);
         showToast(`Failed to load link: ${data.error || 'Unknown error'}`, 'error');
       }
     })
     .catch(err => {
-      console.error('Error loading link definition:', err);
+      console.error('[loadLinkDefinition] Fetch error:', err);
       showToast('Failed to load link definition', 'error');
     });
 }
@@ -4158,6 +4172,50 @@ async function executeDiscoveredImport() {
       executeBtn.disabled = false;
       executeBtn.textContent = 'Import to Primary Graph';
     }
+  }
+}
+
+// Check if there's a running job for this link and resume progress tracking
+async function checkAndResumeRunningJob(linkId) {
+  try {
+    const response = await fetch(`/api/links/${linkId}/job-status`);
+    const data = await response.json();
+
+    if (data.running && data.task_id) {
+      console.log('[checkAndResumeRunningJob] Found running job:', data.task_id);
+
+      // Show progress UI
+      const previewContainer = document.getElementById('preview-container');
+      if (previewContainer) {
+        previewContainer.innerHTML = `
+          <div style="padding: 1.5rem;">
+            <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+              <strong>Import in progress</strong> — resuming progress tracking...
+            </div>
+            <div id="task-progress-message" style="margin-bottom: 1rem; font-weight: 500;">${data.progress.status_message || 'Processing...'}</div>
+            <div style="background: #e0e0e0; border-radius: 4px; height: 24px; overflow: hidden; margin-bottom: 0.5rem;">
+              <div id="task-progress-fill" style="background: #4caf50; height: 100%; width: ${Math.round(data.progress.progress * 100)}%; transition: width 0.3s ease;"></div>
+            </div>
+            <div id="task-progress-stats" style="font-size: 0.85em; color: #666;">
+              ${data.progress.processed ? `${data.progress.processed.toLocaleString()} / ${data.progress.total.toLocaleString()} relationships` : ''}
+            </div>
+          </div>
+        `;
+      }
+
+      // Get config from link's match_config for the completion handler
+      const config = {
+        source: { label: currentLink.source_label },
+        target: { label: currentLink.target_label }
+      };
+
+      // Start polling
+      showToast('Resuming import progress tracking...', 'info');
+      pollDiscoveredImportStatus(data.task_id, config);
+    }
+  } catch (err) {
+    console.error('[checkAndResumeRunningJob] Error:', err);
+    // Silent fail - not critical
   }
 }
 
