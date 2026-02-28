@@ -23,10 +23,13 @@ def get_builtin_scripts() -> List[Script]:
     """
     Return all built-in scripts loaded from files.
 
-    Scripts are loaded from:
+    Scripts are loaded from designated subdirectories only:
     - scripts/analyses/builtin/ (analyses)
     - scripts/links/ (link scripts)
     - scripts/examples/ (example scripts)
+
+    Root-level scripts/*.py files (like analyze_feedback.py, seed_demo_data.py)
+    are utility scripts and are explicitly excluded from loading.
     """
     scripts = []
 
@@ -37,6 +40,10 @@ def get_builtin_scripts() -> List[Script]:
     # Define directories to scan
     # Each tuple: (directory_path, category_override)
     # category_override forces a specific category regardless of path/frontmatter
+    #
+    # IMPORTANT: Only scan designated subdirectories.
+    # DO NOT scan root-level scripts/*.py files - those are utilities,
+    # not Scripts page content (e.g., analyze_feedback.py, seed_demo_data.py).
     script_dirs = [
         (project_root / 'scripts' / 'analyses' / 'builtin', None),
         (project_root / 'scripts' / 'links', 'links'),
@@ -65,7 +72,9 @@ def get_builtin_scripts() -> List[Script]:
                         code=code,
                         description=metadata.get('description', ''),
                         parameters=metadata.get('parameters', []),
-                        tags=metadata.get('tags', [])
+                        tags=metadata.get('tags', []),
+                        source='built-in',
+                        modified=False
                     )
                     scripts.append(script)
                 except Exception as e:
