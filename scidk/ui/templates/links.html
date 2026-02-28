@@ -2676,6 +2676,14 @@ function populateWizardFromLink(link) {
 
     // Show the discovered import triple bar
     updateDiscoveredImportDisplay();
+
+    // Hide Save/Execute/Delete buttons for discovered import workflow
+    const btnSaveDef = document.getElementById('btn-save-def');
+    const btnExecute = document.getElementById('btn-execute');
+    const btnDeleteDef = document.getElementById('btn-delete-def');
+    if (btnSaveDef) btnSaveDef.style.display = 'none';
+    if (btnExecute) btnExecute.style.display = 'none';
+    if (btnDeleteDef) btnDeleteDef.style.display = 'none';
   }
 
   // Update visual display
@@ -3227,8 +3235,16 @@ function executeLink() {
     });
 }
 
+// Global variable to track active regular task polling interval
+let activeTaskPollingInterval = null;
+
 function pollTaskStatus(taskId) {
-  const interval = setInterval(() => {
+  // Clear any existing polling interval to prevent multiple polls
+  if (activeTaskPollingInterval) {
+    clearInterval(activeTaskPollingInterval);
+  }
+
+  activeTaskPollingInterval = setInterval(() => {
     fetch(`/api/tasks/${taskId}`)
       .then(r => r.json())
       .then(task => {
@@ -3251,7 +3267,8 @@ function pollTaskStatus(taskId) {
 
         // Check completion status
         if (task.status === 'completed') {
-          clearInterval(interval);
+          clearInterval(activeTaskPollingInterval);
+          activeTaskPollingInterval = null;
           const relCount = task.relationships_created || task.executed_count || 0;
           const relType = tripleBuilder.relationship.type || 'relationship';
           const propsCount = (tripleBuilder.relationship.properties || []).length;
@@ -3272,7 +3289,8 @@ function pollTaskStatus(taskId) {
           `;
           showToast(`Completed! ${resultMessage}`, 'success');
         } else if (task.status === 'error' || task.status === 'failed') {
-          clearInterval(interval);
+          clearInterval(activeTaskPollingInterval);
+          activeTaskPollingInterval = null;
           document.getElementById('preview-container').innerHTML = `
             <div style="padding: 2rem; text-align: center;">
               <div style="font-size: 3rem; color: #f44336; margin-bottom: 1rem;">✗</div>
@@ -3282,7 +3300,8 @@ function pollTaskStatus(taskId) {
           `;
           showToast(`Execution failed: ${task.error || 'Unknown error'}`, 'error');
         } else if (task.status === 'canceled') {
-          clearInterval(interval);
+          clearInterval(activeTaskPollingInterval);
+          activeTaskPollingInterval = null;
           document.getElementById('preview-container').innerHTML = `
             <div style="padding: 2rem; text-align: center;">
               <div style="font-size: 3rem; color: #ff9800; margin-bottom: 1rem;">⊘</div>
@@ -3293,7 +3312,8 @@ function pollTaskStatus(taskId) {
         }
       })
       .catch(err => {
-        clearInterval(interval);
+        clearInterval(activeTaskPollingInterval);
+        activeTaskPollingInterval = null;
         document.getElementById('preview-container').innerHTML = `<div class="empty-state small" style="color: #f44336;">Failed to poll status</div>`;
       });
   }, 1000);  // Poll every second for responsive progress updates
@@ -4233,11 +4253,20 @@ async function checkAndResumeRunningJob(linkId) {
   }
 }
 
+// Global variable to track active polling interval
+let activePollingInterval = null;
+
 // Poll discovered import task status
 function pollDiscoveredImportStatus(taskId, config) {
   console.log('[pollDiscoveredImportStatus] Starting polling for task:', taskId);
 
-  const interval = setInterval(() => {
+  // Clear any existing polling interval to prevent multiple polls
+  if (activePollingInterval) {
+    console.log('[pollDiscoveredImportStatus] Clearing existing polling interval');
+    clearInterval(activePollingInterval);
+  }
+
+  activePollingInterval = setInterval(() => {
     fetch(`/api/tasks/${taskId}`)
       .then(r => r.json())
       .then(task => {
@@ -4268,7 +4297,8 @@ function pollDiscoveredImportStatus(taskId, config) {
 
         // Check completion status
         if (task.status === 'completed') {
-          clearInterval(interval);
+          clearInterval(activePollingInterval);
+          activePollingInterval = null;
           const relCount = task.relationships_created || 0;
           const sourceCreated = task.source_nodes_created || 0;
           const targetCreated = task.target_nodes_created || 0;
@@ -4293,7 +4323,8 @@ function pollDiscoveredImportStatus(taskId, config) {
           // Refresh link definitions to show the new/updated definition
           loadLinkDefinitions();
         } else if (task.status === 'error' || task.status === 'failed') {
-          clearInterval(interval);
+          clearInterval(activePollingInterval);
+          activePollingInterval = null;
           document.getElementById('preview-container').innerHTML = `
             <div style="padding: 2rem; text-align: center;">
               <div style="font-size: 3rem; color: #f44336; margin-bottom: 1rem;">✗</div>
@@ -4305,7 +4336,8 @@ function pollDiscoveredImportStatus(taskId, config) {
         }
       })
       .catch(err => {
-        clearInterval(interval);
+        clearInterval(activePollingInterval);
+        activePollingInterval = null;
         document.getElementById('preview-container').innerHTML = `<div class="empty-state small" style="color: #f44336;">Failed to poll import status</div>`;
       });
   }, 2000);  // Poll every 2 seconds
