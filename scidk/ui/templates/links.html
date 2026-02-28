@@ -402,10 +402,7 @@
     <!-- Filter Tabs with Refresh Button -->
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
       <div class="link-filter-tabs" style="display: flex; gap: 0.25rem; flex: 1; border-bottom: 2px solid #eee;">
-        <button class="link-filter-tab active" data-filter="all" style="flex: 1; padding: 0.5rem; border: none; background: none; cursor: pointer; font-size: 0.85em; font-weight: 500; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px;">
-          All
-        </button>
-        <button class="link-filter-tab" data-filter="wizard" style="flex: 1; padding: 0.5rem; border: none; background: none; cursor: pointer; font-size: 0.85em; font-weight: 500; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px;">
+        <button class="link-filter-tab active" data-filter="wizard" style="flex: 1; padding: 0.5rem; border: none; background: none; cursor: pointer; font-size: 0.85em; font-weight: 500; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px;">
           Wizard
         </button>
         <button class="link-filter-tab" data-filter="script" style="flex: 1; padding: 0.5rem; border: none; background: none; cursor: pointer; font-size: 0.85em; font-weight: 500; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px;">
@@ -499,7 +496,7 @@ let linkDefinitions = [];
 let discoveredRelationships = []; // Discovered relationships from Neo4j
 let availableLabels = [];
 let lastFocusedIndex = -1; // For keyboard navigation
-let currentFilter = 'all'; // Filter state: 'all', 'wizard', 'script', 'discovered'
+let currentFilter = 'wizard'; // Filter state: 'wizard', 'script', 'discovered'
 
 // Legacy wizardData (to be phased out)
 let wizardData = {
@@ -1626,7 +1623,6 @@ function updateFilterTabCounts() {
   const scriptCount = validLinks.filter(l => l.type === 'script').length;
   const discoveredCount = discoveredRelationships.length;
 
-  document.querySelector('[data-filter="all"]').textContent = `All (${validLinks.length})`;
   document.querySelector('[data-filter="wizard"]').textContent = `Wizard (${wizardCount})`;
   document.querySelector('[data-filter="script"]').textContent = `Script (${scriptCount})`;
   document.querySelector('[data-filter="discovered"]').textContent = `🔍 Discovered (${discoveredCount})`;
@@ -1894,8 +1890,11 @@ function renderDiscoveredRelationships(container) {
   }
 
   container.innerHTML = validRels.map((rel, index) => {
+    // Badge for discovered type
+    const typeBadge = '<span class="badge" style="background: #ff9800; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px;">DISCOVERED</span>';
+
     const databaseBadgeColor = rel.database === 'PRIMARY' ? '#2196f3' : '#757575';
-    const databaseBadge = `<span class="badge" style="background: ${databaseBadgeColor}; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px;">${escapeHtml(rel.database)}</span>`;
+    const databaseBadge = `<span class="badge" style="background: ${databaseBadgeColor}; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${escapeHtml(rel.database)}</span>`;
 
     const countBadge = `<span class="badge" style="background: #4caf50; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${rel.count || 0}</span>`;
 
@@ -1904,19 +1903,26 @@ function renderDiscoveredRelationships(container) {
     const relDisplay = query ? highlightMatch(rel.rel_type || '?', query) : escapeHtml(rel.rel_type || '?');
     const targetDisplay = query ? highlightMatch(rel.target_label || '?', query) : escapeHtml(rel.target_label || '?');
 
+    // Name combines source, rel, target like wizard links
+    const linkName = `${sourceDisplay} → ${targetDisplay}`;
+    const descLine = `${sourceDisplay} → ${relDisplay} → ${targetDisplay}`;
+
     return `
       <div class="link-item"
            data-testid="discovered-item"
-           style="padding: 0.75rem; margin-bottom: 0.5rem; background: #f9f9f9; border: 1px solid #e0e0e0;">
+           style="padding: 0.5rem; margin-bottom: 0.25rem; cursor: pointer; border-radius: 4px; border: 1px solid transparent;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
-          <strong style="font-size: 0.9em;">${sourceDisplay} → ${relDisplay} → ${targetDisplay}</strong>
-          <div>${databaseBadge}${countBadge}</div>
+          <strong style="font-size: 0.95em;">${linkName}</strong>
+          <div>${typeBadge}${databaseBadge}${countBadge}</div>
+        </div>
+        <div style="font-size: 0.85em; color: #666;">
+          ${descLine}
         </div>
         <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
-          <button class="btn btn-sm btn-primary btn-save-discovered" data-index="${index}" style="font-size: 0.75em;">
-            Save as Definition
+          <button class="btn btn-sm btn-outline-secondary btn-save-discovered" data-index="${index}" style="font-size: 0.75em;">
+            Save
           </button>
-          <button class="btn btn-sm btn-outline-primary btn-view-discovered" data-index="${index}" style="font-size: 0.75em;">
+          <button class="btn btn-sm btn-outline-secondary btn-view-discovered" data-index="${index}" style="font-size: 0.75em;">
             View Details
           </button>
         </div>
@@ -1999,12 +2005,20 @@ function renderGroupedDiscoveredRelationships(validRels, container) {
     }
 
     const groupItems = rels.map((rel, index) => {
+      // Badge for discovered type
+      const typeBadge = '<span class="badge" style="background: #ff9800; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px;">DISCOVERED</span>';
+
       const databaseBadgeColor = rel.database === 'PRIMARY' ? '#2196f3' : '#757575';
-      const databaseBadge = `<span class="badge" style="background: ${databaseBadgeColor}; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px;">${escapeHtml(rel.database)}</span>`;
+      const databaseBadge = `<span class="badge" style="background: ${databaseBadgeColor}; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${escapeHtml(rel.database)}</span>`;
       const countBadge = `<span class="badge" style="background: #4caf50; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${rel.count || 0}</span>`;
 
       const sourceDisplay = query ? highlightMatch(rel.source_label || '?', query) : escapeHtml(rel.source_label || '?');
+      const relDisplay = query ? highlightMatch(rel.rel_type || '?', query) : escapeHtml(rel.rel_type || '?');
       const targetDisplay = query ? highlightMatch(rel.target_label || '?', query) : escapeHtml(rel.target_label || '?');
+
+      // Name combines source and target
+      const linkName = `${sourceDisplay} → ${targetDisplay}`;
+      const descLine = `${sourceDisplay} → ${relDisplay} → ${targetDisplay}`;
 
       // Find original index for event handlers
       const originalIndex = discoveredRelationships.findIndex(r =>
@@ -2015,16 +2029,19 @@ function renderGroupedDiscoveredRelationships(validRels, container) {
       );
 
       return `
-        <div class="link-item" data-testid="discovered-item" style="padding: 0.75rem; margin-bottom: 0.5rem; margin-left: 1rem; background: #f9f9f9; border: 1px solid #e0e0e0;">
+        <div class="link-item" data-testid="discovered-item" style="padding: 0.5rem; margin-bottom: 0.25rem; margin-left: 1rem; border-left: 2px solid #e0e0e0;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
-            <strong style="font-size: 0.9em;">${sourceDisplay} → ${targetDisplay}</strong>
-            <div>${databaseBadge}${countBadge}</div>
+            <strong style="font-size: 0.95em;">${linkName}</strong>
+            <div>${typeBadge}${databaseBadge}${countBadge}</div>
+          </div>
+          <div style="font-size: 0.85em; color: #666;">
+            ${descLine}
           </div>
           <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
-            <button class="btn btn-sm btn-primary btn-save-discovered" data-index="${originalIndex}" style="font-size: 0.75em;">
-              Save as Definition
+            <button class="btn btn-sm btn-outline-secondary btn-save-discovered" data-index="${originalIndex}" style="font-size: 0.75em;">
+              Save
             </button>
-            <button class="btn btn-sm btn-outline-primary btn-view-discovered" data-index="${originalIndex}" style="font-size: 0.75em;">
+            <button class="btn btn-sm btn-outline-secondary btn-view-discovered" data-index="${originalIndex}" style="font-size: 0.75em;">
               View Details
             </button>
           </div>
@@ -2071,7 +2088,7 @@ function renderGroupedDiscoveredRelationships(validRels, container) {
 // Render flat list of links
 function renderFlatLinks(validLinks, container) {
   if (validLinks.length === 0) {
-    const filterMsg = currentFilter === 'all' ? 'No link definitions' : `No ${currentFilter} links`;
+    const filterMsg = `No ${currentFilter} links`;
     container.innerHTML = `<div class="empty-state small">${filterMsg}</div>`;
     return;
   }
@@ -2110,6 +2127,33 @@ function renderFlatLinks(validLinks, container) {
 
     const linkName = query ? highlightMatch(link.name || 'Unnamed', query) : escapeHtml(link.name || 'Unnamed');
 
+    // Action buttons based on link type
+    let actionButtons = '';
+    if (link.type === 'script') {
+      actionButtons = `
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+          <button class="btn btn-sm btn-outline-primary btn-run-link" data-link-id="${link.id}" style="font-size: 0.75em;">
+            Run
+          </button>
+          <button class="btn btn-sm btn-outline-secondary btn-view-script" data-link-id="${link.id}" style="font-size: 0.75em;">
+            View Script
+          </button>
+        </div>
+      `;
+    } else {
+      // Wizard type
+      actionButtons = `
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+          <button class="btn btn-sm btn-outline-primary btn-run-link" data-link-id="${link.id}" style="font-size: 0.75em;">
+            Run
+          </button>
+          <button class="btn btn-sm btn-outline-secondary btn-edit-link" data-link-id="${link.id}" style="font-size: 0.75em;">
+            Edit
+          </button>
+        </div>
+      `;
+    }
+
     return `
       <div class="${classes}"
            data-link-id="${link.id}"
@@ -2124,9 +2168,35 @@ function renderFlatLinks(validLinks, container) {
         <div style="font-size: 0.85em; color: #666;">
           ${descLine}
         </div>
+        ${actionButtons}
       </div>
     `;
   }).join('');
+
+  // Attach button click handlers
+  container.querySelectorAll('.btn-run-link').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const linkId = btn.dataset.linkId;
+      runLinkDefinition(linkId);
+    });
+  });
+
+  container.querySelectorAll('.btn-edit-link').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const linkId = btn.dataset.linkId;
+      loadLinkDefinition(linkId);
+    });
+  });
+
+  container.querySelectorAll('.btn-view-script').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const linkId = btn.dataset.linkId;
+      openScriptLink(linkId);
+    });
+  });
 
   attachLinkClickHandlers(container);
 }
@@ -3124,15 +3194,24 @@ function pollTaskStatus(taskId) {
         if (task.status === 'completed') {
           clearInterval(interval);
           const relCount = task.relationships_created || task.executed_count || 0;
+          const relType = tripleBuilder.relationship.type || 'relationship';
+          const propsCount = (tripleBuilder.relationship.properties || []).length;
+
+          // Build detailed result message
+          let resultMessage = `${relCount.toLocaleString()} ${relType} relationships created`;
+          if (propsCount > 0) {
+            resultMessage += ` with ${propsCount} ${propsCount === 1 ? 'property' : 'properties'} each`;
+          }
+
           document.getElementById('preview-container').innerHTML = `
             <div style="padding: 2rem; text-align: center;">
               <div style="font-size: 3rem; color: #4caf50; margin-bottom: 1rem;">✓</div>
               <div style="font-weight: bold; font-size: 1.2rem; margin-bottom: 0.5rem;">Execution Complete!</div>
-              <div style="color: #666;">${relCount.toLocaleString()} relationships created</div>
+              <div style="color: #666;">${resultMessage}</div>
               ${task.status_message ? `<div style="margin-top: 1rem; font-size: 0.85rem; color: #999;">${task.status_message}</div>` : ''}
             </div>
           `;
-          showToast(`Completed! ${relCount.toLocaleString()} relationships created`, 'success');
+          showToast(`Completed! ${resultMessage}`, 'success');
         } else if (task.status === 'error' || task.status === 'failed') {
           clearInterval(interval);
           document.getElementById('preview-container').innerHTML = `
@@ -3159,6 +3238,31 @@ function pollTaskStatus(taskId) {
         document.getElementById('preview-container').innerHTML = `<div class="empty-state small" style="color: #f44336;">Failed to poll status</div>`;
       });
   }, 1000);  // Poll every second for responsive progress updates
+}
+
+// Run a link definition by loading it into the wizard and executing it
+function runLinkDefinition(linkId) {
+  const link = linkDefinitions.find(l => l.id === linkId);
+  if (!link) {
+    showToast('Link not found', 'error');
+    return;
+  }
+
+  // Load the link into the wizard
+  if (link.type === 'script') {
+    openScriptLink(linkId);
+  } else {
+    loadLinkDefinition(linkId);
+  }
+
+  // Execute after a short delay to let the wizard populate
+  setTimeout(() => {
+    if (link.type === 'script') {
+      confirmAndExecuteScriptLink(linkId);
+    } else {
+      executeLink();
+    }
+  }, 100);
 }
 
 // Global keyboard navigation handler
