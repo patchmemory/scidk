@@ -4235,9 +4235,10 @@ async function checkAndResumeRunningJob(linkId) {
             <div style="background: #e0e0e0; border-radius: 4px; height: 24px; overflow: hidden; margin-bottom: 0.5rem;">
               <div id="task-progress-fill" style="background: #4caf50; height: 100%; width: ${Math.round(data.progress.progress * 100)}%; transition: width 0.3s ease;"></div>
             </div>
-            <div id="task-progress-stats" style="font-size: 0.85em; color: #666;">
+            <div id="task-progress-stats" style="font-size: 0.85em; color: #666; margin-bottom: 0.75rem;">
               ${data.progress.processed ? `${data.progress.processed.toLocaleString()} / ${data.progress.total.toLocaleString()} relationships` : ''}
             </div>
+            <button id="btn-cancel-import" class="btn btn-sm btn-outline-danger" onclick="cancelDiscoveredImport('${data.task_id}')">Cancel Import</button>
           </div>
         `;
       }
