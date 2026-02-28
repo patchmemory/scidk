@@ -1515,7 +1515,7 @@ class LinkService:
         source_uid_property: str,
         target_uid_property: str,
         import_rel_properties: bool = True,
-        batch_size: int = 100,
+        batch_size: int = 5000,
         progress_callback=None
     ) -> Dict[str, Any]:
         """

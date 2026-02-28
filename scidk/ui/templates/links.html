@@ -4138,7 +4138,7 @@ async function executeDiscoveredImport() {
         source_uid_property: config.source.uid_property,
         target_uid_property: config.target.uid_property,
         import_rel_properties: config.relationship.import_properties,
-        batch_size: 100
+        batch_size: 5000  // Optimal for Neo4j UNWIND performance
       })
     });
 
