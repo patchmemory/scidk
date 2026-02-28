@@ -26,6 +26,35 @@ class ScriptFileLoader:
         """
         content = file_path.read_text()
 
+        # For .cypher files: try comment-style YAML first (# --- format)
+        if file_path.suffix.lower() == '.cypher':
+            yaml_content, code = ScriptFileLoader._extract_cypher_yaml_header(content)
+            if yaml_content:
+                # Successfully extracted comment-style YAML
+                try:
+                    metadata = yaml.safe_load(yaml_content)
+                except yaml.YAMLError as e:
+                    raise ValueError(f"Invalid YAML frontmatter in {file_path}: {e}")
+
+                # Ensure required fields
+                if 'id' not in metadata:
+                    metadata['id'] = file_path.stem
+                if 'name' not in metadata:
+                    metadata['name'] = file_path.stem.replace('_', ' ').title()
+                if 'language' not in metadata:
+                    metadata['language'] = 'cypher'
+                if 'category' not in metadata:
+                    metadata['category'] = ScriptFileLoader._detect_category(file_path)
+
+                # Set defaults for optional fields
+                metadata.setdefault('description', '')
+                metadata.setdefault('parameters', [])
+                metadata.setdefault('tags', [])
+                metadata.setdefault('created_at', file_path.stat().st_ctime)
+                metadata.setdefault('updated_at', file_path.stat().st_mtime)
+
+                return metadata, code
+
         # Try to extract YAML frontmatter from docstring
         # Pattern: """---\n<yaml>\n---\n"""
         pattern = r'^"""\s*---\s*\n(.*?)\n---\s*"""\s*\n(.*)$'
@@ -70,6 +99,49 @@ class ScriptFileLoader:
         metadata.setdefault('updated_at', file_path.stat().st_mtime)
 
         return metadata, code
+
+    @staticmethod
+    def _extract_cypher_yaml_header(content: str) -> Tuple[Optional[str], str]:
+        """
+        Extract YAML header from Cypher file with comment syntax.
+
+        Cypher format: # --- at start of line, # before each YAML line
+
+        Returns:
+            Tuple of (yaml_content, code) or (None, content) if no header found
+        """
+        lines = content.split('\n')
+        in_header = False
+        header_lines = []
+        code_start_idx = 0
+
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped == '# ---':
+                if in_header:
+                    # End of header
+                    code_start_idx = idx + 1
+                    break
+                else:
+                    # Start of header
+                    in_header = True
+                    continue
+
+            if in_header:
+                # Remove leading # and whitespace
+                if line.startswith('#'):
+                    header_lines.append(line[1:].lstrip())
+                elif stripped:
+                    # Non-comment line ends header prematurely
+                    code_start_idx = idx
+                    break
+
+        if header_lines:
+            yaml_content = '\n'.join(header_lines)
+            code = '\n'.join(lines[code_start_idx:]).strip()
+            return yaml_content, code
+
+        return None, content
 
     @staticmethod
     def _detect_language(file_path: Path) -> str:

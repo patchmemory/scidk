@@ -1,0 +1,6 @@
+Service Name,Core,PI,Location,Equipment ID,Description
+Confocal Microscope LSM 880,Microscopy Core,Dr. Alice Smith,"Biology Building, Room 101",EQ-001,Advanced confocal imaging with spectral detection
+Flow Cytometer BD FACS Aria III,Flow Cytometry Core,Dr. Bob Jones,"Medical Sciences, Room 205",EQ-002,High-speed cell sorting and multicolor analysis
+Mass Spectrometer Orbitrap Fusion,Proteomics Core,Dr. Carol Williams,"Chemistry Building, Room 310",EQ-003,High-resolution protein mass spectrometry
+Electron Microscope TEM 120kV,Electron Microscopy Core,Dr. David Brown,"Materials Science, Room 150",EQ-004,Transmission electron microscopy for nano-scale imaging
+NMR Spectrometer 600MHz,NMR Core,Dr. Emily Davis,"Chemistry Building, Room 220",EQ-005,High-field NMR for structural analysis

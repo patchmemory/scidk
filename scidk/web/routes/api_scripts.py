@@ -887,7 +887,7 @@ def validate_analysis(script_id: str):
 
         # Run validation
         test_runner = ScriptTestRunner()
-        result = test_runner.run_tests(script)
+        result = test_runner.run_tests_for_category(script)
 
         # Update script with results
         script.validation_status = 'passed' if result.passed else 'failed'
@@ -1090,7 +1090,7 @@ def validate_link(script_id: str):
 
         # Run validation
         test_runner = ScriptTestRunner()
-        result = test_runner.run_tests(script)
+        result = test_runner.run_tests_for_category(script)
 
         # Update script with results
         script.validation_status = 'passed' if result.passed else 'failed'

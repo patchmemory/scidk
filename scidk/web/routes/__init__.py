@@ -36,6 +36,7 @@ def register_blueprints(app):
     from . import api_annotations
     from . import api_labels
     from . import api_links
+    from . import api_links_v2
     from . import api_integrations
     from . import api_settings
     from . import api_auth
@@ -69,6 +70,7 @@ def register_blueprints(app):
     app.register_blueprint(api_labels.bp)
     app.register_blueprint(api_integrations.bp)
     app.register_blueprint(api_links.bp)  # Keep for backward compatibility
+    app.register_blueprint(api_links_v2.bp)  # New LinkRegistry-based API
     app.register_blueprint(api_settings.bp)
     app.register_blueprint(api_auth.bp)
     app.register_blueprint(api_users.bp)

@@ -1,0 +1,6 @@
+Service Name,Core,Rate Per Hour,Service ID,Active
+Confocal Microscopy Training,Microscopy Core,50,SVC-001,Yes
+Flow Cytometry Analysis,Flow Cytometry Core,75,SVC-002,Yes
+Mass Spectrometry Run,Proteomics Core,100,SVC-003,Yes
+Sample Preparation - Proteomics,Proteomics Core,60,SVC-004,Yes
+NMR Spectroscopy Analysis,NMR Core,85,SVC-005,No

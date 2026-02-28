@@ -2151,14 +2151,23 @@ function renderGroupedLinks(validLinks, container) {
 
   const query = linksNavState.searchQuery;
 
-  // Default all groups to collapsed, but expand if there's a search query with results
+  // Initialize collapsed state for new groups only (preserve user toggles)
   sortedGroups.forEach(([relType, links]) => {
+    const isNewGroup = !linksNavState.seenGroups.has(relType);
+
+    if (isNewGroup) {
+      // Mark as seen
+      linksNavState.seenGroups.add(relType);
+
+      // Start collapsed unless searching
+      if (!query || !query.trim()) {
+        linksNavState.collapsedGroups.add(relType);
+      }
+    }
+
+    // If searching with results, temporarily expand all groups to show matches
     if (query && query.trim()) {
-      // If searching and this group has results, expand it
       linksNavState.collapsedGroups.delete(relType);
-    } else {
-      // Default to collapsed when not searching
-      linksNavState.collapsedGroups.add(relType);
     }
   });
 
@@ -3331,7 +3340,7 @@ function openImportWizardForRelationship(rel) {
   updateMainTripleDisplay();
 
   // Show wizard panel
-  document.getElementById('link-wizard').style.display = '';
+  showWizard();
 
   // Toast confirmation
   showToast(`Opened wizard for ${rel.triple_count.toLocaleString()} triples from ${rel.database}`, 'info');
@@ -3364,11 +3373,11 @@ function saveDiscoveredAsDefinition(rel) {
   // Update wizard title
   document.getElementById('wizard-title').textContent = `Save Discovered: ${rel.source_label} → ${rel.rel_type} → ${rel.target_label}`;
 
-  // Show wizard panel
-  document.getElementById('link-wizard').style.display = '';
-
   // Update visual display
   updateMainTripleDisplay();
+
+  // Show wizard panel
+  showWizard();
 
   // Toast confirmation
   showToast(`Ready to save ${rel.triple_count.toLocaleString()} triples from ${rel.database}`, 'success');

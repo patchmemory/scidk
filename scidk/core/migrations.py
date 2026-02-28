@@ -679,6 +679,37 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 21)
             version = 21
 
+        # v22: Add links table for LinkRegistry pattern
+        if version < 22:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS links (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    format TEXT NOT NULL,
+                    from_label TEXT NOT NULL,
+                    to_label TEXT NOT NULL,
+                    relationship_type TEXT NOT NULL,
+                    matching_strategy TEXT,
+                    description TEXT,
+                    source_path TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    validation_status TEXT DEFAULT 'pending',
+                    last_run_at REAL,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_links_format ON links(format);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_links_from_label ON links(from_label);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_links_to_label ON links(to_label);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_links_validation_status ON links(validation_status);")
+
+            conn.commit()
+            _set_version(conn, 22)
+            version = 22
+
         return version
     finally:
         if own:

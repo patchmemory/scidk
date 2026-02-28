@@ -1,0 +1,194 @@
+<!-- Modules > Examples Section -->
+<section id="modules-examples-section" class="settings-section">
+  <h1>Examples</h1>
+  <p class="small">Demonstration scripts that teach link algorithms and techniques. These are instructive examples, not operational links for your graph.</p>
+
+  <div style="max-width: 100%;">
+    <div id="examples-container">
+      <p class="small" style="color: #999;"><em>Loading examples...</em></p>
+    </div>
+  </div>
+</section>
+
+<style>
+  .examples-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .examples-table th {
+    background: #f9f9f9;
+    padding: 0.75rem;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: #555;
+    border-bottom: 2px solid #ddd;
+  }
+
+  .examples-table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid #eee;
+    font-size: 0.9rem;
+    vertical-align: top;
+  }
+
+  .examples-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  .examples-table tr:hover {
+    background: #f9f9f9;
+  }
+
+  .example-name {
+    font-weight: 500;
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .example-description {
+    color: #666;
+    line-height: 1.5;
+    font-size: 0.9rem;
+  }
+
+  .example-badge {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    background: #e3f2fd;
+    color: #1976d2;
+  }
+
+  .example-algorithm {
+    font-family: monospace;
+    font-size: 0.85rem;
+    color: #555;
+    background: #f5f5f5;
+    padding: 0.2rem 0.4rem;
+    border-radius: 3px;
+  }
+</style>
+
+<script>
+  // Hardcoded examples metadata (matches the actual scripts)
+  const examples = [
+    {
+      id: 'author-collaboration-link',
+      name: 'Author Collaboration Network',
+      algorithm: 'Shared Authorship Inference',
+      relationship_type: 'CO_AUTHORED',
+      description: `Infers collaboration relationships between authors based on shared document authorship.
+                    <br><br>
+                    <strong>How it works:</strong> If two authors both contributed to N or more documents, they are considered collaborators.
+                    The algorithm calculates collaboration strength using a Jaccard-style coefficient (shared documents / total documents).
+                    This demonstrates <em>inference-based</em> linking — the relationship is derived from existing data patterns rather than explicitly stated.
+                    <br><br>
+                    <strong>Use cases:</strong> Academic citation networks, team formation analysis, knowledge transfer tracking.`,
+      teaches: 'N:N relationship inference, threshold-based matching, set intersection analysis'
+    },
+    {
+      id: 'semantic-similarity-link',
+      name: 'Semantic Document Similarity',
+      algorithm: 'Embedding Cosine Similarity',
+      relationship_type: 'SIMILAR_TO',
+      description: `Creates similarity relationships between documents based on semantic content analysis.
+                    <br><br>
+                    <strong>How it works:</strong> In production, this would compute embeddings for each document using a language model (e.g., OpenAI text-embedding-3-small or sentence-transformers),
+                    then calculate cosine similarity between embedding vectors. Documents above a threshold similarity score get linked.
+                    The demo version uses hardcoded similarity pairs to show the concept without requiring API keys or heavy computation.
+                    <br><br>
+                    <strong>Use cases:</strong> Content recommendation, duplicate detection, knowledge graph enrichment, research paper clustering.`,
+      teaches: 'Vector similarity, semantic analysis, threshold filtering, content-based linking'
+    }
+  ];
+
+  function renderExamples() {
+    const container = document.getElementById('examples-container');
+
+    let html = `
+      <table class="examples-table">
+        <thead>
+          <tr>
+            <th style="width: 40%;">Example</th>
+            <th style="width: 20%;">Algorithm</th>
+            <th style="width: 20%;">Creates</th>
+            <th style="width: 20%;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+
+    examples.forEach(example => {
+      html += `
+        <tr>
+          <td>
+            <div class="example-name">${escapeHtml(example.name)}</div>
+            <div class="example-description">${example.description}</div>
+            <div class="small" style="margin-top: 0.5rem; color: #888;">
+              <strong>Teaches:</strong> ${escapeHtml(example.teaches)}
+            </div>
+          </td>
+          <td>
+            <div class="example-algorithm">${escapeHtml(example.algorithm)}</div>
+          </td>
+          <td>
+            <span class="example-badge">${escapeHtml(example.relationship_type)}</span>
+          </td>
+          <td>
+            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+              <a href="/scripts?script=${encodeURIComponent(example.id)}" class="btn btn-sm btn-outline-primary" style="text-decoration: none; text-align: center;">
+                View Script
+              </a>
+              <button class="btn btn-sm btn-outline-secondary" onclick="alert('Try it: Feature coming soon - will run against synthetic test data')" disabled title="Demo execution coming soon">
+                Try it
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+    });
+
+    html += `
+        </tbody>
+      </table>
+
+      <div style="margin-top: 2rem; padding: 1rem; background: #f0f7ff; border-left: 4px solid #2196f3; border-radius: 4px;">
+        <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem; color: #1976d2;">💡 Using Examples</h3>
+        <p class="small" style="margin: 0; line-height: 1.6;">
+          These examples demonstrate advanced link patterns that go beyond simple property matching.
+          To adapt an example for your graph:
+        </p>
+        <ol class="small" style="margin: 0.5rem 0 0 1.2rem; line-height: 1.6;">
+          <li>Click <strong>View Script</strong> to read the code and understand the algorithm</li>
+          <li>Copy the example to your own <code>scripts/links/</code> directory with a new filename</li>
+          <li>Update the YAML header with your labels and relationship type</li>
+          <li>Modify the logic to query your actual graph data</li>
+          <li>Test on a small subset before running on your full graph</li>
+        </ol>
+      </div>
+    `;
+
+    container.innerHTML = html;
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Initialize
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', renderExamples);
+  } else {
+    renderExamples();
+  }
+</script>
