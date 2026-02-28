@@ -1674,12 +1674,28 @@ class LinkService:
                     relationships_created += stats.get('rels_created', 0)
                     logger.info(f"[Import] Batch processed - relationships_created so far: {relationships_created}")
 
-                    # Report progress if callback provided
+                    # Report progress if callback provided (with ETA like tqdm)
                     if progress_callback:
+                        elapsed = time.time() - start_time
+                        if relationships_created > 0 and elapsed > 0:
+                            rate = relationships_created / elapsed  # relationships per second
+                            remaining = total_relationships - relationships_created
+                            eta_seconds = remaining / rate if rate > 0 else 0
+
+                            # Format ETA (like tqdm: 2m 15s or 45s)
+                            if eta_seconds > 60:
+                                eta_str = f"{int(eta_seconds // 60)}m {int(eta_seconds % 60)}s"
+                            else:
+                                eta_str = f"{int(eta_seconds)}s"
+
+                            message = f"Importing... {relationships_created:,} / {total_relationships:,} relationships (ETA: {eta_str})"
+                        else:
+                            message = f"Importing... {relationships_created:,} / {total_relationships:,} relationships"
+
                         progress_callback(
                             relationships_created,
                             total_relationships,
-                            f"Importing... {relationships_created:,} / {total_relationships:,} relationships"
+                            message
                         )
 
                 # Move to next batch
