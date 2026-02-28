@@ -3069,6 +3069,12 @@ function deleteLinkDefinition() {
 }
 
 function loadPreview() {
+  // Check if we're in discovered import mode
+  if (discoveredImportConfig.rel) {
+    loadDiscoveredInstances();
+    return;
+  }
+
   const linkName = document.getElementById('link-name').value.trim();
 
   if (!linkName || !tripleBuilder.relationship.type || !tripleBuilder.source.label || !tripleBuilder.target.label) {
@@ -3483,95 +3489,122 @@ async function openImportWizardForRelationship(rel) {
     showToast('Failed to load properties', 'error');
   }
 
-  // Show loading in preview container
+  // Show empty preview - user must click "Load Preview" explicitly
+  const previewContainer = document.getElementById('preview-container');
+  if (previewContainer) {
+    previewContainer.innerHTML = '<div class="empty-state small">Click "Load Preview" to see sample matches</div>';
+  }
+}
+
+// Load instances table for discovered relationship import
+async function loadDiscoveredInstances() {
+  const config = discoveredImportConfig;
+  const rel = config.rel;
+  const database = config.database;
+
+  // Read current values from config (already updated by save functions)
+  const sourceUid = config.source.uid_property;
+  const targetUid = config.target.uid_property;
+
+  console.log('[Links] loadDiscoveredInstances - validation check:', {
+    sourceUid,
+    targetUid,
+    source_label: config.source.label,
+    target_label: config.target.label
+  });
+
+  if (!sourceUid || !targetUid) {
+    showToast('Please complete all required fields', 'error');
+    return;
+  }
+
   const previewContainer = document.getElementById('preview-container');
   if (previewContainer) {
     previewContainer.innerHTML = '<div style="text-align: center; padding: 2rem; color: #999;">Loading instances...</div>';
   }
 
   // Build optimized query that returns only scalar values needed for display
-  // Use the configured UID properties plus common display properties
-  const sourceUid = discoveredImportConfig.source.uid_property || 'id';
-  const targetUid = discoveredImportConfig.target.uid_property || 'id';
-
+  // Use coalesce to handle missing properties and fall back to toString(id(node))
   const query = `
-    MATCH (a:${rel.source_label})-[r:${rel.rel_type}]->(b:${rel.target_label})
+    MATCH (a:${config.source.label})-[r:${config.relationship.type}]->(b:${config.target.label})
     RETURN
-      a.${sourceUid} as source_uid,
-      coalesce(a.name, a.title, a.${sourceUid}) as source_display,
+      coalesce(a.${sourceUid}, toString(id(a))) as source_uid,
+      coalesce(a.name, a.title, a.${sourceUid}, toString(id(a))) as source_display,
       type(r) as rel_type,
       size(keys(r)) as rel_prop_count,
-      b.${targetUid} as target_uid,
-      coalesce(b.name, b.title, b.${targetUid}) as target_display
+      coalesce(b.${targetUid}, toString(id(b))) as target_uid,
+      coalesce(b.name, b.title, b.${targetUid}, toString(id(b))) as target_display
     LIMIT 10
   `;
 
-  fetch(`/api/neo4j/query`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ database: database, query: query })
-  })
-    .then(async response => {
-      const result = await response.json();
+  try {
+    const response = await fetch(`/api/neo4j/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ database: database, query: query })
+    });
 
-      if (!response.ok || result.status === 'error') {
-        throw new Error(result.error || 'Query failed');
-      }
+    const result = await response.json();
 
-      // Display the instances in a table with import buttons
-      const records = result.records || [];
+    if (!response.ok || result.status === 'error') {
+      throw new Error(result.error || 'Query failed');
+    }
 
-      if (records.length === 0) {
-        previewContainer.innerHTML = '<div class="empty-state small">No instances found</div>';
-        return;
-      }
+    // Display the instances in a table with import buttons
+    const records = result.records || [];
 
-      let tableHtml = `
-        <div style="margin-top: 1rem;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-            <h5 style="margin: 0;">Sample Instances (showing ${records.length} of ${rel.count || '?'})</h5>
-            <div style="display: flex; gap: 0.5rem;">
-              <button class="btn btn-sm btn-outline-info" onclick="previewDiscoveredImport()">Preview Import</button>
-              <button class="btn btn-sm btn-success" onclick="executeDiscoveredImport()" id="btn-execute-discovered-import">Import to Primary Graph</button>
-            </div>
+    if (records.length === 0) {
+      previewContainer.innerHTML = '<div class="empty-state small">No instances found</div>';
+      return;
+    }
+
+    let tableHtml = `
+      <div style="margin-top: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <h5 style="margin: 0;">Sample Instances (showing ${records.length} of ${rel.count || '?'})</h5>
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="btn btn-sm btn-outline-info" onclick="previewDiscoveredImport()">Preview Import</button>
+            <button class="btn btn-sm btn-success" onclick="executeDiscoveredImport()" id="btn-execute-discovered-import">Import to Primary Graph</button>
           </div>
-          <table class="table table-sm" style="font-size: 0.85em;">
-            <thead>
-              <tr>
-                <th>Source Node</th>
-                <th>Relationship</th>
-                <th>Target Node</th>
-              </tr>
-            </thead>
-            <tbody>
-      `;
+        </div>
+        <table class="table table-sm" style="font-size: 0.85em;">
+          <thead>
+            <tr>
+              <th>Source Node</th>
+              <th>Relationship</th>
+              <th>Target Node</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
 
-      records.forEach(record => {
-        const sourceDisplay = record.source_display || record.source_uid || '?';
-        const relProps = record.rel_prop_count > 0 ? ` (${record.rel_prop_count} props)` : '';
-        const targetDisplay = record.target_display || record.target_uid || '?';
-
-        tableHtml += `
-          <tr>
-            <td>${escapeHtml(String(sourceDisplay))}</td>
-            <td>${escapeHtml(rel.rel_type)}${relProps}</td>
-            <td>${escapeHtml(String(targetDisplay))}</td>
-          </tr>
-        `;
-      });
+    records.forEach(record => {
+      const sourceDisplay = record.source_display || record.source_uid || '?';
+      const relProps = record.rel_prop_count > 0 ? ` (${record.rel_prop_count} props)` : '';
+      const targetDisplay = record.target_display || record.target_uid || '?';
 
       tableHtml += `
-            </tbody>
-          </table>
-        </div>
+        <tr>
+          <td>${escapeHtml(String(sourceDisplay))}</td>
+          <td>${escapeHtml(config.relationship.type)}${relProps}</td>
+          <td>${escapeHtml(String(targetDisplay))}</td>
+        </tr>
       `;
-
-      previewContainer.innerHTML = tableHtml;
-    })
-    .catch(err => {
-      console.error('Failed to fetch instances:', err);
-      previewContainer.innerHTML = `<div class="empty-state small" style="color: #f44336;">Failed to load instances: ${escapeHtml(err.message)}</div>`;
     });
+
+    tableHtml += `
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    previewContainer.innerHTML = tableHtml;
+  } catch (err) {
+    console.error('Failed to fetch instances:', err);
+    if (previewContainer) {
+      previewContainer.innerHTML = `<div class="empty-state small" style="color: #f44336;">Failed to load instances: ${escapeHtml(err.message)}</div>`;
+    }
+  }
 }
 
 function saveDiscoveredAsDefinition(rel) {
@@ -3646,7 +3679,7 @@ let discoveredImportConfig = {
 
 // Auto-detect best UID property from available properties
 function autoDetectUidProperty(properties) {
-  const priorityOrder = ['id', 'uuid', '_id', 'name'];
+  const priorityOrder = ['uid', 'uuid', 'id', '_id', 'name'];
   for (const uid of priorityOrder) {
     const found = properties.find(p => {
       const propName = typeof p === 'string' ? p : p.name;
