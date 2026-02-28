@@ -537,7 +537,8 @@ const linksNavState = {
   relType: '',
   sortBy: 'name',
   groupByRelType: false,
-  collapsedGroups: new Set()
+  collapsedGroups: new Set(),
+  seenGroups: new Set()  // Track which groups have been rendered before
 };
 
 // Toast function
@@ -1962,14 +1963,23 @@ function renderGroupedDiscoveredRelationships(validRels, container) {
     return;
   }
 
-  // Default all groups to collapsed, but expand if there's a search query with results
+  // Initialize collapsed state for new groups only (preserve user toggles)
   sortedRelTypes.forEach(relType => {
+    const isNewGroup = !linksNavState.seenGroups.has(relType);
+
+    if (isNewGroup) {
+      // Mark as seen
+      linksNavState.seenGroups.add(relType);
+
+      // Start collapsed unless searching
+      if (!query || !query.trim()) {
+        linksNavState.collapsedGroups.add(relType);
+      }
+    }
+
+    // If searching with results, temporarily expand all groups to show matches
     if (query && query.trim()) {
-      // If searching and this group has results, expand it
       linksNavState.collapsedGroups.delete(relType);
-    } else {
-      // Default to collapsed when not searching
-      linksNavState.collapsedGroups.add(relType);
     }
   });
 
