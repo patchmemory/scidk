@@ -1155,6 +1155,8 @@ class LinkService:
         from .neo4j_client import get_neo4j_client, get_neo4j_client_for_profile
         import time
 
+        logger.warning(f"[Preview] source_database={source_database!r}, source_label={source_label!r}, rel_type={rel_type!r}")
+
         start_time = time.time()
 
         # Get source database client
@@ -1462,6 +1464,8 @@ class LinkService:
         import hashlib
         import json
         from .neo4j_client import get_neo4j_client_for_profile
+
+        logger.warning(f"[Preview] source_database={source_database!r}, source_label={source_label!r}, rel_type={rel_type!r}")
 
         # Validate relationship type (Cypher injection protection)
         if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', rel_type):
