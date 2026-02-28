@@ -11,6 +11,7 @@ Provides REST endpoints for:
 """
 from flask import Blueprint, jsonify, request, current_app, redirect, url_for
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -917,6 +918,122 @@ def commit_triple_import():
 
     except Exception as e:
         logger.exception("Failed to commit triple import")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/links/<link_id>/sync-status', methods=['GET'])
+def get_link_sync_status(link_id):
+    """
+    Get sync status for an Active import link.
+
+    Returns sync metadata including:
+    - Whether sync is supported (import vs algorithmic link)
+    - Last sync count and timestamp
+    - Current source count
+    - Number of new relationships since last sync
+
+    Returns:
+    {
+        "status": "success",
+        "sync_supported": true,
+        "last_synced_count": 526288,
+        "last_synced_at": "2026-02-28T15:30:00",
+        "current_source_count": 526291,
+        "new_since_sync": 3,
+        "source_database": "NExtSEEK-Dev"
+    }
+
+    Or if sync not supported (algorithmic/script link):
+    {
+        "status": "success",
+        "sync_supported": false
+    }
+    """
+    try:
+        from ...services.neo4j_client import get_neo4j_client_for_profile
+        from datetime import datetime
+
+        service = _get_link_service()
+        link = service.get_link_definition(link_id)
+
+        if not link:
+            return jsonify({
+                'status': 'error',
+                'error': f'Link "{link_id}" not found'
+            }), 404
+
+        # Check if this is an import link (has source_database in match_config)
+        match_config = json.loads(link.get('match_config', '{}')) if isinstance(link.get('match_config'), str) else link.get('match_config', {})
+        source_database = match_config.get('source_database')
+
+        if not source_database:
+            # Not an import link - sync not supported
+            return jsonify({
+                'status': 'success',
+                'sync_supported': False
+            }), 200
+
+        # This is an import link - get sync status
+        last_synced_count = link.get('last_synced_count', 0)
+        last_synced_at = link.get('last_synced_at')
+
+        # Query source database for current count
+        source_label = link.get('source_label')
+        target_label = link.get('target_label')
+        rel_type = link.get('relationship_type')
+
+        try:
+            client = get_neo4j_client_for_profile(source_database)
+            if not client:
+                return jsonify({
+                    'status': 'error',
+                    'error': f'Source database "{source_database}" not found'
+                }), 404
+
+            # Query current relationship count in source database
+            query = f"""
+            MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
+            RETURN count(r) as current_count
+            """
+            results = client.execute_read(query)
+            current_source_count = results[0]['current_count'] if results else 0
+
+            client.close()
+
+        except Exception as e:
+            logger.exception(f"Failed to query source database {source_database}")
+            return jsonify({
+                'status': 'error',
+                'error': f'Failed to query source database: {str(e)}'
+            }), 500
+
+        # Calculate new relationships since last sync
+        new_since_sync = max(0, current_source_count - last_synced_count)
+
+        # Format last_synced_at as ISO string
+        last_synced_at_str = None
+        if last_synced_at:
+            try:
+                dt = datetime.fromtimestamp(last_synced_at)
+                last_synced_at_str = dt.isoformat()
+            except Exception:
+                last_synced_at_str = None
+
+        return jsonify({
+            'status': 'success',
+            'sync_supported': True,
+            'last_synced_count': last_synced_count,
+            'last_synced_at': last_synced_at_str,
+            'current_source_count': current_source_count,
+            'new_since_sync': new_since_sync,
+            'source_database': source_database
+        }), 200
+
+    except Exception as e:
+        logger.exception("Failed to get link sync status")
         return jsonify({
             'status': 'error',
             'error': str(e)

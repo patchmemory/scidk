@@ -1688,13 +1688,17 @@ class LinkService:
         task['source_nodes_created'] = result.get('source_nodes_created', 0)
         task['target_nodes_created'] = result.get('target_nodes_created', 0)
 
-        # Mark Link Definition as active on successful completion
+        # Mark Link Definition as active on successful completion and store sync metadata
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
+            now = time.time()
+            relationships_created = result.get('relationships_created', 0)
             cursor.execute(
-                "UPDATE link_definitions SET status = 'active', updated_at = ? WHERE id = ?",
-                (time.time(), link_def_id)
+                """UPDATE link_definitions
+                   SET status = 'active', last_synced_count = ?, last_synced_at = ?, updated_at = ?
+                   WHERE id = ?""",
+                (relationships_created, now, now, link_def_id)
             )
             conn.commit()
         finally:

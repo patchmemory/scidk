@@ -2734,6 +2734,11 @@ function populateWizardFromLink(link) {
     // Show the discovered import triple bar
     updateDiscoveredImportDisplay();
 
+    // If this is an Active import link, fetch and show sync status
+    if (link.status === 'active') {
+      showSyncStatusForActiveImportLink(link.id);
+    }
+
     // Hide Save button for discovered import workflow (definitions are auto-created)
     // Show Execute/Run button for Pending links so user can re-run
     // Show Delete button for Pending links
@@ -2744,8 +2749,15 @@ function populateWizardFromLink(link) {
     if (btnSaveDef) btnSaveDef.style.display = 'none';
 
     // Show Execute/Run button for Pending status (allows re-run)
+    // For Active status, show "Sync Now" button instead
     if (btnExecute) {
-      btnExecute.style.display = (link.status === 'pending') ? 'inline-block' : 'none';
+      if (link.status === 'active') {
+        btnExecute.textContent = 'Sync Now';
+        btnExecute.style.display = 'inline-block';
+      } else {
+        btnExecute.textContent = 'Execute';
+        btnExecute.style.display = (link.status === 'pending') ? 'inline-block' : 'none';
+      }
     }
 
     // Show Delete button for Pending status
@@ -4203,6 +4215,134 @@ async function previewDiscoveredImport() {
 }
 
 // Execute discovered import
+// Show sync status for an Active import link
+async function showSyncStatusForActiveImportLink(linkId) {
+  const previewContainer = document.getElementById('preview-container');
+  if (!previewContainer) return;
+
+  // Show loading state
+  previewContainer.innerHTML = `
+    <div style="padding: 1rem;">
+      <div style="font-size: 0.9em; color: #666;">Loading sync status...</div>
+    </div>
+  `;
+
+  try {
+    const response = await fetch(`/api/links/${linkId}/sync-status`);
+    const data = await response.json();
+
+    if (!response.ok || data.status === 'error') {
+      throw new Error(data.error || 'Failed to fetch sync status');
+    }
+
+    if (!data.sync_supported) {
+      // Non-import link (algorithmic/script)
+      previewContainer.innerHTML = `
+        <div style="padding: 1.5rem; background: #f5f5f5; border-radius: 6px;">
+          <h5 style="margin: 0 0 0.75rem 0; color: #333;">Algorithmic Link</h5>
+          <div style="font-size: 0.9em; color: #666; margin-bottom: 1rem;">
+            <div>Last run: ${formatLastRun(currentLink.updated_at)}</div>
+          </div>
+          <button class="btn btn-sm btn-primary" onclick="executeLink()">Re-run</button>
+          <button class="btn btn-sm btn-outline-secondary" style="margin-left: 0.5rem;" onclick="loadLinkDefinition('${linkId}')">View Definition</button>
+        </div>
+      `;
+      return;
+    }
+
+    // Import link - show sync status
+    const lastSyncedAt = data.last_synced_at;
+    const lastSyncedCount = data.last_synced_count || 0;
+    const currentSourceCount = data.current_source_count || 0;
+    const newSinceSync = data.new_since_sync || 0;
+    const sourceDatabase = data.source_database || 'Unknown';
+
+    const lastSyncedStr = lastSyncedAt ? formatDateTime(lastSyncedAt) : 'Not yet synced';
+    const syncStatusColor = newSinceSync === 0 ? '#4caf50' : '#ff9800';
+    const syncStatusIcon = newSinceSync === 0 ? '✓' : '⚠';
+    const syncStatusText = newSinceSync === 0 ? 'Up to date' : `${newSinceSync.toLocaleString()} new since last sync`;
+
+    previewContainer.innerHTML = `
+      <div style="padding: 1.5rem; background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%); border-radius: 6px;">
+        <h5 style="margin: 0 0 1rem 0; color: #333; display: flex; align-items: center; gap: 0.5rem;">
+          <span style="color: ${syncStatusColor};">${syncStatusIcon}</span>
+          Sync Status
+        </h5>
+
+        <div style="background: white; padding: 1rem; border-radius: 4px; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+          <div style="font-size: 0.9em; color: #666; margin-bottom: 0.75rem;">
+            <div style="margin-bottom: 0.5rem;"><strong>Last synced:</strong> ${lastSyncedStr}</div>
+            <div style="margin-bottom: 0.5rem;"><strong>${lastSyncedCount.toLocaleString()} relationships</strong> in primary</div>
+          </div>
+
+          <div style="border-top: 1px solid #e0e0e0; padding-top: 0.75rem; margin-top: 0.75rem;">
+            <div style="font-size: 0.85em; color: #888; margin-bottom: 0.25rem;">Source: ${escapeHtml(sourceDatabase)}</div>
+            <div style="font-size: 0.9em; color: #444;">
+              <strong>Current count:</strong> ${currentSourceCount.toLocaleString()}
+              ${newSinceSync > 0 ? `<span style="color: ${syncStatusColor}; font-weight: 500;">(${newSinceSync.toLocaleString()} new)</span>` : `<span style="color: ${syncStatusColor};">✓</span>`}
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-sm btn-primary" onclick="executeLink()" ${newSinceSync === 0 ? 'disabled' : ''}>
+            Sync Now ${newSinceSync > 0 ? `(+${newSinceSync.toLocaleString()})` : ''}
+          </button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="showSyncDetails('${linkId}')">
+            View Details
+          </button>
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    console.error('Failed to fetch sync status:', err);
+    previewContainer.innerHTML = `
+      <div style="padding: 1rem; background: #ffebee; border-radius: 4px;">
+        <div style="color: #c62828; font-size: 0.9em;">Failed to load sync status: ${err.message}</div>
+      </div>
+    `;
+  }
+}
+
+// Helper to format date/time from ISO string
+function formatDateTime(isoString) {
+  if (!isoString) return 'Never';
+  try {
+    const date = new Date(isoString);
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+  } catch (e) {
+    return isoString;
+  }
+}
+
+// Helper to format last run timestamp
+function formatLastRun(timestamp) {
+  if (!timestamp) return 'Never';
+  try {
+    const date = new Date(timestamp * 1000); // Convert Unix timestamp to milliseconds
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  } catch (e) {
+    return 'Never';
+  }
+}
+
+// Show sync details (can be expanded later)
+function showSyncDetails(linkId) {
+  // For now, just show the link definition details
+  showToast('Sync details view - coming soon', 'info');
+}
+
 async function executeDiscoveredImport() {
   const config = discoveredImportConfig;
 
@@ -4412,6 +4552,13 @@ function pollDiscoveredImportStatus(taskId, config) {
 
           // Refresh link definitions to show the new/updated definition
           loadLinkDefinitions();
+
+          // If we're viewing an Active import link, refresh the sync status to show updated counts
+          if (currentLink && currentLink.id && task.link_def_id === currentLink.id) {
+            setTimeout(() => {
+              showSyncStatusForActiveImportLink(currentLink.id);
+            }, 1000); // Brief delay to ensure database is updated
+          }
         } else if (task.status === 'canceled' || task.status === 'cancelled') {
           clearInterval(activePollingInterval);
           activePollingInterval = null;

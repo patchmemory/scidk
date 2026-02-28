@@ -720,6 +720,27 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 23)
             version = 23
 
+        # v24: Add sync metadata columns to link_definitions for import link sync tracking
+        if version < 24:
+            # Add last_synced_count to track number of relationships created in last sync
+            cur.execute("ALTER TABLE link_definitions ADD COLUMN last_synced_count INTEGER DEFAULT 0;")
+            # Add last_synced_at to track when the link was last synced
+            cur.execute("ALTER TABLE link_definitions ADD COLUMN last_synced_at REAL DEFAULT NULL;")
+
+            # Backfill existing active import links so they don't show "Last synced: never"
+            # Import links are identified by having source_database in match_config
+            cur.execute("""
+                UPDATE link_definitions
+                SET last_synced_count = 0, last_synced_at = updated_at
+                WHERE status = 'active'
+                AND json_extract(match_config, '$.source_database') IS NOT NULL
+                AND last_synced_at IS NULL
+            """)
+
+            conn.commit()
+            _set_version(conn, 24)
+            version = 24
+
         return version
     finally:
         if own:
