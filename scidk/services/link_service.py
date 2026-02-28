@@ -1172,25 +1172,39 @@ class LinkService:
             raise ValueError("Primary database not connected")
 
         try:
-            # Query source database for all relationships
-            source_query = f"""
-            MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
-            WHERE a.{source_uid_property} IS NOT NULL AND b.{target_uid_property} IS NOT NULL
-            RETURN count(*) as total_relationships,
-                   count(DISTINCT a.{source_uid_property}) as unique_source_nodes,
-                   count(DISTINCT b.{target_uid_property}) as unique_target_nodes,
-                   count(DISTINCT keys(r)) as rel_property_types
+            # Query source database for relationship count
+            # Use separate queries to avoid potential Neo4j optimization issues with complex aggregations
+            logger.info(f"[Preview] Running count queries on '{source_database}' - {source_label}-[{rel_type}]->{target_label}")
+
+            # Count total relationships
+            rel_count_query = f"""
+            MATCH (:{source_label})-[r:{rel_type}]->(:{target_label})
+            RETURN count(r) as total_relationships
             """
+            rel_results = source_client.execute_read(rel_count_query)
+            total_rels = rel_results[0].get('total_relationships', 0) if rel_results else 0
 
-            logger.info(f"[Preview] Running count query on '{source_database}' - {source_label}-[{rel_type}]->{target_label}")
-            source_results = source_client.execute_read(source_query)
-            source_stats = source_results[0] if source_results else {}
+            logger.info(f"[Preview] Total relationships found: {total_rels}")
 
-            total_rels = source_stats.get('total_relationships', 0)
-            unique_sources = source_stats.get('unique_source_nodes', 0)
-            unique_targets = source_stats.get('unique_target_nodes', 0)
+            # Count unique source nodes with valid UID
+            source_count_query = f"""
+            MATCH (a:{source_label})-[:{rel_type}]->(:{target_label})
+            WHERE a.{source_uid_property} IS NOT NULL
+            RETURN count(DISTINCT a.{source_uid_property}) as unique_source_nodes
+            """
+            source_results = source_client.execute_read(source_count_query)
+            unique_sources = source_results[0].get('unique_source_nodes', 0) if source_results else 0
 
-            logger.info(f"[Preview] Count query returned: total_relationships={total_rels}, unique_sources={unique_sources}, unique_targets={unique_targets}")
+            # Count unique target nodes with valid UID
+            target_count_query = f"""
+            MATCH (:{source_label})-[:{rel_type}]->(b:{target_label})
+            WHERE b.{target_uid_property} IS NOT NULL
+            RETURN count(DISTINCT b.{target_uid_property}) as unique_target_nodes
+            """
+            target_results = source_client.execute_read(target_count_query)
+            unique_targets = target_results[0].get('unique_target_nodes', 0) if target_results else 0
+
+            logger.info(f"[Preview] Counts - total_rels={total_rels}, unique_sources={unique_sources}, unique_targets={unique_targets}")
 
             # Check how many nodes already exist in primary
             existing_sources_query = f"""
