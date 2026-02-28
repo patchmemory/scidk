@@ -1,0 +1,121 @@
+id: sample
+name: Sample
+version: 1.0.0
+description: >
+  A biological sample that was acquired, processed, or analyzed.
+  Used to link imaging datasets, experimental results, and metadata
+  about the physical specimen.
+
+neo4j_label: Sample
+plural: Samples
+
+properties:
+  sample_id:
+    type: string
+    required: true
+    key: true
+    description: "Lab-assigned sample identifier"
+    sanitize: none
+
+  donor_age:
+    type: integer
+    required: false
+    description: "Age of donor at time of sample collection"
+    sanitize: bin
+    sanitize_config:
+      bin_size: 10
+      units: years
+
+  donor_name:
+    type: string
+    required: false
+    description: "Donor full name — NEVER stored in graph"
+    sanitize: redact
+
+  diagnosis:
+    type: string
+    required: false
+    description: "Clinical diagnosis"
+    sanitize: encode
+    sanitize_config:
+      vocabulary: ICD-10
+      fallback: hash
+      case_sensitive: false
+
+  institution:
+    type: string
+    required: false
+    description: "Source institution"
+    sanitize: hash
+    sanitize_config:
+      preserve_linkability: true
+
+  species:
+    type: string
+    required: false
+    description: "Organism species"
+    sanitize: none
+    allowed_values:
+      - "Homo sapiens"
+      - "Mus musculus"
+      - "Rattus norvegicus"
+      - "Drosophila melanogaster"
+      - "Danio rerio"
+      - "Caenorhabditis elegans"
+
+  tissue_type:
+    type: string
+    required: false
+    description: "Tissue or organ type"
+    sanitize: none
+
+  collection_date:
+    type: string
+    required: false
+    description: "Date sample was collected (YYYY-MM-DD)"
+    sanitize: truncate
+    sanitize_config:
+      decimal_places: 0
+
+  notes:
+    type: string
+    required: false
+    description: "Free text notes — stored as-is, avoid PII"
+    sanitize: none
+
+relationships:
+  - type: PART_OF
+    to_label: Study
+    direction: outgoing
+    required: false
+    description: "Sample belongs to a study"
+
+  - type: SUBJECT_OF
+    to_label: ImagingDataset
+    direction: incoming
+    required: false
+    description: "ImagingDataset was acquired from this sample"
+
+indexes:
+  - property: sample_id
+    type: unique
+  - property: species
+    type: standard
+  - property: tissue_type
+    type: standard
+
+test_fixture:
+  valid_node:
+    sample_id: "S001"
+    donor_age: 45
+    donor_name: "John Doe"
+    species: "Homo sapiens"
+    institution: "University of Example"
+    tissue_type: "cortical bone"
+  expected_stored:
+    sample_id: "S001"
+    donor_age: "40-50 years"
+    species: "Homo sapiens"
+    tissue_type: "cortical bone"
+    # donor_name: absent (redacted)
+    # institution: "hash:..." (hashed)

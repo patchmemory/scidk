@@ -1,0 +1,161 @@
+id: imaging_dataset
+name: ImagingDataset
+version: 1.0.0
+description: >
+  A scientific imaging acquisition event and its derived processing stages.
+  Represents a microCT scan, MRI acquisition, fluorescence microscopy session,
+  or similar. The primary entity for imaging research data — files are artifacts
+  linked to this entity, not individually meaningful graph nodes.
+
+neo4j_label: ImagingDataset
+plural: ImagingDatasets
+
+properties:
+  path:
+    type: string
+    required: true
+    key: true
+    description: "Absolute path to the dataset root directory"
+    sanitize: none
+
+  modality:
+    type: string
+    required: true
+    description: "Imaging modality"
+    sanitize: none
+    allowed_values:
+      - "microCT"
+      - "MRI"
+      - "fMRI"
+      - "PET"
+      - "CT"
+      - "fluorescence"
+      - "confocal"
+      - "brightfield"
+      - "electron"
+      - "other"
+
+  voxel_size_um:
+    type: float
+    required: false
+    description: "Isotropic voxel size in micrometers — most critical spatial parameter"
+    sanitize: none
+
+  voxel_size_x_um:
+    type: float
+    required: false
+    description: "Voxel size X dimension in micrometers (for anisotropic data)"
+    sanitize: none
+
+  voxel_size_y_um:
+    type: float
+    required: false
+    description: "Voxel size Y dimension in micrometers (for anisotropic data)"
+    sanitize: none
+
+  voxel_size_z_um:
+    type: float
+    required: false
+    description: "Voxel size Z dimension in micrometers (for anisotropic data)"
+    sanitize: none
+
+  acquisition_date:
+    type: string
+    required: false
+    description: "Date of acquisition (YYYY-MM-DD)"
+    sanitize: none
+
+  instrument:
+    type: string
+    required: false
+    description: "Instrument model name e.g. Bruker SkyScan 1272"
+    sanitize: none
+
+  file_count:
+    type: integer
+    required: false
+    description: "Total number of files in the dataset"
+    sanitize: none
+
+  metadata_complete:
+    type: boolean
+    required: false
+    description: "False if interpreter could not parse all expected metadata fields"
+    sanitize: none
+
+  stack_id:
+    type: string
+    required: false
+    description: "SciDK stack ID linking this dataset to its scan history"
+    sanitize: none
+
+  notes:
+    type: string
+    required: false
+    description: "Free text notes"
+    sanitize: none
+
+relationships:
+  - type: METADATA_SOURCE
+    to_label: InstrumentRecord
+    direction: outgoing
+    required: false
+    description: "Instrument parameters parsed from header file"
+
+  - type: RAW_DATA
+    to_label: FileSet
+    direction: outgoing
+    required: false
+    description: "Raw acquisition files"
+
+  - type: RECONSTRUCTED
+    to_label: FileSet
+    direction: outgoing
+    required: false
+    description: "Reconstructed/processed files"
+
+  - type: ANALYSIS
+    to_label: FileSet
+    direction: outgoing
+    required: false
+    description: "Analysis output files (segmentation, ML output, etc.)"
+
+  - type: SUBJECT
+    to_label: Sample
+    direction: outgoing
+    required: false
+    description: "Biological sample this dataset was acquired from"
+
+  - type: PART_OF
+    to_label: Study
+    direction: outgoing
+    required: false
+    description: "Study this dataset belongs to"
+
+  - type: DERIVED_FROM
+    to_label: File
+    direction: outgoing
+    required: false
+    description: "Source file that produced this dataset entity (e.g. the .log header)"
+
+indexes:
+  - property: path
+    type: unique
+  - property: modality
+    type: standard
+  - property: acquisition_date
+    type: standard
+
+test_fixture:
+  valid_node:
+    path: "/data/experiments/exp_001"
+    modality: "microCT"
+    voxel_size_um: 5.0
+    instrument: "Bruker SkyScan 1272"
+    file_count: 847
+  expected_stored:
+    path: "/data/experiments/exp_001"
+    modality: "microCT"
+    voxel_size_um: 5.0
+    instrument: "Bruker SkyScan 1272"
+    file_count: 847

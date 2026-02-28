@@ -2,6 +2,8 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, Tuple, List
 import os
 
+from scidk.schema.sanitization import sanitize_node_properties
+
 
 def get_neo4j_params(app: Optional[Any] = None) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str], str]:
     """Read Neo4j connection parameters from app extensions or environment.
@@ -240,6 +242,9 @@ class Neo4jClient:
                     label = node_decl.get('label')
                     key_prop = node_decl.get('key_property')
                     props = node_decl.get('properties', {})
+
+                    # Apply Label-defined sanitization rules before write
+                    props = sanitize_node_properties(label, props)
 
                     if not label or not key_prop or key_prop not in props:
                         result['errors'].append(f"Invalid node declaration: missing label, key_property, or key in properties")
