@@ -1950,12 +1950,14 @@ function renderDiscoveredRelationships(container) {
     // Badge for available status
     const statusBadge = '<span class="badge" style="background: #999; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px;">AVAILABLE</span>';
 
-    // Show database badge - each rel now has only one database
-    const database = rel.database || 'PRIMARY';
-    const databaseColor = database === 'PRIMARY' ? '#2196f3' : '#ff9800';
-    const databaseBadge = `<span class="badge" style="background: ${databaseColor}; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${escapeHtml(database)}</span>`;
+    // Show database badges - multiple databases may contain the same triple pattern
+    const databases = rel.databases || [rel.database] || ['PRIMARY'];
+    const databaseBadges = databases.map(db => {
+      const databaseColor = db === 'PRIMARY' ? '#2196f3' : '#ff9800';
+      return `<span class="badge" style="background: ${databaseColor}; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${escapeHtml(db)}</span>`;
+    }).join('');
 
-    const countBadge = `<span class="badge" style="background: #4caf50; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${rel.count || 0}</span>`;
+    const countBadge = `<span class="badge" style="background: #4caf50; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${rel.triple_count || rel.count || 0}</span>`;
 
     // Apply search highlighting
     const sourceDisplay = query ? highlightMatch(rel.source_label || '?', query) : escapeHtml(rel.source_label || '?');
@@ -1972,7 +1974,7 @@ function renderDiscoveredRelationships(container) {
            style="padding: 0.5rem; margin-bottom: 0.25rem; cursor: pointer; border-radius: 4px; border: 1px solid transparent;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
           <strong style="font-size: 0.95em;">${linkName}</strong>
-          <div>${statusBadge}${databaseBadge}${countBadge}</div>
+          <div>${statusBadge}${databaseBadges}${countBadge}</div>
         </div>
         <div style="font-size: 0.85em; color: #666;">
           ${descLine}
@@ -2067,11 +2069,13 @@ function renderGroupedDiscoveredRelationships(validRels, container) {
       // Badge for available status
       const statusBadge = '<span class="badge" style="background: #999; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px;">AVAILABLE</span>';
 
-      // Show database badge - each rel now has only one database
-      const database = rel.database || 'PRIMARY';
-      const databaseColor = database === 'PRIMARY' ? '#2196f3' : '#ff9800';
-      const databaseBadge = `<span class="badge" style="background: ${databaseColor}; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${escapeHtml(database)}</span>`;
-      const countBadge = `<span class="badge" style="background: #4caf50; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${rel.count || 0}</span>`;
+      // Show database badges - multiple databases may contain the same triple pattern
+      const databases = rel.databases || [rel.database] || ['PRIMARY'];
+      const databaseBadges = databases.map(db => {
+        const databaseColor = db === 'PRIMARY' ? '#2196f3' : '#ff9800';
+        return `<span class="badge" style="background: ${databaseColor}; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${escapeHtml(db)}</span>`;
+      }).join('');
+      const countBadge = `<span class="badge" style="background: #4caf50; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${rel.triple_count || rel.count || 0}</span>`;
 
       const sourceDisplay = query ? highlightMatch(rel.source_label || '?', query) : escapeHtml(rel.source_label || '?');
       const relDisplay = query ? highlightMatch(rel.rel_type || '?', query) : escapeHtml(rel.rel_type || '?');
@@ -2093,7 +2097,7 @@ function renderGroupedDiscoveredRelationships(validRels, container) {
         <div class="link-item" data-testid="discovered-item" style="padding: 0.5rem; margin-bottom: 0.25rem; margin-left: 1rem; border-left: 2px solid #e0e0e0;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
             <strong style="font-size: 0.95em;">${linkName}</strong>
-            <div>${statusBadge}${databaseBadge}${countBadge}</div>
+            <div>${statusBadge}${databaseBadges}${countBadge}</div>
           </div>
           <div style="font-size: 0.85em; color: #666;">
             ${descLine}

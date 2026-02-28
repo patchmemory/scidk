@@ -1215,6 +1215,33 @@ class LinkService:
         if promote_to_active and discovered:
             self._promote_discovered_to_active(discovered)
 
+        # Filter out PRIMARY database entries - they belong in Active tab, not Available
+        # Available should only show external/read-only database relationships
+        discovered = [d for d in discovered if d['database'] != 'PRIMARY']
+
+        # Deduplicate by triple pattern - show one entry per unique (source, rel, target)
+        # Keep all database sources in a list for the badge display
+        triple_map = {}
+        for rel in discovered:
+            triple_key = (rel['source_label'], rel['rel_type'], rel['target_label'])
+            if triple_key not in triple_map:
+                triple_map[triple_key] = {
+                    'source_label': rel['source_label'],
+                    'rel_type': rel['rel_type'],
+                    'target_label': rel['target_label'],
+                    'triple_count': rel['triple_count'],
+                    'database': rel['database'],  # Keep first database as primary
+                    'databases': [rel['database']]  # Track all databases
+                }
+            else:
+                # Add this database to the list if not already present
+                if rel['database'] not in triple_map[triple_key]['databases']:
+                    triple_map[triple_key]['databases'].append(rel['database'])
+                # Sum up the triple counts
+                triple_map[triple_key]['triple_count'] += rel['triple_count']
+
+        discovered = list(triple_map.values())
+
         return discovered
 
     def _promote_discovered_to_active(self, discovered: List[Dict[str, Any]]):
