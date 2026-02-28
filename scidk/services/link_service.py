@@ -18,6 +18,9 @@ import csv
 import io
 import requests
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class LinkService:
@@ -1179,12 +1182,15 @@ class LinkService:
                    count(DISTINCT keys(r)) as rel_property_types
             """
 
+            logger.info(f"[Preview] Running count query on '{source_database}' - {source_label}-[{rel_type}]->{target_label}")
             source_results = source_client.execute_read(source_query)
             source_stats = source_results[0] if source_results else {}
 
             total_rels = source_stats.get('total_relationships', 0)
             unique_sources = source_stats.get('unique_source_nodes', 0)
             unique_targets = source_stats.get('unique_target_nodes', 0)
+
+            logger.info(f"[Preview] Count query returned: total_relationships={total_rels}, unique_sources={unique_sources}, unique_targets={unique_targets}")
 
             # Check how many nodes already exist in primary
             existing_sources_query = f"""
