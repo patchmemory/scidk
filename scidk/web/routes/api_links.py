@@ -1176,3 +1176,139 @@ def import_validated_csv(link_id):
     except Exception as e:
         logger.exception("Failed to import validated CSV")
         return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@bp.route('/links/<link_id>/index', methods=['GET'])
+def get_relationship_index(link_id):
+    """
+    Get paginated index of relationships for a link definition.
+
+    Query params:
+    - page: Page number (default 1)
+    - page_size: Number of results per page (default 50)
+
+    For links with link_def_id, reads from match_config.
+    For discovered relationships (no link_def_id), accepts:
+    - source_label
+    - rel_type
+    - target_label
+    - source_database
+
+    Returns:
+    {
+        "status": "success",
+        "total": 526291,
+        "page": 1,
+        "page_size": 50,
+        "rows": [
+            {
+                "source_uid": "D.IMG-001",
+                "rel_props": {"weight": 0.8},
+                "target_uid": "19-194_liver"
+            }
+        ]
+    }
+    """
+    try:
+        from ...services.neo4j_client import get_neo4j_client, get_neo4j_client_for_profile
+
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 50))
+        skip = (page - 1) * page_size
+
+        service = _get_link_service()
+        link = service.get_link_definition(link_id)
+
+        # Determine if this is a discovered relationship or a defined link
+        if link:
+            # Get config from link definition
+            match_config = json.loads(link.get('match_config', '{}')) if isinstance(link.get('match_config'), str) else link.get('match_config', {})
+
+            source_label = link.get('source_label')
+            target_label = link.get('target_label')
+            rel_type = link.get('relationship_type')
+            source_uid_property = match_config.get('source_uid_property', 'uuid')
+            target_uid_property = match_config.get('target_uid_property', 'uuid')
+            source_database = match_config.get('source_database')
+
+            # For Active links, query primary database
+            # For Pending/Available, query source database
+            if link.get('status') == 'active' and not source_database:
+                database = 'PRIMARY'
+            else:
+                database = source_database or 'PRIMARY'
+        else:
+            # Discovered relationship - get params from query string
+            source_label = request.args.get('source_label')
+            target_label = request.args.get('target_label')
+            rel_type = request.args.get('rel_type')
+            source_database = request.args.get('source_database')
+            source_uid_property = request.args.get('source_uid_property', 'uuid')
+            target_uid_property = request.args.get('target_uid_property', 'uuid')
+            database = source_database or 'PRIMARY'
+
+        if not all([source_label, target_label, rel_type]):
+            return jsonify({
+                'status': 'error',
+                'error': 'Missing required parameters: source_label, target_label, rel_type'
+            }), 400
+
+        # Get appropriate Neo4j client
+        if database == 'PRIMARY':
+            client = get_neo4j_client()
+            close_client = False
+        else:
+            client = get_neo4j_client_for_profile(database)
+            close_client = True
+            if not client:
+                return jsonify({
+                    'status': 'error',
+                    'error': f'Database "{database}" not found'
+                }), 404
+
+        try:
+            # Count query
+            count_query = f"""
+            MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
+            RETURN count(r) as total
+            """
+            count_results = client.execute_read(count_query)
+            total = count_results[0]['total'] if count_results else 0
+
+            # Data query with pagination
+            data_query = f"""
+            MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
+            RETURN a.{source_uid_property} as source_uid,
+                   properties(r) as rel_props,
+                   b.{target_uid_property} as target_uid
+            ORDER BY source_uid, target_uid
+            SKIP {skip} LIMIT {page_size}
+            """
+            data_results = client.execute_read(data_query)
+
+            rows = []
+            for record in data_results:
+                rows.append({
+                    'source_uid': record.get('source_uid'),
+                    'rel_props': dict(record.get('rel_props', {})),
+                    'target_uid': record.get('target_uid')
+                })
+
+            return jsonify({
+                'status': 'success',
+                'total': total,
+                'page': page,
+                'page_size': page_size,
+                'rows': rows
+            }), 200
+
+        finally:
+            if close_client:
+                client.close()
+
+    except Exception as e:
+        logger.exception("Failed to get relationship index")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
