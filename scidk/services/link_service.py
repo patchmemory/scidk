@@ -1303,6 +1303,7 @@ class LinkService:
 
             while True:
                 # Fetch one batch from source database
+                # ORDER BY ensures stable pagination with SKIP/LIMIT
                 if import_rel_properties:
                     fetch_query = f"""
                     MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
@@ -1310,6 +1311,7 @@ class LinkService:
                     RETURN a.{source_uid_property} as source_uid,
                            b.{target_uid_property} as target_uid,
                            properties(r) as rel_props
+                    ORDER BY source_uid, target_uid
                     SKIP {skip}
                     LIMIT {batch_size}
                     """
@@ -1319,18 +1321,23 @@ class LinkService:
                     WHERE a.{source_uid_property} IS NOT NULL AND b.{target_uid_property} IS NOT NULL
                     RETURN a.{source_uid_property} as source_uid,
                            b.{target_uid_property} as target_uid
+                    ORDER BY source_uid, target_uid
                     SKIP {skip}
                     LIMIT {batch_size}
                     """
 
+                logger.info(f"[Import] Fetching batch: skip={skip}, batch_size={batch_size}")
                 batch = source_client.execute_read(fetch_query)
+
+                batch_len = len(batch) if batch else 0
+                logger.info(f"[Import] Fetched batch: skip={skip}, batch_size={batch_size}, len(batch)={batch_len}")
 
                 if not batch:
                     # No more relationships to fetch
+                    logger.info(f"[Import] No more batches - stopping at skip={skip}")
                     break
 
                 total_fetched += len(batch)
-                logger.info(f"[Import] Fetched batch of {len(batch)} relationships (total so far: {total_fetched})")
 
                 # Build UNWIND query for batch import
                 if import_rel_properties:
@@ -1384,13 +1391,15 @@ class LinkService:
                     target_nodes_created += stats.get('targets_created', 0)
                     target_nodes_merged += stats.get('targets_merged', 0)
                     relationships_created += stats.get('rels_created', 0)
+                    logger.info(f"[Import] Batch processed - relationships_created so far: {relationships_created}")
 
                 # Move to next batch
                 skip += batch_size
+                logger.info(f"[Import] Incrementing skip to {skip}")
 
                 # If we got fewer results than batch_size, we've reached the end
                 if len(batch) < batch_size:
-                    logger.info(f"[Import] Completed - fetched {total_fetched} total relationships")
+                    logger.info(f"[Import] Completed - final batch had {len(batch)} rows (< {batch_size}), total fetched: {total_fetched}")
                     break
 
             # Clean up _imported_stub flags
