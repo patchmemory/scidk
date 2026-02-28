@@ -1227,8 +1227,9 @@ def get_relationship_index(link_id):
             source_label = link.get('source_label')
             target_label = link.get('target_label')
             rel_type = link.get('relationship_type')
-            source_uid_property = match_config.get('source_uid_property', 'uuid')
-            target_uid_property = match_config.get('target_uid_property', 'uuid')
+            # Fall back to elementId when UID properties are not configured
+            source_uid_property = match_config.get('source_uid_property') or 'elementId'
+            target_uid_property = match_config.get('target_uid_property') or 'elementId'
             source_database = match_config.get('source_database')
 
             # For Active links, query primary database
@@ -1243,8 +1244,8 @@ def get_relationship_index(link_id):
             target_label = request.args.get('target_label')
             rel_type = request.args.get('rel_type')
             source_database = request.args.get('source_database')
-            source_uid_property = request.args.get('source_uid_property', 'uuid')
-            target_uid_property = request.args.get('target_uid_property', 'uuid')
+            source_uid_property = request.args.get('source_uid_property') or 'elementId'
+            target_uid_property = request.args.get('target_uid_property') or 'elementId'
             database = source_database or 'PRIMARY'
 
         if not all([source_label, target_label, rel_type]):
@@ -1275,12 +1276,23 @@ def get_relationship_index(link_id):
             count_results = client.execute_read(count_query)
             total = count_results[0]['total'] if count_results else 0
 
+            # Build property access with fallback to elementId
+            if source_uid_property == 'elementId':
+                source_return = 'elementId(a) as source_uid'
+            else:
+                source_return = f'a.{source_uid_property} as source_uid'
+
+            if target_uid_property == 'elementId':
+                target_return = 'elementId(b) as target_uid'
+            else:
+                target_return = f'b.{target_uid_property} as target_uid'
+
             # Data query with pagination
             data_query = f"""
             MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
-            RETURN a.{source_uid_property} as source_uid,
+            RETURN {source_return},
                    properties(r) as rel_props,
-                   b.{target_uid_property} as target_uid
+                   {target_return}
             ORDER BY source_uid, target_uid
             SKIP {skip} LIMIT {page_size}
             """
