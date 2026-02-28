@@ -1691,7 +1691,6 @@ function renderLinkList() {
 
   // 1. Start with all link definitions
   let validLinks = linkDefinitions.filter(link => link && link.id);
-  const totalCount = validLinks.length;
 
   // 2. Apply status tab filter (active/pending/available)
   // Active = relationships confirmed in primary graph (status = 'active')
@@ -1704,6 +1703,9 @@ function renderLinkList() {
   } else if (currentFilter === 'available') {
     validLinks = validLinks.filter(link => link.status === 'draft' || !link.status);
   }
+
+  // Total count for current tab (after tab filter, before search/other filters)
+  const totalCount = validLinks.length;
 
   // 3. Apply search query
   if (linksNavState.searchQuery) {
