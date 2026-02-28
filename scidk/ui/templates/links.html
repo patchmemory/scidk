@@ -11,6 +11,11 @@
 {% endblock %}
 {% block content %}
 <style>
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
   .links-container {
     display: flex;
     gap: 0;
@@ -413,8 +418,8 @@
           Available
         </button>
       </div>
-      <button id="btn-refresh-available" class="btn btn-sm" style="display: none; margin-left: 0.5rem; padding: 0.25rem 0.5rem; font-size: 0.85em;" title="Refresh available relationships">
-        🔄
+      <button id="btn-refresh-all" class="btn btn-sm" style="margin-left: 0.5rem; padding: 0.25rem 0.5rem; font-size: 0.85em;" title="Refresh all tabs: verify Active, rescan Available, reload Pending">
+        <span id="refresh-icon">🔄</span> <span id="refresh-text">Refresh</span>
       </button>
     </div>
 
@@ -1438,23 +1443,62 @@ function initializeEventListeners() {
 
       // Update filter and re-render
       currentFilter = tab.dataset.filter;
-
-      // Show/hide refresh button when on available tab
-      const refreshBtn = document.getElementById('btn-refresh-available');
-      if (currentFilter === 'available') {
-        refreshBtn.style.display = 'block';
-      } else {
-        refreshBtn.style.display = 'none';
-      }
-
       renderLinkList();
     });
   });
 
-  // Refresh available relationships button
-  document.getElementById('btn-refresh-available').addEventListener('click', () => {
-    loadDiscoveredRelationships();
-    showToast('Refreshing available relationships...', 'info');
+  // Unified refresh button - refreshes all three tabs
+  document.getElementById('btn-refresh-all').addEventListener('click', async () => {
+    const refreshBtn = document.getElementById('btn-refresh-all');
+    const refreshIcon = document.getElementById('refresh-icon');
+    const refreshText = document.getElementById('refresh-text');
+
+    // Show loading state
+    refreshBtn.disabled = true;
+    refreshIcon.style.animation = 'spin 1s linear infinite';
+    refreshText.textContent = 'Refreshing...';
+
+    try {
+      showToast('Refreshing all tabs...', 'info');
+
+      // Step 1: Verify Active links against primary graph
+      try {
+        const verifyResponse = await fetch('/api/links/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const verifyData = await verifyResponse.json();
+
+        if (verifyData.status === 'success') {
+          const staleCount = Object.values(verifyData.verified).filter(count => count === 0).length;
+          if (staleCount > 0) {
+            showToast(`Moved ${staleCount} stale link(s) to Pending`, 'info');
+          }
+        }
+      } catch (err) {
+        console.error('Failed to verify active links:', err);
+      }
+
+      // Step 2: Rescan external graphs for available relationships
+      await loadDiscoveredRelationships();
+
+      // Step 3: Reload all link definitions (promotion happens server-side)
+      await loadLinkDefinitions();
+
+      showToast('Refresh complete - all tabs updated', 'success');
+
+      // Re-render current tab
+      renderLinkList();
+
+    } catch (err) {
+      console.error('Refresh failed:', err);
+      showToast('Refresh failed: ' + err.message, 'error');
+    } finally {
+      // Reset button state
+      refreshBtn.disabled = false;
+      refreshIcon.style.animation = '';
+      refreshText.textContent = 'Refresh';
+    }
   });
 
   // Dropdown toggle

@@ -1023,12 +1023,95 @@ class LinkService:
         finally:
             conn.close()
 
-    def discover_relationships(self, profile_name: Optional[str] = None) -> List[Dict[str, Any]]:
+    def verify_active_links(self) -> Dict[str, int]:
+        """
+        Verify all active link definitions against primary Neo4j graph.
+
+        For each link with status='active', checks if relationships actually exist
+        in the primary graph. If no relationships found, the link is stale and should
+        be moved to 'pending' status.
+
+        Returns:
+            Dict mapping link_id to relationship count in primary graph.
+            Links with count=0 are stale and will be updated to 'pending' status.
+        """
+        from .neo4j_client import get_neo4j_client
+
+        # Get all active links
+        links = self.list_link_definitions()
+        active_links = [link for link in links if link.get('status') == 'active']
+
+        if not active_links:
+            return {}
+
+        # Get primary Neo4j client
+        neo4j_client = get_neo4j_client()
+        if not neo4j_client:
+            logger.warning("Cannot verify active links - Neo4j client not available")
+            return {}
+
+        verification_results = {}
+        conn = self._get_conn()
+
+        try:
+            cursor = conn.cursor()
+
+            for link in active_links:
+                link_id = link['id']
+                source_label = link.get('source_label')
+                target_label = link.get('target_label')
+                rel_type = link.get('relationship_type')
+
+                if not all([source_label, target_label, rel_type]):
+                    # Skip links without required fields
+                    continue
+
+                try:
+                    # Validate relationship type for Cypher safety
+                    rel_type_validated = self._validate_relationship_type(rel_type)
+
+                    # Count relationships in primary graph
+                    count_query = f"""
+                    MATCH (a:{source_label})-[r:{rel_type_validated}]->(b:{target_label})
+                    RETURN count(r) as rel_count
+                    """
+
+                    results = neo4j_client.execute_read(count_query)
+                    rel_count = results[0].get('rel_count', 0) if results else 0
+
+                    verification_results[link_id] = rel_count
+
+                    # Update status if stale (no relationships found)
+                    if rel_count == 0:
+                        cursor.execute(
+                            "UPDATE link_definitions SET status = ?, updated_at = ? WHERE id = ?",
+                            ('pending', time.time(), link_id)
+                        )
+                        logger.info(f"Link {link_id} ({link['name']}) moved to pending - no relationships found in primary graph")
+
+                except Exception as e:
+                    logger.warning(f"Failed to verify link {link_id}: {e}")
+                    verification_results[link_id] = -1  # Mark as error
+
+            conn.commit()
+            return verification_results
+
+        finally:
+            conn.close()
+            if neo4j_client:
+                neo4j_client.close()
+
+    def discover_relationships(self, profile_name: Optional[str] = None, promote_to_active: bool = True) -> List[Dict[str, Any]]:
         """
         Query Neo4j to discover existing relationship types across all nodes.
 
+        For discovered patterns that exist in primary graph:
+        - If link definition exists → mark as 'active'
+        - If no link definition exists → auto-create as 'active'
+
         Args:
             profile_name: Optional Neo4j profile name. If None, queries all configured databases.
+            promote_to_active: If True, promote discovered patterns that exist in primary to 'active' status
 
         Returns:
             List of discovered relationships with:
@@ -1128,7 +1211,93 @@ class LinkService:
                     except:
                         pass
 
+        # Promote discovered patterns that exist in primary to 'active' status
+        if promote_to_active and discovered:
+            self._promote_discovered_to_active(discovered)
+
         return discovered
+
+    def _promote_discovered_to_active(self, discovered: List[Dict[str, Any]]):
+        """
+        Promote discovered relationship patterns to 'active' status if they exist in primary.
+
+        For each discovered pattern:
+        1. Check if it exists in PRIMARY graph
+        2. If yes and link definition exists → mark as 'active'
+        3. If yes and no link definition → auto-create as 'active'
+
+        Args:
+            discovered: List of discovered relationship patterns
+        """
+        from .neo4j_client import get_neo4j_client
+
+        # Get primary client to check which patterns exist
+        primary_client = get_neo4j_client()
+        if not primary_client:
+            return
+
+        conn = self._get_conn()
+
+        try:
+            cursor = conn.cursor()
+
+            # Find patterns that exist in PRIMARY
+            primary_patterns = [d for d in discovered if d['database'] == 'PRIMARY']
+
+            for pattern in primary_patterns:
+                source_label = pattern['source_label']
+                target_label = pattern['target_label']
+                rel_type = pattern['rel_type']
+                triple_count = pattern.get('triple_count', 0)
+
+                if triple_count == 0:
+                    continue  # Skip patterns with no relationships
+
+                # Check if link definition already exists
+                cursor.execute(
+                    """
+                    SELECT id, status FROM link_definitions
+                    WHERE source_label = ? AND target_label = ? AND relationship_type = ?
+                    LIMIT 1
+                    """,
+                    (source_label, target_label, rel_type)
+                )
+                existing = cursor.fetchone()
+
+                if existing:
+                    # Link definition exists - mark as active if not already
+                    link_id, current_status = existing
+                    if current_status != 'active':
+                        cursor.execute(
+                            "UPDATE link_definitions SET status = 'active', updated_at = ? WHERE id = ?",
+                            (time.time(), link_id)
+                        )
+                        logger.info(f"Promoted existing link {link_id} to 'active' - {triple_count} relationships found in primary")
+                else:
+                    # No link definition - auto-create as 'active'
+                    link_id = str(uuid.uuid4())
+                    link_name = f"{source_label} → {rel_type} → {target_label}"
+                    now = time.time()
+
+                    cursor.execute(
+                        """
+                        INSERT INTO link_definitions
+                        (id, name, source_label, target_label, source_type, source_config,
+                         target_type, target_config, match_strategy, match_config,
+                         relationship_type, relationship_props, created_at, updated_at, status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (link_id, link_name, source_label, target_label, 'label', '{}',
+                         'label', '{}', 'id', '{}', rel_type, '{}', now, now, 'active')
+                    )
+                    logger.info(f"Auto-created link definition {link_id} as 'active' - {triple_count} relationships found in primary")
+
+            conn.commit()
+
+        finally:
+            conn.close()
+            if primary_client:
+                primary_client.close()
 
     def preview_discovered_import(
         self,

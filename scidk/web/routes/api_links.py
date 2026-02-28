@@ -460,6 +460,40 @@ def migrate_links():
         }), 500
 
 
+@bp.route('/links/verify', methods=['POST'])
+def verify_active_links():
+    """
+    Verify all active link definitions against primary Neo4j graph.
+
+    Checks each active link to confirm relationships actually exist.
+    Links with no relationships are moved to 'pending' status.
+
+    Returns:
+    {
+        "status": "success",
+        "verified": {
+            "link_id_1": 1234,  // relationship count
+            "link_id_2": 0,     // stale - moved to pending
+            "link_id_3": -1     // verification error
+        }
+    }
+    """
+    try:
+        service = _get_link_service()
+        results = service.verify_active_links()
+
+        return jsonify({
+            'status': 'success',
+            'verified': results
+        }), 200
+    except Exception as e:
+        logger.exception("Failed to verify active links")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
 @bp.route('/links/discovered', methods=['GET'])
 def discover_relationships():
     """
