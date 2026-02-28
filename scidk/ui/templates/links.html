@@ -3460,6 +3460,14 @@ async function openImportWizardForRelationship(rel) {
   // Show wizard panel
   showWizard();
 
+  // Hide Save Definition, Execute, and Delete buttons for discovered import workflow
+  const btnSaveDef = document.getElementById('btn-save-def');
+  const btnExecute = document.getElementById('btn-execute');
+  const btnDeleteDef = document.getElementById('btn-delete-def');
+  if (btnSaveDef) btnSaveDef.style.display = 'none';
+  if (btnExecute) btnExecute.style.display = 'none';
+  if (btnDeleteDef) btnDeleteDef.style.display = 'none';
+
   // Auto-populate link name
   const linkNameInput = document.getElementById('link-name');
   if (linkNameInput) {
@@ -3605,15 +3613,15 @@ async function loadDiscoveredInstances() {
     `;
 
     records.forEach(record => {
-      const sourceDisplay = record.source_display || record.source_uid || '?';
+      const sourceUid = record.source_uid || '?';
       const relProps = record.rel_prop_count > 0 ? ` (${record.rel_prop_count} props)` : '';
-      const targetDisplay = record.target_display || record.target_uid || '?';
+      const targetUid = record.target_uid || '?';
 
       tableHtml += `
         <tr>
-          <td>${escapeHtml(String(sourceDisplay))}</td>
+          <td>${escapeHtml(String(sourceUid))}</td>
           <td>${escapeHtml(config.relationship.type)}${relProps}</td>
-          <td>${escapeHtml(String(targetDisplay))}</td>
+          <td>${escapeHtml(String(targetUid))}</td>
         </tr>
       `;
     });
