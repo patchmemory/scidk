@@ -3489,10 +3489,21 @@ async function openImportWizardForRelationship(rel) {
     previewContainer.innerHTML = '<div style="text-align: center; padding: 2rem; color: #999;">Loading instances...</div>';
   }
 
-  // Fetch sample instances from Neo4j
+  // Build optimized query that returns only scalar values needed for display
+  // Use the configured UID properties plus common display properties
+  const sourceUid = discoveredImportConfig.source.uid_property || 'id';
+  const targetUid = discoveredImportConfig.target.uid_property || 'id';
+
   const query = `
     MATCH (a:${rel.source_label})-[r:${rel.rel_type}]->(b:${rel.target_label})
-    RETURN a, r, b LIMIT 10
+    RETURN
+      a.${sourceUid} as source_uid,
+      coalesce(a.name, a.title, a.${sourceUid}) as source_display,
+      type(r) as rel_type,
+      size(keys(r)) as rel_prop_count,
+      b.${targetUid} as target_uid,
+      coalesce(b.name, b.title, b.${targetUid}) as target_display
+    LIMIT 10
   `;
 
   fetch(`/api/neo4j/query`, {
@@ -3536,19 +3547,15 @@ async function openImportWizardForRelationship(rel) {
       `;
 
       records.forEach(record => {
-        const source = record.a || {};
-        const relationship = record.r || {};
-        const target = record.b || {};
-
-        const sourceName = source.name || source.title || source.id || JSON.stringify(source).substring(0, 50);
-        const relProps = Object.keys(relationship).length > 0 ? ` (${Object.keys(relationship).length} props)` : '';
-        const targetName = target.name || target.title || target.id || JSON.stringify(target).substring(0, 50);
+        const sourceDisplay = record.source_display || record.source_uid || '?';
+        const relProps = record.rel_prop_count > 0 ? ` (${record.rel_prop_count} props)` : '';
+        const targetDisplay = record.target_display || record.target_uid || '?';
 
         tableHtml += `
           <tr>
-            <td>${escapeHtml(sourceName)}</td>
+            <td>${escapeHtml(String(sourceDisplay))}</td>
             <td>${escapeHtml(rel.rel_type)}${relProps}</td>
-            <td>${escapeHtml(targetName)}</td>
+            <td>${escapeHtml(String(targetDisplay))}</td>
           </tr>
         `;
       });

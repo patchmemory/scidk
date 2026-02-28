@@ -541,6 +541,32 @@ def execute_discovered_import():
         }), 500
 
 
+def _serialize_neo4j_record(record):
+    """
+    Convert a Neo4j record to a JSON-serializable dict.
+
+    Handles Node and Relationship objects by extracting their properties.
+    """
+    result = {}
+    for key, value in record.items():
+        if hasattr(value, '_properties'):
+            # Neo4j Node or Relationship object
+            result[key] = dict(value._properties)
+            if hasattr(value, 'type'):
+                # Relationship
+                result[key]['_type'] = value.type
+            elif hasattr(value, 'labels'):
+                # Node
+                result[key]['_labels'] = list(value.labels)
+        elif hasattr(value, 'items'):
+            # Dict-like object
+            result[key] = dict(value)
+        else:
+            # Scalar value
+            result[key] = value
+    return result
+
+
 @bp.route('/neo4j/query', methods=['POST'])
 def execute_neo4j_query():
     """
@@ -552,7 +578,7 @@ def execute_neo4j_query():
         "query": "MATCH (n) RETURN n LIMIT 10"
     }
 
-    Returns query results.
+    Returns query results with Neo4j objects serialized to dicts.
     """
     try:
         from ...services.neo4j_client import get_neo4j_client, get_neo4j_client_for_profile
@@ -576,9 +602,12 @@ def execute_neo4j_query():
         try:
             results = client.execute_read(query)
 
+            # Serialize Neo4j objects to JSON-serializable dicts
+            serialized_results = [_serialize_neo4j_record(record) for record in results]
+
             return jsonify({
                 'status': 'success',
-                'records': results
+                'records': serialized_results
             }), 200
         finally:
             if database != 'PRIMARY':
