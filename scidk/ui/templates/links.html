@@ -2659,7 +2659,11 @@ function populateWizardFromLink(link) {
 
   // Check if this is a discovered import link (has source_database in match_config)
   if (link.match_config && link.match_config.source_database) {
+    console.log('[populateWizardFromLink] Detected discovered import link');
+    console.log('[populateWizardFromLink] match_config:', JSON.stringify(link.match_config, null, 2));
+
     // This is a discovered import link - show the triple bar with UID info
+    discoveredImportConfig.rel = link;  // Set the rel so display knows this is a discovered import
     discoveredImportConfig.database = link.match_config.source_database;
     discoveredImportConfig.source.label = link.source_label;
     discoveredImportConfig.source.uid_property = link.match_config.source_uid_property;
@@ -2667,6 +2671,8 @@ function populateWizardFromLink(link) {
     discoveredImportConfig.target.uid_property = link.match_config.target_uid_property;
     discoveredImportConfig.relationship.type = link.relationship_type;
     discoveredImportConfig.relationship.import_properties = link.match_config.import_rel_properties !== false;
+
+    console.log('[populateWizardFromLink] discoveredImportConfig after setup:', JSON.stringify(discoveredImportConfig, null, 2));
 
     // Show the discovered import triple bar
     updateDiscoveredImportDisplay();
