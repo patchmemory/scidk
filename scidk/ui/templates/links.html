@@ -2728,10 +2728,6 @@ function populateWizardFromLink(link) {
 
     // If this is an Active import link, fetch and show sync status
     if (link.status === 'active') {
-      // Hide the Preview & Execute section for Active links
-      const previewExecuteSection = document.getElementById('preview-execute-section');
-      if (previewExecuteSection) previewExecuteSection.style.display = 'none';
-
       showSyncStatusForActiveImportLink(link.id);
     }
 
