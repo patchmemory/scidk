@@ -1435,18 +1435,17 @@ class LinkService:
                 )
             else:
                 # Create new - start as pending, will become active on completion
-                # Include all required fields to ensure frontend can load the definition
                 cursor.execute(
                     """
                     INSERT INTO link_definitions
-                    (id, name, source_label, target_label, source_type, source_config, source_filters,
-                     target_type, target_config, target_filters,
+                    (id, name, source_label, target_label, source_type, source_config,
+                     target_type, target_config,
                      match_strategy, match_config, relationship_type, relationship_props,
                      created_at, updated_at, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (link_def_id, link_name, source_label, target_label, 'label', '{}', '[]',
-                     'label', '{}', '[]',
+                    (link_def_id, link_name, source_label, target_label, 'label', '{}',
+                     'label', '{}',
                      'id', json.dumps(match_config), rel_type, '{}', now, now, 'pending')
                 )
 
