@@ -2677,13 +2677,17 @@ function populateWizardFromLink(link) {
     // Show the discovered import triple bar
     updateDiscoveredImportDisplay();
 
-    // Hide Save/Execute/Delete buttons for discovered import workflow
+    // Hide Save/Execute buttons for discovered import workflow
+    // But show Delete button for pending links
     const btnSaveDef = document.getElementById('btn-save-def');
     const btnExecute = document.getElementById('btn-execute');
     const btnDeleteDef = document.getElementById('btn-delete-def');
     if (btnSaveDef) btnSaveDef.style.display = 'none';
     if (btnExecute) btnExecute.style.display = 'none';
-    if (btnDeleteDef) btnDeleteDef.style.display = 'none';
+    // Show Delete button only if status is pending
+    if (btnDeleteDef) {
+      btnDeleteDef.style.display = (link.status === 'pending') ? 'inline-block' : 'none';
+    }
   }
 
   // Update visual display
@@ -4188,7 +4192,8 @@ async function executeDiscoveredImport() {
           <div style="background: #e0e0e0; border-radius: 4px; height: 24px; overflow: hidden; margin-bottom: 0.5rem;">
             <div id="task-progress-fill" style="background: #4caf50; height: 100%; width: 0%; transition: width 0.3s ease;"></div>
           </div>
-          <div id="task-progress-stats" style="font-size: 0.85em; color: #666;"></div>
+          <div id="task-progress-stats" style="font-size: 0.85em; color: #666; margin-bottom: 0.75rem;"></div>
+          <button id="btn-cancel-import" class="btn btn-sm btn-outline-danger" onclick="cancelDiscoveredImport('${taskId}')">Cancel Import</button>
         </div>
       `;
     } else {
@@ -4322,6 +4327,20 @@ function pollDiscoveredImportStatus(taskId, config) {
 
           // Refresh link definitions to show the new/updated definition
           loadLinkDefinitions();
+        } else if (task.status === 'canceled' || task.status === 'cancelled') {
+          clearInterval(activePollingInterval);
+          activePollingInterval = null;
+          document.getElementById('preview-container').innerHTML = `
+            <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+              <h5 style="margin: 0 0 0.5rem 0;">Import Cancelled</h5>
+              <div style="font-size: 0.9em; color: #666; margin-bottom: 0.75rem;">
+                The import was stopped before completion.
+              </div>
+              <button class="btn btn-sm btn-success" onclick="previewDiscoveredImport()">Load Preview</button>
+              <button class="btn btn-sm btn-outline-secondary" onclick="executeDiscoveredImport()" style="margin-left: 0.5rem;">Proceed with Import</button>
+            </div>
+          `;
+          showToast('Import cancelled', 'info');
         } else if (task.status === 'error' || task.status === 'failed') {
           clearInterval(activePollingInterval);
           activePollingInterval = null;
@@ -4341,6 +4360,36 @@ function pollDiscoveredImportStatus(taskId, config) {
         document.getElementById('preview-container').innerHTML = `<div class="empty-state small" style="color: #f44336;">Failed to poll import status</div>`;
       });
   }, 2000);  // Poll every 2 seconds
+}
+
+// Cancel discovered import
+async function cancelDiscoveredImport(taskId) {
+  if (!confirm('Are you sure you want to cancel this import?')) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/tasks/${taskId}/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to cancel import');
+    }
+
+    showToast('Cancelling import...', 'info');
+
+    // Disable the cancel button
+    const cancelBtn = document.getElementById('btn-cancel-import');
+    if (cancelBtn) {
+      cancelBtn.disabled = true;
+      cancelBtn.textContent = 'Cancelling...';
+    }
+  } catch (err) {
+    console.error('Failed to cancel import:', err);
+    showToast(`Failed to cancel: ${err.message}`, 'error');
+  }
 }
 
 // CSV Export/Import Functions for Human Validation

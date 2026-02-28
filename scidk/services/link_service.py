@@ -1478,7 +1478,8 @@ class LinkService:
             target_uid_property=target_uid_property,
             import_rel_properties=import_rel_properties,
             batch_size=batch_size,
-            progress_callback=lambda current, total, msg: self._update_task_progress(task, current, total, msg)
+            progress_callback=lambda current, total, msg: self._update_task_progress(task, current, total, msg),
+            task=task
         )
 
         # Update final task state
@@ -1515,7 +1516,8 @@ class LinkService:
         target_uid_property: str,
         import_rel_properties: bool = True,
         batch_size: int = 5000,
-        progress_callback=None
+        progress_callback=None,
+        task: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Import stub nodes and relationships from discovered relationship.
@@ -1577,48 +1579,97 @@ class LinkService:
             target_nodes_merged = 0
             relationships_created = 0
 
-            # Use streaming/pagination to avoid loading all relationships into memory at once
-            # This prevents hitting any implicit or explicit limits
-            skip = 0
+            # Use keyset pagination to avoid O(n) SKIP overhead
+            # This makes each batch O(log n) instead, keeping speed constant
+            last_source_uid = None
+            last_target_uid = None
             total_fetched = 0
 
             logger.info(f"[Import] Starting streaming import from '{source_database}' - batch_size={batch_size}")
 
             while True:
-                # Fetch one batch from source database
-                # ORDER BY ensures stable pagination with SKIP/LIMIT
-                if import_rel_properties:
-                    fetch_query = f"""
-                    MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
-                    WHERE a.{source_uid_property} IS NOT NULL AND b.{target_uid_property} IS NOT NULL
-                    RETURN a.{source_uid_property} as source_uid,
-                           b.{target_uid_property} as target_uid,
-                           properties(r) as rel_props
-                    ORDER BY source_uid, target_uid
-                    SKIP {skip}
-                    LIMIT {batch_size}
-                    """
-                else:
-                    fetch_query = f"""
-                    MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
-                    WHERE a.{source_uid_property} IS NOT NULL AND b.{target_uid_property} IS NOT NULL
-                    RETURN a.{source_uid_property} as source_uid,
-                           b.{target_uid_property} as target_uid
-                    ORDER BY source_uid, target_uid
-                    SKIP {skip}
-                    LIMIT {batch_size}
-                    """
+                # Check for cancellation
+                if task and task.get('cancel_requested'):
+                    logger.info(f"[Import] Cancellation requested, stopping import")
+                    task['status'] = 'cancelled'
+                    task['status_message'] = 'Import cancelled by user'
+                    return {
+                        'source_nodes_created': source_nodes_created,
+                        'source_nodes_merged': source_nodes_merged,
+                        'target_nodes_created': target_nodes_created,
+                        'target_nodes_merged': target_nodes_merged,
+                        'relationships_created': relationships_created,
+                        'duration_seconds': time.time() - start_time
+                    }
 
-                logger.info(f"[Import] Fetching batch: skip={skip}, batch_size={batch_size}")
-                batch = source_client.execute_read(fetch_query)
+                # Fetch one batch from source database using keyset pagination
+                # Keyset pagination: WHERE (source_uid, target_uid) > (last_source, last_target)
+                if last_source_uid is None:
+                    # First batch - no cursor
+                    if import_rel_properties:
+                        fetch_query = f"""
+                        MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
+                        WHERE a.{source_uid_property} IS NOT NULL AND b.{target_uid_property} IS NOT NULL
+                        RETURN a.{source_uid_property} as source_uid,
+                               b.{target_uid_property} as target_uid,
+                               properties(r) as rel_props
+                        ORDER BY source_uid, target_uid
+                        LIMIT {batch_size}
+                        """
+                    else:
+                        fetch_query = f"""
+                        MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
+                        WHERE a.{source_uid_property} IS NOT NULL AND b.{target_uid_property} IS NOT NULL
+                        RETURN a.{source_uid_property} as source_uid,
+                               b.{target_uid_property} as target_uid
+                        ORDER BY source_uid, target_uid
+                        LIMIT {batch_size}
+                        """
+                    logger.info(f"[Import] Fetching first batch: batch_size={batch_size}")
+                    batch = source_client.execute_read(fetch_query)
+                else:
+                    # Subsequent batches - use keyset cursor
+                    if import_rel_properties:
+                        fetch_query = f"""
+                        MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
+                        WHERE a.{source_uid_property} IS NOT NULL AND b.{target_uid_property} IS NOT NULL
+                        AND (a.{source_uid_property} > $last_source
+                             OR (a.{source_uid_property} = $last_source AND b.{target_uid_property} > $last_target))
+                        RETURN a.{source_uid_property} as source_uid,
+                               b.{target_uid_property} as target_uid,
+                               properties(r) as rel_props
+                        ORDER BY source_uid, target_uid
+                        LIMIT {batch_size}
+                        """
+                    else:
+                        fetch_query = f"""
+                        MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
+                        WHERE a.{source_uid_property} IS NOT NULL AND b.{target_uid_property} IS NOT NULL
+                        AND (a.{source_uid_property} > $last_source
+                             OR (a.{source_uid_property} = $last_source AND b.{target_uid_property} > $last_target))
+                        RETURN a.{source_uid_property} as source_uid,
+                               b.{target_uid_property} as target_uid
+                        ORDER BY source_uid, target_uid
+                        LIMIT {batch_size}
+                        """
+                    logger.info(f"[Import] Fetching batch after cursor: last_source={last_source_uid}, last_target={last_target_uid}")
+                    batch = source_client.execute_read(
+                        fetch_query,
+                        last_source=last_source_uid,
+                        last_target=last_target_uid
+                    )
 
                 batch_len = len(batch) if batch else 0
-                logger.info(f"[Import] Fetched batch: skip={skip}, batch_size={batch_size}, len(batch)={batch_len}")
+                logger.info(f"[Import] Fetched batch: len(batch)={batch_len}")
 
                 if not batch:
                     # No more relationships to fetch
-                    logger.info(f"[Import] No more batches - stopping at skip={skip}")
+                    logger.info(f"[Import] No more batches - stopping")
                     break
+
+                # Update cursor for next batch (keyset pagination)
+                last_source_uid = batch[-1]['source_uid']
+                last_target_uid = batch[-1]['target_uid']
 
                 total_fetched += len(batch)
 
@@ -1699,10 +1750,6 @@ class LinkService:
                             total_relationships,
                             message
                         )
-
-                # Move to next batch
-                skip += batch_size
-                logger.info(f"[Import] Incrementing skip to {skip}")
 
                 # If we got fewer results than batch_size, we've reached the end
                 if len(batch) < batch_size:
