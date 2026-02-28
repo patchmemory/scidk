@@ -4156,19 +4156,27 @@ async function executeDiscoveredImport() {
 
     // Show progress UI and start polling
     const taskId = result.task_id;
-    const previewContainer = document.getElementById('preview-container');
+    console.log('[executeDiscoveredImport] Got task_id:', taskId);
 
-    previewContainer.innerHTML = `
-      <div style="padding: 1.5rem;">
-        <div id="task-progress-message" style="margin-bottom: 1rem; font-weight: 500;">Initializing import...</div>
-        <div style="background: #e0e0e0; border-radius: 4px; height: 24px; overflow: hidden; margin-bottom: 0.5rem;">
-          <div id="task-progress-fill" style="background: #4caf50; height: 100%; width: 0%; transition: width 0.3s ease;"></div>
+    const previewContainer = document.getElementById('preview-container');
+    console.log('[executeDiscoveredImport] preview-container element:', previewContainer);
+
+    if (previewContainer) {
+      previewContainer.innerHTML = `
+        <div style="padding: 1.5rem;">
+          <div id="task-progress-message" style="margin-bottom: 1rem; font-weight: 500;">Initializing import...</div>
+          <div style="background: #e0e0e0; border-radius: 4px; height: 24px; overflow: hidden; margin-bottom: 0.5rem;">
+            <div id="task-progress-fill" style="background: #4caf50; height: 100%; width: 0%; transition: width 0.3s ease;"></div>
+          </div>
+          <div id="task-progress-stats" style="font-size: 0.85em; color: #666;"></div>
         </div>
-        <div id="task-progress-stats" style="font-size: 0.85em; color: #666;"></div>
-      </div>
-    `;
+      `;
+    } else {
+      console.error('[executeDiscoveredImport] preview-container not found!');
+    }
 
     showToast('Import started - tracking progress...', 'info');
+    console.log('[executeDiscoveredImport] Starting polling for task:', taskId);
     pollDiscoveredImportStatus(taskId, config);
   } catch (err) {
     console.error('Import failed to start:', err);
@@ -4227,14 +4235,24 @@ async function checkAndResumeRunningJob(linkId) {
 
 // Poll discovered import task status
 function pollDiscoveredImportStatus(taskId, config) {
+  console.log('[pollDiscoveredImportStatus] Starting polling for task:', taskId);
+
   const interval = setInterval(() => {
     fetch(`/api/tasks/${taskId}`)
       .then(r => r.json())
       .then(task => {
+        console.log('[pollDiscoveredImportStatus] Task update:', task);
+
         // Update progress UI
         const progressMsg = document.getElementById('task-progress-message');
         const progressFill = document.getElementById('task-progress-fill');
         const progressStats = document.getElementById('task-progress-stats');
+
+        console.log('[pollDiscoveredImportStatus] UI elements:', {
+          progressMsg: !!progressMsg,
+          progressFill: !!progressFill,
+          progressStats: !!progressStats
+        });
 
         if (progressMsg) {
           progressMsg.textContent = task.status_message || 'Processing...';
