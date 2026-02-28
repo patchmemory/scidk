@@ -1621,7 +1621,7 @@ function loadDiscoveredRelationships() {
 function updateFilterTabCounts() {
   const validLinks = linkDefinitions.filter(link => link && link.id);
   const activeCount = validLinks.filter(l => l.status === 'active').length;
-  const pendingCount = validLinks.filter(l => l.status === 'pending' || !l.status).length;
+  const pendingCount = validLinks.filter(l => l.status === 'pending').length;
   const availableCount = discoveredRelationships.length;
 
   document.querySelector('[data-filter="active"]').textContent = `Active (${activeCount})`;
@@ -1631,6 +1631,8 @@ function updateFilterTabCounts() {
 
 function renderLinkList() {
   const container = document.getElementById('link-list');
+
+  console.log('[Links] Tab data:', currentFilter, 'linkDefinitions:', linkDefinitions.map(l => ({id: l.id, name: l.name, status: l.status})));
 
   // Update filter tab counts
   updateFilterTabCounts();
@@ -1647,11 +1649,16 @@ function renderLinkList() {
   let validLinks = linkDefinitions.filter(link => link && link.id);
   const totalCount = validLinks.length;
 
-  // 2. Apply status tab filter (active/pending)
+  // 2. Apply status tab filter (active/pending/available)
+  // Active = relationships confirmed in primary graph (status = 'active')
+  // Pending = in progress, modified, needs run (status = 'pending')
+  // Available = drafts + discovered (status = 'draft' or null)
   if (currentFilter === 'active') {
     validLinks = validLinks.filter(link => link.status === 'active');
   } else if (currentFilter === 'pending') {
-    validLinks = validLinks.filter(link => link.status === 'pending' || !link.status);
+    validLinks = validLinks.filter(link => link.status === 'pending');
+  } else if (currentFilter === 'available') {
+    validLinks = validLinks.filter(link => link.status === 'draft' || !link.status);
   }
 
   // 3. Apply search query
@@ -2677,14 +2684,21 @@ function populateWizardFromLink(link) {
     // Show the discovered import triple bar
     updateDiscoveredImportDisplay();
 
-    // Hide Save/Execute buttons for discovered import workflow
-    // But show Delete button for pending links
+    // Hide Save button for discovered import workflow (definitions are auto-created)
+    // Show Execute/Run button for Pending links so user can re-run
+    // Show Delete button for Pending links
     const btnSaveDef = document.getElementById('btn-save-def');
     const btnExecute = document.getElementById('btn-execute');
     const btnDeleteDef = document.getElementById('btn-delete-def');
+
     if (btnSaveDef) btnSaveDef.style.display = 'none';
-    if (btnExecute) btnExecute.style.display = 'none';
-    // Show Delete button only if status is pending
+
+    // Show Execute/Run button for Pending status (allows re-run)
+    if (btnExecute) {
+      btnExecute.style.display = (link.status === 'pending') ? 'inline-block' : 'none';
+    }
+
+    // Show Delete button for Pending status
     if (btnDeleteDef) {
       btnDeleteDef.style.display = (link.status === 'pending') ? 'inline-block' : 'none';
     }
@@ -3250,8 +3264,18 @@ function pollTaskStatus(taskId) {
 
   activeTaskPollingInterval = setInterval(() => {
     fetch(`/api/tasks/${taskId}`)
-      .then(r => r.json())
+      .then(r => {
+        if (r.status === 404) {
+          clearInterval(activeTaskPollingInterval);
+          activeTaskPollingInterval = null;
+          console.log('[pollTaskStatus] Task not found (404), stopping poll');
+          document.getElementById('preview-container').innerHTML = `<div class="empty-state small" style="color: #f44336;">Task not found (may have been deleted)</div>`;
+          return null;
+        }
+        return r.json();
+      })
       .then(task => {
+        if (!task) return; // 404 case
         // Update progress UI
         const progressMsg = document.getElementById('task-progress-message');
         const progressFill = document.getElementById('task-progress-fill');
@@ -4274,8 +4298,18 @@ function pollDiscoveredImportStatus(taskId, config) {
 
   activePollingInterval = setInterval(() => {
     fetch(`/api/tasks/${taskId}`)
-      .then(r => r.json())
+      .then(r => {
+        if (r.status === 404) {
+          clearInterval(activePollingInterval);
+          activePollingInterval = null;
+          console.log('[pollDiscoveredImportStatus] Task not found (404), stopping poll');
+          document.getElementById('preview-container').innerHTML = `<div class="empty-state small" style="color: #f44336;">Task not found (may have been deleted)</div>`;
+          return null;
+        }
+        return r.json();
+      })
       .then(task => {
+        if (!task) return; // 404 case
         console.log('[pollDiscoveredImportStatus] Task update:', task);
 
         // Update progress UI
