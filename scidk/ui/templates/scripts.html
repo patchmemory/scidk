@@ -221,6 +221,27 @@
     border: 1px solid #3b82f6;
   }
 
+  /* Language/Format badges */
+  .language-badge {
+    font-size: 0.7em;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    font-weight: 600;
+    text-transform: uppercase;
+    display: inline-block;
+    margin-left: 0.5rem;
+  }
+
+  .language-badge.python {
+    background: #dbeafe;
+    color: #1e40af;
+  }
+
+  .language-badge.cypher {
+    background: #e0e7ff;
+    color: #4338ca;
+  }
+
   /* Edit Warning Banner */
   .edit-warning {
     padding: 0.75rem 1rem;
@@ -1411,6 +1432,7 @@ function renderScriptList(scripts) {
     'interpreters': { icon: '🔧', label: 'Interpreters' },
     'plugins': { icon: '🔌', label: 'Plugins' },
     'links': { icon: '🔗', label: 'Links' },
+    'examples': { icon: '💡', label: 'Examples' },
     'api': { icon: '🌐', label: 'API Endpoints' }
   };
 
@@ -1423,9 +1445,15 @@ function renderScriptList(scripts) {
       html += `<div class="script-category-header">${meta.icon} ${meta.label}</div>`;
 
       items.forEach(script => {
+        // Show language badge for links and examples
+        const showLanguageBadge = ['links', 'examples'].includes(category);
+        const languageBadge = showLanguageBadge
+          ? `<span class="language-badge ${script.language}">${script.language}</span>`
+          : '';
+
         html += `
           <div class="script-item" data-script-id="${script.id}">
-            <div class="script-item-name">${script.name}</div>
+            <div class="script-item-name">${script.name}${languageBadge}</div>
             <div class="script-item-desc">${script.description || ''}</div>
           </div>
         `;
@@ -3741,7 +3769,17 @@ function initializePanelResizing() {
 // Event listeners
 document.addEventListener('DOMContentLoaded', () => {
   initializeEditor();
-  loadScripts();
+  loadScripts().then(() => {
+    // Handle ?script=<id> query parameter for deep linking
+    const params = new URLSearchParams(window.location.search);
+    const scriptId = params.get('script');
+    if (scriptId) {
+      // Wait a tick for DOM to update after renderScriptList
+      setTimeout(() => {
+        loadScript(scriptId);
+      }, 100);
+    }
+  });
 
   // New Script button
   document.getElementById('new-script-btn').addEventListener('click', newScript);

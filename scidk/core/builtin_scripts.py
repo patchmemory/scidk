@@ -23,37 +23,52 @@ def get_builtin_scripts() -> List[Script]:
     """
     Return all built-in scripts loaded from files.
 
-    Scripts are loaded from scripts/analyses/builtin/ directory.
-    Falls back to in-memory versions if files don't exist.
+    Scripts are loaded from:
+    - scripts/analyses/builtin/ (analyses)
+    - scripts/links/ (link scripts)
+    - scripts/examples/ (example scripts)
     """
     scripts = []
 
-    # Find builtin scripts directory
+    # Find project root
     import scidk
     project_root = Path(scidk.__file__).parent.parent
-    builtin_dir = project_root / 'scripts' / 'analyses' / 'builtin'
 
-    if not builtin_dir.exists():
-        print(f"Warning: Builtin scripts directory not found: {builtin_dir}")
-        return []
+    # Define directories to scan
+    # Each tuple: (directory_path, category_override)
+    # category_override forces a specific category regardless of path/frontmatter
+    script_dirs = [
+        (project_root / 'scripts' / 'analyses' / 'builtin', None),
+        (project_root / 'scripts' / 'links', 'links'),
+        (project_root / 'scripts' / 'examples', 'examples'),
+    ]
 
-    # Load all .py and .cypher files
-    for pattern in ['*.py', '*.cypher']:
-        for file_path in builtin_dir.glob(pattern):
-            try:
-                metadata, code = ScriptFileLoader.parse_file(file_path)
-                script = Script(
-                    id=metadata['id'],
-                    name=metadata['name'],
-                    language=metadata['language'],
-                    category=metadata['category'],
-                    code=code,
-                    description=metadata.get('description', ''),
-                    parameters=metadata.get('parameters', []),
-                    tags=metadata.get('tags', [])
-                )
-                scripts.append(script)
-            except Exception as e:
-                print(f"Warning: Failed to load builtin script {file_path}: {e}")
+    # Load all .py and .cypher files from each directory
+    for script_dir, category_override in script_dirs:
+        if not script_dir.exists():
+            continue
+
+        for pattern in ['*.py', '*.cypher']:
+            for file_path in script_dir.glob(pattern):
+                try:
+                    metadata, code = ScriptFileLoader.parse_file(file_path)
+
+                    # Override category if specified (directory is source of truth)
+                    if category_override:
+                        metadata['category'] = category_override
+
+                    script = Script(
+                        id=metadata['id'],
+                        name=metadata['name'],
+                        language=metadata['language'],
+                        category=metadata['category'],
+                        code=code,
+                        description=metadata.get('description', ''),
+                        parameters=metadata.get('parameters', []),
+                        tags=metadata.get('tags', [])
+                    )
+                    scripts.append(script)
+                except Exception as e:
+                    print(f"Warning: Failed to load builtin script {file_path}: {e}")
 
     return scripts
