@@ -4204,6 +4204,8 @@ async function showSyncStatusForActiveImportLink(linkId) {
     const response = await fetch(`/api/links/${linkId}/sync-status`);
     const data = await response.json();
 
+    console.log(`[showSyncStatusForActiveImportLink] Link ${linkId} sync status:`, data);
+
     if (!response.ok || data.status === 'error') {
       throw new Error(data.error || 'Failed to fetch sync status');
     }
@@ -4293,10 +4295,21 @@ async function showSyncStatusForActiveImportLink(linkId) {
   } catch (err) {
     console.error('Failed to fetch sync status:', err);
     previewContainer.innerHTML = `
-      <div style="padding: 1rem; background: #ffebee; border-radius: 4px;">
+      <div style="padding: 1rem; background: #ffebee; border-radius: 4px; margin-bottom: 1.5rem;">
         <div style="color: #c62828; font-size: 0.9em;">Failed to load sync status: ${err.message}</div>
       </div>
+      <div id="active-link-index-container"></div>
     `;
+
+    // Still show relationship index even if sync status fails
+    try {
+      await showRelationshipIndex(linkId, {
+        containerId: 'active-link-index-container',
+        rel_type: currentLink?.relationship_type || ''
+      });
+    } catch (indexErr) {
+      console.error('Failed to show relationship index:', indexErr);
+    }
   }
 }
 

@@ -1224,15 +1224,16 @@ def get_relationship_index(link_id):
             # Get config from link definition
             match_config = json.loads(link.get('match_config', '{}')) if isinstance(link.get('match_config'), str) else link.get('match_config', {})
 
-            source_label = link.get('source_label')
-            target_label = link.get('target_label')
-            rel_type = link.get('relationship_type')
+            # Try match_config first, fall back to top-level fields
+            source_label = match_config.get('source_label') or link.get('source_label')
+            target_label = match_config.get('target_label') or link.get('target_label')
+            rel_type = match_config.get('rel_type') or link.get('relationship_type')
             # Fall back to elementId when UID properties are not configured
             source_uid_property = match_config.get('source_uid_property') or 'elementId'
             target_uid_property = match_config.get('target_uid_property') or 'elementId'
-            source_database = match_config.get('source_database')
+            source_database = match_config.get('source_database')  # None for native links
 
-            # For Active links, query primary database
+            # For Active links with no source_database, query primary directly
             # For Pending/Available, query source database
             if link.get('status') == 'active' and not source_database:
                 database = 'PRIMARY'
