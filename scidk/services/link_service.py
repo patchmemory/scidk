@@ -1208,28 +1208,59 @@ class LinkService:
 
             logger.info(f"[Preview] Counts - total_rels={total_rels}, unique_sources={unique_sources}, unique_targets={unique_targets}")
 
-            # Check how many nodes already exist in primary
-            existing_sources_query = f"""
-            MATCH (a:{source_label})
+            # Get exact source and target UIDs from source database
+            logger.info(f"[Preview] Fetching distinct UIDs from source database...")
+
+            source_uids_query = f"""
+            MATCH (a:{source_label})-[:{rel_type}]->(:{target_label})
             WHERE a.{source_uid_property} IS NOT NULL
-            RETURN count(DISTINCT a.{source_uid_property}) as existing_count
+            RETURN DISTINCT a.{source_uid_property} as uid
             """
+            source_uid_results = source_client.execute_read(source_uids_query)
+            source_uids = [row['uid'] for row in source_uid_results]
 
-            existing_targets_query = f"""
-            MATCH (b:{target_label})
+            target_uids_query = f"""
+            MATCH (:{source_label})-[:{rel_type}]->(b:{target_label})
             WHERE b.{target_uid_property} IS NOT NULL
-            RETURN count(DISTINCT b.{target_uid_property}) as existing_count
+            RETURN DISTINCT b.{target_uid_property} as uid
             """
+            target_uid_results = source_client.execute_read(target_uids_query)
+            target_uids = [row['uid'] for row in target_uid_results]
 
-            existing_sources = primary_client.execute_read(existing_sources_query)[0].get('existing_count', 0)
-            existing_targets = primary_client.execute_read(existing_targets_query)[0].get('existing_count', 0)
+            logger.info(f"[Preview] Got {len(source_uids)} source UIDs and {len(target_uids)} target UIDs")
 
-            # Calculate new vs merge counts (approximation)
-            sources_to_merge = min(unique_sources, existing_sources)
-            sources_to_create = unique_sources - sources_to_merge
+            # Check exact matches in primary database
+            logger.info(f"[Preview] Checking existing nodes in primary...")
 
-            targets_to_merge = min(unique_targets, existing_targets)
-            targets_to_create = unique_targets - targets_to_merge
+            existing_sources = 0
+            if source_uids:
+                existing_sources_query = f"""
+                MATCH (a:{source_label})
+                WHERE a.{source_uid_property} IN $uids
+                RETURN count(a) as count
+                """
+                existing_sources_result = primary_client.execute_read(existing_sources_query, {'uids': source_uids})
+                existing_sources = existing_sources_result[0].get('count', 0) if existing_sources_result else 0
+
+            existing_targets = 0
+            if target_uids:
+                existing_targets_query = f"""
+                MATCH (a:{target_label})
+                WHERE a.{target_uid_property} IN $uids
+                RETURN count(a) as count
+                """
+                existing_targets_result = primary_client.execute_read(existing_targets_query, {'uids': target_uids})
+                existing_targets = existing_targets_result[0].get('count', 0) if existing_targets_result else 0
+
+            # Calculate exact new vs merge counts
+            sources_to_merge = existing_sources
+            sources_to_create = len(source_uids) - existing_sources
+
+            targets_to_merge = existing_targets
+            targets_to_create = len(target_uids) - existing_targets
+
+            logger.info(f"[Preview] Exact counts - sources: {sources_to_create} new + {sources_to_merge} existing = {len(source_uids)} total")
+            logger.info(f"[Preview] Exact counts - targets: {targets_to_create} new + {targets_to_merge} existing = {len(target_uids)} total")
 
             # Get relationship property count if importing properties
             rel_prop_count = 0
