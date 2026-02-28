@@ -447,6 +447,211 @@ def discover_relationships():
         }), 500
 
 
+@bp.route('/links/discovered/import/preview', methods=['POST'])
+def preview_discovered_import():
+    """
+    Preview stub node import from discovered relationship (dry run).
+
+    Request body:
+    {
+        "source_label": "Person",
+        "target_label": "File",
+        "rel_type": "AUTHORED",
+        "source_database": "Local Graph",
+        "source_uid_property": "id",
+        "target_uid_property": "uuid",
+        "import_rel_properties": true
+    }
+
+    Returns preview statistics without making any changes.
+    """
+    try:
+        data = request.json
+        service = _get_link_service()
+
+        preview = service.preview_discovered_import(
+            source_label=data['source_label'],
+            target_label=data['target_label'],
+            rel_type=data['rel_type'],
+            source_database=data['source_database'],
+            source_uid_property=data['source_uid_property'],
+            target_uid_property=data['target_uid_property'],
+            import_rel_properties=data.get('import_rel_properties', True)
+        )
+
+        return jsonify({
+            'status': 'success',
+            'preview': preview
+        }), 200
+    except Exception as e:
+        logger.exception("Failed to preview discovered import")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/links/discovered/import', methods=['POST'])
+def execute_discovered_import():
+    """
+    Import stub nodes and relationships from discovered relationship.
+
+    Creates lightweight stub nodes with only UID property, then creates
+    relationships between them. Full node enrichment happens later via
+    Labels page.
+
+    Request body:
+    {
+        "source_label": "Person",
+        "target_label": "File",
+        "rel_type": "AUTHORED",
+        "source_database": "Local Graph",
+        "source_uid_property": "id",
+        "target_uid_property": "uuid",
+        "import_rel_properties": true,
+        "batch_size": 100
+    }
+
+    Returns summary of nodes and relationships created/merged.
+    """
+    try:
+        data = request.json
+        service = _get_link_service()
+
+        summary = service.execute_discovered_import(
+            source_label=data['source_label'],
+            target_label=data['target_label'],
+            rel_type=data['rel_type'],
+            source_database=data['source_database'],
+            source_uid_property=data['source_uid_property'],
+            target_uid_property=data['target_uid_property'],
+            import_rel_properties=data.get('import_rel_properties', True),
+            batch_size=data.get('batch_size', 100)
+        )
+
+        return jsonify({
+            'status': 'success',
+            'summary': summary
+        }), 200
+    except Exception as e:
+        logger.exception("Failed to execute discovered import")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/neo4j/query', methods=['POST'])
+def execute_neo4j_query():
+    """
+    Execute a Cypher query against a Neo4j database.
+
+    Request body:
+    {
+        "database": "PRIMARY" or "profile_name",
+        "query": "MATCH (n) RETURN n LIMIT 10"
+    }
+
+    Returns query results.
+    """
+    try:
+        from ...services.neo4j_client import get_neo4j_client, get_neo4j_client_for_profile
+
+        data = request.json
+        database = data.get('database', 'PRIMARY')
+        query = data.get('query')
+
+        if not query:
+            return jsonify({'status': 'error', 'error': 'Query is required'}), 400
+
+        # Get appropriate client
+        if database == 'PRIMARY':
+            client = get_neo4j_client()
+        else:
+            client = get_neo4j_client_for_profile(database)
+
+        if not client:
+            return jsonify({'status': 'error', 'error': f'Database {database} not found'}), 404
+
+        try:
+            results = client.execute_read(query)
+
+            return jsonify({
+                'status': 'success',
+                'records': results
+            }), 200
+        finally:
+            if database != 'PRIMARY':
+                client.close()
+
+    except Exception as e:
+        logger.exception("Failed to execute Neo4j query")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/neo4j/label-properties', methods=['POST'])
+def get_label_properties():
+    """
+    Get properties for a label in a Neo4j database.
+
+    Request body:
+    {
+        "database": "PRIMARY" or "profile_name",
+        "label": "Person"
+    }
+
+    Returns list of property names.
+    """
+    try:
+        from ...services.neo4j_client import get_neo4j_client, get_neo4j_client_for_profile
+
+        data = request.json
+        database = data.get('database', 'PRIMARY')
+        label = data.get('label')
+
+        if not label:
+            return jsonify({'status': 'error', 'error': 'Label is required'}), 400
+
+        # Get appropriate client
+        if database == 'PRIMARY':
+            client = get_neo4j_client()
+        else:
+            client = get_neo4j_client_for_profile(database)
+
+        if not client:
+            return jsonify({'status': 'error', 'error': f'Database {database} not found'}), 404
+
+        try:
+            # Query for all property keys on this label
+            query = f"""
+            MATCH (n:{label})
+            UNWIND keys(n) as prop
+            RETURN DISTINCT prop
+            ORDER BY prop
+            """
+
+            results = client.execute_read(query)
+            properties = [r['prop'] for r in results if 'prop' in r]
+
+            return jsonify({
+                'status': 'success',
+                'properties': properties
+            }), 200
+        finally:
+            if database != 'PRIMARY':
+                client.close()
+
+    except Exception as e:
+        logger.exception("Failed to get label properties")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
 @bp.route('/links/import-triples/preview', methods=['POST'])
 def preview_triple_import():
     """

@@ -3429,26 +3429,58 @@ function returnFocusToSidePanel() {
 
 // openImportWizardForRelationship is now the main entry point for clicking discovered relationships
 
-function openImportWizardForRelationship(rel) {
+async function openImportWizardForRelationship(rel) {
   console.log('[Links] openImportWizardForRelationship called with:', rel);
 
   // Use first database if merged from multiple sources
   const database = rel.databases ? rel.databases[0] : rel.database;
 
+  // Initialize import configuration
+  discoveredImportConfig.rel = rel;
+  discoveredImportConfig.database = database;
+  discoveredImportConfig.source.label = rel.source_label;
+  discoveredImportConfig.target.label = rel.target_label;
+  discoveredImportConfig.relationship.type = rel.rel_type;
+
   // Show wizard panel with title
   const wizardTitle = document.getElementById('wizard-title');
   if (wizardTitle) {
-    wizardTitle.textContent = `Details: ${rel.source_label} -[${rel.rel_type}]-> ${rel.target_label}`;
+    wizardTitle.innerHTML = `
+      <span style="background: #ff9800; color: white; padding: 0.25em 0.75em; border-radius: 4px; font-size: 0.8em; margin-right: 0.5rem;">IMPORT</span>
+      ${rel.source_label} -[${rel.rel_type}]-> ${rel.target_label}
+    `;
   }
 
-  // Clear the wizard content and show loading state
+  // Show wizard panel
+  showWizard();
+
+  // Show loading state in triple display
   const mainTripleDisplay = document.getElementById('main-triple-display');
   if (mainTripleDisplay) {
-    mainTripleDisplay.innerHTML = `
-      <div style="padding: 1.5rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; color: white; text-align: center;">
-        <div style="font-size: 1.2rem; font-weight: 500;">${escapeHtml(rel.source_label)} -[${escapeHtml(rel.rel_type)}]-> ${escapeHtml(rel.target_label)}</div>
-      </div>
-    `;
+    mainTripleDisplay.innerHTML = '<div style="text-align: center; padding: 2rem; color: #999;">Loading properties...</div>';
+  }
+
+  // Fetch properties for source, target, and relationship
+  try {
+    const [sourceProps, targetProps, relProps] = await Promise.all([
+      fetchLabelProperties(rel.source_label, database),
+      fetchLabelProperties(rel.target_label, database),
+      fetchRelationshipProperties(rel.source_label, rel.rel_type, rel.target_label, database)
+    ]);
+
+    discoveredImportConfig.source.available_properties = sourceProps;
+    discoveredImportConfig.target.available_properties = targetProps;
+    discoveredImportConfig.relationship.available_properties = relProps;
+
+    // Auto-detect UID properties
+    discoveredImportConfig.source.uid_property = autoDetectUidProperty(sourceProps);
+    discoveredImportConfig.target.uid_property = autoDetectUidProperty(targetProps);
+
+    // Update the clickable triple display
+    updateDiscoveredImportDisplay();
+  } catch (err) {
+    console.error('Failed to load properties:', err);
+    showToast('Failed to load properties', 'error');
   }
 
   // Show loading in preview container
@@ -3456,9 +3488,6 @@ function openImportWizardForRelationship(rel) {
   if (previewContainer) {
     previewContainer.innerHTML = '<div style="text-align: center; padding: 2rem; color: #999;">Loading instances...</div>';
   }
-
-  // Show wizard panel
-  showWizard();
 
   // Fetch sample instances from Neo4j
   const query = `
@@ -3478,7 +3507,7 @@ function openImportWizardForRelationship(rel) {
         throw new Error(result.error || 'Query failed');
       }
 
-      // Display the instances in a table
+      // Display the instances in a table with import buttons
       const records = result.records || [];
 
       if (records.length === 0) {
@@ -3488,7 +3517,13 @@ function openImportWizardForRelationship(rel) {
 
       let tableHtml = `
         <div style="margin-top: 1rem;">
-          <h5 style="margin-bottom: 0.5rem;">Sample Instances (showing ${records.length} of ${rel.count || '?'})</h5>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h5 style="margin: 0;">Sample Instances (showing ${records.length} of ${rel.count || '?'})</h5>
+            <div style="display: flex; gap: 0.5rem;">
+              <button class="btn btn-sm btn-outline-info" onclick="previewDiscoveredImport()">Preview Import</button>
+              <button class="btn btn-sm btn-success" onclick="executeDiscoveredImport()" id="btn-execute-discovered-import">Import to Primary Graph</button>
+            </div>
+          </div>
           <table class="table table-sm" style="font-size: 0.85em;">
             <thead>
               <tr>
@@ -3579,6 +3614,411 @@ function saveDiscoveredAsDefinition(rel) {
       console.error('Failed to save discovered relationship:', err);
       showToast(`Failed to save: ${err.message}`, 'error');
     });
+}
+
+// ===== Discovered Import Configuration =====
+let discoveredImportConfig = {
+  rel: null,
+  database: null,
+  source: {
+    label: null,
+    uid_property: null,
+    available_properties: []
+  },
+  target: {
+    label: null,
+    uid_property: null,
+    available_properties: []
+  },
+  relationship: {
+    type: null,
+    import_properties: true,
+    available_properties: []
+  }
+};
+
+// Auto-detect best UID property from available properties
+function autoDetectUidProperty(properties) {
+  const priorityOrder = ['id', 'uuid', '_id', 'name'];
+  for (const uid of priorityOrder) {
+    const found = properties.find(p => {
+      const propName = typeof p === 'string' ? p : p.name;
+      return propName.toLowerCase() === uid;
+    });
+    if (found) {
+      return typeof found === 'string' ? found : found.name;
+    }
+  }
+  // Return first property if no priority match
+  return properties.length > 0 ? (typeof properties[0] === 'string' ? properties[0] : properties[0].name) : null;
+}
+
+// Fetch properties for a label from external database
+async function fetchLabelProperties(label, database) {
+  try {
+    const response = await fetch(`/api/neo4j/label-properties`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ database: database, label: label })
+    });
+    const result = await response.json();
+
+    if (result.status === 'success' && result.properties) {
+      return result.properties;
+    }
+    return [];
+  } catch (err) {
+    console.error('Failed to fetch label properties:', err);
+    return [];
+  }
+}
+
+// Fetch relationship properties from external database
+async function fetchRelationshipProperties(sourceLabel, relType, targetLabel, database) {
+  try {
+    const query = `MATCH (a:${sourceLabel})-[r:${relType}]->(b:${targetLabel}) RETURN keys(r) as props LIMIT 1`;
+    const response = await fetch(`/api/neo4j/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ database: database, query: query })
+    });
+    const result = await response.json();
+
+    if (result.status === 'success' && result.records && result.records.length > 0) {
+      return result.records[0].props || [];
+    }
+    return [];
+  } catch (err) {
+    console.error('Failed to fetch relationship properties:', err);
+    return [];
+  }
+}
+
+function getDiscoveredSourceImportModal() {
+  const config = discoveredImportConfig.source;
+  const properties = config.available_properties;
+
+  return `
+    <div class="form-group">
+      <label class="form-label small">Source Label (read-only)</label>
+      <input type="text" class="form-control form-control-sm" value="${escapeHtml(config.label)}" disabled>
+    </div>
+
+    <div class="form-group" style="margin-top: 1rem;">
+      <label class="form-label small">Unique ID Property</label>
+      <small class="small text-muted" style="display: block; margin-bottom: 0.5rem;">
+        Select the property to use as unique identifier for merging nodes
+      </small>
+      <select id="modal-source-uid" class="form-control form-control-sm">
+        ${properties.length === 0 ? '<option value="">No properties available</option>' : ''}
+        ${properties.map(p => {
+          const propName = typeof p === 'string' ? p : p.name;
+          const isSelected = config.uid_property === propName;
+          return `<option value="${propName}" ${isSelected ? 'selected' : ''}>${propName}</option>`;
+        }).join('')}
+      </select>
+    </div>
+
+    <div class="alert alert-info" style="margin-top: 1rem; font-size: 0.85em;">
+      ℹ️ <strong>Stub Node Import:</strong> Only the unique ID property will be imported to create lightweight stub nodes.
+      Full node enrichment with all properties happens later via the Labels page.
+    </div>
+
+    <div style="margin-top: 1.5rem; text-align: right; padding-top: 1rem; border-top: 1px solid #eee;">
+      <button class="btn btn-sm btn-outline-secondary" onclick="closeModal(true)">Cancel</button>
+      <button class="btn btn-sm btn-primary" onclick="saveDiscoveredSourceConfig()">Apply</button>
+    </div>
+  `;
+}
+
+function getDiscoveredTargetImportModal() {
+  const config = discoveredImportConfig.target;
+  const properties = config.available_properties;
+
+  return `
+    <div class="form-group">
+      <label class="form-label small">Target Label (read-only)</label>
+      <input type="text" class="form-control form-control-sm" value="${escapeHtml(config.label)}" disabled>
+    </div>
+
+    <div class="form-group" style="margin-top: 1rem;">
+      <label class="form-label small">Unique ID Property</label>
+      <small class="small text-muted" style="display: block; margin-bottom: 0.5rem;">
+        Select the property to use as unique identifier for merging nodes
+      </small>
+      <select id="modal-target-uid" class="form-control form-control-sm">
+        ${properties.length === 0 ? '<option value="">No properties available</option>' : ''}
+        ${properties.map(p => {
+          const propName = typeof p === 'string' ? p : p.name;
+          const isSelected = config.uid_property === propName;
+          return `<option value="${propName}" ${isSelected ? 'selected' : ''}>${propName}</option>`;
+        }).join('')}
+      </select>
+    </div>
+
+    <div class="alert alert-info" style="margin-top: 1rem; font-size: 0.85em;">
+      ℹ️ <strong>Stub Node Import:</strong> Only the unique ID property will be imported to create lightweight stub nodes.
+      Full node enrichment with all properties happens later via the Labels page.
+    </div>
+
+    <div style="margin-top: 1.5rem; text-align: right; padding-top: 1rem; border-top: 1px solid #eee;">
+      <button class="btn btn-sm btn-outline-secondary" onclick="closeModal(true)">Cancel</button>
+      <button class="btn btn-sm btn-primary" onclick="saveDiscoveredTargetConfig()">Apply</button>
+    </div>
+  `;
+}
+
+function getDiscoveredRelationshipImportModal() {
+  const config = discoveredImportConfig.relationship;
+  const properties = config.available_properties;
+
+  return `
+    <div class="form-group">
+      <label class="form-label small">Relationship Type (read-only)</label>
+      <input type="text" class="form-control form-control-sm" value="${escapeHtml(config.type)}" disabled>
+    </div>
+
+    <div class="form-group" style="margin-top: 1rem;">
+      <label class="form-label small">Import Relationship Properties</label>
+      <small class="small text-muted" style="display: block; margin-bottom: 0.5rem;">
+        ${properties.length > 0 ? `Found ${properties.length} properties on this relationship type` : 'No properties found on this relationship type'}
+      </small>
+      <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: normal;">
+        <input type="checkbox" id="modal-rel-import-props" ${config.import_properties ? 'checked' : ''}>
+        Import all relationship properties
+      </label>
+      ${properties.length > 0 ? `
+        <div style="margin-top: 0.5rem; padding: 0.5rem; background: #f9f9f9; border-radius: 4px; font-size: 0.85em;">
+          Properties: ${properties.map(p => `<code>${escapeHtml(p)}</code>`).join(', ')}
+        </div>
+      ` : ''}
+    </div>
+
+    <div style="margin-top: 1.5rem; text-align: right; padding-top: 1rem; border-top: 1px solid #eee;">
+      <button class="btn btn-sm btn-outline-secondary" onclick="closeModal(true)">Cancel</button>
+      <button class="btn btn-sm btn-primary" onclick="saveDiscoveredRelationshipConfig()">Apply</button>
+    </div>
+  `;
+}
+
+function saveDiscoveredSourceConfig() {
+  const uidSelect = document.getElementById('modal-source-uid');
+  if (uidSelect) {
+    discoveredImportConfig.source.uid_property = uidSelect.value;
+  }
+  closeModal();
+  updateDiscoveredImportDisplay();
+  showToast(`Source UID: ${discoveredImportConfig.source.uid_property}`, 'success');
+}
+
+function saveDiscoveredTargetConfig() {
+  const uidSelect = document.getElementById('modal-target-uid');
+  if (uidSelect) {
+    discoveredImportConfig.target.uid_property = uidSelect.value;
+  }
+  closeModal();
+  updateDiscoveredImportDisplay();
+  showToast(`Target UID: ${discoveredImportConfig.target.uid_property}`, 'success');
+}
+
+function saveDiscoveredRelationshipConfig() {
+  const importPropsCheckbox = document.getElementById('modal-rel-import-props');
+  if (importPropsCheckbox) {
+    discoveredImportConfig.relationship.import_properties = importPropsCheckbox.checked;
+  }
+  closeModal();
+  updateDiscoveredImportDisplay();
+  showToast('Relationship configuration saved', 'success');
+}
+
+function updateDiscoveredImportDisplay() {
+  // Update the visual triple display to show configuration status
+  const mainTripleDisplay = document.getElementById('main-triple-display');
+  if (!mainTripleDisplay || !discoveredImportConfig.rel) return;
+
+  const sourceConfigured = discoveredImportConfig.source.uid_property ? 'configured' : '';
+  const targetConfigured = discoveredImportConfig.target.uid_property ? 'configured' : '';
+  const relConfigured = 'configured'; // Always configured since it's just a toggle
+
+  mainTripleDisplay.innerHTML = `
+    <div style="padding: 1.5rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; color: white;">
+      <div style="display: flex; align-items: center; justify-content: center; gap: 1.5rem; font-size: 1rem; font-weight: 500;">
+        <div class="visual-triple-node clickable ${sourceConfigured}" onclick="configureDiscoveredSource()"
+             style="padding: 0.75rem 1.25rem; background: rgba(255,255,255,0.2); border-radius: 6px; backdrop-filter: blur(10px); min-width: 120px; text-align: center; cursor: pointer; transition: transform 0.2s;">
+          <div style="font-size: 0.7rem; opacity: 0.9; margin-bottom: 0.25rem; text-transform: uppercase;">Source</div>
+          <div style="font-size: 1.1rem; font-weight: 500;">${escapeHtml(discoveredImportConfig.source.label)}</div>
+          ${discoveredImportConfig.source.uid_property ? `<div style="font-size: 0.75rem; opacity: 0.8; margin-top: 0.25rem;">UID: ${escapeHtml(discoveredImportConfig.source.uid_property)}</div>` : '<div style="font-size: 0.75rem; opacity: 0.8; margin-top: 0.25rem;">Click to configure</div>'}
+        </div>
+        <div style="font-size: 1.5rem;">→</div>
+        <div class="visual-triple-node clickable ${relConfigured}" onclick="configureDiscoveredRelationship()"
+             style="padding: 0.75rem 1.25rem; background: rgba(255,255,255,0.2); border-radius: 6px; backdrop-filter: blur(10px); min-width: 120px; text-align: center; cursor: pointer; transition: transform 0.2s;">
+          <div style="font-size: 0.7rem; opacity: 0.9; margin-bottom: 0.25rem; text-transform: uppercase;">Relationship</div>
+          <div style="font-size: 1.1rem; font-weight: 500;">${escapeHtml(discoveredImportConfig.relationship.type)}</div>
+          <div style="font-size: 0.75rem; opacity: 0.8; margin-top: 0.25rem;">${discoveredImportConfig.relationship.import_properties ? 'With properties' : 'No properties'}</div>
+        </div>
+        <div style="font-size: 1.5rem;">→</div>
+        <div class="visual-triple-node clickable ${targetConfigured}" onclick="configureDiscoveredTarget()"
+             style="padding: 0.75rem 1.25rem; background: rgba(255,255,255,0.2); border-radius: 6px; backdrop-filter: blur(10px); min-width: 120px; text-align: center; cursor: pointer; transition: transform 0.2s;">
+          <div style="font-size: 0.7rem; opacity: 0.9; margin-bottom: 0.25rem; text-transform: uppercase;">Target</div>
+          <div style="font-size: 1.1rem; font-weight: 500;">${escapeHtml(discoveredImportConfig.target.label)}</div>
+          ${discoveredImportConfig.target.uid_property ? `<div style="font-size: 0.75rem; opacity: 0.8; margin-top: 0.25rem;">UID: ${escapeHtml(discoveredImportConfig.target.uid_property)}</div>` : '<div style="font-size: 0.75rem; opacity: 0.8; margin-top: 0.25rem;">Click to configure</div>'}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function configureDiscoveredSource() {
+  openModal('Configure Source Node', getDiscoveredSourceImportModal());
+}
+
+function configureDiscoveredTarget() {
+  openModal('Configure Target Node', getDiscoveredTargetImportModal());
+}
+
+function configureDiscoveredRelationship() {
+  openModal('Configure Relationship', getDiscoveredRelationshipImportModal());
+}
+
+// Preview discovered import (dry run)
+async function previewDiscoveredImport() {
+  const config = discoveredImportConfig;
+
+  if (!config.source.uid_property || !config.target.uid_property) {
+    showToast('Please configure source and target UID properties first', 'error');
+    return;
+  }
+
+  showToast('Generating preview...', 'info');
+
+  try {
+    const response = await fetch('/api/links/discovered/import/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source_label: config.source.label,
+        target_label: config.target.label,
+        rel_type: config.relationship.type,
+        source_database: config.database,
+        source_uid_property: config.source.uid_property,
+        target_uid_property: config.target.uid_property,
+        import_rel_properties: config.relationship.import_properties
+      })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || result.status === 'error') {
+      throw new Error(result.error || 'Preview failed');
+    }
+
+    // Display preview results
+    const previewContainer = document.getElementById('preview-container');
+    const preview = result.preview || {};
+
+    previewContainer.innerHTML = `
+      <div style="background: #e3f2fd; border-left: 4px solid #2196f3; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+        <h5 style="margin: 0 0 0.5rem 0;">Import Preview (Dry Run)</h5>
+        <div style="font-size: 0.9em;">
+          <div><strong>Total Relationships:</strong> ${preview.total_relationships || 0}</div>
+          <div><strong>Source Nodes:</strong> ${preview.source_nodes_to_create || 0} new + ${preview.source_nodes_to_merge || 0} existing</div>
+          <div><strong>Target Nodes:</strong> ${preview.target_nodes_to_create || 0} new + ${preview.target_nodes_to_merge || 0} existing</div>
+          <div><strong>Relationships:</strong> ${preview.relationships_to_create || 0} to create</div>
+          ${config.relationship.import_properties ? `<div><strong>Relationship Properties:</strong> ${preview.rel_property_count || 0} properties per relationship</div>` : ''}
+        </div>
+        <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid rgba(33,150,243,0.3);">
+          <button class="btn btn-sm btn-success" onclick="executeDiscoveredImport()">✓ Proceed with Import</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="openImportWizardForRelationship(discoveredImportConfig.rel)" style="margin-left: 0.5rem;">Cancel</button>
+        </div>
+      </div>
+    `;
+
+    showToast('Preview generated successfully', 'success');
+  } catch (err) {
+    console.error('Preview failed:', err);
+    showToast(`Preview failed: ${err.message}`, 'error');
+  }
+}
+
+// Execute discovered import
+async function executeDiscoveredImport() {
+  const config = discoveredImportConfig;
+
+  if (!config.source.uid_property || !config.target.uid_property) {
+    showToast('Please configure source and target UID properties first', 'error');
+    return;
+  }
+
+  // Confirmation dialog
+  const confirmed = confirm(
+    `Import ${config.rel.count || '?'} relationships from ${config.database}?\n\n` +
+    `This will create stub nodes with only UID properties:\n` +
+    `- Source: ${config.source.label}.${config.source.uid_property}\n` +
+    `- Target: ${config.target.label}.${config.target.uid_property}\n\n` +
+    `Relationships will ${config.relationship.import_properties ? 'include' : 'exclude'} properties.`
+  );
+
+  if (!confirmed) return;
+
+  const executeBtn = document.getElementById('btn-execute-discovered-import');
+  if (executeBtn) {
+    executeBtn.disabled = true;
+    executeBtn.textContent = 'Importing...';
+  }
+
+  showToast('Starting import...', 'info');
+
+  try {
+    const response = await fetch('/api/links/discovered/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source_label: config.source.label,
+        target_label: config.target.label,
+        rel_type: config.relationship.type,
+        source_database: config.database,
+        source_uid_property: config.source.uid_property,
+        target_uid_property: config.target.uid_property,
+        import_rel_properties: config.relationship.import_properties,
+        batch_size: 100
+      })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || result.status === 'error') {
+      throw new Error(result.error || 'Import failed');
+    }
+
+    // Display success results
+    const previewContainer = document.getElementById('preview-container');
+    const summary = result.summary || {};
+
+    previewContainer.innerHTML = `
+      <div style="background: #e8f5e9; border-left: 4px solid #4caf50; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+        <h5 style="margin: 0 0 0.5rem 0;">✓ Import Complete!</h5>
+        <div style="font-size: 0.9em;">
+          <div><strong>Source Nodes:</strong> ${summary.source_nodes_created || 0} created, ${summary.source_nodes_merged || 0} merged</div>
+          <div><strong>Target Nodes:</strong> ${summary.target_nodes_created || 0} created, ${summary.target_nodes_merged || 0} merged</div>
+          <div><strong>Relationships:</strong> ${summary.relationships_created || 0} created</div>
+          ${summary.duration_seconds ? `<div><strong>Duration:</strong> ${summary.duration_seconds.toFixed(1)}s</div>` : ''}
+        </div>
+        <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid rgba(76,175,80,0.3); font-size: 0.85em; color: #666;">
+          Next steps: Visit the <a href="/labels">Labels page</a> to enrich ${config.source.label} and ${config.target.label} nodes with full properties.
+        </div>
+      </div>
+    `;
+
+    showToast(`Successfully imported ${summary.relationships_created || 0} relationships`, 'success');
+  } catch (err) {
+    console.error('Import failed:', err);
+    showToast(`Import failed: ${err.message}`, 'error');
+
+    if (executeBtn) {
+      executeBtn.disabled = false;
+      executeBtn.textContent = 'Import to Primary Graph';
+    }
+  }
 }
 
 // CSV Export/Import Functions for Human Validation

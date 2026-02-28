@@ -1088,6 +1088,277 @@ class LinkService:
 
         return discovered
 
+    def preview_discovered_import(
+        self,
+        source_label: str,
+        target_label: str,
+        rel_type: str,
+        source_database: str,
+        source_uid_property: str,
+        target_uid_property: str,
+        import_rel_properties: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Preview stub node import from discovered relationship (dry run).
+
+        Analyzes what would be imported without making any changes.
+
+        Args:
+            source_label: Source node label
+            target_label: Target node label
+            rel_type: Relationship type
+            source_database: External Neo4j database name
+            source_uid_property: Property to use as unique ID for source nodes
+            target_uid_property: Property to use as unique ID for target nodes
+            import_rel_properties: Whether to import relationship properties
+
+        Returns:
+            Preview statistics dict with counts of nodes/relationships
+        """
+        from .neo4j_client import get_neo4j_client, get_neo4j_client_for_profile
+        import time
+
+        start_time = time.time()
+
+        # Get source database client
+        if source_database == 'PRIMARY':
+            source_client = get_neo4j_client()
+        else:
+            source_client = get_neo4j_client_for_profile(source_database)
+
+        if not source_client:
+            raise ValueError(f"Database '{source_database}' not found")
+
+        # Get primary database client for checking existing nodes
+        primary_client = get_neo4j_client()
+        if not primary_client:
+            raise ValueError("Primary database not connected")
+
+        try:
+            # Query source database for all relationships
+            source_query = f"""
+            MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
+            WHERE a.{source_uid_property} IS NOT NULL AND b.{target_uid_property} IS NOT NULL
+            RETURN count(*) as total_relationships,
+                   count(DISTINCT a.{source_uid_property}) as unique_source_nodes,
+                   count(DISTINCT b.{target_uid_property}) as unique_target_nodes,
+                   count(DISTINCT keys(r)) as rel_property_types
+            """
+
+            source_results = source_client.execute_read(source_query)
+            source_stats = source_results[0] if source_results else {}
+
+            total_rels = source_stats.get('total_relationships', 0)
+            unique_sources = source_stats.get('unique_source_nodes', 0)
+            unique_targets = source_stats.get('unique_target_nodes', 0)
+
+            # Check how many nodes already exist in primary
+            existing_sources_query = f"""
+            MATCH (a:{source_label})
+            WHERE a.{source_uid_property} IS NOT NULL
+            RETURN count(DISTINCT a.{source_uid_property}) as existing_count
+            """
+
+            existing_targets_query = f"""
+            MATCH (b:{target_label})
+            WHERE b.{target_uid_property} IS NOT NULL
+            RETURN count(DISTINCT b.{target_uid_property}) as existing_count
+            """
+
+            existing_sources = primary_client.execute_read(existing_sources_query)[0].get('existing_count', 0)
+            existing_targets = primary_client.execute_read(existing_targets_query)[0].get('existing_count', 0)
+
+            # Calculate new vs merge counts (approximation)
+            sources_to_merge = min(unique_sources, existing_sources)
+            sources_to_create = unique_sources - sources_to_merge
+
+            targets_to_merge = min(unique_targets, existing_targets)
+            targets_to_create = unique_targets - targets_to_merge
+
+            # Get relationship property count if importing properties
+            rel_prop_count = 0
+            if import_rel_properties:
+                prop_query = f"""
+                MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
+                RETURN size(keys(r)) as prop_count
+                LIMIT 1
+                """
+                prop_results = source_client.execute_read(prop_query)
+                rel_prop_count = prop_results[0].get('prop_count', 0) if prop_results else 0
+
+            duration = time.time() - start_time
+
+            return {
+                'total_relationships': total_rels,
+                'source_nodes_to_create': sources_to_create,
+                'source_nodes_to_merge': sources_to_merge,
+                'target_nodes_to_create': targets_to_create,
+                'target_nodes_to_merge': targets_to_merge,
+                'relationships_to_create': total_rels,
+                'rel_property_count': rel_prop_count if import_rel_properties else 0,
+                'duration_seconds': duration
+            }
+
+        finally:
+            if source_client and source_database != 'PRIMARY':
+                source_client.close()
+
+    def execute_discovered_import(
+        self,
+        source_label: str,
+        target_label: str,
+        rel_type: str,
+        source_database: str,
+        source_uid_property: str,
+        target_uid_property: str,
+        import_rel_properties: bool = True,
+        batch_size: int = 100
+    ) -> Dict[str, Any]:
+        """
+        Import stub nodes and relationships from discovered relationship.
+
+        Creates lightweight stub nodes with only UID property, then creates
+        relationships. Idempotent - running multiple times produces same result.
+
+        Args:
+            source_label: Source node label
+            target_label: Target node label
+            rel_type: Relationship type
+            source_database: External Neo4j database name
+            source_uid_property: Property to use as unique ID for source nodes
+            target_uid_property: Property to use as unique ID for target nodes
+            import_rel_properties: Whether to import relationship properties
+            batch_size: Number of relationships to import per batch
+
+        Returns:
+            Summary dict with counts of nodes/relationships created/merged
+        """
+        from .neo4j_client import get_neo4j_client, get_neo4j_client_for_profile
+        import time
+
+        start_time = time.time()
+
+        # Get source database client
+        if source_database == 'PRIMARY':
+            source_client = get_neo4j_client()
+        else:
+            source_client = get_neo4j_client_for_profile(source_database)
+
+        if not source_client:
+            raise ValueError(f"Database '{source_database}' not found")
+
+        # Get primary database client
+        primary_client = get_neo4j_client()
+        if not primary_client:
+            raise ValueError("Primary database not connected")
+
+        try:
+            # Fetch all relationships from source database
+            if import_rel_properties:
+                fetch_query = f"""
+                MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
+                WHERE a.{source_uid_property} IS NOT NULL AND b.{target_uid_property} IS NOT NULL
+                RETURN a.{source_uid_property} as source_uid,
+                       b.{target_uid_property} as target_uid,
+                       properties(r) as rel_props
+                """
+            else:
+                fetch_query = f"""
+                MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
+                WHERE a.{source_uid_property} IS NOT NULL AND b.{target_uid_property} IS NOT NULL
+                RETURN a.{source_uid_property} as source_uid,
+                       b.{target_uid_property} as target_uid
+                """
+
+            relationships = source_client.execute_read(fetch_query)
+
+            # Track statistics
+            source_nodes_created = 0
+            source_nodes_merged = 0
+            target_nodes_created = 0
+            target_nodes_merged = 0
+            relationships_created = 0
+
+            # Import in batches
+            for i in range(0, len(relationships), batch_size):
+                batch = relationships[i:i + batch_size]
+
+                # Build UNWIND query for batch import
+                if import_rel_properties:
+                    import_query = f"""
+                    UNWIND $batch as row
+                    MERGE (a:{source_label} {{{source_uid_property}: row.source_uid}})
+                    ON CREATE SET a._imported_stub = true
+                    MERGE (b:{target_label} {{{target_uid_property}: row.target_uid}})
+                    ON CREATE SET b._imported_stub = true
+                    MERGE (a)-[r:{rel_type}]->(b)
+                    SET r += row.rel_props
+                    RETURN
+                        count(DISTINCT CASE WHEN a._imported_stub THEN a END) as sources_created,
+                        count(DISTINCT CASE WHEN NOT a._imported_stub THEN a END) as sources_merged,
+                        count(DISTINCT CASE WHEN b._imported_stub THEN b END) as targets_created,
+                        count(DISTINCT CASE WHEN NOT b._imported_stub THEN b END) as targets_merged,
+                        count(r) as rels_created
+                    """
+                else:
+                    import_query = f"""
+                    UNWIND $batch as row
+                    MERGE (a:{source_label} {{{source_uid_property}: row.source_uid}})
+                    ON CREATE SET a._imported_stub = true
+                    MERGE (b:{target_label} {{{target_uid_property}: row.target_uid}})
+                    ON CREATE SET b._imported_stub = true
+                    MERGE (a)-[r:{rel_type}]->(b)
+                    RETURN
+                        count(DISTINCT CASE WHEN a._imported_stub THEN a END) as sources_created,
+                        count(DISTINCT CASE WHEN NOT a._imported_stub THEN a END) as sources_merged,
+                        count(DISTINCT CASE WHEN b._imported_stub THEN b END) as targets_created,
+                        count(DISTINCT CASE WHEN NOT b._imported_stub THEN b END) as targets_merged,
+                        count(r) as rels_created
+                    """
+
+                # Execute batch import
+                batch_data = [
+                    {
+                        'source_uid': rel['source_uid'],
+                        'target_uid': rel['target_uid'],
+                        'rel_props': rel.get('rel_props', {}) if import_rel_properties else {}
+                    }
+                    for rel in batch
+                ]
+
+                result = primary_client.execute_write(import_query, {'batch': batch_data})
+
+                if result:
+                    stats = result[0]
+                    source_nodes_created += stats.get('sources_created', 0)
+                    source_nodes_merged += stats.get('sources_merged', 0)
+                    target_nodes_created += stats.get('targets_created', 0)
+                    target_nodes_merged += stats.get('targets_merged', 0)
+                    relationships_created += stats.get('rels_created', 0)
+
+            # Clean up _imported_stub flags
+            cleanup_query = f"""
+            MATCH (n)
+            WHERE n._imported_stub = true
+            REMOVE n._imported_stub
+            """
+            primary_client.execute_write(cleanup_query)
+
+            duration = time.time() - start_time
+
+            return {
+                'source_nodes_created': source_nodes_created,
+                'source_nodes_merged': source_nodes_merged,
+                'target_nodes_created': target_nodes_created,
+                'target_nodes_merged': target_nodes_merged,
+                'relationships_created': relationships_created,
+                'duration_seconds': duration
+            }
+
+        finally:
+            if source_client and source_database != 'PRIMARY':
+                source_client.close()
+
     def preview_triple_import(self, source_database: str, rel_type: str, source_label: str, target_label: str) -> Dict[str, Any]:
         """
         Preview triples that would be imported from an external database.
