@@ -710,6 +710,16 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 22)
             version = 22
 
+        # v23: Add status field to link_definitions for Active/Pending/Available lifecycle
+        if version < 23:
+            # Add status column with default 'pending'
+            cur.execute("ALTER TABLE link_definitions ADD COLUMN status TEXT DEFAULT 'pending';")
+            # Create index for status-based filtering
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_link_definitions_status ON link_definitions(status);")
+            conn.commit()
+            _set_version(conn, 23)
+            version = 23
+
         return version
     finally:
         if own:
