@@ -1862,6 +1862,27 @@ function renderDiscoveredRelationships(container) {
     validRels = validRels.filter(r => r.rel_type === linksNavState.relType);
   }
 
+  // Deduplicate by relationship pattern (source_label, rel_type, target_label)
+  // Merge relationships from different databases with same pattern
+  const dedupeMap = new Map();
+  validRels.forEach(rel => {
+    const key = `${rel.source_label}|${rel.rel_type}|${rel.target_label}`;
+    if (dedupeMap.has(key)) {
+      const existing = dedupeMap.get(key);
+      // Merge: combine counts and track multiple databases
+      existing.count = (existing.count || 0) + (rel.count || 0);
+      if (!existing.databases) {
+        existing.databases = [existing.database];
+      }
+      if (!existing.databases.includes(rel.database)) {
+        existing.databases.push(rel.database);
+      }
+    } else {
+      dedupeMap.set(key, { ...rel, databases: [rel.database] });
+    }
+  });
+  validRels = Array.from(dedupeMap.values());
+
   // Apply sort
   validRels.sort((a, b) => {
     switch (linksNavState.sortBy) {
@@ -1894,8 +1915,12 @@ function renderDiscoveredRelationships(container) {
     // Badge for discovered type
     const typeBadge = '<span class="badge" style="background: #ff9800; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px;">DISCOVERED</span>';
 
-    const databaseBadgeColor = rel.database === 'PRIMARY' ? '#2196f3' : '#757575';
-    const databaseBadge = `<span class="badge" style="background: ${databaseBadgeColor}; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${escapeHtml(rel.database)}</span>`;
+    // Show all databases if merged from multiple sources
+    const databases = rel.databases || [rel.database];
+    const databaseBadges = databases.map(db => {
+      const color = db === 'PRIMARY' ? '#2196f3' : '#757575';
+      return `<span class="badge" style="background: ${color}; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${escapeHtml(db)}</span>`;
+    }).join('');
 
     const countBadge = `<span class="badge" style="background: #4caf50; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${rel.count || 0}</span>`;
 
@@ -1914,7 +1939,7 @@ function renderDiscoveredRelationships(container) {
            style="padding: 0.5rem; margin-bottom: 0.25rem; cursor: pointer; border-radius: 4px; border: 1px solid transparent;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
           <strong style="font-size: 0.95em;">${linkName}</strong>
-          <div>${typeBadge}${databaseBadge}${countBadge}</div>
+          <div>${typeBadge}${databaseBadges}${countBadge}</div>
         </div>
         <div style="font-size: 0.85em; color: #666;">
           ${descLine}
@@ -2009,8 +2034,12 @@ function renderGroupedDiscoveredRelationships(validRels, container) {
       // Badge for discovered type
       const typeBadge = '<span class="badge" style="background: #ff9800; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px;">DISCOVERED</span>';
 
-      const databaseBadgeColor = rel.database === 'PRIMARY' ? '#2196f3' : '#757575';
-      const databaseBadge = `<span class="badge" style="background: ${databaseBadgeColor}; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${escapeHtml(rel.database)}</span>`;
+      // Show all databases if merged from multiple sources
+      const databases = rel.databases || [rel.database];
+      const databaseBadges = databases.map(db => {
+        const color = db === 'PRIMARY' ? '#2196f3' : '#757575';
+        return `<span class="badge" style="background: ${color}; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${escapeHtml(db)}</span>`;
+      }).join('');
       const countBadge = `<span class="badge" style="background: #4caf50; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px; margin-left: 0.25rem;">${rel.count || 0}</span>`;
 
       const sourceDisplay = query ? highlightMatch(rel.source_label || '?', query) : escapeHtml(rel.source_label || '?');
@@ -2022,18 +2051,20 @@ function renderGroupedDiscoveredRelationships(validRels, container) {
       const descLine = `${sourceDisplay} → ${relDisplay} → ${targetDisplay}`;
 
       // Find original index for event handlers
+      // Use the first database if this was merged from multiple sources
+      const firstDatabase = rel.databases ? rel.databases[0] : rel.database;
       const originalIndex = discoveredRelationships.findIndex(r =>
         r.source_label === rel.source_label &&
         r.rel_type === rel.rel_type &&
         r.target_label === rel.target_label &&
-        r.database === rel.database
+        r.database === firstDatabase
       );
 
       return `
         <div class="link-item" data-testid="discovered-item" style="padding: 0.5rem; margin-bottom: 0.25rem; margin-left: 1rem; border-left: 2px solid #e0e0e0;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
             <strong style="font-size: 0.95em;">${linkName}</strong>
-            <div>${typeBadge}${databaseBadge}${countBadge}</div>
+            <div>${typeBadge}${databaseBadges}${countBadge}</div>
           </div>
           <div style="font-size: 0.85em; color: #666;">
             ${descLine}
@@ -3401,91 +3432,153 @@ function returnFocusToSidePanel() {
 function openImportWizardForRelationship(rel) {
   console.log('[Links] openImportWizardForRelationship called with:', rel);
 
-  // Reset and populate tripleBuilder state
-  tripleBuilder.source.label = rel.source_label;
-  tripleBuilder.source.filters = [];
-  tripleBuilder.target.label = rel.target_label;
-  tripleBuilder.target.filters = [];
-  tripleBuilder.relationship.type = rel.rel_type;
-  tripleBuilder.relationship.properties = [];
-  tripleBuilder.relationship.match_strategy = 'table_import';
-  tripleBuilder.relationship.match_config = {
-    source_database: rel.database,
-    rel_type: rel.rel_type,
-    source_label: rel.source_label,
-    target_label: rel.target_label,
-    triple_count: rel.triple_count
-  };
-  tripleBuilder.name = `${rel.source_label} → ${rel.rel_type} → ${rel.target_label}`;
-  tripleBuilder.link_id = null;
+  // Use first database if merged from multiple sources
+  const database = rel.databases ? rel.databases[0] : rel.database;
 
-  // Update the modal UI elements that actually exist
-  const linkNameInput = document.getElementById('link-name');
-  if (linkNameInput) {
-    linkNameInput.value = tripleBuilder.name;
+  // Show wizard panel with title
+  const wizardTitle = document.getElementById('wizard-title');
+  if (wizardTitle) {
+    wizardTitle.textContent = `Details: ${rel.source_label} -[${rel.rel_type}]-> ${rel.target_label}`;
   }
 
-  // Update match strategy buttons if they exist
-  document.querySelectorAll('.match-strategy-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.strategy === 'table_import');
-  });
-
-  // Show data import config if function exists
-  if (typeof showMatchConfig === 'function') {
-    showMatchConfig('table_import');
+  // Clear the wizard content and show loading state
+  const mainTripleDisplay = document.getElementById('main-triple-display');
+  if (mainTripleDisplay) {
+    mainTripleDisplay.innerHTML = `
+      <div style="padding: 1.5rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; color: white; text-align: center;">
+        <div style="font-size: 1.2rem; font-weight: 500;">${escapeHtml(rel.source_label)} -[${escapeHtml(rel.rel_type)}]-> ${escapeHtml(rel.target_label)}</div>
+      </div>
+    `;
   }
 
-  // Pre-select source database in dropdown if it exists
-  const dbSelect = document.getElementById('data-import-source-db');
-  if (dbSelect) {
-    dbSelect.value = rel.database;
+  // Show loading in preview container
+  const previewContainer = document.getElementById('preview-container');
+  if (previewContainer) {
+    previewContainer.innerHTML = '<div style="text-align: center; padding: 2rem; color: #999;">Loading instances...</div>';
   }
-
-  // Update main triple display
-  updateMainTripleDisplay();
 
   // Show wizard panel
   showWizard();
 
-  // Toast confirmation
-  showToast(`Opened wizard for ${rel.triple_count.toLocaleString()} triples from ${rel.database}`, 'info');
+  // Fetch sample instances from Neo4j
+  const query = `
+    MATCH (a:${rel.source_label})-[r:${rel.rel_type}]->(b:${rel.target_label})
+    RETURN a, r, b LIMIT 10
+  `;
+
+  fetch(`/api/neo4j/query`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ database: database, query: query })
+  })
+    .then(async response => {
+      const result = await response.json();
+
+      if (!response.ok || result.status === 'error') {
+        throw new Error(result.error || 'Query failed');
+      }
+
+      // Display the instances in a table
+      const records = result.records || [];
+
+      if (records.length === 0) {
+        previewContainer.innerHTML = '<div class="empty-state small">No instances found</div>';
+        return;
+      }
+
+      let tableHtml = `
+        <div style="margin-top: 1rem;">
+          <h5 style="margin-bottom: 0.5rem;">Sample Instances (showing ${records.length} of ${rel.count || '?'})</h5>
+          <table class="table table-sm" style="font-size: 0.85em;">
+            <thead>
+              <tr>
+                <th>Source Node</th>
+                <th>Relationship</th>
+                <th>Target Node</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+
+      records.forEach(record => {
+        const source = record.a || {};
+        const relationship = record.r || {};
+        const target = record.b || {};
+
+        const sourceName = source.name || source.title || source.id || JSON.stringify(source).substring(0, 50);
+        const relProps = Object.keys(relationship).length > 0 ? ` (${Object.keys(relationship).length} props)` : '';
+        const targetName = target.name || target.title || target.id || JSON.stringify(target).substring(0, 50);
+
+        tableHtml += `
+          <tr>
+            <td>${escapeHtml(sourceName)}</td>
+            <td>${escapeHtml(rel.rel_type)}${relProps}</td>
+            <td>${escapeHtml(targetName)}</td>
+          </tr>
+        `;
+      });
+
+      tableHtml += `
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      previewContainer.innerHTML = tableHtml;
+    })
+    .catch(err => {
+      console.error('Failed to fetch instances:', err);
+      previewContainer.innerHTML = `<div class="empty-state small" style="color: #f44336;">Failed to load instances: ${escapeHtml(err.message)}</div>`;
+    });
 }
 
 function saveDiscoveredAsDefinition(rel) {
   console.log('[Links] saveDiscoveredAsDefinition called with:', rel);
 
-  // Pre-fill tripleBuilder with discovered relationship data
-  tripleBuilder.source.label = rel.source_label;
-  tripleBuilder.source.filters = [];
-  tripleBuilder.target.label = rel.target_label;
-  tripleBuilder.target.filters = [];
-  tripleBuilder.relationship.type = rel.rel_type;
-  tripleBuilder.relationship.match_strategy = 'table_import';
-  tripleBuilder.relationship.match_config = {
-    source_database: rel.database,
-    rel_type: rel.rel_type,
+  // Use first database if merged from multiple sources
+  const database = rel.databases ? rel.databases[0] : rel.database;
+  const linkName = `${rel.source_label} → ${rel.rel_type} → ${rel.target_label} (${database})`;
+
+  // Build link definition from discovered relationship
+  const data = {
+    name: linkName,
     source_label: rel.source_label,
+    source_filters: [],
     target_label: rel.target_label,
-    triple_count: rel.triple_count
+    target_filters: [],
+    relationship_type: rel.rel_type,
+    match_strategy: 'table_import',
+    match_config: {
+      source_database: database,
+      rel_type: rel.rel_type,
+      source_label: rel.source_label,
+      target_label: rel.target_label,
+      triple_count: rel.count || rel.triple_count || 0
+    },
+    relationship_props: {}
   };
-  tripleBuilder.relationship.properties = [];
-  tripleBuilder.link_id = null;
 
-  // Pre-fill link name with a sensible default
-  const linkName = `${rel.source_label} → ${rel.rel_type} → ${rel.target_label} (${rel.database})`;
-  document.getElementById('link-name').value = linkName;
+  showToast('Saving discovered relationship...', 'info');
 
-  // Update wizard title
-  document.getElementById('wizard-title').textContent = `Save Discovered: ${rel.source_label} → ${rel.rel_type} → ${rel.target_label}`;
+  fetch('/api/links', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  })
+    .then(async response => {
+      const result = await response.json();
 
-  // Update visual display
-  updateMainTripleDisplay();
+      if (!response.ok) {
+        throw new Error(result.detail || result.error || `HTTP ${response.status}`);
+      }
 
-  // Show wizard panel
-  showWizard();
-
-  // Toast confirmation
-  showToast(`Ready to save ${rel.triple_count.toLocaleString()} triples from ${rel.database}`, 'success');
+      showToast('Link definition saved!', 'success');
+      loadLinkDefinitions();
+    })
+    .catch(err => {
+      console.error('Failed to save discovered relationship:', err);
+      showToast(`Failed to save: ${err.message}`, 'error');
+    });
 }
 
 // CSV Export/Import Functions for Human Validation
