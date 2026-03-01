@@ -13,7 +13,7 @@ def test_links_page_loads(client):
     html = response.data.decode('utf-8')
 
     # Check for key UI elements
-    assert 'tripleBuilder' in html, "tripleBuilder state object should be in page"
+    assert 'links-core.js' in html, "links-core.js module should be loaded"
     assert 'main-triple-display' in html, "Visual triple pattern should be present"
     assert 'modal-overlay' in html, "Modal overlay should be present"
 
@@ -37,28 +37,27 @@ def test_links_page_has_modal_buttons(client):
 
 
 def test_links_page_has_modal_functions(client):
-    """Test that modal-related JavaScript functions are defined."""
+    """Test that modal-related JavaScript modules are loaded."""
     response = client.get('/links')
     assert response.status_code == 200
     html = response.data.decode('utf-8')
 
-    # Check for key functions
-    assert 'function openModal(' in html, "openModal function should be defined"
-    assert 'function closeModal(' in html, "closeModal function should be defined"
-    assert 'function getSourceModalContent(' in html, "getSourceModalContent should be defined"
-    assert 'function getRelationshipModalContent(' in html, "getRelationshipModalContent should be defined"
-    assert 'function getTargetModalContent(' in html, "getTargetModalContent should be defined"
-    assert 'function saveDiscoveredAsDefinition(' in html, "saveDiscoveredAsDefinition should be defined"
+    # Check for modular JS files that contain the functions
+    assert 'links-wizard.js' in html, "links-wizard.js module should be loaded"
+    assert 'links-core.js' in html, "links-core.js module should be loaded"
+    assert 'links-discovery.js' in html, "links-discovery.js module should be loaded"
+    assert 'links-active.js' in html, "links-active.js module should be loaded"
 
 
 def test_links_page_has_csv_validation_functions(client):
-    """Test that CSV export/import functions are defined."""
+    """Test that CSV export/import modules are loaded."""
     response = client.get('/links')
     assert response.status_code == 200
     html = response.data.decode('utf-8')
 
-    assert 'function exportMatchesCsv(' in html, "exportMatchesCsv should be defined"
-    assert 'function importValidatedCsv(' in html, "importValidatedCsv should be defined"
+    # CSV functions are in links-core.js and links-wizard.js modules
+    assert 'links-core.js' in html, "links-core.js module (contains CSV logic) should be loaded"
+    assert 'links-wizard.js' in html, "links-wizard.js module should be loaded"
 
 
 def test_links_page_has_new_ui_not_old_steps(client):

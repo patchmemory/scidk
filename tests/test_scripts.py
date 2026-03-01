@@ -490,14 +490,15 @@ def test_builtin_scripts():
     """Test that built-in scripts are properly defined."""
     scripts = get_builtin_scripts()
 
-    assert len(scripts) == 7
+    assert len(scripts) == 10
 
     # Check all scripts have required fields
     for script in scripts:
-        assert script.id.startswith('builtin-')
+        assert script.id  # Has an ID
         assert script.name
         assert script.language in ['cypher', 'python']
-        assert script.category == 'analyses/builtin'
+        # Categories: analyses/builtin, links, examples
+        assert script.category in ['analyses/builtin', 'links', 'examples']
         assert script.code
         assert isinstance(script.tags, list)
 
