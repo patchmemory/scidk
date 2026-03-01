@@ -1225,15 +1225,18 @@ def get_relationship_index(link_id):
             match_config = json.loads(link.get('match_config', '{}')) if isinstance(link.get('match_config'), str) else link.get('match_config', {})
 
             # Try match_config first, fall back to top-level fields
+            # This handles wizard-defined links auto-promoted from primary scan (no match_config)
             source_label = match_config.get('source_label') or link.get('source_label')
             target_label = match_config.get('target_label') or link.get('target_label')
             rel_type = match_config.get('rel_type') or link.get('relationship_type')
             # Fall back to elementId when UID properties are not configured
             source_uid_property = match_config.get('source_uid_property') or 'elementId'
             target_uid_property = match_config.get('target_uid_property') or 'elementId'
+            # For Active links with no source_database, query primary
             source_database = match_config.get('source_database')  # None for native links
 
             # For Active links with no source_database, query primary directly
+            # (relationships are already there from wizard-defined links)
             # For Pending/Available, query source database
             if link.get('status') == 'active' and not source_database:
                 database = 'PRIMARY'
