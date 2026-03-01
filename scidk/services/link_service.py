@@ -2198,7 +2198,8 @@ class LinkService:
                 return {'success': False}
 
             # Get source connection details
-            from .neo4j_client import get_settings_by_prefix
+            # from .neo4j_client import get_settings_by_prefix
+            from ..core.settings import get_settings_by_prefix
             source_settings = get_settings_by_prefix(f'neo4j_profile_{source_database}')
 
             if not source_settings:

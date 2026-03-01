@@ -52,8 +52,32 @@ class TestRelationshipDiscovery:
             assert isinstance(result, list)
 
     def test_discover_relationships_includes_primary_database(self, link_service):
-        """Should include PRIMARY database in discovery results."""
-        pytest.skip("Mock needs updating - discover_relationships imports get_neo4j_client locally which breaks patch")
+        """Should discover relationships from PRIMARY database and promote to active."""
+        with patch('scidk.services.neo4j_client.get_neo4j_client') as mock_primary, \
+             patch('scidk.services.neo4j_client.list_neo4j_profiles') as mock_profiles:
+
+            # Mock primary database client
+            primary_mock = MagicMock()
+            primary_mock.execute_read.return_value = [
+                {
+                    'source_label': 'Gene',
+                    'rel_type': 'INTERACTS_WITH',
+                    'target_label': 'Protein',
+                    'triple_count': 150
+                }
+            ]
+            mock_primary.return_value = primary_mock
+
+            # Mock no additional profiles
+            mock_profiles.return_value = []
+
+            result = link_service.discover_relationships()
+
+            # PRIMARY relationships are filtered out (promoted to active instead)
+            # So result should be empty when only PRIMARY has relationships
+            assert isinstance(result, list)
+            # Verify the primary client was called
+            assert mock_primary.called
 
 
 class TestTripleImportPreview:
@@ -140,7 +164,39 @@ class TestTripleImportCommit:
 
     def test_commit_tries_apoc_first(self, link_service):
         """Should attempt APOC-based import before streaming."""
-        pytest.skip("Complex mock - APOC path requires mocking execute_write with APOC query which has exception handling")
+        with patch('scidk.services.neo4j_client.get_neo4j_client_for_profile') as mock_profile, \
+             patch('scidk.services.neo4j_client.get_neo4j_client') as mock_primary, \
+             patch('scidk.core.settings.get_settings_by_prefix') as mock_settings:
+
+
+            # Mock source database client
+            source_mock = MagicMock()
+            source_mock.close = MagicMock()
+            mock_profile.return_value = source_mock
+
+            # Mock primary database with APOC available
+            primary_mock = MagicMock()
+            primary_mock.execute_read.return_value = [{'version': '5.0.0'}]  # APOC available
+            primary_mock.execute_write.return_value = [{'imported': 100}]
+            primary_mock.close = MagicMock()
+            mock_primary.return_value = primary_mock
+
+            # Mock source settings
+            mock_settings.return_value = {
+                'uri': 'bolt://localhost:7687',
+                'user': 'neo4j',
+                'password': 'test',
+                'database': 'neo4j'
+            }
+
+            result = link_service.commit_triple_import(
+                'TestDB', 'LINKS_TO', 'Source', 'Target', 'hash123'
+            )
+
+            assert result['status'] == 'success'
+            assert result['method'] == 'apoc'
+            # Verify APOC was attempted (execute_read called for version check)
+            assert primary_mock.execute_read.called
 
     def test_commit_falls_back_to_streaming(self, link_service):
         """Should fall back to streaming batch import if APOC unavailable."""
