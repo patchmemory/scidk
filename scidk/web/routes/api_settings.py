@@ -1509,3 +1509,152 @@ def get_plugin_endpoint(endpoint_path):
             'status': 'error',
             'error': str(e)
         }), 500
+
+
+@bp.route('/security/overview', methods=['GET'])
+def get_security_overview():
+    """
+    Get comprehensive security overview for the Security Overview page.
+
+    Returns connection encryption status, auth configuration, data protection
+    summary, and institutional readiness checklist data.
+
+    Returns:
+    {
+        "connections": [
+            {"name": "Primary", "uri": "bolt://...", "encrypted": false},
+            {"name": "Profile Name", "uri": "bolt+s://...", "encrypted": true}
+        ],
+        "auth_status": {
+            "mode": "multi_user"|"single_user"|"disabled",
+            "user_count": 0,
+            "session_count": 0,
+            "session_timeout_hours": 24
+        },
+        "data_protection": {
+            "transit_encrypted": false,
+            "audit_enabled": false,
+            "audit_event_count": 0
+        },
+        "readiness": {
+            "auth_enabled": false,
+            "all_connections_encrypted": false,
+            "audit_enabled": false
+        }
+    }
+    """
+    try:
+        ext = current_app.extensions.get('scidk', {})
+
+        # 1. Connection Security - inspect URIs for encryption
+        connections = []
+
+        # Primary connection
+        neo4j_cfg = ext.get('neo4j_config', {})
+        primary_uri = neo4j_cfg.get('uri') or os.environ.get('NEO4J_URI') or os.environ.get('BOLT_URI')
+        if primary_uri:
+            encrypted = primary_uri.startswith(('bolt+s://', 'neo4j+s://'))
+            connections.append({
+                'name': 'Primary',
+                'uri': primary_uri,
+                'encrypted': encrypted
+            })
+
+        # Named profiles
+        try:
+            from ...core.settings import get_settings_by_prefix
+            import json
+
+            profiles_data = get_settings_by_prefix('neo4j_profile_')
+            for key, value in profiles_data.items():
+                # Keys like: neo4j_profile_Local_Dev
+                profile_name = key.replace('neo4j_profile_', '').replace('_', ' ')
+                try:
+                    profile = json.loads(value)
+                    uri = profile.get('uri', '')
+                    if uri:
+                        encrypted = uri.startswith(('bolt+s://', 'neo4j+s://'))
+                        connections.append({
+                            'name': profile_name,
+                            'uri': uri,
+                            'encrypted': encrypted
+                        })
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # 2. Authentication Status
+        auth_status = {
+            'mode': 'disabled',
+            'user_count': 0,
+            'session_count': 0,
+            'session_timeout_hours': 24
+        }
+
+        try:
+            from ...core.auth import get_auth_manager
+            settings_db = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+            auth_manager = get_auth_manager(db_path=settings_db)
+
+            # Check mode
+            users = auth_manager.list_users(include_disabled=False)
+            if len(users) > 0:
+                auth_status['mode'] = 'multi_user'
+                auth_status['user_count'] = len(users)
+            else:
+                # Check legacy single-user mode
+                config = auth_manager.get_config()
+                if config.get('enabled'):
+                    auth_status['mode'] = 'single_user'
+                    auth_status['user_count'] = 1
+
+            # Active sessions
+            sessions = auth_manager.list_sessions()
+            auth_status['session_count'] = len(sessions)
+
+        except Exception:
+            pass
+
+        # 3. Data Protection Summary
+        all_encrypted = all(conn['encrypted'] for conn in connections) if connections else False
+
+        # Check audit log - audit is enabled if auth is enabled (auditing is automatic with auth)
+        audit_enabled = auth_status['mode'] != 'disabled'
+        audit_event_count = 0
+        if audit_enabled:
+            try:
+                import sqlite3
+                settings_db = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+                conn = sqlite3.connect(settings_db)
+                cur = conn.execute("SELECT COUNT(*) FROM auth_audit_log")
+                audit_event_count = cur.fetchone()[0]
+                conn.close()
+            except Exception:
+                pass
+
+        data_protection = {
+            'transit_encrypted': all_encrypted,
+            'audit_enabled': audit_enabled,
+            'audit_event_count': audit_event_count
+        }
+
+        # 4. Institutional Readiness Checklist
+        readiness = {
+            'auth_enabled': auth_status['mode'] != 'disabled',
+            'all_connections_encrypted': all_encrypted,
+            'audit_enabled': audit_enabled
+        }
+
+        return jsonify({
+            'connections': connections,
+            'auth_status': auth_status,
+            'data_protection': data_protection,
+            'readiness': readiness
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500

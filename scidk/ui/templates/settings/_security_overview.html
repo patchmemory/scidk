@@ -1,0 +1,361 @@
+<!-- Security > Overview Section -->
+<section id="security-overview-section" class="settings-section">
+  <h1>Security Overview</h1>
+  <p class="small">Comprehensive security status and institutional deployment readiness assessment.</p>
+
+  <div id="security-overview-loading" style="padding:2rem; text-align:center; color:#666">
+    Loading security overview...
+  </div>
+
+  <div id="security-overview-content" style="display:none">
+    <!-- 1. Connection Security -->
+    <div style="margin-top:2rem">
+      <h2>Connection Security</h2>
+      <p class="small">Encryption status of database connections. Encrypted connections (bolt+s://, neo4j+s://) protect data in transit.</p>
+
+      <div style="background:#f9f9f9; border:1px solid #e0e0e0; border-radius:4px; padding:1rem; margin-top:1rem">
+        <table style="width:100%; border-collapse:collapse">
+          <thead>
+            <tr style="border-bottom:2px solid #ddd; text-align:left">
+              <th style="padding:0.5rem; font-size:0.9em">Connection Name</th>
+              <th style="padding:0.5rem; font-size:0.9em">URI</th>
+              <th style="padding:0.5rem; font-size:0.9em">Status</th>
+            </tr>
+          </thead>
+          <tbody id="connections-table-body">
+            <tr>
+              <td colspan="3" style="padding:1rem; text-align:center; color:#666">Loading...</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="small" style="margin-top:1rem; color:#666">
+          Encrypted connections ensure that data traveling between SciDK and your databases cannot be intercepted on the network.
+        </p>
+      </div>
+    </div>
+
+    <!-- 2. Authentication Status -->
+    <div style="margin-top:2rem">
+      <h2>Authentication Status</h2>
+      <p class="small">Current authentication mode and session configuration.</p>
+
+      <div style="background:#f9f9f9; border:1px solid #e0e0e0; border-radius:4px; padding:1rem; margin-top:1rem">
+        <table style="width:100%; border-collapse:collapse">
+          <tbody id="auth-status-body">
+            <tr>
+              <td style="padding:1rem; text-align:center; color:#666">Loading...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 3. Data Protection Summary -->
+    <div style="margin-top:2rem">
+      <h2>Data Protection Summary</h2>
+      <p class="small">Encryption and security controls for data at rest and in transit.</p>
+
+      <div style="background:#f9f9f9; border:1px solid #e0e0e0; border-radius:4px; padding:1rem; margin-top:1rem">
+        <table style="width:100%; border-collapse:collapse">
+          <tbody id="data-protection-body">
+            <tr>
+              <td style="padding:1rem; text-align:center; color:#666">Loading...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 4. TLS Setup Guide -->
+    <div style="margin-top:2rem">
+      <details style="background:#f9f9f9; border:1px solid #e0e0e0; border-radius:4px; padding:1rem">
+        <summary style="cursor:pointer; font-weight:600; font-size:1.1em; padding:0.5rem">
+          TLS Setup Guide for Docker Neo4j
+        </summary>
+
+        <div style="margin-top:1rem; padding-left:1rem">
+          <p style="margin-bottom:1rem">Enable TLS encryption on a Docker-deployed Neo4j instance:</p>
+
+          <h3 style="font-size:1em; margin-top:1.5rem">1. Generate a Self-Signed Certificate</h3>
+          <pre style="background:#2d2d2d; color:#f8f8f2; padding:1rem; border-radius:4px; overflow-x:auto; font-size:0.85em">mkdir -p /path/to/neo4j/certificates/bolt
+openssl req -newkey rsa:2048 -nodes \
+  -keyout /path/to/neo4j/certificates/bolt/private.key \
+  -x509 -days 365 -out /path/to/neo4j/certificates/bolt/public.crt \
+  -subj "/CN=localhost"</pre>
+
+          <h3 style="font-size:1em; margin-top:1.5rem">2. Configure Neo4j</h3>
+          <p style="margin-bottom:0.5rem">Add these lines to your <code>neo4j.conf</code> (or pass as Docker environment variables):</p>
+          <pre style="background:#2d2d2d; color:#f8f8f2; padding:1rem; border-radius:4px; overflow-x:auto; font-size:0.85em">dbms.ssl.policy.bolt.enabled=true
+dbms.ssl.policy.bolt.base_directory=certificates/bolt
+dbms.ssl.policy.bolt.tls_versions=TLSv1.2,TLSv1.3</pre>
+
+          <h3 style="font-size:1em; margin-top:1.5rem">3. Update SciDK Connection URI</h3>
+          <p style="margin-bottom:0.5rem">In Settings → Neo4j, change your connection URI from:</p>
+          <pre style="background:#2d2d2d; color:#f8f8f2; padding:1rem; border-radius:4px; font-size:0.85em">bolt://localhost:7687</pre>
+          <p style="margin-bottom:0.5rem">To:</p>
+          <pre style="background:#2d2d2d; color:#f8f8f2; padding:1rem; border-radius:4px; font-size:0.85em">bolt+s://localhost:7687</pre>
+
+          <h3 style="font-size:1em; margin-top:1.5rem">4. Verify Connection</h3>
+          <p>Use the connection test in Settings → Neo4j to verify TLS is working. If using a self-signed certificate, you may need to configure trust settings depending on your driver version.</p>
+
+          <p style="margin-top:1.5rem; padding:1rem; background:#fff3cd; border-left:4px solid #ffc107; color:#856404">
+            <strong>Production Note:</strong> Self-signed certificates are acceptable for development and pilot deployments.
+            For production institutional use, replace with a CA-issued certificate from your organization's PKI infrastructure.
+          </p>
+        </div>
+      </details>
+    </div>
+
+    <!-- 5. Institutional Readiness Checklist -->
+    <div style="margin-top:2rem">
+      <h2>Institutional Readiness Checklist</h2>
+      <p class="small">Current deployment status against institutional security requirements.</p>
+
+      <div style="background:#f9f9f9; border:1px solid #e0e0e0; border-radius:4px; padding:1rem; margin-top:1rem">
+        <table style="width:100%; border-collapse:collapse">
+          <tbody id="readiness-checklist-body">
+            <tr>
+              <td style="padding:1rem; text-align:center; color:#666">Loading...</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p class="small" style="margin-top:1rem; padding:1rem; background:#e7f3ff; border-left:4px solid #0066cc; color:#004085">
+          <strong>Deployment Guidance:</strong> Yellow warnings (⚠) are expected and acceptable for pilot/development deployments.
+          For production institutional use, work with your IT security team to address these items using your organization's PKI and web infrastructure.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.5rem;
+      border-radius: 3px;
+      font-size: 0.85em;
+      font-weight: 500;
+    }
+  </style>
+
+  <script>
+    let securityOverviewLoaded = false;
+
+    function loadSecurityOverview() {
+      if (securityOverviewLoaded) return;
+
+      fetch('/api/security/overview')
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        })
+        .then(data => {
+          securityOverviewLoaded = true;
+
+          // Hide loading, show content
+          document.getElementById('security-overview-loading').style.display = 'none';
+          document.getElementById('security-overview-content').style.display = 'block';
+
+          // 1. Render connections table
+          renderConnectionsTable(data.connections || []);
+
+          // 2. Render auth status
+          renderAuthStatus(data.auth_status || {});
+
+          // 3. Render data protection
+          renderDataProtection(data.data_protection || {});
+
+          // 4. Render readiness checklist
+          renderReadinessChecklist(data.readiness || {});
+        })
+        .catch(err => {
+          console.error('Failed to load security overview:', err);
+          document.getElementById('security-overview-loading').innerHTML = '<p style="color:#b00">Failed to load security overview</p>';
+        });
+    }
+
+    function renderConnectionsTable(connections) {
+      const tbody = document.getElementById('connections-table-body');
+      if (connections.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" style="padding:1rem; text-align:center; color:#666">No database connections configured</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = connections.map(conn => `
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:0.5rem; font-size:0.9em; font-weight:500">${escapeHtml(conn.name)}</td>
+          <td style="padding:0.5rem; font-size:0.9em; font-family:monospace; color:#666">${escapeHtml(conn.uri || 'Not configured')}</td>
+          <td style="padding:0.5rem; font-size:0.9em">
+            ${conn.encrypted
+              ? '<span class="badge" style="background:#19c37d; color:#fff">✅ TLS Encrypted</span>'
+              : '<span class="badge" style="background:#ffa500; color:#fff">⚠ Unencrypted</span>'}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function renderAuthStatus(auth) {
+      const tbody = document.getElementById('auth-status-body');
+
+      let modeBadge = '<span class="badge" style="background:#e74c3c; color:#fff">Disabled</span>';
+      if (auth.mode === 'multi_user') {
+        modeBadge = '<span class="badge" style="background:#19c37d; color:#fff">Multi-user</span>';
+      } else if (auth.mode === 'single_user') {
+        modeBadge = '<span class="badge" style="background:#6c757d; color:#fff">Single-user (Legacy)</span>';
+      }
+
+      tbody.innerHTML = `
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:0.75rem; font-weight:500; width:40%">Mode</td>
+          <td style="padding:0.75rem">${modeBadge}</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:0.75rem; font-weight:500">Active Users</td>
+          <td style="padding:0.75rem">
+            ${auth.user_count || 0} user(s) |
+            <a href="#security/users" style="color:var(--accent)">Manage Users →</a>
+          </td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:0.75rem; font-weight:500">Active Sessions</td>
+          <td style="padding:0.75rem">${auth.session_count || 0}</td>
+        </tr>
+        <tr>
+          <td style="padding:0.75rem; font-weight:500">Session Timeout</td>
+          <td style="padding:0.75rem">${auth.session_timeout_hours || 24} hours</td>
+        </tr>
+      `;
+    }
+
+    function renderDataProtection(data) {
+      const tbody = document.getElementById('data-protection-body');
+
+      const transitBadge = data.transit_encrypted
+        ? '<span class="badge" style="background:#19c37d; color:#fff">✅ Encrypted</span> <span class="small" style="color:#666; margin-left:0.5rem">All database connections use TLS</span>'
+        : '<span class="badge" style="background:#ffa500; color:#fff">⚠ Partially Encrypted</span> <span class="small" style="color:#666; margin-left:0.5rem">Some connections unencrypted</span>';
+
+      const auditBadge = data.audit_enabled
+        ? `<span class="badge" style="background:#19c37d; color:#fff">✅ Active</span> <span class="small" style="color:#666; margin-left:0.5rem">${data.audit_event_count || 0} events logged</span>`
+        : '<span class="badge" style="background:#e74c3c; color:#fff">❌ Disabled</span> <span class="small" style="color:#666; margin-left:0.5rem">No authentication events tracked</span>';
+
+      tbody.innerHTML = `
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:0.75rem; font-weight:500; width:40%">Data in Transit</td>
+          <td style="padding:0.75rem">${transitBadge}</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:0.75rem; font-weight:500">Data at Rest</td>
+          <td style="padding:0.75rem">
+            <span class="badge" style="background:#6c757d; color:#fff">ℹ️ Managed by Neo4j</span>
+            <span class="small" style="color:#666; margin-left:0.5rem">Database and filesystem-level encryption</span>
+          </td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:0.75rem; font-weight:500">Credentials Storage</td>
+          <td style="padding:0.75rem">
+            <span class="badge" style="background:#19c37d; color:#fff">✅ Encrypted</span>
+            <span class="small" style="color:#666; margin-left:0.5rem">AES-256 encryption at rest</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0.75rem; font-weight:500">Audit Trail</td>
+          <td style="padding:0.75rem">${auditBadge}</td>
+        </tr>
+      `;
+    }
+
+    function renderReadinessChecklist(readiness) {
+      const tbody = document.getElementById('readiness-checklist-body');
+
+      tbody.innerHTML = `
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:0.75rem; width:50%">
+            <strong>Authentication Enabled</strong>
+            <div class="small" style="color:#666; margin-top:0.25rem">Multi-user access control</div>
+          </td>
+          <td style="padding:0.75rem; text-align:right">
+            ${readiness.auth_enabled
+              ? '<span class="badge" style="background:#19c37d; color:#fff">✅ Complete</span>'
+              : '<span class="badge" style="background:#e74c3c; color:#fff">❌ Required</span>'}
+          </td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:0.75rem">
+            <strong>All Database Connections Encrypted</strong>
+            <div class="small" style="color:#666; margin-top:0.25rem">TLS encryption on all Neo4j connections</div>
+          </td>
+          <td style="padding:0.75rem; text-align:right">
+            ${readiness.all_connections_encrypted
+              ? '<span class="badge" style="background:#19c37d; color:#fff">✅ Complete</span>'
+              : '<span class="badge" style="background:#ffa500; color:#fff">⚠ Action Needed</span>'}
+          </td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:0.75rem">
+            <strong>Credentials Encrypted at Rest</strong>
+            <div class="small" style="color:#666; margin-top:0.25rem">AES-256 encryption for stored passwords</div>
+          </td>
+          <td style="padding:0.75rem; text-align:right">
+            <span class="badge" style="background:#19c37d; color:#fff">✅ Complete</span>
+          </td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:0.75rem">
+            <strong>Audit Trail Active</strong>
+            <div class="small" style="color:#666; margin-top:0.25rem">User action logging and monitoring</div>
+          </td>
+          <td style="padding:0.75rem; text-align:right">
+            ${readiness.audit_enabled
+              ? '<span class="badge" style="background:#19c37d; color:#fff">✅ Complete</span>'
+              : '<span class="badge" style="background:#ffa500; color:#fff">⚠ Enable Auth</span>'}
+          </td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:0.75rem">
+            <strong>Certificate Type</strong>
+            <div class="small" style="color:#666; margin-top:0.25rem">CA-issued certificates for production</div>
+          </td>
+          <td style="padding:0.75rem; text-align:right">
+            <span class="badge" style="background:#ffa500; color:#fff">⚠ Self-signed OK for pilot</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0.75rem">
+            <strong>HTTPS on Web Interface</strong>
+            <div class="small" style="color:#666; margin-top:0.25rem">Reverse proxy (nginx/Caddy) required</div>
+          </td>
+          <td style="padding:0.75rem; text-align:right">
+            <span class="badge" style="background:#ffa500; color:#fff">⚠ Recommended</span>
+          </td>
+        </tr>
+      `;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Initialize on section activation
+    const securityOverviewSection = document.getElementById('security-overview-section');
+    if (securityOverviewSection) {
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+            if (securityOverviewSection.classList.contains('active')) {
+              loadSecurityOverview();
+            }
+          }
+        });
+      });
+
+      observer.observe(securityOverviewSection, { attributes: true });
+
+      // Initialize if already active
+      if (securityOverviewSection.classList.contains('active')) {
+        loadSecurityOverview();
+      }
+    }
+  </script>
+</section>

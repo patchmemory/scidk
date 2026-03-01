@@ -166,6 +166,7 @@
       <span class="chevron">▸</span>
     </div>
     <div class="settings-subsection-list" id="security-subsection-list">
+      <a href="#security/overview" class="settings-sidebar-item" data-section="security-overview">Overview</a>
       <a href="#security/users" class="settings-sidebar-item admin-only" data-section="security-users">Users</a>
       <a href="#security/audit-log" class="settings-sidebar-item admin-only" data-section="security-audit-log">Audit Log</a>
       <div class="settings-sidebar-item non-admin-message" style="display: none; color: #999; cursor: default; font-style: italic;">
@@ -210,6 +211,7 @@
     {% include 'settings/_ai_history.html' %}
 
     <!-- Security sections -->
+    {% include 'settings/_security_overview.html' %}
     {% include 'settings/_security_users.html' %}
     {% include 'settings/_security_audit_log.html' %}
 
