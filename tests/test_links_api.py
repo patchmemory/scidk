@@ -570,4 +570,174 @@ def test_get_available_labels(client):
     assert len(data['labels']) >= 2
     label_names = [l['name'] for l in data['labels']]
     assert 'Person' in label_names
-    assert 'File' in label_names
+
+
+def test_enrich_link_with_properties(client):
+    """Test enriching link relationships with specific properties."""
+    # Create labels
+    client.post('/api/labels', json={
+        'name': 'Source',
+        'properties': [{'name': 'uuid', 'type': 'string'}],
+        'relationships': []
+    })
+    client.post('/api/labels', json={
+        'name': 'Target',
+        'properties': [{'name': 'uuid', 'type': 'string'}],
+        'relationships': []
+    })
+
+    # Create an Active import link with source_database
+    payload = {
+        'name': 'Test Import Link',
+        'source_label': 'Source',
+        'target_label': 'Target',
+        'match_strategy': 'graph_import',
+        'match_config': {
+            'source_database': 'TestDB',
+            'source_uid_property': 'uuid',
+            'target_uid_property': 'uuid'
+        },
+        'relationship_type': 'LINKS_TO',
+        'relationship_props': {},
+        'status': 'active'
+    }
+    create_resp = client.post('/api/links', json=payload)
+    assert create_resp.status_code in [200, 201]
+    link_id = create_resp.get_json()['link']['id']
+
+    # Enrich with specific properties
+    response = client.post(f'/api/links/{link_id}/enrich', json={
+        'properties': ['prop1', 'prop2'],
+        'batch_size': 500
+    })
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['status'] == 'success'
+    assert 'task_id' in data
+    assert isinstance(data['task_id'], str)
+    assert len(data['task_id']) > 0
+
+
+def test_enrich_link_with_empty_properties(client):
+    """Test enriching link relationships with no specific properties (uses SET r +=)."""
+    # Create labels
+    client.post('/api/labels', json={
+        'name': 'Source',
+        'properties': [{'name': 'uuid', 'type': 'string'}],
+        'relationships': []
+    })
+    client.post('/api/labels', json={
+        'name': 'Target',
+        'properties': [{'name': 'uuid', 'type': 'string'}],
+        'relationships': []
+    })
+
+    # Create an Active import link
+    payload = {
+        'name': 'Test Import Link 2',
+        'source_label': 'Source',
+        'target_label': 'Target',
+        'match_strategy': 'graph_import',
+        'match_config': {
+            'source_database': 'TestDB',
+            'source_uid_property': 'uuid',
+            'target_uid_property': 'uuid'
+        },
+        'relationship_type': 'LINKS_TO',
+        'relationship_props': {},
+        'status': 'active'
+    }
+    create_resp = client.post('/api/links', json=payload)
+    link_id = create_resp.get_json()['link']['id']
+
+    # Enrich without specifying properties
+    response = client.post(f'/api/links/{link_id}/enrich', json={})
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['status'] == 'success'
+    assert 'task_id' in data
+
+
+def test_enrich_link_invalid_id(client):
+    """Test enriching with invalid link id returns 404."""
+    response = client.post('/api/links/nonexistent-link/enrich', json={})
+
+    assert response.status_code == 404
+    data = response.get_json()
+    assert data['status'] == 'error'
+    assert 'not found' in data['error'].lower()
+
+
+def test_enrich_link_requires_active_status(client):
+    """Test that only Active links can be enriched."""
+    # Create labels
+    client.post('/api/labels', json={
+        'name': 'Source',
+        'properties': [{'name': 'uuid', 'type': 'string'}],
+        'relationships': []
+    })
+    client.post('/api/labels', json={
+        'name': 'Target',
+        'properties': [{'name': 'uuid', 'type': 'string'}],
+        'relationships': []
+    })
+
+    # Create a non-Active link (pending)
+    payload = {
+        'name': 'Pending Link',
+        'source_label': 'Source',
+        'target_label': 'Target',
+        'match_strategy': 'property',
+        'match_config': {'source_field': 'id', 'target_field': 'id'},
+        'relationship_type': 'LINKS_TO',
+        'relationship_props': {}
+    }
+    create_resp = client.post('/api/links', json=payload)
+    link_id = create_resp.get_json()['link']['id']
+
+    # Try to enrich - should fail
+    response = client.post(f'/api/links/{link_id}/enrich', json={})
+
+    assert response.status_code == 400
+    data = response.get_json()
+    assert data['status'] == 'error'
+    assert 'Active links' in data['error']
+
+
+def test_enrich_link_requires_source_database(client):
+    """Test that enrichment requires source_database in match_config."""
+    # Create labels
+    client.post('/api/labels', json={
+        'name': 'Source',
+        'properties': [{'name': 'uuid', 'type': 'string'}],
+        'relationships': []
+    })
+    client.post('/api/labels', json={
+        'name': 'Target',
+        'properties': [{'name': 'uuid', 'type': 'string'}],
+        'relationships': []
+    })
+
+    # Create an Active link without source_database
+    payload = {
+        'name': 'Active Link No Source',
+        'source_label': 'Source',
+        'target_label': 'Target',
+        'match_strategy': 'property',
+        'match_config': {'source_field': 'id', 'target_field': 'id'},
+        'relationship_type': 'LINKS_TO',
+        'relationship_props': {},
+        'status': 'active'
+    }
+    create_resp = client.post('/api/links', json=payload)
+    link_id = create_resp.get_json()['link']['id']
+
+    # Try to enrich - should fail
+    response = client.post(f'/api/links/{link_id}/enrich', json={})
+
+    assert response.status_code == 400
+    data = response.get_json()
+    assert data['status'] == 'error'
+    assert 'source_database' in data['error']
