@@ -823,6 +823,87 @@ def get_label_properties():
         }), 500
 
 
+@bp.route('/neo4j/relationship-properties', methods=['POST'])
+def get_relationship_properties():
+    """
+    Get properties and their types for a relationship in a Neo4j database.
+
+    Request body:
+    {
+        "database": "PRIMARY" or "profile_name",
+        "source_label": "Person",
+        "rel_type": "AUTHORED",
+        "target_label": "File"
+    }
+
+    Returns list of property names with their types.
+    """
+    try:
+        from ...services.neo4j_client import get_neo4j_client, get_neo4j_client_for_profile
+
+        data = request.json
+        database = data.get('database', 'PRIMARY')
+        source_label = data.get('source_label')
+        rel_type = data.get('rel_type')
+        target_label = data.get('target_label')
+
+        if not all([source_label, rel_type, target_label]):
+            return jsonify({'status': 'error', 'error': 'source_label, rel_type, and target_label are required'}), 400
+
+        # Get appropriate client
+        if database == 'PRIMARY':
+            client = get_neo4j_client()
+        else:
+            client = get_neo4j_client_for_profile(database)
+
+        if not client:
+            return jsonify({'status': 'error', 'error': f'Database {database} not found'}), 404
+
+        try:
+            # Query for all property keys on this relationship with sample values to infer types
+            query = f"""
+            MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
+            WITH r LIMIT 100
+            UNWIND keys(r) as key
+            WITH DISTINCT key, r[key] as sample_value
+            RETURN key,
+                   CASE
+                     WHEN sample_value IS NULL THEN 'unknown'
+                     WHEN toString(sample_value) =~ '^[0-9]+$' OR toString(sample_value) =~ '^[0-9]*\\.[0-9]+$' THEN 'number'
+                     WHEN sample_value IN [true, false] THEN 'boolean'
+                     ELSE 'string'
+                   END as type
+            ORDER BY key
+            """
+
+            results = client.execute_read(query)
+            properties = []
+            seen_keys = set()
+
+            for r in results:
+                if 'key' in r and r['key'] not in seen_keys:
+                    properties.append({
+                        'name': r['key'],
+                        'type': r.get('type', 'string')
+                    })
+                    seen_keys.add(r['key'])
+
+            return jsonify({
+                'status': 'success',
+                'properties': properties
+            }), 200
+        finally:
+            if database != 'PRIMARY':
+                client.close()
+
+    except Exception as e:
+        logger.exception("Failed to get relationship properties")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
 @bp.route('/links/import-triples/preview', methods=['POST'])
 def preview_triple_import():
     """
@@ -1340,7 +1421,8 @@ def enrich_link_relationships(link_id):
 
     Request body (optional):
     {
-        "batch_size": 1000  // optional, default 1000
+        "batch_size": 1000,  // optional, default 1000
+        "properties": ["prop1", "prop2"]  // optional, specific properties to enrich
     }
 
     Returns:
@@ -1375,9 +1457,10 @@ def enrich_link_relationships(link_id):
                 'error': 'Only import links with source_database can be enriched'
             }), 400
 
-        # Extract batch size from request body
+        # Extract batch size and properties from request body
         data = request.get_json(force=True, silent=True) or {}
         batch_size = data.get('batch_size', 1000)
+        properties = data.get('properties')  # None or list of property names
 
         # Start enrichment task
         task_id = service.enrich_relationships_with_task(
@@ -1388,7 +1471,8 @@ def enrich_link_relationships(link_id):
             source_database=source_database,
             source_uid_property=match_config.get('source_uid_property', 'uuid'),
             target_uid_property=match_config.get('target_uid_property', 'uuid'),
-            batch_size=batch_size
+            batch_size=batch_size,
+            properties=properties
         )
 
         return jsonify({

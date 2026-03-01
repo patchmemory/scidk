@@ -344,18 +344,16 @@ async function showSyncStatusForActiveImportLink(linkId, link) {
       </div>
 
       <!-- Enrich Relationships Section -->
-      <div style="padding: 1.5rem; background: #fff9e6; border: 1px solid #ffd54f; border-radius: 6px; margin-top: 1.5rem;">
-        <h5 style="margin: 0 0 0.75rem 0; color: #333;">Enrich Relationships</h5>
-        <div style="font-size: 0.9em; color: #666; margin-bottom: 1rem;">
-          Update properties on existing relationships from source without re-importing.
-        </div>
-        <button id="btn-enrich-rels" class="btn btn-sm btn-warning" onclick="enrichRelationships('${linkId}')">
-          Enrich Now
-        </button>
+      <div id="enrich-section" style="padding: 1.5rem; background: #fff9e6; border: 1px solid #ffd54f; border-radius: 6px; margin-top: 1.5rem;">
+        <h5 style="margin: 0 0 0.75rem 0; color: #333; font-size: 1.1rem; font-weight: 500;">Enrich Relationships</h5>
+        <div id="enrich-properties-loading" style="font-size: 0.9em; color: #666;">Loading properties...</div>
       </div>
 
       <div id="active-link-index-container"></div>
     `;
+
+    // Load and render property selection UI
+    await renderEnrichPropertiesUI(linkId, data.source_database, link);
 
     // Show relationship index below sync status
     await showRelationshipIndex(linkId, {
@@ -530,18 +528,152 @@ let activePollingInterval = null;
 
 // ===== Relationship Enrichment Functions =====
 
-async function enrichRelationships(linkId) {
-  console.log('[enrichRelationships] Starting enrichment for link:', linkId);
+// Global to store selected properties for enrichment
+let enrichPropertiesSelection = {
+  linkId: null,
+  properties: [],
+  selectedProps: new Set()
+};
+
+async function fetchRelationshipProperties(sourceDatabase, sourceLabel, relType, targetLabel) {
+  console.log('[fetchRelationshipProperties] Fetching properties for:', {sourceDatabase, sourceLabel, relType, targetLabel});
+
+  try {
+    const response = await fetch('/api/neo4j/relationship-properties', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        database: sourceDatabase,
+        source_label: sourceLabel,
+        rel_type: relType,
+        target_label: targetLabel
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'success' && data.properties) {
+      return data.properties; // Array of {name, type}
+    } else {
+      console.error('[fetchRelationshipProperties] Failed:', data.error);
+      return [];
+    }
+  } catch (err) {
+    console.error('[fetchRelationshipProperties] Error:', err);
+    return [];
+  }
+}
+
+async function renderEnrichPropertiesUI(linkId, sourceDatabase, link) {
+  const enrichSection = document.getElementById('enrich-properties-loading');
+  if (!enrichSection) return;
+
+  // Fetch relationship properties from source database
+  const properties = await fetchRelationshipProperties(
+    sourceDatabase,
+    link.source_label,
+    link.relationship_type,
+    link.target_label
+  );
+
+  if (properties.length === 0) {
+    enrichSection.innerHTML = `<div style="font-size: 0.9em; color: #999;">No properties found on relationships in source database.</div>`;
+    return;
+  }
+
+  // Initialize selection with all properties selected
+  enrichPropertiesSelection.linkId = linkId;
+  enrichPropertiesSelection.properties = properties;
+  enrichPropertiesSelection.selectedProps = new Set(properties.map(p => p.name));
+
+  // Render property list
+  const propertyRows = properties.map(prop => `
+    <div style="display: flex; align-items: center; padding: 0.35rem 0; font-size: 0.9em;">
+      <input type="checkbox"
+             id="enrich-prop-${escapeHtml(prop.name)}"
+             checked
+             onchange="toggleEnrichProperty('${escapeHtml(prop.name)}')"
+             style="margin-right: 0.5rem;" />
+      <label for="enrich-prop-${escapeHtml(prop.name)}" style="flex: 1; cursor: pointer; margin: 0;">
+        ${escapeHtml(prop.name)}
+      </label>
+      <span style="color: #888; font-size: 0.85em;">${escapeHtml(prop.type)}</span>
+    </div>
+  `).join('');
+
+  const selectedCount = enrichPropertiesSelection.selectedProps.size;
+  const totalCount = properties.length;
+
+  enrichSection.innerHTML = `
+    <div id="enrich-property-list" style="margin-bottom: 0.75rem; max-height: 200px; overflow-y: auto;">
+      ${propertyRows}
+    </div>
+    <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85em; color: #666; margin-bottom: 0.75rem;">
+      <span id="enrich-selection-count">${selectedCount} of ${totalCount} selected</span>
+      <button class="btn btn-sm btn-link" style="padding: 0; font-size: 0.85em;" onclick="selectAllEnrichProperties()">Select All</button>
+      <button class="btn btn-sm btn-link" style="padding: 0; font-size: 0.85em;" onclick="clearAllEnrichProperties()">Clear</button>
+    </div>
+    <button id="btn-enrich-selected" class="btn btn-sm btn-warning" onclick="enrichSelectedRelationships('${linkId}')">
+      Enrich Selected
+    </button>
+  `;
+}
+
+function toggleEnrichProperty(propName) {
+  if (enrichPropertiesSelection.selectedProps.has(propName)) {
+    enrichPropertiesSelection.selectedProps.delete(propName);
+  } else {
+    enrichPropertiesSelection.selectedProps.add(propName);
+  }
+  updateEnrichSelectionCount();
+}
+
+function selectAllEnrichProperties() {
+  enrichPropertiesSelection.selectedProps = new Set(enrichPropertiesSelection.properties.map(p => p.name));
+  enrichPropertiesSelection.properties.forEach(prop => {
+    const checkbox = document.getElementById(`enrich-prop-${prop.name}`);
+    if (checkbox) checkbox.checked = true;
+  });
+  updateEnrichSelectionCount();
+}
+
+function clearAllEnrichProperties() {
+  enrichPropertiesSelection.selectedProps.clear();
+  enrichPropertiesSelection.properties.forEach(prop => {
+    const checkbox = document.getElementById(`enrich-prop-${prop.name}`);
+    if (checkbox) checkbox.checked = false;
+  });
+  updateEnrichSelectionCount();
+}
+
+function updateEnrichSelectionCount() {
+  const countElem = document.getElementById('enrich-selection-count');
+  if (countElem) {
+    const selectedCount = enrichPropertiesSelection.selectedProps.size;
+    const totalCount = enrichPropertiesSelection.properties.length;
+    countElem.textContent = `${selectedCount} of ${totalCount} selected`;
+  }
+}
+
+async function enrichSelectedRelationships(linkId) {
+  console.log('[enrichSelectedRelationships] Starting enrichment for link:', linkId);
+
+  const selectedProps = Array.from(enrichPropertiesSelection.selectedProps);
+
+  if (selectedProps.length === 0) {
+    showToast('Please select at least one property to enrich', 'error');
+    return;
+  }
 
   const confirmed = confirm(
-    'Enrich relationship properties from source database?\n\n' +
+    `Enrich ${selectedProps.length} selected propert${selectedProps.length === 1 ? 'y' : 'ies'} from source database?\n\n` +
     'This will update properties on existing relationships in primary ' +
     'without creating new nodes or relationships.'
   );
 
   if (!confirmed) return;
 
-  const enrichBtn = document.getElementById('btn-enrich-rels');
+  const enrichBtn = document.getElementById('btn-enrich-selected');
   if (enrichBtn) {
     enrichBtn.disabled = true;
     enrichBtn.textContent = 'Enriching...';
@@ -550,10 +682,17 @@ async function enrichRelationships(linkId) {
   showToast('Starting enrichment...', 'info');
 
   try {
+    // Pass empty properties array if all are selected (use SET r +=)
+    const allSelected = selectedProps.length === enrichPropertiesSelection.properties.length;
+    const propertiesToSend = allSelected ? [] : selectedProps;
+
     const response = await fetch(`/api/links/${linkId}/enrich`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ batch_size: 1000 })
+      body: JSON.stringify({
+        batch_size: 1000,
+        properties: propertiesToSend
+      })
     });
 
     const result = await response.json();
@@ -563,26 +702,20 @@ async function enrichRelationships(linkId) {
     }
 
     const taskId = result.task_id;
-    console.log('[enrichRelationships] Got task_id:', taskId);
+    console.log('[enrichSelectedRelationships] Got task_id:', taskId);
 
     // Show progress UI
-    const previewContainer = document.getElementById('preview-container');
-    if (previewContainer) {
-      // Find the enrich section and replace it with progress UI
-      const enrichSection = previewContainer.querySelector('[id^="enrich-section"]') ||
-                           previewContainer.querySelector('.btn-warning')?.closest('div[style*="background: #fff9e6"]');
-
-      if (enrichSection) {
-        enrichSection.innerHTML = `
-          <h5 style="margin: 0 0 0.75rem 0; color: #333;">Enriching Relationships</h5>
-          <div id="enrich-progress-message" style="margin-bottom: 1rem; font-weight: 500;">Initializing enrichment...</div>
-          <div style="background: #e0e0e0; border-radius: 4px; height: 24px; overflow: hidden; margin-bottom: 0.5rem;">
-            <div id="enrich-progress-fill" style="background: #ff9800; height: 100%; width: 0%; transition: width 0.3s ease;"></div>
-          </div>
-          <div id="enrich-progress-stats" style="font-size: 0.85em; color: #666; margin-bottom: 0.75rem;"></div>
-          <button id="btn-cancel-enrich" class="btn btn-sm btn-outline-danger" onclick="cancelEnrichment('${taskId}')">Cancel</button>
-        `;
-      }
+    const enrichSection = document.getElementById('enrich-section');
+    if (enrichSection) {
+      enrichSection.innerHTML = `
+        <h5 style="margin: 0 0 0.75rem 0; color: #333; font-size: 1.1rem; font-weight: 500;">Enriching Relationships</h5>
+        <div id="enrich-progress-message" style="margin-bottom: 1rem; font-weight: 500;">Initializing enrichment...</div>
+        <div style="background: #e0e0e0; border-radius: 4px; height: 24px; overflow: hidden; margin-bottom: 0.5rem;">
+          <div id="enrich-progress-fill" style="background: #ff9800; height: 100%; width: 0%; transition: width 0.3s ease;"></div>
+        </div>
+        <div id="enrich-progress-stats" style="font-size: 0.85em; color: #666; margin-bottom: 0.75rem;"></div>
+        <button id="btn-cancel-enrich" class="btn btn-sm btn-outline-danger" onclick="cancelEnrichment('${taskId}')">Cancel</button>
+      `;
     }
 
     showToast('Enrichment started - tracking progress...', 'info');
@@ -593,7 +726,7 @@ async function enrichRelationships(linkId) {
 
     if (enrichBtn) {
       enrichBtn.disabled = false;
-      enrichBtn.textContent = 'Enrich Now';
+      enrichBtn.textContent = 'Enrich Selected';
     }
   }
 }

@@ -2446,13 +2446,18 @@ class LinkService:
         source_database: str,
         source_uid_property: str,
         target_uid_property: str,
-        batch_size: int = 1000
+        batch_size: int = 1000,
+        properties: List[str] = None
     ) -> str:
         """
         Enrich relationship properties from source database as background task.
 
         Updates properties on existing relationships in primary without creating
         new nodes or relationships. Only touches relationships that already exist.
+
+        Args:
+            properties: Optional list of property names to enrich. If None or empty,
+                       enriches all properties using SET r += (default behavior).
 
         Returns:
             Task ID for polling progress
@@ -2500,7 +2505,8 @@ class LinkService:
                         source_database=source_database,
                         source_uid_property=source_uid_property,
                         target_uid_property=target_uid_property,
-                        batch_size=batch_size
+                        batch_size=batch_size,
+                        properties=properties
                     )
                     task['ended'] = time.time()
                     task['status'] = 'completed'
@@ -2524,9 +2530,16 @@ class LinkService:
         source_database: str,
         source_uid_property: str,
         target_uid_property: str,
-        batch_size: int = 1000
+        batch_size: int = 1000,
+        properties: List[str] = None
     ):
-        """Execute relationship enrichment with live progress updates to task dict."""
+        """
+        Execute relationship enrichment with live progress updates to task dict.
+
+        Args:
+            properties: Optional list of property names to enrich. If None or empty,
+                       enriches all properties using SET r += (default behavior).
+        """
         from .neo4j_client import get_neo4j_client, get_neo4j_client_for_profile
 
         # Validate relationship type
@@ -2610,12 +2623,25 @@ class LinkService:
                     })
 
                 # Update relationships in primary (MATCH only - never creates)
-                update_query = f"""
-                UNWIND $rows AS row
-                MATCH (a:{source_label} {{{source_uid_property}: row.source_uid}})-[r:{rel_type}]->(b:{target_label} {{{target_uid_property}: row.target_uid}})
-                SET r += row.rel_props
-                RETURN count(r) as updated
-                """
+                # If properties list is provided and non-empty, use explicit property assignment
+                # Otherwise use SET r += for all properties
+                if properties:
+                    # Build explicit SET clauses for selected properties
+                    set_clauses = ', '.join([f'r.{prop} = row.rel_props.{prop}' for prop in properties])
+                    update_query = f"""
+                    UNWIND $rows AS row
+                    MATCH (a:{source_label} {{{source_uid_property}: row.source_uid}})-[r:{rel_type}]->(b:{target_label} {{{target_uid_property}: row.target_uid}})
+                    SET {set_clauses}
+                    RETURN count(r) as updated
+                    """
+                else:
+                    # Default: enrich all properties
+                    update_query = f"""
+                    UNWIND $rows AS row
+                    MATCH (a:{source_label} {{{source_uid_property}: row.source_uid}})-[r:{rel_type}]->(b:{target_label} {{{target_uid_property}: row.target_uid}})
+                    SET r += row.rel_props
+                    RETURN count(r) as updated
+                    """
                 update_results = primary_client.execute_write(update_query, {'rows': rows})
                 updated_count = update_results[0]['updated'] if update_results else 0
 
