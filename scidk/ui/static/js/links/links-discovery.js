@@ -280,7 +280,7 @@ function renderGroupedDiscoveredRelationships(validRels, container) {
 // Adopt discovered relationship as a new link definition
 function adoptDiscoveredAsDefinition(rel) {
   // Reset wizard to clean state
-  resetWizardPanel();
+  resetWizard();
 
   // Populate tripleBuilder from discovered relationship
   tripleBuilder.source.label = rel.source_label || '';

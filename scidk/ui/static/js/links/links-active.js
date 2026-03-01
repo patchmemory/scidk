@@ -382,39 +382,6 @@ async function showSyncStatusForActiveImportLink(linkId, link) {
   }
 }
 
-// Helper to format date/time from ISO string
-function formatDateTime(isoString) {
-  if (!isoString) return 'Never';
-  try {
-    const date = new Date(isoString);
-    return date.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    });
-  } catch (e) {
-    return isoString;
-  }
-}
-
-// Helper to format last run timestamp
-function formatLastRun(timestamp) {
-  if (!timestamp) return 'Never';
-  try {
-    const date = new Date(timestamp * 1000); // Convert Unix timestamp to milliseconds
-    return date.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    });
-  } catch (e) {
-    return 'Never';
-  }
-}
-
 // Show sync details (can be expanded later)
 function showSyncDetails(linkId) {
   // For now, just show the link definition details

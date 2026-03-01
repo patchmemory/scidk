@@ -38,6 +38,15 @@ const tripleBuilder = {
 // Snapshot for cancel functionality
 let tripleBuilderSnapshot = null;
 
+// State for discovered import workflow
+let discoveredImportConfig = {
+  rel: null,
+  database: '',
+  source: { label: '', uid_property: '', available_properties: [] },
+  target: { label: '', uid_property: '', available_properties: [] },
+  relationship: { type: '', available_properties: [], import_properties: true }
+};
+
 // Links navigation state (search, filters, sorting, grouping)
 const linksNavState = {
   searchQuery: '',
@@ -69,6 +78,47 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// Fetch properties for a label from external database
+async function fetchLabelProperties(label, database) {
+  try {
+    const response = await fetch(`/api/neo4j/label-properties`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ database: database, label: label })
+    });
+    const result = await response.json();
+
+    if (result.status === 'success' && result.properties) {
+      return result.properties;
+    }
+    return [];
+  } catch (err) {
+    console.error('Failed to fetch label properties:', err);
+    return [];
+  }
+}
+
+// Fetch relationship properties from external database
+async function fetchRelationshipProperties(sourceLabel, relType, targetLabel, database) {
+  try {
+    const query = `MATCH (a:${sourceLabel})-[r:${relType}]->(b:${targetLabel}) RETURN keys(r) as props LIMIT 1`;
+    const response = await fetch(`/api/neo4j/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ database: database, query: query })
+    });
+    const result = await response.json();
+
+    if (result.status === 'success' && result.records && result.records.length > 0) {
+      return result.records[0].props || [];
+    }
+    return [];
+  } catch (err) {
+    console.error('Failed to fetch relationship properties:', err);
+    return [];
+  }
+}
+
 // Highlight search matches with XSS protection
 function highlightMatch(text, query) {
   if (!query || !text) return escapeHtml(text);
@@ -79,6 +129,39 @@ function highlightMatch(text, query) {
   // Escape regex special characters and create case-insensitive regex
   const regex = new RegExp(`(${escapedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
   return escapedText.replace(regex, '<mark style="background: #fef3c7; padding: 0 2px;">$1</mark>');
+}
+
+// Helper to format date/time from ISO string
+function formatDateTime(isoString) {
+  if (!isoString) return 'Never';
+  try {
+    const date = new Date(isoString);
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+  } catch (e) {
+    return isoString;
+  }
+}
+
+// Helper to format last run timestamp
+function formatLastRun(timestamp) {
+  if (!timestamp) return 'Never';
+  try {
+    const date = new Date(timestamp * 1000); // Convert Unix timestamp to milliseconds
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  } catch (e) {
+    return 'Never';
+  }
 }
 
 // ===== Initialization & Core Management =====
@@ -903,7 +986,7 @@ function loadLinkDefinition(linkId) {
   console.log('[loadLinkDefinition] Loading link:', linkId);
 
   // Reset wizard panel to clean state (prevents state bleed)
-  // Note: resetWizardPanel() is in import functions, not included here
+  // Note: resetWizard() is defined below, called by import/discovery modules
 
   fetch(`/api/links/${linkId}`)
     .then(r => r.json())
@@ -1629,6 +1712,102 @@ function runLinkDefinition(linkId) {
       executeLink();
     }
   }, 100);
+}
+
+// ===== Discovered Import Wizard =====
+
+async function openImportWizardForRelationship(rel) {
+  console.log('[Links] openImportWizardForRelationship called with:', rel);
+
+  // Reset wizard panel to clean state (prevents state bleed)
+  resetWizard();
+
+  // Each rel now has exactly one database (no more merging)
+  const database = rel.database;
+
+  console.log('[Import] Opening wizard for:', database, rel.source_label, rel.rel_type, rel.target_label);
+
+  // Initialize import configuration
+  discoveredImportConfig.rel = rel;
+  discoveredImportConfig.database = database;
+  discoveredImportConfig.source.label = rel.source_label;
+  discoveredImportConfig.target.label = rel.target_label;
+  discoveredImportConfig.relationship.type = rel.rel_type;
+
+  // Show wizard panel with title
+  const wizardTitle = document.getElementById('wizard-title');
+  if (wizardTitle) {
+    wizardTitle.innerHTML = `
+      <span style="background: #ff9800; color: white; padding: 0.25em 0.75em; border-radius: 4px; font-size: 0.8em; margin-right: 0.5rem;">IMPORT</span>
+      ${rel.source_label} -[${rel.rel_type}]-> ${rel.target_label}
+    `;
+  }
+
+  // Show wizard panel
+  showWizard();
+
+  // Hide Save Definition, Execute, and Delete buttons for discovered import workflow
+  const btnSaveDef = document.getElementById('btn-save-def');
+  const btnExecute = document.getElementById('btn-execute');
+  const btnDeleteDef = document.getElementById('btn-delete-def');
+  if (btnSaveDef) btnSaveDef.style.display = 'none';
+  if (btnExecute) btnExecute.style.display = 'none';
+  if (btnDeleteDef) btnDeleteDef.style.display = 'none';
+
+  // Auto-populate link name
+  const linkNameInput = document.getElementById('link-name');
+  if (linkNameInput) {
+    linkNameInput.value = `${rel.source_label} ${rel.rel_type} ${rel.target_label}`;
+  }
+
+  // Show loading state in triple display
+  const mainTripleDisplay = document.getElementById('main-triple-display');
+  if (mainTripleDisplay) {
+    mainTripleDisplay.innerHTML = '<div style="text-align: center; padding: 2rem; color: #999;">Loading properties...</div>';
+  }
+
+  // Fetch properties for source, target, and relationship
+  try {
+    const [sourceProps, targetProps, relProps] = await Promise.all([
+      fetchLabelProperties(rel.source_label, database),
+      fetchLabelProperties(rel.target_label, database),
+      fetchRelationshipProperties(rel.source_label, rel.rel_type, rel.target_label, database)
+    ]);
+
+    discoveredImportConfig.source.available_properties = sourceProps;
+    discoveredImportConfig.target.available_properties = targetProps;
+    discoveredImportConfig.relationship.available_properties = relProps;
+
+    // Auto-detect UID properties (function defined in links-discovery.js)
+    discoveredImportConfig.source.uid_property = autoDetectUidProperty(sourceProps);
+    discoveredImportConfig.target.uid_property = autoDetectUidProperty(targetProps);
+
+    // Show guidance toast based on auto-detection results
+    const sourceUid = discoveredImportConfig.source.uid_property;
+    const targetUid = discoveredImportConfig.target.uid_property;
+
+    if (sourceUid && targetUid) {
+      showToast(`Auto-selected UID properties: source.${sourceUid}, target.${targetUid}`, 'success');
+    } else if (!sourceUid && !targetUid) {
+      showToast('Please configure Source and Target UID properties', 'warning');
+    } else if (!sourceUid) {
+      showToast('Please configure Source UID property', 'warning');
+    } else if (!targetUid) {
+      showToast('Please configure Target UID property', 'warning');
+    }
+
+    // Update the clickable triple display (function defined in links-import.js)
+    updateDiscoveredImportDisplay();
+  } catch (err) {
+    console.error('Failed to load properties:', err);
+    showToast('Failed to load properties', 'error');
+  }
+
+  // Show empty preview - user must click "Load Preview" explicitly
+  const previewContainer = document.getElementById('preview-container');
+  if (previewContainer) {
+    previewContainer.innerHTML = '<div class="empty-state small">Configure all three components to preview matches</div>';
+  }
 }
 
 // ===== Keyboard Navigation =====
