@@ -1,13 +1,12 @@
 """
-Blueprint for Links API routes (DEPRECATED).
+Blueprint for Links API routes.
 
-**DEPRECATED**: This module is kept for backward compatibility only.
 Use api_integrations.py instead. All /api/links/* endpoints redirect to /api/integrations/*
 
 Provides REST endpoints for:
-- Link definitions CRUD (deprecated, use integrations)
-- Preview and execution of link jobs (deprecated, use integrations)
-- Job status tracking (deprecated, use integrations)
+- Link definitions CRUD
+- Preview and execution of link jobs
+- Job status tracking
 """
 from flask import Blueprint, jsonify, request, current_app, redirect, url_for
 import logging

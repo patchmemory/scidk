@@ -1,3 +1,240 @@
+// ===== Active Link Rendering Functions =====
+
+async function renderActiveLinkPanel(link) {
+  console.log('[renderActiveLinkPanel] Rendering Active link:', link);
+
+  // Show wizard panel
+  showWizard();
+
+  // Set wizard title
+  const wizardTitle = document.getElementById('wizard-title');
+  if (wizardTitle) {
+    wizardTitle.textContent = 'Active Link';
+  }
+
+  // Get containers
+  const mainTripleDisplay = document.getElementById('main-triple-display');
+  const linkNameContainer = document.querySelector('.form-group');
+  const previewExecuteSection = document.getElementById('preview-execute-section');
+  const previewContainer = document.getElementById('preview-container');
+
+  // Hide wizard step navigation and standard triple builder
+  if (mainTripleDisplay) {
+    mainTripleDisplay.style.display = 'none';
+  }
+
+  // Hide link name input
+  if (linkNameContainer) {
+    linkNameContainer.style.display = 'none';
+  }
+
+  // Show preview section but replace content
+  if (previewExecuteSection) {
+    previewExecuteSection.style.display = 'block';
+  }
+
+  // Parse match_config
+  const matchConfig = typeof link.match_config === 'string'
+    ? JSON.parse(link.match_config || '{}')
+    : (link.match_config || {});
+
+  const isImportLink = !!matchConfig.source_database;
+  const sourceLabel = link.source_label || '';
+  const targetLabel = link.target_label || '';
+  const relType = link.relationship_type || '';
+
+  // Build read-only triple display with UID selectors
+  const panelHtml = `
+    <div style="margin-bottom: 2rem;">
+      <div style="display: flex; align-items: center; gap: 1rem; padding: 1rem; background: #f5f7fa; border-radius: 6px; margin-bottom: 1.5rem;">
+        <span style="padding: 0.5rem 1rem; background: #2196f3; color: white; border-radius: 4px; font-weight: 500;">${escapeHtml(sourceLabel)}</span>
+        <span style="color: #666;">→</span>
+        <span style="padding: 0.5rem 1rem; background: #ff9800; color: white; border-radius: 4px; font-weight: 500;">${escapeHtml(relType)}</span>
+        <span style="color: #666;">→</span>
+        <span style="padding: 0.5rem 1rem; background: #4caf50; color: white; border-radius: 4px; font-weight: 500;">${escapeHtml(targetLabel)}</span>
+      </div>
+
+      <div style="background: white; padding: 1.5rem; border: 1px solid #e0e0e0; border-radius: 6px; margin-bottom: 1.5rem;">
+        <h5 style="margin: 0 0 1rem 0; color: #333;">UID Properties (for future sync matching)</h5>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div>
+            <label class="form-label small" style="font-weight: 500;">Source UID:</label>
+            <select id="active-source-uid" class="form-control form-control-sm" onchange="updateActiveLinkUIDProperty('source', this.value)">
+              <option value="">Loading...</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label small" style="font-weight: 500;">Target UID:</label>
+            <select id="active-target-uid" class="form-control form-control-sm" onchange="updateActiveLinkUIDProperty('target', this.value)">
+              <option value="">Loading...</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  if (previewContainer) {
+    previewContainer.innerHTML = panelHtml;
+  }
+
+  // Load UID property dropdowns
+  await loadUIDPropertyOptions(link);
+
+  // Show button controls
+  updateActiveLinkButtons(link);
+
+  // Show sync status and index
+  if (isImportLink) {
+    await showSyncStatusForActiveImportLink(link.id, link);
+  } else {
+    // Algorithmic/script link - show basic info and index
+    if (previewContainer) {
+      previewContainer.innerHTML += `
+        <div style="margin-top: 1.5rem;" id="active-link-info-container"></div>
+      `;
+
+      const infoContainer = document.getElementById('active-link-info-container');
+      if (infoContainer) {
+        infoContainer.innerHTML = `
+          <div style="padding: 1.5rem; background: #f5f5f5; border-radius: 6px; margin-bottom: 1.5rem;">
+            <h5 style="margin: 0 0 0.75rem 0; color: #333;">Algorithmic Link</h5>
+            <div style="font-size: 0.9em; color: #666; margin-bottom: 1rem;">
+              <div>Last run: ${formatLastRun(link.updated_at)}</div>
+            </div>
+          </div>
+          <div id="active-link-index-container"></div>
+        `;
+      }
+    }
+
+    await showRelationshipIndex(link.id, {
+      containerId: 'active-link-index-container',
+      source_label: sourceLabel,
+      rel_type: relType,
+      target_label: targetLabel,
+      source_database: null
+    });
+  }
+}
+
+async function loadUIDPropertyOptions(link) {
+  const sourceUidSelect = document.getElementById('active-source-uid');
+  const targetUidSelect = document.getElementById('active-target-uid');
+
+  if (!sourceUidSelect || !targetUidSelect) return;
+
+  const matchConfig = typeof link.match_config === 'string'
+    ? JSON.parse(link.match_config || '{}')
+    : (link.match_config || {});
+
+  const sourceLabel = link.source_label;
+  const targetLabel = link.target_label;
+  const currentSourceUid = matchConfig.source_uid_property || 'uuid';
+  const currentTargetUid = matchConfig.target_uid_property || 'uuid';
+
+  try {
+    // Fetch source properties
+    const sourceResponse = await fetch('/api/neo4j/label-properties', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ database: 'PRIMARY', label: sourceLabel })
+    });
+    const sourceData = await sourceResponse.json();
+
+    if (sourceData.status === 'success' && sourceData.properties) {
+      sourceUidSelect.innerHTML = sourceData.properties.map(prop =>
+        `<option value="${escapeHtml(prop)}" ${prop === currentSourceUid ? 'selected' : ''}>${escapeHtml(prop)}</option>`
+      ).join('');
+    }
+
+    // Fetch target properties
+    const targetResponse = await fetch('/api/neo4j/label-properties', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ database: 'PRIMARY', label: targetLabel })
+    });
+    const targetData = await targetResponse.json();
+
+    if (targetData.status === 'success' && targetData.properties) {
+      targetUidSelect.innerHTML = targetData.properties.map(prop =>
+        `<option value="${escapeHtml(prop)}" ${prop === currentTargetUid ? 'selected' : ''}>${escapeHtml(prop)}</option>`
+      ).join('');
+    }
+  } catch (err) {
+    console.error('Failed to load UID properties:', err);
+    sourceUidSelect.innerHTML = '<option value="">Error loading properties</option>';
+    targetUidSelect.innerHTML = '<option value="">Error loading properties</option>';
+  }
+}
+
+async function updateActiveLinkUIDProperty(side, value) {
+  if (!currentLink) return;
+
+  // Update match_config with new UID property
+  const matchConfig = typeof currentLink.match_config === 'string'
+    ? JSON.parse(currentLink.match_config || '{}')
+    : (currentLink.match_config || {});
+
+  if (side === 'source') {
+    matchConfig.source_uid_property = value;
+  } else {
+    matchConfig.target_uid_property = value;
+  }
+
+  // Save link definition with updated match_config
+  try {
+    const response = await fetch('/api/links', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: currentLink.id,
+        name: currentLink.name,
+        source_label: currentLink.source_label,
+        target_label: currentLink.target_label,
+        relationship_type: currentLink.relationship_type,
+        match_strategy: currentLink.match_strategy,
+        match_config: matchConfig,
+        source_config: currentLink.source_config || {},
+        target_config: currentLink.target_config || {},
+        relationship_props: currentLink.relationship_props || {},
+        status: currentLink.status
+      })
+    });
+
+    const result = await response.json();
+
+    if (result.status === 'success') {
+      showToast(`${side === 'source' ? 'Source' : 'Target'} UID property updated to ${value}`, 'success');
+      currentLink.match_config = matchConfig;
+    } else {
+      showToast(`Failed to update UID property: ${result.error}`, 'error');
+    }
+  } catch (err) {
+    console.error('Failed to update UID property:', err);
+    showToast('Failed to update UID property', 'error');
+  }
+}
+
+function updateActiveLinkButtons(link) {
+  // Show only Delete and Refresh buttons
+  const btnSaveDef = document.getElementById('btn-save-def');
+  const btnExecute = document.getElementById('btn-execute');
+  const btnDeleteDef = document.getElementById('btn-delete-def');
+  const btnExportCsv = document.getElementById('btn-export-csv');
+  const btnImportCsv = document.getElementById('btn-import-csv');
+
+  if (btnSaveDef) btnSaveDef.style.display = 'none';
+  if (btnExecute) {
+    btnExecute.style.display = 'inline-block';
+    btnExecute.textContent = 'Refresh';
+    btnExecute.disabled = false;
+  }
+  if (btnDeleteDef) btnDeleteDef.style.display = 'inline-block';
+  if (btnExportCsv) btnExportCsv.style.display = 'none';
+  if (btnImportCsv) btnImportCsv.style.display = 'none';
+}
+
 // ===== Active Link Sync Status Functions =====
 
 async function showSyncStatusForActiveImportLink(linkId, link) {

@@ -1028,6 +1028,12 @@ function hideScriptLink() {
 function populateWizardFromLink(link) {
   currentLink = link;
 
+  // Branch early for Active links - show read-only panel instead of wizard
+  if (link.status === 'active') {
+    renderActiveLinkPanel(link);
+    return;
+  }
+
   // Populate tripleBuilder from link definition
   tripleBuilder.link_id = link.id;
   tripleBuilder.name = link.name;
