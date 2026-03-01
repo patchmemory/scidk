@@ -2728,7 +2728,7 @@ function populateWizardFromLink(link) {
 
     // If this is an Active import link, fetch and show sync status
     if (link.status === 'active') {
-      showSyncStatusForActiveImportLink(link.id);
+      showSyncStatusForActiveImportLink(link.id, link);
     }
 
     // Hide Save button for discovered import workflow (definitions are auto-created)
@@ -2756,10 +2756,10 @@ function populateWizardFromLink(link) {
     if (btnDeleteDef) {
       btnDeleteDef.style.display = (link.status === 'pending') ? 'inline-block' : 'none';
     }
+  } else {
+    // Not a discovered import - update standard triple display
+    updateMainTripleDisplay();
   }
-
-  // Update visual display
-  updateMainTripleDisplay();
 }
 
 function resetWizard() {
@@ -4189,7 +4189,7 @@ async function previewDiscoveredImport() {
 
 // Execute discovered import
 // Show sync status for an Active import link
-async function showSyncStatusForActiveImportLink(linkId) {
+async function showSyncStatusForActiveImportLink(linkId, link) {
   const previewContainer = document.getElementById('preview-container');
   if (!previewContainer) return;
 
@@ -4227,7 +4227,10 @@ async function showSyncStatusForActiveImportLink(linkId) {
       // Show relationship index below algorithmic link info
       await showRelationshipIndex(linkId, {
         containerId: 'active-link-index-container',
-        rel_type: currentLink?.relationship_type || ''
+        source_label: link.source_label,
+        rel_type: link.relationship_type,
+        target_label: link.target_label,
+        source_database: null
       });
       return;
     }
@@ -4290,7 +4293,10 @@ async function showSyncStatusForActiveImportLink(linkId) {
     // Show relationship index below sync status
     await showRelationshipIndex(linkId, {
       containerId: 'active-link-index-container',
-      rel_type: currentLink?.relationship_type || ''
+      source_label: data.source_label || link.source_label,
+      rel_type: data.rel_type || link.relationship_type,
+      target_label: data.target_label || link.target_label,
+      source_database: data.source_database || null
     });
   } catch (err) {
     console.error('Failed to fetch sync status:', err);
@@ -4305,7 +4311,10 @@ async function showSyncStatusForActiveImportLink(linkId) {
     try {
       await showRelationshipIndex(linkId, {
         containerId: 'active-link-index-container',
-        rel_type: currentLink?.relationship_type || ''
+        source_label: link.source_label,
+        rel_type: link.relationship_type,
+        target_label: link.target_label,
+        source_database: null
       });
     } catch (indexErr) {
       console.error('Failed to show relationship index:', indexErr);
@@ -4565,7 +4574,7 @@ function pollDiscoveredImportStatus(taskId, config) {
           // If we're viewing an Active import link, refresh the sync status to show updated counts
           if (currentLink && currentLink.id && task.link_def_id === currentLink.id) {
             setTimeout(() => {
-              showSyncStatusForActiveImportLink(currentLink.id);
+              showSyncStatusForActiveImportLink(currentLink.id, currentLink);
             }, 1000); // Brief delay to ensure database is updated
           }
         } else if (task.status === 'canceled' || task.status === 'cancelled') {
