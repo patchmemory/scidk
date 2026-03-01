@@ -45,7 +45,7 @@ async function renderActiveLinkPanel(link) {
 
   // Build read-only triple display with UID selectors
   const panelHtml = `
-    <div style="margin-bottom: 2rem;">
+    <div id="active-link-triple-container" style="margin-bottom: 2rem;">
       <div style="display: flex; align-items: center; gap: 1rem; padding: 1rem; background: #f5f7fa; border-radius: 6px; margin-bottom: 1.5rem;">
         <span style="padding: 0.5rem 1rem; background: #2196f3; color: white; border-radius: 4px; font-weight: 500;">${escapeHtml(sourceLabel)}</span>
         <span style="color: #666;">→</span>
@@ -72,6 +72,7 @@ async function renderActiveLinkPanel(link) {
         </div>
       </div>
     </div>
+    <div id="active-link-sync-container"></div>
   `;
 
   if (previewContainer) {
@@ -130,8 +131,6 @@ async function loadUIDPropertyOptions(link) {
 
   const sourceLabel = link.source_label;
   const targetLabel = link.target_label;
-  const currentSourceUid = matchConfig.source_uid_property || 'uuid';
-  const currentTargetUid = matchConfig.target_uid_property || 'uuid';
 
   try {
     // Fetch source properties
@@ -143,8 +142,12 @@ async function loadUIDPropertyOptions(link) {
     const sourceData = await sourceResponse.json();
 
     if (sourceData.status === 'success' && sourceData.properties) {
+      // Determine which value to select: stored value > auto-detect > none
+      const storedSourceUid = matchConfig.source_uid_property;
+      const selectedSourceUid = storedSourceUid || autoDetectUidProperty(sourceData.properties);
+
       sourceUidSelect.innerHTML = sourceData.properties.map(prop =>
-        `<option value="${escapeHtml(prop)}" ${prop === currentSourceUid ? 'selected' : ''}>${escapeHtml(prop)}</option>`
+        `<option value="${escapeHtml(prop)}" ${prop === selectedSourceUid ? 'selected' : ''}>${escapeHtml(prop)}</option>`
       ).join('');
     }
 
@@ -157,8 +160,12 @@ async function loadUIDPropertyOptions(link) {
     const targetData = await targetResponse.json();
 
     if (targetData.status === 'success' && targetData.properties) {
+      // Determine which value to select: stored value > auto-detect > none
+      const storedTargetUid = matchConfig.target_uid_property;
+      const selectedTargetUid = storedTargetUid || autoDetectUidProperty(targetData.properties);
+
       targetUidSelect.innerHTML = targetData.properties.map(prop =>
-        `<option value="${escapeHtml(prop)}" ${prop === currentTargetUid ? 'selected' : ''}>${escapeHtml(prop)}</option>`
+        `<option value="${escapeHtml(prop)}" ${prop === selectedTargetUid ? 'selected' : ''}>${escapeHtml(prop)}</option>`
       ).join('');
     }
   } catch (err) {
@@ -238,11 +245,11 @@ function updateActiveLinkButtons(link) {
 // ===== Active Link Sync Status Functions =====
 
 async function showSyncStatusForActiveImportLink(linkId, link) {
-  const previewContainer = document.getElementById('preview-container');
-  if (!previewContainer) return;
+  const syncContainer = document.getElementById('active-link-sync-container');
+  if (!syncContainer) return;
 
   // Show loading state
-  previewContainer.innerHTML = `
+  syncContainer.innerHTML = `
     <div style="padding: 1rem;">
       <div style="font-size: 0.9em; color: #666;">Loading sync status...</div>
     </div>
@@ -260,7 +267,7 @@ async function showSyncStatusForActiveImportLink(linkId, link) {
 
     if (!data.sync_supported) {
       // Non-import link (algorithmic/script) - skip Sync Status, but show index
-      previewContainer.innerHTML = `
+      syncContainer.innerHTML = `
         <div style="padding: 1.5rem; background: #f5f5f5; border-radius: 6px; margin-bottom: 1.5rem;">
           <h5 style="margin: 0 0 0.75rem 0; color: #333;">Algorithmic Link</h5>
           <div style="font-size: 0.9em; color: #666; margin-bottom: 1rem;">
@@ -304,7 +311,7 @@ async function showSyncStatusForActiveImportLink(linkId, link) {
     const syncStatusIcon = newSinceSync === 0 ? '✓' : '⚠';
     const syncStatusText = newSinceSync === 0 ? 'Up to date' : `${newSinceSync.toLocaleString()} new since last sync`;
 
-    previewContainer.innerHTML = `
+    syncContainer.innerHTML = `
       <div style="padding: 1.5rem; background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%); border-radius: 6px;">
         <h5 style="margin: 0 0 1rem 0; color: #333; display: flex; align-items: center; gap: 0.5rem;">
           <span style="color: ${syncStatusColor};">${syncStatusIcon}</span>
@@ -360,7 +367,7 @@ async function showSyncStatusForActiveImportLink(linkId, link) {
     });
   } catch (err) {
     console.error('Failed to fetch sync status:', err);
-    previewContainer.innerHTML = `
+    syncContainer.innerHTML = `
       <div style="padding: 1rem; background: #ffebee; border-radius: 4px; margin-bottom: 1.5rem;">
         <div style="color: #c62828; font-size: 0.9em;">Failed to load sync status: ${err.message}</div>
       </div>
