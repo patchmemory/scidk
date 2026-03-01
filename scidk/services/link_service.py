@@ -2437,6 +2437,206 @@ class LinkService:
             logger.exception(f"Failed to create validated relationships for link {link_id}")
             raise
 
+    def enrich_relationships_with_task(
+        self,
+        link_id: str,
+        source_label: str,
+        target_label: str,
+        rel_type: str,
+        source_database: str,
+        source_uid_property: str,
+        target_uid_property: str,
+        batch_size: int = 1000
+    ) -> str:
+        """
+        Enrich relationship properties from source database as background task.
+
+        Updates properties on existing relationships in primary without creating
+        new nodes or relationships. Only touches relationships that already exist.
+
+        Returns:
+            Task ID for polling progress
+        """
+        import hashlib
+        from flask import current_app
+
+        now = time.time()
+        tid_src = f"enrich_rels|{link_id}|{source_database}|{now}"
+        task_id = hashlib.sha1(tid_src.encode()).hexdigest()[:12]
+
+        # Create task record
+        task = {
+            'id': task_id,
+            'type': 'enrich_relationships',
+            'status': 'running',
+            'link_def_id': link_id,
+            'source_database': source_database,
+            'source_label': source_label,
+            'target_label': target_label,
+            'rel_type': rel_type,
+            'started': now,
+            'ended': None,
+            'total': 0,
+            'processed': 0,
+            'progress': 0.0,
+            'error': None,
+            'status_message': 'Initializing enrichment...',
+            'relationships_enriched': 0,
+        }
+        current_app.extensions['scidk'].setdefault('tasks', {})[task_id] = task
+
+        # Run in background thread
+        import threading
+        app = current_app._get_current_object()
+
+        def _worker():
+            with app.app_context():
+                try:
+                    self._enrich_relationships_with_progress(
+                        task=task,
+                        source_label=source_label,
+                        target_label=target_label,
+                        rel_type=rel_type,
+                        source_database=source_database,
+                        source_uid_property=source_uid_property,
+                        target_uid_property=target_uid_property,
+                        batch_size=batch_size
+                    )
+                    task['ended'] = time.time()
+                    task['status'] = 'completed'
+                    task['progress'] = 1.0
+                    task['status_message'] = f'Enriched {task["relationships_enriched"]} relationships.'
+                except Exception as e:
+                    logger.exception("Relationship enrichment failed")
+                    task['ended'] = time.time()
+                    task['status'] = 'error'
+                    task['error'] = str(e)
+
+        threading.Thread(target=_worker, daemon=True).start()
+        return task_id
+
+    def _enrich_relationships_with_progress(
+        self,
+        task: Dict[str, Any],
+        source_label: str,
+        target_label: str,
+        rel_type: str,
+        source_database: str,
+        source_uid_property: str,
+        target_uid_property: str,
+        batch_size: int = 1000
+    ):
+        """Execute relationship enrichment with live progress updates to task dict."""
+        from .neo4j_client import get_neo4j_client, get_neo4j_client_for_profile
+
+        # Validate relationship type
+        rel_type = self._validate_relationship_type(rel_type)
+
+        # Get source database client
+        source_client = get_neo4j_client_for_profile(source_database)
+        if not source_client:
+            raise ValueError(f'Source database "{source_database}" not found')
+
+        # Get primary database client
+        primary_client = get_neo4j_client()
+        if not primary_client:
+            raise ValueError('Primary database not configured')
+
+        try:
+            # First, count total relationships in source
+            count_query = f"""
+            MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
+            RETURN count(r) as total
+            """
+            count_results = source_client.execute_read(count_query)
+            total_count = count_results[0]['total'] if count_results else 0
+
+            task['total'] = total_count
+            task['status_message'] = f'Enriching {total_count:,} relationships...'
+
+            if total_count == 0:
+                task['status_message'] = 'No relationships found in source database'
+                return
+
+            # Use keyset pagination to fetch relationships with properties from source
+            last_source_uid = None
+            last_target_uid = None
+            relationships_enriched = 0
+
+            while True:
+                # Build keyset pagination query
+                if last_source_uid is None:
+                    # First batch
+                    data_query = f"""
+                    MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
+                    RETURN a.{source_uid_property} as source_uid,
+                           properties(r) as rel_props,
+                           b.{target_uid_property} as target_uid
+                    ORDER BY source_uid, target_uid
+                    LIMIT {batch_size}
+                    """
+                else:
+                    # Subsequent batches using keyset
+                    data_query = f"""
+                    MATCH (a:{source_label})-[r:{rel_type}]->(b:{target_label})
+                    WHERE (a.{source_uid_property} > $last_source_uid)
+                       OR (a.{source_uid_property} = $last_source_uid AND b.{target_uid_property} > $last_target_uid)
+                    RETURN a.{source_uid_property} as source_uid,
+                           properties(r) as rel_props,
+                           b.{target_uid_property} as target_uid
+                    ORDER BY source_uid, target_uid
+                    LIMIT {batch_size}
+                    """
+
+                # Fetch batch from source
+                if last_source_uid is None:
+                    batch_results = source_client.execute_read(data_query)
+                else:
+                    batch_results = source_client.execute_read(
+                        data_query,
+                        {'last_source_uid': last_source_uid, 'last_target_uid': last_target_uid}
+                    )
+
+                if not batch_results:
+                    break  # No more relationships
+
+                # Prepare batch data for primary update
+                rows = []
+                for record in batch_results:
+                    rows.append({
+                        'source_uid': record['source_uid'],
+                        'target_uid': record['target_uid'],
+                        'rel_props': dict(record['rel_props'])
+                    })
+
+                # Update relationships in primary (MATCH only - never creates)
+                update_query = f"""
+                UNWIND $rows AS row
+                MATCH (a:{source_label} {{{source_uid_property}: row.source_uid}})-[r:{rel_type}]->(b:{target_label} {{{target_uid_property}: row.target_uid}})
+                SET r += row.rel_props
+                RETURN count(r) as updated
+                """
+                update_results = primary_client.execute_write(update_query, {'rows': rows})
+                updated_count = update_results[0]['updated'] if update_results else 0
+
+                relationships_enriched += updated_count
+                task['relationships_enriched'] = relationships_enriched
+                task['processed'] += len(rows)
+                task['progress'] = min(task['processed'] / total_count, 1.0) if total_count > 0 else 1.0
+                task['status_message'] = f'Enriched {relationships_enriched:,} / {total_count:,} relationships...'
+
+                # Update keyset for next batch
+                last_record = batch_results[-1]
+                last_source_uid = last_record['source_uid']
+                last_target_uid = last_record['target_uid']
+
+                # Check if we've processed fewer than batch_size (means we're done)
+                if len(batch_results) < batch_size:
+                    break
+
+        finally:
+            source_client.close()
+
 
 def get_neo4j_client():
     """Get or create Neo4j client instance."""

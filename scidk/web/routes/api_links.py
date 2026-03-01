@@ -32,8 +32,6 @@ def list_links():
     """
     Get all link definitions.
 
-    **DEPRECATED**: Use /api/integrations instead.
-
     Query params:
     - status: Optional status filter ('active', 'pending', 'available')
 
@@ -54,7 +52,7 @@ def list_links():
         ]
     }
     """
-    logger.warning("DEPRECATED: /api/links endpoint called. Use /api/integrations instead.")
+
     try:
         service = _get_link_service()
         links = service.list_all_links()  # NEW: Uses unified method
@@ -1323,6 +1321,82 @@ def get_relationship_index(link_id):
 
     except Exception as e:
         logger.exception("Failed to get relationship index")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/links/<link_id>/enrich', methods=['POST'])
+def enrich_link_relationships(link_id):
+    """
+    Enrich relationship properties from source database for Active import links.
+
+    Updates properties on existing relationships in primary database without
+    re-importing or creating new nodes/relationships. Only works for import
+    links that have source_database in match_config.
+
+    Returns task_id for polling progress.
+
+    Request body (optional):
+    {
+        "batch_size": 1000  // optional, default 1000
+    }
+
+    Returns:
+    {
+        "status": "success",
+        "task_id": "abc123"
+    }
+    """
+    try:
+        service = _get_link_service()
+        link = service.get_link_definition(link_id)
+
+        if not link:
+            return jsonify({
+                'status': 'error',
+                'error': f'Link "{link_id}" not found'
+            }), 404
+
+        # Check if this is an Active import link
+        if link.get('status') != 'active':
+            return jsonify({
+                'status': 'error',
+                'error': 'Only Active links can be enriched'
+            }), 400
+
+        match_config = json.loads(link.get('match_config', '{}')) if isinstance(link.get('match_config'), str) else link.get('match_config', {})
+        source_database = match_config.get('source_database')
+
+        if not source_database:
+            return jsonify({
+                'status': 'error',
+                'error': 'Only import links with source_database can be enriched'
+            }), 400
+
+        # Extract batch size from request body
+        data = request.get_json(force=True, silent=True) or {}
+        batch_size = data.get('batch_size', 1000)
+
+        # Start enrichment task
+        task_id = service.enrich_relationships_with_task(
+            link_id=link_id,
+            source_label=link.get('source_label'),
+            target_label=link.get('target_label'),
+            rel_type=link.get('relationship_type'),
+            source_database=source_database,
+            source_uid_property=match_config.get('source_uid_property', 'uuid'),
+            target_uid_property=match_config.get('target_uid_property', 'uuid'),
+            batch_size=batch_size
+        )
+
+        return jsonify({
+            'status': 'success',
+            'task_id': task_id
+        }), 200
+    except Exception as e:
+        logger.exception("Failed to start enrichment")
         return jsonify({
             'status': 'error',
             'error': str(e)

@@ -335,6 +335,18 @@ async function showSyncStatusForActiveImportLink(linkId, link) {
           </button>
         </div>
       </div>
+
+      <!-- Enrich Relationships Section -->
+      <div style="padding: 1.5rem; background: #fff9e6; border: 1px solid #ffd54f; border-radius: 6px; margin-top: 1.5rem;">
+        <h5 style="margin: 0 0 0.75rem 0; color: #333;">Enrich Relationships</h5>
+        <div style="font-size: 0.9em; color: #666; margin-bottom: 1rem;">
+          Update properties on existing relationships from source without re-importing.
+        </div>
+        <button id="btn-enrich-rels" class="btn btn-sm btn-warning" onclick="enrichRelationships('${linkId}')">
+          Enrich Now
+        </button>
+      </div>
+
       <div id="active-link-index-container"></div>
     `;
 
@@ -541,5 +553,171 @@ async function checkAndResumeRunningJob(linkId) {
 
 // Global variable to track active polling interval
 let activePollingInterval = null;
+
+// ===== Relationship Enrichment Functions =====
+
+async function enrichRelationships(linkId) {
+  console.log('[enrichRelationships] Starting enrichment for link:', linkId);
+
+  const confirmed = confirm(
+    'Enrich relationship properties from source database?\n\n' +
+    'This will update properties on existing relationships in primary ' +
+    'without creating new nodes or relationships.'
+  );
+
+  if (!confirmed) return;
+
+  const enrichBtn = document.getElementById('btn-enrich-rels');
+  if (enrichBtn) {
+    enrichBtn.disabled = true;
+    enrichBtn.textContent = 'Enriching...';
+  }
+
+  showToast('Starting enrichment...', 'info');
+
+  try {
+    const response = await fetch(`/api/links/${linkId}/enrich`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ batch_size: 1000 })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || result.status === 'error') {
+      throw new Error(result.error || 'Enrichment failed');
+    }
+
+    const taskId = result.task_id;
+    console.log('[enrichRelationships] Got task_id:', taskId);
+
+    // Show progress UI
+    const previewContainer = document.getElementById('preview-container');
+    if (previewContainer) {
+      // Find the enrich section and replace it with progress UI
+      const enrichSection = previewContainer.querySelector('[id^="enrich-section"]') ||
+                           previewContainer.querySelector('.btn-warning')?.closest('div[style*="background: #fff9e6"]');
+
+      if (enrichSection) {
+        enrichSection.innerHTML = `
+          <h5 style="margin: 0 0 0.75rem 0; color: #333;">Enriching Relationships</h5>
+          <div id="enrich-progress-message" style="margin-bottom: 1rem; font-weight: 500;">Initializing enrichment...</div>
+          <div style="background: #e0e0e0; border-radius: 4px; height: 24px; overflow: hidden; margin-bottom: 0.5rem;">
+            <div id="enrich-progress-fill" style="background: #ff9800; height: 100%; width: 0%; transition: width 0.3s ease;"></div>
+          </div>
+          <div id="enrich-progress-stats" style="font-size: 0.85em; color: #666; margin-bottom: 0.75rem;"></div>
+          <button id="btn-cancel-enrich" class="btn btn-sm btn-outline-danger" onclick="cancelEnrichment('${taskId}')">Cancel</button>
+        `;
+      }
+    }
+
+    showToast('Enrichment started - tracking progress...', 'info');
+    pollEnrichmentStatus(taskId, linkId);
+  } catch (err) {
+    console.error('Enrichment failed to start:', err);
+    showToast(`Enrichment failed: ${err.message}`, 'error');
+
+    if (enrichBtn) {
+      enrichBtn.disabled = false;
+      enrichBtn.textContent = 'Enrich Now';
+    }
+  }
+}
+
+function pollEnrichmentStatus(taskId, linkId) {
+  console.log('[pollEnrichmentStatus] Starting polling for task:', taskId);
+
+  // Clear any existing polling interval
+  if (activePollingInterval) {
+    clearInterval(activePollingInterval);
+  }
+
+  activePollingInterval = setInterval(async () => {
+    try {
+      const response = await fetch(`/api/tasks/${taskId}`);
+      const task = await response.json();
+
+      console.log('[pollEnrichmentStatus] Task status:', task);
+
+      // Update progress UI
+      const progressFill = document.getElementById('enrich-progress-fill');
+      const progressMessage = document.getElementById('enrich-progress-message');
+      const progressStats = document.getElementById('enrich-progress-stats');
+
+      if (progressFill && task.progress !== undefined) {
+        const progressPercent = Math.round(task.progress * 100);
+        progressFill.style.width = `${progressPercent}%`;
+      }
+
+      if (progressMessage && task.status_message) {
+        progressMessage.textContent = task.status_message;
+      }
+
+      if (progressStats && task.processed !== undefined && task.total !== undefined) {
+        progressStats.textContent = `${task.processed.toLocaleString()} / ${task.total.toLocaleString()} relationships processed`;
+      }
+
+      // Check if completed
+      if (task.status === 'completed') {
+        clearInterval(activePollingInterval);
+        activePollingInterval = null;
+
+        showToast(`Enrichment complete! ${task.relationships_enriched || 0} relationships enriched.`, 'success');
+
+        // Reload the Active link panel to show updated status
+        setTimeout(() => {
+          if (currentLink && currentLink.id === linkId) {
+            showSyncStatusForActiveImportLink(linkId, currentLink);
+          }
+        }, 1000);
+      } else if (task.status === 'error' || task.status === 'failed') {
+        clearInterval(activePollingInterval);
+        activePollingInterval = null;
+
+        showToast(`Enrichment failed: ${task.error || 'Unknown error'}`, 'error');
+
+        // Show error in UI
+        if (progressMessage) {
+          progressMessage.innerHTML = `<span style="color: #f44336;">✗ Enrichment failed: ${task.error || 'Unknown error'}</span>`;
+        }
+      }
+    } catch (err) {
+      console.error('[pollEnrichmentStatus] Polling error:', err);
+      clearInterval(activePollingInterval);
+      activePollingInterval = null;
+      showToast('Failed to poll enrichment status', 'error');
+    }
+  }, 2000);  // Poll every 2 seconds
+}
+
+async function cancelEnrichment(taskId) {
+  if (!confirm('Are you sure you want to cancel enrichment?')) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/tasks/${taskId}/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (response.ok) {
+      showToast('Enrichment cancelled', 'info');
+
+      if (activePollingInterval) {
+        clearInterval(activePollingInterval);
+        activePollingInterval = null;
+      }
+
+      // Reload the panel
+      if (currentLink) {
+        showSyncStatusForActiveImportLink(currentLink.id, currentLink);
+      }
+    }
+  } catch (err) {
+    console.error('Failed to cancel enrichment:', err);
+    showToast('Failed to cancel enrichment', 'error');
+  }
+}
 
 // Poll discovered import task status
