@@ -105,8 +105,15 @@ def seed_demo_data(reset, db_path, pix_path, neo4j):
     print("\n💡 Tip: Run with --reset to clean and reseed all data")
 
 
-def clean_demo_data(db_path: str, pix_path: str, neo4j: bool):
-    """Clean all demo data from databases and file system."""
+def clean_demo_data(db_path: str, pix_path: str, neo4j: bool, demo_data_dir: Path = None):
+    """Clean all demo data from databases and file system.
+
+    Args:
+        db_path: Path to auth database
+        pix_path: Path to path index database
+        neo4j: Whether to clean Neo4j data
+        demo_data_dir: Path to demo_data directory (defaults to './demo_data')
+    """
     # Clean auth database (users and sessions)
     if os.path.exists(db_path):
         conn = sqlite3.connect(db_path)
@@ -141,7 +148,8 @@ def clean_demo_data(db_path: str, pix_path: str, neo4j: bool):
             print(f"  Warning: Could not clean Neo4j data: {e}")
 
     # Clean demo_data directory
-    demo_data_dir = Path('demo_data')
+    if demo_data_dir is None:
+        demo_data_dir = Path('demo_data')
     if demo_data_dir.exists():
         shutil.rmtree(demo_data_dir)
 

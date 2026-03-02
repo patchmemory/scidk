@@ -59,7 +59,7 @@ def api_chat_graphrag():
         # Reuse existing Neo4j connection params
         try:
             from ...services.neo4j_client import get_neo4j_params
-            uri, user, pwd, database, auth_mode = get_neo4j_params(app)
+            uri, user, pwd, database, auth_mode = get_neo4j_params(current_app)
         except Exception:
             uri = user = pwd = database = auth_mode = None
         if not uri:
@@ -253,7 +253,7 @@ def api_chat_context_refresh():
         try:
             from ...services.neo4j_client import get_neo4j_params
             from neo4j import GraphDatabase  # type: ignore
-            uri, user, pwd, database, auth_mode = get_neo4j_params(app)
+            uri, user, pwd, database, auth_mode = get_neo4j_params(current_app)
             if not uri:
                 from ...services.graphrag_schema import normalize_error
                 return jsonify(normalize_error(status="error", error="Neo4j not configured", code="NEO4J_CONFIG_MISSING", hint="Set NEO4J_URI and credentials or NEO4J_AUTH=none")), 500

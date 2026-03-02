@@ -591,7 +591,7 @@ def test_enrich_link_with_properties(client):
         'name': 'Test Import Link',
         'source_label': 'Source',
         'target_label': 'Target',
-        'match_strategy': 'graph_import',
+        'match_strategy': 'id',
         'match_config': {
             'source_database': 'TestDB',
             'source_uid_property': 'uuid',
@@ -638,7 +638,7 @@ def test_enrich_link_with_empty_properties(client):
         'name': 'Test Import Link 2',
         'source_label': 'Source',
         'target_label': 'Target',
-        'match_strategy': 'graph_import',
+        'match_strategy': 'id',
         'match_config': {
             'source_database': 'TestDB',
             'source_uid_property': 'uuid',
