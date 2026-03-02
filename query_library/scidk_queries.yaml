@@ -1,0 +1,133 @@
+# SciDK Query Library
+#
+# Curated Cypher examples for Text2CypherRetriever.
+# Each entry provides a pattern that guides the LLM to generate correct queries.
+#
+# Format:
+#   id: Unique identifier
+#   description: Human-readable description of what this query does
+#   intent: Category (find_counts, find_recent, find_gaps, find_relationships, etc.)
+#   example_questions: List of natural language questions that match this pattern
+#   cypher: The Cypher query template
+#   status: stable | candidate | deprecated
+
+# Validation Query 1: Count files by type
+- id: count_files_by_type
+  description: "Count files grouped by file type or interpreter type"
+  intent: find_counts
+  example_questions:
+    - "How many files have been indexed and what types are they?"
+    - "What file types are there?"
+    - "Count files by type"
+    - "Show me file type distribution"
+  cypher: |
+    MATCH (d:Dataset)
+    RETURN d.file_type AS type, COUNT(d) AS count
+    ORDER BY count DESC
+  status: stable
+
+# Validation Query 2: Recent scans
+- id: recent_scans
+  description: "Get the most recently scanned or indexed files"
+  intent: find_recent
+  example_questions:
+    - "What files were scanned most recently?"
+    - "Show me files added recently"
+    - "List recent scans"
+    - "What was scanned today?"
+  cypher: |
+    MATCH (d:Dataset)
+    WHERE d.scanned_at IS NOT NULL
+    RETURN d.filename AS filename, d.path AS path, d.scanned_at AS scanned_at
+    ORDER BY d.scanned_at DESC
+    LIMIT 20
+  status: stable
+
+# Validation Query 3: Uninterpreted files
+- id: uninterpreted_files
+  description: "Find files that have not been interpreted yet"
+  intent: find_gaps
+  example_questions:
+    - "Are there any files that haven't been interpreted yet?"
+    - "Which files have not been processed?"
+    - "Show me uninterpreted files"
+    - "Find files without interpreter results"
+  cypher: |
+    MATCH (d:Dataset)
+    WHERE NOT (d)-[:INTERPRETED_BY]->(:Interpreter)
+    RETURN d.filename AS filename, d.path AS path, d.scanned_at AS scanned_at
+    LIMIT 50
+  status: stable
+
+# Validation Query 4: Relationships for specific file
+- id: file_relationships
+  description: "Find all nodes and relationships connected to a specific file"
+  intent: find_relationships
+  example_questions:
+    - "What's connected to [filename]?"
+    - "Show me relationships for [path]"
+    - "What is linked to this file?"
+    - "Find connections for [dataset]"
+  cypher: |
+    MATCH (d:Dataset {filename: $filename})
+    OPTIONAL MATCH (d)-[r]-(related)
+    RETURN d, type(r) AS relationship, related
+    LIMIT 50
+  status: stable
+
+# Additional Query 1: Count all files
+- id: count_all_files
+  description: "Count total number of indexed files"
+  intent: find_counts
+  example_questions:
+    - "How many files are indexed?"
+    - "Total file count"
+    - "Count all files"
+  cypher: |
+    MATCH (d:Dataset)
+    RETURN COUNT(d) AS total_files
+  status: stable
+
+# Additional Query 2: Find files by name pattern
+- id: find_files_by_name
+  description: "Search for files by name or path pattern"
+  intent: find
+  example_questions:
+    - "Find files named [pattern]"
+    - "Search for [filename]"
+    - "Show me files matching [pattern]"
+  cypher: |
+    MATCH (d:Dataset)
+    WHERE d.filename CONTAINS $pattern OR d.path CONTAINS $pattern
+    RETURN d.filename AS filename, d.path AS path, d.file_type AS type
+    LIMIT 50
+  status: stable
+
+# Additional Query 3: Interpreter execution history
+- id: interpreter_runs
+  description: "Get history of interpreter executions"
+  intent: find_recent
+  example_questions:
+    - "Show me interpreter runs"
+    - "What interpreters have been executed?"
+    - "List interpreter history"
+  cypher: |
+    MATCH (d:Dataset)-[r:INTERPRETED_BY]->(i:Interpreter)
+    RETURN d.filename AS filename, i.name AS interpreter, r.executed_at AS executed_at
+    ORDER BY r.executed_at DESC
+    LIMIT 50
+  status: stable
+
+# Additional Query 4: Files by interpreter type
+- id: files_by_interpreter
+  description: "Find files processed by a specific interpreter"
+  intent: find
+  example_questions:
+    - "Show me files interpreted as [type]"
+    - "Which files were processed by [interpreter]?"
+    - "Find all [DICOM/FASTQ/CSV] files"
+  cypher: |
+    MATCH (d:Dataset)-[:INTERPRETED_BY]->(i:Interpreter {name: $interpreter_name})
+    RETURN d.filename AS filename, d.path AS path, d.file_type AS type
+    LIMIT 50
+  status: stable

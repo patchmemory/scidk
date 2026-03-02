@@ -5,7 +5,7 @@
   <!-- Left Column: Chat Interface -->
   <div class="chat-panel">
     <div class="chat-header">
-      <h2>💬 Chat <span class="badge" style="background:#4a90e2; color:#fff; font-size:0.6em; padding:0.2em 0.5em; border-radius:3px">GraphRAG</span></h2>
+      <h2>💬 Chat <span id="engine-badge" class="badge" style="background:#4a90e2; color:#fff; font-size:0.6em; padding:0.2em 0.5em; border-radius:3px">GraphRAG</span></h2>
       <div class="chat-controls">
         <select id="llm-selector" class="form-select form-select-sm" style="max-width: 180px; margin-right: 0.5rem;" title="LLM Provider">
           <option value="anthropic">🤖 Claude</option>
@@ -36,6 +36,10 @@
         <button type="submit" class="btn btn-sm btn-primary" data-testid="chat-send">Send</button>
         <button type="button" id="clear-history" class="btn btn-sm btn-secondary" data-testid="chat-clear">Clear</button>
         <button type="button" id="save-session" class="btn btn-sm btn-outline-secondary">Save Session</button>
+      </div>
+      <!-- Tool indicator (hidden by default, shown during query execution) -->
+      <div id="tool-indicator" style="display: none; margin-top: 0.5rem; font-size: 0.85em; color: #4a90e2;">
+        <span class="tool-indicator-text">→ Querying knowledge graph...</span>
       </div>
     </form>
   </div>
@@ -1607,6 +1611,23 @@
     checkSchemaCache();
     setInterval(checkSchemaCache, 60000); // Update every minute
 
+    // Engine badge update helper
+    function updateEngineBadge(engine) {
+      const badge = document.getElementById('engine-badge');
+      if (!badge) return;
+
+      if (engine === 'graph_query') {
+        badge.textContent = '📊 Graph Query';
+        badge.style.background = '#28a745';  // Green for fast lookup
+      } else if (engine === 'reasoning') {
+        badge.textContent = '🤔 Reasoning';
+        badge.style.background = '#fd7e14';  // Orange for reasoning
+      } else {
+        badge.textContent = 'GraphRAG';
+        badge.style.background = '#4a90e2';  // Default blue
+      }
+    }
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const message = input.value.trim();
@@ -1623,70 +1644,62 @@
       appendMessage('user', message);
       input.value = '';
 
+      // Show tool indicator
+      const toolIndicator = document.getElementById('tool-indicator');
+      if (toolIndicator) {
+        toolIndicator.style.display = 'block';
+      }
+
       // Add thinking indicator
       const thinkingMsg = appendThinkingMessage();
 
       try {
-        // Use streaming endpoint for better UX
-        const resp = await fetch('/api/chat/graphrag/v2/stream', {
+        // Use main GraphRAG endpoint (now with intent classification)
+        const resp = await fetch('/api/chat/graphrag', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message, provider })
+          body: JSON.stringify({ message, provider, verbose: verboseCheckbox.checked })
         });
 
         if (!resp.ok) {
           removeThinkingMessage(thinkingMsg);
+          if (toolIndicator) {
+            toolIndicator.style.display = 'none';
+          }
           const errorData = await resp.json();
           appendMessage('assistant', `Error: ${errorData.error || 'Unknown error'}`, null, lastUserQuery);
           return;
         }
 
-        // Handle streaming response
-        currentStreamedMessage = '';
-        const reader = resp.body.getReader();
-        const decoder = new TextDecoder();
-        let assistantMsgEl = null;
+        // Handle JSON response (non-streaming)
+        const data = await resp.json();
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        // Remove thinking indicator
+        removeThinkingMessage(thinkingMsg);
 
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const event = JSON.parse(line.slice(6));
-
-                if (event.type === 'token') {
-                  // Remove thinking indicator on first token
-                  if (assistantMsgEl === null) {
-                    removeThinkingMessage(thinkingMsg);
-                    assistantMsgEl = appendStreamingMessage();
-                  }
-                  currentStreamedMessage += event.content;
-                  updateStreamingMessage(assistantMsgEl, currentStreamedMessage);
-
-                } else if (event.type === 'done') {
-                  // Finalize message with metadata
-                  const metadata = event.metadata || {};
-                  finalizeStreamingMessage(assistantMsgEl, currentStreamedMessage, metadata, lastUserQuery);
-
-                } else if (event.type === 'error') {
-                  removeThinkingMessage(thinkingMsg);
-                  appendMessage('assistant', `Error: ${event.error}`, null, lastUserQuery);
-                  break;
-                }
-              } catch (parseErr) {
-                console.error('Failed to parse SSE event:', parseErr);
-              }
-            }
-          }
+        // Hide tool indicator
+        if (toolIndicator) {
+          toolIndicator.style.display = 'none';
         }
+
+        // Update badge based on engine type
+        updateEngineBadge(data.engine);
+
+        // Build metadata object including cypher_query for citations
+        const metadata = {
+          ...data.metadata,
+          engine: data.engine,
+          cypher_query: data.cypher_query
+        };
+
+        // Add assistant message
+        appendMessage('assistant', data.reply, metadata, lastUserQuery);
 
       } catch (err) {
         removeThinkingMessage(thinkingMsg);
+        if (toolIndicator) {
+          toolIndicator.style.display = 'none';
+        }
         appendMessage('assistant', `Error: ${err.message}`, null, lastUserQuery);
       }
     });
@@ -1809,6 +1822,22 @@
           }
         }
 
+        // Add citations panel for graph queries (always render, empty if no cypher)
+        let citationsHtml = '';
+        const cypherQuery = msg.metadata?.cypher_query || msg.cypher_query;
+        if (msg.role === 'assistant' && cypherQuery) {
+          citationsHtml = `
+            <div class="citations-panel" style="margin-top:0.75rem; padding-top:0.75rem; border-top:1px dashed #ddd;">
+              <details style="cursor:pointer;">
+                <summary style="font-size:0.85em; color:#666; user-select:none;">
+                  <strong>📊 Source Query</strong> (click to expand)
+                </summary>
+                <pre style="margin-top:0.5rem; padding:0.75rem; background:#f8f9fa; border-radius:4px; font-size:0.85em; overflow-x:auto; max-height:200px; overflow-y:auto;">${escapeHtml(cypherQuery)}</pre>
+              </details>
+            </div>
+          `;
+        }
+
         // Add feedback UI for assistant messages
         if (msg.role === 'assistant' && msg.query) {
           const feedbackId = `feedback-${idx}`;
@@ -1867,6 +1896,7 @@
           <div class="chat-message-role">${msg.role === 'user' ? '👤 You' : '🤖 Assistant'}</div>
           <div class="chat-message-content">${escapeHtml(msg.content)}</div>
           ${metadataHtml}
+          ${citationsHtml}
           ${feedbackHtml}
         </div>`;
       }).join('');
@@ -1942,7 +1972,9 @@
       const feedbackData = {
         query: msg.query || '',
         entities_extracted: (msg.metadata && msg.metadata.entities) || {},
-        cypher_generated: msg.cypher || null,
+        cypher_generated: msg.cypher || (msg.metadata && msg.metadata.cypher_query) || null,
+        cypher_query: (msg.metadata && msg.metadata.cypher_query) || null,  // New field for Sprint 1
+        engine: (msg.metadata && msg.metadata.engine) || 'unknown',  // New field for Sprint 1
         session_id: null,
         message_id: msg.id || null,
         feedback: {

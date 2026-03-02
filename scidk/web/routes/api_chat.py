@@ -122,55 +122,115 @@ def api_chat_graphrag():
                 schema_cache['last_loaded_ts'] = now
             neo4j_schema = schema_cache.get('schema') or {"labels": [], "relationships": []}
 
-            # Use new QueryEngine with entity extraction
-            from ...services.graphrag.query_engine import QueryEngine
-            anthropic_key = os.environ.get('SCIDK_ANTHROPIC_API_KEY')
-            verbose = (os.environ.get('SCIDK_GRAPHRAG_VERBOSE') or '').strip().lower() in ('1','true','yes')
+            # Classify intent for routing (LOOKUP vs REASONING)
+            from ...services.graphrag.intent_classifier import classify, Intent
+            intent = classify(message)
 
-            engine = QueryEngine(
-                driver=driver,
-                neo4j_schema=neo4j_schema,
-                anthropic_api_key=anthropic_key,
-                examples=t2c_examples,
-                verbose=verbose
-            )
+            # Route based on intent
+            if intent == Intent.LOOKUP:
+                # LOOKUP path: Fast Text2Cypher via QueryEngine
+                from ...services.graphrag.query_engine import QueryEngine
+                anthropic_key = os.environ.get('SCIDK_ANTHROPIC_API_KEY')
+                verbose = (os.environ.get('SCIDK_GRAPHRAG_VERBOSE') or '').strip().lower() in ('1','true','yes')
 
-            # Execute query
-            result = engine.query(message)
+                query_engine = QueryEngine(
+                    driver=driver,
+                    neo4j_schema=neo4j_schema,
+                    anthropic_api_key=anthropic_key,
+                    database=database,
+                    verbose=verbose
+                )
 
-            if result.get('status') == 'error':
-                return jsonify(result), 500
+                # Execute query
+                result = query_engine.query(message)
 
-            result_text = result.get('answer', 'No results found')
+                if result.get('status') == 'error':
+                    return jsonify(result), 500
+
+                result_text = result.get('answer', 'No results found')
+
+                # Build response with engine type and cypher for UI
+                response_data = {
+                    "status": "ok",
+                    "reply": result_text,
+                    "engine": result.get('engine', 'graph_query'),  # For UI badge
+                    "cypher_query": result.get('cypher_query'),  # For citations panel
+                }
+
+                # Include metadata
+                response_data["metadata"] = {
+                    "entities": result.get('entities', {}),
+                    "execution_time_ms": result.get('execution_time_ms', 0),
+                    "result_count": result.get('result_count', 0)
+                }
+
+                if verbose and 'results' in result:
+                    response_data["metadata"]["results"] = result['results']
+
+            else:
+                # REASONING path: Use existing /v2 provider architecture
+                # This gives full LLM reasoning with schema context
+                from ...ai.schema_context import get_schema_context
+                from ...ai.provider_factory import LLMProviderFactory
+
+                schema_context = get_schema_context(driver, database=database or "neo4j")
+
+                # Build settings dict from environment/config
+                settings = {
+                    'chat_llm_provider': data.get('provider') or os.environ.get('SCIDK_CHAT_LLM_PROVIDER'),
+                    'chat_ollama_endpoint': os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT'),
+                    'chat_ollama_model': os.environ.get('SCIDK_CHAT_OLLAMA_MODEL'),
+                    'chat_claude_api_key': os.environ.get('SCIDK_CHAT_CLAUDE_API_KEY'),
+                    'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
+                }
+
+                provider_obj = LLMProviderFactory.from_settings(settings)
+
+                # Base system prompt
+                base_prompt = "You are a research data assistant for SciDK. Answer questions about the knowledge graph and scientific data."
+
+                # Complete (non-streaming)
+                start_time_reasoning = time.time()
+                response_text = provider_obj.complete(
+                    user_message=message,
+                    system_prompt=base_prompt,
+                    schema_context=schema_context
+                )
+                elapsed_ms = int((time.time() - start_time_reasoning) * 1000)
+
+                # Build response
+                provider_info = provider_obj.health_check()
+
+                response_data = {
+                    "status": "ok",
+                    "reply": response_text,
+                    "engine": "reasoning",  # For UI badge
+                    "metadata": {
+                        "provider": provider_info.get("provider"),
+                        "model": provider_info.get("model"),
+                        "cached_schema": schema_context.get("cached", False),
+                        "schema_labels_count": len(schema_context.get("labels", [])),
+                        "execution_time_ms": elapsed_ms
+                    }
+                }
 
             # Track history and minimal audit
             store = _get_ext().setdefault('chat', {"history": []})
-            store['history'].extend([{"role":"user","content":message},{"role":"assistant","content":result_text}])
+            store['history'].extend([{"role":"user","content":message},{"role":"assistant","content":response_data.get('reply','')}])
             audit = _get_ext().setdefault('telemetry', {}).setdefault('graphrag_audit', [])
             try:
                 audit.append({
                     'ts': int(time.time()),
                     'message': message[:500],
-                    'reply_len': len(result_text or ''),
-                    'execution_time_ms': result.get('execution_time_ms', 0),
+                    'reply_len': len(response_data.get('reply', '') or ''),
+                    'execution_time_ms': response_data.get('metadata', {}).get('execution_time_ms', 0),
+                    'engine': response_data.get('engine', 'unknown'),
                 })
             except Exception:
                 pass
 
-            # Build response with metadata for enhanced UI
-            response_data = {
-                "status": "ok",
-                "reply": result_text,
-                "history": store['history']
-            }
-
-            # Include metadata if verbose mode
-            if verbose:
-                response_data["metadata"] = {
-                    "entities": result.get('entities', {}),
-                    "execution_time_ms": result.get('execution_time_ms', 0),
-                    "result_count": len(result.get('results', []))
-                }
+            # Add history to response
+            response_data["history"] = store['history']
 
             return jsonify(response_data), 200
         except Exception as e:
@@ -1032,12 +1092,13 @@ def api_chat_graphrag_v2():
         )
         elapsed_ms = int((time.time() - start_time) * 1000)
 
-        # Build response
+        # Build response with engine field for UI badge
         provider_info = provider.health_check()
 
         return jsonify({
             "status": "ok",
             "reply": response_text,
+            "engine": "reasoning",  # For UI badge
             "metadata": {
                 "provider": provider_info.get("provider"),
                 "model": provider_info.get("model"),
@@ -1129,9 +1190,9 @@ def api_chat_graphrag_v2_stream():
 
             elapsed_ms = int((time.time() - start_time) * 1000)
 
-            # Send completion metadata
+            # Send completion metadata with engine field for UI badge
             provider_info = provider.health_check()
-            yield f"data: {json.dumps({'type': 'done', 'metadata': {'provider': provider_info.get('provider'), 'model': provider_info.get('model'), 'execution_time_ms': elapsed_ms}})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'metadata': {'provider': provider_info.get('provider'), 'model': provider_info.get('model'), 'execution_time_ms': elapsed_ms, 'engine': 'reasoning'}})}\n\n"
 
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"

@@ -1,4 +1,5 @@
-# Runtime dependencies (must match pyproject.toml [project.dependencies])
+# Core SciDK runtime dependencies (no ML/GPU requirements)
+# For GraphRAG/ChatSEEK features, use: pip install -r requirements-graphrag.txt
 Flask>=3.0
 ijson>=3.2
 openpyxl>=3.1

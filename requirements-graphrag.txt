@@ -1,0 +1,33 @@
+# GraphRAG / ChatSEEK dependencies for SciDK
+#
+# ⚠️  WARNING: This installs PyTorch and the full CUDA stack (4-8GB download)
+#
+# These dependencies enable the GraphRAG chat features including:
+# - Intent classification (LOOKUP vs REASONING routing)
+# - Text-to-Cypher query generation with neo4j-graphrag
+# - Semantic embeddings with sentence-transformers
+#
+# Performance notes:
+# - Best performance: NVIDIA GPU with CUDA support
+# - Fallback: CPU-only mode (slower but functional)
+# - sentence-transformers will auto-detect CUDA availability
+#
+# Installation:
+#   pip install -r requirements-graphrag.txt
+#
+# This will install core dependencies PLUS GraphRAG features.
+#
+# After installation, enable in .env:
+#   SCIDK_GRAPHRAG_ENABLED=1
+#
+# Lightweight alternative:
+# If you don't need chat features, use: pip install -r requirements.txt
+# The GraphRAG endpoints will return a clear "disabled" message.
+
+# Include core dependencies
+-r requirements.txt
+
+# GraphRAG / ChatSEEK integration (Sprint 1)
+# WARNING: These pull in PyTorch (~2GB) + optional CUDA libraries (~4-6GB)
+neo4j-graphrag>=0.3.0
+sentence-transformers>=2.2.0
