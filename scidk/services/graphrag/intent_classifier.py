@@ -42,7 +42,7 @@ REASONING_PATTERNS = [
     r"\bwhy\b",
     r"\bexplain\b",
     r"\bcompare\b",
-    r"\bsummariz[e"]?\b",
+    r"\bsummariz[e]?\b",
     r"\bwhat.s the state\b",
     r"\bhelp me understand\b",
     r"\bwhat should\b",
