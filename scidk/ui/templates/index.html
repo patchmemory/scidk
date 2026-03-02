@@ -239,12 +239,22 @@
       const response = await fetch('/api/auth/status');
       const authData = await response.json();
       const isAdmin = authData.role === 'admin';
+      const hasNoUsers = authData.user_count === 0;
 
       // Handle admin-only elements
       const adminOnlyItems = document.querySelectorAll('.admin-only');
       const nonAdminMessage = document.querySelector('.non-admin-message');
 
-      if (!isAdmin) {
+      // Special case: If there are no users, show Users tab for first-time setup
+      if (hasNoUsers) {
+        // Show all admin items to allow initial admin creation
+        adminOnlyItems.forEach(item => {
+          item.style.display = 'block';
+        });
+        if (nonAdminMessage) {
+          nonAdminMessage.style.display = 'none';
+        }
+      } else if (!isAdmin) {
         // Hide admin-only items and show message
         adminOnlyItems.forEach(item => {
           item.style.display = 'none';

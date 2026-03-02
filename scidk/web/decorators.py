@@ -71,7 +71,8 @@ def require_role(*allowed_roles):
 def require_admin(f):
     """Decorator to require admin role for a route.
 
-    Shortcut for @require_role('admin').
+    Shortcut for @require_role('admin'), with special handling for first-time setup.
+    When there are zero users, allows unauthenticated access for initial admin creation.
 
     Usage:
         @app.route('/admin/users')
@@ -85,4 +86,48 @@ def require_admin(f):
     Returns:
         Decorated function
     """
-    return require_role('admin')(f)
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # In test mode with auth disabled, allow all requests
+        import os
+        import sys
+        from flask import current_app
+        is_testing = (
+            current_app.config.get('TESTING', False) or
+            'pytest' in sys.modules or
+            os.environ.get('SCIDK_E2E_TEST')
+        )
+        if is_testing and not os.environ.get('PYTEST_TEST_AUTH'):
+            from ..core.auth import get_auth_manager
+            db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+            auth = get_auth_manager(db_path=db_path)
+            if not auth.is_enabled():
+                return f(*args, **kwargs)
+
+        # Check for first-time setup (zero users) - allow unauthenticated access
+        from ..core.auth import get_auth_manager
+        from flask import current_app
+        db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+        auth = get_auth_manager(db_path=db_path)
+        try:
+            user_count = len(auth.list_users(include_disabled=True))
+            if user_count == 0:
+                # First-time setup - allow access without authentication
+                return f(*args, **kwargs)
+        except Exception:
+            pass
+
+        # Normal admin role check
+        if not hasattr(g, 'scidk_user_role'):
+            return jsonify({'error': 'Authentication required'}), 401
+
+        user_role = g.scidk_user_role
+        if user_role != 'admin':
+            return jsonify({
+                'error': 'Insufficient permissions',
+                'required_roles': ['admin'],
+                'your_role': user_role
+            }), 403
+
+        return f(*args, **kwargs)
+    return decorated_function

@@ -244,6 +244,12 @@ def api_auth_status():
     auth = _get_auth_manager()
     auth_enabled = auth.is_enabled()
 
+    # Get user count for first-time setup detection
+    try:
+        user_count = len(auth.list_users(include_disabled=True))
+    except Exception:
+        user_count = 0
+
     # If auth is disabled, everyone is authenticated
     if not auth_enabled:
         return jsonify({
@@ -252,6 +258,7 @@ def api_auth_status():
             'auth_enabled': False,
             'token_valid': False,
             'session_locked': False,
+            'user_count': user_count,
         }), 200
 
     # Check if user has valid session (try multi-user first)
@@ -276,6 +283,7 @@ def api_auth_status():
             'auth_enabled': True,
             'token_valid': True,
             'session_locked': session_locked,
+            'user_count': user_count,
         }), 200
     else:
         return jsonify({
@@ -286,6 +294,7 @@ def api_auth_status():
             'auth_enabled': True,
             'token_valid': False,
             'session_locked': False,
+            'user_count': user_count,
         }), 200
 
 
