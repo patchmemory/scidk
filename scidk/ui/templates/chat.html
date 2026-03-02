@@ -733,7 +733,7 @@
     // Load saved sessions into dropdown
     async function loadSessions() {
       try {
-        const resp = await fetch('/api/chat/sessions');
+        const resp = await fetch(window.SCIDK_BASE + '/api/chat/sessions');
         const data = await resp.json();
 
         // Keep "Current Session" option
@@ -769,7 +769,7 @@
 
       try {
         // Create session
-        const sessionResp = await fetch('/api/chat/sessions', {
+        const sessionResp = await fetch(window.SCIDK_BASE + '/api/chat/sessions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: sessionName })
@@ -846,7 +846,7 @@
 
     async function showSessionManager() {
       try {
-        const resp = await fetch('/api/chat/sessions');
+        const resp = await fetch(window.SCIDK_BASE + '/api/chat/sessions');
         const data = await resp.json();
 
         const sessions = data.sessions || [];
@@ -1159,7 +1159,7 @@
 
           const newName = prompt('Enter a name for the imported session (leave blank to keep original):', data.session?.name || '');
 
-          const resp = await fetch('/api/chat/sessions/import', {
+          const resp = await fetch(window.SCIDK_BASE + '/api/chat/sessions/import', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1218,7 +1218,7 @@
       queryInfoText.style.color = '#666';
 
       try {
-        const resp = await fetch('/api/graph/query', {
+        const resp = await fetch(window.SCIDK_BASE + '/api/graph/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query }),
@@ -1319,7 +1319,7 @@
 
       try {
         // Save to database via API
-        const resp = await fetch('/api/queries', {
+        const resp = await fetch(window.SCIDK_BASE + '/api/queries', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1353,7 +1353,7 @@
     loadQueryBtn.addEventListener('click', async () => {
       try {
         // Load queries from database
-        const resp = await fetch('/api/queries?sort_by=last_used_at');
+        const resp = await fetch(window.SCIDK_BASE + '/api/queries?sort_by=last_used_at');
         const data = await resp.json();
 
         if (!resp.ok || !data.queries || data.queries.length === 0) {
@@ -1460,7 +1460,7 @@
     // Load and check provider status on page load
     async function checkProviderStatus() {
       try {
-        const resp = await fetch('/api/chat/providers');
+        const resp = await fetch(window.SCIDK_BASE + '/api/chat/providers');
         const data = await resp.json();
         const providers = data.providers || {};
 
@@ -1497,7 +1497,7 @@
 
         // Fetch hardware info separately for more details
         try {
-          const healthResp = await fetch('/api/health');
+          const healthResp = await fetch(window.SCIDK_BASE + '/api/health');
           const healthData = await healthResp.json();
 
           if (healthData.hardware && healthData.hardware.gpu) {
@@ -1544,7 +1544,7 @@
 
     async function checkSchemaCache() {
       try {
-        const resp = await fetch('/api/chat/schema/cache/stats');
+        const resp = await fetch(window.SCIDK_BASE + '/api/chat/schema/cache/stats');
         const data = await resp.json();
 
         if (data.size > 0 && data.timestamps) {
@@ -1586,7 +1586,7 @@
       schemaCacheText.style.color = '#666';
 
       try {
-        const resp = await fetch('/api/chat/schema/refresh', { method: 'POST' });
+        const resp = await fetch(window.SCIDK_BASE + '/api/chat/schema/refresh', { method: 'POST' });
         if (resp.ok) {
           schemaCacheText.textContent = 'Schema: refreshed!';
           schemaCacheText.style.color = '#28a745';
@@ -1655,7 +1655,7 @@
 
       try {
         // Use main GraphRAG endpoint (now with intent classification)
-        const resp = await fetch('/api/chat/graphrag', {
+        const resp = await fetch(window.SCIDK_BASE + '/api/chat/graphrag', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message, provider, verbose: verboseCheckbox.checked })
@@ -1938,7 +1938,7 @@
       };
 
       try {
-        const response = await fetch('/api/chat/graphrag/feedback', {
+        const response = await fetch(window.SCIDK_BASE + '/api/chat/graphrag/feedback', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(feedbackData)
@@ -1990,7 +1990,7 @@
       };
 
       try {
-        const response = await fetch('/api/chat/graphrag/feedback', {
+        const response = await fetch(window.SCIDK_BASE + '/api/chat/graphrag/feedback', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(feedbackData)

@@ -29,7 +29,7 @@
 
     try {
       // Fetch label definitions
-      const labelsResponse = await fetch('/api/labels');
+      const labelsResponse = await fetch(window.SCIDK_BASE + '/api/labels');
       const labelsData = await labelsResponse.json();
 
       if (labelsData.status !== 'success') {
@@ -54,7 +54,7 @@
       // Fetch Neo4j labels to determine push status
       let neo4jLabels = [];
       try {
-        const neo4jResponse = await fetch('/api/labels/neo4j/schema');
+        const neo4jResponse = await fetch(window.SCIDK_BASE + '/api/labels/neo4j/schema');
         const neo4jData = await neo4jResponse.json();
         if (neo4jData.status === 'success' && neo4jData.labels) {
           neo4jLabels = neo4jData.labels;

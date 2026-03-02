@@ -32,7 +32,7 @@
     const container = document.getElementById('plugins-status-container');
 
     try {
-      const response = await fetch('/api/settings/plugin-endpoints');
+      const response = await fetch(window.SCIDK_BASE + '/api/settings/plugin-endpoints');
       const data = await response.json();
 
       if (data.status === 'success' && data.endpoints) {
@@ -83,7 +83,7 @@
     const container = document.getElementById('plugin-endpoints-list');
 
     try {
-      const response = await fetch('/api/settings/plugin-endpoints');
+      const response = await fetch(window.SCIDK_BASE + '/api/settings/plugin-endpoints');
       const data = await response.json();
 
       if (data.status === 'success' && data.endpoints && data.endpoints.length > 0) {

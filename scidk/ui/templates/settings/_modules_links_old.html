@@ -219,7 +219,7 @@
     <div style="margin-top: 2rem; padding: 1rem; background: #f9f9f9; border-radius: 4px;">
       <p style="margin: 0; font-size: 0.95rem;">
         → <a href="/links" style="font-weight: 500;">View links on Links page</a><br>
-        → <a href="/scripts" style="font-weight: 500;">Author link scripts on Scripts page</a>
+        → <a href="{{ request.script_root }}/scripts" style="font-weight: 500;">Author link scripts on Scripts page</a>
       </p>
     </div>
   </div>
@@ -672,7 +672,7 @@
     // Load current settings
     async function loadSettings() {
       try {
-        const response = await fetch('/api/settings/fuzzy-matching');
+        const response = await fetch(window.SCIDK_BASE + '/api/settings/fuzzy-matching');
         const data = await response.json();
 
         if (data.status === 'success') {
@@ -707,7 +707,7 @@
       };
 
       try {
-        const response = await fetch('/api/settings/fuzzy-matching', {
+        const response = await fetch(window.SCIDK_BASE + '/api/settings/fuzzy-matching', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(settings)
@@ -756,7 +756,7 @@
     const container = document.getElementById('links-status-container');
 
     try {
-      const response = await fetch('/api/scripts/scripts');
+      const response = await fetch(window.SCIDK_BASE + '/api/scripts/scripts');
       const data = await response.json();
 
       if (data.status === 'ok' && data.scripts) {
@@ -792,7 +792,7 @@
           html += `
             <div style="margin-top: 1rem; padding: 0.75rem; background: #f8d7da; border-left: 4px solid #e74c3c; border-radius: 4px;">
               <p class="small" style="margin: 0; color: #721c24;">
-                ${failed} link script${failed !== 1 ? 's have' : ' has'} failed validation. Review on the <a href="/scripts">Scripts page</a>.
+                ${failed} link script${failed !== 1 ? 's have' : ' has'} failed validation. Review on the <a href="{{ request.script_root }}/scripts">Scripts page</a>.
               </p>
             </div>
           `;
@@ -800,7 +800,7 @@
           html += `
             <div style="margin-top: 1rem; padding: 0.75rem; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
               <p class="small" style="margin: 0; color: #856404;">
-                ${draft} link script${draft !== 1 ? 's are' : ' is'} in draft state. Validate on the <a href="/scripts">Scripts page</a>.
+                ${draft} link script${draft !== 1 ? 's are' : ' is'} in draft state. Validate on the <a href="{{ request.script_root }}/scripts">Scripts page</a>.
               </p>
             </div>
           `;
@@ -821,7 +821,7 @@
     const footer = document.getElementById('links-registry-footer');
 
     try {
-      const response = await fetch('/api/scripts/scripts');
+      const response = await fetch(window.SCIDK_BASE + '/api/scripts/scripts');
       const data = await response.json();
 
       if (data.status === 'ok' && data.scripts) {
@@ -842,7 +842,7 @@
             btn.disabled = true;
             btn.textContent = 'Importing...';
             try {
-              const resp = await fetch('/api/scripts/links/bootstrap', { method: 'POST' });
+              const resp = await fetch(window.SCIDK_BASE + '/api/scripts/links/bootstrap', { method: 'POST' });
               const result = await resp.json();
               if (result.status === 'ok') {
                 status.textContent = `✓ Imported ${result.imported} link scripts. Reloading...`;
@@ -944,7 +944,7 @@
     const link = e.target;
     link.textContent = 'Syncing...';
     try {
-      const resp = await fetch('/api/scripts/links/bootstrap', { method: 'POST' });
+      const resp = await fetch(window.SCIDK_BASE + '/api/scripts/links/bootstrap', { method: 'POST' });
       const result = await resp.json();
       if (result.status === 'ok') {
         result.imported > 0 ? (alert(`✓ Imported ${result.imported}`), loadLinksRegistry(), loadLinksStatus()) : alert('All synced');

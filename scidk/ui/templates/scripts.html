@@ -1383,7 +1383,7 @@ function initializeEditor() {
 // Load scripts from API
 async function loadScripts() {
   try {
-    const response = await fetch('/api/scripts/scripts');
+    const response = await fetch(window.SCIDK_BASE + '/api/scripts/scripts');
     const data = await response.json();
 
     if (data.status === 'ok') {
@@ -1627,7 +1627,7 @@ async function populateLabelSelectors() {
   if (labelSelectors.length === 0) return;
 
   try {
-    const response = await fetch('/api/graph/schema/combined?source=neo4j');
+    const response = await fetch(window.SCIDK_BASE + '/api/graph/schema/combined?source=neo4j');
     const data = await response.json();
 
     // Extract unique labels from schema
@@ -2208,7 +2208,7 @@ async function cloneScript() {
   if (!newName) return;
 
   try {
-    const response = await fetch('/api/scripts/scripts', {
+    const response = await fetch(window.SCIDK_BASE + '/api/scripts/scripts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2663,7 +2663,7 @@ async function createScriptFromTemplate() {
   const template = SCRIPT_TEMPLATES[selectedScriptType];
 
   try {
-    const response = await fetch('/api/scripts/scripts', {
+    const response = await fetch(window.SCIDK_BASE + '/api/scripts/scripts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2820,7 +2820,7 @@ function displayValidationResults(validation) {
 // Load available plugins for palette
 async function loadAvailablePlugins() {
   try {
-    const response = await fetch('/api/plugins/available');
+    const response = await fetch(window.SCIDK_BASE + '/api/plugins/available');
     const data = await response.json();
 
     if (data.status === 'ok') {
@@ -3486,7 +3486,7 @@ async function importNotebook(file) {
   formData.append('file', file);
 
   try {
-    const response = await fetch('/api/scripts/import-notebook', {
+    const response = await fetch(window.SCIDK_BASE + '/api/scripts/import-notebook', {
       method: 'POST',
       body: formData
     });

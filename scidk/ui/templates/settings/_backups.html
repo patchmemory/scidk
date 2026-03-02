@@ -310,7 +310,7 @@
     let originalSettings = null;
 
     function loadSettings() {
-      fetch('/api/backups/settings')
+      fetch(window.SCIDK_BASE + '/api/backups/settings')
         .then(res => res.json())
         .then(data => {
           // Store original settings
@@ -341,7 +341,7 @@
         verify_backups: document.getElementById('setting-verify-backups').checked
       };
 
-      fetch('/api/backups/settings', {
+      fetch(window.SCIDK_BASE + '/api/backups/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settings)
@@ -380,7 +380,7 @@
       document.getElementById('backups-table').style.display = 'none';
       document.getElementById('backups-empty').style.display = 'none';
 
-      fetch('/api/backups')
+      fetch(window.SCIDK_BASE + '/api/backups')
         .then(res => {
           if (!res.ok) {
             throw new Error(`HTTP ${res.status}`);
@@ -517,7 +517,7 @@
       btn.disabled = true;
       btn.textContent = 'Creating...';
 
-      fetch('/api/backups', {
+      fetch(window.SCIDK_BASE + '/api/backups', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: 'manual', verify: true })
@@ -619,7 +619,7 @@
       btn.disabled = true;
       btn.textContent = 'Cleaning up...';
 
-      fetch('/api/backups/cleanup', { method: 'POST' })
+      fetch(window.SCIDK_BASE + '/api/backups/cleanup', { method: 'POST' })
         .then(res => res.json())
         .then(data => {
           if (data.success) {

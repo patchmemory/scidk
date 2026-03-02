@@ -198,7 +198,7 @@
         submitBtn.textContent = 'Signing in...';
 
         try {
-          const response = await fetch('/api/auth/login', {
+          const response = await fetch(window.SCIDK_BASE + '/api/auth/login', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

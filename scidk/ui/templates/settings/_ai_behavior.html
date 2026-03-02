@@ -43,7 +43,7 @@
       toast('Chat behavior settings are currently controlled via environment variables (see Advanced section)', 'info');
       /*
       try {
-        const resp = await fetch('/api/chat/config', {
+        const resp = await fetch(window.SCIDK_BASE + '/api/chat/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ verbose: verboseCheck.checked })
@@ -66,7 +66,7 @@
       // For now, check is disabled since settings are environment-based
       /*
       try {
-        const resp = await fetch('/api/chat/config');
+        const resp = await fetch(window.SCIDK_BASE + '/api/chat/config');
         if (resp.ok) {
           const data = await resp.json();
           if (data.verbose !== undefined) {

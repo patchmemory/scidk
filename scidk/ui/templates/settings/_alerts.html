@@ -88,7 +88,7 @@
     // ======================
     async function loadSMTPConfig() {
       try {
-        const resp = await fetch('/api/settings/smtp');
+        const resp = await fetch(window.SCIDK_BASE + '/api/settings/smtp');
         const data = await resp.json();
 
         if (data.status === 'success' && data.smtp) {
@@ -151,7 +151,7 @@
           payload.password = password;
         }
 
-        const resp = await fetch('/api/settings/smtp', {
+        const resp = await fetch(window.SCIDK_BASE + '/api/settings/smtp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -179,7 +179,7 @@
       btn.textContent = 'Sending...';
 
       try {
-        const resp = await fetch('/api/settings/smtp/test', {
+        const resp = await fetch(window.SCIDK_BASE + '/api/settings/smtp/test', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
@@ -217,7 +217,7 @@
     // ======================
     async function loadAlerts() {
       try {
-        const resp = await fetch('/api/settings/alerts');
+        const resp = await fetch(window.SCIDK_BASE + '/api/settings/alerts');
         const data = await resp.json();
 
         if (data.status === 'success') {
@@ -429,7 +429,7 @@
     // ======================
     async function loadAlertHistory() {
       try {
-        const resp = await fetch('/api/settings/alerts/history?limit=50');
+        const resp = await fetch(window.SCIDK_BASE + '/api/settings/alerts/history?limit=50');
         const data = await resp.json();
 
         if (data.status === 'success') {

@@ -8,7 +8,7 @@
     <ul>
       {% for s in scans %}
         <li>
-          <a href="/datasets?scan_id={{ s.id }}">{{ s.path }}</a>
+          <a href="{{ request.script_root }}/datasets?scan_id={{ s.id }}">{{ s.path }}</a>
           <span class="small">— files: {{ s.file_count }}, recursive: {{ s.recursive }}, time: {{ '%.0f'|format((s.ended or s.started) or 0) }}{% if s.source %} — <span class="badge">{{ s.source }}</span>{% endif %}</span>
         </li>
       {% endfor %}
@@ -135,7 +135,7 @@
         const message = input.value.trim();
         if (!message) return;
         try {
-          const resp = await fetch('/api/chat', {
+          const resp = await fetch(window.SCIDK_BASE + '/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message })
@@ -170,7 +170,7 @@
         const q = searchInput.value.trim();
         if (!q) { resultsDiv.innerHTML = ''; return; }
         try {
-          const resp = await fetch('/api/search?q=' + encodeURIComponent(q));
+          const resp = await fetch(window.SCIDK_BASE + '/api/search?q=' + encodeURIComponent(q));
           const data = await resp.json();
           render(data);
         } catch (err) {

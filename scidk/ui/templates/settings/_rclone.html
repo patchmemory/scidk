@@ -65,12 +65,12 @@
     const rcSave = document.getElementById('rc-save');
     const rcMsg = document.getElementById('rc-msg');
     async function loadRcloneInterp(){
-      try { const r = await fetch('/api/settings/rclone-interpret'); const j = await r.json(); if (rcSuggest) rcSuggest.value = (j.suggest_mount_threshold ?? 400); if (rcBatch) rcBatch.value = (j.max_files_per_batch ?? 1000); }
+      try { const r = await fetch(window.SCIDK_BASE + '/api/settings/rclone-interpret'); const j = await r.json(); if (rcSuggest) rcSuggest.value = (j.suggest_mount_threshold ?? 400); if (rcBatch) rcBatch.value = (j.max_files_per_batch ?? 1000); }
       catch(e){ if (rcMsg) rcMsg.textContent = 'Failed to load: ' + e; }
     }
     async function saveRcloneInterp(){
       const payload = { suggest_mount_threshold: Number(rcSuggest && rcSuggest.value || 400), max_files_per_batch: Number(rcBatch && rcBatch.value || 1000) };
-      try { const r = await fetch('/api/settings/rclone-interpret', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }); const j = await r.json(); if (!r.ok) { rcMsg.textContent = 'Save failed: ' + (j.error || r.status); } else { rcMsg.textContent = 'Saved.'; setTimeout(()=>{rcMsg.textContent='';},1500); } }
+      try { const r = await fetch(window.SCIDK_BASE + '/api/settings/rclone-interpret', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }); const j = await r.json(); if (!r.ok) { rcMsg.textContent = 'Save failed: ' + (j.error || r.status); } else { rcMsg.textContent = 'Saved.'; setTimeout(()=>{rcMsg.textContent='';},1500); } }
       catch(e){ rcMsg.textContent = 'Save failed: ' + e; }
     }
     if (rcSave) rcSave.addEventListener('click', async (e) => { e.preventDefault(); await saveRcloneInterp(); });
@@ -90,7 +90,7 @@
     async function refreshMounts(){
       if (!rcEnabled || !tblBody) return;
       try {
-        const r = await fetch('/api/rclone/mounts');
+        const r = await fetch(window.SCIDK_BASE + '/api/rclone/mounts');
         const j = await r.json();
         tblBody.innerHTML = '';
         if (!Array.isArray(j) || j.length === 0){
@@ -125,7 +125,7 @@
       if (!rcEnabled || !btnCreate) return;
       try {
         const payload = { remote: (elRemote && elRemote.value)||'', subpath: (elSub && elSub.value)||'', name: (elName && elName.value)||'', read_only: elRO && elRO.checked };
-        const r = await fetch('/api/rclone/mounts', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        const r = await fetch(window.SCIDK_BASE + '/api/rclone/mounts', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
         const j = await r.json();
         if (!r.ok){ alert('Create failed: ' + (j.error || r.status)); return; }
         elName && (elName.value = '');

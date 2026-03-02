@@ -81,7 +81,7 @@
     async function testGraph(){
       status.textContent = 'Checking...';
       try {
-        const r = await fetch('/api/health/graph');
+        const r = await fetch(window.SCIDK_BASE + '/api/health/graph');
         const j = await r.json();
         if (!r.ok){ status.textContent = 'Error: ' + (j.error || r.status); return; }
         const neo = j.neo4j || {};
@@ -172,7 +172,7 @@
 
     async function loadProfiles(){
       try {
-        const r = await fetch('/api/settings/neo4j/profiles');
+        const r = await fetch(window.SCIDK_BASE + '/api/settings/neo4j/profiles');
         const j = await r.json();
         profiles = j.profiles || [];
 
@@ -226,14 +226,14 @@
         };
 
         // Apply settings temporarily
-        await fetch('/api/settings/neo4j', {
+        await fetch(window.SCIDK_BASE + '/api/settings/neo4j', {
           method: 'POST',
           headers: { 'Content-Type':'application/json' },
           body: JSON.stringify(testPayload)
         });
 
         // Test connection
-        const r = await fetch('/api/settings/neo4j/connect', { method: 'POST' });
+        const r = await fetch(window.SCIDK_BASE + '/api/settings/neo4j/connect', { method: 'POST' });
         const j = await r.json();
 
         return { connected: j.connected, error: j.error };
@@ -259,7 +259,7 @@
       };
 
       try {
-        const r = await fetch('/api/settings/neo4j/profiles', {
+        const r = await fetch(window.SCIDK_BASE + '/api/settings/neo4j/profiles', {
           method: 'POST',
           headers: { 'Content-Type':'application/json' },
           body: JSON.stringify(payload)

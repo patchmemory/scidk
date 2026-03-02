@@ -479,7 +479,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function loadAvailableLabels() {
-  fetch('/api/labels/list')
+  fetch(window.SCIDK_BASE + '/api/labels/list')
     .then(r => r.json())
     .then(data => {
       if (data.status === 'success') {
@@ -569,7 +569,7 @@ function initializeEventListeners() {
 }
 
 function loadLinkDefinitions() {
-  fetch('/api/links')
+  fetch(window.SCIDK_BASE + '/api/links')
     .then(r => r.json())
     .then(data => {
       if (data.status === 'success') {
@@ -916,7 +916,7 @@ function saveLinkDefinition() {
 
   showToast('Saving link definition...', 'info');
 
-  fetch('/api/links', {
+  fetch(window.SCIDK_BASE + '/api/links', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
@@ -964,7 +964,7 @@ function loadPreview() {
 
   // Save first if new
   const savePromise = data.id ? Promise.resolve({ link: data }) :
-    fetch('/api/links', {
+    fetch(window.SCIDK_BASE + '/api/links', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -1079,7 +1079,7 @@ function stopTaskPolling() {
 
 async function fetchLinkTasks() {
   try {
-    const r = await fetch('/api/tasks');
+    const r = await fetch(window.SCIDK_BASE + '/api/tasks');
     const tasks = await r.json();
     const linkTasks = tasks.filter(t => t.type === 'link_execution');
     renderLinkTasks(linkTasks);

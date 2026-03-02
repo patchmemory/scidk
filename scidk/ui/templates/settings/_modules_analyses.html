@@ -24,7 +24,7 @@
     <!-- Action Footer -->
     <div style="margin-top: 2rem; padding: 1rem; background: #f9f9f9; border-radius: 4px;">
       <p style="margin: 0; font-size: 0.95rem;">
-        → <a href="/scripts" style="font-weight: 500;">Author analyses on Scripts page</a><br>
+        → <a href="{{ request.script_root }}/scripts" style="font-weight: 500;">Author analyses on Scripts page</a><br>
         → <a href="/results" style="font-weight: 500;">View results on Results page</a>
       </p>
     </div>
@@ -36,7 +36,7 @@
     const container = document.getElementById('analyses-status-container');
 
     try {
-      const response = await fetch('/api/scripts/scripts');
+      const response = await fetch(window.SCIDK_BASE + '/api/scripts/scripts');
       const data = await response.json();
 
       if (data.status === 'ok' && data.scripts) {
@@ -72,7 +72,7 @@
           html += `
             <div style="margin-top: 1rem; padding: 0.75rem; background: #f8d7da; border-left: 4px solid #e74c3c; border-radius: 4px;">
               <p class="small" style="margin: 0; color: #721c24;">
-                ${failed} analysis script${failed !== 1 ? 's have' : ' has'} failed validation. Review on the <a href="/scripts">Scripts page</a>.
+                ${failed} analysis script${failed !== 1 ? 's have' : ' has'} failed validation. Review on the <a href="{{ request.script_root }}/scripts">Scripts page</a>.
               </p>
             </div>
           `;
@@ -80,7 +80,7 @@
           html += `
             <div style="margin-top: 1rem; padding: 0.75rem; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
               <p class="small" style="margin: 0; color: #856404;">
-                ${draft} analysis script${draft !== 1 ? 's are' : ' is'} in draft state. Validate on the <a href="/scripts">Scripts page</a>.
+                ${draft} analysis script${draft !== 1 ? 's are' : ' is'} in draft state. Validate on the <a href="{{ request.script_root }}/scripts">Scripts page</a>.
               </p>
             </div>
           `;
@@ -89,7 +89,7 @@
         container.innerHTML = html;
       } else {
         container.innerHTML = `
-          <p class="small text-muted">No analysis scripts found. Create your first analysis on the <a href="/scripts">Scripts page</a>.</p>
+          <p class="small text-muted">No analysis scripts found. Create your first analysis on the <a href="{{ request.script_root }}/scripts">Scripts page</a>.</p>
         `;
       }
     } catch (err) {
@@ -104,7 +104,7 @@
     const resyncLink = document.getElementById('analyses-resync-link');
 
     try {
-      const response = await fetch('/api/scripts/scripts');
+      const response = await fetch(window.SCIDK_BASE + '/api/scripts/scripts');
       const data = await response.json();
 
       if (data.status === 'ok' && data.scripts) {
@@ -132,7 +132,7 @@
             status.textContent = 'Importing built-in analyses...';
 
             try {
-              const resp = await fetch('/api/scripts/analyses/bootstrap', { method: 'POST' });
+              const resp = await fetch(window.SCIDK_BASE + '/api/scripts/analyses/bootstrap', { method: 'POST' });
               const result = await resp.json();
 
               if (result.status === 'ok') {
@@ -283,7 +283,7 @@
     link.textContent = 'Syncing...';
 
     try {
-      const resp = await fetch('/api/scripts/analyses/bootstrap', { method: 'POST' });
+      const resp = await fetch(window.SCIDK_BASE + '/api/scripts/analyses/bootstrap', { method: 'POST' });
       const result = await resp.json();
 
       if (result.status === 'ok') {

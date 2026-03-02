@@ -236,7 +236,7 @@
 
     // Check auth status and apply admin-only restrictions
     try {
-      const response = await fetch('/api/auth/status');
+      const response = await fetch(window.SCIDK_BASE + '/api/auth/status');
       const authData = await response.json();
       const isAdmin = authData.role === 'admin';
       const hasNoUsers = authData.user_count === 0;

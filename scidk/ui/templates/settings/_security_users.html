@@ -24,7 +24,7 @@
     // Load users list
     async function loadUsers() {
       try {
-        const response = await fetch('/api/users?include_disabled=true');
+        const response = await fetch(window.SCIDK_BASE + '/api/users?include_disabled=true');
         if (response.ok) {
           const data = await response.json();
           renderUsersList(data.users || []);
@@ -199,7 +199,7 @@
 
     async function createUser(username, password, role) {
       try {
-        const response = await fetch('/api/users', {
+        const response = await fetch(window.SCIDK_BASE + '/api/users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username, password, role }),

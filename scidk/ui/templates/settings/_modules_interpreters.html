@@ -93,7 +93,7 @@
     </div>
 
     <h2 style="margin-top: 2rem;">Interpreter Registry</h2>
-    <p class="small">All interpreter scripts registered in the system. Built-in interpreters can be edited on the <a href="/scripts">Scripts page</a>. Per-file overrides can be set on the <a href="/files">Files page</a>.</p>
+    <p class="small">All interpreter scripts registered in the system. Built-in interpreters can be edited on the <a href="{{ request.script_root }}/scripts">Scripts page</a>. Per-file overrides can be set on the <a href="/files">Files page</a>.</p>
 
     <div id="interpreter-registry-container" style="margin-top: 1rem;">
       <p class="small" style="color: #999;"><em>Loading interpreter registry...</em></p>
@@ -103,7 +103,7 @@
     <div style="margin-top: 2rem; padding: 1rem; background: #f9f9f9; border-radius: 4px;">
       <p style="margin: 0; font-size: 0.95rem;">
         → <a href="/files" style="font-weight: 500;">View files on Files page</a><br>
-        → <a href="/scripts" style="font-weight: 500;">Author interpreters on Scripts page</a>
+        → <a href="{{ request.script_root }}/scripts" style="font-weight: 500;">Author interpreters on Scripts page</a>
       </p>
     </div>
   </div>
@@ -114,7 +114,7 @@
     const container = document.getElementById('interpreters-status-container');
 
     try {
-      const response = await fetch('/api/scripts/scripts');
+      const response = await fetch(window.SCIDK_BASE + '/api/scripts/scripts');
       const data = await response.json();
 
       if (data.status === 'ok' && data.scripts) {
@@ -150,7 +150,7 @@
           html += `
             <div style="margin-top: 1rem; padding: 0.75rem; background: #f8d7da; border-left: 4px solid #e74c3c; border-radius: 4px;">
               <p class="small" style="margin: 0; color: #721c24;">
-                ${failed} interpreter${failed !== 1 ? 's have' : ' has'} failed validation. Review on the <a href="/scripts">Scripts page</a>.
+                ${failed} interpreter${failed !== 1 ? 's have' : ' has'} failed validation. Review on the <a href="{{ request.script_root }}/scripts">Scripts page</a>.
               </p>
             </div>
           `;
@@ -158,7 +158,7 @@
           html += `
             <div style="margin-top: 1rem; padding: 0.75rem; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
               <p class="small" style="margin: 0; color: #856404;">
-                ${draft} interpreter${draft !== 1 ? 's are' : ' is'} in draft state. Validate on the <a href="/scripts">Scripts page</a>.
+                ${draft} interpreter${draft !== 1 ? 's are' : ' is'} in draft state. Validate on the <a href="{{ request.script_root }}/scripts">Scripts page</a>.
               </p>
             </div>
           `;
@@ -226,7 +226,7 @@
       const customLabelNote = document.getElementById('custom-label-note');
 
       try {
-        const response = await fetch('/api/labels');
+        const response = await fetch(window.SCIDK_BASE + '/api/labels');
         const data = await response.json();
 
         if (data.status === 'success' && data.labels && data.labels.length > 0) {
@@ -273,7 +273,7 @@
 
     async function loadFormats() {
       try {
-        const response = await fetch('/api/settings/table-formats');
+        const response = await fetch(window.SCIDK_BASE + '/api/settings/table-formats');
         const data = await response.json();
 
         if (data.status === 'success' && data.formats && data.formats.length > 0) {
@@ -376,7 +376,7 @@
             body: JSON.stringify(formatData)
           });
         } else {
-          response = await fetch('/api/settings/table-formats', {
+          response = await fetch(window.SCIDK_BASE + '/api/settings/table-formats', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(formatData)
@@ -413,7 +413,7 @@
       formData.append('file', file);
 
       try {
-        const response = await fetch('/api/settings/table-formats/detect', {
+        const response = await fetch(window.SCIDK_BASE + '/api/settings/table-formats/detect', {
           method: 'POST',
           body: formData
         });
@@ -554,7 +554,7 @@
     const container = document.getElementById('interpreter-registry-container');
 
     try {
-      const response = await fetch('/api/scripts/scripts');
+      const response = await fetch(window.SCIDK_BASE + '/api/scripts/scripts');
       const data = await response.json();
 
       if (data.status === 'ok' && data.scripts) {

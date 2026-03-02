@@ -292,7 +292,7 @@
         </div>
 
         <div class="plugin-actions">
-          <a href="/scripts#script-{{ plugin.id }}" class="btn-view-scripts">View in Scripts</a>
+          <a href="{{ request.script_root }}/scripts#script-{{ plugin.id }}" class="btn-view-scripts">View in Scripts</a>
         </div>
       </div>
       {% endfor %}
@@ -332,7 +332,7 @@
         </div>
 
         <div class="plugin-actions">
-          <a href="/scripts#script-{{ plugin.id }}" class="btn-activate">→ Activate in Scripts</a>
+          <a href="{{ request.script_root }}/scripts#script-{{ plugin.id }}" class="btn-activate">→ Activate in Scripts</a>
         </div>
       </div>
       {% endfor %}
@@ -385,7 +385,7 @@
         </div>
 
         <div class="plugin-actions">
-          <a href="/scripts#script-{{ plugin.id }}" class="btn-view-scripts">→ Edit in Scripts</a>
+          <a href="{{ request.script_root }}/scripts#script-{{ plugin.id }}" class="btn-view-scripts">→ Edit in Scripts</a>
         </div>
       </div>
       {% endfor %}

@@ -15,7 +15,7 @@
     <!-- Action Footer -->
     <div style="margin-top: 2rem; padding: 1rem; background: #f9f9f9; border-radius: 4px;">
       <p style="margin: 0; font-size: 0.95rem;">
-        → <a href="/scripts" style="font-weight: 500;">Open Scripts page</a>
+        → <a href="{{ request.script_root }}/scripts" style="font-weight: 500;">Open Scripts page</a>
       </p>
     </div>
   </div>
@@ -26,7 +26,7 @@
     const container = document.getElementById('scripts-status-container');
 
     try {
-      const response = await fetch('/api/scripts/scripts');
+      const response = await fetch(window.SCIDK_BASE + '/api/scripts/scripts');
       const data = await response.json();
 
       if (data.status === 'ok' && data.scripts) {
@@ -91,7 +91,7 @@
           html += `
             <div style="margin-top: 1rem; padding: 0.75rem; background: #f8d7da; border-left: 4px solid #e74c3c; border-radius: 4px;">
               <p class="small" style="margin: 0; color: #721c24;">
-                ${failed} script${failed !== 1 ? 's have' : ' has'} failed validation. Review on the <a href="/scripts">Scripts page</a>.
+                ${failed} script${failed !== 1 ? 's have' : ' has'} failed validation. Review on the <a href="{{ request.script_root }}/scripts">Scripts page</a>.
               </p>
             </div>
           `;
@@ -99,7 +99,7 @@
           html += `
             <div style="margin-top: 1rem; padding: 0.75rem; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
               <p class="small" style="margin: 0; color: #856404;">
-                ${draft} script${draft !== 1 ? 's are' : ' is'} in draft state. Validate on the <a href="/scripts">Scripts page</a>.
+                ${draft} script${draft !== 1 ? 's are' : ' is'} in draft state. Validate on the <a href="{{ request.script_root }}/scripts">Scripts page</a>.
               </p>
             </div>
           `;
@@ -108,7 +108,7 @@
         container.innerHTML = html;
       } else {
         container.innerHTML = `
-          <p class="small text-muted">No scripts found. Create your first script on the <a href="/scripts">Scripts page</a>.</p>
+          <p class="small text-muted">No scripts found. Create your first script on the <a href="{{ request.script_root }}/scripts">Scripts page</a>.</p>
         `;
       }
     } catch (err) {

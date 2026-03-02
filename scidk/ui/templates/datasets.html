@@ -1126,7 +1126,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // ===== Servers List (Tree) =====
   async function loadServers() {
     try {
-      const r = await fetch('/api/servers');
+      const r = await fetch(window.SCIDK_BASE + '/api/servers');
       if (!r.ok) {
         throw new Error(`API returned ${r.status}`);
       }
@@ -1226,7 +1226,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   async function loadRootsAndBrowse(providerId) {
     try {
-      const r = await fetch('/api/provider_roots?provider_id=' + encodeURIComponent(providerId));
+      const r = await fetch(window.SCIDK_BASE + '/api/provider_roots?provider_id=' + encodeURIComponent(providerId));
       const roots = await r.json();
 
       if (!Array.isArray(roots) || roots.length === 0) {
@@ -1316,7 +1316,7 @@ window.addEventListener('DOMContentLoaded', () => {
           path: folderId
         });
 
-        const r = await fetch('/api/browse?' + qs.toString());
+        const r = await fetch(window.SCIDK_BASE + '/api/browse?' + qs.toString());
         const data = await r.json();
 
         if (data.entries && Array.isArray(data.entries)) {
@@ -1454,7 +1454,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      const r = await fetch('/api/browse?' + qs.toString());
+      const r = await fetch(window.SCIDK_BASE + '/api/browse?' + qs.toString());
       const j = await r.json();
 
       currentPath = path;
@@ -1778,7 +1778,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // ===== Load Snapshots as Server Entries (for Snapshots mode) =====
   async function loadSnapshotsAsServers() {
     try {
-      const r = await fetch('/api/scans');
+      const r = await fetch(window.SCIDK_BASE + '/api/scans');
       if (!r.ok) {
         throw new Error(`API returned ${r.status}`);
       }
@@ -1862,7 +1862,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // ===== Scans List (Tree) =====
   async function loadScans() {
     try {
-      const r = await fetch('/api/scans');
+      const r = await fetch(window.SCIDK_BASE + '/api/scans');
       const scans = await r.json();
 
       // Format scan timestamp for "Snapshot from: [date]" display
@@ -2036,7 +2036,7 @@ window.addEventListener('DOMContentLoaded', () => {
         root_id: currentRoot
       };
 
-      const r = await fetch('/api/tasks', {
+      const r = await fetch(window.SCIDK_BASE + '/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -2069,7 +2069,7 @@ window.addEventListener('DOMContentLoaded', () => {
     commitScanBtn.textContent = 'Committing...';
 
     try {
-      const r = await fetch('/api/tasks', {
+      const r = await fetch(window.SCIDK_BASE + '/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'commit', scan_id: currentScan })
@@ -2140,7 +2140,7 @@ window.addEventListener('DOMContentLoaded', () => {
       btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-cancel');
         try {
-          await fetch('/api/tasks/' + encodeURIComponent(id) + '/cancel', { method: 'POST' });
+          await fetch(window.SCIDK_BASE + '/api/tasks/' + encodeURIComponent(id) + '/cancel', { method: 'POST' });
           fetchTasks();
         } catch (e) {
           alert('Cancel failed: ' + e.message);
@@ -2151,7 +2151,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   async function fetchTasks() {
     try {
-      const r = await fetch('/api/tasks');
+      const r = await fetch(window.SCIDK_BASE + '/api/tasks');
       const tasks = await r.json();
       renderTasks(Array.isArray(tasks) ? tasks : []);
     } catch (e) {
@@ -2271,7 +2271,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // ===== Neo4j Status =====
   async function fetchNeo4jStatus() {
     try {
-      const r = await fetch('/api/health/comprehensive');
+      const r = await fetch(window.SCIDK_BASE + '/api/health/comprehensive');
       const j = await r.json();
       const light = document.getElementById('neo4j-light');
       const txt = document.getElementById('neo4j-status-text');
@@ -2399,7 +2399,7 @@ window.addEventListener('DOMContentLoaded', () => {
     try {
       // Only search committed snapshots (indexed in database)
       // This is much faster than traversing live filesystems
-      const scansResp = await fetch('/api/scans');
+      const scansResp = await fetch(window.SCIDK_BASE + '/api/scans');
       const scans = await scansResp.json();
 
       if (!scans || scans.length === 0) {
@@ -2572,7 +2572,7 @@ window.addEventListener('DOMContentLoaded', () => {
           selection: selection
         };
 
-        const r = await fetch('/api/scan', {
+        const r = await fetch(window.SCIDK_BASE + '/api/scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -2668,7 +2668,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   populateModalServerSelect = async function() {
     try {
-      const r = await fetch('/api/servers');
+      const r = await fetch(window.SCIDK_BASE + '/api/servers');
       const servers = await r.json();
       const serverSelect = document.getElementById('snapshot-server-select');
 
@@ -2741,7 +2741,7 @@ window.addEventListener('DOMContentLoaded', () => {
         path: path || rootId || '/'
       });
 
-      const r = await fetch('/api/browse?' + qs.toString());
+      const r = await fetch(window.SCIDK_BASE + '/api/browse?' + qs.toString());
       const data = await r.json();
 
       // Update breadcrumb
@@ -2842,7 +2842,7 @@ window.addEventListener('DOMContentLoaded', () => {
           path: folderId
         });
 
-        const r = await fetch('/api/browse?' + qs.toString());
+        const r = await fetch(window.SCIDK_BASE + '/api/browse?' + qs.toString());
         const data = await r.json();
 
         if (data.entries && Array.isArray(data.entries)) {
@@ -2979,7 +2979,7 @@ window.addEventListener('DOMContentLoaded', () => {
         };
 
         if (startScan) {
-          const scanResp = await fetch('/api/scan', {
+          const scanResp = await fetch(window.SCIDK_BASE + '/api/scan', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -2998,7 +2998,7 @@ window.addEventListener('DOMContentLoaded', () => {
           // TODO: Need API endpoint for this - for now just show message
           showMessage('Config-only save not yet implemented - scanning instead', 'info');
 
-          const scanResp = await fetch('/api/scan', {
+          const scanResp = await fetch(window.SCIDK_BASE + '/api/scan', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)

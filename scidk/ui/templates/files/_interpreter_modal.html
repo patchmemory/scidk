@@ -469,7 +469,7 @@
   // Load available interpreters
   async function loadInterpreters() {
     try {
-      const response = await fetch('/api/scripts/active?category=interpreters');
+      const response = await fetch(window.SCIDK_BASE + '/api/scripts/active?category=interpreters');
       const data = await response.json();
 
       interpreterLoading.style.display = 'none';
@@ -536,7 +536,7 @@
     interpreterPreview.style.display = 'none';
 
     try {
-      const response = await fetch('/api/files/interpret', {
+      const response = await fetch(window.SCIDK_BASE + '/api/files/interpret', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -604,7 +604,7 @@
     interpreterError.style.display = 'none';
 
     try {
-      const response = await fetch('/api/files/interpret/commit', {
+      const response = await fetch(window.SCIDK_BASE + '/api/files/interpret/commit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

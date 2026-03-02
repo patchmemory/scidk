@@ -1018,7 +1018,7 @@ document.addEventListener('DOMContentLoaded', () => {
       formData.append('file', file);
 
       try {
-        const resp = await fetch('/api/labels/import/eda', {
+        const resp = await fetch(window.SCIDK_BASE + '/api/labels/import/eda', {
           method: 'POST',
           body: formData
         });
@@ -1503,7 +1503,7 @@ function loadLabels() {
   const container = document.getElementById('label-list');
   container.innerHTML = '<div class="empty-state small" style="padding: 2rem; text-align: center;">Loading labels...</div>';
 
-  fetch('/api/labels')
+  fetch(window.SCIDK_BASE + '/api/labels')
     .then(r => {
       console.log('loadLabels() got response, status:', r.status);
       if (!r.ok) {
@@ -2156,7 +2156,7 @@ async function addIncomingRelationshipOLD() {
         ];
 
         // Save the updated source label
-        const saveResp = await fetch('/api/labels', {
+        const saveResp = await fetch(window.SCIDK_BASE + '/api/labels', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2320,7 +2320,7 @@ async function saveLabel() {
 
   try {
     // First save the current label
-    const resp = await fetch('/api/labels', {
+    const resp = await fetch(window.SCIDK_BASE + '/api/labels', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -2394,7 +2394,7 @@ async function applyIncomingRelationshipChanges(targetLabel, desiredIncoming) {
           !(r.type === rel.type && r.target_label === targetLabel)
         );
 
-        await fetch('/api/labels', {
+        await fetch(window.SCIDK_BASE + '/api/labels', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2435,7 +2435,7 @@ async function applyIncomingRelationshipChanges(targetLabel, desiredIncoming) {
             }
           ];
 
-          await fetch('/api/labels', {
+          await fetch(window.SCIDK_BASE + '/api/labels', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -2508,7 +2508,7 @@ async function deleteIncomingRelationship(sourceLabel, relType, targetLabel) {
         });
 
         // Save the updated source label
-        const saveResp = await fetch('/api/labels', {
+        const saveResp = await fetch(window.SCIDK_BASE + '/api/labels', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2882,7 +2882,7 @@ function pullAllFromNeo4j() {
 
   showToast('Pulling all labels from Neo4j...', 'info');
 
-  fetch('/api/labels/pull', { method: 'POST' })
+  fetch(window.SCIDK_BASE + '/api/labels/pull', { method: 'POST' })
     .then(r => r.json())
     .then(data => {
       if (data.status === 'success') {
@@ -2919,7 +2919,7 @@ async function loadPullDropdown() {
 
   try {
     // Load available Neo4j profiles
-    const r = await fetch('/api/settings/neo4j/profiles');
+    const r = await fetch(window.SCIDK_BASE + '/api/settings/neo4j/profiles');
     const j = await r.json();
     const profiles = j.profiles || [];
 
@@ -2990,7 +2990,7 @@ async function importFromArrows() {
     const arrowsJson = JSON.parse(input);
     showToast('Importing schema...', 'info');
 
-    const resp = await fetch('/api/labels/import/arrows', {
+    const resp = await fetch(window.SCIDK_BASE + '/api/labels/import/arrows', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({arrows_json: arrowsJson, mode: 'merge'})
@@ -3037,7 +3037,7 @@ async function batchPull() {
   showToast(`Pulling schema for ${labelNames.length} labels...`, 'info');
 
   try {
-    const resp = await fetch('/api/labels/batch/pull', {
+    const resp = await fetch(window.SCIDK_BASE + '/api/labels/batch/pull', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ label_names: labelNames })
@@ -3069,7 +3069,7 @@ async function batchDelete() {
   showToast(`Deleting ${labelNames.length} labels...`, 'info');
 
   try {
-    const resp = await fetch('/api/labels/batch/delete', {
+    const resp = await fetch(window.SCIDK_BASE + '/api/labels/batch/delete', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ label_names: labelNames })

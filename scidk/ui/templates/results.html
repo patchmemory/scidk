@@ -256,7 +256,7 @@ async function loadSchemaGraph() {
   if (!cy) return;
 
   try {
-    const response = await fetch('/api/graph/schema/combined?source=all');
+    const response = await fetch(window.SCIDK_BASE + '/api/graph/schema/combined?source=all');
     const data = await response.json();
 
     if (data.nodes || data.edges) {
@@ -313,7 +313,7 @@ async function loadQueryFromLibrary() {
 
     if (data.status === 'ok' && data.query) {
       // Execute the saved query
-      const execResponse = await fetch('/api/graph/query', {
+      const execResponse = await fetch(window.SCIDK_BASE + '/api/graph/query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: data.query.query })
@@ -371,7 +371,7 @@ function fitGraph() {
 // Fetch schema summary stats
 async function loadSchemaSummary() {
   try {
-    const response = await fetch('/api/results/schema-summary');
+    const response = await fetch(window.SCIDK_BASE + '/api/results/schema-summary');
     const data = await response.json();
 
     if (data.status === 'ok') {
@@ -427,7 +427,7 @@ async function loadSchemaSummary() {
 // Load query library
 async function loadQueryLibrary() {
   try {
-    const response = await fetch('/api/queries');
+    const response = await fetch(window.SCIDK_BASE + '/api/queries');
     const data = await response.json();
 
     if (data.status === 'ok' && data.queries) {
@@ -449,7 +449,7 @@ async function loadQueryLibrary() {
 // Fetch and render panels
 async function loadPanels() {
   try {
-    const response = await fetch('/api/results/panels');
+    const response = await fetch(window.SCIDK_BASE + '/api/results/panels');
     const data = await response.json();
 
     if (data.status === 'ok' && data.panels && data.panels.length > 0) {
@@ -463,7 +463,7 @@ async function loadPanels() {
           <div class="empty-state-text">
             Analysis results will appear here automatically after running scripts from the Scripts page.
           </div>
-          <a href="/scripts" class="btn-panel" style="display: inline-block; padding: 0.75rem 1.5rem; background: #667eea; color: white; border: none;">
+          <a href="{{ request.script_root }}/scripts" class="btn-panel" style="display: inline-block; padding: 0.75rem 1.5rem; background: #667eea; color: white; border: none;">
             Go to Scripts →
           </a>
         </div>

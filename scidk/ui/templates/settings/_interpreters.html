@@ -42,7 +42,7 @@
   <script>
     (function(){
       async function fetchEffective(){
-        const r = await fetch('/api/interpreters?view=effective');
+        const r = await fetch(window.SCIDK_BASE + '/api/interpreters?view=effective');
         if(!r.ok){ toast('Failed to load interpreters', 'error'); return []; }
         return await r.json();
       }
@@ -71,7 +71,7 @@
           alertEl.style.display = 'block';
           // Fetch debug info to show env values
           try {
-            fetch('/api/interpreters/effective_debug').then(r => r.json()).then(info => {
+            fetch(window.SCIDK_BASE + '/api/interpreters/effective_debug').then(r => r.json()).then(info => {
               const en = ((info.env || {}).enable_raw || []).join(', ');
               const dis = ((info.env || {}).disable_raw || []).join(', ');
               const unkEn = (((info.env || {}).unknown || {}).enable || []).join(', ');

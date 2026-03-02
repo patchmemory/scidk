@@ -30,7 +30,7 @@
           btnExportConfig.disabled = true;
           btnExportConfig.textContent = 'Exporting...';
 
-          const resp = await fetch('/api/settings/export', {
+          const resp = await fetch(window.SCIDK_BASE + '/api/settings/export', {
             credentials: 'same-origin'
           });
 
@@ -103,7 +103,7 @@
           const formData = new FormData();
           formData.append('backup_file', file);
 
-          const importResp = await fetch('/api/settings/import', {
+          const importResp = await fetch(window.SCIDK_BASE + '/api/settings/import', {
             method: 'POST',
             body: formData,
             credentials: 'same-origin'
@@ -145,7 +145,7 @@
     if (btnViewBackups) {
       btnViewBackups.addEventListener('click', async () => {
         try {
-          const resp = await fetch('/api/settings/backups?limit=20', {
+          const resp = await fetch(window.SCIDK_BASE + '/api/settings/backups?limit=20', {
             credentials: 'same-origin'
           });
 
@@ -281,7 +281,7 @@
             const formData = new FormData();
             formData.append('backup_file', backupBlob, filename);
 
-            const restoreResp = await fetch('/api/settings/import', {
+            const restoreResp = await fetch(window.SCIDK_BASE + '/api/settings/import', {
               method: 'POST',
               body: formData,
               credentials: 'same-origin'

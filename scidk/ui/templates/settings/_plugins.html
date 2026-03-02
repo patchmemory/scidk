@@ -224,7 +224,7 @@
   }
 
   function loadPlugins() {
-    fetch('/api/plugins')
+    fetch(window.SCIDK_BASE + '/api/plugins')
       .then(response => response.json())
       .then(data => {
         renderPlugins(data.plugins || []);
@@ -284,7 +284,7 @@
   }
 
   function togglePlugin(pluginName, enabled) {
-    fetch('/api/plugins/' + encodeURIComponent(pluginName) + '/toggle', {
+    fetch(window.SCIDK_BASE + '/api/plugins/' + encodeURIComponent(pluginName) + '/toggle', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -312,7 +312,7 @@
 
   function openPluginSettings(pluginName) {
     // Fetch plugin settings and schema
-    fetch('/api/plugins/' + encodeURIComponent(pluginName) + '/settings')
+    fetch(window.SCIDK_BASE + '/api/plugins/' + encodeURIComponent(pluginName) + '/settings')
       .then(response => response.json())
       .then(data => {
         if (data.success) {
@@ -424,7 +424,7 @@
     }
 
     // Save to API
-    fetch('/api/plugins/' + encodeURIComponent(pluginName) + '/settings', {
+    fetch(window.SCIDK_BASE + '/api/plugins/' + encodeURIComponent(pluginName) + '/settings', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -486,7 +486,7 @@
     if (pluginInstancesLoaded) return;
 
     try {
-      const resp = await fetch('/api/plugins/instances');
+      const resp = await fetch(window.SCIDK_BASE + '/api/plugins/instances');
       const data = await resp.json();
 
       if (data.status === 'success') {
@@ -660,7 +660,7 @@
 
   async function loadTemplates() {
     try {
-      const resp = await fetch('/api/plugins/templates');
+      const resp = await fetch(window.SCIDK_BASE + '/api/plugins/templates');
       const data = await resp.json();
 
       if (data.status === 'success') {
@@ -922,7 +922,7 @@
         payload.graph_config = wizardState.graphConfig;
       }
 
-      const resp = await fetch('/api/plugins/instances', {
+      const resp = await fetch(window.SCIDK_BASE + '/api/plugins/instances', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

@@ -3,6 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <title>{% block title %}-SciDK->{% endblock %}</title>
+  <script>
+    // Base URL for API calls - works at root (/) or subpath (/scidk)
+    window.SCIDK_BASE = "{{ request.script_root }}";
+  </script>
   <style>
     :root { --fg:#222; --muted:#666; --bg:#fff; --accent:#0a6; }
     * { box-sizing: border-box; }
@@ -30,16 +34,16 @@
 </head>
 <body>
 <header data-testid="header">
-  <h1><a href="/" style="text-decoration:none;color:inherit;font-family:monospace;letter-spacing:0.02em;font-weight:600" data-testid="nav-home">-SciDK-></a></h1>
+  <h1><a href="{{ request.script_root }}/" style="text-decoration:none;color:inherit;font-family:monospace;letter-spacing:0.02em;font-weight:600" data-testid="nav-home">-SciDK-></a></h1>
   <nav data-testid="nav">
-    <a href="/results" data-testid="nav-results">Results</a>
-    <a href="/chat" data-testid="nav-chats">Chats</a>
-    <a href="/map" data-testid="nav-maps">Maps</a>
-    <a href="/labels" data-testid="nav-labels">Labels</a>
-    <a href="/links" data-testid="nav-links">Links</a>
-    <a href="/datasets" data-testid="nav-files">Files</a>
-    <a href="/scripts" data-testid="nav-scripts">Scripts</a>
-    <a href="/plugins" data-testid="nav-plugins">Plugins</a>
+    <a href="{{ request.script_root }}/results" data-testid="nav-results">Results</a>
+    <a href="{{ request.script_root }}/chat" data-testid="nav-chats">Chats</a>
+    <a href="{{ request.script_root }}/map" data-testid="nav-maps">Maps</a>
+    <a href="{{ request.script_root }}/labels" data-testid="nav-labels">Labels</a>
+    <a href="{{ request.script_root }}/links" data-testid="nav-links">Links</a>
+    <a href="{{ request.script_root }}/datasets" data-testid="nav-files">Files</a>
+    <a href="{{ request.script_root }}/scripts" data-testid="nav-scripts">Scripts</a>
+    <a href="{{ request.script_root }}/plugins" data-testid="nav-plugins">Plugins</a>
   </nav>
   <div id="auth-status" style="margin-left:auto; display:none;">
     <span id="auth-username" style="color:var(--muted); font-size:0.9em; margin-right:0.5rem;"></span>
@@ -79,7 +83,7 @@
     // Check auth status on page load
     async function checkAuthStatus() {
       try {
-        const response = await fetch('/api/auth/status');
+        const response = await fetch(window.SCIDK_BASE + '/api/auth/status');
         const data = await response.json();
 
         if (data.authenticated && data.username) {
@@ -103,7 +107,7 @@
         e.preventDefault();
 
         try {
-          const response = await fetch('/api/auth/logout', {
+          const response = await fetch(window.SCIDK_BASE + '/api/auth/logout', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -186,7 +190,7 @@
     async function initAutoLock() {
       try {
         // Check if auth is enabled
-        const authResponse = await fetch('/api/auth/status');
+        const authResponse = await fetch(window.SCIDK_BASE + '/api/auth/status');
         const authData = await authResponse.json();
 
         if (!authData.authenticated || !authData.auth_enabled) {
@@ -201,7 +205,7 @@
         }
 
         // Get auto-lock configuration
-        const configResponse = await fetch('/api/settings/security/auto-lock');
+        const configResponse = await fetch(window.SCIDK_BASE + '/api/settings/security/auto-lock');
         const configData = await configResponse.json();
 
         if (configData.status === 'success' && configData.config.enabled) {
@@ -211,7 +215,7 @@
           activityMonitor = new ActivityMonitor(timeoutMinutes, async () => {
             // Lock session
             try {
-              const lockResponse = await fetch('/api/auth/lock', {
+              const lockResponse = await fetch(window.SCIDK_BASE + '/api/auth/lock', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
               });
@@ -306,7 +310,7 @@
         }
 
         try {
-          const response = await fetch('/api/auth/unlock', {
+          const response = await fetch(window.SCIDK_BASE + '/api/auth/unlock', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ password }),
@@ -318,7 +322,7 @@
 
             // Restart activity monitor if it was active
             if (activityMonitor) {
-              const configResponse = await fetch('/api/settings/security/auto-lock');
+              const configResponse = await fetch(window.SCIDK_BASE + '/api/settings/security/auto-lock');
               const configData = await configResponse.json();
               if (configData.status === 'success' && configData.config.enabled) {
                 activityMonitor.start();
@@ -354,7 +358,7 @@
 </script>
 
 <!-- Browser notifications for alerts -->
-<script src="/static/js/notifications.js"></script>
+<script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
 
 </body>
 </html>

@@ -152,7 +152,7 @@
     const statusText = document.getElementById('links-status-text');
 
     try {
-      const response = await fetch('/api/v2/links');
+      const response = await fetch(window.SCIDK_BASE + '/api/v2/links');
       const data = await response.json();
 
       if (data.status === 'success' && data.links) {
@@ -271,7 +271,7 @@
 
     // Check Neo4j connection first
     try {
-      const healthResponse = await fetch('/api/admin/health');
+      const healthResponse = await fetch(window.SCIDK_BASE + '/api/admin/health');
       const healthData = await healthResponse.json();
 
       if (!healthData.neo4j || healthData.neo4j.status !== 'connected') {
@@ -439,7 +439,7 @@
     statusText.textContent = 'Reloading...';
 
     try {
-      const response = await fetch('/api/v2/links/reload', {
+      const response = await fetch(window.SCIDK_BASE + '/api/v2/links/reload', {
         method: 'POST'
       });
 
