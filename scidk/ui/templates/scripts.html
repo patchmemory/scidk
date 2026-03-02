@@ -1,0 +1,3914 @@
+{% extends 'base.html' %}
+{% block title %}-SciDK-> Scripts{% endblock %}
+{% block head %}
+<!-- CodeMirror for syntax highlighting -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/monokai.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/sql/sql.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js"></script>
+
+<!-- Chart.js for visualizations -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<style>
+  main { max-width: 100% !important; padding: 0 !important; }
+
+  .scripts-container {
+    display: flex;
+    height: calc(100vh - 60px);
+    gap: 0;
+  }
+
+  /* Script Library Panel (Left) */
+  .script-library {
+    width: 280px;
+    min-width: 200px;
+    max-width: 500px;
+    background: #f9f9f9;
+    border-right: 1px solid #e0e0e0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .script-library-header {
+    padding: 1rem;
+    border-bottom: 1px solid #e0e0e0;
+    background: #fff;
+  }
+
+  .script-library-header h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1rem;
+  }
+
+  .script-search {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.9em;
+  }
+
+  .script-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 0;
+  }
+
+  .script-category {
+    margin-bottom: 1rem;
+  }
+
+  .script-category-header {
+    padding: 0.5rem 1rem;
+    font-weight: 600;
+    font-size: 0.85em;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .script-item {
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: all 0.15s ease;
+  }
+
+  .script-item:hover {
+    background: #f0f0f0;
+  }
+
+  .script-item.active {
+    background: #fff;
+    border-left-color: var(--accent);
+  }
+
+  .script-item-name {
+    font-weight: 500;
+    font-size: 0.9em;
+    margin-bottom: 0.25rem;
+  }
+
+  .script-item-desc {
+    font-size: 0.8em;
+    color: #666;
+    line-height: 1.3;
+  }
+
+  .script-library-actions {
+    padding: 1rem;
+    border-top: 1px solid #e0e0e0;
+    background: #fff;
+  }
+
+  /* Editor Panel (Center) */
+  .editor-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 400px;
+    background: #fff;
+  }
+
+  .editor-header {
+    padding: 1rem;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .editor-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+  }
+
+  .editor-controls {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .editor-meta {
+    padding: 1rem;
+    background: #f9f9f9;
+    border-bottom: 1px solid #e0e0e0;
+  }
+
+  .editor-meta-row {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .editor-meta-row:last-child {
+    margin-bottom: 0;
+  }
+
+  .editor-meta-label {
+    font-weight: 500;
+    font-size: 0.85em;
+    min-width: 80px;
+  }
+
+  .editor-meta-value {
+    flex: 1;
+  }
+
+  .CodeMirror {
+    height: 100% !important;
+    font-size: 14px;
+  }
+
+  .editor-code {
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .editor-footer {
+    padding: 1rem;
+    border-top: 1px solid #e0e0e0;
+    background: #f9f9f9;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .editor-status-container {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .editor-status {
+    font-size: 0.9em;
+    color: #666;
+  }
+
+  .editor-status.running { color: #0a6; }
+  .editor-status.error { color: #d00; }
+  .editor-status.success { color: #0a6; }
+
+  /* Status badges */
+  .status-badge {
+    font-size: 0.85em;
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+    font-weight: 500;
+  }
+
+  .status-badge.draft {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  .status-badge.validated {
+    background: #d1fae5;
+    color: #065f46;
+  }
+
+  .status-badge.failed {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+
+  .status-badge.active {
+    background: #dbeafe;
+    color: #1e40af;
+    border: 1px solid #3b82f6;
+  }
+
+  /* Language/Format badges */
+  .language-badge {
+    font-size: 0.7em;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    font-weight: 600;
+    text-transform: uppercase;
+    display: inline-block;
+    margin-left: 0.5rem;
+  }
+
+  .language-badge.python {
+    background: #dbeafe;
+    color: #1e40af;
+  }
+
+  .language-badge.cypher {
+    background: #e0e7ff;
+    color: #4338ca;
+  }
+
+  /* Edit Warning Banner */
+  .edit-warning {
+    padding: 0.75rem 1rem;
+    background: #fef3c7;
+    border: 1px solid #f59e0b;
+    border-left: 4px solid #f59e0b;
+    color: #92400e;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* Validation Results Panel */
+  .validation-results {
+    padding: 1rem;
+    background: #f9fafb;
+    border-bottom: 1px solid #e0e0e0;
+    font-size: 0.9em;
+  }
+
+  .validation-results.passed {
+    background: #f0fdf4;
+    border-color: #86efac;
+  }
+
+  .validation-results.failed {
+    background: #fef2f2;
+    border-color: #fca5a5;
+  }
+
+  .validation-summary {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .validation-tests {
+    margin-top: 1rem;
+  }
+
+  .validation-test-item {
+    padding: 0.75rem;
+    margin: 0.5rem 0;
+    border-radius: 4px;
+    border-left: 4px solid #ccc;
+    background: white;
+  }
+
+  .validation-test-item.passed {
+    background: #f0fdf4;
+    border-left-color: #10b981;
+  }
+
+  .validation-test-item.failed {
+    background: #fef2f2;
+    border-left-color: #ef4444;
+  }
+
+  .test-status {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+  }
+
+  .test-hint {
+    font-size: 0.85em;
+    color: #6b7280;
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background: #f9fafb;
+    border-radius: 3px;
+    font-family: 'Monaco', 'Menlo', monospace;
+  }
+
+  .validation-errors {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #fef2f2;
+    border-radius: 4px;
+  }
+
+  .validation-errors h4 {
+    color: #991b1b;
+    margin-top: 0;
+  }
+
+  .validation-errors ul {
+    color: #991b1b;
+  }
+
+  .validation-warnings {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #fffbeb;
+    border-radius: 4px;
+  }
+
+  .validation-warnings h4 {
+    color: #92400e;
+    margin-top: 0;
+  }
+
+  /* Edit warning banner (duplicates removed) */
+  .edit-warning-banner {
+    padding: 0.25rem 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85em;
+  }
+
+  .validation-test-item.passed {
+    color: #166534;
+  }
+
+  .validation-test-item.failed {
+    color: #991b1b;
+  }
+
+  .validation-errors {
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background: #fff;
+    border: 1px solid #fca5a5;
+    border-radius: 4px;
+    max-height: 150px;
+    overflow-y: auto;
+  }
+
+  .validation-error {
+    color: #991b1b;
+    font-size: 0.85em;
+    margin: 0.25rem 0;
+  }
+
+  /* Plugin Palette Sidebar */
+  .plugin-palette-sidebar {
+    position: fixed;
+    right: 0;
+    top: 60px;
+    bottom: 0;
+    width: 320px;
+    background: #fff;
+    border-left: 1px solid #e0e0e0;
+    box-shadow: -2px 0 8px rgba(0,0,0,0.1);
+    transform: translateX(100%);
+    transition: transform 0.3s ease;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .plugin-palette-sidebar.open {
+    transform: translateX(0);
+  }
+
+  .plugin-palette-header {
+    padding: 1rem;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #f9fafb;
+  }
+
+  .plugin-palette-header h4 {
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  .plugin-palette-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem;
+  }
+
+  .plugin-item {
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .plugin-item:hover {
+    background: #f9fafb;
+    border-color: var(--accent);
+  }
+
+  .plugin-item-name {
+    font-weight: 600;
+    font-size: 0.9em;
+    margin-bottom: 0.25rem;
+  }
+
+  .plugin-item-desc {
+    font-size: 0.85em;
+    color: #666;
+    margin-bottom: 0.5rem;
+  }
+
+  .plugin-item-docstring {
+    font-size: 0.8em;
+    color: #888;
+    font-style: italic;
+    max-height: 60px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .plugin-item-copy {
+    font-size: 0.75em;
+    color: var(--accent);
+    margin-top: 0.5rem;
+  }
+
+  /* Results Panel (Right) */
+  .results-panel {
+    width: 450px;
+    min-width: 300px;
+    max-width: 800px;
+    background: #fff;
+    border-left: 1px solid #e0e0e0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .results-header {
+    padding: 1rem;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .results-header h3 {
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  .results-tabs {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .results-tab {
+    padding: 0.5rem 1rem;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 0.9em;
+    border-bottom: 2px solid transparent;
+  }
+
+  .results-tab.active {
+    border-bottom-color: var(--accent);
+    font-weight: 600;
+  }
+
+  .results-content {
+    flex: 1;
+    overflow: auto;
+    padding: 1rem;
+  }
+
+  .results-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9em;
+    table-layout: fixed;
+  }
+
+  .results-table th,
+  .results-table td {
+    padding: 0.5rem;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    position: relative;
+  }
+
+  .results-table th {
+    background: #f9f9f9;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .results-table th:hover {
+    background: #f0f0f0;
+  }
+
+  .results-table th .sort-indicator {
+    margin-left: 0.25rem;
+    font-size: 0.7em;
+    color: #999;
+  }
+
+  .results-table th.sorted-asc .sort-indicator::after {
+    content: '↑';
+    color: #333;
+  }
+
+  .results-table th.sorted-desc .sort-indicator::after {
+    content: '↓';
+    color: #333;
+  }
+
+  .results-table th .resize-handle {
+    position: absolute;
+    right: -3px;
+    top: 0;
+    bottom: 0;
+    width: 10px;
+    cursor: col-resize;
+    user-select: none;
+    z-index: 10;
+    background: transparent;
+  }
+
+  .results-table th .resize-handle:hover,
+  .results-table th .resize-handle.resizing {
+    background: rgba(0, 123, 255, 0.3);
+    border-right: 2px solid #007bff;
+  }
+
+  .results-chart-container {
+    display: none;
+    height: 400px;
+  }
+
+  .results-chart-container.active {
+    display: block;
+  }
+
+  .results-footer {
+    padding: 1rem;
+    border-top: 1px solid #e0e0e0;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 3rem 2rem;
+    color: #999;
+  }
+
+  /* Buttons */
+  .btn {
+    padding: 0.5rem 1rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: all 0.15s ease;
+  }
+
+  .btn:hover {
+    background: #f9f9f9;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  .btn-primary:hover {
+    opacity: 0.9;
+  }
+
+  .btn-sm {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.85em;
+  }
+
+  /* Resize handles */
+  .resize-handle-vertical {
+    width: 5px;
+    cursor: ew-resize;
+    background: transparent;
+    position: relative;
+  }
+
+  .resize-handle-vertical:hover {
+    background: #ddd;
+  }
+
+  /* Select inputs */
+  select, input {
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.9em;
+  }
+
+  /* Parameters section */
+  .parameters-section {
+    padding: 1rem;
+    background: #f9f9f9;
+    border-bottom: 1px solid #e0e0e0;
+  }
+
+  .parameters-section h4 {
+    margin: 0 0 1rem 0;
+    font-size: 1em;
+    font-weight: 600;
+    color: #333;
+  }
+
+  .no-parameters {
+    font-size: 0.9em;
+    color: #666;
+    font-style: italic;
+  }
+
+  .parameter-field {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.65rem;
+  }
+
+  .parameter-field label {
+    font-size: 0.85em;
+    font-weight: 500;
+    color: #555;
+    text-align: right;
+    padding-right: 0.5rem;
+  }
+
+  .parameter-field label .required {
+    color: #dc2626;
+  }
+
+  .parameter-field input[type="text"],
+  .parameter-field input[type="number"],
+  .parameter-field select,
+  .parameter-field textarea {
+    width: 100%;
+    max-width: 350px;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    font-size: 0.85em;
+    font-family: inherit;
+  }
+
+  .parameter-field input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+  }
+
+  .parameter-field textarea {
+    resize: vertical;
+    min-height: 60px;
+  }
+
+  .field-description {
+    grid-column: 2;
+    font-size: 0.75em;
+    color: #888;
+    margin-top: -0.4rem;
+    margin-bottom: 0.2rem;
+  }
+
+  .field-error {
+    grid-column: 2;
+    font-size: 0.75em;
+    color: #dc2626;
+    font-weight: 500;
+  }
+
+  /* Special layout for checkbox */
+  .parameter-field.checkbox-field {
+    grid-template-columns: 140px auto 1fr;
+  }
+
+  .parameter-row input {
+    flex: 1;
+  }
+
+  /* Modal Styles */
+  .modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 10000;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-content {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    max-width: 900px;
+    max-height: 85vh;
+    width: 90%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .modal-header {
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .modal-header h3 {
+    margin: 0;
+    font-size: 1.25em;
+    font-weight: 600;
+  }
+
+  .modal-body {
+    padding: 1.5rem;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .modal-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .btn-close {
+    background: none;
+    border: none;
+    font-size: 1.75em;
+    color: #666;
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+  }
+
+  .btn-close:hover {
+    background: #f0f0f0;
+    color: #333;
+  }
+
+  /* New Script Modal */
+  .script-type-card {
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 1.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+  }
+
+  .script-type-card:hover {
+    border-color: #00aa66;
+    background: #f0fdf4;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  }
+
+  .script-type-card.selected {
+    border-color: #00aa66;
+    background: #f0fdf4;
+    box-shadow: 0 0 0 3px rgba(0, 170, 102, 0.1);
+  }
+
+  .script-type-icon {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .script-type-card h4 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1rem;
+    color: #111;
+  }
+
+  .script-type-card p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #666;
+    line-height: 1.4;
+  }
+
+  /* Plugin Palette Modal */
+  .snippet-category {
+    margin-bottom: 2rem;
+  }
+
+  .snippet-category h4 {
+    margin: 0 0 1rem 0;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #00aa66;
+    color: #00aa66;
+  }
+
+  .snippet-item {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    overflow: hidden;
+  }
+
+  .snippet-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .snippet-code {
+    margin: 0;
+    padding: 1rem;
+    background: #1e293b;
+    color: #e2e8f0;
+    font-family: 'Courier New', monospace;
+    font-size: 0.85em;
+    overflow-x: auto;
+    line-height: 1.5;
+  }
+
+  .copy-snippet-btn {
+    background: #00aa66;
+    color: white;
+    border: none;
+    cursor: pointer;
+  }
+
+  .copy-snippet-btn:hover {
+    background: #008855;
+  }
+
+  /* Context Menu */
+  .column-context-menu {
+    position: fixed;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    padding: 0.25rem 0;
+    z-index: 1000;
+    min-width: 150px;
+  }
+
+  .column-context-menu-item {
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background 0.1s;
+  }
+
+  .column-context-menu-item:hover {
+    background: #f0f0f0;
+  }
+
+  .column-context-menu-item.disabled {
+    color: #999;
+    cursor: not-allowed;
+  }
+
+  .column-context-menu-item.disabled:hover {
+    background: white;
+  }
+
+  /* Security warning banner */
+  .security-warning-banner {
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 4px;
+    padding: 0.75rem 1rem;
+    margin: 0.5rem;
+    display: flex;
+    align-items: start;
+    gap: 0.75rem;
+  }
+
+  .security-warning-banner .warning-icon {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+  }
+
+  .security-warning-banner .warning-content h4 {
+    margin: 0 0 0.25rem 0;
+    font-size: 0.95rem;
+    color: #856404;
+  }
+
+  .security-warning-banner .warning-content p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #856404;
+    line-height: 1.4;
+  }
+
+  /* Grouped table styling */
+  .results-table.grouped {
+    table-layout: auto;
+  }
+
+  .results-table .grouped-list {
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: monospace;
+    font-size: 0.85em;
+  }
+
+  .results-table .count-column {
+    font-weight: 600;
+    color: #00aa66;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Security Warning Banner -->
+<div class="security-warning-banner">
+  <div class="warning-icon">⚠️</div>
+  <div class="warning-content">
+    <h4>Security Notice: Admin Permissions Required</h4>
+    <p>
+      Scripts have full system access (filesystem, databases, etc.). Only create, edit, or activate scripts from trusted sources.
+      <strong>Creating, editing, and activating scripts requires admin privileges.</strong>
+    </p>
+  </div>
+</div>
+
+<div class="scripts-container">
+  <!-- Script Library Panel -->
+  <div class="script-library" id="script-library">
+    <div class="script-library-header">
+      <h3>Script Library</h3>
+      <input type="text" class="script-search" id="script-search" placeholder="Search scripts..." style="margin-bottom: 0.5rem;">
+      <select class="script-search" id="category-filter">
+        <option value="">All Categories</option>
+        <option value="analyses/builtin">📊 Built-in Analyses</option>
+        <option value="analyses/custom">📊 Custom Analyses</option>
+        <option value="interpreters">🔧 Interpreters</option>
+        <option value="plugins">🔌 Plugins</option>
+        <option value="links">🔗 Links</option>
+        <option value="api">🌐 API Endpoints</option>
+      </select>
+    </div>
+
+    <div class="script-list" id="script-list">
+      <div class="empty-state">Loading scripts...</div>
+    </div>
+
+    <div class="script-library-actions">
+      <button class="btn btn-sm btn-primary" id="new-script-btn" style="width: 100%; margin-bottom: 0.5rem;">+ New Script</button>
+      <button class="btn btn-sm" id="import-notebook-btn" style="width: 100%;">📓 Import Notebook</button>
+      <input type="file" id="notebook-file-input" accept=".ipynb" style="display: none;">
+    </div>
+  </div>
+
+  <!-- Resize Handle -->
+  <div class="resize-handle-vertical" id="resize-library"></div>
+
+  <!-- Editor Panel -->
+  <div class="editor-panel" id="editor-panel">
+    <div class="editor-header">
+      <h3 id="editor-title">Script Editor</h3>
+      <div class="editor-controls">
+        <select id="language-selector">
+          <option value="cypher">Cypher</option>
+          <option value="python">Python</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="editor-meta" id="editor-meta" style="display: none;">
+      <div class="editor-meta-row">
+        <div class="editor-meta-label">Description:</div>
+        <div class="editor-meta-value" id="script-description">-</div>
+      </div>
+      <div class="editor-meta-row">
+        <div class="editor-meta-label">Tags:</div>
+        <div class="editor-meta-value" id="script-tags">-</div>
+      </div>
+      <div class="editor-meta-row">
+        <div class="editor-meta-label">Status:</div>
+        <div class="editor-meta-value">
+          <span class="status-badge" id="validation-status-badge">🟡 Draft</span>
+          <span class="status-badge active" id="active-status-badge" style="display: none;">✓ Active</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Warning Banner -->
+    <div class="edit-warning" id="edit-warning" style="display: none;">
+      ⚠️ Editing will reset validation status. Save & re-validate to activate.
+    </div>
+
+    <!-- Validation Results Panel -->
+    <div class="validation-results" id="validation-results" style="display: none;">
+      <div class="validation-summary" id="validation-summary"></div>
+      <div class="validation-tests" id="validation-tests"></div>
+      <div class="validation-errors" id="validation-errors" style="display: none;"></div>
+    </div>
+
+    <div class="parameters-section" id="parameters-section" style="display: none;">
+      <!-- Dynamic parameter inputs will be inserted here -->
+    </div>
+
+    <div class="editor-code" id="editor-code">
+      <textarea id="code-editor">// Select a script from the library to begin</textarea>
+    </div>
+
+    <div class="editor-footer">
+      <div class="editor-status-container">
+        <div class="editor-status" id="editor-status">Ready</div>
+        <span class="status-badge" id="status-badge" style="display: none;">🟡 Draft</span>
+      </div>
+      <div class="editor-controls">
+        <button class="btn btn-sm" id="plugin-palette-btn">📦 Snippets</button>
+        <button class="btn btn-sm" id="clone-script-btn" disabled style="display: none;">📋 Clone</button>
+        <button class="btn btn-sm" id="validate-script-btn" disabled>🔍 Validate</button>
+        <button class="btn btn-sm" id="activate-script-btn" disabled style="display: none;">✅ Activate</button>
+        <button class="btn btn-sm" id="deactivate-script-btn" disabled style="display: none;">⏸ Deactivate</button>
+        <button class="btn btn-sm" id="save-script-btn" disabled>💾 Save</button>
+        <button class="btn btn-sm" id="delete-script-btn" disabled>🗑 Delete</button>
+        <button class="btn btn-sm btn-primary" id="run-script-btn" disabled>▶ Run</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Resize Handle -->
+  <div class="resize-handle-vertical" id="resize-results"></div>
+
+  <!-- Results Panel -->
+  <div class="results-panel" id="results-panel">
+    <div class="results-header">
+      <h3>Results</h3>
+      <div class="results-tabs">
+        <button class="results-tab active" data-tab="table">Table</button>
+        <button class="results-tab" data-tab="chart">Chart</button>
+        <button class="results-tab" data-tab="validation">Validation</button>
+      </div>
+    </div>
+
+    <div class="results-content" id="results-content">
+      <div class="empty-state">
+        <p>Run a script to see results</p>
+      </div>
+    </div>
+
+    <div class="results-footer" id="results-footer" style="display: none;">
+      <button class="btn btn-sm" id="export-csv-btn">⬇ CSV</button>
+      <button class="btn btn-sm" id="export-json-btn">⬇ JSON</button>
+      <button class="btn btn-sm" id="export-jupyter-btn">📓 Jupyter</button>
+      <div style="flex: 1"></div>
+      <span class="small" id="results-count">0 rows</span>
+    </div>
+  </div>
+</div>
+
+<!-- Plugin Palette Modal -->
+<div id="plugin-palette-modal" class="modal">
+  <div class="modal-content" style="max-width: 800px;">
+    <div class="modal-header">
+      <h3>Plugin Code Snippets</h3>
+      <button class="btn-close" id="close-palette-btn">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="color: #666; margin-bottom: 1rem;">
+        Click a snippet to copy it to your clipboard, then paste into your script.
+      </p>
+
+      <div class="snippet-category">
+        <h4>Interpreter Contract</h4>
+        <div class="snippet-item" data-snippet="interpreter-basic">
+          <div class="snippet-header">
+            <strong>Basic Interpreter Template</strong>
+            <button class="btn btn-sm copy-snippet-btn">📋 Copy</button>
+          </div>
+          <pre class="snippet-code">def interpret(file_path: Path) -> dict:
+    """
+    Parse file and return structured data.
+
+    Returns:
+        dict with keys:
+        - status: 'ok' or 'error'
+        - data: parsed content (list/dict)
+        - message: error message if status='error'
+    """
+    try:
+        # Your parsing logic here
+        data = []
+        return {'status': 'ok', 'data': data}
+    except Exception as e:
+        return {'status': 'error', 'message': str(e)}</pre>
+        </div>
+      </div>
+
+      <div class="snippet-category">
+        <h4>Link Script Contract</h4>
+        <div class="snippet-item" data-snippet="link-basic">
+          <div class="snippet-header">
+            <strong>Basic Link Script Template</strong>
+            <button class="btn btn-sm copy-snippet-btn">📋 Copy</button>
+          </div>
+          <pre class="snippet-code">def create_links(source_nodes: list, target_nodes: list) -> list:
+    """
+    Create relationships between source and target nodes.
+
+    Args:
+        source_nodes: List of dicts with node data
+        target_nodes: List of dicts with node data
+
+    Returns:
+        List of tuples: (source_id, target_id, relationship_type, properties)
+    """
+    links = []
+    for source in source_nodes:
+        for target in target_nodes:
+            if matches(source, target):
+                links.append((
+                    source['id'],
+                    target['id'],
+                    'RELATED_TO',
+                    {'confidence': 1.0}
+                ))
+    return links</pre>
+        </div>
+      </div>
+
+      <div class="snippet-category">
+        <h4>Common Patterns</h4>
+        <div class="snippet-item" data-snippet="fuzzy-match">
+          <div class="snippet-header">
+            <strong>Fuzzy String Matching</strong>
+            <button class="btn btn-sm copy-snippet-btn">📋 Copy</button>
+          </div>
+          <pre class="snippet-code">from difflib import SequenceMatcher
+
+def fuzzy_match(str1: str, str2: str, threshold: float = 0.8) -> bool:
+    """Check if two strings match with fuzzy logic."""
+    ratio = SequenceMatcher(None, str1.lower(), str2.lower()).ratio()
+    return ratio >= threshold</pre>
+        </div>
+
+        <div class="snippet-item" data-snippet="csv-reader">
+          <div class="snippet-header">
+            <strong>CSV Reader</strong>
+            <button class="btn btn-sm copy-snippet-btn">📋 Copy</button>
+          </div>
+          <pre class="snippet-code">import csv
+from pathlib import Path
+
+def read_csv(file_path: Path) -> list:
+    """Read CSV file and return list of dicts."""
+    with open(file_path, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        return list(reader)</pre>
+        </div>
+
+        <div class="snippet-item" data-snippet="json-reader">
+          <div class="snippet-header">
+            <strong>JSON Reader</strong>
+            <button class="btn btn-sm copy-snippet-btn">📋 Copy</button>
+          </div>
+          <pre class="snippet-code">import json
+from pathlib import Path
+
+def read_json(file_path: Path) -> dict:
+    """Read JSON file and return parsed data."""
+    with open(file_path, 'r', encoding='utf-8') as f:
+        return json.load(f)</pre>
+        </div>
+      </div>
+
+      <!-- Available Plugins Section -->
+      <div class="snippet-category">
+        <h4>📦 Available Plugins</h4>
+        <p style="font-size: 0.9em; color: #666; margin-bottom: 0.75rem;">
+          Validated plugins you can call from your scripts. Click to copy load_plugin() call.
+        </p>
+        <div id="available-plugins-list">
+          <!-- Dynamically loaded from /api/plugins/available -->
+          <div style="color: #999; font-style: italic;">Loading plugins...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- New Script Modal -->
+<div id="new-script-modal" class="modal">
+  <div class="modal-content" style="max-width: 600px;">
+    <div class="modal-header">
+      <h3>Create New Script</h3>
+      <button class="btn-close" onclick="closeNewScriptModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="color: #666; margin-bottom: 1.5rem;">
+        Select a script type to start with a pre-configured template.
+      </p>
+
+      <div class="script-type-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+        <div class="script-type-card" data-type="plugin">
+          <div class="script-type-icon">🧩</div>
+          <h4>Plugin</h4>
+          <p>General-purpose analysis or data processing module</p>
+        </div>
+        <div class="script-type-card" data-type="interpreter">
+          <div class="script-type-icon">📄</div>
+          <h4>Interpreter</h4>
+          <p>Parse files and extract structured data</p>
+        </div>
+        <div class="script-type-card" data-type="link">
+          <div class="script-type-icon">🔗</div>
+          <h4>Link</h4>
+          <p>Create relationships between graph nodes</p>
+        </div>
+        <div class="script-type-card" data-type="analysis">
+          <div class="script-type-icon">📊</div>
+          <h4>Analysis</h4>
+          <p>Custom data analysis script</p>
+        </div>
+        <div class="script-type-card" data-type="api">
+          <div class="script-type-icon">🌐</div>
+          <h4>API Endpoint</h4>
+          <p>REST API endpoint handler</p>
+        </div>
+        <div class="script-type-card" data-type="custom">
+          <div class="script-type-icon">⚙️</div>
+          <h4>Custom</h4>
+          <p>Blank script for advanced users</p>
+        </div>
+      </div>
+
+      <div id="new-script-form" style="display: none;">
+        <hr style="margin: 1.5rem 0;">
+        <div style="margin-bottom: 1rem;">
+          <label style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Script Name</label>
+          <input type="text" id="new-script-name" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;" placeholder="Enter script name">
+        </div>
+        <div style="margin-bottom: 1rem;">
+          <label style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Description</label>
+          <textarea id="new-script-description" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; resize: vertical;" rows="2" placeholder="Enter description (optional)"></textarea>
+        </div>
+        <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+          <button class="btn" onclick="closeNewScriptModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="createScriptFromTemplate()">Create Script</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Parameter Editor Modal -->
+<div id="parameter-editor-modal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>Edit Parameters</h3>
+      <button class="btn-close" onclick="closeParameterEditor()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="color: #666; margin-bottom: 1rem;">
+        Define parameters that users can fill in when running this script.
+      </p>
+
+      <div id="parameter-editor-list">
+        <!-- Parameter editor items will be added here -->
+      </div>
+
+      <button class="btn btn-sm" onclick="addParameterRow()" style="margin-top: 1rem;">+ Add Parameter</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeParameterEditor()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveParameters()">Save Parameters</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Global state
+let currentScript = null;
+let currentResult = null;
+let codeMirrorEditor = null;
+let allScripts = [];
+let currentChart = null;
+let groupedByColumn = null;
+let originalTableData = null;
+
+// Initialize CodeMirror
+function initializeEditor() {
+  const textarea = document.getElementById('code-editor');
+  codeMirrorEditor = CodeMirror.fromTextArea(textarea, {
+    mode: 'text/x-sql',
+    theme: 'monokai',
+    lineNumbers: true,
+    readOnly: false
+  });
+
+  // Detect when code is edited to show warning banner
+  codeMirrorEditor.on('change', function() {
+    if (!currentScript) return;
+
+    // Check if script was validated or failed before edit
+    if (currentScript.validation_status === 'validated' ||
+        currentScript.validation_status === 'failed') {
+      // Show edit warning
+      const editWarning = document.getElementById('edit-warning');
+      if (editWarning) {
+        editWarning.style.display = 'flex';
+      }
+    }
+  });
+}
+
+// Load scripts from API
+async function loadScripts() {
+  try {
+    const response = await fetch('/api/scripts/scripts');
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      allScripts = data.scripts;
+      renderScriptList(allScripts);
+    } else {
+      window.toast('Failed to load scripts: ' + data.message, 'error');
+    }
+  } catch (error) {
+    window.toast('Error loading scripts: ' + error.message, 'error');
+  }
+}
+
+// Render script list
+function renderScriptList(scripts) {
+  const listEl = document.getElementById('script-list');
+  const categoryFilter = document.getElementById('category-filter').value;
+
+  // Deduplicate by ID (in case backend returns duplicates)
+  const seenIds = new Set();
+  scripts = scripts.filter(s => {
+    if (seenIds.has(s.id)) return false;
+    seenIds.add(s.id);
+    return true;
+  });
+
+  // Filter by category if selected
+  if (categoryFilter) {
+    scripts = scripts.filter(s => s.category === categoryFilter);
+  }
+
+  // Group by category
+  const categoryGroups = {};
+  scripts.forEach(script => {
+    const cat = script.category;
+    if (!categoryGroups[cat]) categoryGroups[cat] = [];
+    categoryGroups[cat].push(script);
+  });
+
+  // Category icons and labels
+  const categoryMeta = {
+    'builtin': { icon: '📦', label: 'Built-in' },
+    'custom': { icon: '📝', label: 'Custom' },
+    'analyses/builtin': { icon: '📊', label: 'Built-in Analyses' },
+    'analyses/custom': { icon: '📊', label: 'Custom Analyses' },
+    'interpreters': { icon: '🔧', label: 'Interpreters' },
+    'plugins': { icon: '🔌', label: 'Plugins' },
+    'links': { icon: '🔗', label: 'Links' },
+    'examples': { icon: '💡', label: 'Examples' },
+    'api': { icon: '🌐', label: 'API Endpoints' }
+  };
+
+  let html = '';
+
+  for (const [category, items] of Object.entries(categoryGroups)) {
+    if (items.length > 0) {
+      const meta = categoryMeta[category] || { icon: '📄', label: category };
+      html += `<div class="script-category">`;
+      html += `<div class="script-category-header">${meta.icon} ${meta.label}</div>`;
+
+      items.forEach(script => {
+        // Show language badge for links and examples
+        const showLanguageBadge = ['links', 'examples'].includes(category);
+        const languageBadge = showLanguageBadge
+          ? `<span class="language-badge ${script.language}">${script.language}</span>`
+          : '';
+
+        html += `
+          <div class="script-item" data-script-id="${script.id}">
+            <div class="script-item-name">${script.name}${languageBadge}</div>
+            <div class="script-item-desc">${script.description || ''}</div>
+          </div>
+        `;
+      });
+
+      html += `</div>`;
+    }
+  }
+
+  if (html === '') {
+    html = '<div class="empty-state">No scripts found</div>';
+  }
+
+  listEl.innerHTML = html;
+
+  // Add click handlers
+  document.querySelectorAll('.script-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const scriptId = item.dataset.scriptId;
+      loadScript(scriptId);
+    });
+  });
+}
+
+// Load and display a script
+async function loadScript(scriptId) {
+  try {
+    const response = await fetch(`/api/scripts/scripts/${scriptId}`);
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      currentScript = data.script;
+      displayScript(currentScript);
+    } else {
+      window.toast('Failed to load script: ' + data.message, 'error');
+    }
+  } catch (error) {
+    window.toast('Error loading script: ' + error.message, 'error');
+  }
+}
+
+// Display script in editor
+function displayScript(script) {
+  // Update active state in list
+  document.querySelectorAll('.script-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.scriptId === script.id);
+  });
+
+  // Update editor
+  document.getElementById('editor-title').textContent = script.name;
+  document.getElementById('script-description').textContent = script.description || '-';
+  document.getElementById('script-tags').textContent = script.tags.join(', ') || '-';
+  document.getElementById('editor-meta').style.display = 'block';
+
+  // Set language
+  const langSelect = document.getElementById('language-selector');
+  langSelect.value = script.language;
+  updateEditorMode(script.language);
+
+  // Set code - always allow editing (builtins can be cloned)
+  codeMirrorEditor.setValue(script.code);
+  codeMirrorEditor.setOption('readOnly', false);
+
+  // Update parameters
+  if (script.parameters && script.parameters.length > 0) {
+    renderParameters(script.parameters);
+  } else {
+    document.getElementById('parameters-section').style.display = 'none';
+  }
+
+  // Update buttons based on whether it's builtin
+  const isBuiltin = script.category === 'builtin' || script.category === 'analyses/builtin';
+
+  document.getElementById('run-script-btn').disabled = false;
+
+  // Show Clone button for builtins, hide Save/Delete/Validate
+  const cloneBtn = document.getElementById('clone-script-btn');
+  const saveBtn = document.getElementById('save-script-btn');
+  const deleteBtn = document.getElementById('delete-script-btn');
+  const validateBtn = document.getElementById('validate-script-btn');
+
+  if (isBuiltin) {
+    cloneBtn.style.display = 'inline-block';
+    cloneBtn.disabled = false;
+    saveBtn.style.display = 'none';
+    deleteBtn.style.display = 'none';
+    validateBtn.style.display = 'none';
+  } else {
+    cloneBtn.style.display = 'none';
+    saveBtn.style.display = 'inline-block';
+    saveBtn.disabled = false;
+    deleteBtn.style.display = 'inline-block';
+    deleteBtn.disabled = false;
+    validateBtn.style.display = 'inline-block';
+    validateBtn.disabled = false;
+  }
+
+  document.getElementById('editor-status').textContent = 'Ready';
+  document.getElementById('editor-status').className = 'editor-status';
+
+  // Update validation status badge
+  updateValidationBadge(script);
+
+  // Update activation buttons
+  updateActivationButtons();
+}
+
+// Update validation status badge
+function updateValidationBadge(script) {
+  const badge = document.getElementById('status-badge');
+  const status = script.validation_status || 'draft';
+
+  badge.style.display = 'inline-block';
+  badge.className = 'status-badge ' + status;
+
+  if (script.is_active) {
+    badge.textContent = '🟢 Active';
+    badge.className = 'status-badge active';
+  } else if (status === 'validated') {
+    const timestamp = script.validation_timestamp;
+    const timeAgo = timestamp ? getTimeAgo(timestamp) : '';
+    badge.textContent = `🟢 Validated ${timeAgo}`;
+  } else if (status === 'failed') {
+    badge.textContent = '🔴 Failed';
+  } else {
+    badge.textContent = '🟡 Draft';
+  }
+}
+
+// Get human-readable time ago
+function getTimeAgo(timestamp) {
+  const seconds = Math.floor(Date.now() / 1000 - timestamp);
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+// Render parameter inputs
+function renderParameters(parameters) {
+  const section = document.getElementById('parameters-section');
+  const isBuiltin = currentScript?.category === 'builtin' || currentScript?.category === 'analyses/builtin';
+
+  let html = '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">';
+  html += '<h4 style="margin: 0;">Parameters</h4>';
+
+  // Add "Edit Parameters" button for non-builtin scripts
+  if (!isBuiltin) {
+    html += '<button class="btn btn-sm" onclick="openParameterEditor()" style="font-size: 0.85em;">✏️ Edit Parameters</button>';
+  }
+  html += '</div>';
+
+  if (!parameters || parameters.length === 0) {
+    html += '<p class="no-parameters">No parameters defined. Click "Edit Parameters" to add some.</p>';
+  } else {
+    parameters.forEach(param => {
+      html += renderParameterField(param);
+    });
+  }
+
+  section.innerHTML = html;
+  section.style.display = 'block';
+
+  // After rendering, populate label selectors for node parameters
+  populateLabelSelectors();
+}
+
+// Populate label selectors with available Neo4j labels
+async function populateLabelSelectors() {
+  const labelSelectors = document.querySelectorAll('.label-selector');
+  if (labelSelectors.length === 0) return;
+
+  try {
+    const response = await fetch('/api/graph/schema/combined?source=neo4j');
+    const data = await response.json();
+
+    // Extract unique labels from schema
+    const labels = new Set();
+    if (data.labels) {
+      data.labels.forEach(label => labels.add(label.name));
+    }
+
+    // Populate each selector
+    labelSelectors.forEach(selector => {
+      const sortedLabels = Array.from(labels).sort();
+      sortedLabels.forEach(label => {
+        const option = document.createElement('option');
+        option.value = label;
+        option.textContent = label;
+        selector.appendChild(option);
+      });
+    });
+  } catch (error) {
+    console.error('Failed to load labels:', error);
+  }
+}
+
+// Load nodes for selected label
+async function loadNodesForLabel(paramName) {
+  const fieldId = `param-${paramName}`;
+  const selectorId = `${fieldId}-label-selector`;
+  const selector = document.getElementById(selectorId);
+  const textarea = document.getElementById(fieldId);
+  const nodeInfo = document.getElementById(`${fieldId}-node-info`);
+
+  if (!selector || !textarea) return;
+
+  const selectedLabel = selector.value;
+  if (!selectedLabel) {
+    window.toast('Please select a label first', 'error');
+    return;
+  }
+
+  try {
+    // Show loading state
+    nodeInfo.style.display = 'block';
+    nodeInfo.innerHTML = '<span style="color: #666;">Loading nodes...</span>';
+
+    const response = await fetch(`/api/graph/instances?label=${encodeURIComponent(selectedLabel)}&limit=100`);
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    // Format nodes as JSON
+    const nodes = data.rows || [];
+    const formattedJson = JSON.stringify(nodes, null, 2);
+    textarea.value = formattedJson;
+
+    // Update info
+    nodeInfo.innerHTML = `<span style="color: #00aa66;">✓ ${nodes.length} nodes loaded from "${selectedLabel}"</span>`;
+    window.toast(`Loaded ${nodes.length} nodes`, 'success');
+
+  } catch (error) {
+    console.error('Failed to load nodes:', error);
+    nodeInfo.style.display = 'block';
+    nodeInfo.innerHTML = `<span style="color: #d00;">Error: ${error.message}</span>`;
+    window.toast('Failed to load nodes: ' + error.message, 'error');
+  }
+}
+
+// Render individual parameter field based on type
+function renderParameterField(param) {
+  const fieldId = `param-${param.name}`;
+  const required = param.required ? '<span class="required">*</span>' : '';
+  const description = param.description ?
+    `<div class="field-description">${escapeHtml(param.description)}</div>` : '';
+
+  let inputHtml = '';
+
+  // Special handling for Link script node parameters
+  if (param.name === 'source_nodes' || param.name === 'target_nodes') {
+    const nodeType = param.name === 'source_nodes' ? 'source' : 'target';
+    return `
+      <div class="parameter-field node-selector-field" data-param-name="${param.name}">
+        <label for="${fieldId}">
+          ${escapeHtml(param.label || param.name)}${required}
+          <span style="font-size: 0.75em; color: #999; font-weight: normal; margin-left: 0.25rem;">(${param.name})</span>
+        </label>
+        <div>
+          <div class="node-selector-controls">
+            <select id="${fieldId}-label-selector" class="label-selector" data-node-type="${nodeType}" style="margin-bottom: 0.5rem;">
+              <option value="">Select a label...</option>
+            </select>
+            <button type="button" class="btn btn-sm" onclick="loadNodesForLabel('${param.name}')" style="margin-left: 0.5rem;">Load Nodes</button>
+          </div>
+          <div id="${fieldId}-node-info" class="node-info" style="font-size: 0.85em; color: #666; margin: 0.5rem 0; display: none;">
+            <span class="node-count">0 nodes loaded</span>
+          </div>
+          <textarea id="${fieldId}" name="${param.name}"
+                   rows="6"
+                   placeholder="Select a label and click 'Load Nodes', or paste JSON array manually"
+                   ${param.required ? 'required' : ''}
+                   >${escapeHtml(param.default || '')}</textarea>
+          ${description}
+          <div class="field-error" style="display:none;"></div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Handle different parameter types
+  switch (param.type) {
+    case 'select':
+      const options = (param.options || []).map(opt => {
+        const selected = opt === param.default ? 'selected' : '';
+        return `<option value="${escapeHtml(opt)}" ${selected}>${escapeHtml(opt)}</option>`;
+      }).join('');
+      inputHtml = `<select id="${fieldId}" name="${param.name}" ${param.required ? 'required' : ''}>${options}</select>`;
+      break;
+
+    case 'number':
+    case 'integer':
+      inputHtml = `<input type="number" id="${fieldId}" name="${param.name}"
+                   value="${param.default !== undefined ? param.default : ''}"
+                   ${param.min !== undefined ? `min="${param.min}"` : ''}
+                   ${param.max !== undefined ? `max="${param.max}"` : ''}
+                   ${param.step !== undefined ? `step="${param.step}"` : ''}
+                   ${param.required ? 'required' : ''} />`;
+      break;
+
+    case 'boolean':
+      // For checkbox, use special 3-column layout
+      return `
+        <div class="parameter-field checkbox-field">
+          <label style="text-align: right;">
+            ${escapeHtml(param.label || param.name)}
+            <span style="font-size: 0.75em; color: #999; font-weight: normal; margin-left: 0.25rem;">(${param.name})</span>
+          </label>
+          <input type="checkbox" id="${fieldId}" name="${param.name}" ${param.default ? 'checked' : ''} />
+          <div style="font-size: 0.75em; color: #888;">${param.description || ''}</div>
+          <div></div>
+          <div class="field-error" style="display:none; grid-column: 2 / 4;"></div>
+        </div>
+      `;
+
+    case 'textarea':
+      inputHtml = `<textarea id="${fieldId}" name="${param.name}"
+                   rows="${param.rows || 4}"
+                   placeholder="${escapeHtml(param.placeholder || '')}"
+                   ${param.required ? 'required' : ''}
+                   ${param.maxLength ? `maxlength="${param.maxLength}"` : ''}
+                   >${escapeHtml(param.default || '')}</textarea>`;
+      break;
+
+    case 'text':
+    default:
+      inputHtml = `<input type="text" id="${fieldId}" name="${param.name}"
+                   value="${escapeHtml(param.default || '')}"
+                   placeholder="${escapeHtml(param.placeholder || '')}"
+                   ${param.required ? 'required' : ''}
+                   ${param.maxLength ? `maxlength="${param.maxLength}"` : ''} />`;
+      break;
+  }
+
+  return `
+    <div class="parameter-field">
+      <label for="${fieldId}">
+        ${escapeHtml(param.label || param.name)}${required}
+        <span style="font-size: 0.75em; color: #999; font-weight: normal; margin-left: 0.25rem;">(${param.name})</span>
+      </label>
+      <div>
+        ${inputHtml}
+        ${description}
+        <div class="field-error" style="display:none;"></div>
+      </div>
+    </div>
+  `;
+}
+
+// Helper: Escape HTML to prevent XSS
+function escapeHtml(text) {
+  if (text === null || text === undefined) return '';
+  const div = document.createElement('div');
+  div.textContent = String(text);
+  return div.innerHTML;
+}
+
+// Toggle parameter label editing mode
+window.toggleEditParameterLabels = function() {
+  const btn = document.getElementById('edit-labels-btn');
+  const labels = document.querySelectorAll('.param-label');
+
+  window.parameterLabelsEditMode = !window.parameterLabelsEditMode;
+
+  if (window.parameterLabelsEditMode) {
+    btn.textContent = 'Save Labels';
+    btn.classList.add('btn-primary');
+    btn.classList.remove('btn-secondary');
+
+    labels.forEach(label => {
+      label.contentEditable = 'true';
+      label.style.border = '1px dashed #007bff';
+      label.style.padding = '2px 4px';
+      label.style.borderRadius = '3px';
+      label.style.cursor = 'text';
+    });
+  } else {
+    // Save mode
+    btn.textContent = 'Edit Labels';
+    btn.classList.remove('btn-primary');
+    btn.classList.add('btn-secondary');
+
+    labels.forEach(label => {
+      label.contentEditable = 'false';
+      label.style.border = 'none';
+      label.style.padding = '0';
+      label.style.cursor = 'default';
+    });
+
+    saveParameterLabels();
+  }
+}
+
+// Save parameter label changes
+async function saveParameterLabels() {
+  if (!currentScript) return;
+
+  const labels = document.querySelectorAll('.param-label');
+  const updatedParameters = [...currentScript.parameters];
+  let hasChanges = false;
+
+  labels.forEach(label => {
+    const index = parseInt(label.dataset.paramIndex);
+    const newLabel = label.textContent.trim();
+    const originalLabel = label.dataset.originalLabel;
+
+    if (newLabel !== originalLabel && newLabel !== '') {
+      updatedParameters[index].label = newLabel;
+      hasChanges = true;
+    }
+  });
+
+  if (!hasChanges) return;
+
+  try {
+    const response = await fetch(`/api/scripts/scripts/${currentScript.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: currentScript.name,
+        description: currentScript.description,
+        code: codeMirrorEditor.getValue(),
+        parameters: updatedParameters,
+        tags: currentScript.tags
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      currentScript.parameters = updatedParameters;
+      window.toast('Parameter labels saved successfully', 'success');
+
+      // Update original labels
+      labels.forEach(label => {
+        label.dataset.originalLabel = label.textContent.trim();
+      });
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    window.toast('Error saving parameter labels: ' + error.message, 'error');
+  }
+}
+
+// Update editor mode based on language
+function updateEditorMode(language) {
+  const mode = language === 'python' ? 'text/x-python' : 'text/x-sql';
+  codeMirrorEditor.setOption('mode', mode);
+}
+
+// Collect parameter values from form
+function collectParameterValues() {
+  const section = document.getElementById('parameters-section');
+  const inputs = section.querySelectorAll('input, select, textarea');
+  const values = {};
+
+  inputs.forEach(input => {
+    const name = input.name;
+    if (!name) return;
+
+    if (input.type === 'checkbox') {
+      values[name] = input.checked;
+    } else if (input.type === 'number') {
+      values[name] = input.value ? parseFloat(input.value) : null;
+    } else {
+      values[name] = input.value;
+    }
+  });
+
+  return values;
+}
+
+// Validate parameter values
+function validateParameterValues(parameters, values) {
+  const errors = [];
+
+  parameters.forEach(param => {
+    const value = values[param.name];
+
+    // Check required fields
+    if (param.required && (value === null || value === undefined || value === '')) {
+      errors.push({
+        field: param.name,
+        message: `${param.label || param.name} is required`
+      });
+    }
+
+    // Type-specific validation
+    if (value !== null && value !== undefined && value !== '') {
+      // Number validation
+      if ((param.type === 'number' || param.type === 'integer') && typeof value === 'number') {
+        if (param.min !== undefined && value < param.min) {
+          errors.push({
+            field: param.name,
+            message: `${param.label || param.name} must be at least ${param.min}`
+          });
+        }
+        if (param.max !== undefined && value > param.max) {
+          errors.push({
+            field: param.name,
+            message: `${param.label || param.name} must be at most ${param.max}`
+          });
+        }
+      }
+
+      // Select validation
+      if (param.type === 'select' && param.options) {
+        if (!param.options.includes(value)) {
+          errors.push({
+            field: param.name,
+            message: `${param.label || param.name} must be one of: ${param.options.join(', ')}`
+          });
+        }
+      }
+
+      // String length validation
+      if ((param.type === 'text' || param.type === 'textarea') && typeof value === 'string') {
+        if (param.maxLength && value.length > param.maxLength) {
+          errors.push({
+            field: param.name,
+            message: `${param.label || param.name} must be at most ${param.maxLength} characters`
+          });
+        }
+      }
+    }
+  });
+
+  return errors;
+}
+
+// Display parameter validation errors
+function displayParameterErrors(errors) {
+  // Clear previous errors
+  document.querySelectorAll('.parameter-field .field-error').forEach(el => {
+    el.style.display = 'none';
+    el.textContent = '';
+  });
+  document.querySelectorAll('.parameter-field').forEach(el => {
+    el.classList.remove('has-error');
+  });
+
+  // Show new errors
+  errors.forEach(error => {
+    const fieldId = `param-${error.field}`;
+    const input = document.getElementById(fieldId);
+    if (input) {
+      const field = input.closest('.parameter-field');
+      if (field) {
+        field.classList.add('has-error');
+        const errorEl = field.querySelector('.field-error');
+        if (errorEl) {
+          errorEl.textContent = error.message;
+          errorEl.style.display = 'block';
+        }
+      }
+    }
+  });
+}
+
+// Run script
+async function runScript() {
+  if (!currentScript) return;
+
+  const statusEl = document.getElementById('editor-status');
+  statusEl.textContent = 'Running...';
+  statusEl.className = 'editor-status running';
+
+  // Collect and validate parameters
+  const parameters = collectParameterValues();
+  console.log('Collected parameters:', parameters);
+  const validationErrors = validateParameterValues(currentScript.parameters || [], parameters);
+
+  if (validationErrors.length > 0) {
+    displayParameterErrors(validationErrors);
+    statusEl.textContent = 'Parameter validation failed';
+    statusEl.className = 'editor-status error';
+    window.toast('Please fix parameter errors', 'error');
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/scripts/scripts/${currentScript.id}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parameters })
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      currentResult = data.result;
+
+      if (currentResult.status === 'success') {
+        statusEl.textContent = `Success (${currentResult.execution_time_ms}ms)`;
+        statusEl.className = 'editor-status success';
+
+        // Switch to table tab to show results
+        switchResultsTab('table');
+
+        // Display results
+        displayResults(currentResult.results);
+
+        window.toast(`Query returned ${currentResult.results?.length || 0} rows`, 'success');
+      } else {
+        statusEl.textContent = `Error: ${currentResult.error}`;
+        statusEl.className = 'editor-status error';
+        window.toast('Script execution failed: ' + currentResult.error, 'error');
+      }
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    statusEl.textContent = 'Error';
+    statusEl.className = 'editor-status error';
+    window.toast('Error running script: ' + error.message, 'error');
+  }
+}
+
+// Validate script
+async function validateScript() {
+  if (!currentScript) return;
+
+  const statusEl = document.getElementById('editor-status');
+  const badge = document.getElementById('status-badge');
+
+  statusEl.textContent = 'Validating...';
+  statusEl.className = 'editor-status running';
+
+  try {
+    const response = await fetch(`/api/scripts/scripts/${currentScript.id}/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      const validation = data.validation;
+
+      // Update current script with new validation status
+      currentScript.validation_status = validation.passed ? 'validated' : 'failed';
+      currentScript.validation_errors = validation.errors;
+      currentScript.validation_timestamp = Date.now() / 1000;
+
+      // Update badge
+      updateValidationBadge(currentScript);
+
+      // Display validation results in Validation tab
+      displayValidationResults(validation);
+
+      // Switch to Validation tab
+      switchResultsTab('validation');
+
+      // Update status
+      if (validation.passed) {
+        statusEl.textContent = `✅ Validated (${validation.passed_count}/${validation.test_count} tests passed)`;
+        statusEl.className = 'editor-status success';
+        window.toast('Script validation passed!', 'success');
+      } else {
+        statusEl.textContent = `❌ Validation failed (${validation.failed_count} errors)`;
+        statusEl.className = 'editor-status error';
+        window.toast(`Validation failed: ${validation.errors[0]}`, 'error');
+      }
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    statusEl.textContent = 'Validation error';
+    statusEl.className = 'editor-status error';
+    window.toast('Error validating script: ' + error.message, 'error');
+  }
+}
+
+// Activate script
+async function activateScript() {
+  if (!currentScript) return;
+
+  const statusEl = document.getElementById('editor-status');
+
+  statusEl.textContent = 'Activating...';
+  statusEl.className = 'editor-status running';
+
+  try {
+    const response = await fetch(`/api/scripts/scripts/${currentScript.id}/activate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      currentScript.is_active = true;
+      updateValidationBadge(currentScript);
+      updateActivationButtons();
+
+      statusEl.textContent = '✅ Activated';
+      statusEl.className = 'editor-status success';
+      window.toast('Script activated successfully!', 'success');
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    statusEl.textContent = 'Activation error';
+    statusEl.className = 'editor-status error';
+    window.toast('Error activating script: ' + error.message, 'error');
+  }
+}
+
+// Deactivate script
+async function deactivateScript() {
+  if (!currentScript) return;
+
+  const statusEl = document.getElementById('editor-status');
+
+  statusEl.textContent = 'Deactivating...';
+  statusEl.className = 'editor-status running';
+
+  try {
+    const response = await fetch(`/api/scripts/scripts/${currentScript.id}/deactivate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      currentScript.is_active = false;
+      updateValidationBadge(currentScript);
+      updateActivationButtons();
+
+      statusEl.textContent = '⏸ Deactivated';
+      statusEl.className = 'editor-status';
+      window.toast('Script deactivated', 'success');
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    statusEl.textContent = 'Deactivation error';
+    statusEl.className = 'editor-status error';
+    window.toast('Error deactivating script: ' + error.message, 'error');
+  }
+}
+
+// Clone script (create custom copy of builtin)
+async function cloneScript() {
+  if (!currentScript) return;
+
+  const newName = prompt('Enter name for cloned script:', currentScript.name + ' (Custom)');
+  if (!newName) return;
+
+  try {
+    const response = await fetch('/api/scripts/scripts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: newName,
+        description: currentScript.description + ' (cloned from builtin)',
+        language: currentScript.language,
+        category: 'custom',
+        code: codeMirrorEditor.getValue(),
+        parameters: currentScript.parameters,
+        tags: [...currentScript.tags, 'cloned']
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      window.toast('Script cloned successfully!', 'success');
+      await loadScripts();
+      await loadScript(data.script.id);
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    window.toast('Error cloning script: ' + error.message, 'error');
+  }
+}
+
+// Save script changes
+async function saveScript() {
+  if (!currentScript) return;
+
+  const statusEl = document.getElementById('editor-status');
+
+  statusEl.textContent = 'Saving...';
+  statusEl.className = 'editor-status running';
+
+  try {
+    const response = await fetch(`/api/scripts/scripts/${currentScript.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: currentScript.name,
+        description: currentScript.description,
+        code: codeMirrorEditor.getValue(),  // Get current code from editor
+        parameters: currentScript.parameters,
+        tags: currentScript.tags
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      // Update currentScript with saved data
+      currentScript = data.script;
+
+      statusEl.textContent = '✅ Saved';
+      statusEl.className = 'editor-status success';
+      window.toast('Script saved successfully!', 'success');
+
+      // Reload script list to reflect any changes
+      await loadScripts();
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    statusEl.textContent = 'Save error';
+    statusEl.className = 'editor-status error';
+    window.toast('Error saving script: ' + error.message, 'error');
+  }
+}
+
+// Delete script
+async function deleteScript() {
+  if (!currentScript) return;
+
+  if (!confirm(`Are you sure you want to delete "${currentScript.name}"? This cannot be undone.`)) {
+    return;
+  }
+
+  const statusEl = document.getElementById('editor-status');
+
+  statusEl.textContent = 'Deleting...';
+  statusEl.className = 'editor-status running';
+
+  try {
+    const response = await fetch(`/api/scripts/scripts/${currentScript.id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      window.toast('Script deleted successfully!', 'success');
+
+      // Clear editor
+      currentScript = null;
+      codeMirrorEditor.setValue('');
+      document.getElementById('script-name').textContent = '';
+      document.getElementById('script-description').textContent = '';
+      document.getElementById('parameters-section').style.display = 'none';
+
+      // Reload script list
+      await loadScripts();
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    statusEl.textContent = 'Delete error';
+    statusEl.className = 'editor-status error';
+    window.toast('Error deleting script: ' + error.message, 'error');
+  }
+}
+
+// Script templates for different categories
+const SCRIPT_TEMPLATES = {
+  plugin: {
+    name: 'New Plugin',
+    description: 'Reusable analysis or processing module',
+    category: 'plugins',
+    language: 'python',
+    code: `"""
+Plugin that processes data.
+
+Usage:
+  from scidk.core.script_plugin_loader import load_plugin
+  result = load_plugin('plugin-id', manager, {'param': 'value'})
+  data = result.to_dict()
+"""
+
+def run(context: dict) -> dict:
+    """
+    Execute plugin logic.
+
+    Args:
+        context: Input parameters as dict with keys:
+            - parameters: User-provided parameters
+            - neo4j_driver: Database driver (if available)
+
+    Returns:
+        Dict with 'status' and 'data' keys
+    """
+    params = context.get('parameters', {})
+
+    # Your plugin logic here
+    # Access parameters: params.get('param_name', default_value)
+
+    return {
+        'status': 'success',
+        'data': [
+            {'message': 'Plugin executed successfully'}
+        ]
+    }
+`,
+    parameters: [],
+    tags: ['custom']
+  },
+
+  interpreter: {
+    name: 'New Interpreter',
+    description: 'Parse files and extract structured data',
+    category: 'interpreters',
+    language: 'python',
+    code: `"""
+Interpreter that extracts data from files.
+
+Contract: Read file and return structured data
+"""
+from pathlib import Path
+
+def interpret(file_path: Path) -> dict:
+    """
+    Interpret a file and extract data.
+
+    Args:
+        file_path: Path to file to interpret
+
+    Returns:
+        Dict with 'status' and 'data' keys:
+        - status: 'success' or 'error'
+        - data: Extracted data (dict)
+    """
+    # REQUIRED: Check if file exists
+    if not file_path.exists():
+        return {
+            'status': 'error',
+            'data': {'error': 'File not found'}
+        }
+
+    try:
+        # Your parsing logic here
+        content = file_path.read_text()
+
+        # Extract/process data
+        data = {
+            'file_path': str(file_path),
+            'file_name': file_path.name,
+            'size_bytes': len(content),
+            'lines': len(content.splitlines())
+            # Add your extracted data here
+        }
+
+        return {
+            'status': 'success',
+            'data': data
+        }
+
+    except Exception as e:
+        # REQUIRED: Handle errors gracefully
+        return {
+            'status': 'error',
+            'data': {'error': str(e)}
+        }
+`,
+    parameters: [
+      {
+        name: 'file_path',
+        type: 'text',
+        label: 'File Path',
+        description: 'Path to file to interpret',
+        default: '/tmp/test.txt',
+        required: true
+      }
+    ],
+    tags: ['custom']
+  },
+
+  link: {
+    name: 'New Link',
+    description: 'Create relationships between nodes',
+    category: 'links',
+    language: 'python',
+    code: `"""
+Link script that creates relationships between nodes.
+
+Contract: Analyze nodes and create relationships
+"""
+
+def create_links(source_nodes: list, target_nodes: list) -> list:
+    """
+    Create relationships between nodes.
+
+    Args:
+        source_nodes: List of source node dicts (each has 'id' key)
+        target_nodes: List of target node dicts (each has 'id' key)
+
+    Returns:
+        List of tuples: (source_id, target_id, rel_type, properties)
+    """
+    links = []
+
+    # REQUIRED: Handle empty inputs
+    if not source_nodes or not target_nodes:
+        return links
+
+    # Your link creation logic here
+    for source in source_nodes:
+        for target in target_nodes:
+            # Your matching/scoring logic
+            should_link = True  # Replace with your condition
+
+            if should_link:
+                links.append((
+                    source.get('id'),
+                    target.get('id'),
+                    'RELATED_TO',  # Change to your relationship type
+                    {
+                        'confidence': 1.0,  # Your properties
+                        'method': 'custom_algorithm'
+                    }
+                ))
+
+    return links
+`,
+    parameters: [
+      {
+        name: 'source_nodes',
+        type: 'textarea',
+        label: 'Source Nodes',
+        description: 'Select a label from the dropdown to load nodes from Neo4j, or paste JSON array manually',
+        default: '[]',
+        required: true
+      },
+      {
+        name: 'target_nodes',
+        type: 'textarea',
+        label: 'Target Nodes',
+        description: 'Select a label from the dropdown to load nodes from Neo4j, or paste JSON array manually',
+        default: '[]',
+        required: true
+      }
+    ],
+    tags: ['custom']
+  },
+
+  analysis: {
+    name: 'New Analysis',
+    description: 'Custom data analysis script',
+    category: 'analyses/custom',
+    language: 'python',
+    code: `"""
+Custom analysis script.
+
+This script runs analysis queries and returns results for display.
+"""
+
+def run(context: dict) -> dict:
+    """
+    Run analysis and return results.
+
+    Args:
+        context: Contains parameters and neo4j_driver
+
+    Returns:
+        Dict with 'status' and 'data' keys
+    """
+    params = context.get('parameters', {})
+    driver = context.get('neo4j_driver')
+
+    # Your analysis logic here
+    # Can use Neo4j driver to query graph
+    # Can use pandas for data processing
+
+    results = [
+        {'metric': 'Total Items', 'value': 0},
+        {'metric': 'Processed', 'value': 0}
+    ]
+
+    return {
+        'status': 'success',
+        'data': results
+    }
+`,
+    parameters: [],
+    tags: ['analysis', 'custom']
+  },
+
+  api: {
+    name: 'New API Endpoint',
+    description: 'REST API endpoint handler',
+    category: 'api',
+    language: 'python',
+    code: `"""
+API endpoint handler.
+
+Handles HTTP requests and returns JSON responses.
+"""
+
+def run(context: dict) -> dict:
+    """
+    Handle API request.
+
+    Args:
+        context: Contains parameters (from request body/query)
+
+    Returns:
+        Dict with response data
+    """
+    params = context.get('parameters', {})
+
+    # Your API logic here
+    # params will contain request parameters
+
+    return {
+        'status': 'success',
+        'data': {
+            'message': 'API endpoint executed',
+            'received': params
+        }
+    }
+`,
+    parameters: [],
+    tags: ['api', 'custom']
+  },
+
+  custom: {
+    name: 'New Custom Script',
+    description: 'Blank script for advanced users',
+    category: 'custom',
+    language: 'python',
+    code: `"""
+Custom script.
+
+Add your custom logic here.
+"""
+
+# Your code here
+results = []
+`,
+    parameters: [],
+    tags: ['custom']
+  }
+};
+
+// State for new script modal
+let selectedScriptType = null;
+
+// Open new script modal
+function newScript() {
+  selectedScriptType = null;
+  document.getElementById('new-script-form').style.display = 'none';
+  document.getElementById('new-script-name').value = '';
+  document.getElementById('new-script-description').value = '';
+
+  // Remove all selected states
+  document.querySelectorAll('.script-type-card').forEach(card => {
+    card.classList.remove('selected');
+  });
+
+  document.getElementById('new-script-modal').style.display = 'flex';
+}
+
+// Close new script modal
+function closeNewScriptModal() {
+  document.getElementById('new-script-modal').style.display = 'none';
+}
+
+// Handle script type card click
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.script-type-card').forEach(card => {
+    card.addEventListener('click', () => {
+      // Remove selection from all cards
+      document.querySelectorAll('.script-type-card').forEach(c => c.classList.remove('selected'));
+
+      // Select this card
+      card.classList.add('selected');
+      selectedScriptType = card.dataset.type;
+
+      // Show form with pre-filled values
+      const template = SCRIPT_TEMPLATES[selectedScriptType];
+      document.getElementById('new-script-name').value = template.name;
+      document.getElementById('new-script-description').value = template.description;
+      document.getElementById('new-script-form').style.display = 'block';
+    });
+  });
+});
+
+// Create script from selected template
+async function createScriptFromTemplate() {
+  if (!selectedScriptType) {
+    window.toast('Please select a script type', 'error');
+    return;
+  }
+
+  const name = document.getElementById('new-script-name').value.trim();
+  if (!name) {
+    window.toast('Please enter a script name', 'error');
+    return;
+  }
+
+  const description = document.getElementById('new-script-description').value.trim();
+  const template = SCRIPT_TEMPLATES[selectedScriptType];
+
+  try {
+    const response = await fetch('/api/scripts/scripts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: name,
+        description: description || template.description,
+        language: template.language,
+        category: template.category,
+        code: template.code,
+        parameters: template.parameters,
+        tags: template.tags
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      window.toast(`Script created successfully!`, 'success');
+      closeNewScriptModal();
+      await loadScripts();
+      await loadScript(data.script.id);
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    window.toast('Error creating script: ' + error.message, 'error');
+  }
+}
+
+// Update activation button visibility
+function updateActivationButtons() {
+  const activateBtn = document.getElementById('activate-script-btn');
+  const deactivateBtn = document.getElementById('deactivate-script-btn');
+
+  if (!currentScript) {
+    activateBtn.style.display = 'none';
+    deactivateBtn.style.display = 'none';
+    return;
+  }
+
+  const isValidated = currentScript.validation_status === 'validated';
+  const isActive = currentScript.is_active;
+
+  // Show activate button if validated but not active
+  activateBtn.style.display = isValidated && !isActive ? 'inline-block' : 'none';
+  activateBtn.disabled = !isValidated || isActive;
+
+  // Show deactivate button if active
+  deactivateBtn.style.display = isActive ? 'inline-block' : 'none';
+  deactivateBtn.disabled = !isActive;
+}
+
+// Display validation results
+// Helper: Get human-readable test description
+function getTestDescription(testName) {
+  const descriptions = {
+    'valid_syntax': 'Valid Python syntax',
+    'executes_without_error': 'Executes without errors',
+    'returns_wrappable_data': 'Returns wrappable data (dict, list, or DataFrame)',
+    'has_interpret_function': 'Has interpret() function',
+    'interpret_has_parameter': 'interpret() accepts file_path parameter',
+    'returns_dict': 'Returns dict type',
+    'returns_status_key': "Returns dict with 'status' key",
+    'handles_missing_file': 'Handles missing files gracefully',
+    'has_create_links_function': 'Has create_links() function',
+    'create_links_has_two_parameters': 'create_links() accepts 2 parameters',
+    'returns_list': 'Returns list type',
+    'handles_empty_inputs': 'Handles empty inputs gracefully'
+  };
+  return descriptions[testName] || testName.replace(/_/g, ' ');
+}
+
+// Helper: Get fix hint for failed test
+function getFixHint(testName) {
+  const hints = {
+    'returns_wrappable_data': "Plugin run() must return dict, list, or pandas DataFrame (JSON-serializable)",
+    'has_interpret_function': "Add function: def interpret(file_path: Path) -> dict:",
+    'interpret_has_parameter': "Function signature should be: def interpret(file_path: Path)",
+    'returns_status_key': "Return dict must include 'status' key: {'status': 'success', 'data': {...}}",
+    'handles_missing_file': "Check if file exists: if not file_path.exists(): return {'status': 'error', ...}",
+    'has_create_links_function': "Add function: def create_links(source_nodes: list, target_nodes: list) -> list:",
+    'create_links_has_two_parameters': "Function signature should be: def create_links(source_nodes: list, target_nodes: list)",
+    'returns_list': "Return a list, not dict or other type",
+    'handles_empty_inputs': "Check for empty inputs: if not source_nodes or not target_nodes: return []",
+    'returns_dict': "Function must return a dict, not list or other type",
+    'executes_without_error': "Fix runtime errors shown below"
+  };
+  return hints[testName] || '';
+}
+
+function displayValidationResults(validation) {
+  const contentEl = document.getElementById('results-content');
+
+  let html = '<div class="validation-results">';
+
+  // Overall status
+  html += '<div class="validation-summary">';
+  if (validation.passed) {
+    html += '<h3 style="color: #065f46;">✅ Validation Passed</h3>';
+  } else {
+    html += '<h3 style="color: #991b1b;">❌ Validation Failed</h3>';
+  }
+  html += `<p>${validation.passed_count} of ${validation.test_count} tests passed</p>`;
+  html += '</div>';
+
+  // Test results with detailed breakdown
+  html += '<div class="validation-tests">';
+  html += '<h4>Test Results:</h4>';
+
+  for (const [testName, passed] of Object.entries(validation.test_results)) {
+    const icon = passed ? '✅' : '❌';
+    const cssClass = passed ? 'passed' : 'failed';
+    const description = getTestDescription(testName);
+    const fixHint = !passed ? getFixHint(testName) : '';
+
+    html += `<div class="validation-test-item ${cssClass}">`;
+    html += `<div class="test-status">${icon} ${description}</div>`;
+    if (fixHint) {
+      html += `<div class="test-hint">💡 ${fixHint}</div>`;
+    }
+    html += `</div>`;
+  }
+
+  html += '</div>';
+
+  // Errors
+  if (validation.errors && validation.errors.length > 0) {
+    html += '<div class="validation-errors">';
+    html += '<h4>Errors:</h4>';
+    html += '<ul style="color: #991b1b;">';
+    validation.errors.forEach(error => {
+      html += `<li style="padding: 0.25rem 0;">${error}</li>`;
+    });
+    html += '</ul>';
+    html += '</div>';
+  }
+
+  // Warnings
+  if (validation.warnings && validation.warnings.length > 0) {
+    html += '<div class="validation-warnings">';
+    html += '<h4>Warnings:</h4>';
+    html += '<ul style="color: #92400e;">';
+    validation.warnings.forEach(warning => {
+      html += `<li style="padding: 0.25rem 0;">⚠️ ${warning}</li>`;
+    });
+    html += '</ul>';
+    html += '</div>';
+  }
+
+  html += '</div>';
+
+  contentEl.innerHTML = html;
+}
+
+// Load available plugins for palette
+async function loadAvailablePlugins() {
+  try {
+    const response = await fetch('/api/plugins/available');
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      displayAvailablePlugins(data.plugins);
+    }
+  } catch (error) {
+    console.error('Failed to load plugins:', error);
+    const listEl = document.getElementById('available-plugins-list');
+    if (listEl) {
+      listEl.innerHTML = '<div style="color: #d00;">Failed to load plugins</div>';
+    }
+  }
+}
+
+// Display available plugins in modal
+function displayAvailablePlugins(plugins) {
+  const container = document.getElementById('available-plugins-list');
+  if (!container) return;
+
+  if (plugins.length === 0) {
+    container.innerHTML = '<div style="color: #999; font-style: italic;">No validated plugins available yet.</div>';
+    return;
+  }
+
+  container.innerHTML = plugins.map(plugin => `
+    <div class="snippet-item plugin-item" data-plugin-id="${plugin.id}">
+      <div class="snippet-header">
+        <strong>${plugin.name}</strong>
+        <button class="btn btn-sm copy-plugin-btn" data-plugin-id="${plugin.id}">📋 Copy</button>
+      </div>
+      <div class="plugin-item-desc">${plugin.description || 'No description'}</div>
+      ${plugin.docstring ? `<div class="plugin-item-docstring">${plugin.docstring}</div>` : ''}
+      <pre class="snippet-code" style="margin-top: 0.5rem;">load_plugin('${plugin.id}', manager, context={'param': 'value'})</pre>
+    </div>
+  `).join('');
+
+  // Add click handlers to copy buttons
+  document.querySelectorAll('.copy-plugin-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const pluginId = btn.dataset.pluginId;
+      const snippet = `load_plugin('${pluginId}', manager, context={'param': 'value'})`;
+      copySnippetToClipboard(snippet);
+    });
+  });
+}
+
+// Display results
+function displayResults(results) {
+  const contentEl = document.getElementById('results-content');
+  const footerEl = document.getElementById('results-footer');
+
+  if (!results || results.length === 0) {
+    contentEl.innerHTML = '<div class="empty-state">No results</div>';
+    footerEl.style.display = 'none';
+    return;
+  }
+
+  // Show table by default
+  renderResultsTable(results);
+  prepareChart(results);
+
+  footerEl.style.display = 'flex';
+  document.getElementById('results-count').textContent = `${results.length} rows`;
+}
+
+// Render results table
+function renderResultsTable(results) {
+  const contentEl = document.getElementById('results-content');
+
+  if (results.length === 0) {
+    contentEl.innerHTML = '<div class="empty-state">No results</div>';
+    return;
+  }
+
+  const keys = Object.keys(results[0]);
+
+  // Store results for sorting
+  window.currentTableData = results;
+  window.currentTableKeys = keys;
+  window.currentSortColumn = null;
+  window.currentSortDirection = 'asc';
+
+  let html = '<table class="results-table"><thead><tr>';
+  keys.forEach((key, index) => {
+    html += `
+      <th data-column="${key}" data-index="${index}">
+        <span class="column-name">${key}</span>
+        <span class="sort-indicator"></span>
+        <div class="resize-handle"></div>
+      </th>
+    `;
+  });
+  html += '</tr></thead><tbody id="table-body">';
+
+  results.forEach(row => {
+    html += '<tr>';
+    keys.forEach(key => {
+      const value = row[key];
+      html += `<td title="${value !== null && value !== undefined ? value : '-'}">${value !== null && value !== undefined ? value : '-'}</td>`;
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  contentEl.innerHTML = html;
+
+  // Initialize table features
+  initializeTableSorting();
+  initializeColumnResizing();
+  restoreColumnWidths();
+}
+
+// Initialize table sorting
+function initializeTableSorting() {
+  const table = document.querySelector('.results-table');
+  if (!table) return;
+
+  const headers = table.querySelectorAll('th');
+  headers.forEach(header => {
+    // Left click - sort
+    header.addEventListener('click', (e) => {
+      // Don't sort if clicking on resize handle or its child elements
+      if (e.target.classList.contains('resize-handle') ||
+          e.target.closest('.resize-handle')) {
+        return;
+      }
+
+      const column = header.dataset.column;
+      sortTable(column);
+    });
+
+    // Right click - context menu
+    header.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const column = header.dataset.column;
+      showColumnContextMenu(e.clientX, e.clientY, column);
+    });
+  });
+}
+
+// Sort table by column
+function sortTable(column) {
+  if (!window.currentTableData) return;
+
+  const headers = document.querySelectorAll('.results-table th');
+
+  // Update sort direction
+  if (window.currentSortColumn === column) {
+    window.currentSortDirection = window.currentSortDirection === 'asc' ? 'desc' : 'asc';
+  } else {
+    window.currentSortColumn = column;
+    window.currentSortDirection = 'asc';
+  }
+
+  // Remove sort indicators from all headers
+  headers.forEach(h => {
+    h.classList.remove('sorted-asc', 'sorted-desc');
+  });
+
+  // Add sort indicator to current column
+  const currentHeader = Array.from(headers).find(h => h.dataset.column === column);
+  if (currentHeader) {
+    currentHeader.classList.add(`sorted-${window.currentSortDirection}`);
+  }
+
+  // Sort data
+  const sortedData = [...window.currentTableData].sort((a, b) => {
+    let aVal = a[column];
+    let bVal = b[column];
+
+    // Handle null/undefined
+    if (aVal === null || aVal === undefined) return 1;
+    if (bVal === null || bVal === undefined) return -1;
+
+    // Handle arrays (for grouped data) - sort by length or first element
+    if (Array.isArray(aVal) && Array.isArray(bVal)) {
+      const aLen = aVal.length;
+      const bLen = bVal.length;
+      if (aLen !== bLen) {
+        return window.currentSortDirection === 'asc' ? aLen - bLen : bLen - aLen;
+      }
+      // If same length, compare first elements
+      aVal = aVal[0] || '';
+      bVal = bVal[0] || '';
+    } else if (Array.isArray(aVal)) {
+      aVal = aVal[0] || '';
+    } else if (Array.isArray(bVal)) {
+      bVal = bVal[0] || '';
+    }
+
+    // Detect and sort numbers
+    if (!isNaN(aVal) && !isNaN(bVal)) {
+      aVal = parseFloat(aVal);
+      bVal = parseFloat(bVal);
+      return window.currentSortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+    }
+
+    // Sort strings
+    aVal = String(aVal).toLowerCase();
+    bVal = String(bVal).toLowerCase();
+    if (window.currentSortDirection === 'asc') {
+      return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+    } else {
+      return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
+    }
+  });
+
+  // Re-render table body
+  const tbody = document.getElementById('table-body');
+  if (!tbody) return;
+
+  let html = '';
+  sortedData.forEach(row => {
+    html += '<tr>';
+    window.currentTableKeys.forEach(key => {
+      const value = row[key];
+
+      // Handle grouped data display
+      if (key === '_count') {
+        html += `<td class="count-column">${value}</td>`;
+      } else if (Array.isArray(value)) {
+        const displayValue = value.length === 0 ? '-' :
+                           value.length <= 3 ? value.join(', ') :
+                           value.slice(0, 3).join(', ') + ` (+${value.length - 3} more)`;
+        const fullValue = value.join(', ');
+        html += `<td class="grouped-list" title="${fullValue}">${displayValue}</td>`;
+      } else {
+        html += `<td title="${value !== null && value !== undefined ? value : '-'}">${value !== null && value !== undefined ? value : '-'}</td>`;
+      }
+    });
+    html += '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+// Initialize column resizing
+function initializeColumnResizing() {
+  const table = document.querySelector('.results-table');
+  if (!table) return;
+
+  const handles = table.querySelectorAll('.resize-handle');
+  let currentHandle = null;
+  let startX = 0;
+  let startWidth = 0;
+
+  handles.forEach(handle => {
+    handle.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      currentHandle = handle;
+      const th = handle.parentElement;
+      startX = e.pageX;
+      startWidth = th.offsetWidth;
+      handle.classList.add('resizing');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    });
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!currentHandle) return;
+
+    const th = currentHandle.parentElement;
+    const diff = e.pageX - startX;
+    const newWidth = Math.max(50, startWidth + diff);
+    th.style.width = newWidth + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (currentHandle) {
+      currentHandle.classList.remove('resizing');
+      const th = currentHandle.parentElement;
+      saveColumnWidth(th.dataset.column, th.offsetWidth);
+      currentHandle = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+  });
+}
+
+// Save column width to localStorage
+function saveColumnWidth(column, width) {
+  const scriptId = currentScript?.id;
+  if (!scriptId) return;
+
+  const key = `table-column-widths-${scriptId}`;
+  const widths = JSON.parse(localStorage.getItem(key) || '{}');
+  widths[column] = width;
+  localStorage.setItem(key, JSON.stringify(widths));
+}
+
+// Restore column widths from localStorage
+function restoreColumnWidths() {
+  const scriptId = currentScript?.id;
+  if (!scriptId) return;
+
+  const key = `table-column-widths-${scriptId}`;
+  const widths = JSON.parse(localStorage.getItem(key) || '{}');
+
+  const headers = document.querySelectorAll('.results-table th');
+  headers.forEach(th => {
+    const column = th.dataset.column;
+    if (widths[column]) {
+      th.style.width = widths[column] + 'px';
+    }
+  });
+}
+
+// Plugin palette functions
+function openPluginPalette() {
+  const modal = document.getElementById('plugin-palette-modal');
+  modal.style.display = 'flex';
+  loadAvailablePlugins(); // Refresh plugins list when modal opens
+}
+
+function closePluginPalette() {
+  const modal = document.getElementById('plugin-palette-modal');
+  modal.style.display = 'none';
+}
+
+// Parameter Editor Functions
+let parameterEditorData = [];
+
+window.openParameterEditor = function() {
+  console.log('openParameterEditor called', currentScript);
+  if (!currentScript) {
+    console.error('No current script');
+    return;
+  }
+
+  // Load current parameters
+  parameterEditorData = JSON.parse(JSON.stringify(currentScript.parameters || []));
+  console.log('Loaded parameters:', parameterEditorData);
+
+  // Render parameter editor
+  renderParameterEditor();
+
+  // Show modal
+  const modal = document.getElementById('parameter-editor-modal');
+  if (!modal) {
+    console.error('Modal not found');
+    return;
+  }
+  modal.style.display = 'flex';
+  console.log('Modal opened');
+}
+
+function closeParameterEditor() {
+  const modal = document.getElementById('parameter-editor-modal');
+  modal.style.display = 'none';
+  parameterEditorData = [];
+}
+
+function renderParameterEditor() {
+  const container = document.getElementById('parameter-editor-list');
+
+  if (parameterEditorData.length === 0) {
+    container.innerHTML = '<p style="color: #999; font-style: italic;">No parameters defined. Click "+ Add Parameter" to create one.</p>';
+    return;
+  }
+
+  let html = '';
+  parameterEditorData.forEach((param, index) => {
+    html += renderParameterEditorRow(param, index);
+  });
+
+  container.innerHTML = html;
+}
+
+function renderParameterEditorRow(param, index) {
+  const typeOptions = ['text', 'number', 'boolean', 'select', 'textarea'].map(t =>
+    `<option value="${t}" ${param.type === t ? 'selected' : ''}>${t}</option>`
+  ).join('');
+
+  return `
+    <div class="parameter-editor-row" data-index="${index}" style="border: 1px solid #e0e0e0; padding: 1rem; margin-bottom: 1rem; border-radius: 4px; background: #f9f9f9;">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
+        <strong>Parameter ${index + 1}</strong>
+        <button class="btn btn-sm" onclick="removeParameterRow(${index})" style="color: #dc2626;">🗑 Remove</button>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem;">
+        <div>
+          <label style="font-size: 0.85em; font-weight: 500; display: block; margin-bottom: 0.25rem;">Name (variable name)</label>
+          <input type="text" value="${escapeHtml(param.name || '')}"
+                 onchange="updateParameter(${index}, 'name', this.value)"
+                 placeholder="e.g., limit"
+                 style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;" />
+        </div>
+
+        <div>
+          <label style="font-size: 0.85em; font-weight: 500; display: block; margin-bottom: 0.25rem;">Type</label>
+          <select onchange="updateParameter(${index}, 'type', this.value)"
+                  style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;">
+            ${typeOptions}
+          </select>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 0.75rem;">
+        <label style="font-size: 0.85em; font-weight: 500; display: block; margin-bottom: 0.25rem;">Label (display name)</label>
+        <input type="text" value="${escapeHtml(param.label || '')}"
+               onchange="updateParameter(${index}, 'label', this.value)"
+               placeholder="e.g., Result Limit"
+               style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;" />
+      </div>
+
+      <div style="margin-bottom: 0.75rem;">
+        <label style="font-size: 0.85em; font-weight: 500; display: block; margin-bottom: 0.25rem;">Description (help text)</label>
+        <input type="text" value="${escapeHtml(param.description || '')}"
+               onchange="updateParameter(${index}, 'description', this.value)"
+               placeholder="e.g., Maximum number of results to show"
+               style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;" />
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;">
+        <div>
+          <label style="font-size: 0.85em; font-weight: 500; display: block; margin-bottom: 0.25rem;">Default Value</label>
+          <input type="text" value="${escapeHtml(param.default !== undefined ? param.default : '')}"
+                 onchange="updateParameter(${index}, 'default', this.value)"
+                 style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;" />
+        </div>
+
+        <div>
+          <label style="font-size: 0.85em; font-weight: 500; display: block; margin-bottom: 0.25rem;">
+            <input type="checkbox" ${param.required ? 'checked' : ''}
+                   onchange="updateParameter(${index}, 'required', this.checked)" />
+            Required
+          </label>
+        </div>
+
+        ${param.type === 'select' ? `
+        <div>
+          <label style="font-size: 0.85em; font-weight: 500; display: block; margin-bottom: 0.25rem;">Options (comma-separated)</label>
+          <input type="text" value="${escapeHtml((param.options || []).join(', '))}"
+                 onchange="updateParameter(${index}, 'options', this.value.split(',').map(s => s.trim()))"
+                 placeholder="e.g., option1, option2"
+                 style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;" />
+        </div>
+        ` : ''}
+
+        ${param.type === 'number' ? `
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+          <div>
+            <label style="font-size: 0.85em;">Min</label>
+            <input type="number" value="${param.min !== undefined ? param.min : ''}"
+                   onchange="updateParameter(${index}, 'min', parseFloat(this.value))"
+                   style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;" />
+          </div>
+          <div>
+            <label style="font-size: 0.85em;">Max</label>
+            <input type="number" value="${param.max !== undefined ? param.max : ''}"
+                   onchange="updateParameter(${index}, 'max', parseFloat(this.value))"
+                   style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;" />
+          </div>
+        </div>
+        ` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function addParameterRow() {
+  parameterEditorData.push({
+    name: '',
+    type: 'text',
+    label: '',
+    description: '',
+    default: '',
+    required: false
+  });
+  renderParameterEditor();
+}
+
+function removeParameterRow(index) {
+  parameterEditorData.splice(index, 1);
+  renderParameterEditor();
+}
+
+function updateParameter(index, field, value) {
+  parameterEditorData[index][field] = value;
+}
+
+async function saveParameters() {
+  if (!currentScript) return;
+
+  // Validate parameters
+  const errors = [];
+  parameterEditorData.forEach((param, index) => {
+    if (!param.name) {
+      errors.push(`Parameter ${index + 1}: Name is required`);
+    }
+    if (!param.label) {
+      errors.push(`Parameter ${index + 1}: Label is required`);
+    }
+    if (param.type === 'select' && (!param.options || param.options.length === 0)) {
+      errors.push(`Parameter ${index + 1}: Select type requires options`);
+    }
+  });
+
+  if (errors.length > 0) {
+    window.toast('Validation errors:\n' + errors.join('\n'), 'error');
+    return;
+  }
+
+  // Update current script
+  currentScript.parameters = parameterEditorData;
+
+  // Save to database
+  try {
+    const response = await fetch(`/api/scripts/scripts/${currentScript.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(currentScript)
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      window.toast('Parameters saved successfully!', 'success');
+      closeParameterEditor();
+
+      // Reload script from server to get fresh data
+      const scriptResponse = await fetch(`/api/scripts/scripts/${currentScript.id}`);
+      const scriptData = await scriptResponse.json();
+      if (scriptData.status === 'ok') {
+        currentScript = scriptData.script;
+        // Re-render parameter form with fresh data
+        renderParameters(currentScript.parameters);
+      }
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    window.toast('Error saving parameters: ' + error.message, 'error');
+  }
+}
+
+async function copySnippetToClipboard(snippetCode) {
+  try {
+    await navigator.clipboard.writeText(snippetCode);
+    window.toast('Code snippet copied to clipboard!', 'success');
+  } catch (error) {
+    window.toast('Failed to copy: ' + error.message, 'error');
+  }
+}
+
+// Prepare chart (bar chart for now)
+function prepareChart(results) {
+  if (results.length === 0) return;
+
+  // Destroy existing chart
+  if (currentChart) {
+    currentChart.destroy();
+    currentChart = null;
+  }
+
+  // Create canvas if needed
+  let canvas = document.getElementById('results-chart');
+  if (!canvas) {
+    const container = document.createElement('div');
+    container.className = 'results-chart-container';
+    container.innerHTML = '<canvas id="results-chart"></canvas>';
+    document.getElementById('results-content').appendChild(container);
+    canvas = document.getElementById('results-chart');
+  }
+
+  // Prepare data (use first two columns)
+  const keys = Object.keys(results[0]);
+  if (keys.length < 2) return;
+
+  const labels = results.map(row => row[keys[0]]);
+  const values = results.map(row => row[keys[1]]);
+
+  currentChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: keys[1],
+        data: values,
+        backgroundColor: 'rgba(0, 170, 102, 0.6)',
+        borderColor: 'rgba(0, 170, 102, 1)',
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          beginAtZero: true
+        }
+      }
+    }
+  });
+}
+
+// Tab switching
+function switchResultsTab(tab) {
+  document.querySelectorAll('.results-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === tab);
+  });
+
+  const contentEl = document.getElementById('results-content');
+
+  if (tab === 'table') {
+    const table = contentEl.querySelector('.results-table');
+    if (table && table.parentElement) table.parentElement.style.display = 'block';
+    const chart = contentEl.querySelector('.results-chart-container');
+    if (chart) chart.style.display = 'none';
+    const validation = contentEl.querySelector('.validation-results');
+    if (validation) validation.style.display = 'none';
+  } else if (tab === 'chart') {
+    const table = contentEl.querySelector('.results-table');
+    if (table && table.parentElement) table.parentElement.style.display = 'none';
+    const chart = contentEl.querySelector('.results-chart-container');
+    if (chart) chart.style.display = 'block';
+    const validation = contentEl.querySelector('.validation-results');
+    if (validation) validation.style.display = 'none';
+  } else if (tab === 'validation') {
+    const table = contentEl.querySelector('.results-table');
+    if (table && table.parentElement) table.parentElement.style.display = 'none';
+    const chart = contentEl.querySelector('.results-chart-container');
+    if (chart) chart.style.display = 'none';
+    const validation = contentEl.querySelector('.validation-results');
+    if (validation) validation.style.display = 'block';
+  }
+}
+
+// Export functions
+async function exportResult(format) {
+  if (!currentResult) return;
+
+  try {
+    const response = await fetch(`/api/scripts/results/${currentResult.id}/export?format=${format}`);
+
+    if (!response.ok) {
+      throw new Error('Export failed');
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+
+    const ext = format === 'jupyter' ? 'ipynb' : format;
+    a.download = `script_${currentResult.id}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+
+    window.toast(`Exported as ${format.toUpperCase()}`, 'success');
+  } catch (error) {
+    window.toast('Export failed: ' + error.message, 'error');
+  }
+}
+
+// Import notebook
+async function importNotebook(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const response = await fetch('/api/scripts/import-notebook', {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      window.toast(`Imported ${data.count} scripts from notebook`, 'success');
+      await loadScripts();
+    } else {
+      window.toast('Import failed: ' + data.message, 'error');
+    }
+  } catch (error) {
+    window.toast('Import error: ' + error.message, 'error');
+  }
+}
+
+// Show column context menu
+function showColumnContextMenu(x, y, column) {
+  // Remove existing menu if any
+  const existingMenu = document.querySelector('.column-context-menu');
+  if (existingMenu) existingMenu.remove();
+
+  // Create menu
+  const menu = document.createElement('div');
+  menu.className = 'column-context-menu';
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+
+  // Menu items
+  const items = [];
+
+  if (groupedByColumn === null) {
+    items.push({
+      label: `📊 Group By "${column}"`,
+      action: () => groupByColumn(column)
+    });
+  } else {
+    items.push({
+      label: '↩️ Ungroup (Show All Rows)',
+      action: () => ungroupTable()
+    });
+    if (groupedByColumn !== column) {
+      items.push({
+        label: `📊 Re-group By "${column}"`,
+        action: () => {
+          ungroupTable();
+          setTimeout(() => groupByColumn(column), 50);
+        }
+      });
+    }
+  }
+
+  items.forEach(item => {
+    const menuItem = document.createElement('div');
+    menuItem.className = 'column-context-menu-item';
+    menuItem.textContent = item.label;
+    menuItem.addEventListener('click', () => {
+      item.action();
+      menu.remove();
+    });
+    menu.appendChild(menuItem);
+  });
+
+  document.body.appendChild(menu);
+
+  // Close menu on outside click
+  const closeMenu = (e) => {
+    if (!menu.contains(e.target)) {
+      menu.remove();
+      document.removeEventListener('click', closeMenu);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', closeMenu), 0);
+}
+
+// Group table by column
+function groupByColumn(column) {
+  if (!window.currentTableData) return;
+
+  // Save original data if not already saved
+  if (!originalTableData) {
+    originalTableData = window.currentTableData;
+  }
+
+  groupedByColumn = column;
+
+  // Group data
+  const grouped = {};
+  originalTableData.forEach(row => {
+    const key = row[column];
+    if (!grouped[key]) {
+      grouped[key] = [];
+    }
+    grouped[key].push(row);
+  });
+
+  // Convert to array of grouped rows
+  const groupedData = Object.entries(grouped).map(([key, rows]) => {
+    const groupedRow = { [column]: key, _count: rows.length };
+
+    // Aggregate other columns as arrays
+    window.currentTableKeys.forEach(k => {
+      if (k !== column) {
+        const values = rows.map(r => r[k]).filter(v => v !== null && v !== undefined);
+        // Remove duplicates and limit display
+        const uniqueValues = [...new Set(values)];
+        groupedRow[k] = uniqueValues;
+      }
+    });
+
+    return groupedRow;
+  });
+
+  // Update current data
+  window.currentTableData = groupedData;
+  window.currentTableKeys = [column, '_count', ...window.currentTableKeys.filter(k => k !== column)];
+
+  // Re-render table
+  renderGroupedTable(groupedData);
+
+  window.toast(`Grouped by "${column}" - ${groupedData.length} unique values`, 'success');
+}
+
+// Ungroup table
+function ungroupTable() {
+  if (!originalTableData) return;
+
+  groupedByColumn = null;
+  window.currentTableData = originalTableData;
+  window.currentTableKeys = Object.keys(originalTableData[0]);
+  originalTableData = null;
+
+  // Re-render as normal table
+  renderResultsTable(window.currentTableData);
+
+  window.toast('Ungrouped - showing all rows', 'success');
+}
+
+// Render grouped table
+function renderGroupedTable(groupedData) {
+  const contentEl = document.getElementById('results-content');
+
+  if (groupedData.length === 0) {
+    contentEl.innerHTML = '<div class="empty-state">No results</div>';
+    return;
+  }
+
+  const keys = window.currentTableKeys;
+
+  let html = '<table class="results-table grouped"><thead><tr>';
+  keys.forEach((key, index) => {
+    const displayName = key === '_count' ? 'Count' : key;
+    html += `
+      <th data-column="${key}" data-index="${index}">
+        <span class="column-name">${displayName}</span>
+        <span class="sort-indicator"></span>
+        <div class="resize-handle"></div>
+      </th>
+    `;
+  });
+  html += '</tr></thead><tbody id="table-body">';
+
+  groupedData.forEach(row => {
+    html += '<tr>';
+    keys.forEach(key => {
+      const value = row[key];
+
+      if (key === '_count') {
+        html += `<td class="count-column">${value}</td>`;
+      } else if (Array.isArray(value)) {
+        const displayValue = value.length === 0 ? '-' :
+                           value.length <= 3 ? value.join(', ') :
+                           value.slice(0, 3).join(', ') + ` (+${value.length - 3} more)`;
+        const fullValue = value.join(', ');
+        html += `<td class="grouped-list" title="${fullValue}">${displayValue}</td>`;
+      } else {
+        html += `<td title="${value !== null && value !== undefined ? value : '-'}">${value !== null && value !== undefined ? value : '-'}</td>`;
+      }
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  contentEl.innerHTML = html;
+
+  // Re-initialize table features
+  initializeTableSorting();
+  initializeColumnResizing();
+  restoreColumnWidths();
+}
+
+// Initialize panel resizing
+function initializePanelResizing() {
+  const libraryPanel = document.getElementById('script-library');
+  const resultsPanel = document.getElementById('results-panel');
+  const libraryResizer = document.getElementById('resize-library');
+  const resultsResizer = document.getElementById('resize-results');
+  const container = document.querySelector('.scripts-container');
+
+  if (!libraryPanel || !resultsPanel || !libraryResizer || !resultsResizer || !container) {
+    console.warn('Panel resize elements not found');
+    return;
+  }
+
+  let isResizingLibrary = false;
+  let isResizingResults = false;
+  let startX = 0;
+  let startWidth = 0;
+
+  // Library panel resizing
+  libraryResizer.addEventListener('mousedown', (e) => {
+    isResizingLibrary = true;
+    startX = e.clientX;
+    startWidth = libraryPanel.offsetWidth;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  // Results panel resizing
+  resultsResizer.addEventListener('mousedown', (e) => {
+    isResizingResults = true;
+    startX = e.clientX;
+    startWidth = resultsPanel.offsetWidth;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  // Mouse move handler
+  document.addEventListener('mousemove', (e) => {
+    if (isResizingLibrary) {
+      const deltaX = e.clientX - startX;
+      const newWidth = startWidth + deltaX;
+      const minWidth = 200;
+      const maxWidth = 500;
+
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        libraryPanel.style.width = newWidth + 'px';
+      }
+    } else if (isResizingResults) {
+      const deltaX = startX - e.clientX; // Inverted for right panel
+      const newWidth = startWidth + deltaX;
+      const minWidth = 300;
+      const maxWidth = 800;
+
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        resultsPanel.style.width = newWidth + 'px';
+      }
+    }
+  });
+
+  // Mouse up handler
+  document.addEventListener('mouseup', () => {
+    if (isResizingLibrary || isResizingResults) {
+      isResizingLibrary = false;
+      isResizingResults = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+
+      // Save panel widths to localStorage
+      localStorage.setItem('scripts-library-width', libraryPanel.offsetWidth);
+      localStorage.setItem('scripts-results-width', resultsPanel.offsetWidth);
+    }
+  });
+
+  // Restore saved widths
+  const savedLibraryWidth = localStorage.getItem('scripts-library-width');
+  const savedResultsWidth = localStorage.getItem('scripts-results-width');
+
+  if (savedLibraryWidth) {
+    libraryPanel.style.width = savedLibraryWidth + 'px';
+  }
+  if (savedResultsWidth) {
+    resultsPanel.style.width = savedResultsWidth + 'px';
+  }
+}
+
+// Event listeners
+document.addEventListener('DOMContentLoaded', () => {
+  initializeEditor();
+  loadScripts().then(() => {
+    // Handle ?script=<id> query parameter for deep linking
+    const params = new URLSearchParams(window.location.search);
+    const scriptId = params.get('script');
+    if (scriptId) {
+      // Wait a tick for DOM to update after renderScriptList
+      setTimeout(() => {
+        loadScript(scriptId);
+      }, 100);
+    }
+  });
+
+  // New Script button
+  document.getElementById('new-script-btn').addEventListener('click', newScript);
+
+  // Run button
+  document.getElementById('run-script-btn').addEventListener('click', runScript);
+
+  // Save button
+  document.getElementById('save-script-btn').addEventListener('click', saveScript);
+
+  // Delete button
+  document.getElementById('delete-script-btn').addEventListener('click', deleteScript);
+
+  // Validate button
+  document.getElementById('validate-script-btn').addEventListener('click', validateScript);
+
+  // Clone button
+  document.getElementById('clone-script-btn').addEventListener('click', cloneScript);
+
+  // Activate/Deactivate buttons
+  document.getElementById('activate-script-btn').addEventListener('click', activateScript);
+  document.getElementById('deactivate-script-btn').addEventListener('click', deactivateScript);
+
+  // Results tabs
+  document.querySelectorAll('.results-tab').forEach(tab => {
+    tab.addEventListener('click', () => switchResultsTab(tab.dataset.tab));
+  });
+
+  // Export buttons
+  document.getElementById('export-csv-btn').addEventListener('click', () => exportResult('csv'));
+  document.getElementById('export-json-btn').addEventListener('click', () => exportResult('json'));
+  document.getElementById('export-jupyter-btn').addEventListener('click', () => exportResult('jupyter'));
+
+  // Import button
+  document.getElementById('import-notebook-btn').addEventListener('click', () => {
+    document.getElementById('notebook-file-input').click();
+  });
+
+  document.getElementById('notebook-file-input').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      importNotebook(file);
+      e.target.value = ''; // Reset input
+    }
+  });
+
+  // Language selector
+  document.getElementById('language-selector').addEventListener('change', (e) => {
+    updateEditorMode(e.target.value);
+  });
+
+  // Script search
+  // Search filter
+  document.getElementById('script-search').addEventListener('input', (e) => {
+    const query = e.target.value.toLowerCase();
+    const filtered = allScripts.filter(script =>
+      script.name.toLowerCase().includes(query) ||
+      script.description.toLowerCase().includes(query) ||
+      script.tags.some(tag => tag.toLowerCase().includes(query))
+    );
+    renderScriptList(filtered);
+  });
+
+  // Category filter
+  document.getElementById('category-filter').addEventListener('change', () => {
+    renderScriptList(allScripts);
+  });
+
+  // Plugin palette
+  document.getElementById('plugin-palette-btn').addEventListener('click', openPluginPalette);
+  document.getElementById('close-palette-btn').addEventListener('click', closePluginPalette);
+
+  // Copy snippet buttons
+  document.querySelectorAll('.copy-snippet-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const snippetItem = e.target.closest('.snippet-item');
+      const codeElement = snippetItem.querySelector('.snippet-code');
+      const code = codeElement.textContent.trim();
+      copySnippetToClipboard(code);
+    });
+  });
+
+  // Close modals when clicking outside
+  document.getElementById('plugin-palette-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'plugin-palette-modal') {
+      closePluginPalette();
+    }
+  });
+
+  document.getElementById('parameter-editor-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'parameter-editor-modal') {
+      closeParameterEditor();
+    }
+  });
+
+  document.getElementById('new-script-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'new-script-modal') {
+      closeNewScriptModal();
+    }
+  });
+
+  // Initialize panel resizing
+  initializePanelResizing();
+
+  // Handle deep links from other pages
+  const urlParams = new URLSearchParams(window.location.search);
+
+  // Load specific script if ?script=<id> provided
+  if (urlParams.has('script')) {
+    const scriptId = urlParams.get('script');
+    // Wait for scripts to load, then open the specified script
+    setTimeout(() => {
+      const script = allScripts.find(s => s.id === scriptId);
+      if (script) {
+        selectScript(scriptId);
+      } else {
+        showToast(`Script "${scriptId}" not found`, 'error');
+      }
+    }, 500);
+  }
+
+  // Create new link script if ?new=link provided
+  if (urlParams.has('new') && urlParams.get('new') === 'link') {
+    // Wait for scripts to load, then open new script modal with links category
+    setTimeout(() => {
+      openNewScriptModal();
+      document.getElementById('new-script-category').value = 'links';
+    }, 300);
+  }
+});
+</script>
+{% endblock %}

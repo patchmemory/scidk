@@ -1,4 +1,4 @@
-<section id="health-section" class="settings-section">
+<section id="system-health-section" class="settings-section">
   <h1>System Health Dashboard</h1>
   <p class="small">Real-time monitoring of all system components. Auto-refreshes every 30 seconds.</p>
 
@@ -346,7 +346,7 @@
     }
 
     // Start monitoring when health section is activated
-    const healthSection = document.getElementById('health-section');
+    const healthSection = document.getElementById('system-health-section');
     if (healthSection) {
       const observer = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {

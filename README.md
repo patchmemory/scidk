@@ -17,8 +17,9 @@ pip install -e .            # runtime deps only
 # or for development (tests, Playwright helpers, etc.)
 pip install -e .[dev]
 # alternatively, use the provided requirements files:
-#   pip install -r requirements.txt         # runtime-only
-#   pip install -r requirements-dev.txt     # dev extras (editable)
+#   pip install -r requirements.txt             # runtime-only (lightweight, no ML/GPU)
+#   pip install -r requirements-graphrag.txt    # runtime + GraphRAG/ChatSEEK chat features (PyTorch + CUDA, 4-8GB)
+#   pip install -r requirements-dev.txt         # dev extras (editable)
 ```
 
 Note: do NOT run `pip install -r pyproject.toml`. pyproject.toml is not a requirements file; it is a build/metadata file. Use one of the commands above instead.

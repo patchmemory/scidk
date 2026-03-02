@@ -287,6 +287,43 @@
     background: #e3f2fd;
   }
 
+  /* Selection mode */
+  .selection-checkbox {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    accent-color: #2196f3;
+  }
+  .file-table.selection-mode .checkbox-col {
+    display: table-cell;
+  }
+  .file-table:not(.selection-mode) .checkbox-col {
+    display: none;
+  }
+  .selection-toolbar {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.5rem;
+    background: #e3f2fd;
+    border: 1px solid #2196f3;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+  }
+  .selection-toolbar .selection-count {
+    font-weight: 600;
+    color: #1976d2;
+  }
+
+  /* Snapshot config diff visualization */
+  .row-config-unchanged {
+    background: #d4edda !important;
+  }
+  .row-config-removed {
+    background: #e0e0e0 !important;
+  }
+  /* row-config-new and default (no class) have no special background */
+
   /* Neo4j status indicator */
   .neo4j-status {
     display: flex;
@@ -338,6 +375,80 @@
   .task-progress-fill.running {
     background: #2196f3;
   }
+
+  /* Snapshot List Items - Compact Design */
+  .snapshot-item {
+    margin: 0.25rem 0;
+    padding: 0.375rem 0.5rem;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .snapshot-item:hover {
+    background: #f8f9fa;
+    border-color: #2196f3;
+  }
+  .snapshot-item.active {
+    background: #e3f2fd;
+    border-color: #2196f3;
+  }
+  .snapshot-item .snapshot-main {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .snapshot-item .snapshot-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .snapshot-item .snapshot-title {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-weight: 600;
+    color: #333;
+    line-height: 1.2;
+  }
+  .snapshot-item .snapshot-meta {
+    color: #666;
+    font-size: 0.65rem;
+    line-height: 1.2;
+    margin-top: 0.125rem;
+  }
+  .snapshot-item .snapshot-actions {
+    display: flex;
+    gap: 0.25rem;
+    flex-shrink: 0;
+  }
+  .snapshot-item .snapshot-actions button {
+    font-size: 0.875rem;
+    padding: 0.125rem 0.25rem;
+    border: none;
+    background: transparent;
+    color: #666;
+    cursor: pointer;
+    border-radius: 3px;
+    line-height: 1;
+  }
+  .snapshot-item .snapshot-actions button:hover {
+    background: rgba(0,0,0,0.05);
+    color: #333;
+  }
+  .snapshot-item.scanning {
+    border-color: #2196f3;
+    background: #e8f4fd;
+  }
+  .snapshot-item.error {
+    border-color: #e53935;
+    background: #ffebee;
+  }
+  .snapshot-item .task-progress-bar {
+    margin-top: 0.25rem;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -380,8 +491,22 @@
       </div>
 
       <div class="tree-section">
-        <div class="tree-section-header">BACKGROUND TASKS</div>
-        <div id="tasks-list"></div>
+        <div class="tree-section-header">ACTIVITY</div>
+        <div id="activity-panel">
+          <!-- Active background tasks -->
+          <div id="tasks-list"></div>
+
+          <!-- Snapshots section -->
+          <div style="margin-top: 1rem;">
+            <div style="font-weight: 600; font-size: 0.75rem; text-transform: uppercase; color: #666; padding: 0.5rem 0.25rem 0.25rem;">
+              SNAPSHOTS
+            </div>
+            <div id="snapshots-list"></div>
+            <button class="btn btn-sm btn-outline-primary w-100 mt-2" id="new-snapshot-btn" style="font-size: 0.75rem;">
+              + New Snapshot
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -397,6 +522,14 @@
 
     <!-- Breadcrumb Navigation -->
     <div class="breadcrumb-nav" id="breadcrumb-nav"></div>
+
+    <!-- Selection Toolbar (shown when in selection mode) -->
+    <div id="selection-toolbar" class="selection-toolbar" style="display: none;">
+      <span class="selection-count" id="selection-count">0 items selected</span>
+      <button id="clear-selection-btn" class="btn btn-sm btn-outline-secondary">Clear</button>
+      <button id="scan-selected-btn" class="btn btn-sm btn-primary">Scan Selected</button>
+      <button id="exit-selection-btn" class="btn btn-sm btn-outline-secondary">Exit Selection Mode</button>
+    </div>
 
     <!-- Advanced Options (Collapsed by default) -->
     <details style="margin-bottom: 0.75rem;">
@@ -426,10 +559,13 @@
     </details>
 
     <!-- File List Table -->
-    <div class="file-table">
+    <div class="file-table" id="file-table">
       <table class="table table-sm table-hover">
         <thead>
           <tr>
+            <th class="checkbox-col" style="width: 40px;">
+              <input type="checkbox" id="select-all-checkbox" class="selection-checkbox" title="Select all">
+            </th>
             <th>Name</th>
             <th>Type</th>
             <th>Size</th>
@@ -440,13 +576,16 @@
           </tr>
         </thead>
         <tbody id="file-list">
-          <tr><td colspan="7" class="small text-muted">Select a server to browse files</td></tr>
+          <tr><td colspan="8" class="small text-muted">Select a server to browse files</td></tr>
         </tbody>
       </table>
     </div>
 
     <!-- Actions -->
     <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem; align-items: center;">
+      <button id="toggle-selection-btn" class="btn btn-sm btn-outline-primary">
+        ☑ Select Files
+      </button>
       <button id="scan-folder-btn" class="btn btn-sm btn-primary" disabled>
         🔍 Scan Current Folder
       </button>
@@ -467,6 +606,83 @@
       <h4 style="font-size: 1rem; margin-bottom: 0.75rem;">File Details</h4>
       <div id="file-metadata" class="small">
         <p class="text-muted">Select a file to view details</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Include Interpreter Modal Component -->
+{% include 'files/_interpreter_modal.html' %}
+
+<!-- Snapshot Configuration Modal -->
+<div class="modal fade" id="snapshot-config-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="snapshot-config-modal-title">New Snapshot</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <!-- Diff Legend (only shown in Reconfigure mode) -->
+        <div id="snapshot-diff-legend" class="alert alert-info" style="display: none; font-size: 0.875rem;">
+          <strong>Selection Changes:</strong>
+          <span style="background: #d4edda; padding: 0.125rem 0.375rem; border-radius: 3px; margin-left: 0.5rem;">☑ Green</span> = Unchanged (in saved config)
+          <span style="padding: 0.125rem 0.375rem; margin-left: 0.5rem;">☑ No tint</span> = New addition
+          <span style="background: #e0e0e0; padding: 0.125rem 0.375rem; border-radius: 3px; margin-left: 0.5rem;">☐ Grey</span> = Removed (was in saved config)
+          <span style="padding: 0.125rem 0.375rem; margin-left: 0.5rem;">☐ No tint</span> = Not selected
+        </div>
+
+        <!-- Snapshot Name -->
+        <div class="mb-3">
+          <label for="snapshot-name-input" class="form-label">Snapshot Name</label>
+          <input type="text" class="form-control" id="snapshot-name-input" placeholder="e.g., Lab Data - Core Files">
+        </div>
+
+        <!-- Server Selection -->
+        <div class="mb-3">
+          <label for="snapshot-server-select" class="form-label">Server</label>
+          <select class="form-select" id="snapshot-server-select">
+            <option value="">Select a server...</option>
+          </select>
+        </div>
+
+        <!-- File Browser (reuses Phase 4 checkbox infrastructure) -->
+        <div style="border: 1px solid #dee2e6; border-radius: 4px; padding: 1rem; max-height: 400px; overflow-y: auto;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <h6 style="margin: 0;">Select Files and Folders</h6>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="modal-select-all-btn">Select All</button>
+          </div>
+
+          <!-- Breadcrumb for modal -->
+          <div id="modal-breadcrumb" class="small text-muted mb-2"></div>
+
+          <!-- File table in modal -->
+          <div class="file-table selection-mode" id="modal-file-table">
+            <table class="table table-sm table-hover">
+              <thead>
+                <tr>
+                  <th class="checkbox-col" style="width: 40px;">
+                    <input type="checkbox" id="modal-select-all-checkbox" class="selection-checkbox" title="Select all">
+                  </th>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th style="width: 100px;">Size</th>
+                </tr>
+              </thead>
+              <tbody id="modal-file-list">
+                <tr><td colspan="4" class="small text-muted">Select a server to browse files</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Selection count in modal -->
+          <div class="small text-muted mt-2" id="modal-selection-count">0 items selected</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-outline-primary" id="snapshot-save-config-btn">Save Config Only</button>
+        <button type="button" class="btn btn-primary" id="snapshot-save-scan-btn">Create and Scan Now</button>
       </div>
     </div>
   </div>
@@ -809,6 +1025,14 @@ window.addEventListener('DOMContentLoaded', () => {
   let currentScan = null;
   let selectedFile = null;
 
+  // ===== Selection Mode State =====
+  let selectionMode = false;
+  let selectedItems = new Set(); // Set of file/folder IDs that are selected
+  let folderContents = new Map(); // Map of folder ID -> Set of child IDs (for recursive selection)
+  let itemTypes = new Map(); // Map of item ID -> 'file' or 'folder'
+  let itemParents = new Map(); // Map of item ID -> parent folder ID
+  let lastClickedIndex = -1; // For shift-click range selection
+
   // ===== Mode Switching =====
   const modeLive = document.getElementById('mode-live');
   const modeSnapshot = document.getElementById('mode-snapshot');
@@ -820,19 +1044,29 @@ window.addEventListener('DOMContentLoaded', () => {
   modeLive.addEventListener('change', () => {
     if (modeLive.checked) {
       currentMode = 'live';
+      // In Live mode: show server list in servers section
+      document.querySelector('#servers-section .tree-section-header').textContent = 'SERVERS';
       serversSection.style.display = 'block';
       snapshotsSection.style.display = 'none';
       scanFolderBtn.style.display = 'inline-block';
       commitScanBtn.style.display = 'none';
+      // Update handler and reload servers
+      updateServersTreeHandler();
+      loadServers();
     }
   });
 
   modeSnapshot.addEventListener('change', () => {
     if (modeSnapshot.checked) {
       currentMode = 'snapshot';
-      serversSection.style.display = 'none';
-      snapshotsSection.style.display = 'block';
+      // In Snapshots mode: populate servers section with snapshot-derived entries
+      document.querySelector('#servers-section .tree-section-header').textContent = 'SNAPSHOTS';
+      serversSection.style.display = 'block';
+      snapshotsSection.style.display = 'none'; // Keep hidden - we use servers section instead
       scanFolderBtn.style.display = 'none';
+      // Update handler and load snapshots into the servers tree
+      updateServersTreeHandler();
+      loadSnapshotsAsServers();
     }
   });
 
@@ -842,24 +1076,45 @@ window.addEventListener('DOMContentLoaded', () => {
   let serversData = [];
   let scansData = [];
 
-  serversTree.onSelect = (node) => {
-    console.log('Tree node selected:', node);
+  // Set serversTree onSelect handler based on current mode
+  function updateServersTreeHandler() {
+    if (currentMode === 'live') {
+      serversTree.onSelect = (node) => {
+        console.log('Tree node selected (live):', node);
 
-    if (node.type === 'server') {
-      currentServer = node.id;
-      showServerDetails(node.id);
-      // Don't auto-browse, just expand to show roots
-    } else if (node.type === 'root') {
-      // Root selected - load it in the file browser
-      console.log('Loading root:', node);
-      currentServer = node.providerId;
-      currentRoot = node.id;
-      currentPath = node.id;
-      browseLive(node.providerId, node.id, node.id);
-    } else {
-      console.warn('Unknown node type:', node.type);
+        if (node.type === 'server') {
+          currentServer = node.id;
+          showServerDetails(node.id);
+          // Don't auto-browse, just expand to show roots
+        } else if (node.type === 'root') {
+          // Root selected - load it in the file browser
+          console.log('Loading root:', node);
+          currentServer = node.providerId;
+          currentRoot = node.id;
+          currentPath = node.id;
+          browseLive(node.providerId, node.id, node.id);
+        } else {
+          console.warn('Unknown node type:', node.type);
+        }
+      };
+    } else if (currentMode === 'snapshot') {
+      serversTree.onSelect = (node) => {
+        console.log('Tree node selected (snapshot):', node);
+        // When a snapshot server is selected, show its latest scan
+        const provider = serversData.find(sd => sd.id === node.id);
+        if (provider && provider.scans && provider.scans.length > 0) {
+          const latestScan = provider.scans[0];
+          currentScan = latestScan.id;
+          browseSnapshot(latestScan.id);
+          showScanDetails(latestScan.id);
+          commitScanBtn.style.display = 'inline-block';
+        }
+      };
     }
-  };
+  }
+
+  // Initialize handler for live mode
+  updateServersTreeHandler();
 
   scansTree.onSelect = (node) => {
     currentScan = node.id;
@@ -871,32 +1126,100 @@ window.addEventListener('DOMContentLoaded', () => {
   // ===== Servers List (Tree) =====
   async function loadServers() {
     try {
-      const r = await fetch('/api/providers');
-      const providers = await r.json();
+      const r = await fetch('/api/servers');
+      if (!r.ok) {
+        throw new Error(`API returned ${r.status}`);
+      }
+      const servers = await r.json();
 
-      serversData = providers.map(p => ({
-        id: p.id,
-        label: p.display_name,
-        type: 'server',
-        icon: '💻',
-        hasChildren: true  // Show roots (first level)
-      }));
+      // Check if response is an array
+      if (!Array.isArray(servers)) {
+        console.error('Servers API returned non-array:', servers);
+        throw new Error('Invalid response format');
+      }
+
+      // Format scan timestamp for display
+      function fmtLastScanned(timestamp) {
+        if (!timestamp) return null;
+        const now = Date.now() / 1000;
+        const diff = now - timestamp;
+        const days = Math.floor(diff / 86400);
+        const hours = Math.floor(diff / 3600);
+        const mins = Math.floor(diff / 60);
+
+        if (days > 0) return `${days}d ago`;
+        if (hours > 0) return `${hours}h ago`;
+        if (mins > 0) return `${mins}m ago`;
+        return 'just now';
+      }
+
+      // Group servers by provider ID
+      // API returns: [{id: 'prov', root_id: '/', root_path: '/', display_name: 'X', ...}, ...]
+      const grouped = {};
+      for (const server of servers) {
+        if (!grouped[server.id]) {
+          grouped[server.id] = {
+            id: server.id,
+            label: server.display_name || server.id,
+            type: 'server',
+            icon: server.connected ? '💻' : '⚠️',
+            connected: server.connected,
+            hasChildren: true,
+            roots: []
+          };
+        }
+        // Each server entry has root_id and root_path - group them
+        grouped[server.id].roots.push({
+          id: server.root_id,
+          path: server.root_path,
+          scanned: server.scanned,
+          last_scanned: server.last_scanned,
+          file_count: server.file_count
+        });
+      }
+
+      serversData = Object.values(grouped).map(s => {
+        // Add scan metadata to label
+        const hasScans = s.roots.some(r => r.scanned);
+        let metadata = '';
+        if (hasScans) {
+          const latest = s.roots.reduce((max, r) =>
+            (r.last_scanned && r.last_scanned > (max?.last_scanned || 0)) ? r : max
+          , null);
+          if (latest) {
+            metadata = ` (Last: ${fmtLastScanned(latest.last_scanned)})`;
+          }
+        } else {
+          metadata = ' (Not scanned)';
+        }
+
+        return {
+          ...s,
+          displayLabel: s.label + metadata,
+          metadata: metadata
+        };
+      });
 
       serversTree.getCurrentNodes = () => {
         return serversData.map(s => {
           const children = serversTree.nodeCache.get(`server:${s.id}`) || null;
-          return { ...s, children };
+          return {
+            ...s,
+            label: s.displayLabel, // Use label with metadata
+            children
+          };
         });
       };
       serversTree.nodes = serversData;
       serversTree.refresh();
 
-      if (providers.length > 0) {
-        currentServer = providers[0].id;
+      if (serversData.length > 0) {
+        currentServer = serversData[0].id;
         await loadRootsAndBrowse(currentServer);
       }
     } catch (e) {
-      document.getElementById('servers-tree').innerHTML = '<div class="small text-danger">Failed to load servers</div>';
+      console.error('loadServers error:', e);
+      document.getElementById('servers-tree').innerHTML = `<div class="small text-danger">Failed to load servers: ${e.message}</div>`;
     }
   }
 
@@ -922,6 +1245,174 @@ window.addEventListener('DOMContentLoaded', () => {
     } catch (e) {
       showMessage('Failed to load roots: ' + e.message, 'error');
     }
+  }
+
+  // ===== Selection Mode Functions =====
+  function toggleSelectionMode() {
+    selectionMode = !selectionMode;
+    const fileTable = document.getElementById('file-table');
+    const toggleBtn = document.getElementById('toggle-selection-btn');
+    const selectionToolbar = document.getElementById('selection-toolbar');
+    const scanFolderBtn = document.getElementById('scan-folder-btn');
+
+    if (selectionMode) {
+      fileTable.classList.add('selection-mode');
+      toggleBtn.textContent = '☑ Exit Selection';
+      toggleBtn.classList.add('active');
+      selectionToolbar.style.display = 'flex';
+      scanFolderBtn.style.display = 'none';
+      updateSelectionCount();
+    } else {
+      fileTable.classList.remove('selection-mode');
+      toggleBtn.textContent = '☑ Select Files';
+      toggleBtn.classList.remove('active');
+      selectionToolbar.style.display = 'none';
+      scanFolderBtn.style.display = 'inline-block';
+      selectedItems.clear();
+      lastClickedIndex = -1;
+    }
+  }
+
+  function updateSelectionCount() {
+    const count = selectedItems.size;
+    const countEl = document.getElementById('selection-count');
+    if (countEl) {
+      countEl.textContent = `${count} item${count !== 1 ? 's' : ''} selected`;
+    }
+  }
+
+  async function toggleItemSelection(itemId, checked, isFolder) {
+    if (checked) {
+      selectedItems.add(itemId);
+      if (isFolder) {
+        // Show loading indicator
+        showMessage('Loading folder contents...', 'info');
+        // Recursively select all children
+        await selectFolderRecursive(itemId, true);
+      }
+    } else {
+      selectedItems.delete(itemId);
+      if (isFolder) {
+        // Recursively deselect all children
+        await selectFolderRecursive(itemId, false);
+      }
+    }
+    updateSelectionCount();
+    updateIndeterminateStates();
+  }
+
+  async function selectFolderRecursive(folderId, select) {
+    // When selecting/deselecting a folder, we need to fetch its contents
+    // and recursively select/deselect all children
+    // For Live browsing, we'll make this async and fetch the folder contents
+
+    if (select) {
+      selectedItems.add(folderId);
+      // Fetch folder contents and recursively select
+      try {
+        const qs = new URLSearchParams({
+          provider_id: currentServer || 'local_fs',
+          root_id: currentRoot || '/',
+          path: folderId
+        });
+
+        const r = await fetch('/api/browse?' + qs.toString());
+        const data = await r.json();
+
+        if (data.entries && Array.isArray(data.entries)) {
+          // Track this folder's children
+          const children = new Set();
+          folderContents.set(folderId, children);
+
+          for (const entry of data.entries) {
+            children.add(entry.id);
+            selectedItems.add(entry.id);
+            itemTypes.set(entry.id, entry.type);
+            itemParents.set(entry.id, folderId);
+
+            // If it's a folder, recursively fetch its contents too
+            if (entry.type === 'folder') {
+              await selectFolderRecursive(entry.id, true);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to fetch folder contents for selection:', e);
+      }
+    } else {
+      selectedItems.delete(folderId);
+      // Recursively deselect children
+      const children = folderContents.get(folderId);
+      if (children) {
+        for (const childId of children) {
+          selectedItems.delete(childId);
+          if (itemTypes.get(childId) === 'folder') {
+            await selectFolderRecursive(childId, false);
+          }
+        }
+      }
+    }
+  }
+
+  function updateIndeterminateStates() {
+    // Update checkbox visual states based on selection
+    // For folders: if some (but not all) children are selected, show indeterminate state
+
+    fileList.querySelectorAll('.selection-checkbox').forEach(cb => {
+      const itemId = cb.getAttribute('data-id');
+      const tr = cb.closest('tr');
+      const type = tr?.getAttribute('data-type');
+      const isFolder = (type === 'folder');
+
+      const isSelected = selectedItems.has(itemId);
+      let isIndeterminate = false;
+
+      if (isFolder) {
+        // Check if this folder has children tracked
+        const children = folderContents.get(itemId);
+        if (children && children.size > 0) {
+          const selectedChildren = Array.from(children).filter(cid => selectedItems.has(cid));
+          if (selectedChildren.length > 0 && selectedChildren.length < children.size) {
+            // Some but not all children selected -> indeterminate
+            isIndeterminate = true;
+          }
+        } else if (isSelected) {
+          // Folder is selected but we haven't loaded its children yet
+          // This is fine - it means "select recursively"
+          isIndeterminate = false;
+        }
+      }
+
+      cb.checked = isSelected && !isIndeterminate;
+      cb.indeterminate = isIndeterminate;
+    });
+
+    // Update select-all checkbox
+    const selectAllCb = document.getElementById('select-all-checkbox');
+    if (selectAllCb) {
+      const visibleCheckboxes = Array.from(fileList.querySelectorAll('.selection-checkbox'));
+      const allChecked = visibleCheckboxes.every(cb => cb.checked || cb.indeterminate);
+      const someChecked = visibleCheckboxes.some(cb => cb.checked || cb.indeterminate);
+
+      selectAllCb.checked = allChecked && visibleCheckboxes.length > 0 && someChecked;
+      selectAllCb.indeterminate = someChecked && !allChecked;
+    }
+  }
+
+  function clearSelection() {
+    selectedItems.clear();
+    lastClickedIndex = -1;
+    updateSelectionCount();
+    updateIndeterminateStates();
+  }
+
+  function selectAll() {
+    fileList.querySelectorAll('tr[data-id]').forEach(tr => {
+      const itemId = tr.getAttribute('data-id');
+      selectedItems.add(itemId);
+    });
+    updateSelectionCount();
+    updateIndeterminateStates();
   }
 
   // ===== File Browsing =====
@@ -1050,18 +1541,32 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function renderFileList(entries, providerId) {
     if (!entries || entries.length === 0) {
-      fileList.innerHTML = '<tr><td colspan="7" class="small text-muted">Empty folder</td></tr>';
+      fileList.innerHTML = '<tr><td colspan="8" class="small text-muted">Empty folder</td></tr>';
       return;
     }
 
-    fileList.innerHTML = entries.map(e => {
+    // Build folder hierarchy for selection tracking
+    itemTypes.clear();
+    itemParents.clear();
+    entries.forEach(e => {
+      itemTypes.set(e.id, e.type);
+      // Parent tracking will be updated when navigating folders
+    });
+
+    fileList.innerHTML = entries.map((e, idx) => {
       const icon = e.type === 'folder' ? '📁' : '📄';
       const size = e.type === 'folder' ? '' : fmtBytes(e.size || 0);
       const created = e.ctime ? fmtTime(e.ctime) : '';
       const modified = e.mtime ? fmtTime(e.mtime) : '';
-      const scanned = '';  // Live files not scanned
 
-      return `<tr data-id="${e.id}" data-type="${e.type}" data-name="${e.name}">
+      // In Live mode, show scan status for each file/folder
+      const scanned = '<span class="text-muted">—</span>';
+
+      const isSelected = selectedItems.has(e.id);
+      const checkboxHtml = `<input type="checkbox" class="selection-checkbox" data-id="${e.id}" data-index="${idx}" ${isSelected ? 'checked' : ''}>`;
+
+      return `<tr data-id="${e.id}" data-type="${e.type}" data-name="${e.name}" data-index="${idx}">
+        <td class="checkbox-col">${checkboxHtml}</td>
         <td>${icon} ${e.name}</td>
         <td>${e.type}</td>
         <td>${size}</td>
@@ -1072,9 +1577,48 @@ window.addEventListener('DOMContentLoaded', () => {
       </tr>`;
     }).join('');
 
-    // Attach click handlers
+    // Attach checkbox handlers (must be before tr click handlers)
+    fileList.querySelectorAll('.selection-checkbox').forEach(cb => {
+      cb.addEventListener('change', async (e) => {
+        e.stopPropagation();
+        const itemId = cb.getAttribute('data-id');
+        const tr = cb.closest('tr');
+        const type = tr?.getAttribute('data-type');
+        const isFolder = (type === 'folder');
+        const index = parseInt(cb.getAttribute('data-index'));
+
+        // Handle shift-click for range selection
+        if (e.shiftKey && lastClickedIndex >= 0 && lastClickedIndex !== index) {
+          const start = Math.min(lastClickedIndex, index);
+          const end = Math.max(lastClickedIndex, index);
+          const allCheckboxes = Array.from(fileList.querySelectorAll('.selection-checkbox'));
+          for (let i = start; i <= end; i++) {
+            if (allCheckboxes[i]) {
+              const id = allCheckboxes[i].getAttribute('data-id');
+              const tr = allCheckboxes[i].closest('tr');
+              const t = tr?.getAttribute('data-type');
+              if (cb.checked) {
+                selectedItems.add(id);
+                allCheckboxes[i].checked = true;
+              }
+            }
+          }
+          updateSelectionCount();
+          updateIndeterminateStates();
+        } else {
+          await toggleItemSelection(itemId, cb.checked, isFolder);
+        }
+
+        lastClickedIndex = index;
+      });
+    });
+
+    // Attach click handlers for rows (not checkboxes)
     fileList.querySelectorAll('tr').forEach(tr => {
-      tr.addEventListener('click', () => {
+      tr.addEventListener('click', (e) => {
+        // Don't trigger if clicking checkbox
+        if (e.target.type === 'checkbox' || e.target.closest('.checkbox-col')) return;
+
         const id = tr.getAttribute('data-id');
         const type = tr.getAttribute('data-type');
         const name = tr.getAttribute('data-name');
@@ -1112,6 +1656,9 @@ window.addEventListener('DOMContentLoaded', () => {
   function showFileDetails(file) {
     selectedFile = file;
 
+    // Set global file path for interpreter modal
+    window.selectedFilePath = file.id;
+
     // Expand right panel if collapsed
     if (details.classList.contains('collapsed')) {
       collapseRight.click();
@@ -1134,7 +1681,13 @@ window.addEventListener('DOMContentLoaded', () => {
           🔍 Scan This Folder
         </button>
       ` : ''}
+      <div id="file-interpreter-section"></div>
     `;
+
+    // Show interpreter section for files
+    if (file.type === 'file' && window.updateFileInterpreterSection) {
+      window.updateFileInterpreterSection(file.id);
+    }
   }
 
   function showServerDetails(serverId) {
@@ -1222,20 +1775,126 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  // ===== Load Snapshots as Server Entries (for Snapshots mode) =====
+  async function loadSnapshotsAsServers() {
+    try {
+      const r = await fetch('/api/scans');
+      if (!r.ok) {
+        throw new Error(`API returned ${r.status}`);
+      }
+      const scans = await r.json();
+
+      console.log('Scans API response:', scans);
+
+      if (!Array.isArray(scans)) {
+        console.error('Scans API returned non-array:', scans);
+        throw new Error('Invalid response format');
+      }
+
+      if (scans.length === 0) {
+        console.log('No scans found - showing empty state');
+        document.getElementById('servers-tree').innerHTML = '<div class="small text-muted">No snapshots yet</div>';
+        return;
+      }
+
+      // Group scans by provider_id to build server-like entries
+      const grouped = {};
+      for (const scan of scans) {
+        const providerId = scan.provider_id || 'local_fs';
+        console.log('Processing scan:', scan.id, 'provider:', providerId);
+
+        if (!grouped[providerId]) {
+          grouped[providerId] = {
+            id: providerId,
+            label: providerId,
+            type: 'server',
+            icon: '📷', // Camera icon to distinguish from Live mode
+            hasChildren: false,
+            scans: []
+          };
+        }
+        grouped[providerId].scans.push(scan);
+      }
+
+      console.log('Grouped scans:', grouped);
+
+      // Format as tree nodes with snapshot metadata
+      serversData = Object.values(grouped).map(s => {
+        const latestScan = s.scans[0]; // Scans are already sorted by date
+        const scanDate = latestScan.ended || latestScan.started;
+        let dateStr = '';
+        try {
+          if (scanDate) {
+            const d = new Date(scanDate * 1000);
+            const now = Date.now() / 1000;
+            const diff = now - scanDate;
+            const days = Math.floor(diff / 86400);
+            if (days === 0) {
+              dateStr = ' (Today)';
+            } else if (days === 1) {
+              dateStr = ' (Yesterday)';
+            } else if (days < 7) {
+              dateStr = ` (${days}d ago)`;
+            } else {
+              dateStr = ` (${d.toLocaleDateString()})`;
+            }
+          }
+        } catch (e) {
+          dateStr = '';
+        }
+
+        return {
+          ...s,
+          displayLabel: s.label + dateStr,
+          label: s.label + dateStr
+        };
+      });
+
+      // Don't reassign onSelect here - it's handled by updateServersTreeHandler()
+      serversTree.nodes = serversData;
+      serversTree.refresh();
+    } catch (e) {
+      console.error('loadSnapshotsAsServers error:', e);
+      document.getElementById('servers-tree').innerHTML = `<div class="small text-danger">Failed to load snapshots: ${e.message}</div>`;
+    }
+  }
+
   // ===== Scans List (Tree) =====
   async function loadScans() {
     try {
       const r = await fetch('/api/scans');
       const scans = await r.json();
 
+      // Format scan timestamp for "Snapshot from: [date]" display
+      function fmtSnapshotDate(timestamp) {
+        if (!timestamp) return 'Unknown date';
+        try {
+          const d = new Date(timestamp * 1000);
+          const now = new Date();
+          const diffMs = now - d;
+          const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+          if (diffDays === 0) return 'Today';
+          if (diffDays === 1) return 'Yesterday';
+          if (diffDays < 7) return `${diffDays} days ago`;
+          return d.toLocaleDateString();
+        } catch (e) {
+          return 'Unknown date';
+        }
+      }
+
       scansData = scans.map(s => {
-        const shortPath = s.path.length > 40 ? '...' + s.path.slice(-37) : s.path;
+        // Get provider/server name from scan metadata
+        const providerLabel = s.provider_id || 'Unknown';
+        const snapshotDate = fmtSnapshotDate(s.started || s.ended);
+
         return {
           id: s.id,
-          label: `#${s.id}: ${shortPath}`,
+          label: `📷 ${providerLabel} — ${snapshotDate}`,
           type: 'scan',
-          icon: '📸',
+          icon: '📷', // Camera icon for snapshots
           count: s.file_count,
+          snapshotDate: snapshotDate,
           hasChildren: false
         };
       });
@@ -1243,8 +1902,12 @@ window.addEventListener('DOMContentLoaded', () => {
       scansTree.getCurrentNodes = () => scansData;
       scansTree.nodes = scansData;
       scansTree.refresh();
+
+      // Also render snapshots in Activity Panel
+      renderSnapshots(scans);
     } catch (e) {
       document.getElementById('scans-tree').innerHTML = '<div class="small text-danger">Failed to load scans</div>';
+      snapshotsList.innerHTML = '<div class="small text-danger">Failed to load snapshots</div>';
     }
   }
 
@@ -1427,12 +2090,30 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // ===== Snapshot Configuration Modal State (declared early for use in renderSnapshots) =====
+  let modalMode = 'new'; // 'new' or 'reconfigure'
+  let modalScanId = null;
+  let modalSelectedItems = new Set();
+  let modalFolderContents = new Map();
+  let modalItemTypes = new Map();
+  let modalSavedConfig = new Set();
+  let modalCurrentPath = '';
+  let modalCurrentServer = null;
+  let modalCurrentRoot = null;
+
+  // Forward declare modal functions (defined fully later)
+  let openSnapshotModal, populateModalServerSelect, loadScanConfigForReconfigure;
+  let loadModalFileList, attachModalCheckboxHandlers, selectModalFolderRecursive;
+  let updateModalSelectionCount, updateModalDiffClasses, saveSnapshotConfig;
+
   // ===== Background Tasks =====
   const tasksList = document.getElementById('tasks-list');
+  const snapshotsList = document.getElementById('snapshots-list');
+  let activeSnapshotId = null;
 
   function renderTasks(tasks) {
     if (!tasks || tasks.length === 0) {
-      tasksList.innerHTML = '<div class="small text-muted">No tasks</div>';
+      tasksList.innerHTML = '';  // Empty, not "No tasks" - we have snapshots below now
       return;
     }
 
@@ -1478,21 +2159,142 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // ===== Snapshots List in Activity Panel =====
+  function renderSnapshots(scans) {
+    if (!scans || scans.length === 0) {
+      snapshotsList.innerHTML = '<div class="small text-muted" style="padding: 0.25rem;">No snapshots yet</div>';
+      return;
+    }
+
+    snapshotsList.innerHTML = scans.slice(0, 10).map(s => {
+      const isActive = (activeSnapshotId === s.id);
+      const statusClass = s.committed ? '' : 'scanning';
+
+      // Format date
+      let dateStr = '';
+      try {
+        if (s.started || s.ended) {
+          const ts = s.ended || s.started;
+          const d = new Date(ts * 1000);
+          dateStr = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        }
+      } catch (e) {
+        dateStr = 'Unknown date';
+      }
+
+      // Provider label
+      const providerLabel = s.provider_id || 'local';
+      const fileCount = s.file_count || 0;
+
+      return `<div class="snapshot-item ${isActive ? 'active' : ''} ${statusClass}" data-scan-id="${s.id}">
+        <div class="snapshot-main">
+          <div class="snapshot-info">
+            <div class="snapshot-title">📷 ${providerLabel}</div>
+            <div class="snapshot-meta">${dateStr} • ${fileCount} files</div>
+          </div>
+          <div class="snapshot-actions">
+            <button class="snapshot-refresh" data-scan-id="${s.id}" title="Refresh snapshot">↻</button>
+            <button class="snapshot-reconfig" data-scan-id="${s.id}" title="Reconfigure">⚙</button>
+          </div>
+        </div>
+        ${!s.committed ? `
+          <div class="task-progress-bar">
+            <div class="task-progress-fill running" style="width: 100%;"></div>
+          </div>
+        ` : ''}
+      </div>`;
+    }).join('');
+
+    // Attach click handlers for snapshot items
+    snapshotsList.querySelectorAll('.snapshot-item').forEach(item => {
+      const scanId = item.getAttribute('data-scan-id');
+
+      // Click on item itself (not buttons) to load snapshot
+      item.addEventListener('click', (e) => {
+        if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+        activeSnapshotId = scanId;
+        currentScan = scanId;
+        browseSnapshot(scanId);
+        showScanDetails(scanId);
+        commitScanBtn.style.display = 'inline-block';
+
+        // Update active state
+        snapshotsList.querySelectorAll('.snapshot-item').forEach(si => si.classList.remove('active'));
+        item.classList.add('active');
+      });
+    });
+
+    // Attach refresh button handlers
+    snapshotsList.querySelectorAll('.snapshot-refresh').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const scanId = btn.getAttribute('data-scan-id');
+        if (!confirm(`Refresh snapshot #${scanId} with same configuration?`)) return;
+
+        btn.disabled = true;
+        btn.textContent = 'Refreshing...';
+
+        try {
+          const r = await fetch(`/api/scans/${scanId}/rescan`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+
+          if (r.ok) {
+            const result = await r.json();
+            showMessage(`Refresh started: new scan #${result.scan_id}`, 'success');
+            fetchTasks();
+            loadScans();
+          } else {
+            const err = await r.json();
+            showMessage('Refresh failed: ' + (err.error || r.status), 'error');
+          }
+        } catch (err) {
+          showMessage('Refresh failed: ' + err.message, 'error');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = '↻ Refresh';
+        }
+      });
+    });
+
+    // Attach reconfigure button handlers
+    snapshotsList.querySelectorAll('.snapshot-reconfig').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const scanId = btn.getAttribute('data-scan-id');
+        openSnapshotModal('reconfigure', scanId);
+      });
+    });
+  }
+
   // ===== Neo4j Status =====
   async function fetchNeo4jStatus() {
     try {
-      const r = await fetch('/api/settings/neo4j');
+      const r = await fetch('/api/health/comprehensive');
       const j = await r.json();
       const light = document.getElementById('neo4j-light');
       const txt = document.getElementById('neo4j-status-text');
-      const ok = !!(j && j.connected);
+
+      // Check Neo4j component status from health check
+      const neo4jStatus = j?.components?.neo4j?.status || 'unavailable';
+      const ok = (neo4jStatus === 'connected');
+      const error = j?.components?.neo4j?.error;
 
       if (light) {
         light.classList.toggle('connected', ok);
         light.title = ok ? 'Connected' : 'Disconnected';
       }
       if (txt) {
-        txt.textContent = ok ? 'Neo4j: Connected' : (j && j.last_error ? ('Neo4j: Error — ' + j.last_error) : 'Neo4j: Not connected');
+        if (ok) {
+          txt.textContent = 'Neo4j: Connected';
+        } else if (neo4jStatus === 'not_configured') {
+          txt.textContent = 'Neo4j: Not configured';
+        } else if (error) {
+          txt.textContent = 'Neo4j: Error — ' + error;
+        } else {
+          txt.textContent = 'Neo4j: Not connected';
+        }
       }
     } catch (e) {
       const txt = document.getElementById('neo4j-status-text');
@@ -1703,6 +2505,600 @@ window.addEventListener('DOMContentLoaded', () => {
     loadScans();  // Always poll scans to keep the tree updated
     fetchNeo4jStatus();
   }, 2000);
+
+  // ===== Selection Mode Event Handlers =====
+  const toggleSelectionBtn = document.getElementById('toggle-selection-btn');
+  const exitSelectionBtn = document.getElementById('exit-selection-btn');
+  const clearSelectionBtn = document.getElementById('clear-selection-btn');
+  const scanSelectedBtn = document.getElementById('scan-selected-btn');
+  const selectAllCheckbox = document.getElementById('select-all-checkbox');
+
+  if (toggleSelectionBtn) {
+    toggleSelectionBtn.addEventListener('click', toggleSelectionMode);
+  }
+
+  if (exitSelectionBtn) {
+    exitSelectionBtn.addEventListener('click', toggleSelectionMode);
+  }
+
+  if (clearSelectionBtn) {
+    clearSelectionBtn.addEventListener('click', clearSelection);
+  }
+
+  if (selectAllCheckbox) {
+    selectAllCheckbox.addEventListener('change', (e) => {
+      if (e.target.checked) {
+        selectAll();
+      } else {
+        clearSelection();
+      }
+    });
+  }
+
+  if (scanSelectedBtn) {
+    scanSelectedBtn.addEventListener('click', async () => {
+      if (selectedItems.size === 0) {
+        alert('Please select files or folders to scan');
+        return;
+      }
+
+      // Build selection rules from selected items
+      const rules = Array.from(selectedItems).map(itemId => {
+        const type = itemTypes.get(itemId);
+        return {
+          action: 'include',
+          path: itemId,
+          recursive: (type === 'folder'), // Folders are recursive by default
+          node_type: type
+        };
+      });
+
+      const selection = {
+        rules: rules,
+        use_ignore: true,
+        allow_override_ignores: true
+      };
+
+      scanSelectedBtn.disabled = true;
+      scanSelectedBtn.textContent = 'Starting scan...';
+
+      try {
+        const payload = {
+          type: 'scan',
+          path: currentPath || currentRoot,
+          recursive: true,
+          provider_id: currentServer,
+          root_id: currentRoot,
+          selection: selection
+        };
+
+        const r = await fetch('/api/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (r.ok) {
+          const result = await r.json();
+          showMessage(`Scan started for ${selectedItems.size} selected items`, 'success');
+          fetchTasks();
+          loadScans();
+          toggleSelectionMode(); // Exit selection mode after scan
+        } else {
+          const j = await r.json();
+          showMessage('Scan error: ' + (j.error || r.status), 'error');
+        }
+      } catch (err) {
+        showMessage('Scan error: ' + err.message, 'error');
+      } finally {
+        scanSelectedBtn.disabled = false;
+        scanSelectedBtn.textContent = 'Scan Selected';
+      }
+    });
+  }
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    // Ctrl/Cmd + A: Select all (when in selection mode)
+    if ((e.ctrlKey || e.metaKey) && e.key === 'a' && selectionMode) {
+      e.preventDefault();
+      selectAll();
+    }
+
+    // Escape: Exit selection mode
+    if (e.key === 'Escape' && selectionMode) {
+      toggleSelectionMode();
+    }
+  });
+
+  // ===== Snapshot Configuration Modal =====
+  // State already declared earlier - now define functions
+
+  openSnapshotModal = function(mode, scanId = null) {
+    modalMode = mode;
+    modalScanId = scanId;
+    modalSelectedItems.clear();
+    modalFolderContents.clear();
+    modalItemTypes.clear();
+    modalSavedConfig.clear();
+
+    const modalEl = document.getElementById('snapshot-config-modal');
+    if (!modalEl) {
+      console.error('Modal element not found');
+      return;
+    }
+
+    // Check if bootstrap is available
+    if (typeof bootstrap === 'undefined') {
+      console.error('Bootstrap not loaded');
+      showMessage('Modal system not ready', 'error');
+      return;
+    }
+
+    const modal = new bootstrap.Modal(modalEl);
+    const title = document.getElementById('snapshot-config-modal-title');
+    const legend = document.getElementById('snapshot-diff-legend');
+    const nameInput = document.getElementById('snapshot-name-input');
+    const serverSelect = document.getElementById('snapshot-server-select');
+    const saveConfigBtn = document.getElementById('snapshot-save-config-btn');
+    const saveScanBtn = document.getElementById('snapshot-save-scan-btn');
+
+    if (mode === 'new') {
+      title.textContent = 'New Snapshot';
+      legend.style.display = 'none';
+      nameInput.value = '';
+      serverSelect.disabled = false;
+      saveConfigBtn.textContent = 'Save Config Only';
+      saveScanBtn.textContent = 'Create and Scan Now';
+
+      // Populate server dropdown
+      populateModalServerSelect();
+    } else if (mode === 'reconfigure') {
+      title.textContent = 'Reconfigure Snapshot';
+      legend.style.display = 'block';
+      saveConfigBtn.textContent = 'Save Config Only';
+      saveScanBtn.textContent = 'Save and Rescan';
+
+      // Load existing scan config
+      loadScanConfigForReconfigure(scanId);
+    }
+
+    modal.show();
+  };
+
+  populateModalServerSelect = async function() {
+    try {
+      const r = await fetch('/api/servers');
+      const servers = await r.json();
+      const serverSelect = document.getElementById('snapshot-server-select');
+
+      serverSelect.innerHTML = '<option value="">Select a server...</option>';
+      servers.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.display_name || s.id;
+        serverSelect.appendChild(opt);
+      });
+
+      // Auto-select current server if available
+      if (currentServer) {
+        serverSelect.value = currentServer;
+        await loadModalFileList(currentServer, currentRoot, currentPath);
+      }
+    } catch (e) {
+      console.error('Failed to load servers:', e);
+    }
+  };
+
+  loadScanConfigForReconfigure = async function(scanId) {
+    try {
+      // Fetch scan details
+      const scanResp = await fetch(`/api/scans/${scanId}`);
+      const scan = await scanResp.json();
+
+      // Fetch saved config
+      const configResp = await fetch(`/api/scans/${scanId}/config`);
+      const config = await configResp.json();
+
+      const nameInput = document.getElementById('snapshot-name-input');
+      const serverSelect = document.getElementById('snapshot-server-select');
+
+      // Populate form
+      nameInput.value = `${scan.provider_id || 'Snapshot'} - Reconfigured`;
+      modalCurrentServer = scan.provider_id || currentServer;
+      modalCurrentRoot = scan.root_id || currentRoot;
+      modalCurrentPath = scan.path || currentPath;
+
+      // Populate servers and select the correct one
+      await populateModalServerSelect();
+      serverSelect.value = modalCurrentServer;
+      serverSelect.disabled = true; // Can't change server when reconfiguring
+
+      // Parse saved config rules
+      if (config.rules && Array.isArray(config.rules)) {
+        config.rules.forEach(rule => {
+          modalSavedConfig.add(rule.path);
+          modalSelectedItems.add(rule.path); // Start with saved config selected
+        });
+      }
+
+      // Load file list
+      await loadModalFileList(modalCurrentServer, modalCurrentRoot, modalCurrentPath);
+    } catch (e) {
+      console.error('Failed to load scan config:', e);
+      showMessage('Failed to load snapshot configuration', 'error');
+    }
+  };
+
+  loadModalFileList = async function(providerId, rootId, path) {
+    const modalFileList = document.getElementById('modal-file-list');
+    const modalBreadcrumb = document.getElementById('modal-breadcrumb');
+
+    try {
+      const qs = new URLSearchParams({
+        provider_id: providerId || 'local_fs',
+        root_id: rootId || '/',
+        path: path || rootId || '/'
+      });
+
+      const r = await fetch('/api/browse?' + qs.toString());
+      const data = await r.json();
+
+      // Update breadcrumb
+      modalBreadcrumb.textContent = path || rootId || '/';
+
+      // Render file list
+      if (!data.entries || data.entries.length === 0) {
+        modalFileList.innerHTML = '<tr><td colspan="4" class="small text-muted">Empty folder</td></tr>';
+        return;
+      }
+
+      modalFileList.innerHTML = data.entries.map((e, idx) => {
+        const icon = e.type === 'folder' ? '📁' : '📄';
+        const size = e.type === 'folder' ? '' : fmtBytes(e.size || 0);
+        const isSelected = modalSelectedItems.has(e.id);
+        const wasInConfig = modalSavedConfig.has(e.id);
+
+        modalItemTypes.set(e.id, e.type);
+
+        // Determine diff class for reconfigure mode
+        let rowClass = '';
+        if (modalMode === 'reconfigure') {
+          if (isSelected && wasInConfig) {
+            rowClass = 'row-config-unchanged'; // Green tint
+          } else if (!isSelected && wasInConfig) {
+            rowClass = 'row-config-removed'; // Grey tint
+          } else if (isSelected && !wasInConfig) {
+            rowClass = 'row-config-new'; // No tint (new addition)
+          }
+          // else: not selected, not in config = no class (default)
+        }
+
+        return `<tr class="${rowClass}" data-id="${e.id}" data-type="${e.type}" data-name="${e.name}" data-index="${idx}">
+          <td class="checkbox-col">
+            <input type="checkbox" class="selection-checkbox modal-checkbox" data-id="${e.id}" data-index="${idx}" ${isSelected ? 'checked' : ''}>
+          </td>
+          <td>${icon} ${e.name}</td>
+          <td>${e.type}</td>
+          <td>${size}</td>
+        </tr>`;
+      }).join('');
+
+      // Attach modal checkbox handlers
+      attachModalCheckboxHandlers();
+      updateModalSelectionCount();
+    } catch (e) {
+      console.error('Failed to load modal file list:', e);
+      modalFileList.innerHTML = '<tr><td colspan="4" class="small text-danger">Failed to load files</td></tr>';
+    }
+  };
+
+  attachModalCheckboxHandlers = function() {
+    const modalFileList = document.getElementById('modal-file-list');
+
+    modalFileList.querySelectorAll('.modal-checkbox').forEach(cb => {
+      cb.addEventListener('change', async (e) => {
+        e.stopPropagation();
+        const itemId = cb.getAttribute('data-id');
+        const tr = cb.closest('tr');
+        const type = tr?.getAttribute('data-type');
+        const isFolder = (type === 'folder');
+
+        if (cb.checked) {
+          modalSelectedItems.add(itemId);
+          if (isFolder) {
+            await selectModalFolderRecursive(itemId, true);
+          }
+        } else {
+          modalSelectedItems.delete(itemId);
+          if (isFolder) {
+            await selectModalFolderRecursive(itemId, false);
+          }
+        }
+
+        updateModalSelectionCount();
+        updateModalDiffClasses();
+      });
+    });
+
+    // Attach row click handlers for folder navigation
+    modalFileList.querySelectorAll('tr[data-type="folder"]').forEach(tr => {
+      tr.addEventListener('dblclick', async () => {
+        const folderId = tr.getAttribute('data-id');
+        modalCurrentPath = folderId;
+        await loadModalFileList(modalCurrentServer, modalCurrentRoot, folderId);
+      });
+    });
+  };
+
+  selectModalFolderRecursive = async function(folderId, select) {
+    // Reuse the same recursive logic as main selection
+    if (select) {
+      modalSelectedItems.add(folderId);
+      try {
+        const qs = new URLSearchParams({
+          provider_id: modalCurrentServer || 'local_fs',
+          root_id: modalCurrentRoot || '/',
+          path: folderId
+        });
+
+        const r = await fetch('/api/browse?' + qs.toString());
+        const data = await r.json();
+
+        if (data.entries && Array.isArray(data.entries)) {
+          const children = new Set();
+          modalFolderContents.set(folderId, children);
+
+          for (const entry of data.entries) {
+            children.add(entry.id);
+            modalSelectedItems.add(entry.id);
+            modalItemTypes.set(entry.id, entry.type);
+
+            if (entry.type === 'folder') {
+              await selectModalFolderRecursive(entry.id, true);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to fetch folder contents:', e);
+      }
+    } else {
+      modalSelectedItems.delete(folderId);
+      const children = modalFolderContents.get(folderId);
+      if (children) {
+        for (const childId of children) {
+          modalSelectedItems.delete(childId);
+          if (modalItemTypes.get(childId) === 'folder') {
+            await selectModalFolderRecursive(childId, false);
+          }
+        }
+      }
+    }
+  };
+
+  updateModalSelectionCount = function() {
+    const countEl = document.getElementById('modal-selection-count');
+    const count = modalSelectedItems.size;
+    countEl.textContent = `${count} item${count !== 1 ? 's' : ''} selected`;
+  };
+
+  updateModalDiffClasses = function() {
+    // Update row classes based on current selection vs saved config (reconfigure mode only)
+    if (modalMode !== 'reconfigure') return;
+
+    const modalFileList = document.getElementById('modal-file-list');
+    modalFileList.querySelectorAll('tr[data-id]').forEach(tr => {
+      const itemId = tr.getAttribute('data-id');
+      const isSelected = modalSelectedItems.has(itemId);
+      const wasInConfig = modalSavedConfig.has(itemId);
+
+      // Remove all diff classes
+      tr.classList.remove('row-config-unchanged', 'row-config-new', 'row-config-removed');
+
+      // Apply appropriate class
+      if (isSelected && wasInConfig) {
+        tr.classList.add('row-config-unchanged'); // Green
+      } else if (!isSelected && wasInConfig) {
+        tr.classList.add('row-config-removed'); // Grey
+      } else if (isSelected && !wasInConfig) {
+        tr.classList.add('row-config-new'); // No tint (explicitly setting, though it does nothing)
+      }
+      // else: not selected, not in config = no class
+    });
+  };
+
+  saveSnapshotConfig = async function(startScan) {
+    const nameInput = document.getElementById('snapshot-name-input');
+    const name = nameInput.value.trim();
+
+    if (!name) {
+      alert('Please enter a snapshot name');
+      return;
+    }
+
+    if (modalSelectedItems.size === 0) {
+      alert('Please select at least one file or folder');
+      return;
+    }
+
+    // Build selection rules
+    const rules = Array.from(modalSelectedItems).map(itemId => {
+      const type = modalItemTypes.get(itemId);
+      return {
+        action: 'include',
+        path: itemId,
+        recursive: (type === 'folder'),
+        node_type: type
+      };
+    });
+
+    const selection = {
+      rules: rules,
+      use_ignore: true,
+      allow_override_ignores: true
+    };
+
+    try {
+      if (modalMode === 'reconfigure') {
+        // Update existing scan config
+        const configResp = await fetch(`/api/scans/${modalScanId}/config`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(selection)
+        });
+
+        if (!configResp.ok) throw new Error('Failed to save config');
+
+        if (startScan) {
+          // Trigger rescan
+          const rescanResp = await fetch(`/api/scans/${modalScanId}/rescan`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+
+          if (rescanResp.ok) {
+            const result = await rescanResp.json();
+            showMessage(`Rescan started: new scan #${result.scan_id}`, 'success');
+            fetchTasks();
+            loadScans();
+          } else {
+            throw new Error('Rescan failed');
+          }
+        } else {
+          showMessage('Snapshot configuration updated', 'success');
+        }
+      } else {
+        // New snapshot: create and optionally scan
+        const payload = {
+          type: 'scan',
+          path: modalCurrentPath || modalCurrentRoot,
+          recursive: true,
+          provider_id: modalCurrentServer,
+          root_id: modalCurrentRoot,
+          selection: selection
+        };
+
+        if (startScan) {
+          const scanResp = await fetch('/api/scan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          if (scanResp.ok) {
+            const result = await scanResp.json();
+            showMessage(`Snapshot scan started: #${result.scan_id}`, 'success');
+            fetchTasks();
+            loadScans();
+          } else {
+            throw new Error('Scan failed');
+          }
+        } else {
+          // Save config only (no immediate scan)
+          // TODO: Need API endpoint for this - for now just show message
+          showMessage('Config-only save not yet implemented - scanning instead', 'info');
+
+          const scanResp = await fetch('/api/scan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          if (scanResp.ok) {
+            const result = await scanResp.json();
+            showMessage(`Snapshot created: #${result.scan_id}`, 'success');
+            fetchTasks();
+            loadScans();
+          }
+        }
+      }
+
+      // Close modal
+      bootstrap.Modal.getInstance(document.getElementById('snapshot-config-modal')).hide();
+    } catch (e) {
+      console.error('Failed to save snapshot config:', e);
+      showMessage('Failed to save snapshot: ' + e.message, 'error');
+    }
+  };
+
+  // Modal action buttons
+  const snapshotSaveConfigBtn = document.getElementById('snapshot-save-config-btn');
+  const snapshotSaveScanBtn = document.getElementById('snapshot-save-scan-btn');
+  const modalSelectAllCheckbox = document.getElementById('modal-select-all-checkbox');
+  const modalSelectAllBtn = document.getElementById('modal-select-all-btn');
+  const snapshotServerSelect = document.getElementById('snapshot-server-select');
+
+  if (snapshotServerSelect) {
+    snapshotServerSelect.addEventListener('change', async (e) => {
+      const serverId = e.target.value;
+      if (!serverId) return;
+
+      modalCurrentServer = serverId;
+      modalCurrentRoot = '/'; // Default root
+      modalCurrentPath = '/';
+      await loadModalFileList(serverId, modalCurrentRoot, modalCurrentPath);
+    });
+  }
+
+  if (modalSelectAllBtn) {
+    modalSelectAllBtn.addEventListener('click', () => {
+      const modalFileList = document.getElementById('modal-file-list');
+      modalFileList.querySelectorAll('tr[data-id]').forEach(tr => {
+        const itemId = tr.getAttribute('data-id');
+        modalSelectedItems.add(itemId);
+        const cb = tr.querySelector('.modal-checkbox');
+        if (cb) cb.checked = true;
+      });
+      updateModalSelectionCount();
+      updateModalDiffClasses();
+    });
+  }
+
+  if (modalSelectAllCheckbox) {
+    modalSelectAllCheckbox.addEventListener('change', (e) => {
+      const modalFileList = document.getElementById('modal-file-list');
+      if (e.target.checked) {
+        modalFileList.querySelectorAll('tr[data-id]').forEach(tr => {
+          const itemId = tr.getAttribute('data-id');
+          modalSelectedItems.add(itemId);
+          const cb = tr.querySelector('.modal-checkbox');
+          if (cb) cb.checked = true;
+        });
+      } else {
+        modalSelectedItems.clear();
+        modalFileList.querySelectorAll('.modal-checkbox').forEach(cb => {
+          cb.checked = false;
+        });
+      }
+      updateModalSelectionCount();
+      updateModalDiffClasses();
+    });
+  }
+
+  if (snapshotSaveConfigBtn) {
+    snapshotSaveConfigBtn.addEventListener('click', async () => {
+      // Save config without scanning
+      await saveSnapshotConfig(false);
+    });
+  }
+
+  if (snapshotSaveScanBtn) {
+    snapshotSaveScanBtn.addEventListener('click', async () => {
+      // Save config and start scan
+      await saveSnapshotConfig(true);
+    });
+  }
+
+  // ===== Wire up Snapshot Action Buttons =====
+  const newSnapshotBtn = document.getElementById('new-snapshot-btn');
+  if (newSnapshotBtn) {
+    newSnapshotBtn.addEventListener('click', () => {
+      openSnapshotModal('new');
+    });
+  }
+
+  // Reconfigure buttons already wired in renderSnapshots() function
+  // (see lines where .snapshot-reconfig handlers are attached)
 
   // ===== Initialization =====
   loadServers();

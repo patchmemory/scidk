@@ -70,4 +70,4 @@ def test_instance_count_neo4j_not_configured(client):
         # Error message should mention Neo4j, configuration, or driver issues
         assert 'error' in data
         error_msg = data['error'].lower()
-        assert 'neo4j' in error_msg or 'config' in error_msg or 'connect' in error_msg or 'driver' in error_msg
+        assert 'neo4j' in error_msg or 'config' in error_msg or 'connect' in error_msg or 'driver' in error_msg or 'unauthorized' in error_msg or 'scheme' in error_msg

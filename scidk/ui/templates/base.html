@@ -12,6 +12,7 @@
     nav a { color: var(--fg); text-decoration: none; padding: 0.25rem 0.5rem; border-radius: 4px; }
     nav a + a { margin-left: 0.25rem; }
     nav a:hover { background: #f3f3f3; }
+    nav a.active { font-weight: 600; }
     main { padding: 1rem 0.5rem; max-width: 100%; margin: 0; }
     table { border-collapse: collapse; width: 100%; }
     td, th { border: 1px solid #eee; padding: 8px; text-align: left; }
@@ -29,14 +30,16 @@
 </head>
 <body>
 <header data-testid="header">
-  <h1><a href="/" style="text-decoration:none;color:inherit;font-family:monospace;letter-spacing:0.02em" data-testid="nav-home">-SciDK-></a></h1>
+  <h1><a href="/" style="text-decoration:none;color:inherit;font-family:monospace;letter-spacing:0.02em;font-weight:600" data-testid="nav-home">-SciDK-></a></h1>
   <nav data-testid="nav">
-    <!-- SciDK logo links to landing page (Settings) -->
-    <a href="/datasets" data-testid="nav-files">Files</a>
-    <a href="/labels" data-testid="nav-labels">Labels</a>
-    <a href="/integrate" data-testid="nav-integrate">Integrations</a>
-    <a href="/map" data-testid="nav-maps">Maps</a>
+    <a href="/results" data-testid="nav-results">Results</a>
     <a href="/chat" data-testid="nav-chats">Chats</a>
+    <a href="/map" data-testid="nav-maps">Maps</a>
+    <a href="/labels" data-testid="nav-labels">Labels</a>
+    <a href="/links" data-testid="nav-links">Links</a>
+    <a href="/datasets" data-testid="nav-files">Files</a>
+    <a href="/scripts" data-testid="nav-scripts">Scripts</a>
+    <a href="/plugins" data-testid="nav-plugins">Plugins</a>
   </nav>
   <div id="auth-status" style="margin-left:auto; display:none;">
     <span id="auth-username" style="color:var(--muted); font-size:0.9em; margin-right:0.5rem;"></span>
@@ -121,6 +124,18 @@
 
     // Check status on page load
     checkAuthStatus();
+  })();
+
+  // Set active nav link based on current page
+  (function(){
+    const path = window.location.pathname;
+    const navLinks = document.querySelectorAll('nav a');
+    navLinks.forEach(link => {
+      const href = link.getAttribute('href');
+      if ((href === '/' && path === '/') || (href !== '/' && path.startsWith(href))) {
+        link.classList.add('active');
+      }
+    });
   })();
 
   // Activity Monitor and Auto-Lock functionality

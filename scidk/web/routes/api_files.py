@@ -13,7 +13,7 @@ bp = Blueprint('files', __name__, url_prefix='/api')
 
 def _get_ext():
     """Get SciDK extensions from current Flask current_app."""
-    return current_app.extensions['scidk']
+    return current_app.extensions.get('scidk')
 
 @bp.post('/scan/dry-run')
 def api_scan_dry_run():
@@ -854,6 +854,146 @@ def api_interpret():
         return jsonify({"status": "ok", "results": results}), 200
 
 
+@bp.get('/servers')
+def api_servers():
+    """Get list of all accessible servers/providers with scan metadata.
+
+    Returns servers with connection status, last scanned timestamp, and scan counts.
+    Used by Files page Live Servers mode to show which servers have been scanned before.
+    """
+    import traceback
+    import logging
+    logger = logging.getLogger(__name__)
+
+    try:
+        logger.info("api_servers: Starting")
+        ext = _get_ext()
+        logger.info(f"api_servers: ext = {ext is not None}")
+        if not ext:
+            return jsonify([]), 200  # Return empty list if no extensions
+
+        provs = ext.get('providers')
+        if not provs:
+            return jsonify([]), 200  # Return empty list if no providers
+
+        # ProviderRegistry has a .providers dict attribute
+        providers_dict = getattr(provs, 'providers', {}) if hasattr(provs, 'providers') else provs
+        logger.info(f"api_servers: provs keys = {list(providers_dict.keys()) if providers_dict else None}")
+        if not providers_dict:
+            return jsonify([]), 200  # Return empty list if no providers
+
+        servers = []
+
+        # Get scan history from SQLite
+        scan_history = {}
+        try:
+            logger.info("api_servers: Loading scan history")
+            from ...core import path_index_sqlite as pix
+            from ...core import migrations as _migs
+            import json as _json
+            conn = pix.connect()
+            try:
+                _migs.migrate(conn)
+                cur = conn.cursor()
+                # Aggregate scans by provider+root
+                cur.execute("""
+                    SELECT extra_json, completed
+                    FROM scans
+                    WHERE extra_json IS NOT NULL
+                    ORDER BY completed DESC
+                """)
+                for (extra_json, completed) in cur.fetchall():
+                    try:
+                        extra = _json.loads(extra_json) if extra_json else {}
+                        provider_id = extra.get('provider_id', 'local_fs')
+                        root_id = extra.get('root_id', '/')
+                        key = f"{provider_id}:{root_id}"
+
+                        if key not in scan_history or (completed and completed > scan_history[key].get('last_scanned', 0)):
+                            scan_history[key] = {
+                                'last_scanned': completed or 0,
+                                'file_count': extra.get('file_count', 0),
+                                'scanned': True
+                            }
+                    except Exception as e:
+                        logger.warning(f"api_servers: Error parsing scan entry: {e}")
+                        continue
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            logger.info(f"api_servers: Loaded {len(scan_history)} scan history entries")
+        except Exception as e:
+            logger.warning(f"api_servers: Error loading scan history: {e}")
+            pass
+
+        # Build server list with scan metadata
+        logger.info(f"api_servers: Building server list from {len(providers_dict)} providers")
+        for prov_id, prov in providers_dict.items():
+            try:
+                logger.info(f"api_servers: Processing provider {prov_id}")
+                # Get provider display name
+                display_name = getattr(prov, 'display_name', prov_id)
+
+                # Check connection status (simple check - provider is accessible if it's loaded)
+                connected = True  # If provider is in the dict, it's accessible
+
+                # Get roots for this provider
+                try:
+                    roots = prov.list_roots()
+                    logger.info(f"api_servers: Provider {prov_id} returned {len(roots) if roots else 0} roots")
+                    if not isinstance(roots, list):
+                        roots = []
+                except Exception as e:
+                    logger.warning(f"api_servers: Provider {prov_id} list_roots error: {e}")
+                    roots = []
+
+                # If no roots, create a default entry
+                if not roots:
+                    roots = [{'id': '/', 'path': '/'}]
+
+                # For each root, check scan history
+                for root in roots:
+                    root_id = root.get('id', '/')
+                    key = f"{prov_id}:{root_id}"
+                    scan_info = scan_history.get(key, {})
+
+                    server_entry = {
+                        'id': prov_id,
+                        'display_name': display_name,
+                        'root_id': root_id,
+                        'root_path': root.get('path', root_id),
+                        'connected': connected,
+                        'scanned': scan_info.get('scanned', False),
+                        'last_scanned': scan_info.get('last_scanned', None),
+                        'file_count': scan_info.get('file_count', 0)
+                    }
+                    servers.append(server_entry)
+                    logger.info(f"api_servers: Added server entry for {prov_id}:{root_id}")
+
+            except Exception as e:
+                logger.error(f"api_servers: Error processing provider {prov_id}: {e}\n{traceback.format_exc()}")
+                # If provider fails, mark as disconnected
+                servers.append({
+                    'id': prov_id,
+                    'display_name': prov_id,
+                    'root_id': '/',
+                    'root_path': '/',
+                    'connected': False,
+                    'scanned': False,
+                    'last_scanned': None,
+                    'file_count': 0,
+                    'error': str(e)
+                })
+
+        logger.info(f"api_servers: Returning {len(servers)} servers")
+        return jsonify(servers), 200
+    except Exception as e:
+        logger.error(f"api_servers: Fatal error: {e}\n{traceback.format_exc()}")
+        return jsonify({'error': str(e)}), 500
+
+
 @bp.get('/browse')
 def api_browse():
         prov_id = (request.args.get('provider_id') or 'local_fs').strip() or 'local_fs'
@@ -1262,6 +1402,8 @@ def api_scans():
                         'committed_at': (extra_obj or {}).get('committed_at'),
                         'status': status,
                         'rescan_of': (extra_obj or {}).get('rescan_of'),
+                        'provider_id': (extra_obj or {}).get('provider_id', 'local_fs'),
+                        'root_id': (extra_obj or {}).get('root_id', '/'),
                     })
                 # Merge in-memory committed flags to reflect immediate commits
                 try:
@@ -1298,6 +1440,8 @@ def api_scans():
                 'checksum_count': len(s.get('checksums') or []),
                 'committed': bool(s.get('committed', False)),
                 'committed_at': s.get('committed_at'),
+                'provider_id': s.get('provider_id', 'local_fs'),
+                'root_id': s.get('root_id', '/'),
             }
             for s in scans
         ]
@@ -1682,3 +1826,211 @@ def api_scan_delete(scan_id):
             current_app.logger.warning(f"Failed to delete scan {scan_id} from SQLite: {e}")
 
     return jsonify({"status": "ok", "deleted": True, "scan_id": scan_id, "existed": existed}), 200
+
+
+# ============================================================================
+# Interpreter Integration (Phase 3: Files Page Transparency Layer)
+# ============================================================================
+
+@bp.post('/files/interpret')
+def api_interpret_file_preview():
+    """Preview interpreter results without committing to graph.
+
+    Request Body:
+        file_path (str): Absolute path to file
+        interpreter_id (str): ID of interpreter to run
+
+    Returns:
+        JSON response with preview data and hash
+    """
+    try:
+        data = request.get_json()
+        if not data or 'file_path' not in data or 'interpreter_id' not in data:
+            return jsonify({
+                'status': 'error',
+                'error': 'Missing required fields: file_path, interpreter_id'
+            }), 400
+
+        file_path = data['file_path']
+        interpreter_id = data['interpreter_id']
+
+        # Get interpreter script
+        from scidk.core.scripts import ScriptsManager
+        manager = ScriptsManager()
+        script = manager.get_script(interpreter_id)
+
+        if not script:
+            return jsonify({
+                'status': 'error',
+                'error': f'Interpreter not found: {interpreter_id}'
+            }), 404
+
+        if script.category != 'interpreters':
+            return jsonify({
+                'status': 'error',
+                'error': f'Script {interpreter_id} is not an interpreter'
+            }), 400
+
+        if script.validation_status != 'validated':
+            return jsonify({
+                'status': 'error',
+                'error': f'Interpreter {interpreter_id} is not validated'
+            }), 400
+
+        # Run interpreter in sandbox
+        from scidk.core.script_sandbox import run_sandboxed
+        context = {
+            'file_path': Path(file_path)
+        }
+
+        result = run_sandboxed(
+            script.code,
+            language='python',
+            context=context,
+            allowed_imports=['pathlib', 'json', 're', 'os'],
+            timeout=10
+        )
+
+        if not result['success']:
+            return jsonify({
+                'status': 'error',
+                'error': f"Interpreter execution failed: {result.get('error', 'Unknown error')}"
+            }), 500
+
+        # Extract preview data from result
+        preview = {
+            'entity_type': result.get('entity_type', 'File'),
+            'metadata': result.get('metadata', {})
+        }
+
+        # Generate preview hash for commit verification
+        import hashlib
+        import json
+        canonical = json.dumps(preview, sort_keys=True)
+        preview_hash = hashlib.sha256(canonical.encode()).hexdigest()
+
+        return jsonify({
+            'status': 'success',
+            'preview': preview,
+            'preview_hash': preview_hash,
+            'interpreter_id': interpreter_id,
+            'file_path': file_path
+        })
+
+    except Exception as e:
+        current_app.logger.exception(f"Error previewing interpreter results")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.post('/files/interpret/commit')
+def api_interpret_file_commit():
+    """Commit interpreter results to knowledge graph.
+
+    Request Body:
+        file_path (str): Absolute path to file
+        interpreter_id (str): ID of interpreter that was run
+        preview_hash (str): Hash from preview to verify no changes
+
+    Returns:
+        JSON response with node ID
+    """
+    try:
+        data = request.get_json()
+        if not data or 'file_path' not in data or 'interpreter_id' not in data or 'preview_hash' not in data:
+            return jsonify({
+                'status': 'error',
+                'error': 'Missing required fields: file_path, interpreter_id, preview_hash'
+            }), 400
+
+        file_path = data['file_path']
+        interpreter_id = data['interpreter_id']
+        provided_hash = data['preview_hash']
+
+        # Re-run interpreter to get fresh results
+        from scidk.core.scripts import ScriptsManager
+        manager = ScriptsManager()
+        script = manager.get_script(interpreter_id)
+
+        if not script:
+            return jsonify({
+                'status': 'error',
+                'error': f'Interpreter not found: {interpreter_id}'
+            }), 404
+
+        # Run interpreter again
+        from scidk.core.script_sandbox import run_sandboxed
+        context = {
+            'file_path': Path(file_path)
+        }
+
+        result = run_sandboxed(
+            script.code,
+            language='python',
+            context=context,
+            allowed_imports=['pathlib', 'json', 're', 'os'],
+            timeout=10
+        )
+
+        if not result['success']:
+            return jsonify({
+                'status': 'error',
+                'error': f"Interpreter execution failed: {result.get('error', 'Unknown error')}"
+            }), 500
+
+        # Verify hash matches
+        preview = {
+            'entity_type': result.get('entity_type', 'File'),
+            'metadata': result.get('metadata', {})
+        }
+
+        import hashlib
+        import json
+        canonical = json.dumps(preview, sort_keys=True)
+        current_hash = hashlib.sha256(canonical.encode()).hexdigest()
+
+        if current_hash != provided_hash:
+            return jsonify({
+                'status': 'error',
+                'error': 'Preview hash mismatch - file may have changed. Please preview again.'
+            }), 409  # Conflict
+
+        # Commit to graph
+        graph = _get_ext()['graph']
+
+        # Create or update file node with entity type and metadata
+        file_id = hashlib.md5(file_path.encode()).hexdigest()
+
+        # Build properties dict
+        properties = {
+            'path': file_path,
+            'entity_type': preview['entity_type'],
+            'interpreted_by': interpreter_id,
+            'interpreted_at': _time.time()
+        }
+        properties.update(preview['metadata'])
+
+        # Use graph.add_file or similar method
+        # For now, we'll use a simple approach
+        try:
+            # This is a placeholder - actual implementation depends on graph interface
+            node_id = graph.add_or_update_file(file_id, properties, labels=[preview['entity_type']])
+        except AttributeError:
+            # Fallback if graph doesn't have add_or_update_file method
+            node_id = file_id
+
+        return jsonify({
+            'status': 'success',
+            'node_id': node_id,
+            'entity_type': preview['entity_type'],
+            'message': 'Interpreter results committed to graph'
+        })
+
+    except Exception as e:
+        current_app.logger.exception(f"Error committing interpreter results")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500

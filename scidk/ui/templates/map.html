@@ -5,141 +5,352 @@
   /* Override base.html main width constraint for map page */
   main {
     max-width: 100% !important;
-    padding: 1rem 0.5rem !important;
+    padding: 0 !important;
+  }
+
+  /* === THREE-COLUMN LAYOUT === */
+  .maps-container {
+    display: flex;
+    gap: 0;
+    height: calc(100vh - 60px);
+    position: relative;
+  }
+
+  /* Left Panel: Map Library (placeholder for now) */
+  .map-library-panel {
+    width: 20%;
+    min-width: 250px;
+    border-right: 1px solid #e0e0e0;
+    background: #f9f9f9;
+    overflow-y: auto;
+    padding: 1rem;
+  }
+
+  /* Center Panel: Main workspace */
+  .map-workspace-panel {
+    flex: 1;
+    min-width: 400px;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    overflow: hidden;
+    padding: 1rem;
+  }
+
+  /* Right Panel: Controls */
+  .map-controls-panel {
+    width: 20%;
+    min-width: 250px;
+    border-left: 1px solid #e0e0e0;
+    background: #f9f9f9;
+    overflow-y: auto;
+    padding: 1rem;
+  }
+
+  /* Resizable Dividers */
+  .resizer {
+    width: 6px;
+    cursor: col-resize;
+    background: #e0e0e0;
+    position: relative;
+    flex-shrink: 0;
+    transition: background 0.15s ease;
+  }
+
+  .resizer:hover {
+    background: #2196f3;
+  }
+
+  .resizer::after {
+    content: '⋮';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #999;
+    font-size: 1.2rem;
+    line-height: 0.5rem;
+  }
+
+  .resizer.resizing {
+    background: #2196f3;
+  }
+
+  /* Panel headers */
+  .panel-header {
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #ddd;
+  }
+
+  .panel-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: #333;
+  }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: #999;
+  }
+
+  .empty-state-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    opacity: 0.5;
+  }
+
+  /* Map Library Styles */
+  .library-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+
+  .library-header h3 {
+    font-size: 1rem;
+    margin: 0;
+  }
+
+  #save-current-map {
+    font-size: 0.8rem;
+    padding: 0.25rem 0.5rem;
+  }
+
+  #map-search {
+    width: 100%;
+    font-size: 0.85rem;
+    padding: 0.4rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin-bottom: 0.75rem;
+  }
+
+  .map-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .map-item {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 0.75rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .map-item:hover {
+    border-color: #2196f3;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  }
+
+  .map-item.active {
+    border-color: #2196f3;
+    background: #e3f2fd;
+  }
+
+  .map-name {
+    font-weight: 500;
+    font-size: 0.9rem;
+    margin-bottom: 0.25rem;
+    color: #333;
+  }
+
+  .map-meta {
+    font-size: 0.75rem;
+    color: #999;
+    margin-bottom: 0.5rem;
+  }
+
+  .map-actions {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  .map-actions button {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid #ddd;
+    background: #fff;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .map-actions button:hover {
+    background: #f5f5f5;
+  }
+
+  .map-actions .load-btn:hover {
+    border-color: #2196f3;
+    color: #2196f3;
+  }
+
+  .map-actions .delete-btn {
+    color: #dc3545;
+  }
+
+  .map-actions .delete-btn:hover {
+    border-color: #dc3545;
+    background: #fff5f5;
+  }
+
+  #map-library-loading {
+    text-align: center;
+    padding: 2rem;
+    color: #999;
+    font-size: 0.9rem;
+  }
+
+  /* === TAB STYLES === */
+  .tab-bar {
+    flex-shrink: 0;
+  }
+
+  #tab-container {
+    white-space: nowrap;
+  }
+
+  #tab-container::-webkit-scrollbar {
+    height: 4px;
+  }
+
+  #tab-container::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 2px;
+  }
+
+  .map-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #e0e0e0;
+    border-bottom: none;
+    background: #f5f5f5;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.15s ease;
+    border-radius: 4px 4px 0 0;
+    max-width: 150px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .map-tab:hover {
+    background: #efefef;
+  }
+
+  .map-tab.active {
+    background: #fff;
+    border-bottom: 2px solid #fff;
+    font-weight: 500;
+    position: relative;
+    z-index: 1;
+  }
+
+  .map-tab-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .map-tab-close {
+    color: #999;
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 0.25rem;
+    border: none;
+    background: none;
+  }
+
+  .map-tab-close:hover {
+    color: #dc3545;
+  }
+
+  .tab-content {
+    display: none;
+  }
+
+  .tab-content.active {
+    display: block;
+  }
+
+  #tab-content-area {
+    flex: 1;
+    overflow-y: auto;
   }
 </style>
 {% endblock %}
 {% block content %}
-<section>
-  <h2>Schema Graph (Interactive)</h2>
-  <div class="row g-2" style="margin-bottom:.5rem">
-    <div class="col-auto">
-      <label for="schema-source" class="form-label small" style="margin-bottom:.25rem">Source</label>
-      <select id="schema-source" class="form-select form-select-sm" data-testid="schema-source-selector">
-        <option value="all" selected>All Sources</option>
-        <option value="labels">Local Labels</option>
-        <option value="neo4j">Neo4j Schema</option>
-        <option value="graph">In-Memory Graph</option>
-      </select>
+<div class="maps-container">
+  <!-- LEFT PANEL: Map Library -->
+  <div class="map-library-panel">
+    <div class="library-header">
+      <h3>📁 Saved Maps</h3>
+      <button id="save-current-map" class="btn btn-sm btn-primary" data-testid="save-current-map">💾 Save</button>
     </div>
-    <div class="col-auto">
-      <label for="filter-labels" class="form-label small" style="margin-bottom:.25rem">Labels</label>
-      <select id="filter-labels" class="form-select form-select-sm" data-testid="filter-labels">
-      </select>
+
+    <input type="search" id="map-search" placeholder="Search maps..." data-testid="map-search" />
+
+    <div id="map-library-loading" style="display:none;">
+      Loading...
     </div>
-    <div class="col-auto">
-      <label for="filter-reltypes" class="form-label small" style="margin-bottom:.25rem">Relationship Types</label>
-      <select id="filter-reltypes" class="form-select form-select-sm" data-testid="filter-reltypes">
-      </select>
+
+    <div id="map-library-empty" class="empty-state" style="display:none;">
+      <div class="empty-state-icon">🗺️</div>
+      <p class="small"><strong>No saved maps yet</strong></p>
+      <p class="small text-muted">Click Save to create your first map</p>
     </div>
-    <div class="col-auto">
-      <label for="layout-mode" class="form-label small" style="margin-bottom:.25rem">Layout</label>
-      <select id="layout-mode" class="form-select form-select-sm">
-        <option value="cose">Force (cose)</option>
-        <option value="breadthfirst">Hierarchical (breadthfirst)</option>
-        <option value="manual">Manual</option>
-      </select>
+
+    <div id="map-list" class="map-list" data-testid="map-list">
+      <!-- Map items will be inserted here dynamically -->
     </div>
-    <div class="col-auto" style="display:flex; gap:.5rem; align-items:end;">
-      <button id="save-positions" class="btn btn-sm btn-outline-secondary">Save</button>
-      <button id="load-positions" class="btn btn-sm btn-outline-secondary">Load</button>
-    </div>
-    <div class="col-auto">
-      <label for="node-size" class="form-label small" style="margin-bottom:.25rem">Node size</label>
-      <input id="node-size" type="range" class="form-range" min="0.5" max="3" step="0.1" value="1" style="width:140px">
-    </div>
-    <div class="col-auto">
-      <label for="edge-width" class="form-label small" style="margin-bottom:.25rem">Edge width</label>
-      <input id="edge-width" type="range" class="form-range" min="0.5" max="3" step="0.1" value="1" style="width:140px">
-    </div>
-    <div class="col-auto">
-      <label for="font-size" class="form-label small" style="margin-bottom:.25rem">Label font</label>
-      <input id="font-size" type="range" class="form-range" min="8" max="18" step="1" value="10" style="width:140px">
-    </div>
-    <div class="col-auto form-check" style="padding-top:1.6rem">
-      <input class="form-check-input" type="checkbox" id="high-contrast" />
-      <label class="form-check-label small" for="high-contrast">High-contrast labels</label>
-    </div>
-  </div>
-  <div id="schema-graph" data-testid="graph-explorer-root" style="width: 100%; height: 420px; border: 1px solid #ddd"></div>
-  <div style="margin-top: .5rem">
-    <button id="download-csv" class="btn btn-sm btn-outline-primary">Download Schema (CSV)</button>
   </div>
 
-  <div style="margin-top:1rem">
-    <h3>Instances (preview & download)</h3>
-    <div class="row g-2" style="margin-bottom:.5rem">
-      <div class="col-auto">
-        <label for="instances-label" class="form-label small" style="margin-bottom:.25rem">Label</label>
-        <select id="instances-label" class="form-select form-select-sm">
-          <option value="Scan" selected>Scan</option>
-          <option value="File">File</option>
-          <option value="Folder">Folder</option>
-        </select>
-      </div>
-      <div class="col-auto" style="display:flex; gap:.5rem; align-items:end;">
-        <button id="instances-preview" class="btn btn-sm btn-outline-secondary">Preview</button>
-        <a id="dl-file-csv" class="btn btn-sm btn-outline-primary" href="/api/graph/instances.csv?label=File">Files CSV</a>
-        <a id="dl-folder-csv" class="btn btn-sm btn-outline-primary" href="/api/graph/instances.csv?label=Folder">Folders CSV</a>
-        <a id="dl-scan-csv" class="btn btn-sm btn-outline-primary" href="/api/graph/instances.csv?label=Scan">Scans CSV</a>
-        <a id="dl-file-xlsx" class="btn btn-sm btn-outline-secondary" href="/api/graph/instances.xlsx?label=File">Files XLSX</a>
-      </div>
-    </div>
-    <div id="instances-table" class="table-responsive" style="max-height:240px; overflow:auto; border:1px solid #eee"></div>
-  </div>
-</section>
+  <!-- RESIZER (Left/Center) -->
+  <div class="resizer" id="resizer-left"></div>
 
-<section>
-  <h2>Graph Schema</h2>
-  <p class="small">MVP: table-based schema view showing node labels and relationship types with counts. Data reflects the current in-memory session.</p>
-  <div style="display:flex; gap:2rem; flex-wrap:wrap; align-items:flex-start;">
-    <div>
-      <h3>Node Labels</h3>
-      <table class="table table-sm">
-        <thead>
-          <tr><th>Label</th><th>Count</th></tr>
-        </thead>
-        <tbody>
-          {% for label, cnt in schema_summary.nodes.items() %}
-            <tr><td>{{ label }}</td><td>{{ cnt }}</td></tr>
-          {% else %}
-            <tr><td colspan="2" class="small">No nodes</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
+  <!-- CENTER PANEL: Main Workspace -->
+  <div class="map-workspace-panel">
+    <!-- Tab Bar -->
+    <div class="tab-bar" style="display:flex; align-items:center; border-bottom:1px solid #e0e0e0; padding:0.5rem 0; margin-bottom:1rem">
+      <div id="tab-container" style="display:flex; gap:0.25rem; flex:1; overflow-x:auto">
+        <!-- Tabs will be inserted here dynamically -->
+      </div>
+      <button id="add-tab-btn" class="btn btn-sm btn-outline-primary" style="margin-left:0.5rem" data-testid="add-tab-btn">
+        + New Tab
+      </button>
     </div>
-    <div>
-      <h3>Relationship Types</h3>
-      <table class="table table-sm">
-        <thead>
-          <tr><th>Type</th><th>Count</th></tr>
-        </thead>
-        <tbody>
-          {% for rel, cnt in schema_summary.relations.items() %}
-            <tr><td>{{ rel }}</td><td>{{ cnt }}</td></tr>
-          {% else %}
-            <tr><td colspan="2" class="small">No relationships</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
+
+    <!-- Tab Content Area -->
+    <div id="tab-content-area">
+      <!-- Individual tab contents will be dynamically created here by JavaScript -->
     </div>
-  </div>
-  <div>
-    <h3>Interpretation Types</h3>
-    {% set pref = ['csv','ipynb','json','python_code','txt','xlsx','yaml'] %}
-    {% set itypes = schema_summary.interpretation_types or [] %}
-    {% if itypes %}
-      <ul>
-        {% for it in pref if it in itypes %}<li>{{ it }}</li>{% endfor %}
-        {% for it in itypes if it not in pref %}<li>{{ it }}</li>{% endfor %}
-      </ul>
-    {% else %}
-      <p class="small">None</p>
-    {% endif %}
-  </div>
-</section>
 
 <script src="https://unpkg.com/cytoscape@3.27.0/dist/cytoscape.min.js"></script>
+
+<!-- CodeMirror 5 with Cypher mode -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/cypher/cypher.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/edit/closebrackets.min.js"></script>
+<style>
+  .CodeMirror {
+    height: 100%;
+    font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+    font-size: 0.9em;
+  }
+</style>
+
 <script>
 (async function() {
   function qs(params){
@@ -261,8 +472,8 @@
       }},
       { selector: 'edge', style: {
           'curve-style': 'bezier',
-          'line-color': ele => sourceColors[ele.data('edgeSource')] || '#999',
-          'target-arrow-color': ele => sourceColors[ele.data('edgeSource')] || '#999',
+          'line-color': ele => sourceColors[ele.data('edgeSource')] || '#999999',
+          'target-arrow-color': ele => sourceColors[ele.data('edgeSource')] || '#999999',
           'target-arrow-shape': 'triangle',
           'width': ele => Math.max(1, Math.log(1 + (ele.data('count')||1))) * edgeMul,
           'label': 'data(type)', 'font-size': () => labelFont, 'color': '#555', 'text-rotation': 'autorotate', 'text-margin-x': 2, 'text-margin-y': 2, 'text-outline-color': () => (highContrast ? '#fff' : 'transparent'), 'text-outline-width': () => (highContrast ? 3 : 0)
@@ -272,6 +483,7 @@
   });
   function runLayout(name){
     if (name === 'manual') return; // don't run a layout in manual mode
+    if (cy.nodes().length === 0) return; // don't run layout on empty graph
     cy.layout({ name: name || 'cose', animate: false }).run();
   }
   function render(newData){
@@ -297,7 +509,7 @@
   function loadPositions(){
     const pos = JSON.parse(localStorage.getItem(keyPos) || '{}');
     const ids = Object.keys(pos);
-    if (ids.length){
+    if (ids.length && cy.nodes().length > 0){
       cy.nodes().positions(n => pos[n.id()] || n.position());
       cy.layout({ name: 'preset' }).run();
     }
@@ -379,6 +591,3672 @@
     instDiv.innerHTML = html;
   }
   if (instBtn) instBtn.onclick = previewInstances;
+
+  // Query Panel functionality
+  const toggleQueryPanel = document.getElementById('toggle-query-panel');
+  const queryPanel = document.getElementById('query-panel');
+  const queryPanelIcon = document.getElementById('query-panel-icon');
+  const queryPanelText = document.getElementById('query-panel-text');
+  const queryInput = document.getElementById('query-input');
+  const runQueryBtn = document.getElementById('run-query');
+  const saveQueryBtn = document.getElementById('save-query');
+  const loadLibraryBtn = document.getElementById('load-library');
+  const clearQueryBtn = document.getElementById('clear-query');
+  const queryStatus = document.getElementById('query-status');
+  const queryResults = document.getElementById('query-results');
+  const queryResultsContent = document.getElementById('query-results-content');
+
+  // Helper function to escape HTML
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // Toggle query panel collapse/expand
+  if (toggleQueryPanel) {
+    toggleQueryPanel.onclick = () => {
+      if (queryPanel.style.display === 'none') {
+        queryPanel.style.display = 'block';
+        queryPanelIcon.textContent = '▼';
+        queryPanelText.textContent = 'Collapse';
+      } else {
+        queryPanel.style.display = 'none';
+        queryPanelIcon.textContent = '▶';
+        queryPanelText.textContent = 'Expand';
+      }
+    };
+  }
+
+  // Run query
+  if (runQueryBtn) {
+    runQueryBtn.onclick = async () => {
+      const query = queryInput.value.trim();
+      if (!query) {
+        alert('Please enter a query');
+        return;
+      }
+
+      queryStatus.textContent = 'Running query...';
+      queryStatus.style.color = '#666';
+      runQueryBtn.disabled = true;
+
+      try {
+        const resp = await fetch('/api/graph/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query })
+        });
+        const data = await resp.json();
+
+        if (resp.ok && data.status === 'ok') {
+          queryStatus.textContent = `✓ Query executed - ${data.result_count || 0} results in ${data.execution_time_ms || 0}ms`;
+          queryStatus.style.color = '#28a745';
+
+          // Display results
+          if (data.results && data.results.length > 0) {
+            const keys = Object.keys(data.results[0]);
+            let tableHtml = `<table class="table table-sm">
+              <thead><tr>${keys.map(k => `<th>${escapeHtml(k)}</th>`).join('')}</tr></thead>
+              <tbody>`;
+
+            data.results.forEach(row => {
+              tableHtml += `<tr>${keys.map(k => {
+                const val = row[k];
+                // Handle complex objects (nodes, relationships, etc.)
+                if (val && typeof val === 'object') {
+                  return `<td><pre style="margin:0; font-size:0.85em">${escapeHtml(JSON.stringify(val, null, 2))}</pre></td>`;
+                }
+                return `<td>${escapeHtml(String(val != null ? val : ''))}</td>`;
+              }).join('')}</tr>`;
+            });
+
+            tableHtml += `</tbody></table>`;
+            queryResultsContent.innerHTML = tableHtml;
+            queryResults.style.display = 'block';
+          } else {
+            queryResultsContent.innerHTML = '<p class="small text-muted">Query executed but returned no results.</p>';
+            queryResults.style.display = 'block';
+          }
+        } else {
+          queryStatus.textContent = `✗ Error: ${data.error || 'Query failed'}`;
+          queryStatus.style.color = '#dc3545';
+        }
+      } catch (err) {
+        queryStatus.textContent = `✗ Error: ${err.message}`;
+        queryStatus.style.color = '#dc3545';
+      } finally {
+        runQueryBtn.disabled = false;
+      }
+    };
+  }
+
+  // Save query
+  if (saveQueryBtn) {
+    saveQueryBtn.onclick = async () => {
+      const query = queryInput.value.trim();
+      if (!query) {
+        alert('Please enter a query to save');
+        return;
+      }
+
+      const name = prompt('Enter a name for this query:');
+      if (!name) return;
+
+      const description = prompt('Description (optional):') || '';
+      const tagsInput = prompt('Tags (comma-separated, optional):') || '';
+      const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
+
+      try {
+        const resp = await fetch('/api/queries', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            query,
+            description: description || undefined,
+            tags: tags.length > 0 ? tags : undefined,
+            metadata: {
+              saved_from: 'maps_query_panel'
+            }
+          })
+        });
+
+        if (resp.ok) {
+          queryStatus.textContent = `✓ Query saved as "${name}"`;
+          queryStatus.style.color = '#28a745';
+          setTimeout(() => {
+            queryStatus.textContent = '';
+          }, 3000);
+        } else {
+          const data = await resp.json();
+          alert(`Failed to save query: ${data.error || 'Unknown error'}`);
+        }
+      } catch (err) {
+        alert(`Failed to save query: ${err.message}`);
+      }
+    };
+  }
+
+  // Load query library
+  if (loadLibraryBtn) {
+    loadLibraryBtn.onclick = async () => {
+      try {
+        const resp = await fetch('/api/queries?sort_by=last_used_at');
+        const data = await resp.json();
+
+        if (!resp.ok || !data.queries || data.queries.length === 0) {
+          alert('No saved queries found');
+          return;
+        }
+
+        // Create query library modal (reuse pattern from Chat page)
+        const libraryHtml = data.queries.map(q =>
+          `<div style="margin-bottom:1rem; padding:0.75rem; border:1px solid #ddd; border-radius:4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <strong>${escapeHtml(q.name)}</strong>
+                ${q.tags && q.tags.length > 0 ? `<div class="small">${q.tags.map(t => `<span class="badge" style="background:#6c757d;margin-right:0.25rem">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+                ${q.description ? `<div class="small text-muted">${escapeHtml(q.description)}</div>` : ''}
+              </div>
+              <div>
+                <button class="btn btn-sm btn-outline-primary" onclick="loadQueryById('${q.id}', '${escapeHtml(q.name).replace(/'/g, "\\'")}')">Load</button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteQueryById('${q.id}')">Delete</button>
+              </div>
+            </div>
+            <pre style="margin-top:0.5rem; font-size:0.85em; background:#f8f9fa; padding:0.5rem; border-radius:3px; max-height:100px; overflow:auto;">${escapeHtml(q.query)}</pre>
+            <div class="small text-muted">
+              Created: ${new Date(q.created_at * 1000).toLocaleString()}
+              ${q.use_count > 0 ? ` · Used ${q.use_count} time${q.use_count !== 1 ? 's' : ''}` : ''}
+              ${q.last_used_at ? ` · Last used: ${new Date(q.last_used_at * 1000).toLocaleString()}` : ''}
+            </div>
+          </div>`
+        ).join('');
+
+        // Show modal
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center;';
+        overlay.innerHTML = `<div style="background:#fff; padding:2rem; border-radius:8px; max-width:800px; max-height:80vh; overflow:auto; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <h3 style="margin:0;">Query Library (${data.queries.length})</h3>
+            <button class="btn btn-sm btn-secondary" onclick="this.closest('[style*=fixed]').remove()">Close</button>
+          </div>
+          ${libraryHtml}
+        </div>`;
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) overlay.remove();
+        });
+      } catch (err) {
+        alert(`Failed to load query library: ${err.message}`);
+      }
+    };
+  }
+
+  // Global functions for query library
+  window.loadQueryById = async (queryId, queryName) => {
+    try {
+      const resp = await fetch(`/api/queries/${queryId}`);
+      const data = await resp.json();
+
+      if (resp.ok && data.query) {
+        queryInput.value = data.query.query;
+        queryStatus.textContent = `✓ Loaded "${queryName}"`;
+        queryStatus.style.color = '#28a745';
+        document.querySelector('[style*="fixed"]')?.remove();
+
+        // Record usage
+        fetch(`/api/queries/${queryId}/use`, { method: 'POST' }).catch(() => {});
+
+        setTimeout(() => {
+          queryStatus.textContent = '';
+        }, 3000);
+      }
+    } catch (err) {
+      alert(`Failed to load query: ${err.message}`);
+    }
+  };
+
+  window.deleteQueryById = async (queryId) => {
+    if (!confirm('Delete this query from the library?')) return;
+
+    try {
+      const resp = await fetch(`/api/queries/${queryId}`, { method: 'DELETE' });
+
+      if (resp.ok) {
+        document.querySelector('[style*="fixed"]')?.remove();
+        loadLibraryBtn.click(); // Refresh the library view
+      } else {
+        const data = await resp.json();
+        alert(`Failed to delete: ${data.error}`);
+      }
+    } catch (err) {
+      alert(`Failed to delete: ${err.message}`);
+    }
+  };
+
+  // Clear query
+  if (clearQueryBtn) {
+    clearQueryBtn.onclick = () => {
+      queryInput.value = '';
+      queryResults.style.display = 'none';
+      queryStatus.textContent = '';
+    };
+  }
 })();
 </script>
+
+<!-- Panel Resizing JavaScript -->
+<script>
+(function() {
+  const mapsContainer = document.querySelector('.maps-container');
+  const leftPanel = document.querySelector('.map-library-panel');
+  const centerPanel = document.querySelector('.map-workspace-panel');
+  const rightPanel = document.querySelector('.map-controls-panel');
+  const resizerLeft = document.getElementById('resizer-left');
+  const resizerRight = document.getElementById('resizer-right');
+
+  // Storage keys
+  const STORAGE_KEY_LEFT = 'maps_left_panel_width';
+  const STORAGE_KEY_RIGHT = 'maps_right_panel_width';
+
+  // Load saved widths from localStorage
+  function loadPanelWidths() {
+    const leftWidth = localStorage.getItem(STORAGE_KEY_LEFT);
+    const rightWidth = localStorage.getItem(STORAGE_KEY_RIGHT);
+
+    if (leftWidth) {
+      leftPanel.style.width = leftWidth;
+    }
+    if (rightWidth) {
+      rightPanel.style.width = rightWidth;
+    }
+  }
+
+  // Save panel widths to localStorage
+  function savePanelWidths() {
+    localStorage.setItem(STORAGE_KEY_LEFT, leftPanel.style.width || '20%');
+    localStorage.setItem(STORAGE_KEY_RIGHT, rightPanel.style.width || '20%');
+  }
+
+  // Initialize resizer for left panel
+  function initLeftResizer() {
+    if (!resizerLeft) return; // Element not found
+
+    let isResizing = false;
+    let startX = 0;
+    let startWidth = 0;
+
+    resizerLeft.addEventListener('mousedown', (e) => {
+      isResizing = true;
+      startX = e.clientX;
+      startWidth = leftPanel.offsetWidth;
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isResizing) return;
+
+      const deltaX = e.clientX - startX;
+      const newWidth = startWidth + deltaX;
+      const containerWidth = mapsContainer.offsetWidth;
+
+      // Enforce min/max widths (10% to 40%)
+      const minWidth = containerWidth * 0.10;
+      const maxWidth = containerWidth * 0.40;
+
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        const widthPercent = (newWidth / containerWidth * 100).toFixed(2) + '%';
+        leftPanel.style.width = widthPercent;
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (isResizing) {
+        isResizing = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        savePanelWidths();
+      }
+    });
+  }
+
+  // Initialize resizer for right panel
+  function initRightResizer() {
+    if (!resizerRight) return; // Element not found
+
+    let isResizing = false;
+    let startX = 0;
+    let startWidth = 0;
+
+    resizerRight.addEventListener('mousedown', (e) => {
+      isResizing = true;
+      startX = e.clientX;
+      startWidth = rightPanel.offsetWidth;
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isResizing) return;
+
+      const deltaX = startX - e.clientX; // Inverted for right panel
+      const newWidth = startWidth + deltaX;
+      const containerWidth = mapsContainer.offsetWidth;
+
+      // Enforce min/max widths (10% to 40%)
+      const minWidth = containerWidth * 0.10;
+      const maxWidth = containerWidth * 0.40;
+
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        const widthPercent = (newWidth / containerWidth * 100).toFixed(2) + '%';
+        rightPanel.style.width = widthPercent;
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (isResizing) {
+        isResizing = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        savePanelWidths();
+      }
+    });
+  }
+
+  // Initialize
+  loadPanelWidths();
+  initLeftResizer();
+  initRightResizer();
+})();
+</script>
+
+<!-- Multi-Tab Management JavaScript -->
+<script>
+(function() {
+  const tabContainer = document.getElementById('tab-container');
+  const tabContentArea = document.getElementById('tab-content-area');
+  const addTabBtn = document.getElementById('add-tab-btn');
+
+  // Tab state
+  let tabs = [];
+  let activeTabId = null;
+  let nextTabId = 1;
+  const MAX_TABS = 8;
+
+  // Storage key
+  const STORAGE_KEY_TABS = 'maps_tabs_state';
+
+  // Initialize with first tab
+  function init() {
+    // Try to load saved state
+    const savedState = loadTabsState();
+
+    if (savedState && savedState.tabs.length > 0) {
+      tabs = savedState.tabs;
+      activeTabId = savedState.activeTabId;
+      nextTabId = savedState.nextTabId;
+
+      // Render all tabs
+      tabs.forEach(tab => {
+        renderTab(tab);
+        renderTabContent(tab);
+      });
+
+      switchToTab(activeTabId);
+    } else {
+      // Create initial tab
+      createTab('Map 1');
+    }
+  }
+
+  // Create a new tab
+  function createTab(name) {
+    if (tabs.length >= MAX_TABS) {
+      alert(`Maximum ${MAX_TABS} tabs allowed`);
+      return;
+    }
+
+    const tabId = `tab-${nextTabId++}`;
+    const tab = {
+      id: tabId,
+      name: name || `Map ${nextTabId}`,
+      created: Date.now()
+    };
+
+    tabs.push(tab);
+    renderTab(tab);
+    renderTabContent(tab);
+    switchToTab(tabId);
+    saveTabsState();
+  }
+
+  // Render tab button
+  function renderTab(tab) {
+    const tabEl = document.createElement('div');
+    tabEl.className = 'map-tab';
+    tabEl.dataset.tabId = tab.id;
+    tabEl.innerHTML = `
+      <span class="map-tab-title" title="${tab.name}">${tab.name}</span>
+      <button class="map-tab-close" data-testid="close-tab-${tab.id}">×</button>
+    `;
+
+    // Tab click handler
+    tabEl.querySelector('.map-tab-title').onclick = () => {
+      switchToTab(tab.id);
+    };
+
+    // Close button handler
+    tabEl.querySelector('.map-tab-close').onclick = (e) => {
+      e.stopPropagation();
+      closeTab(tab.id);
+    };
+
+    tabContainer.appendChild(tabEl);
+  }
+
+  // Render tab content area (matches Chat page layout)
+  function renderTabContent(tab) {
+    const contentEl = document.createElement('section');
+    contentEl.className = 'tab-content';
+    contentEl.dataset.tabId = tab.id;
+    contentEl.style.margin = '0';
+    contentEl.style.padding = '0';
+    contentEl.style.display = 'flex';
+    contentEl.style.flexDirection = 'column';
+    contentEl.style.height = '100%';
+    contentEl.innerHTML = `
+      <!-- Top Section: Visualization & Results with Tabs (resizable) -->
+      <div class="tab-top-section-${tab.id}" style="flex: 1; min-height: 300px; display: flex; flex-direction: column; overflow: hidden;">
+        <!-- Result Type Tabs: Visualization / Table / JSON -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; padding-bottom: 0.5rem; border-bottom: 2px solid #e0e0e0;">
+          <div class="result-type-tabs-${tab.id}" style="display: flex; gap: 0.25rem;">
+            <button class="result-type-btn active" data-result-type="visualization" style="padding: 0.5rem 1rem; border: none; border-bottom: 2px solid #2196f3; background: transparent; cursor: pointer; font-size: 0.9rem; font-weight: 500; color: #2196f3;">Visualization</button>
+            <button class="result-type-btn" data-result-type="table" style="padding: 0.5rem 1rem; border: none; border-bottom: 2px solid transparent; background: transparent; cursor: pointer; font-size: 0.9rem; color: #666;">Table</button>
+            <button class="result-type-btn" data-result-type="json" style="padding: 0.5rem 1rem; border: none; border-bottom: 2px solid transparent; background: transparent; cursor: pointer; font-size: 0.9rem; color: #666;">JSON</button>
+          </div>
+          <h2 style="margin: 0; font-size: 1rem; color: #999;">${tab.name}</h2>
+        </div>
+
+        <!-- Content Area (switches based on active tab) -->
+        <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+          <!-- Visualization View -->
+          <div class="result-view-visualization-${tab.id} result-view active" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+            <div class="graph-container-${tab.id}" data-testid="graph-container-${tab.id}" style="width: 100%; flex: 1; border: 1px solid #ddd;"></div>
+
+            <!-- Instances Table (appears below visualization) -->
+            <div class="instances-table-container-${tab.id}" style="max-height: 300px; overflow: auto; border: 1px solid #ddd; border-top: none; background: #fafafa; padding: 0.5rem; display: none;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <h4 style="margin: 0; font-size: 0.9rem;">Instances</h4>
+                <button class="toggle-instances-${tab.id}" style="font-size: 0.7rem; padding: 0.25rem 0.5rem;" class="btn btn-xs btn-outline-secondary">Hide</button>
+              </div>
+              <div class="instances-table-${tab.id}">
+                <p class="small text-muted" style="margin: 0;">Run a query to see instance data</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Table View -->
+          <div class="result-view-table-${tab.id} result-view" style="flex: 1; overflow: auto; border: 1px solid #ddd; background: #fafafa; padding: 0.5rem; display: none;">
+            <div class="query-results-table-${tab.id}">
+              <p class="small text-muted" style="margin: 0;">Run a query to see table results</p>
+            </div>
+          </div>
+
+          <!-- JSON View -->
+          <div class="result-view-json-${tab.id} result-view" style="flex: 1; overflow: auto; border: 1px solid #ddd; background: #f5f5f5; padding: 0.5rem; display: none;">
+            <pre class="query-results-json-${tab.id}" style="margin: 0; font-family: monospace; font-size: 0.85em;">
+<span class="small text-muted">Run a query to see JSON results</span>
+            </pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Horizontal Resizer -->
+      <div class="horizontal-resizer-${tab.id}" style="height: 6px; cursor: row-resize; background: #e0e0e0; position: relative; flex-shrink: 0; transition: background 0.15s ease;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #999; font-size: 0.8rem;">⋯</div>
+      </div>
+
+      <!-- Bottom Section: Query Editor -->
+      <div class="tab-bottom-section-${tab.id}" style="min-height: 200px; max-height: 500px; display: flex; flex-direction: column; background: #fff;">
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid #e0e0e0; margin-bottom: 0.5rem;">
+          <h3 style="margin: 0; font-size: 1rem;">Query Editor</h3>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <button class="run-query-${tab.id} btn btn-sm btn-success" data-testid="run-query-${tab.id}" title="Run query">▶ Run</button>
+            <button class="save-map-${tab.id} btn btn-sm btn-primary" data-testid="save-map-${tab.id}" title="Save entire map configuration">💾 Save Map</button>
+            <button class="save-query-${tab.id} btn btn-sm btn-outline-secondary" data-testid="save-query-${tab.id}" title="Save query">💾 Query</button>
+            <button class="load-library-${tab.id} btn btn-sm btn-outline-secondary" data-testid="load-library-${tab.id}" title="Load from library">📚 Library</button>
+            <button class="clear-query-${tab.id} btn btn-sm btn-outline-secondary" data-testid="clear-query-${tab.id}" title="Clear editor">Clear</button>
+          </div>
+        </div>
+
+        <div class="query-editor-container-${tab.id}" data-testid="query-input-${tab.id}"
+          style="flex: 1; border: 1px solid #ddd; overflow: hidden;"></div>
+
+        <div class="query-info-${tab.id}" style="padding: 0.5rem 0; border-top: 1px solid #e0e0e0; margin-top: 0.5rem;">
+          <span class="small text-muted query-status-${tab.id}">Ready</span>
+        </div>
+      </div>
+    `;
+
+    tabContentArea.appendChild(contentEl);
+
+    // Initialize Cytoscape graph instance for this tab
+    initCytoscapeGraph(tab.id);
+
+    // Initialize horizontal resizer for this tab
+    initHorizontalResizer(tab.id);
+
+    // Initialize result tab switching
+    initResultTabs(tab.id);
+
+    // Initialize CodeMirror for syntax highlighting (wait for CodeMirror to load)
+    initCodeMirrorEditor(tab.id);
+
+    // Initialize button handlers
+    initQueryButtons(tab.id);
+  }
+
+  // Initialize Cytoscape graph for a tab
+  function initCytoscapeGraph(tabId) {
+    const containerSelector = `.graph-container-${tabId}`;
+    const container = document.querySelector(containerSelector);
+
+    if (!container) {
+      console.error('Graph container not found for tab:', tabId);
+      return;
+    }
+
+    // Wait for Cytoscape library to be loaded
+    const tryInit = () => {
+      if (typeof cytoscape === 'undefined') {
+        setTimeout(tryInit, 100);
+        return;
+      }
+
+      // Initialize global storage if needed
+      if (!window.cytoscapeInstances) {
+        window.cytoscapeInstances = {};
+      }
+      if (!window.tabVisualizationModes) {
+        window.tabVisualizationModes = {};
+      }
+
+      // Default to schema mode (only if not already set)
+      if (!window.tabVisualizationModes[tabId]) {
+        window.tabVisualizationModes[tabId] = 'schema';
+        console.log(`Initialized tab ${tabId} with default mode: schema`);
+      } else {
+        console.log(`Tab ${tabId} already has mode: ${window.tabVisualizationModes[tabId]}`);
+      }
+
+      // Create Cytoscape instance
+      const cy = cytoscape({
+        container: container,
+        elements: [],
+        style: [
+          {
+            selector: 'node',
+            style: {
+              'background-color': '#4e79a7',
+              'label': 'data(label)',
+              'color': '#fff',
+              'text-outline-color': '#000',
+              'text-outline-width': 2,
+              'font-size': '10px',
+              'width': 30,
+              'height': 30,
+              'text-valign': 'center',
+              'text-halign': 'center',
+              'text-wrap': 'wrap',
+              'text-max-width': '250px'
+            }
+          },
+          {
+            selector: 'edge',
+            style: {
+              'width': 2,
+              'line-color': '#999999',
+              'target-arrow-color': '#999999',
+              'target-arrow-shape': 'triangle',
+              'curve-style': 'bezier',
+              'label': 'data(label)',
+              'font-size': '8px',
+              'text-rotation': 'autorotate',
+              'text-margin-y': -10
+            }
+          }
+        ],
+        layout: {
+          name: 'preset' // Use preset layout for empty graph (no positioning)
+        }
+      });
+
+      // Store instance
+      window.cytoscapeInstances[tabId] = cy;
+      console.log('Cytoscape initialized for tab:', tabId);
+
+      // Don't auto-load schema - user can load a saved map or run a query
+      // renderSchemaVisualization(tabId);
+    };
+
+    tryInit();
+  }
+
+  // Render schema visualization (aggregated label triples)
+  async function renderSchemaVisualization(tabId) {
+    const cy = window.cytoscapeInstances && window.cytoscapeInstances[tabId];
+    if (!cy) {
+      console.error('Cytoscape instance not found for renderSchema:', tabId);
+      return;
+    }
+
+    try {
+      // Fetch schema from API
+      const source = document.getElementById('schema-source')?.value || 'all';
+      const url = `/api/graph/schema/combined?source=${source}`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      console.log('Schema data fetched:', data);
+
+      // Color mapping by source
+      const sourceColors = {
+        'labels': '#e15759',
+        'neo4j': '#59a14f',
+        'graph': '#4e79a7',
+        'neo4j+labels': '#f28e2c',
+        'graph+labels': '#af7aa1',
+        'graph+neo4j': '#76b7b2',
+        'all': '#edc949'
+      };
+
+      // Convert schema to Cytoscape elements
+      const nodes = new Map();
+      const edges = [];
+
+      // Add nodes
+      (data.nodes || []).forEach(n => {
+        const nodeSize = 14 + 8 * Math.log(1 + (n.count || 1));
+        nodes.set(n.label, {
+          data: {
+            id: n.label,
+            label: n.label,
+            count: n.count || 0,
+            source: n.source || 'graph'
+          },
+          style: {
+            'background-color': sourceColors[n.source] || sourceColors['graph'],
+            'width': nodeSize,
+            'height': nodeSize
+          }
+        });
+      });
+
+      // Add edges
+      (data.edges || []).forEach(e => {
+        const edgeId = `${e.start_label}_${e.rel_type}_${e.end_label}`;
+        edges.push({
+          data: {
+            id: edgeId,
+            source: e.start_label,
+            target: e.end_label,
+            label: e.rel_type,
+            count: e.count || 0,
+            relSource: e.source || 'graph'
+          }
+        });
+      });
+
+      const elements = [...nodes.values(), ...edges];
+      console.log(`Rendering schema: ${nodes.size} node types, ${edges.length} relationship types`);
+
+      // Clear and render
+      cy.elements().remove();
+      cy.add(elements);
+
+      // Apply layout (only if elements exist)
+      if (elements.length > 0) {
+        cy.layout({
+          name: 'cose',
+          animate: true,
+          animationDuration: 500,
+          nodeRepulsion: 8000,
+          idealEdgeLength: 100
+        }).run();
+      }
+
+    } catch (error) {
+      console.error('Error rendering schema:', error);
+    }
+  }
+
+  // Initialize query button handlers
+  function initQueryButtons(tabId) {
+    const runBtn = document.querySelector(`.run-query-${tabId}`);
+    const saveMapBtn = document.querySelector(`.save-map-${tabId}`);
+    const saveBtn = document.querySelector(`.save-query-${tabId}`);
+    const loadBtn = document.querySelector(`.load-library-${tabId}`);
+    const clearBtn = document.querySelector(`.clear-query-${tabId}`);
+    const statusEl = document.querySelector(`.query-status-${tabId}`);
+    const tableResultsEl = document.querySelector(`.query-results-table-${tabId}`);
+    const jsonResultsEl = document.querySelector(`.query-results-json-${tabId}`);
+
+    // Helper to get query text from CodeMirror
+    function getQueryText() {
+      const editor = window.tabEditors && window.tabEditors[tabId];
+      return editor ? editor.getValue() : '';
+    }
+
+    // Helper to set query text in CodeMirror
+    function setQueryText(text) {
+      const editor = window.tabEditors && window.tabEditors[tabId];
+      if (!editor) return;
+      editor.setValue(text);
+    }
+
+    // Helper to escape HTML
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    // Function to extract and visualize schema from query results
+    function visualizeSchemaFromResults(results, tabId) {
+      const cy = window.cytoscapeInstances[tabId];
+
+      // Get schema expansion settings from config
+      const expansionConfig = window.schemaExpansionConfig || {nodes: {}, relationships: {}};
+
+      console.log(`Schema visualization - expansion:`, expansionConfig);
+
+      // Helper to format display label based on per-label/per-type settings
+      function formatDisplayLabel(baseLabel, config, propName, propValue) {
+        if (!propName || propValue == null) return baseLabel;
+
+        // Get display name if configured (use renamed label, fallback to baseLabel if empty)
+        let displayName = (window.labelDisplayNames && window.labelDisplayNames[baseLabel]) || baseLabel;
+        // Sanitize display name: trim whitespace, replace newlines, limit length
+        if (displayName) {
+          displayName = String(displayName).trim().replace(/[\r\n]+/g, ' ');
+          if (displayName.length > 100) displayName = displayName.substring(0, 97) + '...';
+          if (displayName.length === 0) displayName = baseLabel; // Fallback if empty after trim
+        } else {
+          displayName = baseLabel;
+        }
+
+        // Get display settings from config
+        const showLabel = config && config.showLabel !== false; // default true
+        const showKey = config && config.showKey === true; // default false
+
+        const parts = [];
+        if (showLabel) parts.push(displayName); // Use display name instead of base label
+        if (showKey) {
+          parts.push(`${propName}: ${propValue}`);
+        } else {
+          parts.push(String(propValue));
+        }
+
+        return parts.join('\n');
+      }
+
+      // Track unique label triples: {startLabel}-[relType]->{endLabel}
+      const labelNodes = new Map(); // label -> {label, count}
+      const labelTriples = new Map(); // "Label1|REL_TYPE|Label2" -> {start, type, end, count}
+
+      results.forEach(row => {
+        Object.values(row).forEach(val => {
+          if (!val) return;
+
+          // Track node labels (with optional property grouping)
+          if (val.id !== undefined && val.labels) {
+            val.labels.forEach(label => {
+              let displayLabel = label;
+              let uniqueKey = label; // For map storage
+
+              // Check if this label has expansion configured
+              const config = expansionConfig.nodes[label];
+              if (config && config.property && val.properties && val.properties[config.property] != null) {
+                const propValue = val.properties[config.property];
+                displayLabel = formatDisplayLabel(label, config, config.property, propValue);
+                uniqueKey = `${label}|${config.property}|${propValue}`; // Unique storage key
+              }
+
+              if (!labelNodes.has(uniqueKey)) {
+                labelNodes.set(uniqueKey, {label: displayLabel, baseLabel: label, count: 0});
+              }
+              labelNodes.get(uniqueKey).count++;
+            });
+          }
+
+          // Track relationship triples
+          if (val.id !== undefined && val.type && val.start_node !== undefined && val.end_node !== undefined) {
+            // Find the start and end node labels and properties in this row
+            let startNode = null;
+            let endNode = null;
+
+            Object.values(row).forEach(node => {
+              if (node && node.id !== undefined && node.labels) {
+                if (node.id === val.start_node) startNode = node;
+                if (node.id === val.end_node) endNode = node;
+              }
+            });
+
+            if (startNode && endNode) {
+              // Create display labels with optional property values
+              let startDisplayLabel = startNode.labels[0];
+              let startUniqueKey = startNode.labels[0];
+
+              // Check if start label has expansion
+              const startConfig = expansionConfig.nodes[startNode.labels[0]];
+              if (startConfig && startConfig.property && startNode.properties && startNode.properties[startConfig.property] != null) {
+                const propValue = startNode.properties[startConfig.property];
+                startDisplayLabel = formatDisplayLabel(startNode.labels[0], startConfig, startConfig.property, propValue);
+                startUniqueKey = `${startNode.labels[0]}|${startConfig.property}|${propValue}`;
+              }
+
+              // Check if end label has expansion
+              let endDisplayLabel = endNode.labels[0];
+              let endUniqueKey = endNode.labels[0];
+              const endConfig = expansionConfig.nodes[endNode.labels[0]];
+              if (endConfig && endConfig.property && endNode.properties && endNode.properties[endConfig.property] != null) {
+                const propValue = endNode.properties[endConfig.property];
+                endDisplayLabel = formatDisplayLabel(endNode.labels[0], endConfig, endConfig.property, propValue);
+                endUniqueKey = `${endNode.labels[0]}|${endConfig.property}|${propValue}`;
+              }
+
+              // Create relationship display label with optional property
+              let relDisplayType = val.type;
+              let relUniqueKey = val.type;
+              const relConfig = expansionConfig.relationships[val.type];
+              if (relConfig && relConfig.property && val.properties && val.properties[relConfig.property] !== undefined) {
+                const propValue = val.properties[relConfig.property];
+                relDisplayType = formatDisplayLabel(val.type, relConfig, relConfig.property, propValue);
+                relUniqueKey = `${val.type}|${relConfig.property}|${propValue}`;
+              }
+
+              const tripleKey = `${startUniqueKey}|||${relUniqueKey}|||${endUniqueKey}`;
+
+              if (!labelTriples.has(tripleKey)) {
+                labelTriples.set(tripleKey, {
+                  start: startUniqueKey,  // Use unique key for node reference
+                  type: relDisplayType,  // Display label (formatted)
+                  typeKey: relUniqueKey,  // Unique key for relationship
+                  baseType: val.type,  // Base relationship type
+                  end: endUniqueKey,  // Use unique key for node reference
+                  count: 0
+                });
+              }
+              labelTriples.get(tripleKey).count++;
+            }
+          }
+        });
+      });
+
+      console.log(`Schema extracted: ${labelNodes.size} label types, ${labelTriples.size} relationship types`);
+
+      // Build Cytoscape elements
+      const elements = [];
+
+      // Add label nodes (sized by count)
+      labelNodes.forEach((nodeData, uniqueKey) => {
+        const nodeSize = 20 + Math.log(1 + nodeData.count) * 8;
+
+        // Use the baseLabel already stored in the map
+        const baseLabel = nodeData.baseLabel || nodeData.label;
+
+        elements.push({
+          data: {
+            id: uniqueKey,  // Use unique key (e.g., "DNA_Sample|conctype|plasma")
+            label: baseLabel,  // Start with base label, applyGraphFormatting will update it
+            fullLabel: uniqueKey,  // Full unique key for identification
+            baseLabel: baseLabel,  // Base label for formatting lookups (e.g., "DNA_Sample")
+            count: nodeData.count
+          },
+          style: {
+            // Don't set background-color here - let applyColoring handle it
+            'width': nodeSize,
+            'height': nodeSize
+          }
+        });
+      });
+
+      // Add relationship edges
+      labelTriples.forEach(triple => {
+        elements.push({
+          data: {
+            source: triple.start,
+            target: triple.end,
+            label: triple.baseType,  // Start with base type, applyGraphFormatting will update it
+            type: triple.typeKey,  // Unique key for relationship
+            baseType: triple.baseType,  // Base relationship type
+            count: triple.count
+          }
+        });
+      });
+
+      // Render
+      cy.elements().remove();
+      cy.add(elements);
+
+      // Apply selected layout algorithm (only if elements exist)
+      if (elements.length > 0) {
+        const layoutMode = document.getElementById('layout-mode')?.value || 'cose';
+        const layoutConfig = {
+          name: layoutMode,
+          animate: true,
+          animationDuration: 500
+        };
+
+        // Add hierarchical-specific options
+        if (layoutMode === 'breadthfirst') {
+          const orientation = document.getElementById('layout-orientation')?.value || 'TB';
+          layoutConfig.directed = true;
+          layoutConfig.spacingFactor = 1.5;
+          layoutConfig.padding = 30;
+          // Map orientation: TB=top-to-bottom, BT=bottom-to-top, LR=left-to-right, RL=right-to-left
+          layoutConfig.roots = cy.nodes().filter(n => n.indegree() === 0);
+          if (orientation === 'TB') layoutConfig.grid = false;
+          else if (orientation === 'BT') { layoutConfig.grid = false; layoutConfig.transform = (node, pos) => ({ x: pos.x, y: -pos.y }); }
+          else if (orientation === 'LR') { layoutConfig.grid = false; layoutConfig.transform = (node, pos) => ({ x: pos.y, y: pos.x }); }
+          else if (orientation === 'RL') { layoutConfig.grid = false; layoutConfig.transform = (node, pos) => ({ x: -pos.y, y: pos.x }); }
+        }
+
+        cy.layout(layoutConfig).run();
+      }
+
+      console.log(`Rendered schema: ${labelNodes.size} nodes, ${labelTriples.size} edges`);
+
+      // Apply formatting and labels after rendering
+      setTimeout(() => {
+        if (window.applyGraphFormatting) window.applyGraphFormatting();
+        if (window.updateLabelPropertyList) window.updateLabelPropertyList();
+        if (window.applyLabelProperty) window.applyLabelProperty();
+      }, 100);
+    }
+
+    // Function to visualize query results in graph
+    window.visualizeQueryResults = function(results, tabId) {
+      if (!window.cytoscapeInstances || !window.cytoscapeInstances[tabId]) {
+        console.error('Cytoscape instance not found for tab', tabId);
+        return;
+      }
+
+      // Store results for schema display property re-application
+      window.lastQueryResults = { results, tabId };
+
+      // Populate schema configuration panel
+      if (window.populateSchemaConfig) {
+        window.populateSchemaConfig(results);
+      }
+
+      // Populate instances table
+      if (window.populateInstancesTable) {
+        window.populateInstancesTable(results, tabId);
+      }
+
+      // Check current visualization mode for this tab
+      const currentMode = window.tabVisualizationModes && window.tabVisualizationModes[tabId];
+      const checkedRadio = document.querySelector('input[name="viz-mode"]:checked')?.value;
+      console.log('=== VISUALIZATION DEBUG ===');
+      console.log('Tab ID:', tabId);
+      console.log('Current mode (from window.tabVisualizationModes):', currentMode);
+      console.log('Checked radio button:', checkedRadio);
+      console.log('All tab modes:', window.tabVisualizationModes);
+      console.log('Results to visualize:', results);
+      console.log('===========================');
+
+      const cy = window.cytoscapeInstances[tabId];
+
+      // Handle different visualization modes
+      if (currentMode === 'schema') {
+        // Extract schema (unique label triples) from query results
+        console.log('📊 Extracting schema from query results');
+        visualizeSchemaFromResults(results, tabId);
+        return;
+      } else if (currentMode === 'hybrid') {
+        // TODO: Implement hybrid mode visualization
+        console.log('🔀 Hybrid mode not yet implemented for query results');
+        return;
+      }
+
+      // Instance mode: visualize individual nodes and relationships
+      console.log('📍 Visualizing instances from query results');
+      const nodes = new Map();
+      const edges = [];
+
+      // Parse results looking for nodes (n, m) and relationships (r)
+      results.forEach((row, rowIndex) => {
+        console.log(`Row ${rowIndex}:`, row);
+        // Process each value in the row
+        Object.values(row).forEach(val => {
+          if (!val) return;
+
+          // Check if it's a node (has id and labels)
+          if (val.id !== undefined && val.labels) {
+            const nodeId = String(val.id);
+            if (!nodes.has(nodeId)) {
+              console.log('Found node:', nodeId, val.labels);
+              nodes.set(nodeId, {
+                id: nodeId,
+                label: val.labels[0] || 'Node',
+                labels: val.labels,
+                properties: val.properties || {},
+                // Create display label from properties
+                displayLabel: val.properties?.name || val.properties?.title || val.properties?.id || nodeId
+              });
+            }
+          }
+
+          // Check if it's a relationship (has id, type, start_node, end_node)
+          if (val.id !== undefined && val.type && val.start_node !== undefined && val.end_node !== undefined) {
+            console.log('Found relationship:', val.type, 'from', val.start_node, 'to', val.end_node);
+            edges.push({
+              id: `edge_${val.id}`,
+              source: String(val.start_node),
+              target: String(val.end_node),
+              type: val.type,
+              properties: val.properties || {}
+            });
+          }
+        });
+      });
+
+      // Build Cytoscape elements
+      const elements = [];
+
+      // Add nodes
+      nodes.forEach(node => {
+        elements.push({
+          data: {
+            id: node.id,
+            label: node.displayLabel,
+            fullLabel: node.label,
+            labels: node.labels,
+            properties: node.properties
+          },
+          classes: 'instance-node'
+        });
+      });
+
+      // Add edges
+      edges.forEach(edge => {
+        elements.push({
+          data: {
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            label: edge.type,
+            type: edge.type,
+            properties: edge.properties
+          },
+          classes: 'instance-edge'
+        });
+      });
+
+      console.log(`Visualizing ${nodes.size} nodes and ${edges.length} edges`);
+
+      // Clear and render
+      cy.elements().remove();
+      cy.add(elements);
+
+      // Apply layout (only if elements exist)
+      if (elements.length > 0) {
+        cy.layout({
+          name: 'cose',
+          animate: true,
+          animationDuration: 500,
+          nodeRepulsion: 8000,
+          idealEdgeLength: 100
+        }).run();
+      }
+
+      // Apply formatting and labels after rendering
+      setTimeout(() => {
+        if (window.applyGraphFormatting) window.applyGraphFormatting();
+        if (window.updateLabelPropertyList) window.updateLabelPropertyList();
+        if (window.applyLabelProperty) window.applyLabelProperty();
+      }, 100);
+
+      // Apply basic styling
+      cy.style()
+        .selector('node')
+        .style({
+          'background-color': '#4e79a7',
+          'label': 'data(label)',
+          'color': '#fff',
+          'text-outline-color': '#000',
+          'text-outline-width': 2,
+          'font-size': '10px',
+          'width': 30,
+          'height': 30,
+          'text-wrap': 'wrap',
+          'text-max-width': '250px',
+          'text-valign': 'center',
+          'text-halign': 'center'
+        })
+        .selector('edge')
+        .style({
+          'width': 2,
+          'line-color': '#999999',
+          'target-arrow-color': '#999999',
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier',
+          'label': 'data(label)',
+          'font-size': '8px',
+          'text-rotation': 'autorotate',
+          'text-margin-y': -10
+        })
+        .update();
+    };
+
+    // Run/Stop Query Button with AbortController
+    if (runBtn) {
+      let abortController = null;
+      let isRunning = false;
+
+      runBtn.onclick = async () => {
+        // If query is running, stop it
+        if (isRunning && abortController) {
+          abortController.abort();
+          statusEl.textContent = '⊗ Query cancelled by user';
+          statusEl.style.color = '#ff9800';
+          runBtn.innerHTML = '▶ Run';
+          runBtn.classList.remove('btn-danger');
+          runBtn.classList.add('btn-success');
+          isRunning = false;
+          return;
+        }
+
+        const query = getQueryText().trim();
+        if (!query) {
+          alert('Please enter a query');
+          return;
+        }
+
+        // Switch to Stop mode
+        isRunning = true;
+        abortController = new AbortController();
+        runBtn.innerHTML = '⊠ Stop';
+        runBtn.classList.remove('btn-success');
+        runBtn.classList.add('btn-danger');
+        statusEl.textContent = 'Running query...';
+        statusEl.style.color = '#666';
+
+        try {
+          // Get selected Neo4j connection
+          const selectedConnection = window.getSelectedNeo4jConnection ? window.getSelectedNeo4jConnection() : null;
+
+          const requestBody = { query };
+          if (selectedConnection) {
+            requestBody.profile_name = selectedConnection;
+          }
+
+          const resp = await fetch('/api/graph/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody),
+            signal: abortController.signal
+          });
+          const data = await resp.json();
+
+          if (resp.ok && data.status === 'ok') {
+            statusEl.textContent = `✓ Query executed - ${data.result_count || 0} results in ${data.execution_time_ms || 0}ms`;
+            statusEl.style.color = '#28a745';
+
+            // VISUALIZE RESULTS IN GRAPH
+            if (data.results && data.results.length > 0) {
+              visualizeQueryResults(data.results, tabId);
+            }
+
+            // Display results in Table view
+            if (data.results && data.results.length > 0) {
+              const keys = Object.keys(data.results[0]);
+              let tableHtml = `<table class="table table-sm table-striped">
+                <thead><tr>${keys.map(k => `<th>${escapeHtml(k)}</th>`).join('')}</tr></thead>
+                <tbody>`;
+
+              data.results.forEach(row => {
+                tableHtml += `<tr>${keys.map(k => {
+                  const val = row[k];
+                  if (val && typeof val === 'object') {
+                    return `<td><pre style="margin:0; font-size:0.85em; max-height:100px; overflow:auto">${escapeHtml(JSON.stringify(val, null, 2))}</pre></td>`;
+                  }
+                  return `<td>${escapeHtml(String(val != null ? val : ''))}</td>`;
+                }).join('')}</tr>`;
+              });
+
+              tableHtml += `</tbody></table>`;
+              tableResultsEl.innerHTML = tableHtml;
+            } else {
+              tableResultsEl.innerHTML = '<p class="small text-muted">Query executed but returned no results.</p>';
+            }
+
+            // Display results in JSON view
+            jsonResultsEl.textContent = JSON.stringify(data.results, null, 2);
+
+          } else {
+            statusEl.textContent = `✗ Error: ${data.error || 'Query failed'}`;
+            statusEl.style.color = '#dc3545';
+            tableResultsEl.innerHTML = `<p class="small text-danger">Error: ${escapeHtml(data.error || 'Query failed')}</p>`;
+            jsonResultsEl.textContent = JSON.stringify(data, null, 2);
+          }
+        } catch (err) {
+          if (err.name === 'AbortError') {
+            // Query was cancelled - status already set above
+          } else {
+            statusEl.textContent = `✗ Error: ${err.message}`;
+            statusEl.style.color = '#dc3545';
+            tableResultsEl.innerHTML = `<p class="small text-danger">Error: ${escapeHtml(err.message)}</p>`;
+          }
+        } finally {
+          // Reset to Run mode
+          isRunning = false;
+          runBtn.innerHTML = '▶ Run';
+          runBtn.classList.remove('btn-danger');
+          runBtn.classList.add('btn-success');
+        }
+      };
+    }
+
+    // Save Map Button - saves entire configuration
+    if (saveMapBtn) {
+      saveMapBtn.onclick = async () => {
+        const query = getQueryText().trim();
+
+        // Validate: warn if query is empty (allow saving but inform user)
+        if (!query) {
+          const proceed = confirm('Warning: You are saving a map with no query.\n\nClick OK to proceed, or Cancel to go back and add a query.');
+          if (!proceed) return;
+        }
+
+        // Check if savedMaps is available (should be populated by loadSavedMaps)
+        const existingMaps = window.savedMaps || [];
+
+        // Prompt for map name
+        let mapName = prompt('Enter a name for this map:');
+        if (!mapName || !mapName.trim()) return;
+        mapName = mapName.trim();
+
+        // Check if map with this name already exists
+        const existingMap = existingMaps.find(m => m.name === mapName);
+        let mapIdToUpdate = null;
+
+        if (existingMap) {
+          // Ask user if they want to overwrite or save as new
+          const choice = confirm(
+            `A map named "${mapName}" already exists.\n\n` +
+            `Click OK to overwrite it, or Cancel to save with a different name.`
+          );
+
+          if (choice) {
+            // User chose to overwrite
+            mapIdToUpdate = existingMap.id;
+          } else {
+            // User chose to save as new - prompt for new name
+            mapName = prompt('Enter a different name for this map:');
+            if (!mapName || !mapName.trim()) return;
+            mapName = mapName.trim();
+
+            // Check again if the new name exists
+            const existingMap2 = existingMaps.find(m => m.name === mapName);
+            if (existingMap2) {
+              alert(`A map named "${mapName}" already exists. Please try again with a unique name.`);
+              return;
+            }
+          }
+        }
+
+        // Gather all visualization settings
+        const vizSettings = {
+          mode: window.tabVisualizationModes?.[tabId] || 'schema',
+          connection: window.getSelectedNeo4jConnection ? window.getSelectedNeo4jConnection() : null,
+          nodeSize: document.getElementById('node-size')?.value || 1,
+          fontSize: document.getElementById('font-size')?.value || 10,
+          highContrast: document.getElementById('high-contrast')?.checked || false,
+          edgeWidth: document.getElementById('edge-width')?.value || 1,
+          showLabels: document.getElementById('show-node-labels')?.checked !== false,
+          layoutAlgorithm: document.getElementById('layout-mode')?.value || 'cose',
+          schemaSource: document.getElementById('schema-source')?.value || 'all',
+          // Save all formatting configurations
+          labelColorMap: window.labelColorMap || {},
+          labelFormattingConfig: window.labelFormattingConfig || {},
+          relationshipFormattingConfig: window.relationshipFormattingConfig || {},
+          labelDisplayNames: window.labelDisplayNames || {},
+          relationshipDisplayNames: window.relationshipDisplayNames || {},
+          schemaExpansionConfig: window.schemaExpansionConfig || {nodes: {}, relationships: {}}
+        };
+
+        console.log('💾 Saving map with formatting configs:', vizSettings);
+
+        const payload = {
+          name: mapName,
+          query: query,
+          visualization: vizSettings,
+          tags: [] // Could add tag support later
+        };
+
+        try {
+          let resp;
+          if (mapIdToUpdate) {
+            // Update existing map
+            resp = await fetch(`/api/maps/saved/${mapIdToUpdate}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+          } else {
+            // Create new map
+            resp = await fetch('/api/maps/saved', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+          }
+
+          const data = await resp.json();
+
+          if (resp.ok && data.status === 'ok') {
+            const action = mapIdToUpdate ? 'updated' : 'saved';
+            alert(`Map "${mapName}" ${action} successfully!`);
+            // Reload saved maps list
+            if (window.loadSavedMaps) window.loadSavedMaps();
+          } else {
+            alert(`Failed to save map: ${data.message || data.error || 'Unknown error'}`);
+          }
+        } catch (err) {
+          console.error('Error saving map:', err);
+          alert(`Failed to save map: ${err.message}\n\nPlease check your network connection and try again.`);
+        }
+      };
+    }
+
+    // Save Query Button
+    if (saveBtn) {
+      saveBtn.onclick = async () => {
+        const query = getQueryText().trim();
+        if (!query) {
+          alert('Please enter a query to save');
+          return;
+        }
+
+        const name = prompt('Enter a name for this query:');
+        if (!name) return;
+
+        const description = prompt('Enter a description (optional):') || '';
+
+        try {
+          const resp = await fetch('/api/queries', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, query, description })
+          });
+
+          if (resp.ok) {
+            statusEl.textContent = `✓ Query saved as "${name}"`;
+            statusEl.style.color = '#28a745';
+            setTimeout(() => { statusEl.textContent = 'Ready'; statusEl.style.color = '#666'; }, 3000);
+          } else {
+            const data = await resp.json();
+            alert(`Failed to save: ${data.error}`);
+          }
+        } catch (err) {
+          alert(`Failed to save: ${err.message}`);
+        }
+      };
+    }
+
+    // Load Library Button (reuse existing query library modal logic)
+    if (loadBtn) {
+      loadBtn.onclick = async () => {
+        try {
+          const resp = await fetch('/api/queries');
+          const data = await resp.json();
+
+          if (!resp.ok || !data.queries) {
+            alert('Failed to load query library');
+            return;
+          }
+
+          // Create modal overlay
+          const overlay = document.createElement('div');
+          overlay.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:10000;';
+          overlay.innerHTML = `
+            <div style="background:white; padding:2rem; border-radius:8px; max-width:600px; max-height:80vh; overflow:auto; box-shadow:0 4px 12px rgba(0,0,0,0.3)">
+              <h3>Query Library</h3>
+              <div style="margin-top:1rem">
+                ${data.queries.length === 0 ? '<p class="small text-muted">No saved queries yet.</p>' : ''}
+                ${data.queries.map(q => `
+                  <div style="border:1px solid #e0e0e0; padding:0.75rem; margin-bottom:0.5rem; border-radius:4px">
+                    <strong>${escapeHtml(q.name)}</strong>
+                    ${q.description ? `<p class="small text-muted" style="margin:0.25rem 0">${escapeHtml(q.description)}</p>` : ''}
+                    <div style="margin-top:0.5rem">
+                      <button class="btn btn-sm btn-primary" onclick="window.loadQueryById_${tabId}(${q.id}, '${escapeHtml(q.name)}')">Load</button>
+                      <button class="btn btn-sm btn-outline-danger" onclick="window.deleteQueryById_${tabId}(${q.id})">Delete</button>
+                      <span class="small text-muted" style="margin-left:0.5rem">Used ${q.usage_count || 0} times</span>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+              <div style="margin-top:1rem; text-align:right">
+                <button class="btn btn-sm btn-secondary">Close</button>
+              </div>
+            </div>
+          `;
+          document.body.appendChild(overlay);
+
+          // Close on overlay click or button
+          overlay.addEventListener('click', (e) => {
+            if (e.target === overlay || e.target.textContent === 'Close') overlay.remove();
+          });
+
+          // Global functions for this tab's query library
+          window[`loadQueryById_${tabId}`] = async (queryId, queryName) => {
+            try {
+              const resp = await fetch(`/api/queries/${queryId}`);
+              const data = await resp.json();
+
+              if (resp.ok && data.query) {
+                setQueryText(data.query.query);
+                statusEl.textContent = `✓ Loaded "${queryName}"`;
+                statusEl.style.color = '#28a745';
+                overlay.remove();
+
+                // Record usage
+                fetch(`/api/queries/${queryId}/use`, { method: 'POST' }).catch(() => {});
+
+                setTimeout(() => { statusEl.textContent = 'Ready'; statusEl.style.color = '#666'; }, 3000);
+              }
+            } catch (err) {
+              alert(`Failed to load query: ${err.message}`);
+            }
+          };
+
+          window[`deleteQueryById_${tabId}`] = async (queryId) => {
+            if (!confirm('Delete this query from the library?')) return;
+
+            try {
+              const resp = await fetch(`/api/queries/${queryId}`, { method: 'DELETE' });
+
+              if (resp.ok) {
+                overlay.remove();
+                loadBtn.click(); // Refresh the library view
+              } else {
+                const data = await resp.json();
+                alert(`Failed to delete: ${data.error}`);
+              }
+            } catch (err) {
+              alert(`Failed to delete: ${err.message}`);
+            }
+          };
+
+        } catch (err) {
+          alert(`Failed to load query library: ${err.message}`);
+        }
+      };
+    }
+
+    // Clear Button
+    if (clearBtn) {
+      clearBtn.onclick = () => {
+        setQueryText('// Enter Cypher query\nMATCH (n) RETURN n LIMIT 10');
+        tableResultsEl.innerHTML = '<p class="small text-muted">Run a query to see table results</p>';
+        jsonResultsEl.textContent = 'Run a query to see JSON results';
+        statusEl.textContent = 'Ready';
+        statusEl.style.color = '#666';
+      };
+    }
+  }
+
+  // Initialize CodeMirror editor with Cypher mode
+  function initCodeMirrorEditor(tabId) {
+    // Wait for CodeMirror to be loaded
+    const tryInit = () => {
+      if (!window.CodeMirror) {
+        setTimeout(tryInit, 100);
+        return;
+      }
+
+      const container = document.querySelector(`.query-editor-container-${tabId}`);
+      if (!container) return;
+
+      const editor = CodeMirror(container, {
+        value: '// Enter Cypher query\nMATCH (n) RETURN n LIMIT 10',
+        mode: 'application/x-cypher-query',
+        lineNumbers: true,
+        lineWrapping: true,
+        matchBrackets: true,
+        autoCloseBrackets: true,
+        theme: 'default',
+        indentUnit: 2,
+        tabSize: 2,
+        indentWithTabs: false
+      });
+
+      // Store editor instance for later access
+      if (!window.tabEditors) window.tabEditors = {};
+      window.tabEditors[tabId] = editor;
+    };
+
+    tryInit();
+  }
+
+  // Initialize horizontal resizer between results and query editor
+  function initHorizontalResizer(tabId) {
+    const resizer = document.querySelector(`.horizontal-resizer-${tabId}`);
+    const topSection = document.querySelector(`.tab-top-section-${tabId}`);
+    const bottomSection = document.querySelector(`.tab-bottom-section-${tabId}`);
+
+    if (!resizer || !topSection || !bottomSection) return;
+
+    let isResizing = false;
+    let startY = 0;
+    let startTopHeight = 0;
+    let startBottomHeight = 0;
+
+    resizer.addEventListener('mousedown', (e) => {
+      isResizing = true;
+      startY = e.clientY;
+      startTopHeight = topSection.offsetHeight;
+      startBottomHeight = bottomSection.offsetHeight;
+      document.body.style.cursor = 'row-resize';
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isResizing) return;
+
+      const deltaY = e.clientY - startY;
+      const newTopHeight = startTopHeight + deltaY;
+      const newBottomHeight = startBottomHeight - deltaY;
+
+      // Enforce min heights
+      if (newTopHeight >= 300 && newBottomHeight >= 200 && newBottomHeight <= 500) {
+        topSection.style.flex = 'none';
+        topSection.style.height = newTopHeight + 'px';
+        bottomSection.style.height = newBottomHeight + 'px';
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (isResizing) {
+        isResizing = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    });
+
+    // Hover effect
+    resizer.addEventListener('mouseenter', () => {
+      resizer.style.background = '#2196f3';
+    });
+    resizer.addEventListener('mouseleave', () => {
+      if (!isResizing) resizer.style.background = '#e0e0e0';
+    });
+  }
+
+  // Initialize result type tab switching (Visualization/Table/JSON)
+  function initResultTabs(tabId) {
+    const tabBtns = document.querySelectorAll(`.result-type-tabs-${tabId} .result-type-btn`);
+    const views = {
+      visualization: document.querySelector(`.result-view-visualization-${tabId}`),
+      table: document.querySelector(`.result-view-table-${tabId}`),
+      json: document.querySelector(`.result-view-json-${tabId}`)
+    };
+
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const viewType = btn.dataset.resultType;
+
+        // Update button styles
+        tabBtns.forEach(b => {
+          b.classList.remove('active');
+          b.style.borderBottom = '2px solid transparent';
+          b.style.color = '#666';
+          b.style.fontWeight = 'normal';
+        });
+        btn.classList.add('active');
+        btn.style.borderBottom = '2px solid #2196f3';
+        btn.style.color = '#2196f3';
+        btn.style.fontWeight = '500';
+
+        // Show/hide views
+        Object.keys(views).forEach(key => {
+          if (key === viewType) {
+            views[key].style.display = 'flex';
+            views[key].classList.add('active');
+          } else {
+            views[key].style.display = 'none';
+            views[key].classList.remove('active');
+          }
+        });
+      });
+    });
+  }
+
+  // Switch to a specific tab
+  function switchToTab(tabId) {
+    if (!tabs.find(t => t.id === tabId)) return;
+
+    // Update active state
+    activeTabId = tabId;
+
+    // Update tab buttons
+    document.querySelectorAll('.map-tab').forEach(el => {
+      if (el.dataset.tabId === tabId) {
+        el.classList.add('active');
+      } else {
+        el.classList.remove('active');
+      }
+    });
+
+    // Update content visibility
+    document.querySelectorAll('.tab-content').forEach(el => {
+      if (el.dataset.tabId === tabId) {
+        el.classList.add('active');
+        el.style.display = 'flex'; // Override inline styles
+      } else {
+        el.classList.remove('active');
+        el.style.display = 'none'; // Override inline styles
+      }
+    });
+
+    // Sync visualization mode radio buttons with this tab's mode
+    if (window.tabVisualizationModes && window.tabVisualizationModes[tabId]) {
+      const tabMode = window.tabVisualizationModes[tabId];
+      const modeRadio = document.querySelector(`input[name="viz-mode"][value="${tabMode}"]`);
+      if (modeRadio) {
+        modeRadio.checked = true;
+        // Show/hide mode-specific settings
+        const instanceSettings = document.getElementById('instance-settings');
+        const hybridSettings = document.getElementById('hybrid-settings');
+        if (instanceSettings) instanceSettings.style.display = tabMode === 'instance' ? 'block' : 'none';
+        if (hybridSettings) hybridSettings.style.display = tabMode === 'hybrid' ? 'block' : 'none';
+        console.log(`Synced radio buttons to tab ${tabId} mode: ${tabMode}`);
+      }
+    }
+
+    saveTabsState();
+  }
+
+  // Close a tab
+  function closeTab(tabId) {
+    if (tabs.length === 1) {
+      alert('Cannot close the last tab');
+      return;
+    }
+
+    // Find tab index
+    const tabIndex = tabs.findIndex(t => t.id === tabId);
+    if (tabIndex === -1) return;
+
+    // Remove from array
+    tabs.splice(tabIndex, 1);
+
+    // Remove DOM elements
+    const tabEl = document.querySelector(`.map-tab[data-tab-id="${tabId}"]`);
+    const contentEl = document.querySelector(`.tab-content[data-tab-id="${tabId}"]`);
+
+    if (tabEl) tabEl.remove();
+    if (contentEl) contentEl.remove();
+
+    // If closing active tab, switch to another
+    if (activeTabId === tabId) {
+      const newActiveTab = tabs[Math.max(0, tabIndex - 1)];
+      switchToTab(newActiveTab.id);
+    }
+
+    saveTabsState();
+  }
+
+  // Save tabs state to localStorage
+  function saveTabsState() {
+    const state = {
+      tabs: tabs,
+      activeTabId: activeTabId,
+      nextTabId: nextTabId
+    };
+    localStorage.setItem(STORAGE_KEY_TABS, JSON.stringify(state));
+  }
+
+  // Load tabs state from localStorage
+  function loadTabsState() {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_TABS);
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      console.error('Failed to load tabs state:', e);
+      return null;
+    }
+  }
+
+  // Add tab button handler
+  if (addTabBtn) {
+    addTabBtn.onclick = () => {
+      const tabNumber = tabs.length + 1;
+      createTab(`Map ${tabNumber}`);
+    };
+  }
+
+  // Initialize tabs
+  init();
+})();
+
+// === MAP LIBRARY ===
+(function() {
+  let savedMaps = [];
+  let currentMapId = null;
+
+  // Expose savedMaps globally so other parts of the app can access it
+  window.savedMaps = savedMaps;
+
+  const mapListEl = document.getElementById('map-list');
+  const mapSearchEl = document.getElementById('map-search');
+  const saveMapBtn = document.getElementById('save-current-map');
+  const loadingEl = document.getElementById('map-library-loading');
+  const emptyEl = document.getElementById('map-library-empty');
+
+  // Load saved maps from backend
+  async function loadSavedMaps() {
+    loadingEl.style.display = 'block';
+    emptyEl.style.display = 'none';
+    mapListEl.innerHTML = '';
+
+    try {
+      const response = await fetch('/api/maps/saved?sort_by=updated_at&order=DESC');
+      const data = await response.json();
+
+      if (data.status === 'ok') {
+        savedMaps = data.maps || [];
+        window.savedMaps = savedMaps; // Keep global reference in sync
+        renderMapList();
+      } else {
+        console.error('Failed to load saved maps:', data.message);
+      }
+    } catch (error) {
+      console.error('Error loading saved maps:', error);
+    } finally {
+      loadingEl.style.display = 'none';
+    }
+  }
+
+  // Render map list
+  function renderMapList(filterText = '') {
+    mapListEl.innerHTML = '';
+
+    const filtered = savedMaps.filter(map => {
+      if (!filterText) return true;
+      const searchLower = filterText.toLowerCase();
+      return map.name.toLowerCase().includes(searchLower) ||
+             (map.description && map.description.toLowerCase().includes(searchLower)) ||
+             (map.tags && map.tags.toLowerCase().includes(searchLower));
+    });
+
+    if (filtered.length === 0) {
+      emptyEl.style.display = 'block';
+      return;
+    }
+
+    emptyEl.style.display = 'none';
+
+    filtered.forEach(map => {
+      const mapItem = document.createElement('div');
+      mapItem.className = 'map-item';
+      if (map.id === currentMapId) {
+        mapItem.classList.add('active');
+      }
+      mapItem.dataset.mapId = map.id;
+
+      const lastUsed = map.last_used_at
+        ? formatTimeAgo(map.last_used_at)
+        : `Created ${formatTimeAgo(map.created_at)}`;
+
+      mapItem.innerHTML = `
+        <div class="map-name">${escapeHtml(map.name)}</div>
+        <div class="map-meta">${lastUsed}${map.tags ? ` • ${escapeHtml(map.tags)}` : ''}</div>
+        <div class="map-actions">
+          <button class="load-btn" data-map-id="${map.id}">Load</button>
+          <button class="delete-btn" data-map-id="${map.id}">Delete</button>
+        </div>
+      `;
+
+      mapListEl.appendChild(mapItem);
+    });
+
+    // Add event listeners
+    mapListEl.querySelectorAll('.load-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        loadMap(btn.dataset.mapId);
+      });
+    });
+
+    mapListEl.querySelectorAll('.delete-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteMap(btn.dataset.mapId);
+      });
+    });
+  }
+
+  // Load a map
+  async function loadMap(mapId) {
+    try {
+      const response = await fetch(`/api/maps/saved/${mapId}`);
+      const data = await response.json();
+
+      if (data.status === 'ok' && data.map) {
+        const map = data.map;
+        currentMapId = mapId;
+
+        console.log('📦 Loaded map data:', map);
+        console.log('📦 Visualization config:', map.visualization);
+
+        // Track usage
+        fetch(`/api/maps/saved/${mapId}/use`, { method: 'POST' });
+
+        // Apply filters if present
+        if (map.filters) {
+          // Apply label filters
+          if (map.filters.labels && Array.isArray(map.filters.labels)) {
+            const labelSelect = document.getElementById('filter-labels');
+            if (labelSelect) {
+              // Note: actual multiselect implementation would need more complex handling
+              console.log('Load labels:', map.filters.labels);
+            }
+          }
+
+          // Apply rel type filters
+          if (map.filters.rel_types && Array.isArray(map.filters.rel_types)) {
+            const relSelect = document.getElementById('filter-reltypes');
+            if (relSelect) {
+              console.log('Load rel types:', map.filters.rel_types);
+            }
+          }
+        }
+
+        // Apply visualization settings if present (do this BEFORE loading query)
+        if (map.visualization) {
+          const viz = map.visualization;
+
+          // Apply visualization mode
+          if (viz.mode) {
+            const modeRadio = document.querySelector(`input[name="viz-mode"][value="${viz.mode}"]`);
+            if (modeRadio) {
+              modeRadio.checked = true;
+              modeRadio.dispatchEvent(new Event('change'));
+            }
+          }
+
+          // Apply connection selection (validate connection exists)
+          if (viz.connection) {
+            const connectionSelect = document.getElementById('neo4j-connection-select');
+            if (connectionSelect) {
+              // Check if the connection exists in the dropdown
+              const optionExists = Array.from(connectionSelect.options).some(opt => opt.value === viz.connection);
+              if (optionExists) {
+                connectionSelect.value = viz.connection;
+                connectionSelect.dispatchEvent(new Event('change'));
+              } else {
+                console.warn(`⚠️ Connection "${viz.connection}" not found. Using default connection.`);
+                alert(`Warning: Saved connection "${viz.connection}" not found. Please select a connection manually.`);
+              }
+            }
+          }
+
+          // Apply node size
+          if (viz.nodeSize !== undefined) {
+            const nodeSizeSlider = document.getElementById('node-size');
+            if (nodeSizeSlider) {
+              nodeSizeSlider.value = viz.nodeSize;
+              nodeSizeSlider.dispatchEvent(new Event('input'));
+            }
+          }
+
+          // Apply font size
+          if (viz.fontSize !== undefined) {
+            const fontSizeSlider = document.getElementById('font-size');
+            if (fontSizeSlider) {
+              fontSizeSlider.value = viz.fontSize;
+              fontSizeSlider.dispatchEvent(new Event('input'));
+            }
+          }
+
+          // Apply high contrast
+          if (viz.highContrast !== undefined) {
+            const highContrastCheckbox = document.getElementById('high-contrast');
+            if (highContrastCheckbox) {
+              highContrastCheckbox.checked = viz.highContrast;
+              highContrastCheckbox.dispatchEvent(new Event('change'));
+            }
+          }
+
+          // Apply edge width
+          if (viz.edgeWidth !== undefined) {
+            const edgeWidthSlider = document.getElementById('edge-width');
+            if (edgeWidthSlider) {
+              edgeWidthSlider.value = viz.edgeWidth;
+              edgeWidthSlider.dispatchEvent(new Event('input'));
+            }
+          }
+
+          // Restore all formatting configurations
+          if (viz.labelColorMap) {
+            window.labelColorMap = viz.labelColorMap;
+            console.log('✓ Restored labelColorMap:', window.labelColorMap);
+          }
+          if (viz.labelFormattingConfig) {
+            window.labelFormattingConfig = viz.labelFormattingConfig;
+            console.log('✓ Restored labelFormattingConfig:', window.labelFormattingConfig);
+          }
+          if (viz.relationshipFormattingConfig) {
+            window.relationshipFormattingConfig = viz.relationshipFormattingConfig;
+            console.log('✓ Restored relationshipFormattingConfig:', window.relationshipFormattingConfig);
+          }
+          if (viz.labelDisplayNames) {
+            window.labelDisplayNames = viz.labelDisplayNames;
+            console.log('✓ Restored labelDisplayNames:', window.labelDisplayNames);
+          }
+          if (viz.relationshipDisplayNames) {
+            window.relationshipDisplayNames = viz.relationshipDisplayNames;
+            console.log('✓ Restored relationshipDisplayNames:', window.relationshipDisplayNames);
+          }
+          if (viz.schemaExpansionConfig) {
+            window.schemaExpansionConfig = viz.schemaExpansionConfig;
+            console.log('✓ Restored schemaExpansionConfig:', window.schemaExpansionConfig);
+          }
+
+          // Apply show labels
+          if (viz.showLabels !== undefined) {
+            const showLabelsCheckbox = document.getElementById('show-node-labels');
+            if (showLabelsCheckbox) {
+              showLabelsCheckbox.checked = viz.showLabels;
+              showLabelsCheckbox.dispatchEvent(new Event('change'));
+            }
+          }
+
+          // Apply layout algorithm
+          if (viz.layoutAlgorithm) {
+            const layoutSelect = document.getElementById('layout-mode');
+            if (layoutSelect) {
+              layoutSelect.value = viz.layoutAlgorithm;
+            }
+          }
+
+          // Apply schema source
+          if (viz.schemaSource) {
+            const sourceSelect = document.getElementById('schema-source');
+            if (sourceSelect) {
+              sourceSelect.value = viz.schemaSource;
+            }
+          }
+        }
+
+        // Load query AFTER visualization settings are applied
+        if (map.query && window.tabEditors) {
+          const activeTabId = Object.keys(window.tabEditors)[0];
+          if (activeTabId && window.tabEditors[activeTabId]) {
+            window.tabEditors[activeTabId].setValue(map.query);
+          }
+        }
+
+        renderMapList(); // Re-render to update active state
+        console.log(`✓ Loaded map: ${map.name}`);
+
+        // Auto-run the query after loading the map (with delay to ensure connection is set)
+        if (map.query) {
+          setTimeout(() => {
+            // Find the active tab's run button
+            const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+            const runBtn = activeTabId ? document.querySelector(`.run-query-${activeTabId}`) : null;
+            if (runBtn) {
+              console.log(`Auto-running query for loaded map on tab ${activeTabId}...`);
+              runBtn.click();
+            } else {
+              console.error(`Run button not found for tab ${activeTabId} - query will need to be run manually`);
+            }
+          }, 800); // Delay to ensure connection and editor are ready
+
+          alert(`Loaded map: ${map.name}\nQuery will run automatically...`);
+        } else {
+          alert(`Loaded map: ${map.name}`);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading map:', error);
+      alert(`Failed to load map: ${error.message}\n\nPlease check your network connection and try again.`);
+    }
+  }
+
+  // Delete a map
+  async function deleteMap(mapId) {
+    const map = savedMaps.find(m => m.id === mapId);
+    if (!map) return;
+
+    if (!confirm(`Delete map "${map.name}"?`)) return;
+
+    try {
+      const response = await fetch(`/api/maps/saved/${mapId}`, { method: 'DELETE' });
+      const data = await response.json();
+
+      if (data.status === 'ok') {
+        if (currentMapId === mapId) {
+          currentMapId = null;
+        }
+        await loadSavedMaps(); // Reload list
+      } else {
+        alert('Failed to delete map: ' + data.message);
+      }
+    } catch (error) {
+      console.error('Error deleting map:', error);
+      alert('Failed to delete map');
+    }
+  }
+
+  // Save current map
+  saveMapBtn.addEventListener('click', async () => {
+    const name = prompt('Enter map name:');
+    if (!name) return;
+
+    const description = prompt('Enter description (optional):');
+
+    // Gather current state
+    const filters = {};
+    const visualization = {};
+
+    // Get active query
+    let query = null;
+    if (window.tabEditors) {
+      const activeTabId = Object.keys(window.tabEditors)[0];
+      if (activeTabId && window.tabEditors[activeTabId]) {
+        query = window.tabEditors[activeTabId].getValue();
+      }
+    }
+
+    // Get visualization settings
+    const sourceSelect = document.getElementById('schema-source');
+    if (sourceSelect) {
+      visualization.mode = sourceSelect.value;
+    }
+
+    const layoutSelect = document.getElementById('layout-mode');
+    if (layoutSelect) {
+      visualization.layout = layoutSelect.value;
+    }
+
+    // Save all formatting configurations
+    visualization.labelColorMap = window.labelColorMap || {};
+    visualization.labelFormattingConfig = window.labelFormattingConfig || {};
+    visualization.relationshipFormattingConfig = window.relationshipFormattingConfig || {};
+    visualization.labelDisplayNames = window.labelDisplayNames || {};
+    visualization.relationshipDisplayNames = window.relationshipDisplayNames || {};
+    visualization.schemaExpansionConfig = window.schemaExpansionConfig || {nodes: {}, relationships: {}};
+
+    console.log('💾 Saving formatting configs:');
+    console.log('  labelColorMap:', window.labelColorMap);
+    console.log('  labelFormattingConfig:', window.labelFormattingConfig);
+    console.log('  labelDisplayNames:', window.labelDisplayNames);
+    console.log('  schemaExpansionConfig:', window.schemaExpansionConfig);
+    console.log('  Full visualization object:', visualization);
+
+    // Save connection info
+    const selectedConnection = window.getSelectedNeo4jConnection ? window.getSelectedNeo4jConnection() : null;
+    if (selectedConnection) {
+      visualization.connection = selectedConnection;
+    }
+
+    try {
+      const response = await fetch('/api/maps/saved', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          description,
+          query,
+          filters,
+          visualization
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.status === 'ok') {
+        currentMapId = data.map.id;
+        await loadSavedMaps();
+        alert(`Saved map: ${name}`);
+      } else {
+        alert('Failed to save map: ' + data.message);
+      }
+    } catch (error) {
+      console.error('Error saving map:', error);
+      alert('Failed to save map');
+    }
+  });
+
+  // Search filter
+  mapSearchEl.addEventListener('input', (e) => {
+    renderMapList(e.target.value);
+  });
+
+  // Helper functions
+  function formatTimeAgo(timestamp) {
+    const seconds = Math.floor((Date.now() / 1000) - timestamp);
+    if (seconds < 60) return 'Just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Initialize
+  loadSavedMaps();
+})();
+
+// === VISUALIZATION MODE SWITCHING ===
+(function() {
+  // Wait for DOM to be ready
+  const initModeSwitch = () => {
+    const modeRadios = document.querySelectorAll('input[name="viz-mode"]');
+    const instanceSettings = document.getElementById('instance-settings');
+    const hybridSettings = document.getElementById('hybrid-settings');
+    const nodeLimitInput = document.getElementById('node-limit');
+    const hybridLabelSelect = document.getElementById('hybrid-label');
+    const hybridPropertySelect = document.getElementById('hybrid-property');
+
+    console.log('🔧 Initializing mode switching, found', modeRadios.length, 'radio buttons');
+
+    // Handle mode switching
+    modeRadios.forEach(radio => {
+    radio.addEventListener('change', async (e) => {
+      const newMode = e.target.value;
+
+      console.log('=== MODE SWITCH DEBUG ===');
+      console.log('Radio button changed to:', newMode);
+
+      // Show/hide mode-specific settings
+      const schemaSettings = document.getElementById('schema-settings');
+      const instanceSettings = document.getElementById('instance-settings');
+
+      if (schemaSettings) schemaSettings.style.display = newMode === 'schema' ? 'block' : 'none';
+      if (instanceSettings) instanceSettings.style.display = newMode === 'instance' ? 'block' : 'none';
+
+      // Get active tab
+      const activeTab = document.querySelector('.map-tab.active');
+      const activeTabId = activeTab?.dataset.tabId || 'tab-1';
+
+      console.log('Active tab:', activeTabId);
+      console.log('Tab modes before update:', window.tabVisualizationModes);
+
+      // Update mode for this tab
+      if (window.tabVisualizationModes) {
+        window.tabVisualizationModes[activeTabId] = newMode;
+        console.log('Tab modes after update:', window.tabVisualizationModes);
+      } else {
+        console.error('❌ window.tabVisualizationModes not initialized!');
+      }
+
+      console.log(`✓ Switched tab ${activeTabId} to ${newMode} mode`);
+      console.log('========================');
+
+      // Re-render based on mode
+      if (newMode === 'schema') {
+        // Don't auto-render schema - user should run a query or load a saved map
+        // if (typeof renderSchemaVisualization === 'function') {
+        //   await renderSchemaVisualization(activeTabId);
+        // }
+      } else if (newMode === 'instance') {
+        // Clear graph and show message to run query
+        const cy = window.cytoscapeInstances && window.cytoscapeInstances[activeTabId];
+        if (cy) {
+          cy.elements().remove();
+          console.log('Instance mode: Run a query to visualize results');
+        }
+      } else if (newMode === 'hybrid') {
+        // Don't auto-render schema - user should run a query or load a saved map
+        // if (typeof renderSchemaVisualization === 'function') {
+        //   await renderSchemaVisualization(activeTabId);
+        //   console.log('Hybrid mode: Select label and property for grouping');
+        // }
+      }
+    });
+  });
+
+  // Handle node limit warnings
+  nodeLimitInput?.addEventListener('change', (e) => {
+    const limit = parseInt(e.target.value);
+    if (limit > 1000) {
+      alert(`Warning: Displaying ${limit} nodes may cause performance issues. Consider reducing the limit.`);
+    }
+  });
+
+  // Populate hybrid label/property selectors (placeholder - would fetch from API)
+  function populateHybridSelectors() {
+    if (!hybridLabelSelect) return; // Element not found
+
+    // TODO: Fetch available labels and properties from schema
+    const sampleLabels = ['File', 'Folder', 'Sample', 'SampleType'];
+    hybridLabelSelect.innerHTML = '<option value="">Select label...</option>';
+    sampleLabels.forEach(label => {
+      const option = document.createElement('option');
+      option.value = label;
+      option.textContent = label;
+      hybridLabelSelect.appendChild(option);
+    });
+  }
+
+  hybridLabelSelect?.addEventListener('change', (e) => {
+    const label = e.target.value;
+    if (!label) {
+      hybridPropertySelect.innerHTML = '<option value="">Select property...</option>';
+      return;
+    }
+
+    // TODO: Fetch properties for selected label
+    const sampleProperties = ['type', 'status', 'category', 'created_at'];
+    hybridPropertySelect.innerHTML = '<option value="">Select property...</option>';
+    sampleProperties.forEach(prop => {
+      const option = document.createElement('option');
+      option.value = prop;
+      option.textContent = prop;
+      hybridPropertySelect.appendChild(option);
+    });
+  });
+
+  populateHybridSelectors();
+
+  // === SCHEMA CONFIGURATION (PER-LABEL PROPERTY EXPANSION) ===
+  // Store last query results and schema expansion settings
+  window.lastQueryResults = null;
+
+  // Only initialize if not already set (preserve loaded map configs)
+  if (!window.schemaExpansionConfig) {
+    window.schemaExpansionConfig = {
+      nodes: {}, // {labelName: propertyName or null}
+      relationships: {} // {relType: propertyName or null}
+    };
+  }
+
+  // Populate schema configuration panel with per-label/per-type options
+  window.populateSchemaConfig = function(results) {
+    if (!results || !Array.isArray(results)) return;
+
+    // Analyze results to get labels, types, and their properties with value counts
+    const nodeData = new Map(); // label -> {properties: {propName: Set(values)}}
+    const relData = new Map(); // type -> {properties: {propName: Set(values)}}
+
+    results.forEach(record => {
+      Object.values(record).forEach(val => {
+        if (!val) return;
+
+        // Process nodes
+        if (val.id !== undefined && val.labels && val.labels.length > 0) {
+          val.labels.forEach(label => {
+            if (!nodeData.has(label)) {
+              nodeData.set(label, {properties: new Map()});
+            }
+            const labelData = nodeData.get(label);
+
+            // Track property values (exclude null/undefined)
+            if (val.properties) {
+              Object.entries(val.properties).forEach(([propName, propValue]) => {
+                if (propValue != null) { // Filter out null and undefined
+                  if (!labelData.properties.has(propName)) {
+                    labelData.properties.set(propName, new Set());
+                  }
+                  labelData.properties.get(propName).add(propValue);
+                }
+              });
+            }
+          });
+        }
+
+        // Process relationships (check for both start/end and start_node/end_node)
+        if (val.type && (val.start_node !== undefined || val.start !== undefined)) {
+          const relType = val.type;
+          if (!relData.has(relType)) {
+            relData.set(relType, {properties: new Map()});
+          }
+          const typeData = relData.get(relType);
+
+          // Track property values (exclude null/undefined)
+          if (val.properties) {
+            Object.entries(val.properties).forEach(([propName, propValue]) => {
+              if (propValue != null) { // Filter out null and undefined
+                if (!typeData.properties.has(propName)) {
+                  typeData.properties.set(propName, new Set());
+                }
+                typeData.properties.get(propName).add(propValue);
+              }
+            });
+          }
+        }
+      });
+    });
+
+    // Build node label UI with per-label display format options
+    const nodeListEl = document.getElementById('schema-node-list');
+    if (nodeListEl && nodeData.size > 0) {
+      // Initialize default colors and formatting
+      const defaultColors = ['#4e79a7', '#f28e2c', '#e15759', '#76b7b2', '#59a14f', '#edc949', '#af7aa1', '#ff9da7', '#9c755f', '#bab0ab'];
+      window.labelColorMap = window.labelColorMap || {};
+      window.labelFormattingConfig = window.labelFormattingConfig || {};
+
+      let html = '';
+      Array.from(nodeData.keys()).sort().forEach((label, index) => {
+        const data = nodeData.get(label);
+        const config = window.schemaExpansionConfig.nodes[label] || {};
+        const currentExpansion = typeof config === 'string' ? config : config.property;
+        const showLabel = config.showLabel !== false; // default true
+        const showKey = config.showKey === true; // default false
+
+        // Get or set default color and formatting
+        if (!window.labelColorMap[label]) {
+          window.labelColorMap[label] = defaultColors[index % defaultColors.length];
+        }
+        const color = window.labelColorMap[label];
+
+        const formatting = window.labelFormattingConfig[label] || {};
+        const nodeSize = formatting.size || 30;
+        const fontSize = formatting.fontSize || 10;
+
+        html += `<div style="margin-bottom:0.75rem; padding:0.5rem; background:#fff; border:1px solid #dee2e6; border-radius:4px">`;
+
+        // Header with label name and color picker
+        html += `<div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem">`;
+        html += `<input type="color" class="label-color-picker" data-label="${label}" value="${color}" style="width:24px; height:24px; border:none; cursor:pointer; border-radius:3px">`;
+        html += `<div style="font-weight:600; font-size:0.75rem; flex:1">${label}</div>`;
+        html += `</div>`;
+
+        // Display name input (for renaming in visualization)
+        const displayName = (window.labelDisplayNames && window.labelDisplayNames[label]) || label;
+        html += `<div style="margin-bottom:0.5rem"><label style="display:block; margin-bottom:0.1rem; font-size:0.65rem">Display Name</label>`;
+        html += `<input type="text" class="form-control form-control-sm label-display-name-input" data-label="${label}" value="${displayName}" placeholder="${label}" style="font-size:0.7rem; padding:0.2rem"></div>`;
+
+        // Property expansion selector
+        html += `<select class="form-select form-select-sm schema-node-expand" data-label="${label}" style="font-size:0.7rem; margin-bottom:0.5rem">`;
+        html += `<option value="">No expansion</option>`;
+
+        // Add property options with value counts
+        Array.from(data.properties.entries()).sort().forEach(([propName, values]) => {
+          const selected = currentExpansion === propName ? 'selected' : '';
+          html += `<option value="${propName}" ${selected}>${propName} (${values.size} variants)</option>`;
+        });
+        html += `</select>`;
+
+        // Formatting controls (size and font)
+        html += `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.25rem; margin-bottom:0.5rem; font-size:0.65rem">`;
+        html += `<div><label style="display:block; margin-bottom:0.1rem">Size</label>`;
+        html += `<input type="number" class="form-control form-control-sm node-size-input" data-label="${label}" value="${nodeSize}" min="10" max="100" step="5" style="font-size:0.65rem; padding:0.2rem"></div>`;
+        html += `<div><label style="display:block; margin-bottom:0.1rem">Font</label>`;
+        html += `<input type="number" class="form-control form-control-sm node-font-input" data-label="${label}" value="${fontSize}" min="6" max="20" step="1" style="font-size:0.65rem; padding:0.2rem"></div>`;
+        html += `</div>`;
+
+        // Export dropdown
+        html += `<div style="margin-bottom:0.5rem"><label style="display:block; margin-bottom:0.1rem; font-size:0.65rem">Export</label>`;
+        html += `<select class="form-select form-select-sm label-export-select" data-label="${label}" style="font-size:0.65rem; padding:0.2rem">`;
+        html += `<option value="">Select format...</option>`;
+        html += `<option value="csv">CSV</option>`;
+        html += `<option value="xlsx">XLSX</option>`;
+        html += `<option value="json">JSON</option>`;
+        html += `</select></div>`;
+
+        // Display format options (shown only when property is selected)
+        html += `<div class="schema-format-options" data-label="${label}" style="font-size:0.65rem; display:${currentExpansion ? 'block' : 'none'}">`;
+        html += `<label style="display:flex; align-items:center; cursor:pointer; margin-bottom:0.125rem">`;
+        html += `<input type="checkbox" class="schema-show-label-check" data-label="${label}" ${showLabel ? 'checked' : ''} style="margin-right:0.25rem">`;
+        html += `<span>Display Name</span></label>`;
+        html += `<label style="display:flex; align-items:center; cursor:pointer">`;
+        html += `<input type="checkbox" class="schema-show-key-check" data-label="${label}" ${showKey ? 'checked' : ''} style="margin-right:0.25rem">`;
+        html += `<span>Show Property Key</span></label>`;
+        html += `</div></div>`;
+      });
+      nodeListEl.innerHTML = html;
+
+      // Add event listeners to show/hide format options when property selected and trigger update
+      setTimeout(() => {
+        document.querySelectorAll('.schema-node-expand').forEach(select => {
+          select.addEventListener('change', (e) => {
+            const label = e.target.dataset.label;
+            const formatOptions = document.querySelector(`.schema-format-options[data-label="${label}"]`);
+            if (formatOptions) {
+              formatOptions.style.display = e.target.value ? 'block' : 'none';
+            }
+
+            // Auto-apply changes when variant selection changes
+            const applyBtn = document.getElementById('apply-schema-display');
+            if (applyBtn) {
+              console.log(`🔄 Auto-applying after variant change for ${label}`);
+              applyBtn.click();
+            }
+          });
+        });
+      }, 50);
+    }
+
+    // Build relationship type UI with per-type display format options
+    const relListEl = document.getElementById('schema-rel-list');
+    if (relListEl && relData.size > 0) {
+      // Initialize relationship formatting config
+      window.relationshipFormattingConfig = window.relationshipFormattingConfig || {};
+      const defaultRelColor = '#999999';
+
+      let html = '';
+      Array.from(relData.keys()).sort().forEach(relType => {
+        const data = relData.get(relType);
+        const config = window.schemaExpansionConfig.relationships[relType] || {};
+        const currentExpansion = typeof config === 'string' ? config : config.property;
+        const showLabel = config.showLabel !== false; // default true
+        const showKey = config.showKey === true; // default false
+
+        // Get or set default formatting
+        const formatting = window.relationshipFormattingConfig[relType] || {};
+        const edgeWidth = formatting.width || 2;
+        const fontSize = formatting.fontSize || 8;
+        const color = formatting.color || defaultRelColor;
+
+        html += `<div style="margin-bottom:0.75rem; padding:0.5rem; background:#fff; border:1px solid #dee2e6; border-radius:4px">`;
+
+        // Header with relationship type and color picker
+        html += `<div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem">`;
+        html += `<input type="color" class="rel-color-picker" data-type="${relType}" value="${color}" style="width:24px; height:24px; border:none; cursor:pointer; border-radius:3px">`;
+        html += `<div style="font-weight:600; font-size:0.75rem; flex:1">${relType}</div>`;
+        html += `</div>`;
+
+        // Display name input (for renaming in visualization)
+        const displayName = (window.relationshipDisplayNames && window.relationshipDisplayNames[relType]) || relType;
+        html += `<div style="margin-bottom:0.5rem"><label style="display:block; margin-bottom:0.1rem; font-size:0.65rem">Display Name</label>`;
+        html += `<input type="text" class="form-control form-control-sm rel-display-name-input" data-type="${relType}" value="${displayName}" placeholder="${relType}" style="font-size:0.7rem; padding:0.2rem"></div>`;
+
+        // Property expansion selector
+        html += `<select class="form-select form-select-sm schema-rel-expand" data-type="${relType}" style="font-size:0.7rem; margin-bottom:0.5rem">`;
+        html += `<option value="">No expansion</option>`;
+
+        // Add property options with value counts
+        Array.from(data.properties.entries()).sort().forEach(([propName, values]) => {
+          const selected = currentExpansion === propName ? 'selected' : '';
+          html += `<option value="${propName}" ${selected}>${propName} (${values.size} variants)</option>`;
+        });
+        html += `</select>`;
+
+        // Formatting controls (width and font)
+        html += `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.25rem; margin-bottom:0.5rem; font-size:0.65rem">`;
+        html += `<div><label style="display:block; margin-bottom:0.1rem">Width</label>`;
+        html += `<input type="number" class="form-control form-control-sm edge-width-input" data-type="${relType}" value="${edgeWidth}" min="1" max="10" step="0.5" style="font-size:0.65rem; padding:0.2rem"></div>`;
+        html += `<div><label style="display:block; margin-bottom:0.1rem">Font</label>`;
+        html += `<input type="number" class="form-control form-control-sm edge-font-input" data-type="${relType}" value="${fontSize}" min="6" max="16" step="1" style="font-size:0.65rem; padding:0.2rem"></div>`;
+        html += `</div>`;
+
+        // Display format options (shown only when property is selected)
+        html += `<div class="schema-rel-format-options" data-type="${relType}" style="font-size:0.65rem; display:${currentExpansion ? 'block' : 'none'}">`;
+        html += `<label style="display:flex; align-items:center; cursor:pointer; margin-bottom:0.125rem">`;
+        html += `<input type="checkbox" class="schema-show-type-check" data-type="${relType}" ${showLabel ? 'checked' : ''} style="margin-right:0.25rem">`;
+        html += `<span>Display Name</span></label>`;
+        html += `<label style="display:flex; align-items:center; cursor:pointer">`;
+        html += `<input type="checkbox" class="schema-show-relkey-check" data-type="${relType}" ${showKey ? 'checked' : ''} style="margin-right:0.25rem">`;
+        html += `<span>Show Property Key</span></label>`;
+        html += `</div></div>`;
+      });
+      relListEl.innerHTML = html;
+
+      // Add event listeners to show/hide format options when property selected and trigger update
+      setTimeout(() => {
+        document.querySelectorAll('.schema-rel-expand').forEach(select => {
+          select.addEventListener('change', (e) => {
+            const relType = e.target.dataset.type;
+            const formatOptions = document.querySelector(`.schema-rel-format-options[data-type="${relType}"]`);
+            if (formatOptions) {
+              formatOptions.style.display = e.target.value ? 'block' : 'none';
+            }
+
+            // Auto-apply changes when variant selection changes
+            const applyBtn = document.getElementById('apply-schema-display');
+            if (applyBtn) {
+              console.log(`🔄 Auto-applying after variant change for ${relType}`);
+              applyBtn.click();
+            }
+          });
+        });
+      }, 50);
+    }
+
+    // Add event listeners for all formatting controls in node and relationship blocks
+    setTimeout(() => {
+      // Node label color pickers
+      document.querySelectorAll('.label-color-picker').forEach(picker => {
+        picker.addEventListener('change', (e) => {
+          const label = e.target.dataset.label;
+          const color = e.target.value;
+          console.log(`🎨 Node color changed: ${label} -> ${color}`);
+          window.labelColorMap[label] = color;
+          if (window.applyGraphFormatting) window.applyGraphFormatting();
+        });
+      });
+
+      // Node size inputs
+      document.querySelectorAll('.node-size-input').forEach(input => {
+        input.addEventListener('change', (e) => {
+          const label = e.target.dataset.label;
+          const size = parseFloat(e.target.value);
+          window.labelFormattingConfig[label] = window.labelFormattingConfig[label] || {};
+          window.labelFormattingConfig[label].size = size;
+          console.log(`📏 Node size changed: ${label} -> ${size}`);
+          if (window.applyGraphFormatting) window.applyGraphFormatting();
+        });
+      });
+
+      // Node font inputs
+      document.querySelectorAll('.node-font-input').forEach(input => {
+        input.addEventListener('change', (e) => {
+          const label = e.target.dataset.label;
+          const fontSize = parseFloat(e.target.value);
+          window.labelFormattingConfig[label] = window.labelFormattingConfig[label] || {};
+          window.labelFormattingConfig[label].fontSize = fontSize;
+          console.log(`🔤 Node font changed: ${label} -> ${fontSize}`);
+          if (window.applyGraphFormatting) window.applyGraphFormatting();
+        });
+      });
+
+      // Relationship color pickers
+      document.querySelectorAll('.rel-color-picker').forEach(picker => {
+        picker.addEventListener('change', (e) => {
+          const relType = e.target.dataset.type;
+          const color = e.target.value;
+          window.relationshipFormattingConfig[relType] = window.relationshipFormattingConfig[relType] || {};
+          window.relationshipFormattingConfig[relType].color = color;
+          console.log(`🎨 Edge color changed: ${relType} -> ${color}`);
+          if (window.applyGraphFormatting) window.applyGraphFormatting();
+        });
+      });
+
+      // Edge width inputs
+      document.querySelectorAll('.edge-width-input').forEach(input => {
+        input.addEventListener('change', (e) => {
+          const relType = e.target.dataset.type;
+          const width = parseFloat(e.target.value);
+          window.relationshipFormattingConfig[relType] = window.relationshipFormattingConfig[relType] || {};
+          window.relationshipFormattingConfig[relType].width = width;
+          console.log(`📏 Edge width changed: ${relType} -> ${width}`);
+          if (window.applyGraphFormatting) window.applyGraphFormatting();
+        });
+      });
+
+      // Edge font inputs
+      document.querySelectorAll('.edge-font-input').forEach(input => {
+        input.addEventListener('change', (e) => {
+          const relType = e.target.dataset.type;
+          const fontSize = parseFloat(e.target.value);
+          window.relationshipFormattingConfig[relType] = window.relationshipFormattingConfig[relType] || {};
+          window.relationshipFormattingConfig[relType].fontSize = fontSize;
+          console.log(`🔤 Edge font changed: ${relType} -> ${fontSize}`);
+          if (window.applyGraphFormatting) window.applyGraphFormatting();
+        });
+      });
+
+      // Label display name inputs
+      window.labelDisplayNames = window.labelDisplayNames || {};
+      document.querySelectorAll('.label-display-name-input').forEach(input => {
+        input.addEventListener('change', (e) => {
+          const label = e.target.dataset.label;
+          let displayName = e.target.value.trim();
+          // Sanitize: remove newlines, limit length, fallback to original label if empty
+          displayName = displayName.replace(/[\r\n]+/g, ' ');
+          if (displayName.length > 100) displayName = displayName.substring(0, 97) + '...';
+          window.labelDisplayNames[label] = displayName || label;
+          console.log(`✏️ Label renamed: ${label} -> ${window.labelDisplayNames[label]}`);
+          if (window.applyGraphFormatting) window.applyGraphFormatting();
+        });
+      });
+
+      // Relationship display name inputs
+      window.relationshipDisplayNames = window.relationshipDisplayNames || {};
+      document.querySelectorAll('.rel-display-name-input').forEach(input => {
+        input.addEventListener('change', (e) => {
+          const relType = e.target.dataset.type;
+          let displayName = e.target.value.trim();
+          // Sanitize: remove newlines, limit length, fallback to original type if empty
+          displayName = displayName.replace(/[\r\n]+/g, ' ');
+          if (displayName.length > 100) displayName = displayName.substring(0, 97) + '...';
+          window.relationshipDisplayNames[relType] = displayName || relType;
+          console.log(`✏️ Relationship renamed: ${relType} -> ${window.relationshipDisplayNames[relType]}`);
+          if (window.applyGraphFormatting) window.applyGraphFormatting();
+        });
+      });
+
+      // Export selects for labels
+      document.querySelectorAll('.label-export-select').forEach(select => {
+        select.addEventListener('change', (e) => {
+          const label = e.target.dataset.label;
+          const format = e.target.value;
+          if (!format) return;
+
+          const selectedConnection = window.getSelectedNeo4jConnection ? window.getSelectedNeo4jConnection() : null;
+          const connParam = selectedConnection ? `&connection=${encodeURIComponent(selectedConnection)}` : '';
+          const url = `/api/graph/instances.${format}?label=${encodeURIComponent(label)}${connParam}`;
+
+          // Download the file
+          window.location.href = url;
+
+          // Reset select
+          setTimeout(() => { e.target.value = ''; }, 100);
+        });
+      });
+
+      console.log(`🎨 Added formatting listeners to all controls`);
+    }, 100);
+
+    console.log(`📋 Populated schema config: ${nodeData.size} labels, ${relData.size} rel types`);
+  };
+
+  // Wire up Apply Schema Display button
+  const applySchemaDisplayBtn = document.getElementById('apply-schema-display');
+  if (applySchemaDisplayBtn) {
+    applySchemaDisplayBtn.addEventListener('click', () => {
+      if (!window.lastQueryResults) {
+        alert('No query results to re-visualize. Please run a query first.');
+        return;
+      }
+
+      // Collect current expansion settings with display format options
+      document.querySelectorAll('.schema-node-expand').forEach(select => {
+        const label = select.dataset.label;
+        const property = select.value || null;
+
+        if (property) {
+          const showLabelCheck = document.querySelector(`.schema-show-label-check[data-label="${label}"]`);
+          const showKeyCheck = document.querySelector(`.schema-show-key-check[data-label="${label}"]`);
+
+          window.schemaExpansionConfig.nodes[label] = {
+            property,
+            showLabel: showLabelCheck?.checked !== false,
+            showKey: showKeyCheck?.checked === true
+          };
+        } else {
+          window.schemaExpansionConfig.nodes[label] = null;
+        }
+      });
+
+      document.querySelectorAll('.schema-rel-expand').forEach(select => {
+        const relType = select.dataset.type;
+        const property = select.value || null;
+
+        if (property) {
+          const showTypeCheck = document.querySelector(`.schema-show-type-check[data-type="${relType}"]`);
+          const showKeyCheck = document.querySelector(`.schema-show-relkey-check[data-type="${relType}"]`);
+
+          window.schemaExpansionConfig.relationships[relType] = {
+            property,
+            showLabel: showTypeCheck?.checked !== false,
+            showKey: showKeyCheck?.checked === true
+          };
+        } else {
+          window.schemaExpansionConfig.relationships[relType] = null;
+        }
+      });
+
+      const { results, tabId } = window.lastQueryResults;
+      console.log('🔄 Re-visualizing with expansion config:', window.schemaExpansionConfig);
+
+      // Re-run visualization with stored results
+      if (window.visualizeQueryResults) {
+        window.visualizeQueryResults(results, tabId);
+      }
+    });
+  }
+
+  // Initialize panel visibility based on default mode (schema)
+  const schemaSettings = document.getElementById('schema-settings');
+  if (schemaSettings) schemaSettings.style.display = 'block'; // Schema is checked by default
+  }; // End of initModeSwitch
+
+  // Call init when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initModeSwitch);
+  } else {
+    initModeSwitch();
+  }
+})();
+
+// === INSTANCES TABLE POPULATION ===
+window.populateInstancesTable = async function(results, tabId) {
+  // Extract unique labels from query results
+  const labels = new Set();
+  results.forEach(row => {
+    Object.values(row).forEach(val => {
+      // Check if it's a node with labels
+      if (val && typeof val === 'object' && Array.isArray(val.labels)) {
+        val.labels.forEach(label => labels.add(label));
+      }
+    });
+  });
+
+  if (labels.size === 0) {
+    // No labels found, hide instances table
+    const container = document.querySelector(`.instances-table-container-${tabId}`);
+    if (container) container.style.display = 'none';
+    return;
+  }
+
+  // Show instances table container
+  const container = document.querySelector(`.instances-table-container-${tabId}`);
+  if (container) container.style.display = 'block';
+
+  const tableEl = document.querySelector(`.instances-table-${tabId}`);
+  if (!tableEl) return;
+
+  tableEl.innerHTML = '<p class="small text-muted">Loading instances...</p>';
+
+  try {
+    // Fetch instances for first label (for now, could expand to show all labels)
+    const firstLabel = Array.from(labels)[0];
+    const selectedConnection = window.getSelectedNeo4jConnection ? window.getSelectedNeo4jConnection() : null;
+    const connParam = selectedConnection ? `&connection=${encodeURIComponent(selectedConnection)}` : '';
+    const response = await fetch(`/api/graph/instances?label=${encodeURIComponent(firstLabel)}&limit=100${connParam}`);
+    const data = await response.json();
+
+    if (!response.ok || data.error) {
+      tableEl.innerHTML = `<p class="small text-danger">Error loading instances: ${data.error || 'Unknown error'}</p>`;
+      return;
+    }
+
+    const instances = data.rows || [];
+
+    if (instances.length === 0) {
+      tableEl.innerHTML = `<p class="small text-muted">No instances found for label: ${firstLabel}</p>`;
+      return;
+    }
+
+    // Build table
+    const headers = new Set();
+    instances.forEach(inst => {
+      Object.keys(inst).forEach(key => headers.add(key));
+    });
+
+    const headerArray = Array.from(headers);
+    let html = `<div style="margin-bottom:0.5rem"><strong>${firstLabel}</strong> (${instances.length} instances, showing first 100)</div>`;
+    html += `<table class="table table-sm table-bordered" style="font-size:0.75rem; background:#fff">`;
+    html += `<thead><tr>${headerArray.map(h => `<th>${h}</th>`).join('')}</tr></thead>`;
+    html += `<tbody>`;
+
+    instances.slice(0, 100).forEach(inst => {
+      html += `<tr>`;
+      headerArray.forEach(header => {
+        const val = inst[header];
+        if (val && typeof val === 'object') {
+          html += `<td><pre style="margin:0; font-size:0.7em; max-height:50px; overflow:auto">${JSON.stringify(val, null, 2)}</pre></td>`;
+        } else {
+          html += `<td>${String(val != null ? val : '')}</td>`;
+        }
+      });
+      html += `</tr>`;
+    });
+
+    html += `</tbody></table>`;
+    tableEl.innerHTML = html;
+
+  } catch (err) {
+    tableEl.innerHTML = `<p class="small text-danger">Error loading instances: ${err.message}</p>`;
+  }
+
+  // Add toggle functionality
+  const toggleBtn = document.querySelector(`.toggle-instances-${tabId}`);
+  if (toggleBtn) {
+    toggleBtn.onclick = () => {
+      const container = document.querySelector(`.instances-table-container-${tabId}`);
+      if (container) {
+        container.style.display = 'none';
+      }
+    };
+  }
+};
+
+// === NEO4J CONNECTION SELECTION ===
+(function() {
+  const initConnectionSelect = () => {
+    const connectionSelect = document.getElementById('neo4j-connection-select');
+    const connectionStatus = document.getElementById('connection-status');
+
+    if (!connectionSelect) {
+      console.warn('Neo4j connection selector not found');
+      return;
+    }
+
+    let selectedConnection = null; // Store selected profile name
+
+    async function loadConnections() {
+      try {
+        const response = await fetch('/api/settings/neo4j/profiles');
+        const data = await response.json();
+        const profiles = data.profiles || [];
+
+        if (profiles.length === 0) {
+          connectionSelect.innerHTML = '<option value="">No connections configured</option>';
+          connectionStatus.textContent = 'Configure connections in Settings';
+          return;
+        }
+
+        // Build options
+        connectionSelect.innerHTML = '<option value="">Select connection...</option>';
+        profiles.forEach(profile => {
+          const option = document.createElement('option');
+          option.value = profile.name;
+          option.textContent = `${profile.name} (${profile.role || 'primary'})`;
+          connectionSelect.appendChild(option);
+        });
+
+        // Try to select the primary connection by default
+        const primaryProfile = profiles.find(p => p.role === 'primary');
+        if (primaryProfile) {
+          connectionSelect.value = primaryProfile.name;
+          selectedConnection = primaryProfile.name;
+          connectionStatus.textContent = `Using: ${primaryProfile.name}`;
+          console.log(`✓ Auto-selected primary connection: ${primaryProfile.name}`);
+        } else if (profiles.length > 0) {
+          // Fall back to first profile
+          connectionSelect.value = profiles[0].name;
+          selectedConnection = profiles[0].name;
+          connectionStatus.textContent = `Using: ${profiles[0].name}`;
+          console.log(`✓ Auto-selected connection: ${profiles[0].name}`);
+        }
+      } catch (error) {
+        console.error('Failed to load Neo4j connections:', error);
+        connectionSelect.innerHTML = '<option value="">Error loading connections</option>';
+        connectionStatus.textContent = 'Failed to load connections';
+      }
+    }
+
+    // Handle connection selection change
+    connectionSelect.addEventListener('change', (e) => {
+      selectedConnection = e.target.value;
+      if (selectedConnection) {
+        connectionStatus.textContent = `Using: ${selectedConnection}`;
+        console.log(`Connection switched to: ${selectedConnection}`);
+      } else {
+        connectionStatus.textContent = 'No connection selected';
+      }
+    });
+
+    // Make selected connection available globally for query execution
+    window.getSelectedNeo4jConnection = () => selectedConnection;
+
+    loadConnections();
+  };
+
+  // Call init when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initConnectionSelect);
+  } else {
+    initConnectionSelect();
+  }
+})();
+
+// === LAYOUT CONTROLS ===
+(function() {
+  const initLayoutControls = () => {
+    const layoutSelect = document.getElementById('layout-mode');
+    const orientationContainer = document.getElementById('layout-orientation-container');
+    const orientationSelect = document.getElementById('layout-orientation');
+    const savePositionsBtn = document.getElementById('save-positions');
+    const loadPositionsBtn = document.getElementById('load-positions');
+
+    if (!layoutSelect) return;
+
+    // Show/hide orientation dropdown based on algorithm
+    function updateOrientationVisibility() {
+      if (orientationContainer) {
+        orientationContainer.style.display = layoutSelect.value === 'breadthfirst' ? 'block' : 'none';
+      }
+    }
+
+    // Apply layout when algorithm changes
+    layoutSelect.addEventListener('change', (e) => {
+      updateOrientationVisibility();
+
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      const layoutName = e.target.value;
+      console.log(`Applying layout: ${layoutName}`);
+
+      if (layoutName === 'manual') {
+        console.log('Manual layout - drag nodes to position them');
+        return;
+      }
+
+      // Don't run layout on empty graph
+      if (cy.nodes().length === 0) {
+        console.log('No nodes to layout');
+        return;
+      }
+
+      const layoutOptions = {
+        name: layoutName,
+        animate: true,
+        animationDuration: 500
+      };
+
+      // Add layout-specific options
+      if (layoutName === 'cose') {
+        layoutOptions.nodeRepulsion = 8000;
+        layoutOptions.idealEdgeLength = 100;
+        layoutOptions.gravity = 0.1;
+      } else if (layoutName === 'breadthfirst') {
+        const orientation = orientationSelect?.value || 'TB';
+        layoutOptions.directed = true;
+        layoutOptions.spacingFactor = 1.5;
+        layoutOptions.padding = 30;
+        layoutOptions.roots = cy.nodes().filter(n => n.indegree() === 0);
+
+        // Apply orientation transform
+        if (orientation === 'BT') layoutOptions.transform = (node, pos) => ({ x: pos.x, y: -pos.y });
+        else if (orientation === 'LR') layoutOptions.transform = (node, pos) => ({ x: pos.y, y: pos.x });
+        else if (orientation === 'RL') layoutOptions.transform = (node, pos) => ({ x: -pos.y, y: pos.x });
+      }
+
+      cy.layout(layoutOptions).run();
+    });
+
+    // Apply layout when orientation changes
+    orientationSelect?.addEventListener('change', () => {
+      if (layoutSelect.value === 'breadthfirst') {
+        layoutSelect.dispatchEvent(new Event('change'));
+      }
+    });
+
+    // Initialize orientation visibility
+    updateOrientationVisibility();
+
+    // Save positions
+    savePositionsBtn?.addEventListener('click', () => {
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      const positions = {};
+      cy.nodes().forEach(node => {
+        positions[node.id()] = node.position();
+      });
+
+      localStorage.setItem(`map_positions_${activeTabId}`, JSON.stringify(positions));
+      console.log(`✓ Saved positions for ${Object.keys(positions).length} nodes`);
+      alert('Node positions saved');
+    });
+
+    // Load positions
+    loadPositionsBtn?.addEventListener('click', () => {
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      const savedPositions = localStorage.getItem(`map_positions_${activeTabId}`);
+      if (!savedPositions) {
+        alert('No saved positions found for this tab');
+        return;
+      }
+
+      const positions = JSON.parse(savedPositions);
+      let restoredCount = 0;
+
+      cy.nodes().forEach(node => {
+        const pos = positions[node.id()];
+        if (pos) {
+          node.position(pos);
+          restoredCount++;
+        }
+      });
+
+      console.log(`✓ Restored positions for ${restoredCount} nodes`);
+      alert(`Restored positions for ${restoredCount} nodes`);
+    });
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initLayoutControls);
+  } else {
+    initLayoutControls();
+  }
+})();
+
+// === NODE & EDGE STYLE CONTROLS ===
+(function() {
+  const initStyleControls = () => {
+    const nodeSizeSlider = document.getElementById('node-size');
+    const fontSizeSlider = document.getElementById('font-size');
+    const highContrastCheckbox = document.getElementById('high-contrast');
+    const edgeWidthSlider = document.getElementById('edge-width');
+
+    if (!nodeSizeSlider) return;
+
+    // Apply node size
+    nodeSizeSlider.addEventListener('input', (e) => {
+      const scale = parseFloat(e.target.value);
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      cy.style().selector('node').style({
+        'width': ele => (ele.data('size') || 30) * scale,
+        'height': ele => (ele.data('size') || 30) * scale
+      }).update();
+    });
+
+    // Apply font size
+    fontSizeSlider?.addEventListener('input', (e) => {
+      const fontSize = parseInt(e.target.value);
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      cy.style().selector('node').style({
+        'font-size': `${fontSize}px`
+      }).update();
+    });
+
+    // Apply high contrast
+    highContrastCheckbox?.addEventListener('change', (e) => {
+      const highContrast = e.target.checked;
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      if (highContrast) {
+        cy.style().selector('node').style({
+          'text-outline-width': 3,
+          'text-outline-color': '#000'
+        }).update();
+      } else {
+        cy.style().selector('node').style({
+          'text-outline-width': 2,
+          'text-outline-color': '#000'
+        }).update();
+      }
+    });
+
+    // Apply edge width
+    edgeWidthSlider?.addEventListener('input', (e) => {
+      const scale = parseFloat(e.target.value);
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      cy.style().selector('edge').style({
+        'width': 2 * scale
+      }).update();
+    });
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initStyleControls);
+  } else {
+    initStyleControls();
+  }
+})();
+
+// === NODE COLORING & LEGEND ===
+(function() {
+  // Color palette for labels (used as defaults) - defined at module scope so applyColoring can access it
+  const colorPalette = [
+    '#4e79a7', '#f28e2c', '#e15759', '#76b7b2', '#59a14f',
+    '#edc949', '#af7aa1', '#ff9da7', '#9c755f', '#bab0ab'
+  ];
+
+  const initColoringControls = () => {
+    const showLabelsCheckbox = document.getElementById('show-node-labels');
+    const legendDiv = document.getElementById('color-legend');
+    const legendItems = document.getElementById('legend-items');
+
+    function applyColoring() {
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) {
+        console.warn('⚠️ applyColoring: No active tab or cytoscapeInstances');
+        return;
+      }
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy || cy.nodes().length === 0) {
+        console.warn('⚠️ applyColoring: No cytoscape instance or no nodes');
+        return;
+      }
+
+      console.log('🎨 applyColoring: Starting color application');
+      console.log('🎨 labelColorMap:', window.labelColorMap);
+
+      // Color by node label using labelColorMap
+      const labels = new Set();
+      cy.nodes().forEach(node => {
+        const label = node.data('fullLabel') || node.data('labels')?.[0] || 'Unknown';
+        labels.add(label);
+      });
+
+      const labelArray = Array.from(labels).sort();
+      const colorMap = new Map();
+
+      labelArray.forEach((label, index) => {
+        // Use custom color from legend if available, otherwise use palette
+        const color = window.labelColorMap && window.labelColorMap[label]
+          ? window.labelColorMap[label]
+          : colorPalette[index % colorPalette.length];
+        colorMap.set(label, color);
+        console.log(`🎨 Label "${label}" -> color ${color}`);
+      });
+
+      cy.nodes().forEach(node => {
+        const label = node.data('fullLabel') || node.data('labels')?.[0] || 'Unknown';
+        const color = colorMap.get(label) || '#999999';
+        node.style('background-color', color);
+      });
+
+      console.log('🎨 applyColoring: Color application complete');
+
+      // Don't update legend HTML - legend is managed by populateSchemaConfig with color pickers
+    }
+
+    // Apply all formatting (colors, sizes, fonts) to graph
+    function applyGraphFormatting() {
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy || cy.nodes().length === 0) return;
+
+      console.log('🎨 applyGraphFormatting: Applying all formatting...');
+
+      // Apply node formatting
+      cy.nodes().forEach(node => {
+        // Use baseLabel for formatting lookups, fall back to fullLabel if not present
+        const baseLabel = node.data('baseLabel') || node.data('fullLabel') || node.data('labels')?.[0] || 'Unknown';
+        const fullLabel = node.data('fullLabel') || node.data('label');
+
+        // Apply color using base label
+        const color = window.labelColorMap && window.labelColorMap[baseLabel]
+          ? window.labelColorMap[baseLabel]
+          : colorPalette[0];
+        node.style('background-color', color);
+
+        // Apply display name using base label
+        const displayName = (window.labelDisplayNames && window.labelDisplayNames[baseLabel]) || baseLabel;
+
+        // For variant nodes, construct label from display name + property value
+        if (fullLabel.includes('|')) {
+          const parts = fullLabel.split('|');
+          if (parts.length === 3) {
+            // Get expansion config to check Display Name and Show Property Key settings
+            const expansionConfig = window.schemaExpansionConfig || {nodes: {}, relationships: {}};
+            const config = expansionConfig.nodes[baseLabel];
+            const showLabel = config && config.showLabel !== false; // default true
+            const showKey = config && config.showKey === true; // default false
+
+            const propName = parts[1];
+            const propValue = parts[2];
+
+            // Build label parts based on settings
+            const labelParts = [];
+            if (showLabel) labelParts.push(displayName);
+            if (showKey) {
+              labelParts.push(`${propName}: ${propValue}`);
+            } else {
+              labelParts.push(String(propValue));
+            }
+
+            node.data('label', labelParts.join('\n'));
+          } else {
+            node.data('label', displayName);
+          }
+        } else {
+          // For non-variant nodes, just use display name
+          node.data('label', displayName);
+        }
+
+        // Apply size and font using base label
+        const formatting = window.labelFormattingConfig && window.labelFormattingConfig[baseLabel];
+        if (formatting) {
+          if (formatting.size) {
+            node.style({
+              'width': formatting.size,
+              'height': formatting.size
+            });
+          }
+          if (formatting.fontSize) {
+            node.style('font-size', `${formatting.fontSize}px`);
+          }
+        }
+      });
+
+      // Apply edge formatting
+      cy.edges().forEach(edge => {
+        const baseType = edge.data('baseType') || edge.data('type') || edge.data('label');
+        const typeKey = edge.data('type') || edge.data('label');
+
+        // Get display name for base type
+        const displayName = (window.relationshipDisplayNames && window.relationshipDisplayNames[baseType]) || baseType;
+
+        // For variant relationships, construct label similar to nodes
+        if (typeKey && typeKey.includes('|')) {
+          const parts = typeKey.split('|');
+          if (parts.length === 3) {
+            const expansionConfig = window.schemaExpansionConfig || {nodes: {}, relationships: {}};
+            const config = expansionConfig.relationships[baseType];
+            const showLabel = config && config.showLabel !== false;
+            const showKey = config && config.showKey === true;
+
+            const propName = parts[1];
+            const propValue = parts[2];
+
+            const labelParts = [];
+            if (showLabel) labelParts.push(displayName);
+            if (showKey) {
+              labelParts.push(`${propName}: ${propValue}`);
+            } else {
+              labelParts.push(String(propValue));
+            }
+
+            edge.data('label', labelParts.join('\n'));
+          } else {
+            edge.data('label', displayName);
+          }
+        } else {
+          edge.data('label', displayName);
+        }
+
+        const formatting = window.relationshipFormattingConfig && window.relationshipFormattingConfig[baseType];
+
+        if (formatting) {
+          if (formatting.color) {
+            edge.style({
+              'line-color': formatting.color,
+              'target-arrow-color': formatting.color
+            });
+          }
+          if (formatting.width) {
+            edge.style('width', formatting.width);
+          }
+          if (formatting.fontSize) {
+            edge.style('font-size', `${formatting.fontSize}px`);
+          }
+        }
+      });
+
+      console.log('🎨 applyGraphFormatting: Formatting complete');
+    }
+
+    // Show/hide labels
+    showLabelsCheckbox?.addEventListener('change', (e) => {
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      if (e.target.checked) {
+        applyLabelProperty();
+      } else {
+        cy.style().selector('node').style({'label': ''}).update();
+      }
+    });
+
+    // Label property selector
+    const labelPropertySelect = document.getElementById('label-property');
+
+    function updateLabelPropertyList() {
+      if (!labelPropertySelect) return;
+
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      const properties = new Set();
+      cy.nodes().forEach(node => {
+        const props = node.data('properties') || {};
+        Object.keys(props).forEach(key => properties.add(key));
+      });
+
+      // Keep default options
+      const currentValue = labelPropertySelect.value;
+      labelPropertySelect.innerHTML = `
+        <option value="_label">Node Label</option>
+        <option value="_id">Node ID</option>
+      `;
+
+      // Add properties from graph
+      Array.from(properties).sort().forEach(prop => {
+        const option = document.createElement('option');
+        option.value = prop;
+        option.textContent = prop;
+        labelPropertySelect.appendChild(option);
+      });
+
+      // Restore selection if it still exists
+      if (Array.from(labelPropertySelect.options).some(opt => opt.value === currentValue)) {
+        labelPropertySelect.value = currentValue;
+      }
+    }
+
+    function applyLabelProperty() {
+      if (!labelPropertySelect) return;
+
+      const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+      if (!activeTabId || !window.cytoscapeInstances) return;
+
+      const cy = window.cytoscapeInstances[activeTabId];
+      if (!cy) return;
+
+      const property = labelPropertySelect.value;
+
+      cy.nodes().forEach(node => {
+        let labelText = '';
+
+        if (property === '_label') {
+          // Use the label that was set by applyGraphFormatting (respects display names)
+          labelText = node.data('label') || node.data('fullLabel') || node.data('labels')?.[0] || 'Node';
+        } else if (property === '_id') {
+          labelText = node.data('id') || node.id();
+        } else {
+          const props = node.data('properties') || {};
+          labelText = props[property] || node.data('label') || '';
+        }
+
+        node.style('label', String(labelText));
+      });
+    }
+
+    labelPropertySelect?.addEventListener('change', applyLabelProperty);
+
+    // Make functions available globally
+    window.applyGraphColoring = applyColoring;
+    window.applyGraphFormatting = applyGraphFormatting;
+    window.updateLabelPropertyList = updateLabelPropertyList;
+    window.applyLabelProperty = applyLabelProperty;
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initColoringControls);
+  } else {
+    initColoringControls();
+  }
+})();
+
+// === EXPORT FUNCTIONALITY ===
+(function() {
+  const exportPngBtn = document.getElementById('export-png');
+  const exportJsonBtn = document.getElementById('export-json');
+  const exportCypherBtn = document.getElementById('export-cypher');
+
+  // Export PNG
+  exportPngBtn?.addEventListener('click', () => {
+    // Get active tab's cytoscape instance
+    const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+    if (!activeTabId || !window.cytoscapeInstances || !window.cytoscapeInstances[activeTabId]) {
+      alert('No graph to export');
+      return;
+    }
+
+    const cy = window.cytoscapeInstances[activeTabId];
+    const png64 = cy.png({scale: 2, full: true});
+    const link = document.createElement('a');
+    link.download = `map_${Date.now()}.png`;
+    link.href = png64;
+    link.click();
+  });
+
+  // Export JSON
+  exportJsonBtn?.addEventListener('click', () => {
+    const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+    if (!activeTabId || !window.cytoscapeInstances || !window.cytoscapeInstances[activeTabId]) {
+      alert('No graph to export');
+      return;
+    }
+
+    const cy = window.cytoscapeInstances[activeTabId];
+    const data = {
+      nodes: cy.nodes().map(n => n.data()),
+      edges: cy.edges().map(e => e.data())
+    };
+
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+    const link = document.createElement('a');
+    link.download = `map_${Date.now()}.json`;
+    link.href = URL.createObjectURL(blob);
+    link.click();
+  });
+
+  // Export Cypher
+  exportCypherBtn?.addEventListener('click', () => {
+    const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+    if (!activeTabId || !window.cytoscapeInstances || !window.cytoscapeInstances[activeTabId]) {
+      alert('No graph to export');
+      return;
+    }
+
+    const cy = window.cytoscapeInstances[activeTabId];
+
+    // Generate Cypher CREATE statements
+    let cypher = '// Generated Cypher script\n\n';
+
+    // Create nodes
+    cy.nodes().forEach(node => {
+      const data = node.data();
+      const label = data.label || 'Node';
+      const props = Object.entries(data)
+        .filter(([k, v]) => k !== 'id' && k !== 'label' && v !== undefined)
+        .map(([k, v]) => `${k}: "${v}"`)
+        .join(', ');
+
+      cypher += `CREATE (n:${label} {id: "${data.id}"${props ? ', ' + props : ''}})\n`;
+    });
+
+    cypher += '\n';
+
+    // Create relationships
+    cy.edges().forEach(edge => {
+      const data = edge.data();
+      const type = data.type || 'RELATED_TO';
+      const source = data.source;
+      const target = data.target;
+
+      cypher += `MATCH (a {id: "${source}"}), (b {id: "${target}"})\n`;
+      cypher += `CREATE (a)-[:${type}]->(b)\n\n`;
+    });
+
+    const blob = new Blob([cypher], {type: 'text/plain'});
+    const link = document.createElement('a');
+    link.download = `map_${Date.now()}.cypher`;
+    link.href = URL.createObjectURL(blob);
+    link.click();
+  });
+})();
+</script>
+  </div> <!-- END: Center Panel -->
+
+  <!-- RESIZER (Center/Right) -->
+  <div class="resizer" id="resizer-right"></div>
+
+  <!-- RIGHT PANEL: Controls -->
+  <div class="map-controls-panel">
+    <div class="panel-header">
+      <h3>⚙️ Visualization</h3>
+    </div>
+
+    <!-- Neo4j Connection Selection -->
+    <div class="control-group" style="margin-bottom:1.5rem">
+      <h4 style="font-size:0.85rem; color:#666; text-transform:uppercase; margin-bottom:0.75rem">Database Connection</h4>
+      <select id="neo4j-connection-select" class="form-select form-select-sm" data-testid="neo4j-connection">
+        <option value="">Loading connections...</option>
+      </select>
+      <small class="text-muted" style="font-size:0.7rem; display:block; margin-top:0.25rem">
+        <span id="connection-status">Select a connection</span>
+      </small>
+    </div>
+
+    <!-- Visualization Mode -->
+    <div class="control-group" style="margin-bottom:1.5rem">
+      <h4 style="font-size:0.85rem; color:#666; text-transform:uppercase; margin-bottom:0.75rem">Visualization Mode</h4>
+      <div style="display:flex; flex-direction:column; gap:0.5rem">
+        <label style="display:flex; align-items:center; cursor:pointer">
+          <input type="radio" name="viz-mode" value="schema" checked data-testid="mode-schema" style="margin-right:0.5rem">
+          <span>Schema</span>
+        </label>
+        <label style="display:flex; align-items:center; cursor:pointer">
+          <input type="radio" name="viz-mode" value="instance" data-testid="mode-instance" style="margin-right:0.5rem">
+          <span>Instance</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Layout -->
+    <div class="control-group" style="margin-bottom:1.5rem">
+      <h4 style="font-size:0.85rem; color:#666; text-transform:uppercase; margin-bottom:0.75rem">Layout</h4>
+      <div style="margin-bottom:0.75rem">
+        <label for="layout-mode" class="form-label small" style="margin-bottom:.25rem">Algorithm</label>
+        <select id="layout-mode" class="form-select form-select-sm">
+          <option value="cose">Force (cose)</option>
+          <option value="breadthfirst">Hierarchical (breadthfirst)</option>
+          <option value="manual">Manual</option>
+        </select>
+      </div>
+      <div id="layout-orientation-container" style="margin-bottom:0.75rem; display:none">
+        <label for="layout-orientation" class="form-label small" style="margin-bottom:.25rem">Orientation</label>
+        <select id="layout-orientation" class="form-select form-select-sm">
+          <option value="TB">Top to Bottom</option>
+          <option value="BT">Bottom to Top</option>
+          <option value="LR">Left to Right</option>
+          <option value="RL">Right to Left</option>
+        </select>
+      </div>
+      <div style="display:flex; gap:.5rem">
+        <button id="save-positions" class="btn btn-sm btn-outline-secondary" style="flex:1">💾 Save</button>
+        <button id="load-positions" class="btn btn-sm btn-outline-secondary" style="flex:1">📂 Load</button>
+      </div>
+    </div>
+
+    <!-- Instance Mode Settings -->
+    <div id="instance-settings" class="control-group" style="margin-bottom:1.5rem; display:none">
+      <h4 style="font-size:0.85rem; color:#666; text-transform:uppercase; margin-bottom:0.75rem">Instance Settings</h4>
+      <label for="node-limit" class="form-label small" style="margin-bottom:.25rem">Node Limit</label>
+      <input type="number" id="node-limit" class="form-control form-control-sm" value="500" min="10" max="5000" data-testid="node-limit" />
+      <small class="text-muted" style="font-size:0.7rem">Warning: >1000 nodes may slow performance</small>
+    </div>
+
+    <!-- Schema Mode Settings (visible in schema mode only) -->
+    <div id="schema-settings" class="control-group" style="margin-bottom:1.5rem; display:none">
+      <h4 style="font-size:0.85rem; color:#666; text-transform:uppercase; margin-bottom:0.75rem">🔷 Schema Configuration</h4>
+
+      <small class="text-muted" style="font-size:0.7rem; display:block; margin-bottom:1rem">
+        Expand labels by property to show variants. Use checkboxes to control display format per-label.
+      </small>
+
+      <!-- Node Labels with Property Expansion -->
+      <div id="schema-node-config" style="margin-bottom:1rem">
+        <div style="font-weight:600; font-size:0.75rem; color:#666; margin-bottom:0.5rem; text-transform:uppercase">
+          Node Labels
+        </div>
+        <div id="schema-node-list" style="font-size:0.75rem">
+          <div class="text-muted" style="padding:0.5rem; background:#f8f9fa; border-radius:4px">
+            Run a query to see available labels
+          </div>
+        </div>
+      </div>
+
+      <!-- Relationship Types with Property Expansion -->
+      <div id="schema-rel-config" style="margin-bottom:1rem">
+        <div style="font-weight:600; font-size:0.75rem; color:#666; margin-bottom:0.5rem; text-transform:uppercase">
+          Relationship Types
+        </div>
+        <div id="schema-rel-list" style="font-size:0.75rem">
+          <div class="text-muted" style="padding:0.5rem; background:#f8f9fa; border-radius:4px">
+            Run a query to see available types
+          </div>
+        </div>
+      </div>
+
+      <button id="apply-schema-display" class="btn btn-sm btn-primary w-100" style="margin-top:0.5rem">
+        🔄 Apply Changes
+      </button>
+    </div>
+
+    <!-- Node Style (moved to per-label blocks) -->
+    <div class="control-group" style="margin-bottom:1.5rem; display:none">
+      <h4 style="font-size:0.85rem; color:#666; text-transform:uppercase; margin-bottom:0.75rem">Node Style</h4>
+      <div style="margin-bottom:0.75rem">
+        <label for="node-size" class="form-label small" style="margin-bottom:.25rem">Size</label>
+        <input id="node-size" type="range" class="form-range" min="0.5" max="3" step="0.1" value="1" style="width:100%">
+      </div>
+      <div style="margin-bottom:0.75rem">
+        <label for="font-size" class="form-label small" style="margin-bottom:.25rem">Label Font</label>
+        <input id="font-size" type="range" class="form-range" min="8" max="18" step="1" value="10" style="width:100%">
+      </div>
+      <div class="form-check" style="margin-bottom:0.75rem">
+        <input class="form-check-input" type="checkbox" id="high-contrast" />
+        <label class="form-check-label small" for="high-contrast">High-contrast labels</label>
+      </div>
+      <div id="label-display-options" style="margin-bottom:0.75rem">
+        <label class="form-label small" style="margin-bottom:.25rem">Display</label>
+        <div class="form-check" style="margin-bottom:0.5rem">
+          <input class="form-check-input" type="checkbox" id="show-node-labels" checked />
+          <label class="form-check-label small" for="show-node-labels">Show labels</label>
+        </div>
+        <label for="label-property" class="form-label small" style="margin-bottom:.25rem">Label Property</label>
+        <select id="label-property" class="form-select form-select-sm">
+          <option value="_label">Node Label</option>
+          <option value="_id">Node ID</option>
+        </select>
+        <small class="text-muted" style="font-size:0.7rem; display:block; margin-top:0.25rem">Choose which property displays on nodes</small>
+      </div>
+      <!-- Color Legend with Editable Colors -->
+      <div id="color-legend" style="margin-top:1rem">
+        <div style="font-weight:600; font-size:0.7rem; margin-bottom:0.5rem; text-transform:uppercase">Label Colors</div>
+        <div id="legend-items" style="font-size:0.75rem">
+          <div class="text-muted" style="padding:0.5rem; background:#f8f9fa; border-radius:4px; font-size:0.7rem">
+            Run a query to see available labels
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edge Style (moved to per-relationship blocks) -->
+    <div class="control-group" style="margin-bottom:1.5rem; display:none">
+      <h4 style="font-size:0.85rem; color:#666; text-transform:uppercase; margin-bottom:0.75rem">Edge Style</h4>
+      <div style="margin-bottom:0.75rem">
+        <label for="edge-width" class="form-label small" style="margin-bottom:.25rem">Width</label>
+        <input id="edge-width" type="range" class="form-range" min="0.5" max="3" step="0.1" value="1" style="width:100%">
+      </div>
+    </div>
+
+
+    <!-- Export -->
+    <div class="control-group">
+      <h4 style="font-size:0.85rem; color:#666; text-transform:uppercase; margin-bottom:0.75rem">Export Graph</h4>
+      <button id="export-png" class="btn btn-sm btn-outline-primary w-100" data-testid="export-png" style="margin-bottom:0.5rem">🖼️ Export PNG</button>
+      <button id="export-json" class="btn btn-sm btn-outline-primary w-100" data-testid="export-json" style="margin-bottom:0.5rem">📄 Export JSON</button>
+      <button id="export-cypher" class="btn btn-sm btn-outline-primary w-100" data-testid="export-cypher" style="margin-bottom:0.5rem">🔷 Export Cypher</button>
+      <button id="download-csv" class="btn btn-sm btn-outline-secondary w-100">📊 Download CSV</button>
+    </div>
+  </div>
+
+</div> <!-- END: maps-container -->
 {% endblock %}

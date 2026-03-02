@@ -143,7 +143,7 @@ class TestDemoDataSeeding:
         exp_file = temp_demo_dir / 'Project_A_Cancer_Research' / 'experiments' / 'exp001_cell_culture.xlsx'
         assert exp_file.stat().st_size > 0
 
-    def test_clean_demo_data_removes_users(self, temp_db):
+    def test_clean_demo_data_removes_users(self, temp_db, tmp_path):
         """Test that clean_demo_data removes demo users."""
         auth = AuthManager(temp_db)
         seed_users(auth)
@@ -151,8 +151,10 @@ class TestDemoDataSeeding:
         # Verify users exist
         assert auth.get_user_by_username('admin') is not None
 
-        # Clean data
-        clean_demo_data(temp_db, 'dummy_pix.db', neo4j=False)
+        # Clean data - use tmp_path to avoid deleting real demo_data
+        temp_demo_dir = tmp_path / 'demo_data'
+        temp_demo_dir.mkdir(exist_ok=True)
+        clean_demo_data(temp_db, 'dummy_pix.db', neo4j=False, demo_data_dir=temp_demo_dir)
 
         # Verify users are removed
         assert auth.get_user_by_username('admin') is None
@@ -270,11 +272,13 @@ class TestDemoDataIntegration:
         assert auth.get_user_by_username('admin') is not None
         assert temp_demo_dir.exists()
 
-        # Clean data
-        clean_demo_data(temp_db, 'dummy_pix.db', neo4j=False)
+        # Clean data - pass temp_demo_dir to avoid deleting real demo_data
+        clean_demo_data(temp_db, 'dummy_pix.db', neo4j=False, demo_data_dir=temp_demo_dir)
 
-        # Verify users are removed (files would be removed but we're using temp_demo_dir)
+        # Verify users are removed and files directory is cleaned
         assert auth.get_user_by_username('admin') is None
+        # Directory should be removed by clean_demo_data
+        assert not temp_demo_dir.exists()
 
 
 if __name__ == '__main__':

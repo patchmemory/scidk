@@ -1,0 +1,322 @@
+<!-- Modules > Analyses Section -->
+<section id="modules-analyses-section" class="settings-section">
+  <h1>Analyses</h1>
+  <p class="small">Run analytical computations over graph data to extract insights, generate reports, or perform calculations.</p>
+
+  <div style="max-width: 800px;">
+    <h3 style="margin-top: 1.5rem;">Registry Status</h3>
+    <div id="analyses-status-container" style="margin-top: 1rem;">
+      <p class="small" style="color: #999;"><em>Loading analysis status...</em></p>
+    </div>
+
+    <h3 style="margin-top: 2rem;">What are Analyses?</h3>
+    <p>Analysis modules are specialized scripts (Cypher queries or Python code) that read from the graph, perform computations, and write results back as nodes or properties. They enable reproducible analytical workflows, automated reporting, and data quality checks. Analyses run on-demand and store their output for review.</p>
+
+    <h2 style="margin-top: 2rem;">Analysis Registry</h2>
+    <div id="analyses-registry-container" style="margin-top: 1rem;">
+      <p class="small" style="color: #999;"><em>Loading analysis registry...</em></p>
+    </div>
+
+    <div id="analyses-registry-footer" style="margin-top: 0.5rem; text-align: right; display: none;">
+      <a href="#" id="analyses-resync-link" class="small" style="color: #666; text-decoration: none;">Re-sync built-ins</a>
+    </div>
+
+    <!-- Action Footer -->
+    <div style="margin-top: 2rem; padding: 1rem; background: #f9f9f9; border-radius: 4px;">
+      <p style="margin: 0; font-size: 0.95rem;">
+        → <a href="/scripts" style="font-weight: 500;">Author analyses on Scripts page</a><br>
+        → <a href="/results" style="font-weight: 500;">View results on Results page</a>
+      </p>
+    </div>
+  </div>
+</section>
+
+<script>
+  async function loadAnalysesStatus() {
+    const container = document.getElementById('analyses-status-container');
+
+    try {
+      const response = await fetch('/api/scripts/scripts');
+      const data = await response.json();
+
+      if (data.status === 'ok' && data.scripts) {
+        // Filter for analysis scripts (category starts with 'analyses/')
+        const analyses = data.scripts.filter(s => s.category && s.category.startsWith('analyses/'));
+        const total = analyses.length;
+        const validated = analyses.filter(s => s.validation_status === 'validated' && s.is_active).length;
+        const draft = analyses.filter(s => s.validation_status === 'draft').length;
+        const failed = analyses.filter(s => s.validation_status === 'failed').length;
+
+        let html = `
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;">
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
+              <div style="font-size: 2rem; font-weight: bold; color: var(--accent);">${total}</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Total</div>
+            </div>
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
+              <div style="font-size: 2rem; font-weight: bold; color: #28a745;">${validated}</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;" title="Passed syntax and contract checks — ready to run">Validated</div>
+            </div>
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
+              <div style="font-size: 2rem; font-weight: bold; color: #ffc107;">${draft}</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Draft</div>
+            </div>
+            <div style="padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 4px; text-align: center;">
+              <div style="font-size: 2rem; font-weight: bold; color: #e74c3c;">${failed}</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Failed</div>
+            </div>
+          </div>
+        `;
+
+        if (failed > 0) {
+          html += `
+            <div style="margin-top: 1rem; padding: 0.75rem; background: #f8d7da; border-left: 4px solid #e74c3c; border-radius: 4px;">
+              <p class="small" style="margin: 0; color: #721c24;">
+                ${failed} analysis script${failed !== 1 ? 's have' : ' has'} failed validation. Review on the <a href="/scripts">Scripts page</a>.
+              </p>
+            </div>
+          `;
+        } else if (draft > 0) {
+          html += `
+            <div style="margin-top: 1rem; padding: 0.75rem; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
+              <p class="small" style="margin: 0; color: #856404;">
+                ${draft} analysis script${draft !== 1 ? 's are' : ' is'} in draft state. Validate on the <a href="/scripts">Scripts page</a>.
+              </p>
+            </div>
+          `;
+        }
+
+        container.innerHTML = html;
+      } else {
+        container.innerHTML = `
+          <p class="small text-muted">No analysis scripts found. Create your first analysis on the <a href="/scripts">Scripts page</a>.</p>
+        `;
+      }
+    } catch (err) {
+      console.error('Failed to load analyses status:', err);
+      container.innerHTML = '<p class="small" style="color: #999;"><em>Analysis status unavailable</em></p>';
+    }
+  }
+
+  async function loadAnalysesRegistry() {
+    const container = document.getElementById('analyses-registry-container');
+    const footer = document.getElementById('analyses-registry-footer');
+    const resyncLink = document.getElementById('analyses-resync-link');
+
+    try {
+      const response = await fetch('/api/scripts/scripts');
+      const data = await response.json();
+
+      if (data.status === 'ok' && data.scripts) {
+        // Filter for analysis scripts
+        const analyses = data.scripts.filter(s => s.category && s.category.startsWith('analyses/'));
+
+        if (analyses.length === 0) {
+          // Empty state with import prompt
+          container.innerHTML = `
+            <div style="padding: 2rem; background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 4px; text-align: center;">
+              <p style="margin: 0 0 0.5rem 0; font-size: 1em;">No analyses registered yet.</p>
+              <p class="small text-muted" style="margin: 0 0 1rem 0;">
+                SciDK includes built-in analyses ready to import. These will be added to your Scripts registry as editable, validated scripts.
+              </p>
+              <button id="import-analyses-btn" class="btn btn-primary btn-sm">Import Built-in Analyses</button>
+              <p id="import-status" class="small" style="margin-top: 0.5rem; color: #666;"></p>
+            </div>
+          `;
+
+          document.getElementById('import-analyses-btn')?.addEventListener('click', async () => {
+            const btn = document.getElementById('import-analyses-btn');
+            const status = document.getElementById('import-status');
+            btn.disabled = true;
+            btn.textContent = 'Importing...';
+            status.textContent = 'Importing built-in analyses...';
+
+            try {
+              const resp = await fetch('/api/scripts/analyses/bootstrap', { method: 'POST' });
+              const result = await resp.json();
+
+              if (result.status === 'ok') {
+                status.textContent = `✓ Imported ${result.imported} analysis scripts. Reloading...`;
+                status.style.color = '#28a745';
+                setTimeout(() => {
+                  loadAnalysesRegistry();
+                  loadAnalysesStatus();
+                }, 1000);
+              } else {
+                status.textContent = `✗ Import failed: ${result.message}`;
+                status.style.color = '#e74c3c';
+                btn.disabled = false;
+                btn.textContent = 'Import Built-in Analyses';
+              }
+            } catch (err) {
+              status.textContent = `✗ Import failed: ${err.message}`;
+              status.style.color = '#e74c3c';
+              btn.disabled = false;
+              btn.textContent = 'Import Built-in Analyses';
+            }
+          });
+
+          return;
+        }
+
+        // Show registry table
+        footer.style.display = 'block';
+
+        // Sort by name
+        analyses.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+        let html = `
+          <table style="width: 100%; border-collapse: collapse; background: white; border: 1px solid #ddd; border-radius: 4px;">
+            <thead>
+              <tr style="background: #f0f0f0; border-bottom: 2px solid #ccc;">
+                <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Name</th>
+                <th style="padding: 0.75rem; text-align: left; font-weight: 600; width: 15%;">Source</th>
+                <th style="padding: 0.75rem; text-align: left; font-weight: 600; width: 15%;">Validation</th>
+                <th style="padding: 0.75rem; text-align: left; font-weight: 600; width: 15%;">Last Tested</th>
+                <th style="padding: 0.75rem; text-align: left; font-weight: 600; width: 20%;">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+
+        analyses.forEach((analysis, index) => {
+          const borderStyle = index < analyses.length - 1 ? 'border-bottom: 1px solid #e0e0e0;' : '';
+
+          // Source badge
+          let sourceBadge = '';
+          if (analysis.source === 'built-in') {
+            if (analysis.modified) {
+              sourceBadge = '<span class="badge" style="background: #ffc107; color: #000;" title="Modified from built-in — restore available">built-in ✎</span>';
+            } else {
+              sourceBadge = '<span class="badge" style="background: #19c37d; color: white;">built-in</span>';
+            }
+          } else {
+            sourceBadge = '<span class="badge" style="background: #6c757d; color: white;">custom</span>';
+          }
+
+          // Validation state badge (clickable to open modal)
+          let validationBadge = '';
+          const badgeStyle = 'cursor: pointer; transition: opacity 0.2s;';
+          const onClickHandler = `onclick="showValidationModal('${analysis.id}', '${escapeHtml(analysis.name)}')" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'" title="Click to view validation details"`;
+
+          if (analysis.validation_status === 'queued') {
+            validationBadge = `<span class="badge" style="background: #6c757d; color: white; ${badgeStyle}" ${onClickHandler}>Queued</span>`;
+          } else if (analysis.validation_status === 'running') {
+            validationBadge = `<span class="badge" style="background: #17a2b8; color: white; ${badgeStyle}" ${onClickHandler}>Running ⟳</span>`;
+          } else if (analysis.validation_status === 'passed' || analysis.validation_status === 'validated') {
+            validationBadge = `<span class="badge" style="background: #28a745; color: white; ${badgeStyle}" ${onClickHandler}>Passed ✅</span>`;
+          } else if (analysis.validation_status === 'failed') {
+            validationBadge = `<span class="badge" style="background: #e74c3c; color: white; ${badgeStyle}" ${onClickHandler}>Failed ❌</span>`;
+          } else {
+            validationBadge = `<span class="badge" style="background: #999; color: white; ${badgeStyle}" ${onClickHandler}>Not run</span>`;
+          }
+
+          // Last tested
+          const lastTested = analysis.validation_timestamp
+            ? new Date(analysis.validation_timestamp * 1000).toLocaleDateString()
+            : '—';
+
+          // Actions
+          let actions = `<a href="/scripts?script=${encodeURIComponent(analysis.id)}" class="btn btn-xs btn-outline-secondary">Edit →</a>`;
+          if (analysis.source === 'built-in' && analysis.modified) {
+            actions += ` <button class="btn btn-xs btn-outline-warning" onclick="restoreAnalysis('${analysis.id}')">Restore</button>`;
+          }
+
+          html += `
+            <tr style="${borderStyle}">
+              <td style="padding: 0.75rem; font-size: 0.9em;">${escapeHtml(analysis.name)}</td>
+              <td style="padding: 0.75rem;">${sourceBadge}</td>
+              <td style="padding: 0.75rem;">${validationBadge}</td>
+              <td style="padding: 0.75rem; font-size: 0.85em; color: #666;">${lastTested}</td>
+              <td style="padding: 0.75rem;">${actions}</td>
+            </tr>
+          `;
+        });
+
+        html += `
+            </tbody>
+          </table>
+        `;
+
+        container.innerHTML = html;
+      } else {
+        container.innerHTML = '<p class="small" style="color: #999;"><em>No analyses found</em></p>';
+      }
+    } catch (err) {
+      console.error('Failed to load analyses registry:', err);
+      container.innerHTML = '<p class="small" style="color: #f48771;">Error loading analysis registry</p>';
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  }
+
+  // Global restore function
+  window.restoreAnalysis = async function(scriptId) {
+    if (!confirm('This will replace your changes with the original built-in version. This cannot be undone. Continue?')) {
+      return;
+    }
+
+    try {
+      const resp = await fetch(`/api/scripts/analyses/restore/${scriptId}`, { method: 'POST' });
+      const result = await resp.json();
+
+      if (result.status === 'ok') {
+        alert('✓ Script restored to canonical version');
+        loadAnalysesRegistry();
+        loadAnalysesStatus();
+      } else {
+        alert(`✗ Restore failed: ${result.message}`);
+      }
+    } catch (err) {
+      alert(`✗ Restore failed: ${err.message}`);
+    }
+  };
+
+  // Re-sync built-ins link
+  document.getElementById('analyses-resync-link')?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    const link = e.target;
+    link.textContent = 'Syncing...';
+
+    try {
+      const resp = await fetch('/api/scripts/analyses/bootstrap', { method: 'POST' });
+      const result = await resp.json();
+
+      if (result.status === 'ok') {
+        if (result.imported > 0) {
+          alert(`✓ Imported ${result.imported} new built-in analyses`);
+          loadAnalysesRegistry();
+          loadAnalysesStatus();
+        } else {
+          alert('All built-ins are already synced');
+        }
+      } else {
+        alert(`✗ Sync failed: ${result.message}`);
+      }
+    } catch (err) {
+      alert(`✗ Sync failed: ${err.message}`);
+    } finally {
+      link.textContent = 'Re-sync built-ins';
+    }
+  });
+
+  // Initialize when section becomes active
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      loadAnalysesStatus();
+      loadAnalysesRegistry();
+    });
+  } else {
+    loadAnalysesStatus();
+    loadAnalysesRegistry();
+  }
+</script>
+
+<!-- Include shared validation modal -->
+{% include 'settings/_validation_modal.html' %}
+
+</section>

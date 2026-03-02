@@ -14,6 +14,37 @@ def _get_ext():
     """Get SciDK extensions from current Flask current_app."""
     return current_app.extensions['scidk']
 
+def _get_profile_credentials(profile_name):
+    """Load Neo4j profile credentials by name.
+
+    Args:
+        profile_name: Name of the profile to load
+
+    Returns:
+        dict: {uri, user, password, database, role} or None if not found
+    """
+    try:
+        from ...core.settings import get_setting
+
+        profile_key = f'neo4j_profile_{profile_name.replace(" ", "_")}'
+        profile_json = get_setting(profile_key)
+
+        if not profile_json:
+            return None
+
+        profile = json.loads(profile_json)
+
+        # Load password separately
+        password_key = f'neo4j_profile_password_{profile_name.replace(" ", "_")}'
+        password = get_setting(password_key)
+        if password:
+            profile['password'] = password
+
+        profile['name'] = profile_name
+        return profile
+    except Exception:
+        return None
+
 @bp.get('/graph/schema')
 def api_graph_schema():
         try:
@@ -308,6 +339,139 @@ def api_graph_schema_csv():
         csv_text = "\n".join(lines) + "\n"
         from flask import Response
         return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename="schema.csv"'})
+
+
+def _serialize_neo4j_value(value):
+    """Convert Neo4j objects to JSON-serializable dicts.
+
+    Handles Neo4j Node, Relationship, and Path objects, as well as
+    nested lists and dicts. Plain Python primitives pass through unchanged.
+    """
+    # Import Neo4j types only when needed to avoid import errors in tests
+    try:
+        from neo4j.graph import Node, Relationship, Path
+    except ImportError:
+        # If neo4j not installed, just return value as-is
+        Node = Relationship = Path = type(None)
+
+    if isinstance(value, Node):
+        return {
+            'id': value.id,
+            'labels': list(value.labels),
+            'properties': dict(value.items())
+        }
+    elif isinstance(value, Relationship):
+        return {
+            'id': value.id,
+            'type': value.type,
+            'start_node': value.start_node.id,
+            'end_node': value.end_node.id,
+            'properties': dict(value.items())
+        }
+    elif isinstance(value, Path):
+        return {
+            'nodes': [_serialize_neo4j_value(n) for n in value.nodes],
+            'relationships': [_serialize_neo4j_value(r) for r in value.relationships]
+        }
+    elif isinstance(value, list):
+        return [_serialize_neo4j_value(v) for v in value]
+    elif isinstance(value, dict):
+        # Recursively serialize dict values, but keep dict keys as-is
+        return {k: _serialize_neo4j_value(v) for k, v in value.items()}
+    else:
+        # Primitives (str, int, float, bool, None) pass through
+        return value
+
+
+@bp.post('/graph/query')
+def api_graph_query():
+    """Execute a Cypher query against Neo4j.
+
+    Request body:
+        {
+            "query": "MATCH (n) RETURN n LIMIT 10",
+            "parameters": {"optional": "params"}
+        }
+
+    Returns:
+        200: {
+            "status": "ok",
+            "results": [...],
+            "result_count": 10,
+            "execution_time_ms": 123
+        }
+        400: {"status": "error", "error": "Missing query"}
+        500: {"status": "error", "error": "Error message"}
+    """
+    import time
+    from ...services.neo4j_client import Neo4jClient, get_neo4j_params
+
+    data = request.get_json() or {}
+    query = (data.get('query') or '').strip()
+    parameters = data.get('parameters') or {}
+    profile_name = data.get('profile_name')  # Optional: specific profile to use
+
+    if not query:
+        return jsonify({'status': 'error', 'error': 'Missing query'}), 400
+
+    # Get Neo4j connection parameters
+    # If profile_name is provided, load that profile's credentials
+    if profile_name:
+        profile_creds = _get_profile_credentials(profile_name)
+        if not profile_creds:
+            return jsonify({
+                'status': 'error',
+                'error': f'Profile "{profile_name}" not found'
+            }), 404
+        uri = profile_creds.get('uri')
+        user = profile_creds.get('user')
+        password = profile_creds.get('password')
+        database = profile_creds.get('database')
+        auth_mode = 'basic'  # Profiles use basic auth
+    else:
+        # Fall back to default connection parameters
+        uri, user, password, database, auth_mode = get_neo4j_params(current_app)
+
+    if not uri:
+        return jsonify({
+            'status': 'error',
+            'error': 'Neo4j not configured. Please configure Neo4j in Settings or select a connection profile.'
+        }), 500
+
+    try:
+        # Execute query
+        start_time = time.time()
+        client = Neo4jClient(uri, user, password, database, auth_mode)
+        client.connect()
+
+        try:
+            # Use execute_read for queries that don't modify data
+            # (In production, you might want to detect write queries and use execute_write)
+            results = client.execute_read(query, parameters)
+
+            execution_time_ms = int((time.time() - start_time) * 1000)
+
+            # Serialize Neo4j objects to JSON-compatible format
+            serialized_results = [
+                {k: _serialize_neo4j_value(v) for k, v in row.items()}
+                for row in results
+            ]
+
+            return jsonify({
+                'status': 'ok',
+                'results': serialized_results,
+                'result_count': len(serialized_results),
+                'execution_time_ms': execution_time_ms
+            }), 200
+
+        finally:
+            client.close()
+
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
 
 
 @bp.get('/graph/subschema')

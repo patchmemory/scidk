@@ -1,0 +1,140 @@
+id: instrument_record
+name: InstrumentRecord
+version: 1.0.0
+description: >
+  Raw instrument parameters parsed from a hardware header or log file.
+  Stores acquisition settings exactly as recorded by the instrument —
+  voltage, current, exposure, rotation, reconstruction parameters, etc.
+  Every parseable field is stored. Unknown fields are stored with raw_ prefix.
+
+neo4j_label: InstrumentRecord
+plural: InstrumentRecords
+
+properties:
+  source_file:
+    type: string
+    required: true
+    key: true
+    description: "Absolute path to the source header/log file"
+    sanitize: none
+
+  instrument_model:
+    type: string
+    required: false
+    description: "Instrument model name from header"
+    sanitize: none
+
+  instrument_manufacturer:
+    type: string
+    required: false
+    description: "Instrument manufacturer"
+    sanitize: none
+
+  voltage_kv:
+    type: float
+    required: false
+    description: "Source voltage in kilovolts"
+    sanitize: none
+
+  current_ua:
+    type: float
+    required: false
+    description: "Source current in microamps"
+    sanitize: none
+
+  exposure_ms:
+    type: float
+    required: false
+    description: "Exposure time in milliseconds"
+    sanitize: none
+
+  rotation_step_deg:
+    type: float
+    required: false
+    description: "Rotation step in degrees"
+    sanitize: none
+
+  frame_averaging:
+    type: integer
+    required: false
+    description: "Number of frames averaged per projection"
+    sanitize: none
+
+  filter:
+    type: string
+    required: false
+    description: "Hardware filter e.g. Al 0.5mm"
+    sanitize: none
+
+  reconstruction_software:
+    type: string
+    required: false
+    description: "Reconstruction software name and version"
+    sanitize: none
+
+  reconstruction_algorithm:
+    type: string
+    required: false
+    description: "Reconstruction algorithm used"
+    sanitize: none
+
+  smoothing:
+    type: integer
+    required: false
+    description: "Smoothing parameter used in reconstruction"
+    sanitize: none
+
+  ring_artifact_correction:
+    type: integer
+    required: false
+    description: "Ring artifact correction parameter"
+    sanitize: none
+
+  beam_hardening_correction:
+    type: integer
+    required: false
+    description: "Beam hardening correction percentage"
+    sanitize: none
+
+  metadata_complete:
+    type: boolean
+    required: false
+    description: "False if some expected fields could not be parsed"
+    sanitize: none
+
+  parser:
+    type: string
+    required: false
+    description: "Interpreter ID that produced this record e.g. bruker_skyscan_log"
+    sanitize: none
+
+relationships:
+  - type: METADATA_SOURCE
+    to_label: ImagingDataset
+    direction: incoming
+    required: false
+    description: "ImagingDataset this record belongs to"
+
+indexes:
+  - property: source_file
+    type: unique
+  - property: instrument_model
+    type: standard
+
+test_fixture:
+  valid_node:
+    source_file: "/data/experiments/exp_001/scan_params.log"
+    instrument_model: "SkyScan 1272"
+    voltage_kv: 70.0
+    current_ua: 142.0
+    exposure_ms: 1200.0
+    rotation_step_deg: 0.4
+    parser: "bruker_skyscan_log"
+  expected_stored:
+    source_file: "/data/experiments/exp_001/scan_params.log"
+    instrument_model: "SkyScan 1272"
+    voltage_kv: 70.0
+    current_ua: 142.0
+    exposure_ms: 1200.0
+    rotation_step_deg: 0.4
+    parser: "bruker_skyscan_log"

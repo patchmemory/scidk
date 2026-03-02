@@ -1,4 +1,4 @@
-<section id="logs-section" class="settings-section">
+<section id="system-logs-section" class="settings-section">
   <h1>System Logs</h1>
   <p class="small">Real-time view of application logs. Auto-refreshes every 2 seconds.</p>
 
@@ -117,7 +117,7 @@
     }
 
     // Initialize on DOMContentLoaded if in logs section
-    if (document.getElementById('logs-section')) {
+    if (document.getElementById('system-logs-section')) {
       // Check if we're already loaded
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initLogsViewer);

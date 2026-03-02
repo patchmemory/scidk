@@ -1,0 +1,660 @@
+{% extends 'base.html' %}
+{% block title %}-SciDK-> Maps{% endblock %}
+{% block head %}
+<style>
+  /* Override base.html main width constraint for map page */
+  main {
+    max-width: 100% !important;
+    padding: 1rem 0.5rem !important;
+  }
+</style>
+{% endblock %}
+{% block content %}
+<section>
+  <h2>Schema Graph (Interactive)</h2>
+  <div class="row g-2" style="margin-bottom:.5rem">
+    <div class="col-auto">
+      <label for="schema-source" class="form-label small" style="margin-bottom:.25rem">Source</label>
+      <select id="schema-source" class="form-select form-select-sm" data-testid="schema-source-selector">
+        <option value="all" selected>All Sources</option>
+        <option value="labels">Local Labels</option>
+        <option value="neo4j">Neo4j Schema</option>
+        <option value="graph">In-Memory Graph</option>
+      </select>
+    </div>
+    <div class="col-auto">
+      <label for="filter-labels" class="form-label small" style="margin-bottom:.25rem">Labels</label>
+      <select id="filter-labels" class="form-select form-select-sm" data-testid="filter-labels">
+      </select>
+    </div>
+    <div class="col-auto">
+      <label for="filter-reltypes" class="form-label small" style="margin-bottom:.25rem">Relationship Types</label>
+      <select id="filter-reltypes" class="form-select form-select-sm" data-testid="filter-reltypes">
+      </select>
+    </div>
+    <div class="col-auto">
+      <label for="layout-mode" class="form-label small" style="margin-bottom:.25rem">Layout</label>
+      <select id="layout-mode" class="form-select form-select-sm">
+        <option value="cose">Force (cose)</option>
+        <option value="breadthfirst">Hierarchical (breadthfirst)</option>
+        <option value="manual">Manual</option>
+      </select>
+    </div>
+    <div class="col-auto" style="display:flex; gap:.5rem; align-items:end;">
+      <button id="save-positions" class="btn btn-sm btn-outline-secondary">Save</button>
+      <button id="load-positions" class="btn btn-sm btn-outline-secondary">Load</button>
+    </div>
+    <div class="col-auto">
+      <label for="node-size" class="form-label small" style="margin-bottom:.25rem">Node size</label>
+      <input id="node-size" type="range" class="form-range" min="0.5" max="3" step="0.1" value="1" style="width:140px">
+    </div>
+    <div class="col-auto">
+      <label for="edge-width" class="form-label small" style="margin-bottom:.25rem">Edge width</label>
+      <input id="edge-width" type="range" class="form-range" min="0.5" max="3" step="0.1" value="1" style="width:140px">
+    </div>
+    <div class="col-auto">
+      <label for="font-size" class="form-label small" style="margin-bottom:.25rem">Label font</label>
+      <input id="font-size" type="range" class="form-range" min="8" max="18" step="1" value="10" style="width:140px">
+    </div>
+    <div class="col-auto form-check" style="padding-top:1.6rem">
+      <input class="form-check-input" type="checkbox" id="high-contrast" />
+      <label class="form-check-label small" for="high-contrast">High-contrast labels</label>
+    </div>
+  </div>
+  <div id="schema-graph" data-testid="graph-explorer-root" style="width: 100%; height: 420px; border: 1px solid #ddd"></div>
+  <div style="margin-top: .5rem">
+    <button id="download-csv" class="btn btn-sm btn-outline-primary">Download Schema (CSV)</button>
+  </div>
+
+  <div style="margin-top:1rem">
+    <h3>Instances (preview & download)</h3>
+    <div class="row g-2" style="margin-bottom:.5rem">
+      <div class="col-auto">
+        <label for="instances-label" class="form-label small" style="margin-bottom:.25rem">Label</label>
+        <select id="instances-label" class="form-select form-select-sm">
+          <option value="Scan" selected>Scan</option>
+          <option value="File">File</option>
+          <option value="Folder">Folder</option>
+        </select>
+      </div>
+      <div class="col-auto" style="display:flex; gap:.5rem; align-items:end;">
+        <button id="instances-preview" class="btn btn-sm btn-outline-secondary">Preview</button>
+        <a id="dl-file-csv" class="btn btn-sm btn-outline-primary" href="/api/graph/instances.csv?label=File">Files CSV</a>
+        <a id="dl-folder-csv" class="btn btn-sm btn-outline-primary" href="/api/graph/instances.csv?label=Folder">Folders CSV</a>
+        <a id="dl-scan-csv" class="btn btn-sm btn-outline-primary" href="/api/graph/instances.csv?label=Scan">Scans CSV</a>
+        <a id="dl-file-xlsx" class="btn btn-sm btn-outline-secondary" href="/api/graph/instances.xlsx?label=File">Files XLSX</a>
+      </div>
+    </div>
+    <div id="instances-table" class="table-responsive" style="max-height:240px; overflow:auto; border:1px solid #eee"></div>
+  </div>
+
+  <!-- Query Panel -->
+  <div style="margin-top:2rem">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem">
+      <h3 style="margin:0">Cypher Query</h3>
+      <button id="toggle-query-panel" class="btn btn-sm btn-outline-secondary" data-testid="toggle-query-panel">
+        <span id="query-panel-icon">▼</span> <span id="query-panel-text">Collapse</span>
+      </button>
+    </div>
+    <div id="query-panel" style="display:block">
+      <textarea id="query-input" class="form-control" rows="4" placeholder="Enter Cypher query (e.g., MATCH (n:File) RETURN n LIMIT 10)" data-testid="query-input" style="font-family:monospace; font-size:0.9em"></textarea>
+      <div style="margin-top:0.5rem; display:flex; gap:0.5rem; align-items:center">
+        <button id="run-query" class="btn btn-sm btn-success" data-testid="run-query">▶ Run Query</button>
+        <button id="save-query" class="btn btn-sm btn-outline-secondary" data-testid="save-query">💾 Save</button>
+        <button id="load-library" class="btn btn-sm btn-outline-secondary" data-testid="load-library">📚 Library</button>
+        <button id="clear-query" class="btn btn-sm btn-outline-secondary" data-testid="clear-query">Clear</button>
+        <span id="query-status" class="small text-muted" style="margin-left:1rem"></span>
+      </div>
+      <div id="query-results" style="margin-top:1rem; display:none">
+        <h4>Results</h4>
+        <div id="query-results-content" class="table-responsive" style="max-height:400px; overflow:auto; border:1px solid #eee"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Graph Schema</h2>
+  <p class="small">MVP: table-based schema view showing node labels and relationship types with counts. Data reflects the current in-memory session.</p>
+  <div style="display:flex; gap:2rem; flex-wrap:wrap; align-items:flex-start;">
+    <div>
+      <h3>Node Labels</h3>
+      <table class="table table-sm">
+        <thead>
+          <tr><th>Label</th><th>Count</th></tr>
+        </thead>
+        <tbody>
+          {% for label, cnt in schema_summary.nodes.items() %}
+            <tr><td>{{ label }}</td><td>{{ cnt }}</td></tr>
+          {% else %}
+            <tr><td colspan="2" class="small">No nodes</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <h3>Relationship Types</h3>
+      <table class="table table-sm">
+        <thead>
+          <tr><th>Type</th><th>Count</th></tr>
+        </thead>
+        <tbody>
+          {% for rel, cnt in schema_summary.relations.items() %}
+            <tr><td>{{ rel }}</td><td>{{ cnt }}</td></tr>
+          {% else %}
+            <tr><td colspan="2" class="small">No relationships</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div>
+    <h3>Interpretation Types</h3>
+    {% set pref = ['csv','ipynb','json','python_code','txt','xlsx','yaml'] %}
+    {% set itypes = schema_summary.interpretation_types or [] %}
+    {% if itypes %}
+      <ul>
+        {% for it in pref if it in itypes %}<li>{{ it }}</li>{% endfor %}
+        {% for it in itypes if it not in pref %}<li>{{ it }}</li>{% endfor %}
+      </ul>
+    {% else %}
+      <p class="small">None</p>
+    {% endif %}
+  </div>
+</section>
+
+<script src="https://unpkg.com/cytoscape@3.27.0/dist/cytoscape.min.js"></script>
+<script>
+(async function() {
+  function qs(params){
+    const u = new URLSearchParams();
+    for (const [k,v] of Object.entries(params)) if (v) u.set(k, v);
+    return u.toString();
+  }
+  // Source color mapping
+  const sourceColors = {
+    'labels': '#e15759',        // Red - defined but not instantiated
+    'neo4j': '#59a14f',          // Green - from Neo4j
+    'graph': '#4e79a7',          // Blue - in-memory (current default)
+    'neo4j+labels': '#f28e2c',   // Orange - Neo4j + Labels
+    'graph+labels': '#af7aa1',   // Purple - Graph + Labels
+    'graph+neo4j': '#76b7b2',    // Teal - Graph + Neo4j
+    'all': '#edc949'             // Yellow - All three sources
+  };
+  async function fetchSchema(params) {
+    try {
+      const source = document.getElementById('schema-source')?.value || 'all';
+      params = params || {};
+      params.source = source;
+
+      const q = qs(params);
+      const url = '/api/graph/schema/combined' + (q ? '?' + q : '');
+      const res = await fetch(url);
+      return await res.json();
+    } catch (e) {
+      console.error('Schema fetch failed', e);
+      return { nodes: [], edges: [], sources: {} };
+    }
+  }
+  // Update filter dropdowns dynamically based on schema
+  function updateFilters(schema) {
+    const labelSelect = document.getElementById('filter-labels');
+    const relSelect = document.getElementById('filter-reltypes');
+
+    if (labelSelect) {
+      // Preserve current selection
+      const currentLabel = labelSelect.value;
+      // Get unique labels from schema, filtering out empty/null values
+      const labels = [...new Set(schema.nodes?.map(n => n.label).filter(l => l) || [])].sort();
+      labelSelect.innerHTML = '<option value="">All</option>' +
+        labels.map(l => `<option value="${l}">${l}</option>`).join('');
+      // Restore selection if still valid
+      if (currentLabel && labels.includes(currentLabel)) {
+        labelSelect.value = currentLabel;
+      }
+    }
+
+    if (relSelect) {
+      // Preserve current selection
+      const currentRel = relSelect.value;
+      // Get unique relationship types from schema, filtering out empty/null values
+      const rels = [...new Set(schema.edges?.map(e => e.rel_type).filter(r => r) || [])].sort();
+      relSelect.innerHTML = '<option value="">All</option>' +
+        rels.map(r => `<option value="${r}">${r}</option>`).join('');
+      // Restore selection if still valid
+      if (currentRel && rels.includes(currentRel)) {
+        relSelect.value = currentRel;
+      }
+    }
+  }
+  let nodeMul = 1.0;
+  let edgeMul = 1.0;
+  let labelFont = 10;
+  let highContrast = false;
+  function scaleBase(val) { return 14 + 8 * Math.log(1 + (val||1)); }
+  function scale(val) { return scaleBase(val) * nodeMul; }
+  function toElements(data){
+    const nodes = new Map();
+    for (const n of (data.nodes||[])) {
+      nodes.set(n.label, {
+        data: {
+          id: n.label,
+          label: n.label,
+          count: n.count,
+          source: n.source || 'graph'
+        }
+      });
+    }
+    const edges = [];
+    for (const e of (data.edges||[])) {
+      const id = `${e.start_label}|${e.rel_type}|${e.end_label}`;
+      if (!nodes.has(e.start_label)) {
+        nodes.set(e.start_label, {
+          data: { id: e.start_label, label: e.start_label, count: 1, source: e.source || 'graph' }
+        });
+      }
+      if (!nodes.has(e.end_label)) {
+        nodes.set(e.end_label, {
+          data: { id: e.end_label, label: e.end_label, count: 1, source: e.source || 'graph' }
+        });
+      }
+      edges.push({
+        data: {
+          id,
+          source: e.start_label,
+          target: e.end_label,
+          type: e.rel_type,
+          count: e.count,
+          edgeSource: e.source || 'graph'
+        }
+      });
+    }
+    return [...nodes.values(), ...edges];
+  }
+  let data = await fetchSchema();
+  updateFilters(data);  // Initialize filter dropdowns
+  const cy = cytoscape({
+    container: document.getElementById('schema-graph'),
+    elements: toElements(data),
+    style: [
+      { selector: 'node', style: {
+          'label': 'data(label)', 'text-valign': 'center', 'text-halign': 'center',
+          'background-color': ele => sourceColors[ele.data('source')] || sourceColors['graph'],
+          'color': '#fff', 'font-size': 10,
+          'width': ele => scale(ele.data('count')), 'height': ele => scale(ele.data('count'))
+      }},
+      { selector: 'edge', style: {
+          'curve-style': 'bezier',
+          'line-color': ele => sourceColors[ele.data('edgeSource')] || '#999',
+          'target-arrow-color': ele => sourceColors[ele.data('edgeSource')] || '#999',
+          'target-arrow-shape': 'triangle',
+          'width': ele => Math.max(1, Math.log(1 + (ele.data('count')||1))) * edgeMul,
+          'label': 'data(type)', 'font-size': () => labelFont, 'color': '#555', 'text-rotation': 'autorotate', 'text-margin-x': 2, 'text-margin-y': 2, 'text-outline-color': () => (highContrast ? '#fff' : 'transparent'), 'text-outline-width': () => (highContrast ? 3 : 0)
+      }}
+    ],
+    layout: { name: 'cose', animate: false }
+  });
+  function runLayout(name){
+    if (name === 'manual') return; // don't run a layout in manual mode
+    cy.layout({ name: name || 'cose', animate: false }).run();
+  }
+  function render(newData){
+    data = newData;
+    updateFilters(data);  // Update filter dropdowns with new schema
+    cy.json({ elements: toElements(data) });
+    const mode = (document.getElementById('layout-mode')||{}).value || 'cose';
+    runLayout(mode);
+  }
+  const sourceSel = document.getElementById('schema-source');
+  const lbl = document.getElementById('filter-labels');
+  const rlt = document.getElementById('filter-reltypes');
+  const layoutSel = document.getElementById('layout-mode');
+  const keyPos = 'scidk.schema.positions';
+  const keyLayout = 'scidk.schema.layout';
+  function savePositions(){
+    const pos = {};
+    cy.nodes().forEach(n => { pos[n.id()] = n.position(); });
+    localStorage.setItem(keyPos, JSON.stringify(pos));
+    const mode = layoutSel ? layoutSel.value : 'cose';
+    localStorage.setItem(keyLayout, mode);
+  }
+  function loadPositions(){
+    const pos = JSON.parse(localStorage.getItem(keyPos) || '{}');
+    const ids = Object.keys(pos);
+    if (ids.length){
+      cy.nodes().positions(n => pos[n.id()] || n.position());
+      cy.layout({ name: 'preset' }).run();
+    }
+    const savedLayout = localStorage.getItem(keyLayout);
+    if (savedLayout){ if (layoutSel) layoutSel.value = savedLayout; }
+  }
+  async function onFilter(){
+    const labels = lbl && lbl.value ? lbl.value : '';
+    const rel_types = rlt && rlt.value ? rlt.value : '';
+
+    // For combined schema endpoint, we filter on client-side for now
+    // (server-side filtering can be added later if needed)
+    const fullData = await fetchSchema();
+
+    let filteredNodes = fullData.nodes || [];
+    let filteredEdges = fullData.edges || [];
+
+    if (labels) {
+      // Filter nodes by label
+      filteredNodes = filteredNodes.filter(n => n.label === labels);
+      // Filter edges that connect to this label
+      filteredEdges = filteredEdges.filter(e =>
+        e.start_label === labels || e.end_label === labels
+      );
+    }
+
+    if (rel_types) {
+      // Filter edges by relationship type
+      filteredEdges = filteredEdges.filter(e => e.rel_type === rel_types);
+    }
+
+    const filteredData = {
+      nodes: filteredNodes,
+      edges: filteredEdges,
+      sources: fullData.sources
+    };
+
+    render(filteredData);
+  }
+  async function onSourceChange(){
+    // When source changes, reload full schema
+    const nd = await fetchSchema();
+    render(nd);
+  }
+  if (sourceSel) sourceSel.onchange = onSourceChange;
+  if (lbl) lbl.onchange = onFilter;
+  if (rlt) rlt.onchange = onFilter;
+  if (layoutSel) layoutSel.onchange = () => runLayout(layoutSel.value);
+  const btn = document.getElementById('download-csv');
+  if (btn) btn.onclick = () => { window.location = '/api/graph/schema.csv'; };
+  const btnSave = document.getElementById('save-positions');
+  const btnLoad = document.getElementById('load-positions');
+  if (btnSave) btnSave.onclick = savePositions;
+  if (btnLoad) btnLoad.onclick = loadPositions;
+  // tuning controls
+  const nodeSize = document.getElementById('node-size');
+  const edgeWidth = document.getElementById('edge-width');
+  const fontSize = document.getElementById('font-size');
+  const hc = document.getElementById('high-contrast');
+  function updateStyles(){ cy.style().update(); }
+  if (nodeSize) nodeSize.oninput = () => { nodeMul = parseFloat(nodeSize.value||'1'); updateStyles(); };
+  if (edgeWidth) edgeWidth.oninput = () => { edgeMul = parseFloat(edgeWidth.value||'1'); updateStyles(); };
+  if (fontSize) fontSize.oninput = () => { labelFont = parseInt(fontSize.value||'10', 10); updateStyles(); };
+  if (hc) hc.onchange = () => { highContrast = !!hc.checked; updateStyles(); };
+  // instances preview
+  const instSel = document.getElementById('instances-label');
+  const instBtn = document.getElementById('instances-preview');
+  const instDiv = document.getElementById('instances-table');
+  async function previewInstances(){
+    const label = instSel ? instSel.value : 'File';
+    const res = await fetch('/api/graph/instances?label=' + encodeURIComponent(label) + '&limit=50');
+    const data = await res.json();
+    const rows = data.rows || [];
+    if (!rows.length){ instDiv.innerHTML = '<p class="small" style="margin:.5rem">No rows</p>'; return; }
+    const cols = Object.keys(rows[0]);
+    let html = '<table class="table table-sm"><thead><tr>' + cols.map(c=>`<th>${c}</th>`).join('') + '</tr></thead><tbody>';
+    for (const r of rows){ html += '<tr>' + cols.map(c=>`<td>${(r[c]!==undefined&&r[c]!==null)?String(r[c]):''}</td>`).join('') + '</tr>'; }
+    html += '</tbody></table>';
+    instDiv.innerHTML = html;
+  }
+  if (instBtn) instBtn.onclick = previewInstances;
+
+  // Query Panel functionality
+  const toggleQueryPanel = document.getElementById('toggle-query-panel');
+  const queryPanel = document.getElementById('query-panel');
+  const queryPanelIcon = document.getElementById('query-panel-icon');
+  const queryPanelText = document.getElementById('query-panel-text');
+  const queryInput = document.getElementById('query-input');
+  const runQueryBtn = document.getElementById('run-query');
+  const saveQueryBtn = document.getElementById('save-query');
+  const loadLibraryBtn = document.getElementById('load-library');
+  const clearQueryBtn = document.getElementById('clear-query');
+  const queryStatus = document.getElementById('query-status');
+  const queryResults = document.getElementById('query-results');
+  const queryResultsContent = document.getElementById('query-results-content');
+
+  // Helper function to escape HTML
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // Toggle query panel collapse/expand
+  if (toggleQueryPanel) {
+    toggleQueryPanel.onclick = () => {
+      if (queryPanel.style.display === 'none') {
+        queryPanel.style.display = 'block';
+        queryPanelIcon.textContent = '▼';
+        queryPanelText.textContent = 'Collapse';
+      } else {
+        queryPanel.style.display = 'none';
+        queryPanelIcon.textContent = '▶';
+        queryPanelText.textContent = 'Expand';
+      }
+    };
+  }
+
+  // Run query
+  if (runQueryBtn) {
+    runQueryBtn.onclick = async () => {
+      const query = queryInput.value.trim();
+      if (!query) {
+        alert('Please enter a query');
+        return;
+      }
+
+      queryStatus.textContent = 'Running query...';
+      queryStatus.style.color = '#666';
+      runQueryBtn.disabled = true;
+
+      try {
+        const resp = await fetch('/api/graph/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query })
+        });
+        const data = await resp.json();
+
+        if (resp.ok && data.status === 'ok') {
+          queryStatus.textContent = `✓ Query executed - ${data.result_count || 0} results in ${data.execution_time_ms || 0}ms`;
+          queryStatus.style.color = '#28a745';
+
+          // Display results
+          if (data.results && data.results.length > 0) {
+            const keys = Object.keys(data.results[0]);
+            let tableHtml = `<table class="table table-sm">
+              <thead><tr>${keys.map(k => `<th>${escapeHtml(k)}</th>`).join('')}</tr></thead>
+              <tbody>`;
+
+            data.results.forEach(row => {
+              tableHtml += `<tr>${keys.map(k => {
+                const val = row[k];
+                // Handle complex objects (nodes, relationships, etc.)
+                if (val && typeof val === 'object') {
+                  return `<td><pre style="margin:0; font-size:0.85em">${escapeHtml(JSON.stringify(val, null, 2))}</pre></td>`;
+                }
+                return `<td>${escapeHtml(String(val != null ? val : ''))}</td>`;
+              }).join('')}</tr>`;
+            });
+
+            tableHtml += `</tbody></table>`;
+            queryResultsContent.innerHTML = tableHtml;
+            queryResults.style.display = 'block';
+          } else {
+            queryResultsContent.innerHTML = '<p class="small text-muted">Query executed but returned no results.</p>';
+            queryResults.style.display = 'block';
+          }
+        } else {
+          queryStatus.textContent = `✗ Error: ${data.error || 'Query failed'}`;
+          queryStatus.style.color = '#dc3545';
+        }
+      } catch (err) {
+        queryStatus.textContent = `✗ Error: ${err.message}`;
+        queryStatus.style.color = '#dc3545';
+      } finally {
+        runQueryBtn.disabled = false;
+      }
+    };
+  }
+
+  // Save query
+  if (saveQueryBtn) {
+    saveQueryBtn.onclick = async () => {
+      const query = queryInput.value.trim();
+      if (!query) {
+        alert('Please enter a query to save');
+        return;
+      }
+
+      const name = prompt('Enter a name for this query:');
+      if (!name) return;
+
+      const description = prompt('Description (optional):') || '';
+      const tagsInput = prompt('Tags (comma-separated, optional):') || '';
+      const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
+
+      try {
+        const resp = await fetch('/api/queries', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            query,
+            description: description || undefined,
+            tags: tags.length > 0 ? tags : undefined,
+            metadata: {
+              saved_from: 'maps_query_panel'
+            }
+          })
+        });
+
+        if (resp.ok) {
+          queryStatus.textContent = `✓ Query saved as "${name}"`;
+          queryStatus.style.color = '#28a745';
+          setTimeout(() => {
+            queryStatus.textContent = '';
+          }, 3000);
+        } else {
+          const data = await resp.json();
+          alert(`Failed to save query: ${data.error || 'Unknown error'}`);
+        }
+      } catch (err) {
+        alert(`Failed to save query: ${err.message}`);
+      }
+    };
+  }
+
+  // Load query library
+  if (loadLibraryBtn) {
+    loadLibraryBtn.onclick = async () => {
+      try {
+        const resp = await fetch('/api/queries?sort_by=last_used_at');
+        const data = await resp.json();
+
+        if (!resp.ok || !data.queries || data.queries.length === 0) {
+          alert('No saved queries found');
+          return;
+        }
+
+        // Create query library modal (reuse pattern from Chat page)
+        const libraryHtml = data.queries.map(q =>
+          `<div style="margin-bottom:1rem; padding:0.75rem; border:1px solid #ddd; border-radius:4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <strong>${escapeHtml(q.name)}</strong>
+                ${q.tags && q.tags.length > 0 ? `<div class="small">${q.tags.map(t => `<span class="badge" style="background:#6c757d;margin-right:0.25rem">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+                ${q.description ? `<div class="small text-muted">${escapeHtml(q.description)}</div>` : ''}
+              </div>
+              <div>
+                <button class="btn btn-sm btn-outline-primary" onclick="loadQueryById('${q.id}', '${escapeHtml(q.name).replace(/'/g, "\\'")}')">Load</button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteQueryById('${q.id}')">Delete</button>
+              </div>
+            </div>
+            <pre style="margin-top:0.5rem; font-size:0.85em; background:#f8f9fa; padding:0.5rem; border-radius:3px; max-height:100px; overflow:auto;">${escapeHtml(q.query)}</pre>
+            <div class="small text-muted">
+              Created: ${new Date(q.created_at * 1000).toLocaleString()}
+              ${q.use_count > 0 ? ` · Used ${q.use_count} time${q.use_count !== 1 ? 's' : ''}` : ''}
+              ${q.last_used_at ? ` · Last used: ${new Date(q.last_used_at * 1000).toLocaleString()}` : ''}
+            </div>
+          </div>`
+        ).join('');
+
+        // Show modal
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center;';
+        overlay.innerHTML = `<div style="background:#fff; padding:2rem; border-radius:8px; max-width:800px; max-height:80vh; overflow:auto; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <h3 style="margin:0;">Query Library (${data.queries.length})</h3>
+            <button class="btn btn-sm btn-secondary" onclick="this.closest('[style*=fixed]').remove()">Close</button>
+          </div>
+          ${libraryHtml}
+        </div>`;
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) overlay.remove();
+        });
+      } catch (err) {
+        alert(`Failed to load query library: ${err.message}`);
+      }
+    };
+  }
+
+  // Global functions for query library
+  window.loadQueryById = async (queryId, queryName) => {
+    try {
+      const resp = await fetch(`/api/queries/${queryId}`);
+      const data = await resp.json();
+
+      if (resp.ok && data.query) {
+        queryInput.value = data.query.query;
+        queryStatus.textContent = `✓ Loaded "${queryName}"`;
+        queryStatus.style.color = '#28a745';
+        document.querySelector('[style*="fixed"]')?.remove();
+
+        // Record usage
+        fetch(`/api/queries/${queryId}/use`, { method: 'POST' }).catch(() => {});
+
+        setTimeout(() => {
+          queryStatus.textContent = '';
+        }, 3000);
+      }
+    } catch (err) {
+      alert(`Failed to load query: ${err.message}`);
+    }
+  };
+
+  window.deleteQueryById = async (queryId) => {
+    if (!confirm('Delete this query from the library?')) return;
+
+    try {
+      const resp = await fetch(`/api/queries/${queryId}`, { method: 'DELETE' });
+
+      if (resp.ok) {
+        document.querySelector('[style*="fixed"]')?.remove();
+        loadLibraryBtn.click(); // Refresh the library view
+      } else {
+        const data = await resp.json();
+        alert(`Failed to delete: ${data.error}`);
+      }
+    } catch (err) {
+      alert(`Failed to delete: ${err.message}`);
+    }
+  };
+
+  // Clear query
+  if (clearQueryBtn) {
+    clearQueryBtn.onclick = () => {
+      queryInput.value = '';
+      queryResults.style.display = 'none';
+      queryStatus.textContent = '';
+    };
+  }
+})();
+</script>
+{% endblock %}

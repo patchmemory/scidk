@@ -125,6 +125,24 @@ def commit_to_neo4j(rows: List[Dict[str, Any]], folder_rows: List[Dict[str, Any]
             result['written_folders'] = wres.get('written_folders', 0)
             vres = client.verify(scan.get('id'))
             result.update(vres)
+
+            # Write interpreter-declared domain nodes (Phase 1: Interpreter Contract Extension)
+            try:
+                from ..services.commit_service import CommitService
+                commit_svc = CommitService()
+                declared_nodes, declared_rels = commit_svc.extract_declared_nodes_from_scan(scan.get('id'))
+
+                if declared_nodes or declared_rels:
+                    domain_result = client.write_declared_nodes(declared_nodes, declared_rels)
+                    result['domain_nodes_written'] = domain_result.get('written_nodes', 0)
+                    result['domain_relationships_written'] = domain_result.get('written_relationships', 0)
+                    if domain_result.get('errors'):
+                        result['domain_node_errors'] = domain_result['errors']
+
+            except Exception as domain_err:
+                # Non-fatal: domain node writes are optional
+                result['domain_node_error'] = str(domain_err)
+
         finally:
             client.close()
     except Exception as e:
@@ -578,6 +596,43 @@ def commit_to_neo4j_batched(
                 result["db_files"] = files_cnt
                 result["db_folders"] = folders_cnt
                 result["db_verified"] = bool(scan_exists and (files_cnt > 0 or folders_cnt > 0))
+
+            # Write interpreter-declared domain nodes (Phase 1: Interpreter Contract Extension)
+            try:
+                from ..services.commit_service import CommitService
+                from ..services.neo4j_client import Neo4jClient
+
+                commit_svc = CommitService()
+                declared_nodes, declared_rels = commit_svc.extract_declared_nodes_from_scan(scan.get("id"))
+
+                if declared_nodes or declared_rels:
+                    on_progress("domain_nodes_start", {
+                        "nodes": len(declared_nodes),
+                        "relationships": len(declared_rels)
+                    })
+
+                    # Use Neo4jClient directly since we're already in a transaction context
+                    client = Neo4jClient(uri, user, pwd, database, auth_mode)
+                    client.connect()
+                    try:
+                        domain_result = client.write_declared_nodes(declared_nodes, declared_rels)
+                        result["domain_nodes_written"] = domain_result.get("written_nodes", 0)
+                        result["domain_relationships_written"] = domain_result.get("written_relationships", 0)
+                        if domain_result.get("errors"):
+                            result["domain_node_errors"] = domain_result["errors"]
+
+                        on_progress("domain_nodes_done", {
+                            "written_nodes": result.get("domain_nodes_written", 0),
+                            "written_relationships": result.get("domain_relationships_written", 0),
+                            "errors": len(domain_result.get("errors", []))
+                        })
+                    finally:
+                        client.close()
+
+            except Exception as domain_err:
+                # Non-fatal: domain node writes are optional, don't fail the entire commit
+                result["domain_node_error"] = str(domain_err)
+                on_progress("domain_nodes_error", {"error": str(domain_err)})
 
             on_progress("done", {
                 "scan_id": scan.get("id"),

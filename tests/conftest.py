@@ -3,6 +3,9 @@ import tempfile
 from pathlib import Path
 import pytest
 
+# Import transparency layer test fixtures
+pytest_plugins = ['tests.fixtures.transparency_test_data']
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _pin_repo_local_test_env():
@@ -29,6 +32,9 @@ def _pin_repo_local_test_env():
 
     # Clean up test users from SQLite database
     _cleanup_test_users_from_db(db_dir / 'unit_integration.db')
+
+    # Clean up test wizard links from unit_integration.db (link_definitions table via pix.connect())
+    _cleanup_test_wizard_links_from_db(db_dir / 'unit_integration.db')
 
     # OS temp for tempfile and libraries
     os.environ.setdefault("TMPDIR", str(tmp_root))
@@ -258,6 +264,47 @@ def _cleanup_test_users_from_db(db_path: Path):
             if cur.fetchone():
                 for pattern in test_user_patterns:
                     cur.execute("DELETE FROM auth_audit_log WHERE username LIKE ?", (pattern,))
+
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass  # Silently fail; don't break test runs
+
+
+def _cleanup_test_wizard_links_from_db(db_path: Path):
+    """Remove duplicate wizard links from the SQLite database before test runs.
+
+    This prevents accumulation of wizard links from test runs.
+    Keeps only unique links by name (oldest of each name).
+
+    Args:
+        db_path: Path to the SQLite database file
+    """
+    if not db_path.exists():
+        return
+
+    try:
+        import sqlite3
+        conn = sqlite3.connect(str(db_path))
+        try:
+            cur = conn.cursor()
+
+            # Check if link_definitions table exists
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='link_definitions'")
+            if not cur.fetchone():
+                return
+
+            # Keep only unique links by name (keep the oldest of each name)
+            # All links in link_definitions are "wizard" type (created via UI)
+            cur.execute("""
+                DELETE FROM link_definitions
+                WHERE id NOT IN (
+                    SELECT MIN(id)
+                    FROM link_definitions
+                    GROUP BY name
+                )
+            """)
 
             conn.commit()
         finally:

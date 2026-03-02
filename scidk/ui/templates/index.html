@@ -23,14 +23,56 @@
     padding: 1rem 0;
   }
 
-  .settings-sidebar-item {
+  .settings-section-header {
     padding: 0.75rem 1.5rem;
+    cursor: pointer;
+    color: var(--fg);
+    font-weight: 600;
+    font-size: 0.95em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: all 0.15s ease;
+    border-left: 3px solid transparent;
+  }
+
+  .settings-section-header:hover {
+    background: #f0f0f0;
+  }
+
+  .settings-section-header.active {
+    background: #f0f0f0;
+  }
+
+  .settings-section-header .chevron {
+    transition: transform 0.2s ease;
+    font-size: 0.75em;
+  }
+
+  .settings-section-header.expanded .chevron {
+    transform: rotate(90deg);
+  }
+
+  .settings-subsection-list {
+    display: none;
+    padding-left: 0;
+  }
+
+  .settings-subsection-list.expanded {
+    display: block;
+  }
+
+  .settings-sidebar-item {
+    padding: 0.6rem 1.5rem 0.6rem 2.5rem;
     cursor: pointer;
     color: var(--fg);
     text-decoration: none;
     display: block;
     border-left: 3px solid transparent;
     transition: all 0.15s ease;
+    font-size: 0.9em;
   }
 
   .settings-sidebar-item:hover {
@@ -83,41 +125,165 @@
 <div class="settings-container">
   <!-- Sidebar Navigation -->
   <nav class="settings-sidebar">
-    <a href="#general" class="settings-sidebar-item active" data-section="general">General</a>
-    <a href="#providers" class="settings-sidebar-item" data-section="providers">File Providers</a>
-    <a href="#neo4j" class="settings-sidebar-item" data-section="neo4j">Neo4j</a>
-    <a href="#chat" class="settings-sidebar-item" data-section="chat">Chat</a>
-    <a href="#interpreters" class="settings-sidebar-item" data-section="interpreters">Interpreters</a>
-    <a href="#plugins" class="settings-sidebar-item" data-section="plugins">Plugins</a>
-    <a href="#rclone" class="settings-sidebar-item" data-section="rclone">Rclone</a>
-    <a href="#integrations" class="settings-sidebar-item" data-section="integrations">Integrations</a>
-    <a href="#alerts" class="settings-sidebar-item" data-section="alerts">Alerts</a>
-    <a href="#health" class="settings-sidebar-item" data-section="health">Health</a>
-    <a href="#logs" class="settings-sidebar-item" data-section="logs">Logs</a>
+    <!-- System Section -->
+    <div class="settings-section-header expanded" data-section="system">
+      <span>System</span>
+      <span class="chevron">▸</span>
+    </div>
+    <div class="settings-subsection-list expanded">
+      <a href="#system/overview" class="settings-sidebar-item active" data-section="system-overview">Overview</a>
+      <a href="#system/health" class="settings-sidebar-item" data-section="system-health">Health</a>
+      <a href="#system/logs" class="settings-sidebar-item" data-section="system-logs">Logs</a>
+      <a href="#system/alerts" class="settings-sidebar-item" data-section="system-alerts">Alerts</a>
+      <a href="#system/configuration" class="settings-sidebar-item" data-section="system-configuration">Configuration</a>
+    </div>
+
+    <!-- Connections Section -->
+    <div class="settings-section-header" data-section="connections">
+      <span>Connections</span>
+      <span class="chevron">▸</span>
+    </div>
+    <div class="settings-subsection-list">
+      <a href="#connections/neo4j" class="settings-sidebar-item" data-section="connections-neo4j">Neo4j</a>
+      <a href="#connections/local-storage" class="settings-sidebar-item" data-section="connections-local-storage">Local Storage</a>
+      <a href="#connections/rclone" class="settings-sidebar-item" data-section="connections-rclone">Rclone</a>
+    </div>
+
+    <!-- AI & Chat Section -->
+    <div class="settings-section-header" data-section="ai-chat">
+      <span>AI & Chat</span>
+      <span class="chevron">▸</span>
+    </div>
+    <div class="settings-subsection-list">
+      <a href="#ai-chat/llm-provider" class="settings-sidebar-item" data-section="ai-chat-llm-provider">LLM Provider</a>
+      <a href="#ai-chat/behavior" class="settings-sidebar-item" data-section="ai-chat-behavior">Behavior</a>
+      <a href="#ai-chat/history" class="settings-sidebar-item" data-section="ai-chat-history">Chat History</a>
+    </div>
+
+    <!-- Security Section -->
+    <div class="settings-section-header" data-section="security">
+      <span>Security</span>
+      <span class="chevron">▸</span>
+    </div>
+    <div class="settings-subsection-list" id="security-subsection-list">
+      <a href="#security/overview" class="settings-sidebar-item" data-section="security-overview">Overview</a>
+      <a href="#security/users" class="settings-sidebar-item admin-only" data-section="security-users">Users</a>
+      <a href="#security/audit-log" class="settings-sidebar-item admin-only" data-section="security-audit-log">Audit Log</a>
+      <div class="settings-sidebar-item non-admin-message" style="display: none; color: #999; cursor: default; font-style: italic;">
+        Admin access required
+      </div>
+    </div>
+
+    <!-- Modules Section -->
+    <div class="settings-section-header" data-section="modules">
+      <span>Modules</span>
+      <span class="chevron">▸</span>
+    </div>
+    <div class="settings-subsection-list">
+      <a href="#modules/overview" class="settings-sidebar-item" data-section="modules-overview">Overview</a>
+      <a href="#modules/interpreters" class="settings-sidebar-item" data-section="modules-interpreters">Interpreters</a>
+      <a href="#modules/plugins" class="settings-sidebar-item" data-section="modules-plugins">Plugins</a>
+      <a href="#modules/links" class="settings-sidebar-item" data-section="modules-links">Links</a>
+      <a href="#modules/examples" class="settings-sidebar-item" data-section="modules-examples">Examples</a>
+      <a href="#modules/labels" class="settings-sidebar-item" data-section="modules-labels">Labels</a>
+      <a href="#modules/analyses" class="settings-sidebar-item" data-section="modules-analyses">Analyses</a>
+      <a href="#modules/scripts" class="settings-sidebar-item" data-section="modules-scripts">Scripts</a>
+    </div>
   </nav>
 
   <!-- Content Area -->
   <div class="settings-content">
-    {% include 'settings/_general.html' %}
-    {% include 'settings/_providers.html' %}
-    {% include 'settings/_neo4j.html' %}
-    {% include 'settings/_chat.html' %}
-    {% include 'settings/_interpreters.html' %}
-    {% include 'settings/_plugins.html' %}
-    {% include 'settings/_rclone.html' %}
-    {% include 'settings/_integrations.html' %}
-    {% include 'settings/_alerts.html' %}
+    <!-- System sections -->
+    {% include 'settings/_system_overview.html' %}
     {% include 'settings/_health.html' %}
     {% include 'settings/_logs.html' %}
+    {% include 'settings/_alerts.html' %}
+    {% include 'settings/_system_configuration.html' %}
+
+    <!-- Connections sections -->
+    {% include 'settings/_neo4j.html' %}
+    {% include 'settings/_connections_local_storage.html' %}
+    {% include 'settings/_rclone.html' %}
+
+    <!-- AI & Chat sections -->
+    {% include 'settings/_ai_llm_provider.html' %}
+    {% include 'settings/_ai_behavior.html' %}
+    {% include 'settings/_ai_history.html' %}
+
+    <!-- Security sections -->
+    {% include 'settings/_security_overview.html' %}
+    {% include 'settings/_security_users.html' %}
+    {% include 'settings/_security_audit_log.html' %}
+
+    <!-- Modules sections -->
+    {% include 'settings/_modules_overview.html' %}
+    {% include 'settings/_modules_interpreters.html' %}
+    {% include 'settings/_modules_plugins.html' %}
+    {% include 'settings/_modules_links.html' %}
+    {% include 'settings/_modules_examples.html' %}
+    {% include 'settings/_modules_labels.html' %}
+    {% include 'settings/_modules_analyses.html' %}
+    {% include 'settings/_modules_scripts.html' %}
   </div>
 </div>
 
 <script>
-  // Settings navigation - shared tab switching logic
-  document.addEventListener('DOMContentLoaded', () => {
+  // Settings navigation - hierarchical collapsible sections
+  document.addEventListener('DOMContentLoaded', async () => {
+    const sectionHeaders = document.querySelectorAll('.settings-section-header');
     const navItems = document.querySelectorAll('.settings-sidebar-item');
     const sections = document.querySelectorAll('.settings-section');
 
+    // Check auth status and apply admin-only restrictions
+    try {
+      const response = await fetch('/api/auth/status');
+      const authData = await response.json();
+      const isAdmin = authData.role === 'admin';
+
+      // Handle admin-only elements
+      const adminOnlyItems = document.querySelectorAll('.admin-only');
+      const nonAdminMessage = document.querySelector('.non-admin-message');
+
+      if (!isAdmin) {
+        // Hide admin-only items and show message
+        adminOnlyItems.forEach(item => {
+          item.style.display = 'none';
+        });
+        if (nonAdminMessage) {
+          nonAdminMessage.style.display = 'block';
+        }
+      } else {
+        // Show admin items (default, but explicit for clarity)
+        adminOnlyItems.forEach(item => {
+          item.style.display = 'block';
+        });
+        if (nonAdminMessage) {
+          nonAdminMessage.style.display = 'none';
+        }
+      }
+    } catch (err) {
+      console.error('Failed to check auth status:', err);
+      // On error, assume non-admin (safe default)
+      document.querySelectorAll('.admin-only').forEach(item => item.style.display = 'none');
+      const nonAdminMessage = document.querySelector('.non-admin-message');
+      if (nonAdminMessage) {
+        nonAdminMessage.style.display = 'block';
+      }
+    }
+
+    // Section header click - toggle expand/collapse
+    sectionHeaders.forEach(header => {
+      header.addEventListener('click', (e) => {
+        const subsectionList = header.nextElementSibling;
+        const isExpanded = header.classList.contains('expanded');
+
+        // Toggle this section
+        header.classList.toggle('expanded');
+        subsectionList.classList.toggle('expanded');
+      });
+    });
+
+    // Sub-section item click - show content
     navItems.forEach(item => {
       item.addEventListener('click', (e) => {
         e.preventDefault();
@@ -129,17 +295,30 @@
         // Show corresponding section
         const sectionId = item.dataset.section + '-section';
         sections.forEach(section => section.classList.remove('active'));
-        document.getElementById(sectionId).classList.add('active');
+        const targetSection = document.getElementById(sectionId);
+        if (targetSection) {
+          targetSection.classList.add('active');
+        }
+
+        // Ensure parent section is expanded
+        const parentList = item.parentElement;
+        const parentHeader = parentList.previousElementSibling;
+        if (!parentHeader.classList.contains('expanded')) {
+          parentHeader.classList.add('expanded');
+          parentList.classList.add('expanded');
+        }
 
         // Update URL hash without scrolling
-        history.replaceState(null, null, '#' + item.dataset.section);
+        history.replaceState(null, null, item.getAttribute('href'));
       });
     });
 
     // Handle initial hash navigation
     const hash = window.location.hash.slice(1);
     if (hash) {
-      const targetNav = document.querySelector(`[data-section="${hash}"]`);
+      // Try to find matching subsection (e.g., "system/overview" -> "system-overview")
+      const sectionId = hash.replace('/', '-');
+      const targetNav = document.querySelector(`[data-section="${sectionId}"]`);
       if (targetNav) {
         targetNav.click();
       }

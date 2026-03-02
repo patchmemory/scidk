@@ -59,7 +59,7 @@ def api_chat_graphrag():
         # Reuse existing Neo4j connection params
         try:
             from ...services.neo4j_client import get_neo4j_params
-            uri, user, pwd, database, auth_mode = get_neo4j_params(app)
+            uri, user, pwd, database, auth_mode = get_neo4j_params(current_app)
         except Exception:
             uri = user = pwd = database = auth_mode = None
         if not uri:
@@ -122,55 +122,115 @@ def api_chat_graphrag():
                 schema_cache['last_loaded_ts'] = now
             neo4j_schema = schema_cache.get('schema') or {"labels": [], "relationships": []}
 
-            # Use new QueryEngine with entity extraction
-            from ...services.graphrag.query_engine import QueryEngine
-            anthropic_key = os.environ.get('SCIDK_ANTHROPIC_API_KEY')
-            verbose = (os.environ.get('SCIDK_GRAPHRAG_VERBOSE') or '').strip().lower() in ('1','true','yes')
+            # Classify intent for routing (LOOKUP vs REASONING)
+            from ...services.graphrag.intent_classifier import classify, Intent
+            intent = classify(message)
 
-            engine = QueryEngine(
-                driver=driver,
-                neo4j_schema=neo4j_schema,
-                anthropic_api_key=anthropic_key,
-                examples=t2c_examples,
-                verbose=verbose
-            )
+            # Route based on intent
+            if intent == Intent.LOOKUP:
+                # LOOKUP path: Fast Text2Cypher via QueryEngine
+                from ...services.graphrag.query_engine import QueryEngine
+                anthropic_key = os.environ.get('SCIDK_ANTHROPIC_API_KEY')
+                verbose = (os.environ.get('SCIDK_GRAPHRAG_VERBOSE') or '').strip().lower() in ('1','true','yes')
 
-            # Execute query
-            result = engine.query(message)
+                query_engine = QueryEngine(
+                    driver=driver,
+                    neo4j_schema=neo4j_schema,
+                    anthropic_api_key=anthropic_key,
+                    database=database,
+                    verbose=verbose
+                )
 
-            if result.get('status') == 'error':
-                return jsonify(result), 500
+                # Execute query
+                result = query_engine.query(message)
 
-            result_text = result.get('answer', 'No results found')
+                if result.get('status') == 'error':
+                    return jsonify(result), 500
+
+                result_text = result.get('answer', 'No results found')
+
+                # Build response with engine type and cypher for UI
+                response_data = {
+                    "status": "ok",
+                    "reply": result_text,
+                    "engine": result.get('engine', 'graph_query'),  # For UI badge
+                    "cypher_query": result.get('cypher_query'),  # For citations panel
+                }
+
+                # Include metadata
+                response_data["metadata"] = {
+                    "entities": result.get('entities', {}),
+                    "execution_time_ms": result.get('execution_time_ms', 0),
+                    "result_count": result.get('result_count', 0)
+                }
+
+                if verbose and 'results' in result:
+                    response_data["metadata"]["results"] = result['results']
+
+            else:
+                # REASONING path: Use existing /v2 provider architecture
+                # This gives full LLM reasoning with schema context
+                from ...ai.schema_context import get_schema_context
+                from ...ai.provider_factory import LLMProviderFactory
+
+                schema_context = get_schema_context(driver, database=database or "neo4j")
+
+                # Build settings dict from environment/config
+                settings = {
+                    'chat_llm_provider': data.get('provider') or os.environ.get('SCIDK_CHAT_LLM_PROVIDER'),
+                    'chat_ollama_endpoint': os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT'),
+                    'chat_ollama_model': os.environ.get('SCIDK_CHAT_OLLAMA_MODEL'),
+                    'chat_claude_api_key': os.environ.get('SCIDK_CHAT_CLAUDE_API_KEY'),
+                    'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
+                }
+
+                provider_obj = LLMProviderFactory.from_settings(settings)
+
+                # Base system prompt
+                base_prompt = "You are a research data assistant for SciDK. Answer questions about the knowledge graph and scientific data."
+
+                # Complete (non-streaming)
+                start_time_reasoning = time.time()
+                response_text = provider_obj.complete(
+                    user_message=message,
+                    system_prompt=base_prompt,
+                    schema_context=schema_context
+                )
+                elapsed_ms = int((time.time() - start_time_reasoning) * 1000)
+
+                # Build response
+                provider_info = provider_obj.health_check()
+
+                response_data = {
+                    "status": "ok",
+                    "reply": response_text,
+                    "engine": "reasoning",  # For UI badge
+                    "metadata": {
+                        "provider": provider_info.get("provider"),
+                        "model": provider_info.get("model"),
+                        "cached_schema": schema_context.get("cached", False),
+                        "schema_labels_count": len(schema_context.get("labels", [])),
+                        "execution_time_ms": elapsed_ms
+                    }
+                }
 
             # Track history and minimal audit
             store = _get_ext().setdefault('chat', {"history": []})
-            store['history'].extend([{"role":"user","content":message},{"role":"assistant","content":result_text}])
+            store['history'].extend([{"role":"user","content":message},{"role":"assistant","content":response_data.get('reply','')}])
             audit = _get_ext().setdefault('telemetry', {}).setdefault('graphrag_audit', [])
             try:
                 audit.append({
                     'ts': int(time.time()),
                     'message': message[:500],
-                    'reply_len': len(result_text or ''),
-                    'execution_time_ms': result.get('execution_time_ms', 0),
+                    'reply_len': len(response_data.get('reply', '') or ''),
+                    'execution_time_ms': response_data.get('metadata', {}).get('execution_time_ms', 0),
+                    'engine': response_data.get('engine', 'unknown'),
                 })
             except Exception:
                 pass
 
-            # Build response with metadata for enhanced UI
-            response_data = {
-                "status": "ok",
-                "reply": result_text,
-                "history": store['history']
-            }
-
-            # Include metadata if verbose mode
-            if verbose:
-                response_data["metadata"] = {
-                    "entities": result.get('entities', {}),
-                    "execution_time_ms": result.get('execution_time_ms', 0),
-                    "result_count": len(result.get('results', []))
-                }
+            # Add history to response
+            response_data["history"] = store['history']
 
             return jsonify(response_data), 200
         except Exception as e:
@@ -193,7 +253,7 @@ def api_chat_context_refresh():
         try:
             from ...services.neo4j_client import get_neo4j_params
             from neo4j import GraphDatabase  # type: ignore
-            uri, user, pwd, database, auth_mode = get_neo4j_params(app)
+            uri, user, pwd, database, auth_mode = get_neo4j_params(current_app)
             if not uri:
                 from ...services.graphrag_schema import normalize_error
                 return jsonify(normalize_error(status="error", error="Neo4j not configured", code="NEO4J_CONFIG_MISSING", hint="Set NEO4J_URI and credentials or NEO4J_AUTH=none")), 500
@@ -947,3 +1007,261 @@ def get_terminology_mappings():
     return jsonify({
         'mappings': mappings
     }), 200
+
+
+# ============================================================================
+# New Provider Architecture (Phase 2/3) - Multi-provider with streaming
+# ============================================================================
+
+@bp.post('/chat/graphrag/v2')
+def api_chat_graphrag_v2():
+    """
+    GraphRAG with new provider architecture and schema grounding.
+
+    Features:
+    - Multi-provider support (Ollama/Claude/OpenAI)
+    - Schema grounding (prevents LLM hallucination)
+    - No streaming (use /chat/graphrag/v2/stream for streaming)
+
+    Body:
+        message: str (required)
+        provider: str (optional, uses setting/env if not specified)
+
+    Returns:
+        200: {status, reply, metadata: {provider, model, cached_schema, ...}}
+        500: {status: error, error: str}
+    """
+    enabled = (os.environ.get('SCIDK_GRAPHRAG_ENABLED') or '').strip().lower() in ('1','true','yes','on','y')
+    if not enabled:
+        from ...services.graphrag_schema import normalize_error
+        return jsonify(normalize_error(
+            status="disabled",
+            error="GraphRAG disabled",
+            code="GR_DISABLED",
+            hint="Set SCIDK_GRAPHRAG_ENABLED=1"
+        )), 501
+
+    data = request.get_json(force=True, silent=True) or {}
+    message = (data.get('message') or '').strip()
+    if not message:
+        return jsonify({"status": "error", "error": "message required"}), 400
+
+    try:
+        # Get Neo4j connection
+        from ...services.neo4j_client import get_neo4j_params
+        from neo4j import GraphDatabase
+        uri, user, pwd, database, auth_mode = get_neo4j_params(current_app)
+
+        if not uri:
+            return jsonify({
+                "status": "error",
+                "error": "Neo4j not configured",
+                "hint": "Set NEO4J_URI and credentials"
+            }), 500
+
+        auth = None if (auth_mode or 'basic').lower() == 'none' else (user, pwd)
+        driver = GraphDatabase.driver(uri, auth=auth)
+
+        # Get schema context for grounding (provider integrates it)
+        from ...ai.schema_context import get_schema_context
+        schema_context = get_schema_context(driver, database=database or "neo4j")
+
+        # Get provider (allow override via request body)
+        from ...ai.provider_factory import LLMProviderFactory
+
+        # Build settings dict from environment/config
+        settings = {
+            'chat_llm_provider': data.get('provider') or os.environ.get('SCIDK_CHAT_LLM_PROVIDER'),
+            'chat_ollama_endpoint': os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT'),
+            'chat_ollama_model': os.environ.get('SCIDK_CHAT_OLLAMA_MODEL'),
+            'chat_claude_api_key': os.environ.get('SCIDK_CHAT_CLAUDE_API_KEY'),
+            'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
+        }
+
+        provider = LLMProviderFactory.from_settings(settings)
+
+        # Base system prompt (provider will integrate schema_context)
+        base_prompt = "You are a research data assistant for SciDK."
+
+        # Complete (non-streaming) - schema grounding built into interface
+        start_time = time.time()
+        response_text = provider.complete(
+            user_message=message,
+            system_prompt=base_prompt,
+            schema_context=schema_context
+        )
+        elapsed_ms = int((time.time() - start_time) * 1000)
+
+        # Build response with engine field for UI badge
+        provider_info = provider.health_check()
+
+        return jsonify({
+            "status": "ok",
+            "reply": response_text,
+            "engine": "reasoning",  # For UI badge
+            "metadata": {
+                "provider": provider_info.get("provider"),
+                "model": provider_info.get("model"),
+                "cached_schema": schema_context.get("cached", False),
+                "schema_labels_count": len(schema_context.get("labels", [])),
+                "execution_time_ms": elapsed_ms
+            }
+        }), 200
+
+    except ConnectionError as e:
+        return jsonify({"status": "error", "error": str(e)}), 503
+    except ValueError as e:
+        return jsonify({"status": "error", "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
+@bp.post('/chat/graphrag/v2/stream')
+def api_chat_graphrag_v2_stream():
+    """
+    GraphRAG with streaming responses.
+
+    Critical for UX: At 13 tok/sec, streaming makes 15s responses feel instant.
+
+    Body:
+        message: str (required)
+        provider: str (optional)
+
+    Returns:
+        200: Server-Sent Events (SSE) stream
+            data: {"type": "token", "content": "..."}
+            data: {"type": "done", "metadata": {...}}
+    """
+    enabled = (os.environ.get('SCIDK_GRAPHRAG_ENABLED') or '').strip().lower() in ('1','true','yes','on','y')
+    if not enabled:
+        return jsonify({
+            "status": "disabled",
+            "error": "GraphRAG disabled",
+            "hint": "Set SCIDK_GRAPHRAG_ENABLED=1"
+        }), 501
+
+    data = request.get_json(force=True, silent=True) or {}
+    message = (data.get('message') or '').strip()
+    if not message:
+        return jsonify({"status": "error", "error": "message required"}), 400
+
+    def generate_stream():
+        """Generator for SSE streaming."""
+        try:
+            # Get Neo4j connection and schema
+            from ...services.neo4j_client import get_neo4j_params
+            from neo4j import GraphDatabase
+            uri, user, pwd, database, auth_mode = get_neo4j_params(current_app)
+
+            if not uri:
+                yield f"data: {json.dumps({'type': 'error', 'error': 'Neo4j not configured'})}\n\n"
+                return
+
+            auth = None if (auth_mode or 'basic').lower() == 'none' else (user, pwd)
+            driver = GraphDatabase.driver(uri, auth=auth)
+
+            # Get schema context for grounding
+            from ...ai.schema_context import get_schema_context
+            schema_context = get_schema_context(driver, database=database or "neo4j")
+
+            # Get provider
+            from ...ai.provider_factory import LLMProviderFactory
+            settings = {
+                'chat_llm_provider': data.get('provider') or os.environ.get('SCIDK_CHAT_LLM_PROVIDER'),
+                'chat_ollama_endpoint': os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT'),
+                'chat_ollama_model': os.environ.get('SCIDK_CHAT_OLLAMA_MODEL'),
+                'chat_claude_api_key': os.environ.get('SCIDK_CHAT_CLAUDE_API_KEY'),
+                'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
+            }
+
+            provider = LLMProviderFactory.from_settings(settings)
+
+            # Base system prompt
+            base_prompt = "You are a research data assistant for SciDK."
+
+            # Stream tokens - schema grounding built into interface
+            start_time = time.time()
+            for token in provider.stream(
+                user_message=message,
+                system_prompt=base_prompt,
+                schema_context=schema_context
+            ):
+                yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+
+            elapsed_ms = int((time.time() - start_time) * 1000)
+
+            # Send completion metadata with engine field for UI badge
+            provider_info = provider.health_check()
+            yield f"data: {json.dumps({'type': 'done', 'metadata': {'provider': provider_info.get('provider'), 'model': provider_info.get('model'), 'execution_time_ms': elapsed_ms, 'engine': 'reasoning'}})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+
+    return current_app.response_class(
+        generate_stream(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no'
+        }
+    )
+
+
+@bp.get('/chat/providers')
+def api_chat_providers():
+    """
+    Get available LLM providers and their status.
+
+    Returns:
+        200: {
+            "providers": {
+                "ollama": {status, endpoint, model, available_models, ...},
+                "anthropic": {status, model, ...},
+                "openai": {status, model, ...}
+            }
+        }
+    """
+    from ...ai.provider_factory import LLMProviderFactory
+
+    settings = {
+        'chat_ollama_endpoint': os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT'),
+        'chat_ollama_model': os.environ.get('SCIDK_CHAT_OLLAMA_MODEL'),
+        'chat_claude_api_key': os.environ.get('SCIDK_CHAT_CLAUDE_API_KEY'),
+        'chat_claude_model': os.environ.get('SCIDK_CHAT_CLAUDE_MODEL'),
+        'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
+        'chat_openai_model': os.environ.get('SCIDK_CHAT_OPENAI_MODEL'),
+    }
+
+    providers = LLMProviderFactory.get_available_providers(settings)
+
+    return jsonify({"providers": providers}), 200
+
+
+@bp.post('/chat/schema/refresh')
+def api_chat_schema_refresh():
+    """
+    Force refresh of schema cache.
+
+    Useful after Neo4j schema changes or for testing.
+
+    Returns:
+        200: {status: ok, message: "Schema cache cleared"}
+    """
+    from ...ai.schema_context import refresh_schema_cache
+    refresh_schema_cache()
+
+    return jsonify({"status": "ok", "message": "Schema cache cleared"}), 200
+
+
+@bp.get('/chat/schema/cache/stats')
+def api_chat_schema_cache_stats():
+    """
+    Get schema cache statistics for observability.
+
+    Returns:
+        200: {size, keys, timestamps, ttl_seconds}
+    """
+    from ...ai.schema_context import get_cache_stats
+    stats = get_cache_stats()
+
+    return jsonify(stats), 200

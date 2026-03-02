@@ -1,0 +1,484 @@
+<!-- Modules > Links Section -->
+<section id="modules-links-section" class="settings-section">
+  <h1>Links</h1>
+  <p class="small">Relationship creation scripts that connect nodes in the knowledge graph. Links are defined in <code>scripts/links/</code> and can be Cypher or Python.</p>
+
+  <div style="max-width: 100%;">
+    <!-- Action Toolbar -->
+    <div style="margin-bottom: 1rem; display: flex; gap: 0.5rem; align-items: center;">
+      <button id="reload-links-btn" class="btn btn-sm" style="padding: 0.4rem 0.8rem; font-size: 0.9rem;">
+        <span class="reload-icon">⟳</span> Reload from Disk
+      </button>
+      <span id="links-status-text" class="small" style="color: #666;"></span>
+    </div>
+
+    <!-- Links Table -->
+    <div id="links-table-container">
+      <p class="small" style="color: #999;"><em>Loading links...</em></p>
+    </div>
+  </div>
+</section>
+
+<style>
+  .links-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .links-table th {
+    background: #f9f9f9;
+    padding: 0.75rem;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: #555;
+    border-bottom: 2px solid #ddd;
+  }
+
+  .links-table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid #eee;
+    font-size: 0.9rem;
+  }
+
+  .links-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  .links-table tr:hover {
+    background: #f9f9f9;
+  }
+
+  .link-format-badge {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    font-weight: 500;
+  }
+
+  .link-format-cypher {
+    background: #e3f2fd;
+    color: #1976d2;
+  }
+
+  .link-format-python {
+    background: #fff3e0;
+    color: #f57c00;
+  }
+
+  .link-format-wizard {
+    background: #f3e5f5;
+    color: #6a1b9a;
+  }
+
+  .link-relationship {
+    font-family: monospace;
+    font-size: 0.85rem;
+    color: #555;
+  }
+
+  .link-arrow {
+    color: #999;
+    margin: 0 0.25rem;
+  }
+
+  .link-status-badge {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    font-weight: 500;
+  }
+
+  .link-status-passed {
+    background: #d4edda;
+    color: #155724;
+  }
+
+  .link-status-failed {
+    background: #f8d7da;
+    color: #721c24;
+  }
+
+  .link-status-pending {
+    background: #e2e3e5;
+    color: #383d41;
+  }
+
+  .link-run-result {
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    border-radius: 3px;
+    font-size: 0.85rem;
+  }
+
+  .link-run-result.success {
+    background: #d4edda;
+    color: #155724;
+    border-left: 4px solid #28a745;
+  }
+
+  .link-run-result.error {
+    background: #f8d7da;
+    color: #721c24;
+    border-left: 4px solid #e74c3c;
+  }
+
+  .reload-icon {
+    display: inline-block;
+    transition: transform 0.3s ease;
+  }
+
+  .reload-icon.spinning {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+</style>
+
+<script>
+  let linksData = [];
+
+  async function loadLinks() {
+    const container = document.getElementById('links-table-container');
+    const statusText = document.getElementById('links-status-text');
+
+    try {
+      const response = await fetch('/api/v2/links');
+      const data = await response.json();
+
+      if (data.status === 'success' && data.links) {
+        linksData = data.links;
+        renderLinksTable();
+        statusText.textContent = `${data.count} link${data.count !== 1 ? 's' : ''} registered`;
+      } else {
+        container.innerHTML = `
+          <p class="small text-muted">No links found. Add <code>.cypher</code> or <code>.py</code> files to <code>scripts/links/</code>.</p>
+        `;
+        statusText.textContent = '';
+      }
+    } catch (err) {
+      console.error('Failed to load links:', err);
+      container.innerHTML = '<p class="small" style="color: #e74c3c;"><em>Failed to load links</em></p>';
+      statusText.textContent = '';
+    }
+  }
+
+  function renderLinksTable() {
+    const container = document.getElementById('links-table-container');
+
+    if (linksData.length === 0) {
+      container.innerHTML = `
+        <p class="small text-muted">No links registered. Add link scripts to <code>scripts/links/</code>.</p>
+      `;
+      return;
+    }
+
+    let html = `
+      <table class="links-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Format</th>
+            <th>Relationship</th>
+            <th>Matching</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+
+    linksData.forEach(link => {
+      const isWizard = link.source === 'wizard';
+      const isScript = link.source === 'script';
+
+      // Format badge - add wizard support
+      let formatClass, formatLabel;
+      if (link.format === 'wizard') {
+        formatClass = 'link-format-wizard';
+        formatLabel = 'WIZARD';
+      } else if (link.format === 'cypher') {
+        formatClass = 'link-format-cypher';
+        formatLabel = 'CYPHER';
+      } else {
+        formatClass = 'link-format-python';
+        formatLabel = 'PYTHON';
+      }
+
+      html += `
+        <tr id="link-row-${link.id}">
+          <td>
+            <div style="font-weight: 500;">${escapeHtml(link.name)}</div>
+            ${link.description ? `<div class="small" style="color: #666; margin-top: 0.25rem;">${escapeHtml(link.description)}</div>` : ''}
+          </td>
+          <td>
+            <span class="link-format-badge ${formatClass}">${formatLabel}</span>
+          </td>
+          <td>
+            <div class="link-relationship">
+              <span>${escapeHtml(link.from_label || '?')}</span>
+              <span class="link-arrow">-[</span><strong>${escapeHtml(link.relationship_type || '?')}</strong><span class="link-arrow">]-></span>
+              <span>${escapeHtml(link.to_label || '?')}</span>
+            </div>
+          </td>
+          <td>
+            <span class="small">${escapeHtml(link.matching_strategy || 'computed')}</span>
+          </td>
+          <td>
+            <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+              ${isWizard ? `
+                <button class="btn btn-sm" onclick="runWizardLink('${link.id}')" id="run-btn-${link.id}">
+                  Run
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="editWizardLink('${link.id}')">
+                  Edit Wizard
+                </button>
+              ` : ''}
+              ${isScript ? `
+                <button class="btn btn-sm" onclick="runLink('${link.id}')" id="run-btn-${link.id}">
+                  Run
+                </button>
+                <a href="/scripts?script=${encodeURIComponent(link.id)}" class="btn btn-sm btn-outline-secondary" style="text-decoration: none;">
+                  View Script
+                </a>
+              ` : ''}
+            </div>
+            <div id="result-${link.id}"></div>
+          </td>
+        </tr>
+      `;
+    });
+
+    html += `
+        </tbody>
+      </table>
+    `;
+
+    container.innerHTML = html;
+  }
+
+  async function runLink(linkId) {
+    const resultDiv = document.getElementById(`result-${linkId}`);
+    const runBtn = document.getElementById(`run-btn-${linkId}`);
+
+    // Check Neo4j connection first
+    try {
+      const healthResponse = await fetch('/api/admin/health');
+      const healthData = await healthResponse.json();
+
+      if (!healthData.neo4j || healthData.neo4j.status !== 'connected') {
+        resultDiv.innerHTML = `
+          <div class="link-run-result error">
+            ❌ Neo4j is not connected. Check Settings → Connections.
+          </div>
+        `;
+        return;
+      }
+    } catch (err) {
+      resultDiv.innerHTML = `
+        <div class="link-run-result error">
+          ❌ Failed to check Neo4j status
+        </div>
+      `;
+      return;
+    }
+
+    // Execute link
+    runBtn.disabled = true;
+    runBtn.textContent = 'Running...';
+    resultDiv.innerHTML = '';
+
+    try {
+      const response = await fetch(`/api/v2/links/${linkId}/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+
+      const data = await response.json();
+
+      if (data.status === 'success') {
+        resultDiv.innerHTML = `
+          <div class="link-run-result success">
+            ✓ Created ${data.relationships_created} relationship${data.relationships_created !== 1 ? 's' : ''} (${data.execution_time_ms}ms)
+          </div>
+        `;
+      } else {
+        resultDiv.innerHTML = `
+          <div class="link-run-result error">
+            ❌ ${escapeHtml(data.error || 'Execution failed')}
+          </div>
+        `;
+      }
+
+      // Auto-hide success message after 5 seconds
+      if (data.status === 'success') {
+        setTimeout(() => {
+          resultDiv.innerHTML = '';
+        }, 5000);
+      }
+
+    } catch (err) {
+      console.error('Failed to run link:', err);
+      resultDiv.innerHTML = `
+        <div class="link-run-result error">
+          ❌ Request failed: ${escapeHtml(err.message)}
+        </div>
+      `;
+    } finally {
+      runBtn.disabled = false;
+      runBtn.textContent = 'Run';
+    }
+  }
+
+  async function runWizardLink(linkId) {
+    const resultDiv = document.getElementById(`result-${linkId}`);
+    const runBtn = document.getElementById(`run-btn-${linkId}`);
+
+    runBtn.disabled = true;
+    runBtn.textContent = 'Running...';
+    resultDiv.innerHTML = '';
+
+    try {
+      // Use old wizard execution endpoint
+      const response = await fetch(`/api/links/${linkId}/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      const data = await response.json();
+
+      if (data.status === 'success') {
+        // Poll for job completion
+        const jobId = data.job_id;
+        pollWizardJob(linkId, jobId, resultDiv);
+      } else {
+        resultDiv.innerHTML = `
+          <div class="link-run-result error">
+            ❌ ${escapeHtml(data.error || 'Execution failed')}
+          </div>
+        `;
+        runBtn.disabled = false;
+        runBtn.textContent = 'Run';
+      }
+    } catch (err) {
+      resultDiv.innerHTML = `
+        <div class="link-run-result error">
+          ❌ Request failed: ${escapeHtml(err.message)}
+        </div>
+      `;
+      runBtn.disabled = false;
+      runBtn.textContent = 'Run';
+    }
+  }
+
+  async function pollWizardJob(linkId, jobId, resultDiv) {
+    const runBtn = document.getElementById(`run-btn-${linkId}`);
+
+    try {
+      const response = await fetch(`/api/links/jobs/${jobId}`);
+      const data = await response.json();
+
+      if (data.status === 'success' && data.job) {
+        const job = data.job;
+
+        if (job.status === 'completed') {
+          resultDiv.innerHTML = `
+            <div class="link-run-result success">
+              ✓ Created ${job.executed_count} relationship${job.executed_count !== 1 ? 's' : ''}
+            </div>
+          `;
+          runBtn.disabled = false;
+          runBtn.textContent = 'Run';
+
+          setTimeout(() => { resultDiv.innerHTML = ''; }, 5000);
+        } else if (job.status === 'failed') {
+          resultDiv.innerHTML = `
+            <div class="link-run-result error">
+              ❌ ${escapeHtml(job.error || 'Job failed')}
+            </div>
+          `;
+          runBtn.disabled = false;
+          runBtn.textContent = 'Run';
+        } else {
+          // Still running, poll again
+          setTimeout(() => pollWizardJob(linkId, jobId, resultDiv), 1000);
+        }
+      }
+    } catch (err) {
+      resultDiv.innerHTML = `
+        <div class="link-run-result error">
+          ❌ Failed to check status
+        </div>
+      `;
+      runBtn.disabled = false;
+      runBtn.textContent = 'Run';
+    }
+  }
+
+  function editWizardLink(linkId) {
+    // Open wizard editor in Links page
+    window.location.href = `/links?edit=${linkId}`;
+  }
+
+  async function reloadLinks() {
+    const btn = document.getElementById('reload-links-btn');
+    const icon = btn.querySelector('.reload-icon');
+    const statusText = document.getElementById('links-status-text');
+
+    btn.disabled = true;
+    icon.classList.add('spinning');
+    statusText.textContent = 'Reloading...';
+
+    try {
+      const response = await fetch('/api/v2/links/reload', {
+        method: 'POST'
+      });
+
+      const data = await response.json();
+
+      if (data.status === 'success') {
+        statusText.textContent = `Reloaded ${data.links_loaded} link${data.links_loaded !== 1 ? 's' : ''}`;
+        await loadLinks();
+
+        // Clear status after 3 seconds
+        setTimeout(() => {
+          statusText.textContent = `${linksData.length} link${linksData.length !== 1 ? 's' : ''} registered`;
+        }, 3000);
+      } else {
+        statusText.textContent = `Reload failed: ${data.error}`;
+        statusText.style.color = '#e74c3c';
+      }
+    } catch (err) {
+      console.error('Failed to reload links:', err);
+      statusText.textContent = 'Reload failed';
+      statusText.style.color = '#e74c3c';
+    } finally {
+      btn.disabled = false;
+      icon.classList.remove('spinning');
+    }
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Initialize
+  document.getElementById('reload-links-btn').addEventListener('click', reloadLinks);
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadLinks);
+  } else {
+    loadLinks();
+  }
+</script>

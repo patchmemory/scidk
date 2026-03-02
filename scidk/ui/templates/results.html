@@ -1,0 +1,591 @@
+{% extends 'base.html' %}
+{% block title %}-SciDK-> Results{% endblock %}
+
+{% block head %}
+<script src="https://unpkg.com/cytoscape@3.27.0/dist/cytoscape.min.js"></script>
+<style>
+  .results-container { max-width: 1400px; margin: 0 auto; padding: 1rem; }
+
+  .schema-summary {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+    overflow: hidden;
+  }
+
+  .schema-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 1rem 1.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .schema-header h2 { margin: 0; font-size: 1.25rem; }
+
+  .schema-controls {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .schema-controls select, .schema-controls button {
+    padding: 0.375rem 0.75rem;
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 4px;
+    background: rgba(255,255,255,0.1);
+    color: white;
+    font-size: 0.875rem;
+    cursor: pointer;
+  }
+
+  .schema-controls select { min-width: 200px; }
+
+  .schema-controls button:hover {
+    background: rgba(255,255,255,0.2);
+  }
+
+  .schema-graph-container {
+    width: 100%;
+    height: 500px;
+    background: #fafafa;
+    position: relative;
+  }
+
+  .schema-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #e0e0e0;
+    background: #f9f9f9;
+  }
+
+  .stat-card {
+    background: white;
+    padding: 1rem;
+    border-radius: 6px;
+    border: 1px solid #e0e0e0;
+  }
+
+  .stat-label { font-size: 0.875rem; color: #666; font-weight: 600; }
+  .stat-value { font-size: 1.5rem; font-weight: 600; margin: 0.5rem 0 0 0; color: #333; }
+
+  .panels-section h2 { margin: 0 0 1.5rem 0; font-size: 1.25rem; }
+
+  .panel-card {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  }
+
+  .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #f0f0f0;
+  }
+
+  .panel-title { font-size: 1.1rem; font-weight: 600; margin: 0; }
+
+  .panel-meta {
+    font-size: 0.875rem;
+    color: #666;
+  }
+
+  .panel-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .btn-panel {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.875rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+    text-decoration: none;
+    color: #333;
+  }
+
+  .btn-panel:hover { background: #f5f5f5; }
+
+  .panel-content table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+
+  .panel-content th {
+    background: #f9f9f9;
+    padding: 0.75rem;
+    text-align: left;
+    border: 1px solid #e0e0e0;
+    font-weight: 600;
+  }
+
+  .panel-content td {
+    padding: 0.75rem;
+    border: 1px solid #e0e0e0;
+  }
+
+  .metric-display {
+    text-align: center;
+    padding: 2rem;
+  }
+
+  .metric-value {
+    font-size: 3rem;
+    font-weight: 600;
+    color: #667eea;
+  }
+
+  .metric-label {
+    font-size: 1.1rem;
+    color: #666;
+    margin-top: 0.5rem;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: #999;
+  }
+
+  .empty-state-icon { font-size: 4rem; margin-bottom: 1rem; }
+  .empty-state-title { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem; color: #666; }
+  .empty-state-text { font-size: 1rem; margin-bottom: 1.5rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="results-container">
+  <!-- Schema Summary Section with Cytoscape Graph -->
+  <div class="schema-summary">
+    <div class="schema-header">
+      <h2>📊 Knowledge Graph Schema</h2>
+      <div class="schema-controls">
+        <select id="query-selector">
+          <option value="">Load from Query Library...</option>
+        </select>
+        <button onclick="loadSchemaGraph()">Load Schema</button>
+        <button onclick="fitGraph()">Fit</button>
+      </div>
+    </div>
+
+    <div id="schema-graph" class="schema-graph-container"></div>
+
+    <div class="schema-stats" id="schema-stats">
+      <div class="stat-card">
+        <div class="stat-label">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Analysis Panels Section -->
+  <div class="panels-section">
+    <h2>📈 Analysis Results</h2>
+    <div id="panels-container">
+      <div style="text-align: center; padding: 2rem; color: #999;">
+        Loading panels...
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let cy = null;
+
+// Initialize Cytoscape
+function initCytoscape() {
+  if (typeof cytoscape === 'undefined') {
+    setTimeout(initCytoscape, 100);
+    return;
+  }
+
+  cy = cytoscape({
+    container: document.getElementById('schema-graph'),
+    elements: [],
+    style: [
+      {
+        selector: 'node',
+        style: {
+          'background-color': '#4e79a7',
+          'label': 'data(label)',
+          'color': '#fff',
+          'text-outline-color': '#000',
+          'text-outline-width': 2,
+          'font-size': '12px',
+          'width': 40,
+          'height': 40,
+          'text-valign': 'center',
+          'text-halign': 'center'
+        }
+      },
+      {
+        selector: 'edge',
+        style: {
+          'width': 2,
+          'line-color': '#999',
+          'target-arrow-color': '#999',
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier',
+          'label': 'data(label)',
+          'font-size': '10px',
+          'text-rotation': 'autorotate',
+          'text-margin-y': -10
+        }
+      }
+    ],
+    layout: { name: 'preset' }
+  });
+
+  console.log('Cytoscape initialized');
+}
+
+// Load schema visualization
+async function loadSchemaGraph() {
+  if (!cy) return;
+
+  try {
+    const response = await fetch('/api/graph/schema/combined?source=all');
+    const data = await response.json();
+
+    if (data.nodes || data.edges) {
+      const elements = [];
+      const nodeSet = new Set();
+
+      // Add nodes
+      (data.nodes || []).forEach(node => {
+        if (!nodeSet.has(node.label)) {
+          elements.push({
+            data: {
+              id: node.label,
+              label: node.label,
+              count: node.count || 0
+            }
+          });
+          nodeSet.add(node.label);
+        }
+      });
+
+      // Add edges
+      (data.edges || []).forEach(edge => {
+        const edgeId = `${edge.start_label}-${edge.rel_type}-${edge.end_label}`;
+        elements.push({
+          data: {
+            id: edgeId,
+            source: edge.start_label,
+            target: edge.end_label,
+            label: `${edge.rel_type} (${edge.count || 0})`
+          }
+        });
+      });
+
+      cy.elements().remove();
+      cy.add(elements);
+      cy.layout({ name: 'cose', animate: true, animationDuration: 500 }).run();
+
+      window.toast && window.toast('Schema loaded', 'success');
+    }
+  } catch (error) {
+    console.error('Failed to load schema:', error);
+    window.toast && window.toast('Failed to load schema', 'error');
+  }
+}
+
+// Load query from library
+async function loadQueryFromLibrary() {
+  const queryId = document.getElementById('query-selector').value;
+  if (!queryId || !cy) return;
+
+  try {
+    const response = await fetch(`/api/queries/${queryId}`);
+    const data = await response.json();
+
+    if (data.status === 'ok' && data.query) {
+      // Execute the saved query
+      const execResponse = await fetch('/api/graph/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: data.query.query })
+      });
+
+      const execData = await execResponse.json();
+      if (execData.status === 'ok' && execData.results) {
+        renderQueryResults(execData.results);
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load query:', error);
+    window.toast && window.toast('Failed to load query', 'error');
+  }
+}
+
+// Render query results in Cytoscape
+function renderQueryResults(results) {
+  if (!cy || !results || results.length === 0) return;
+
+  const elements = [];
+  const nodeSet = new Set();
+
+  results.forEach(row => {
+    Object.values(row).forEach(value => {
+      if (value && typeof value === 'object' && value.identity !== undefined) {
+        // Neo4j node
+        const nodeId = value.identity.toString();
+        if (!nodeSet.has(nodeId)) {
+          elements.push({
+            data: {
+              id: nodeId,
+              label: value.labels?.[0] || 'Node',
+              properties: value.properties
+            }
+          });
+          nodeSet.add(nodeId);
+        }
+      }
+    });
+  });
+
+  cy.elements().remove();
+  cy.add(elements);
+  cy.layout({ name: 'cose', animate: true }).run();
+}
+
+// Fit graph to container
+function fitGraph() {
+  if (cy) {
+    cy.fit(null, 50);
+  }
+}
+
+// Fetch schema summary stats
+async function loadSchemaSummary() {
+  try {
+    const response = await fetch('/api/results/schema-summary');
+    const data = await response.json();
+
+    if (data.status === 'ok') {
+      const schema = data.schema;
+      const statsHtml = [];
+
+      statsHtml.push(`
+        <div class="stat-card">
+          <div class="stat-label">Total Nodes</div>
+          <div class="stat-value">${schema.node_count.toLocaleString()}</div>
+        </div>
+      `);
+
+      statsHtml.push(`
+        <div class="stat-card">
+          <div class="stat-label">Total Relationships</div>
+          <div class="stat-value">${schema.relationship_count.toLocaleString()}</div>
+        </div>
+      `);
+
+      if (schema.labels && schema.labels.length > 0) {
+        statsHtml.push(`
+          <div class="stat-card">
+            <div class="stat-label">Node Labels</div>
+            <div style="font-size: 0.9rem; margin-top: 0.5rem;">
+              ${schema.labels.join(', ')}
+            </div>
+          </div>
+        `);
+      }
+
+      if (schema.relationship_types && schema.relationship_types.length > 0) {
+        statsHtml.push(`
+          <div class="stat-card">
+            <div class="stat-label">Relationship Types</div>
+            <div style="font-size: 0.9rem; margin-top: 0.5rem;">
+              ${schema.relationship_types.join(', ')}
+            </div>
+          </div>
+        `);
+      }
+
+      document.getElementById('schema-stats').innerHTML = statsHtml.join('') ||
+        '<div class="stat-card"><div class="stat-label">No data in knowledge graph yet</div></div>';
+    }
+  } catch (error) {
+    console.error('Failed to load schema summary:', error);
+    document.getElementById('schema-stats').innerHTML =
+      '<div class="stat-card"><div class="stat-label">Failed to load schema</div></div>';
+  }
+}
+
+// Load query library
+async function loadQueryLibrary() {
+  try {
+    const response = await fetch('/api/queries');
+    const data = await response.json();
+
+    if (data.status === 'ok' && data.queries) {
+      const selector = document.getElementById('query-selector');
+      data.queries.forEach(query => {
+        const option = document.createElement('option');
+        option.value = query.id;
+        option.textContent = query.name;
+        selector.appendChild(option);
+      });
+
+      selector.addEventListener('change', loadQueryFromLibrary);
+    }
+  } catch (error) {
+    console.error('Failed to load query library:', error);
+  }
+}
+
+// Fetch and render panels
+async function loadPanels() {
+  try {
+    const response = await fetch('/api/results/panels');
+    const data = await response.json();
+
+    if (data.status === 'ok' && data.panels && data.panels.length > 0) {
+      const panelsHtml = data.panels.map(panel => renderPanel(panel)).join('');
+      document.getElementById('panels-container').innerHTML = panelsHtml;
+    } else {
+      document.getElementById('panels-container').innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">📊</div>
+          <div class="empty-state-title">No analyses have been run yet</div>
+          <div class="empty-state-text">
+            Analysis results will appear here automatically after running scripts from the Scripts page.
+          </div>
+          <a href="/scripts" class="btn-panel" style="display: inline-block; padding: 0.75rem 1.5rem; background: #667eea; color: white; border: none;">
+            Go to Scripts →
+          </a>
+        </div>
+      `;
+    }
+  } catch (error) {
+    console.error('Failed to load panels:', error);
+    document.getElementById('panels-container').innerHTML =
+      '<div style="text-align: center; padding: 2rem; color: #b00;">Failed to load analysis results</div>';
+  }
+}
+
+// Render single panel
+function renderPanel(panel) {
+  const ranAt = new Date(panel.ran_at * 1000);
+  const timeAgo = getTimeAgo(panel.ran_at);
+
+  let contentHtml = '';
+
+  if (panel.panel_type === 'table') {
+    const data = JSON.parse(panel.panel_data);
+    contentHtml = renderTable(data);
+  } else if (panel.panel_type === 'metric') {
+    const data = JSON.parse(panel.panel_data);
+    contentHtml = `
+      <div class="metric-display">
+        <div class="metric-value">${data.value.toLocaleString()}</div>
+        <div class="metric-label">${data.label || ''}</div>
+      </div>
+    `;
+  } else if (panel.panel_type === 'figure') {
+    contentHtml = '<div style="padding: 2rem; text-align: center; color: #999;">Chart visualization (Chart.js integration TODO)</div>';
+  }
+
+  return `
+    <div class="panel-card" data-panel-id="${panel.id}">
+      <div class="panel-header">
+        <div>
+          <h3 class="panel-title">📊 ${panel.title}</h3>
+          <div class="panel-meta">
+            Ran ${timeAgo} • ${panel.script_name || panel.script_id}
+          </div>
+        </div>
+        <div class="panel-actions">
+          <a href="/scripts#script-${panel.script_id}" class="btn-panel">View Script</a>
+          <button class="btn-panel" onclick="removePanel('${panel.id}')">Remove</button>
+        </div>
+      </div>
+      <div class="panel-content">
+        ${contentHtml}
+      </div>
+    </div>
+  `;
+}
+
+// Render table
+function renderTable(data) {
+  if (!data || data.length === 0) {
+    return '<div style="padding: 1rem; text-align: center; color: #999;">No data</div>';
+  }
+
+  const headers = Object.keys(data[0]);
+  const rows = data.slice(0, 100);
+
+  return `
+    <table>
+      <thead>
+        <tr>
+          ${headers.map(h => `<th>${h}</th>`).join('')}
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map(row => `
+          <tr>
+            ${headers.map(h => `<td>${row[h] !== null && row[h] !== undefined ? row[h] : ''}</td>`).join('')}
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    ${data.length > 100 ? `<div style="padding: 0.5rem; text-align: center; font-size: 0.875rem; color: #666;">Showing first 100 of ${data.length} rows</div>` : ''}
+  `;
+}
+
+// Remove panel
+async function removePanel(panelId) {
+  if (!confirm('Remove this panel from Results?')) return;
+
+  try {
+    const response = await fetch(`/api/results/panels/${panelId}`, { method: 'DELETE' });
+    if (response.ok) {
+      document.querySelector(`[data-panel-id="${panelId}"]`).remove();
+      window.toast && window.toast('Panel removed', 'success');
+    } else {
+      throw new Error('Failed to remove panel');
+    }
+  } catch (error) {
+    console.error('Failed to remove panel:', error);
+    window.toast && window.toast('Failed to remove panel', 'error');
+  }
+}
+
+// Time ago helper
+function getTimeAgo(timestamp) {
+  const seconds = Math.floor(Date.now() / 1000 - timestamp);
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
+  return `${Math.floor(seconds / 86400)} days ago`;
+}
+
+// Load on page load
+document.addEventListener('DOMContentLoaded', () => {
+  initCytoscape();
+  loadSchemaSummary();
+  loadQueryLibrary();
+  loadPanels();
+
+  // Auto-refresh every 30 seconds (but not the graph)
+  setInterval(() => {
+    loadSchemaSummary();
+    loadPanels();
+  }, 30000);
+});
+</script>
+{% endblock %}

@@ -512,6 +512,235 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 15)
             version = 15
 
+        # v16: Add analyses_scripts and analyses_results tables for analysis page
+        if version < 16:
+            # analyses_scripts: stores analysis script definitions (built-in and custom)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analyses_scripts (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    language TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    code TEXT NOT NULL,
+                    parameters TEXT,
+                    tags TEXT,
+                    created_at REAL NOT NULL,
+                    created_by TEXT,
+                    updated_at REAL NOT NULL
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_analyses_scripts_category ON analyses_scripts(category);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_analyses_scripts_language ON analyses_scripts(language);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_analyses_scripts_created_by ON analyses_scripts(created_by);")
+
+            # analyses_results: stores execution results and history
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analyses_results (
+                    id TEXT PRIMARY KEY,
+                    script_id TEXT NOT NULL,
+                    executed_at REAL NOT NULL,
+                    executed_by TEXT,
+                    parameters TEXT,
+                    results TEXT,
+                    execution_time_ms INTEGER,
+                    status TEXT NOT NULL,
+                    error TEXT,
+                    FOREIGN KEY (script_id) REFERENCES analyses_scripts(id) ON DELETE CASCADE
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_analyses_results_script ON analyses_results(script_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_analyses_results_executed_at ON analyses_results(executed_at DESC);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_analyses_results_executed_by ON analyses_results(executed_by);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_analyses_results_status ON analyses_results(status);")
+
+            conn.commit()
+            _set_version(conn, 16)
+            version = 16
+
+        # v17: Rename analyses_* tables to scripts_* and add file-based storage columns
+        if version < 17:
+            # Rename tables
+            cur.execute("ALTER TABLE analyses_scripts RENAME TO scripts;")
+            cur.execute("ALTER TABLE analyses_results RENAME TO script_executions;")
+
+            # Add new columns for file-based storage
+            cur.execute("ALTER TABLE scripts ADD COLUMN file_path TEXT;")
+            cur.execute("ALTER TABLE scripts ADD COLUMN is_file_based INTEGER DEFAULT 0;")
+
+            # Create new indexes
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scripts_file_path ON scripts(file_path);")
+
+            # Recreate indexes with new table names
+            cur.execute("DROP INDEX IF EXISTS idx_analyses_scripts_category;")
+            cur.execute("DROP INDEX IF EXISTS idx_analyses_scripts_language;")
+            cur.execute("DROP INDEX IF EXISTS idx_analyses_scripts_created_by;")
+            cur.execute("DROP INDEX IF EXISTS idx_analyses_results_script;")
+            cur.execute("DROP INDEX IF EXISTS idx_analyses_results_executed_at;")
+            cur.execute("DROP INDEX IF EXISTS idx_analyses_results_executed_by;")
+            cur.execute("DROP INDEX IF EXISTS idx_analyses_results_status;")
+
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scripts_category ON scripts(category);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scripts_language ON scripts(language);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scripts_created_by ON scripts(created_by);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_script_executions_script ON script_executions(script_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_script_executions_executed_at ON script_executions(executed_at DESC);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_script_executions_executed_by ON script_executions(executed_by);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_script_executions_status ON script_executions(status);")
+
+            conn.commit()
+            _set_version(conn, 17)
+            version = 17
+
+        # v18: Add validation and activation columns for Script Validation & Plugin Architecture
+        if version < 18:
+            # Add validation status and activation columns
+            cur.execute("ALTER TABLE scripts ADD COLUMN validation_status TEXT;")
+            cur.execute("ALTER TABLE scripts ADD COLUMN validation_timestamp REAL;")
+            cur.execute("ALTER TABLE scripts ADD COLUMN validation_errors TEXT;")
+            cur.execute("ALTER TABLE scripts ADD COLUMN is_active INTEGER DEFAULT 0;")
+            cur.execute("ALTER TABLE scripts ADD COLUMN docstring TEXT;")
+
+            # Create index for active scripts
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scripts_validation_status ON scripts(validation_status);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scripts_is_active ON scripts(is_active);")
+
+            conn.commit()
+            _set_version(conn, 18)
+            version = 18
+
+        if version < 19:
+            # Add script_dependencies table for tracking plugin usage
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS script_dependencies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    dependent_id TEXT NOT NULL,
+                    dependency_id TEXT NOT NULL,
+                    dependent_type TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    UNIQUE(dependent_id, dependency_id)
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_dependencies_dependency ON script_dependencies(dependency_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_dependencies_dependent ON script_dependencies(dependent_id);")
+
+            conn.commit()
+            _set_version(conn, 19)
+            version = 19
+
+        # v20: Add analysis_panels table for Results page
+        if version < 20:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS analysis_panels (
+                    id TEXT PRIMARY KEY,
+                    script_id TEXT NOT NULL,
+                    execution_id TEXT NOT NULL,
+                    script_name TEXT,
+                    ran_at REAL NOT NULL,
+                    panel_type TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    panel_data TEXT NOT NULL,
+                    visualization TEXT,
+                    status TEXT DEFAULT 'success',
+                    error_message TEXT,
+                    FOREIGN KEY (script_id) REFERENCES scripts(id) ON DELETE CASCADE,
+                    FOREIGN KEY (execution_id) REFERENCES script_executions(id) ON DELETE CASCADE
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_analysis_panels_ran_at ON analysis_panels(ran_at DESC);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_analysis_panels_script ON analysis_panels(script_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_analysis_panels_execution ON analysis_panels(execution_id);")
+
+            conn.commit()
+            _set_version(conn, 20)
+            version = 20
+
+        # v21: Add source, modified, validation_output fields for Universal Module Registry Pattern
+        if version < 21:
+            # Add source tracking for built-in vs custom scripts
+            cur.execute("ALTER TABLE scripts ADD COLUMN source TEXT DEFAULT 'custom';")
+
+            # Add modified flag to track if built-in scripts have been edited
+            cur.execute("ALTER TABLE scripts ADD COLUMN modified INTEGER DEFAULT 0;")
+
+            # Add validation_output to store complete test run results
+            # (separate from validation_errors which only stores error messages)
+            cur.execute("ALTER TABLE scripts ADD COLUMN validation_output TEXT;")
+
+            # Create indexes for efficient filtering
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scripts_source ON scripts(source);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scripts_modified ON scripts(modified);")
+
+            conn.commit()
+            _set_version(conn, 21)
+            version = 21
+
+        # v22: Add links table for LinkRegistry pattern
+        if version < 22:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS links (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    format TEXT NOT NULL,
+                    from_label TEXT NOT NULL,
+                    to_label TEXT NOT NULL,
+                    relationship_type TEXT NOT NULL,
+                    matching_strategy TEXT,
+                    description TEXT,
+                    source_path TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    validation_status TEXT DEFAULT 'pending',
+                    last_run_at REAL,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_links_format ON links(format);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_links_from_label ON links(from_label);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_links_to_label ON links(to_label);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_links_validation_status ON links(validation_status);")
+
+            conn.commit()
+            _set_version(conn, 22)
+            version = 22
+
+        # v23: Add status field to link_definitions for Active/Pending/Available lifecycle
+        if version < 23:
+            # Add status column with default 'pending'
+            cur.execute("ALTER TABLE link_definitions ADD COLUMN status TEXT DEFAULT 'pending';")
+            # Create index for status-based filtering
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_link_definitions_status ON link_definitions(status);")
+            conn.commit()
+            _set_version(conn, 23)
+            version = 23
+
+        # v24: Add sync metadata columns to link_definitions for import link sync tracking
+        if version < 24:
+            # Add last_synced_count to track number of relationships created in last sync
+            cur.execute("ALTER TABLE link_definitions ADD COLUMN last_synced_count INTEGER DEFAULT 0;")
+            # Add last_synced_at to track when the link was last synced
+            cur.execute("ALTER TABLE link_definitions ADD COLUMN last_synced_at REAL DEFAULT NULL;")
+
+            # Backfill existing active import links so they don't show "Last synced: never"
+            # Import links are identified by having source_database in match_config
+            cur.execute("""
+                UPDATE link_definitions
+                SET last_synced_count = 0, last_synced_at = updated_at
+                WHERE status = 'active'
+                AND json_extract(match_config, '$.source_database') IS NOT NULL
+                AND last_synced_at IS NULL
+            """)
+
+            conn.commit()
+            _set_version(conn, 24)
+            version = 24
+
         return version
     finally:
         if own:

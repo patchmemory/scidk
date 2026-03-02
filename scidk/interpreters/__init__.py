@@ -15,6 +15,10 @@ from .yaml_interpreter import YamlInterpreter
 from .ipynb_interpreter import IpynbInterpreter
 from .txt_interpreter import TxtInterpreter
 from .xlsx_interpreter import XlsxInterpreter
+from .bruker_skyscan_log import BrukerSkyScanLogInterpreter
+from .bruker_microct_dataset import BrukerMicroCtDatasetInterpreter
+from .ome_tiff import OMETiffInterpreter
+from .dicom_bioformats import DicomBioFormatsInterpreter
 
 # Centralized interpreter registry
 INTERPRETERS = [
@@ -25,6 +29,10 @@ INTERPRETERS = [
     IpynbInterpreter,
     TxtInterpreter,
     XlsxInterpreter,
+    BrukerSkyScanLogInterpreter,
+    BrukerMicroCtDatasetInterpreter,
+    OMETiffInterpreter,
+    DicomBioFormatsInterpreter,
 ]
 
 

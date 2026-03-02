@@ -36,6 +36,7 @@ def register_blueprints(app):
     from . import api_annotations
     from . import api_labels
     from . import api_links
+    from . import api_links_v2
     from . import api_integrations
     from . import api_settings
     from . import api_auth
@@ -45,6 +46,10 @@ def register_blueprints(app):
     from . import api_alerts
     from . import api_logs
     from . import api_plugins
+    from . import api_maps
+    from . import api_scripts
+    from . import api_system
+    from . import api_results
 
     # Register UI blueprint
     app.register_blueprint(ui.bp)
@@ -52,6 +57,8 @@ def register_blueprints(app):
     # Register API blueprints
     app.register_blueprint(api_files.bp)
     app.register_blueprint(api_graph.bp)
+    app.register_blueprint(api_maps.bp)
+    app.register_blueprint(api_scripts.bp)
     app.register_blueprint(api_tasks.bp)
     app.register_blueprint(api_chat.bp)
     app.register_blueprint(api_queries.bp)
@@ -63,6 +70,7 @@ def register_blueprints(app):
     app.register_blueprint(api_labels.bp)
     app.register_blueprint(api_integrations.bp)
     app.register_blueprint(api_links.bp)  # Keep for backward compatibility
+    app.register_blueprint(api_links_v2.bp)  # New LinkRegistry-based API
     app.register_blueprint(api_settings.bp)
     app.register_blueprint(api_auth.bp)
     app.register_blueprint(api_users.bp)
@@ -70,3 +78,5 @@ def register_blueprints(app):
     app.register_blueprint(api_alerts.bp)
     app.register_blueprint(api_logs.bp)
     app.register_blueprint(api_plugins.bp)
+    app.register_blueprint(api_system.bp)  # Chat self-awareness tools
+    app.register_blueprint(api_results.bp)  # Results page API

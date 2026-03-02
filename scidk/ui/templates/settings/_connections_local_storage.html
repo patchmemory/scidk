@@ -1,0 +1,107 @@
+<!-- Connections > Local Storage Section -->
+<section class="settings-section" id="connections-local-storage-section">
+  <h1>Local Storage</h1>
+  <p class="small">Configure the base directory for local file browsing and mounted volume detection.</p>
+
+  <!-- Local Files Provider -->
+  <div class="setting-card">
+    <h2>Base Directory</h2>
+    <p class="small">Configure the base directory for local file browsing.</p>
+
+    <form id="local-files-form">
+      <div style="margin-bottom: 1rem;">
+        <label for="local-files-base" class="form-label">Base Directory</label>
+        <input
+          type="text"
+          class="form-control"
+          id="local-files-base"
+          placeholder="/home/username or ~/Documents"
+          style="max-width: 500px;"
+        />
+        <small class="form-text text-muted">
+          Specify the root directory for "Local Files". Defaults to your home directory (~).
+        </small>
+      </div>
+
+      <button type="submit" class="btn btn-primary">Save</button>
+      <span id="local-files-status" class="small text-muted" style="margin-left: 1rem;"></span>
+    </form>
+  </div>
+
+  <!-- Mounted Volumes Provider -->
+  <div class="setting-card" style="margin-top: 1.5rem;">
+    <h2>Mounted Volumes</h2>
+    <p class="small">Mounted volumes are automatically detected under /mnt and /media directories.</p>
+    <p class="small text-muted">
+      This provider scans for mounted drives in <code>/mnt</code> and <code>/media</code>.
+      Mount your external drives or network shares there to access them in SciDK.
+    </p>
+  </div>
+
+  <!-- Table Format Registry Note -->
+  <div class="setting-card" style="margin-top: 2rem;">
+    <h2>Table Format Registry</h2>
+    <p class="small">
+      Table format configuration has moved to <a href="#modules/interpreters">Modules &gt; Interpreters</a>.
+    </p>
+    <p class="small text-muted">
+      Table formats describe how to parse file contents (CSV delimiters, Excel sheets, Parquet schemas),
+      which is an interpretation concern rather than a connection concern. Format definitions apply
+      regardless of whether files come from local storage, rclone mounts, or any other source.
+    </p>
+  </div>
+</section>
+
+<script>
+  function initLocalStorage() {
+    const form = document.getElementById('local-files-form');
+    const input = document.getElementById('local-files-base');
+    const status = document.getElementById('local-files-status');
+
+    // Load current setting
+    fetch('/api/providers')
+      .then(r => r.json())
+      .then(data => {
+        if (data.local_files_base) {
+          input.value = data.local_files_base;
+        }
+      })
+      .catch(e => console.error('Failed to load provider settings:', e));
+
+    // Save setting
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      status.textContent = 'Saving...';
+      status.className = 'small text-muted';
+
+      try {
+        const r = await fetch('/api/providers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            local_files_base: input.value || null
+          })
+        });
+
+        if (r.ok) {
+          status.textContent = '✓ Saved! Reload the Files page to see changes.';
+          status.className = 'small text-success';
+        } else {
+          const err = await r.json();
+          status.textContent = '✗ ' + (err.error || 'Failed to save');
+          status.className = 'small text-danger';
+        }
+      } catch (e) {
+        status.textContent = '✗ Failed to save: ' + e.message;
+        status.className = 'small text-danger';
+      }
+    });
+  }
+
+  // Initialize on page load
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initLocalStorage);
+  } else {
+    initLocalStorage();
+  }
+</script>

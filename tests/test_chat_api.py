@@ -1,5 +1,6 @@
 import os
 import pytest
+import unittest.mock
 
 
 def test_api_chat_echo(client):
@@ -50,11 +51,13 @@ def test_api_chat_capabilities(client):
 
 def test_api_chat_graphrag_disabled_by_default(client):
     # GraphRAG should be disabled without SCIDK_GRAPHRAG_ENABLED
-    resp = client.post('/api/chat/graphrag', json={'message': 'Test query'})
-    assert resp.status_code == 501
-    data = resp.get_json()
-    assert data['status'] == 'disabled'
-    assert 'SCIDK_GRAPHRAG_ENABLED' in data.get('hint', '')
+    # Override env var to ensure test is deterministic regardless of developer environment
+    with unittest.mock.patch.dict(os.environ, {'SCIDK_GRAPHRAG_ENABLED': '0'}):
+        resp = client.post('/api/chat/graphrag', json={'message': 'Test query'})
+        assert resp.status_code == 501
+        data = resp.get_json()
+        assert data['status'] == 'disabled'
+        assert 'SCIDK_GRAPHRAG_ENABLED' in data.get('hint', '')
 
 
 def test_api_chat_graphrag_missing_message(client, monkeypatch):
@@ -67,10 +70,12 @@ def test_api_chat_graphrag_missing_message(client, monkeypatch):
 
 
 def test_api_chat_context_refresh_disabled(client):
-    resp = client.post('/api/chat/context/refresh')
-    assert resp.status_code == 501
-    data = resp.get_json()
-    assert data['status'] == 'disabled'
+    # Override env var to ensure test is deterministic regardless of developer environment
+    with unittest.mock.patch.dict(os.environ, {'SCIDK_GRAPHRAG_ENABLED': '0'}):
+        resp = client.post('/api/chat/context/refresh')
+        assert resp.status_code == 501
+        data = resp.get_json()
+        assert data['status'] == 'disabled'
 
 
 def test_api_chat_observability_graphrag(client):

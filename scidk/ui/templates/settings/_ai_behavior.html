@@ -1,0 +1,91 @@
+<!-- AI & Chat > Behavior Section -->
+<section id="ai-chat-behavior-section" class="settings-section">
+  <h1>Chat Behavior</h1>
+  <p class="small">Configure chat interface behavior and output settings.</p>
+
+  <div class="row g-2" style="max-width:720px">
+    <div class="col-12">
+      <div class="form-check">
+        <input id="chat-verbose-mode" type="checkbox" class="form-check-input" />
+        <label class="form-check-label" for="chat-verbose-mode">
+          Verbose mode (show technical details like entities, execution time)
+        </label>
+      </div>
+      <small class="form-text text-muted">Can also be toggled per-session in the chat interface.</small>
+    </div>
+    <div class="col-12" style="margin-top:1rem">
+      <button id="chat-save-behavior" class="btn btn-sm btn-primary">Save Settings</button>
+    </div>
+  </div>
+
+  <details style="margin-top:1.5rem; max-width:720px">
+    <summary class="small">Advanced</summary>
+    <p class="small" style="margin-top:.5rem">
+      Environment variables:
+      <ul class="small">
+        <li><code>SCIDK_GRAPHRAG_VERBOSE</code> - Set to '1' or 'true' to enable verbose mode by default</li>
+      </ul>
+    </p>
+  </details>
+</section>
+
+<script>
+  function initChatBehavior() {
+    const verboseCheck = document.getElementById('chat-verbose-mode');
+    const saveBtn = document.getElementById('chat-save-behavior');
+
+    if (!saveBtn || !verboseCheck) return;
+
+    // Save chat behavior settings
+    saveBtn.addEventListener('click', async () => {
+      // TODO: Implement /api/chat/config endpoint or use environment variables
+      // Verbose mode is currently controlled by SCIDK_GRAPHRAG_VERBOSE environment variable
+      toast('Chat behavior settings are currently controlled via environment variables (see Advanced section)', 'info');
+      /*
+      try {
+        const resp = await fetch('/api/chat/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ verbose: verboseCheck.checked })
+        });
+        const data = await resp.json();
+        if (data.status === 'success') {
+          toast('Settings saved successfully', 'success');
+        } else {
+          toast('Failed to save settings: ' + (data.error || 'unknown'), 'error');
+        }
+      } catch (err) {
+        toast('Error saving settings: ' + err.message, 'error');
+      }
+      */
+    });
+
+    // Load current settings
+    async function loadChatBehavior() {
+      // TODO: Load from /api/chat/config when endpoint is implemented
+      // For now, check is disabled since settings are environment-based
+      /*
+      try {
+        const resp = await fetch('/api/chat/config');
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.verbose !== undefined) {
+            verboseCheck.checked = data.verbose;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load chat settings:', err);
+      }
+      */
+    }
+
+    loadChatBehavior();
+  }
+
+  // Initialize on page load
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initChatBehavior);
+  } else {
+    initChatBehavior();
+  }
+</script>

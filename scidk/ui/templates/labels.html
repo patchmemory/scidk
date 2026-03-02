@@ -519,7 +519,13 @@
     <!-- Instance Browser Section -->
     <div class="instance-browser" id="instance-browser" style="display: none;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-        <h4 class="small" style="margin: 0;">Instances</h4>
+        <div style="display: flex; align-items: center; gap: 1rem;">
+          <h4 class="small" style="margin: 0;">Instances</h4>
+          <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85em; cursor: pointer; user-select: none;">
+            <input type="checkbox" id="toggle-with-relationships" style="cursor: pointer;">
+            <span>Show relationships</span>
+          </label>
+        </div>
         <div style="display: flex; gap: 0.5rem;">
           <button id="btn-pull-instances" class="btn btn-sm btn-outline-primary" data-testid="pull-instances-btn">Pull from Neo4j</button>
           <button id="btn-transfer-to-primary" class="btn btn-sm btn-warning" data-testid="transfer-to-primary-btn" style="display: none;" title="Transfer instances from source to primary database">Transfer to Primary</button>
@@ -925,6 +931,22 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-refresh-instances').addEventListener('click', refreshInstances);
     document.getElementById('btn-instance-prev').addEventListener('click', () => navigateInstances(-1));
     document.getElementById('btn-instance-next').addEventListener('click', () => navigateInstances(1));
+
+    // With relationships toggle
+    const toggleWithRelationships = document.getElementById('toggle-with-relationships');
+    // Load saved state from localStorage
+    const savedState = localStorage.getItem('labels_show_relationships') === 'true';
+    toggleWithRelationships.checked = savedState;
+
+    toggleWithRelationships.addEventListener('change', (e) => {
+      // Save to localStorage
+      localStorage.setItem('labels_show_relationships', e.target.checked);
+      // Re-fetch instances with new setting
+      if (currentLabel && instanceData.length > 0) {
+        pullInstances();
+      }
+    });
+
     console.log('Instance browser listeners attached');
   } catch (e) {
     console.error('Error attaching instance browser listeners:', e);
@@ -3166,8 +3188,11 @@ async function pullInstances() {
   const sourceText = sourceProfile ? ` from ${sourceProfile}` : '';
   showToast(`Pulling instances${sourceText}...`, 'info');
 
+  // Check if "with relationships" toggle is enabled
+  const withRelationships = document.getElementById('toggle-with-relationships').checked;
+
   try {
-    const resp = await fetch(`/api/labels/${currentLabel.name}/instances?limit=${instanceLimit}&offset=${instancePage * instanceLimit}`);
+    const resp = await fetch(`/api/labels/${currentLabel.name}/instances?limit=${instanceLimit}&offset=${instancePage * instanceLimit}&with_relationships=${withRelationships}`);
     const result = await resp.json();
 
     if (result.status === 'success') {
@@ -3594,12 +3619,19 @@ function renderInstanceTable() {
   // Get property names from current label
   const properties = currentLabel.properties.map(p => p.name);
 
+  // Check if any instance has relationships
+  const hasRelationships = instanceData.some(i => i.relatedTo && i.relatedTo.length > 0);
+  const showRelatedColumn = hasRelationships;
+
   // Build table
   let html = '<table class="instance-table"><thead><tr>';
   html += '<th>ID</th>';
   properties.forEach(prop => {
     html += `<th>${prop}</th>`;
   });
+  if (showRelatedColumn) {
+    html += '<th>Related To</th>';
+  }
   html += '</tr></thead><tbody>';
 
   instanceData.forEach(instance => {
@@ -3612,6 +3644,31 @@ function renderInstanceTable() {
       const changeClass = hasChange ? ' instance-cell-changed' : '';
       html += `<td><div class="instance-cell-editable${changeClass}" data-id="${instance.id}" data-prop="${prop}" contenteditable="true">${displayValue}</div></td>`;
     });
+
+    // Add related-to column
+    if (showRelatedColumn) {
+      const relatedTo = instance.relatedTo || [];
+      if (relatedTo.length === 0) {
+        html += '<td></td>';
+      } else {
+        const relId = `rel-${instance.id.replace(/[^a-zA-Z0-9]/g, '')}`;
+        html += `<td>
+          <div style="cursor: pointer; color: #2196f3; font-size: 0.85em;" onclick="toggleRelationships('${relId}')">
+            <span id="${relId}-badge">${relatedTo.length} relationship${relatedTo.length !== 1 ? 's' : ''} ▼</span>
+          </div>
+          <div id="${relId}" style="display: none; margin-top: 0.5rem; font-size: 0.85em; color: #666; max-height: 200px; overflow-y: auto;">
+            ${relatedTo.map(rel => {
+              const dirArrow = rel.direction === 'out' ? '→' : '←';
+              const labels = rel.neighbor_labels && rel.neighbor_labels.length > 0 ? rel.neighbor_labels[0] : 'Node';
+              return `<div style="padding: 0.25rem 0; border-bottom: 1px solid #eee;">
+                <strong>${rel.rel_type}</strong> ${dirArrow} ${labels}
+              </div>`;
+            }).join('')}
+          </div>
+        </td>`;
+      }
+    }
+
     html += '</tr>';
   });
 
@@ -3752,6 +3809,19 @@ function renderInstanceTable() {
       }
     });
   });
+}
+
+function toggleRelationships(relId) {
+  const relDiv = document.getElementById(relId);
+  const badge = document.getElementById(`${relId}-badge`);
+
+  if (relDiv.style.display === 'none') {
+    relDiv.style.display = 'block';
+    badge.textContent = badge.textContent.replace('▼', '▲');
+  } else {
+    relDiv.style.display = 'none';
+    badge.textContent = badge.textContent.replace('▲', '▼');
+  }
 }
 </script>
 {% endblock %}

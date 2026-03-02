@@ -1,0 +1,100 @@
+<!-- Modules > Overview Section -->
+<section id="modules-overview-section" class="settings-section">
+  <h1>Modules Overview</h1>
+  <p class="small">Reference guide for SciDK's module types, contracts, and validation lifecycle.</p>
+
+  <div style="max-width: 1000px;">
+    <p style="margin-bottom: 1.5rem;">SciDK uses a modular architecture where different component types handle specific tasks. Each module type has a well-defined contract specifying what inputs it expects, what it writes to the graph, and how validation applies. This page serves as a technical reference for developers, collaborators, and IDE agents building conformant modules.</p>
+
+    <h3 style="margin-top: 2rem;">Module Types</h3>
+
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 2rem;">
+      <thead>
+        <tr style="background: #f0f0f0; border-bottom: 2px solid #ccc;">
+          <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Module Type</th>
+          <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Purpose</th>
+          <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Inputs</th>
+          <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Writes to Graph</th>
+          <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Authoring Surface</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom: 1px solid #e0e0e0;">
+          <td style="padding: 0.75rem; vertical-align: top;"><strong>Interpreters</strong></td>
+          <td style="padding: 0.75rem; vertical-align: top;">Transform raw files into structured graph data</td>
+          <td style="padding: 0.75rem; vertical-align: top; font-size: 0.9em;">File path, file type</td>
+          <td style="padding: 0.75rem; vertical-align: top; font-size: 0.9em;">File nodes, metadata properties, extracted entities</td>
+          <td style="padding: 0.75rem; vertical-align: top;"><a href="/scripts">Scripts page</a>, <a href="/files">Files page</a></td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e0e0e0;">
+          <td style="padding: 0.75rem; vertical-align: top;"><strong>Plugins</strong></td>
+          <td style="padding: 0.75rem; vertical-align: top;">Extend SciDK with custom endpoints and integrations</td>
+          <td style="padding: 0.75rem; vertical-align: top; font-size: 0.9em;">HTTP requests, plugin config</td>
+          <td style="padding: 0.75rem; vertical-align: top; font-size: 0.9em;">Custom labels, relationships, metadata (plugin-defined)</td>
+          <td style="padding: 0.75rem; vertical-align: top;"><a href="/plugins">Plugins page</a></td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e0e0e0;">
+          <td style="padding: 0.75rem; vertical-align: top;"><strong>Links</strong></td>
+          <td style="padding: 0.75rem; vertical-align: top;">Create relationships between nodes via matching rules</td>
+          <td style="padding: 0.75rem; vertical-align: top; font-size: 0.9em;">Node properties, matching config, external data (optional)</td>
+          <td style="padding: 0.75rem; vertical-align: top; font-size: 0.9em;">Relationships with confidence scores and provenance</td>
+          <td style="padding: 0.75rem; vertical-align: top;"><a href="/links">Links page</a></td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e0e0e0;">
+          <td style="padding: 0.75rem; vertical-align: top;"><strong>Labels</strong></td>
+          <td style="padding: 0.75rem; vertical-align: top;">Define custom node types with schema constraints</td>
+          <td style="padding: 0.75rem; vertical-align: top; font-size: 0.9em;">Label definition, property schema</td>
+          <td style="padding: 0.75rem; vertical-align: top; font-size: 0.9em;">Label constraints, index definitions, validation rules</td>
+          <td style="padding: 0.75rem; vertical-align: top;"><a href="/labels">Labels page</a></td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e0e0e0;">
+          <td style="padding: 0.75rem; vertical-align: top;"><strong>Analyses</strong></td>
+          <td style="padding: 0.75rem; vertical-align: top;">Run analytical computations over graph data</td>
+          <td style="padding: 0.75rem; vertical-align: top; font-size: 0.9em;">Cypher query or Python script, parameters</td>
+          <td style="padding: 0.75rem; vertical-align: top; font-size: 0.9em;">Result nodes, computed properties, analysis metadata</td>
+          <td style="padding: 0.75rem; vertical-align: top;"><a href="/scripts">Scripts page</a>, <a href="/results">Results page</a></td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e0e0e0;">
+          <td style="padding: 0.75rem; vertical-align: top;"><strong>Scripts</strong></td>
+          <td style="padding: 0.75rem; vertical-align: top;">General-purpose graph operations and automation</td>
+          <td style="padding: 0.75rem; vertical-align: top; font-size: 0.9em;">User-defined parameters, graph context</td>
+          <td style="padding: 0.75rem; vertical-align: top; font-size: 0.9em;">Any graph modifications (user-defined)</td>
+          <td style="padding: 0.75rem; vertical-align: top;"><a href="/scripts">Scripts page</a></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3 style="margin-top: 2rem; margin-bottom: 1rem;">Validation Lifecycle</h3>
+    <p style="margin-bottom: 1rem;">Most module types follow a three-state validation lifecycle to ensure safe deployment:</p>
+
+    <div style="display: flex; gap: 1rem; margin-bottom: 2rem;">
+      <div style="flex: 1; background: #fff3cd; border-left: 4px solid #ffc107; padding: 1rem; border-radius: 4px;">
+        <h4 style="margin-top: 0; color: #856404;">Draft</h4>
+        <p class="small" style="margin-bottom: 0;">Newly created or edited modules. Not executed automatically. Available for manual testing via authoring interface.</p>
+      </div>
+
+      <div style="flex: 1; background: #d1ecf1; border-left: 4px solid #17a2b8; padding: 1rem; border-radius: 4px;">
+        <h4 style="margin-top: 0; color: #0c5460;">Validated</h4>
+        <p class="small" style="margin-bottom: 0;">Passed validation tests. Safe for use. Validation checks syntax, runtime dependencies, and contract conformance.</p>
+      </div>
+
+      <div style="flex: 1; background: #d4edda; border-left: 4px solid #28a745; padding: 1rem; border-radius: 4px;">
+        <h4 style="margin-top: 0; color: #155724;">Active</h4>
+        <p class="small" style="margin-bottom: 0;">Validated and enabled for automatic execution. Applies to system workflows (interpreters, links, plugins). Scripts/analyses remain validated but run on-demand.</p>
+      </div>
+    </div>
+
+    <p class="small" style="color: #666; margin-bottom: 2rem;"><strong>Note:</strong> Plugins and Labels may have simplified or alternate validation flows depending on their registration mechanism. Check the specific module settings page for details.</p>
+
+    <h3 style="margin-top: 2rem; margin-bottom: 1rem;">Configuration</h3>
+    <p style="margin-bottom: 0.5rem;">Module-type-level configuration (not per-module settings) is managed in the Settings panel:</p>
+    <ul style="margin-top: 0;">
+      <li><a href="#modules/interpreters">Modules &gt; Interpreters</a> — Table format registry, default file extension assignments</li>
+      <li><a href="#modules/plugins">Modules &gt; Plugins</a> — Active plugin health, registered API endpoints (read-only)</li>
+      <li><a href="#modules/links">Modules &gt; Links</a> — Global fuzzy matching algorithm and threshold defaults</li>
+      <li><a href="#modules/labels">Modules &gt; Labels</a> — Schema-level settings (if applicable)</li>
+      <li><a href="#modules/analyses">Modules &gt; Analyses</a> — Analysis health monitoring</li>
+      <li><a href="#modules/scripts">Modules &gt; Scripts</a> — Script runtime health monitoring</li>
+    </ul>
+  </div>
+</section>

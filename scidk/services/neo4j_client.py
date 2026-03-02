@@ -2,6 +2,8 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, Tuple, List
 import os
 
+from scidk.schema.sanitization import sanitize_node_properties
+
 
 def get_neo4j_params(app: Optional[Any] = None) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str], str]:
     """Read Neo4j connection parameters from app extensions or environment.
@@ -217,6 +219,251 @@ class Neo4jClient:
                 'db_folders': folders_cnt,
                 'db_verified': bool(scan_exists and (files_cnt > 0 or folders_cnt > 0)),
             }
+
+    def write_declared_nodes(self, nodes: List[Dict[str, Any]], relationships: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Write interpreter-declared nodes and relationships at commit time.
+
+        Args:
+            nodes: List of node declarations with format:
+                   [{'label': 'ImagingDataset', 'key_property': 'path', 'properties': {...}}]
+            relationships: List of relationship declarations with format:
+                          [{'type': 'METADATA_SOURCE', 'from_label': 'X', 'from_match': {...},
+                            'to_label': 'Y', 'to_match': {...}}]
+
+        Returns:
+            Dict with keys: written_nodes (int), written_relationships (int), errors (list)
+        """
+        result = {'written_nodes': 0, 'written_relationships': 0, 'errors': []}
+
+        with self._session() as sess:
+            # Write nodes using MERGE on key property
+            for node_decl in nodes:
+                try:
+                    label = node_decl.get('label')
+                    key_prop = node_decl.get('key_property')
+                    props = node_decl.get('properties', {})
+
+                    # Apply Label-defined sanitization rules before write
+                    props = sanitize_node_properties(label, props)
+
+                    if not label or not key_prop or key_prop not in props:
+                        result['errors'].append(f"Invalid node declaration: missing label, key_property, or key in properties")
+                        continue
+
+                    # Build MERGE query with key property, SET all other properties
+                    key_val = props[key_prop]
+                    other_props = {k: v for k, v in props.items() if k != key_prop}
+
+                    # Cypher parameter construction
+                    params = {'key_val': key_val}
+                    set_clauses = []
+                    for idx, (k, v) in enumerate(other_props.items()):
+                        param_name = f'prop_{idx}'
+                        params[param_name] = v
+                        set_clauses.append(f'n.{k} = ${param_name}')
+
+                    set_clause = ', '.join(set_clauses) if set_clauses else ''
+                    cypher = f"MERGE (n:{label} {{{key_prop}: $key_val}})"
+                    if set_clause:
+                        cypher += f" SET {set_clause}"
+                    cypher += " RETURN elementId(n) as node_id"
+
+                    sess.run(cypher, **params).consume()
+                    result['written_nodes'] += 1
+
+                except Exception as e:
+                    result['errors'].append(f"Failed to write node {node_decl.get('label')}: {str(e)}")
+
+            # Write relationships using MATCH by key properties
+            for rel_decl in relationships:
+                try:
+                    rel_type = rel_decl.get('type')
+                    from_label = rel_decl.get('from_label')
+                    from_match = rel_decl.get('from_match', {})
+                    to_label = rel_decl.get('to_label')
+                    to_match = rel_decl.get('to_match', {})
+
+                    if not rel_type or not from_label or not to_label or not from_match or not to_match:
+                        result['errors'].append(f"Invalid relationship declaration: missing required fields")
+                        continue
+
+                    # Build MATCH clauses with provided properties
+                    from_props_str = ', '.join([f'{k}: $from_{k}' for k in from_match.keys()])
+                    to_props_str = ', '.join([f'{k}: $to_{k}' for k in to_match.keys()])
+
+                    params = {}
+                    for k, v in from_match.items():
+                        params[f'from_{k}'] = v
+                    for k, v in to_match.items():
+                        params[f'to_{k}'] = v
+
+                    cypher = (
+                        f"MATCH (from:{from_label} {{{from_props_str}}}) "
+                        f"MATCH (to:{to_label} {{{to_props_str}}}) "
+                        f"MERGE (from)-[:{rel_type}]->(to)"
+                    )
+
+                    sess.run(cypher, **params).consume()
+                    result['written_relationships'] += 1
+
+                except Exception as e:
+                    result['errors'].append(f"Failed to write relationship {rel_decl.get('type')}: {str(e)}")
+
+        return result
+
+    def push_label_constraints(self) -> Dict[str, Any]:
+        """Push all Label schema constraints and indexes to Neo4j.
+
+        Loads all registered Label definitions and creates their constraints/indexes.
+        Uses IF NOT EXISTS so this operation is idempotent.
+
+        Returns:
+            Dict with keys:
+                - created: List of constraint/index names that were created
+                - already_existed: List of constraint/index names that already existed
+                - errors: List of error messages for any failures
+        """
+        from scidk.schema.registry import LabelRegistry
+
+        result = {
+            'created': [],
+            'already_existed': [],
+            'errors': []
+        }
+
+        # Load all labels
+        all_labels = LabelRegistry.all()
+
+        with self._session() as session:
+            for label_name, label_def in all_labels.items():
+                try:
+                    # Generate Cypher constraint statements
+                    statements = label_def.generate_cypher_constraints()
+
+                    for statement in statements:
+                        try:
+                            # Execute the constraint/index creation
+                            session.run(statement).consume()
+
+                            # Extract constraint/index name from statement
+                            # Format: "CREATE CONSTRAINT name IF NOT EXISTS..." or "CREATE INDEX name IF NOT EXISTS..."
+                            parts = statement.split()
+                            if len(parts) >= 3:
+                                constraint_name = parts[2]  # Third token is the name
+
+                                # Check if it already existed by trying to query it
+                                # Neo4j returns success even if it existed due to IF NOT EXISTS
+                                # So we'll consider it as created (idempotent operation)
+                                result['created'].append(f"{label_name}.{constraint_name}")
+
+                        except Exception as e:
+                            error_msg = str(e).lower()
+                            # If it already exists, Neo4j might still raise in some versions
+                            if 'already exists' in error_msg or 'equivalent' in error_msg:
+                                if len(statement.split()) >= 3:
+                                    constraint_name = statement.split()[2]
+                                    result['already_existed'].append(f"{label_name}.{constraint_name}")
+                            else:
+                                result['errors'].append(f"{label_name}: {str(e)}")
+
+                except Exception as e:
+                    result['errors'].append(f"Failed to process {label_name}: {str(e)}")
+
+        return result
+
+
+def get_neo4j_client_for_profile(profile_name: str) -> Optional['Neo4jClient']:
+    """Get Neo4j client for a specific named profile.
+
+    Args:
+        profile_name: Name of the Neo4j profile (e.g., 'Read-Only Source')
+
+    Returns:
+        Connected Neo4jClient instance or None if profile not found
+
+    Raises:
+        ValueError: If profile configuration is invalid
+    """
+    try:
+        from flask import current_app
+        from ..core.settings import get_setting
+        import json
+
+        # Normalize profile name for key lookup
+        profile_key = f'neo4j_profile_{profile_name.replace(" ", "_")}'
+        profile_json = get_setting(profile_key)
+
+        if not profile_json:
+            raise ValueError(f"Neo4j profile '{profile_name}' not found in settings")
+
+        profile = json.loads(profile_json)
+
+        # Load password
+        password_key = f'neo4j_profile_password_{profile_name.replace(" ", "_")}'
+        password = get_setting(password_key)
+
+        uri = profile.get('uri')
+        user = profile.get('user')
+        database = profile.get('database')
+        auth_mode = 'basic'  # Default for profiles
+
+        if not uri:
+            raise ValueError(f"Neo4j profile '{profile_name}' has no URI configured")
+
+        client = Neo4jClient(uri, user, password, database, auth_mode)
+        client.connect()
+        return client
+
+    except Exception as e:
+        try:
+            from flask import current_app
+            current_app.logger.error(f"Failed to create Neo4j client for profile '{profile_name}': {e}")
+        except:
+            pass
+        return None
+
+
+def list_neo4j_profiles() -> List[Dict[str, Any]]:
+    """List all configured Neo4j profiles.
+
+    Returns:
+        List of profile dicts with keys: name, uri, user, database, role
+    """
+    try:
+        from ..core.settings import get_settings_by_prefix
+        import json
+
+        profiles = []
+        settings = get_settings_by_prefix('neo4j_profile_')
+
+        # Find all neo4j_profile_* settings
+        for key, value in settings.items():
+            if not key.endswith('_password'):
+                # Extract profile name from key
+                profile_name_normalized = key.replace('neo4j_profile_', '')
+                profile_name = profile_name_normalized.replace('_', ' ')
+
+                try:
+                    profile_data = json.loads(value)
+                    profiles.append({
+                        'name': profile_name,
+                        'uri': profile_data.get('uri', ''),
+                        'user': profile_data.get('user', ''),
+                        'database': profile_data.get('database', 'neo4j'),
+                        'role': profile_data.get('role', 'unknown')
+                    })
+                except:
+                    continue
+
+        return profiles
+
+    except Exception as e:
+        try:
+            from flask import current_app
+            current_app.logger.error(f"Failed to list Neo4j profiles: {e}")
+        except:
+            pass
+        return []
 
 
 def get_neo4j_client(role: Optional[str] = None):

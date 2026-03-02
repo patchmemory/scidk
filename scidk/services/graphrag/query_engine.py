@@ -1,15 +1,25 @@
 """
 Schema-agnostic GraphRAG query engine for SciDK.
 Combines entity extraction with neo4j-graphrag's Text2CypherRetriever.
+
+Enhanced with:
+- Dynamic schema loading from live Neo4j instance (SciDKSchemaLoader)
+- Curated query library for few-shot Cypher generation
 """
 from typing import Dict, Any, Optional
 import time
+import logging
 
 
 class QueryEngine:
     """
     High-level GraphRAG query interface.
     Schema-agnostic: works with any Neo4j database.
+
+    Features:
+    - Dynamic schema injection into entity extraction
+    - Query library with curated Cypher examples
+    - Intent classification support
     """
 
     def __init__(
@@ -18,7 +28,9 @@ class QueryEngine:
         neo4j_schema: Dict[str, Any],
         anthropic_api_key: Optional[str] = None,
         examples: Optional[list] = None,
-        verbose: bool = False
+        verbose: bool = False,
+        database: Optional[str] = None,
+        query_library_path: Optional[str] = None
     ):
         """
         Initialize query engine.
@@ -27,17 +39,39 @@ class QueryEngine:
             driver: Neo4j driver instance
             neo4j_schema: Schema dict with 'labels' and 'relationships'
             anthropic_api_key: Optional API key for entity extraction
-            examples: Optional Text2Cypher examples
+            examples: Optional Text2Cypher examples (overrides query library)
             verbose: If True, include extracted entities and Cypher in response
+            database: Optional Neo4j database name for schema loader
+            query_library_path: Optional path to query library YAML (defaults to query_library/scidk_queries.yaml)
         """
         self.driver = driver
         self.neo4j_schema = neo4j_schema
         self.verbose = verbose
+        self.database = database
+        self.logger = logging.getLogger(__name__)
+
+        # Initialize schema loader for dynamic schema discovery
+        from .schema_loader import SciDKSchemaLoader
+        self.schema_loader = SciDKSchemaLoader(driver, database=database)
+
+        # Load schema once at initialization (NOT per-request)
+        schema_fragment = self.schema_loader.get_schema_fragment()
+        self.logger.info("Schema loaded for entity extraction")
+
+        # Load query library for few-shot examples
+        if examples is None:
+            from .query_library_loader import load_query_library
+            examples = load_query_library(query_library_path)
+            self.logger.info(f"Loaded {len(examples)} query library examples")
+
         self.examples = examples or []
 
-        # Initialize entity extractor
+        # Initialize entity extractor with schema context
         from .entity_extractor import EntityExtractor
         self.entity_extractor = EntityExtractor(anthropic_api_key)
+
+        # Store schema fragment for entity extraction
+        self._schema_fragment = schema_fragment
 
     def query(self, question: str) -> Dict[str, Any]:
         """
@@ -50,9 +84,11 @@ class QueryEngine:
             Dict with:
                 - status: 'ok' or 'error'
                 - answer: Natural language answer
+                - engine: 'graph_query' (for UI badge)
+                - cypher_query: Generated Cypher query (always included for feedback)
                 - entities: Extracted entities (if verbose)
-                - cypher: Generated Cypher query (if verbose)
                 - results: Raw results (if verbose)
+                - result_count: Number of results returned
                 - execution_time_ms: Query execution time
         """
         start_time = time.time()
@@ -71,7 +107,7 @@ class QueryEngine:
                 if self.entity_extractor.use_llm:
                     llm = self._create_llm_adapter()
 
-                # Create retriever with schema
+                # Create retriever with schema and query library examples
                 retriever = Text2CypherRetriever(
                     driver=self.driver,
                     neo4j_schema=self.neo4j_schema,
@@ -82,18 +118,30 @@ class QueryEngine:
                 # Execute query
                 result = retriever.search(query_text=question)
 
+                # Extract Cypher query from result (for feedback and UI citations)
+                cypher_query = None
+                if hasattr(result, 'metadata') and 'cypher' in result.metadata:
+                    cypher_query = result.metadata['cypher']
+
+                # Extract items for counting
+                items = result.items if hasattr(result, 'items') else []
+                result_count = len(items)
+
                 # Format response
                 execution_time = int((time.time() - start_time) * 1000)
 
                 response = {
                     'status': 'ok',
                     'answer': self._format_answer(result, question),
+                    'engine': 'graph_query',  # Used by UI to show "📊 Graph Query" badge
+                    'cypher_query': cypher_query,  # Always include for feedback and citations
+                    'result_count': result_count,
                     'execution_time_ms': execution_time
                 }
 
                 if self.verbose:
                     response['entities'] = entities
-                    response['results'] = result.items if hasattr(result, 'items') else []
+                    response['results'] = items
 
                 return response
 
@@ -110,6 +158,21 @@ class QueryEngine:
                 'error': str(e),
                 'execution_time_ms': int((time.time() - start_time) * 1000)
             }
+
+    def refresh_schema(self) -> Dict[str, Any]:
+        """
+        Force reload of schema from Neo4j.
+
+        Call this endpoint when new labels or relationship types are added.
+
+        Returns:
+            Updated schema dict with 'labels' and 'relationships'.
+        """
+        schema = self.schema_loader.refresh()
+        self._schema_fragment = self.schema_loader.get_schema_fragment()
+        self.neo4j_schema = {"labels": schema["labels"], "relationships": schema["relationships"]}
+        self.logger.info("Schema refreshed")
+        return schema
 
     def _create_llm_adapter(self) -> Optional[Any]:
         """Create LLM adapter for neo4j-graphrag."""

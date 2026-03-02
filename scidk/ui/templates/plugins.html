@@ -1,11 +1,439 @@
 {% extends 'base.html' %}
 {% block title %}-SciDK-> Plugins{% endblock %}
+
+{% block head %}
+<style>
+  .plugins-container {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .plugins-section {
+    margin-bottom: 2rem;
+    border: 1px solid #eee;
+    border-radius: 6px;
+    padding: 1.5rem;
+    background: #fff;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid #eee;
+  }
+
+  .section-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+  }
+
+  .section-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  .badge-active {
+    background: #d4edda;
+    color: #155724;
+  }
+
+  .badge-inactive {
+    background: #fff3cd;
+    color: #856404;
+  }
+
+  .badge-draft {
+    background: #f8d7da;
+    color: #721c24;
+  }
+
+  .plugin-card {
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    transition: box-shadow 0.2s;
+  }
+
+  .plugin-card:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  }
+
+  .plugin-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.5rem;
+  }
+
+  .plugin-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .plugin-title h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+  }
+
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.125rem 0.5rem;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .status-validated {
+    background: #d4edda;
+    color: #155724;
+  }
+
+  .status-draft {
+    background: #fff3cd;
+    color: #856404;
+  }
+
+  .status-failed {
+    background: #f8d7da;
+    color: #721c24;
+  }
+
+  .status-active {
+    background: #cce5ff;
+    color: #004085;
+  }
+
+  .plugin-description {
+    color: #666;
+    margin-bottom: 0.75rem;
+    font-size: 0.95rem;
+  }
+
+  .plugin-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    font-size: 0.875rem;
+    color: #666;
+    margin-bottom: 0.75rem;
+  }
+
+  .meta-item {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .plugin-used-by {
+    background: #f8f9fa;
+    border-left: 3px solid #0a6;
+    padding: 0.75rem;
+    margin-top: 0.5rem;
+    border-radius: 4px;
+  }
+
+  .used-by-title {
+    font-weight: 600;
+    font-size: 0.875rem;
+    margin-bottom: 0.5rem;
+    color: #333;
+  }
+
+  .used-by-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .used-by-item {
+    background: #fff;
+    border: 1px solid #ddd;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .used-by-item:hover {
+    background: #e3f2fd;
+    border-color: #2196f3;
+  }
+
+  .plugin-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+
+  .btn-view-scripts {
+    padding: 0.5rem 1rem;
+    background: #0a6;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    text-decoration: none;
+    display: inline-block;
+  }
+
+  .btn-view-scripts:hover {
+    background: #085;
+  }
+
+  .btn-activate {
+    padding: 0.5rem 1rem;
+    background: #fff;
+    color: #0a6;
+    border: 1px solid #0a6;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    text-decoration: none;
+    display: inline-block;
+  }
+
+  .btn-activate:hover {
+    background: #f0f9f0;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 2rem;
+    color: #999;
+    font-style: italic;
+  }
+
+  .info-box {
+    background: #e3f2fd;
+    border-left: 4px solid #2196f3;
+    padding: 1rem;
+    margin-bottom: 2rem;
+    border-radius: 4px;
+  }
+
+  .info-box p {
+    margin: 0;
+    color: #555;
+    font-size: 0.95rem;
+  }
+
+  .loading {
+    text-align: center;
+    padding: 1rem;
+    color: #666;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
-<h1>Plugins</h1>
-<p class="small">Plugin registry and management UI will appear here.</p>
-<ul>
-  <li class="small">Registered interpreter count: {{ interp_count or 0 }}</li>
-  <li class="small">Extensions mapped: {{ ext_count or 0 }}</li>
-  <li class="small">MVP: Placeholder page.</li>
-</ul>
+<div class="plugins-container">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+    <h1 style="margin: 0;">Plugins</h1>
+  </div>
+
+  <div class="info-box">
+    <p><strong>Transparency Layer:</strong> This page shows all intelligence running in your SciDK instance. Active plugins are validated scripts that extend system capabilities. Only scripts validated through the Scripts page appear here.</p>
+  </div>
+
+  <!-- Active Plugins Section -->
+  <div class="plugins-section">
+    <div class="section-header">
+      <h2>🟢 Active Plugins</h2>
+      <span class="section-badge badge-active">{{ active_plugins|length }} Active</span>
+    </div>
+
+    {% if active_plugins %}
+      {% for plugin in active_plugins %}
+      <div class="plugin-card" data-plugin-id="{{ plugin.id }}">
+        <div class="plugin-header">
+          <div class="plugin-title">
+            <h3>📦 {{ plugin.name }}</h3>
+            <span class="status-badge status-validated">✅ Validated</span>
+            <span class="status-badge status-active">🟢 Active</span>
+          </div>
+        </div>
+
+        <p class="plugin-description">{{ plugin.description or plugin.docstring or 'No description' }}</p>
+
+        <div class="plugin-meta">
+          <span class="meta-item">
+            <strong>Category:</strong> {{ plugin.category }}
+          </span>
+          <span class="meta-item">
+            <strong>Language:</strong> {{ plugin.language }}
+          </span>
+          {% if plugin.validation_timestamp %}
+          <span class="meta-item">
+            <strong>Validated:</strong> {{ ((now() - plugin.validation_timestamp) / 86400) | round(0) | int }} days ago
+          </span>
+          {% endif %}
+        </div>
+
+        <!-- Used By Section (populated via JS) -->
+        <div class="plugin-used-by" id="used-by-{{ plugin.id }}" style="display: none;">
+          <div class="used-by-title">Used by:</div>
+          <div class="used-by-list" id="used-by-list-{{ plugin.id }}">
+            <span class="loading">Loading...</span>
+          </div>
+        </div>
+
+        <div class="plugin-actions">
+          <a href="/scripts#script-{{ plugin.id }}" class="btn-view-scripts">View in Scripts</a>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        No active plugins yet. Validate and activate scripts in the Scripts page.
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Available but Inactive Section -->
+  <div class="plugins-section">
+    <div class="section-header">
+      <h2>🟡 Available but Inactive</h2>
+      <span class="section-badge badge-inactive">{{ inactive_plugins|length }} Inactive</span>
+    </div>
+
+    {% if inactive_plugins %}
+      {% for plugin in inactive_plugins %}
+      <div class="plugin-card">
+        <div class="plugin-header">
+          <div class="plugin-title">
+            <h3>📦 {{ plugin.name }}</h3>
+            <span class="status-badge status-validated">✅ Validated</span>
+          </div>
+        </div>
+
+        <p class="plugin-description">{{ plugin.description or plugin.docstring or 'No description' }}</p>
+
+        <div class="plugin-meta">
+          <span class="meta-item">
+            <strong>Category:</strong> {{ plugin.category }}
+          </span>
+          <span class="meta-item">
+            <strong>Language:</strong> {{ plugin.language }}
+          </span>
+        </div>
+
+        <div class="plugin-actions">
+          <a href="/scripts#script-{{ plugin.id }}" class="btn-activate">→ Activate in Scripts</a>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        All validated plugins are active.
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Draft / Failed Section -->
+  <div class="plugins-section">
+    <div class="section-header">
+      <h2>🔴 Draft / Failed</h2>
+      <span class="section-badge badge-draft">{{ draft_failed_plugins|length }} Needs Attention</span>
+    </div>
+
+    {% if draft_failed_plugins %}
+      {% for plugin in draft_failed_plugins %}
+      <div class="plugin-card">
+        <div class="plugin-header">
+          <div class="plugin-title">
+            <h3>📦 {{ plugin.name }}</h3>
+            <span class="status-badge status-{{ plugin.validation_status }}">
+              {% if plugin.validation_status == 'failed' %}❌ Failed{% else %}🟡 Draft{% endif %}
+            </span>
+          </div>
+        </div>
+
+        <p class="plugin-description">{{ plugin.description or plugin.docstring or 'No description' }}</p>
+
+        {% if plugin.validation_errors %}
+        <div style="background: #fff3cd; padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0; font-size: 0.875rem;">
+          <strong>Validation errors:</strong>
+          <ul style="margin: 0.25rem 0 0 1.25rem; padding: 0;">
+            {% for error in plugin.validation_errors[:3] %}
+            <li>{{ error }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        <div class="plugin-meta">
+          <span class="meta-item">
+            <strong>Category:</strong> {{ plugin.category }}
+          </span>
+          <span class="meta-item">
+            <strong>Language:</strong> {{ plugin.language }}
+          </span>
+        </div>
+
+        <div class="plugin-actions">
+          <a href="/scripts#script-{{ plugin.id }}" class="btn-view-scripts">→ Edit in Scripts</a>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        All scripts are validated or active.
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+// Load "Used by" data for active plugins
+document.addEventListener('DOMContentLoaded', async () => {
+  const activePlugins = document.querySelectorAll('[data-plugin-id]');
+
+  for (const pluginCard of activePlugins) {
+    const pluginId = pluginCard.getAttribute('data-plugin-id');
+    const usedByContainer = document.getElementById(`used-by-${pluginId}`);
+    const usedByList = document.getElementById(`used-by-list-${pluginId}`);
+
+    if (!usedByContainer || !usedByList) continue;
+
+    try {
+      const response = await fetch(`/api/plugins/dependencies/${encodeURIComponent(pluginId)}`);
+      const data = await response.json();
+
+      if (data.status === 'success' && data.used_by && data.used_by.length > 0) {
+        // Show the container
+        usedByContainer.style.display = 'block';
+
+        // Build used-by list
+        usedByList.innerHTML = data.used_by.map(dep => {
+          const typeLabel = dep.type === 'interpreter' ? '🔬 Interpreter' :
+                           dep.type === 'link' ? '🔗 Link' : '🔌 Plugin';
+          return `<a href="/scripts#script-${dep.id}" class="used-by-item" title="${dep.name}">
+            ${typeLabel}: ${dep.name}
+          </a>`;
+        }).join('');
+      } else {
+        // No dependencies, hide the container
+        usedByContainer.style.display = 'none';
+      }
+    } catch (error) {
+      console.error(`Failed to load dependencies for ${pluginId}:`, error);
+      usedByContainer.style.display = 'none';
+    }
+  }
+});
+</script>
 {% endblock %}

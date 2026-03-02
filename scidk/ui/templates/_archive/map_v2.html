@@ -1,0 +1,962 @@
+{% extends 'base.html' %}
+{% block title %}-SciDK-> Maps{% endblock %}
+{% block head %}
+<style>
+  /* Override base.html main width constraint for map page */
+  main {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+
+  .maps-container {
+    display: flex;
+    gap: 0;
+    height: calc(100vh - 60px);
+    position: relative;
+  }
+
+  /* Left Panel: Map Library */
+  .map-library-panel {
+    width: 20%;
+    min-width: 250px;
+    max-width: 40%;
+    border-right: 1px solid #e0e0e0;
+    background: #f9f9f9;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Center Panel: Tabs + Graph + Query Panel */
+  .map-workspace-panel {
+    flex: 1;
+    min-width: 400px;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    overflow: hidden;
+  }
+
+  /* Right Panel: Visualization Controls */
+  .map-controls-panel {
+    width: 20%;
+    min-width: 250px;
+    max-width: 40%;
+    border-left: 1px solid #e0e0e0;
+    background: #f9f9f9;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Resizable Dividers */
+  .resizer {
+    width: 6px;
+    cursor: col-resize;
+    background: #e0e0e0;
+    position: relative;
+    flex-shrink: 0;
+    transition: background 0.15s ease;
+  }
+
+  .resizer:hover {
+    background: #2196f3;
+  }
+
+  .resizer::after {
+    content: '⋮';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #999;
+    font-size: 1.2rem;
+    line-height: 0.5rem;
+  }
+
+  .resizer.resizing {
+    background: #2196f3;
+  }
+
+  /* === LEFT PANEL: MAP LIBRARY === */
+  .map-library-header {
+    padding: 1rem;
+    border-bottom: 1px solid #e0e0e0;
+    background: #fff;
+  }
+
+  .map-library-header h3 {
+    margin: 0 0 0.75rem 0;
+    font-size: 1.1rem;
+  }
+
+  .map-library-content {
+    flex: 1;
+    padding: 1rem;
+    overflow-y: auto;
+  }
+
+  .map-item {
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .map-item:hover {
+    border-color: #2196f3;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+
+  .map-item.active {
+    border-color: #2196f3;
+    background: #e3f2fd;
+  }
+
+  .map-item-name {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+  }
+
+  .map-item-meta {
+    font-size: 0.75rem;
+    color: #666;
+  }
+
+  /* === CENTER PANEL: TABS + WORKSPACE === */
+  .map-tabs-bar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid #e0e0e0;
+    background: #f5f5f5;
+    overflow-x: auto;
+  }
+
+  .map-tab {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
+    font-size: 0.9rem;
+  }
+
+  .map-tab:hover {
+    background: #f9f9f9;
+  }
+
+  .map-tab.active {
+    background: #fff;
+    border-color: #2196f3;
+    border-bottom-color: #fff;
+    margin-bottom: -1px;
+    z-index: 1;
+  }
+
+  .map-tab-close {
+    margin-left: 0.25rem;
+    color: #999;
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .map-tab-close:hover {
+    color: #dc3545;
+  }
+
+  .map-tab-new {
+    padding: 0.5rem 0.75rem;
+    background: transparent;
+    border: 1px dashed #999;
+    border-radius: 4px;
+    cursor: pointer;
+    color: #666;
+    font-size: 1.2rem;
+    line-height: 1;
+    transition: all 0.2s;
+  }
+
+  .map-tab-new:hover {
+    border-color: #2196f3;
+    color: #2196f3;
+    background: #f0f7ff;
+  }
+
+  .map-tab-content {
+    display: none;
+    flex: 1;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .map-tab-content.active {
+    display: flex;
+  }
+
+  /* Graph Canvas Area */
+  .map-graph-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .map-graph-canvas {
+    flex: 1;
+    border: 1px solid #e0e0e0;
+    margin: 1rem;
+    border-radius: 4px;
+  }
+
+  /* Query Panel at Bottom of Center */
+  .map-query-section {
+    border-top: 1px solid #e0e0e0;
+    background: #f9f9f9;
+    padding: 1rem;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .query-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+
+  .query-section-header h4 {
+    margin: 0;
+    font-size: 0.95rem;
+  }
+
+  /* === RIGHT PANEL: CONTROLS === */
+  .map-controls-header {
+    padding: 1rem;
+    border-bottom: 1px solid #e0e0e0;
+    background: #fff;
+  }
+
+  .map-controls-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+  }
+
+  .map-controls-content {
+    flex: 1;
+    padding: 1rem;
+    overflow-y: auto;
+  }
+
+  .control-group {
+    margin-bottom: 1.5rem;
+  }
+
+  .control-group h4 {
+    font-size: 0.9rem;
+    margin-bottom: 0.75rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .control-item {
+    margin-bottom: 1rem;
+  }
+
+  .control-item label {
+    display: block;
+    font-size: 0.85rem;
+    margin-bottom: 0.25rem;
+    color: #333;
+  }
+
+  .control-item input[type="range"] {
+    width: 100%;
+  }
+
+  .control-item select {
+    width: 100%;
+  }
+
+  /* Empty State */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #999;
+    padding: 2rem;
+    text-align: center;
+  }
+
+  .empty-state-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+  }
+
+  /* Utility Classes */
+  .btn-group {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .small-text {
+    font-size: 0.75rem;
+    color: #666;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="maps-container">
+  <!-- LEFT PANEL: Map Library -->
+  <div class="map-library-panel" id="map-library-panel">
+    <div class="map-library-header">
+      <h3>📁 Saved Maps</h3>
+      <div class="btn-group">
+        <button id="new-map-btn" class="btn btn-sm btn-primary" style="flex:1">+ New Map</button>
+      </div>
+      <input type="search" id="map-search" class="form-control form-control-sm" placeholder="Search maps..." />
+    </div>
+
+    <div class="map-library-content" id="map-library-content">
+      <div class="empty-state">
+        <div class="empty-state-icon">🗺️</div>
+        <p><strong>No saved maps yet</strong></p>
+        <p class="small-text">Create a new map or run a query to get started</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESIZER (Left/Center) -->
+  <div class="resizer" id="resizer-left"></div>
+
+  <!-- CENTER PANEL: Tabs + Graph + Query -->
+  <div class="map-workspace-panel" id="map-workspace-panel">
+    <!-- Tabs Bar -->
+    <div class="map-tabs-bar" id="map-tabs-bar">
+      <!-- Tabs will be dynamically added here -->
+      <div class="map-tab active" data-tab-id="tab-1" data-testid="map-tab">
+        <span class="map-tab-name">Map 1</span>
+        <span class="map-tab-close" data-tab-id="tab-1">×</span>
+      </div>
+      <button class="map-tab-new" id="new-tab-btn" data-testid="new-tab-btn" title="New tab">+</button>
+    </div>
+
+    <!-- Tab Content -->
+    <div class="map-tab-content active" id="tab-content-1">
+      <!-- Graph Canvas Area -->
+      <div class="map-graph-area">
+        <div class="map-graph-canvas" id="graph-canvas-1" data-testid="graph-canvas"></div>
+      </div>
+
+      <!-- Query Section at Bottom -->
+      <div class="map-query-section">
+        <div class="query-section-header">
+          <h4>🔍 Query & Filters</h4>
+          <button id="toggle-query-section" class="btn btn-sm btn-outline-secondary">
+            <span id="query-section-icon">▼</span>
+          </button>
+        </div>
+
+        <div id="query-section-content">
+          <!-- Query Panel (from existing implementation) -->
+          <div class="control-item">
+            <label>Cypher Query</label>
+            <textarea id="query-input" class="form-control" rows="3" placeholder="MATCH (n) RETURN n LIMIT 10" data-testid="query-input" style="font-family:monospace; font-size:0.9em"></textarea>
+            <div class="btn-group" style="margin-top:0.5rem">
+              <button id="run-query" class="btn btn-sm btn-success" data-testid="run-query">▶ Run</button>
+              <button id="save-query" class="btn btn-sm btn-outline-secondary" data-testid="save-query">💾 Save</button>
+              <button id="load-library" class="btn btn-sm btn-outline-secondary" data-testid="load-library">📚 Library</button>
+              <button id="clear-query" class="btn btn-sm btn-outline-secondary" data-testid="clear-query">Clear</button>
+            </div>
+            <div class="small-text" style="margin-top:0.5rem">
+              <span id="query-status"></span>
+            </div>
+          </div>
+
+          <!-- Query Results -->
+          <div id="query-results" style="margin-top:1rem; display:none">
+            <h5>Results</h5>
+            <div id="query-results-content" class="table-responsive" style="max-height:300px; overflow:auto; border:1px solid #eee; border-radius:4px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESIZER (Center/Right) -->
+  <div class="resizer" id="resizer-right"></div>
+
+  <!-- RIGHT PANEL: Visualization Controls -->
+  <div class="map-controls-panel" id="map-controls-panel">
+    <div class="map-controls-header">
+      <h3>⚙️ Visualization</h3>
+    </div>
+
+    <div class="map-controls-content">
+      <!-- Schema Source -->
+      <div class="control-group">
+        <h4>Data Source</h4>
+        <div class="control-item">
+          <label for="schema-source">Source</label>
+          <select id="schema-source" class="form-select form-select-sm" data-testid="schema-source-selector">
+            <option value="all" selected>All Sources</option>
+            <option value="labels">Local Labels</option>
+            <option value="neo4j">Neo4j Schema</option>
+            <option value="graph">In-Memory Graph</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Layout Controls -->
+      <div class="control-group">
+        <h4>Layout</h4>
+        <div class="control-item">
+          <label for="layout-mode">Algorithm</label>
+          <select id="layout-mode" class="form-select form-select-sm">
+            <option value="cose" selected>Force-directed (cose)</option>
+            <option value="breadthfirst">Hierarchical (breadthfirst)</option>
+            <option value="circle">Circular</option>
+            <option value="grid">Grid</option>
+            <option value="concentric">Concentric</option>
+            <option value="manual">Manual</option>
+          </select>
+        </div>
+        <div class="btn-group">
+          <button id="save-positions" class="btn btn-sm btn-outline-secondary">💾 Save</button>
+          <button id="load-positions" class="btn btn-sm btn-outline-secondary">📂 Load</button>
+        </div>
+      </div>
+
+      <!-- Node Styling -->
+      <div class="control-group">
+        <h4>Node Style</h4>
+        <div class="control-item">
+          <label for="node-size">Size</label>
+          <input id="node-size" type="range" class="form-range" min="0.5" max="3" step="0.1" value="1">
+        </div>
+        <div class="control-item">
+          <label for="font-size">Label Font Size</label>
+          <input id="font-size" type="range" class="form-range" min="8" max="18" step="1" value="10">
+        </div>
+        <div class="control-item">
+          <label>
+            <input type="checkbox" id="high-contrast" class="form-check-input">
+            High-contrast labels
+          </label>
+        </div>
+      </div>
+
+      <!-- Edge Styling -->
+      <div class="control-group">
+        <h4>Edge Style</h4>
+        <div class="control-item">
+          <label for="edge-width">Width</label>
+          <input id="edge-width" type="range" class="form-range" min="0.5" max="3" step="0.1" value="1">
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div class="control-group">
+        <h4>Filters</h4>
+        <div class="control-item">
+          <label for="filter-labels">Labels</label>
+          <select id="filter-labels" class="form-select form-select-sm" data-testid="filter-labels">
+            <option value="">All</option>
+          </select>
+        </div>
+        <div class="control-item">
+          <label for="filter-reltypes">Relationships</label>
+          <select id="filter-reltypes" class="form-select form-select-sm" data-testid="filter-reltypes">
+            <option value="">All</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Export -->
+      <div class="control-group">
+        <h4>Export</h4>
+        <button id="download-csv" class="btn btn-sm btn-outline-primary w-100">📊 Schema CSV</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Schema Tables (Hidden - will be moved to a tab or modal later) -->
+<div style="display:none">
+  <section>
+    <h2>Graph Schema</h2>
+    <p class="small">MVP: table-based schema view showing node labels and relationship types with counts. Data reflects the current in-memory session.</p>
+    <div style="display:flex; gap:2rem; flex-wrap:wrap; align-items:flex-start;">
+      <div>
+        <h3>Node Labels</h3>
+        <table class="table table-sm">
+          <thead>
+            <tr><th>Label</th><th>Count</th></tr>
+          </thead>
+          <tbody>
+            {% for label, cnt in schema_summary.nodes.items() %}
+              <tr><td>{{ label }}</td><td>{{ cnt }}</td></tr>
+            {% else %}
+              <tr><td colspan="2" class="small">No nodes</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <h3>Relationship Types</h3>
+        <table class="table table-sm">
+          <thead>
+            <tr><th>Type</th><th>Count</th></tr>
+          </thead>
+          <tbody>
+            {% for rel, cnt in schema_summary.relations.items() %}
+              <tr><td>{{ rel }}</td><td>{{ cnt }}</td></tr>
+            {% else %}
+              <tr><td colspan="2" class="small">No relationships</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script src="https://unpkg.com/cytoscape@3.27.0/dist/cytoscape.min.js"></script>
+<script>
+(async function() {
+  // ===== GLOBAL STATE =====
+  const mapState = {
+    tabs: {},
+    activeTabId: 'tab-1',
+    maxTabs: 8,
+    nextTabId: 2,
+    panelWidths: {
+      left: 20, // percentage
+      right: 20
+    }
+  };
+
+  // Initialize first tab
+  mapState.tabs['tab-1'] = {
+    id: 'tab-1',
+    name: 'Map 1',
+    cy: null, // Cytoscape instance
+    graphData: null,
+    settings: {
+      source: 'all',
+      layout: 'cose',
+      filters: {
+        labels: '',
+        relTypes: ''
+      }
+    }
+  };
+
+  // ===== HELPER FUNCTIONS =====
+  function qs(params){
+    const u = new URLSearchParams();
+    for (const [k,v] of Object.entries(params)) if (v) u.set(k, v);
+    return u.toString();
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // ===== TAB MANAGEMENT =====
+  function getActiveTab() {
+    return mapState.tabs[mapState.activeTabId];
+  }
+
+  function createNewTab() {
+    if (Object.keys(mapState.tabs).length >= mapState.maxTabs) {
+      alert(`Maximum of ${mapState.maxTabs} tabs reached`);
+      return;
+    }
+
+    const tabId = `tab-${mapState.nextTabId++}`;
+    const tabName = `Map ${mapState.nextTabId - 1}`;
+
+    // Create tab state
+    mapState.tabs[tabId] = {
+      id: tabId,
+      name: tabName,
+      cy: null,
+      graphData: null,
+      settings: {
+        source: 'all',
+        layout: 'cose',
+        filters: {
+          labels: '',
+          relTypes: ''
+        }
+      }
+    };
+
+    // Create tab UI
+    const tabsBar = document.getElementById('map-tabs-bar');
+    const newTabBtn = document.getElementById('new-tab-btn');
+
+    const tabEl = document.createElement('div');
+    tabEl.className = 'map-tab';
+    tabEl.dataset.tabId = tabId;
+    tabEl.dataset.testid = 'map-tab';
+    tabEl.innerHTML = `
+      <span class="map-tab-name">${escapeHtml(tabName)}</span>
+      <span class="map-tab-close" data-tab-id="${tabId}">×</span>
+    `;
+    tabsBar.insertBefore(tabEl, newTabBtn);
+
+    // Create tab content
+    const workspace = document.getElementById('map-workspace-panel');
+    const tabContent = document.createElement('div');
+    tabContent.className = 'map-tab-content';
+    tabContent.id = `tab-content-${tabId}`;
+    tabContent.innerHTML = `
+      <div class="map-graph-area">
+        <div class="map-graph-canvas" id="graph-canvas-${tabId}" data-testid="graph-canvas"></div>
+      </div>
+    `;
+    workspace.appendChild(tabContent);
+
+    // Switch to new tab
+    switchTab(tabId);
+
+    // Attach event handlers
+    attachTabEventHandlers();
+  }
+
+  function switchTab(tabId) {
+    // Deactivate current tab
+    document.querySelectorAll('.map-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.map-tab-content').forEach(t => t.classList.remove('active'));
+
+    // Activate new tab
+    const tabEl = document.querySelector(`.map-tab[data-tab-id="${tabId}"]`);
+    const tabContent = document.getElementById(`tab-content-${tabId}`);
+
+    if (tabEl && tabContent) {
+      tabEl.classList.add('active');
+      tabContent.classList.add('active');
+      mapState.activeTabId = tabId;
+
+      // Initialize Cytoscape if not already done
+      const tab = mapState.tabs[tabId];
+      if (!tab.cy) {
+        initializeGraph(tabId);
+      }
+
+      // Update controls to reflect this tab's settings
+      updateControlsFromTab(tab);
+    }
+  }
+
+  function closeTab(tabId) {
+    // Can't close if it's the only tab
+    if (Object.keys(mapState.tabs).length === 1) {
+      return;
+    }
+
+    // Remove from state
+    const tab = mapState.tabs[tabId];
+    if (tab && tab.cy) {
+      tab.cy.destroy();
+    }
+    delete mapState.tabs[tabId];
+
+    // Remove from DOM
+    const tabEl = document.querySelector(`.map-tab[data-tab-id="${tabId}"]`);
+    const tabContent = document.getElementById(`tab-content-${tabId}`);
+    if (tabEl) tabEl.remove();
+    if (tabContent) tabContent.remove();
+
+    // If this was the active tab, switch to first available tab
+    if (mapState.activeTabId === tabId) {
+      const firstTabId = Object.keys(mapState.tabs)[0];
+      switchTab(firstTabId);
+    }
+  }
+
+  function updateControlsFromTab(tab) {
+    // Update controls to match tab settings
+    document.getElementById('schema-source').value = tab.settings.source;
+    document.getElementById('layout-mode').value = tab.settings.layout;
+    // ... update other controls as needed
+  }
+
+  function attachTabEventHandlers() {
+    // Tab click to switch
+    document.querySelectorAll('.map-tab').forEach(tab => {
+      tab.onclick = (e) => {
+        if (!e.target.classList.contains('map-tab-close')) {
+          switchTab(tab.dataset.tabId);
+        }
+      };
+    });
+
+    // Tab close button
+    document.querySelectorAll('.map-tab-close').forEach(closeBtn => {
+      closeBtn.onclick = (e) => {
+        e.stopPropagation();
+        closeTab(closeBtn.dataset.tabId);
+      };
+    });
+  }
+
+  // ===== CYTOSCAPE INITIALIZATION =====
+  async function initializeGraph(tabId) {
+    const tab = mapState.tabs[tabId];
+    const container = document.getElementById(`graph-canvas-${tabId}`);
+
+    if (!container) return;
+
+    // Fetch initial schema data
+    const data = await fetchSchema({source: tab.settings.source});
+    tab.graphData = data;
+
+    // Initialize Cytoscape
+    tab.cy = cytoscape({
+      container: container,
+      elements: toElements(data),
+      style: getCytoscapeStyles(),
+      layout: { name: tab.settings.layout, animate: false }
+    });
+
+    // Store reference for later
+    updateFilters(data);
+  }
+
+  async function fetchSchema(params) {
+    try {
+      const source = params.source || 'all';
+      const q = qs({source, ...params});
+      const url = '/api/graph/schema/combined' + (q ? '?' + q : '');
+      const res = await fetch(url);
+      return await res.json();
+    } catch (e) {
+      console.error('Schema fetch failed', e);
+      return { nodes: [], edges: [], sources: {} };
+    }
+  }
+
+  function toElements(data){
+    const nodes = new Map();
+    for (const n of (data.nodes||[])) {
+      nodes.set(n.label, {
+        data: {
+          id: n.label,
+          label: n.label,
+          count: n.count,
+          source: n.source || 'graph'
+        }
+      });
+    }
+    const edges = [];
+    for (const e of (data.edges||[])) {
+      const id = `${e.start_label}|${e.rel_type}|${e.end_label}`;
+      if (!nodes.has(e.start_label)) {
+        nodes.set(e.start_label, {
+          data: { id: e.start_label, label: e.start_label, count: 1, source: e.source || 'graph' }
+        });
+      }
+      if (!nodes.has(e.end_label)) {
+        nodes.set(e.end_label, {
+          data: { id: e.end_label, label: e.end_label, count: 1, source: e.source || 'graph' }
+        });
+      }
+      edges.push({
+        data: {
+          id,
+          source: e.start_label,
+          target: e.end_label,
+          type: e.rel_type,
+          count: e.count,
+          edgeSource: e.source || 'graph'
+        }
+      });
+    }
+    return [...nodes.values(), ...edges];
+  }
+
+  function getCytoscapeStyles() {
+    const sourceColors = {
+      'labels': '#e15759',
+      'neo4j': '#59a14f',
+      'graph': '#4e79a7',
+      'neo4j+labels': '#f28e2c',
+      'graph+labels': '#af7aa1',
+      'graph+neo4j': '#76b7b2',
+      'all': '#edc949'
+    };
+
+    let nodeMul = 1.0;
+    let edgeMul = 1.0;
+    let labelFont = 10;
+    let highContrast = false;
+
+    function scaleBase(val) { return 14 + 8 * Math.log(1 + (val||1)); }
+    function scale(val) { return scaleBase(val) * nodeMul; }
+
+    return [
+      { selector: 'node', style: {
+          'label': 'data(label)', 'text-valign': 'center', 'text-halign': 'center',
+          'background-color': ele => sourceColors[ele.data('source')] || sourceColors['graph'],
+          'color': '#fff', 'font-size': () => labelFont,
+          'width': ele => scale(ele.data('count')), 'height': ele => scale(ele.data('count'))
+      }},
+      { selector: 'edge', style: {
+          'curve-style': 'bezier',
+          'line-color': ele => sourceColors[ele.data('edgeSource')] || '#999',
+          'target-arrow-color': ele => sourceColors[ele.data('edgeSource')] || '#999',
+          'target-arrow-shape': 'triangle',
+          'width': ele => Math.max(1, Math.log(1 + (ele.data('count')||1))) * edgeMul,
+          'label': 'data(type)', 'font-size': () => labelFont, 'color': '#555',
+          'text-rotation': 'autorotate', 'text-margin-x': 2, 'text-margin-y': 2,
+          'text-outline-color': () => (highContrast ? '#fff' : 'transparent'),
+          'text-outline-width': () => (highContrast ? 3 : 0)
+      }}
+    ];
+  }
+
+  function updateFilters(schema) {
+    const labelSelect = document.getElementById('filter-labels');
+    const relSelect = document.getElementById('filter-reltypes');
+
+    if (labelSelect) {
+      const labels = [...new Set(schema.nodes?.map(n => n.label).filter(l => l) || [])].sort();
+      labelSelect.innerHTML = '<option value="">All</option>' +
+        labels.map(l => `<option value="${l}">${l}</option>`).join('');
+    }
+
+    if (relSelect) {
+      const rels = [...new Set(schema.edges?.map(e => e.rel_type).filter(r => r) || [])].sort();
+      relSelect.innerHTML = '<option value="">All</option>' +
+        rels.map(r => `<option value="${r}">${r}</option>`).join('');
+    }
+  }
+
+  // ===== PANEL RESIZING =====
+  function initializeResizers() {
+    const resizerLeft = document.getElementById('resizer-left');
+    const resizerRight = document.getElementById('resizer-right');
+    const leftPanel = document.getElementById('map-library-panel');
+    const rightPanel = document.getElementById('map-controls-panel');
+    const container = document.querySelector('.maps-container');
+
+    let isResizing = false;
+    let currentResizer = null;
+
+    function startResize(resizer) {
+      isResizing = true;
+      currentResizer = resizer;
+      resizer.classList.add('resizing');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    }
+
+    function stopResize() {
+      if (!isResizing) return;
+      isResizing = false;
+      if (currentResizer) {
+        currentResizer.classList.remove('resizing');
+      }
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+
+      // Save panel widths to localStorage
+      savePanelWidths();
+    }
+
+    function doResize(e) {
+      if (!isResizing) return;
+
+      const containerWidth = container.offsetWidth;
+
+      if (currentResizer === resizerLeft) {
+        const newWidth = (e.clientX / containerWidth) * 100;
+        if (newWidth >= 10 && newWidth <= 40) {
+          leftPanel.style.width = `${newWidth}%`;
+          mapState.panelWidths.left = newWidth;
+        }
+      } else if (currentResizer === resizerRight) {
+        const newWidth = ((containerWidth - e.clientX) / containerWidth) * 100;
+        if (newWidth >= 10 && newWidth <= 40) {
+          rightPanel.style.width = `${newWidth}%`;
+          mapState.panelWidths.right = newWidth;
+        }
+      }
+    }
+
+    resizerLeft.addEventListener('mousedown', () => startResize(resizerLeft));
+    resizerRight.addEventListener('mousedown', () => startResize(resizerRight));
+    document.addEventListener('mousemove', doResize);
+    document.addEventListener('mouseup', stopResize);
+
+    // Load saved panel widths
+    loadPanelWidths();
+  }
+
+  function savePanelWidths() {
+    localStorage.setItem('scidk.maps.panelWidths', JSON.stringify(mapState.panelWidths));
+  }
+
+  function loadPanelWidths() {
+    const saved = localStorage.getItem('scidk.maps.panelWidths');
+    if (saved) {
+      try {
+        const widths = JSON.parse(saved);
+        mapState.panelWidths = widths;
+        document.getElementById('map-library-panel').style.width = `${widths.left}%`;
+        document.getElementById('map-controls-panel').style.width = `${widths.right}%`;
+      } catch (e) {
+        console.error('Failed to load panel widths', e);
+      }
+    }
+  }
+
+  // ===== EVENT HANDLERS =====
+  document.getElementById('new-tab-btn')?.addEventListener('click', createNewTab);
+  attachTabEventHandlers();
+
+  // Query panel toggle
+  document.getElementById('toggle-query-section')?.addEventListener('click', () => {
+    const content = document.getElementById('query-section-content');
+    const icon = document.getElementById('query-section-icon');
+    if (content.style.display === 'none') {
+      content.style.display = 'block';
+      icon.textContent = '▼';
+    } else {
+      content.style.display = 'none';
+      icon.textContent = '▶';
+    }
+  });
+
+  // TODO: Wire up existing query panel functionality from original map.html
+  // TODO: Wire up visualization controls
+
+  // ===== INITIALIZATION =====
+  initializeResizers();
+  initializeGraph('tab-1');
+})();
+</script>
+{% endblock %}
