@@ -11,6 +11,7 @@ from flask import Flask
 from pathlib import Path
 import os
 from flasgger import Swagger
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Core components
 from .core.filesystem import FilesystemManager
@@ -42,6 +43,16 @@ def create_app():
     apply_channel_defaults()
 
     app = Flask(__name__, template_folder="ui/templates", static_folder="ui/static")
+
+    # Enable ProxyFix for reverse proxy support (nginx, Apache, etc.)
+    # This ensures Flask correctly handles X-Forwarded-* headers
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=1,      # Trust 1 proxy for X-Forwarded-For
+        x_proto=1,    # Trust 1 proxy for X-Forwarded-Proto
+        x_host=1,     # Trust 1 proxy for X-Forwarded-Host
+        x_prefix=1    # Trust 1 proxy for X-Forwarded-Prefix
+    )
 
     # Initialize Swagger for API documentation
     swagger_template = {
@@ -276,7 +287,7 @@ def main():
     """Run the Flask development server."""
     app = create_app()
     # Read host/port from env for convenience
-    host = os.environ.get('SCIDK_HOST', '127.0.0.1')
+    host = os.environ.get('SCIDK_HOST', '0.0.0.0')
     port = int(os.environ.get('SCIDK_PORT', '5000'))
     debug = os.environ.get('SCIDK_DEBUG', '1') == '1'
     app.run(host=host, port=port, debug=debug)

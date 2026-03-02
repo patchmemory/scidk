@@ -955,7 +955,15 @@ def api_servers():
 
                 # For each root, check scan history
                 for root in roots:
-                    root_id = root.get('id', '/')
+                    # Handle both DriveInfo dataclass and dict for backward compatibility
+                    if isinstance(root, dict):
+                        root_id = root.get('id', '/')
+                        root_path = root.get('path', root_id)
+                    else:
+                        # DriveInfo dataclass
+                        root_id = getattr(root, 'id', '/')
+                        root_path = getattr(root, 'path', root_id)
+
                     key = f"{prov_id}:{root_id}"
                     scan_info = scan_history.get(key, {})
 
@@ -963,7 +971,7 @@ def api_servers():
                         'id': prov_id,
                         'display_name': display_name,
                         'root_id': root_id,
-                        'root_path': root.get('path', root_id),
+                        'root_path': root_path,
                         'connected': connected,
                         'scanned': scan_info.get('scanned', False),
                         'last_scanned': scan_info.get('last_scanned', None),
