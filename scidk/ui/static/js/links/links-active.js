@@ -214,6 +214,9 @@ async function updateActiveLinkUIDProperty(side, value) {
     if (result.status === 'success') {
       showToast(`${side === 'source' ? 'Source' : 'Target'} UID property updated to ${value}`, 'success');
       currentLink.match_config = matchConfig;
+
+      // Refresh the relationship index table to show values for the new UID
+      await loadRelationshipIndexPage('active-link-index-container');
     } else {
       showToast(`Failed to update UID property: ${result.error}`, 'error');
     }
