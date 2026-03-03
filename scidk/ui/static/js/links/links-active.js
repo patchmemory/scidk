@@ -239,10 +239,39 @@ function updateActiveLinkButtons(link) {
     btnExecute.style.display = 'inline-block';
     btnExecute.textContent = 'Refresh';
     btnExecute.disabled = false;
+    // Override the global executeLink() handler with refreshActiveLink()
+    btnExecute.onclick = () => refreshActiveLink();
   }
   if (btnDeleteDef) btnDeleteDef.style.display = 'inline-block';
   if (btnExportCsv) btnExportCsv.style.display = 'none';
   if (btnImportCsv) btnImportCsv.style.display = 'none';
+}
+
+// Refresh active link panel without requiring save
+async function refreshActiveLink() {
+  if (!currentLink) {
+    showToast('No active link to refresh', 'error');
+    return;
+  }
+
+  showToast('Refreshing...', 'info');
+
+  try {
+    // Reload the link from the backend to get latest state
+    const response = await fetch(window.SCIDK_BASE + `/api/links/${currentLink.id}`);
+    const data = await response.json();
+
+    if (data.status === 'success') {
+      currentLink = data.link;
+      await renderActiveLinkPanel(currentLink);
+      showToast('Refreshed successfully', 'success');
+    } else {
+      showToast(`Failed to refresh: ${data.error}`, 'error');
+    }
+  } catch (err) {
+    console.error('Failed to refresh active link:', err);
+    showToast('Failed to refresh link', 'error');
+  }
 }
 
 // ===== Active Link Sync Status Functions =====
@@ -358,13 +387,13 @@ async function showSyncStatusForActiveImportLink(linkId, link) {
     // Load and render property selection UI
     await renderEnrichPropertiesUI(linkId, data.source_database, link);
 
-    // Show relationship index below sync status
+    // Show relationship index below sync status - always query PRIMARY for Active links
     await showRelationshipIndex(linkId, {
       containerId: 'active-link-index-container',
       source_label: data.source_label || link.source_label,
       rel_type: data.rel_type || link.relationship_type,
       target_label: data.target_label || link.target_label,
-      source_database: data.source_database || null
+      source_database: null  // Force PRIMARY - Active links show what's in primary graph
     });
   } catch (err) {
     console.error('Failed to fetch sync status:', err);
