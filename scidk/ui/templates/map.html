@@ -1257,7 +1257,7 @@
     try {
       // Fetch schema from API
       const source = document.getElementById('schema-source')?.value || 'all';
-      const url = `/api/graph/schema/combined?source=${source}`;
+      const url = window.SCIDK_BASE + `/api/graph/schema/combined?source=${source}`;
       const response = await fetch(url);
       const data = await response.json();
 
@@ -3241,7 +3241,7 @@
 
           const selectedConnection = window.getSelectedNeo4jConnection ? window.getSelectedNeo4jConnection() : null;
           const connParam = selectedConnection ? `&connection=${encodeURIComponent(selectedConnection)}` : '';
-          const url = `/api/graph/instances.${format}?label=${encodeURIComponent(label)}${connParam}`;
+          const url = window.SCIDK_BASE + `/api/graph/instances.${format}?label=${encodeURIComponent(label)}${connParam}`;
 
           // Download the file
           window.location.href = url;
