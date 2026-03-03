@@ -17,18 +17,27 @@ async function loadDiscoveredInstances() {
     target_label: config.target.label
   });
 
-  if (!sourceUid && !targetUid) {
-    showToast('Please configure Source and Target UID properties', 'error');
-    return;
-  } else if (!sourceUid) {
-    showToast('Please configure Source UID property', 'error');
-    return;
-  } else if (!targetUid) {
-    showToast('Please configure Target UID property', 'error');
+  const previewContainer = document.getElementById('preview-container');
+
+  // Show configuration status instead of blocking completely
+  if (!sourceUid || !targetUid) {
+    const missingConfig = [];
+    if (!sourceUid) missingConfig.push('Source UID');
+    if (!targetUid) missingConfig.push('Target UID');
+
+    if (previewContainer) {
+      previewContainer.innerHTML = `
+        <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+          <strong>⚠ Configuration Required</strong>
+          <p style="margin: 0.5rem 0 0 0; font-size: 0.9em;">
+            Please configure ${missingConfig.join(' and ')} ${missingConfig.length > 1 ? 'properties' : 'property'} to preview and import relationships.
+          </p>
+        </div>
+      `;
+    }
     return;
   }
 
-  const previewContainer = document.getElementById('preview-container');
   if (previewContainer) {
     previewContainer.innerHTML = '<div style="text-align: center; padding: 2rem; color: #999;">Loading instances...</div>';
   }
@@ -72,6 +81,7 @@ async function loadDiscoveredInstances() {
     let actionButtonsHtml = `
       <div style="margin-top: 1rem; margin-bottom: 1rem;">
         <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-sm btn-primary" onclick="saveDiscoveredAsLinkDefinition()">Save as Link Definition</button>
           <button class="btn btn-sm btn-outline-info" onclick="previewDiscoveredImport()">Preview Import</button>
           <button class="btn btn-sm btn-success" onclick="executeDiscoveredImport()" id="btn-execute-discovered-import">Import to Primary Graph</button>
         </div>
@@ -628,6 +638,68 @@ async function cancelDiscoveredImport(taskId) {
   } catch (err) {
     console.error('Failed to cancel import:', err);
     showToast(`Failed to cancel: ${err.message}`, 'error');
+  }
+}
+
+// Save discovered relationship as a link definition
+async function saveDiscoveredAsLinkDefinition() {
+  const config = discoveredImportConfig;
+
+  if (!config.source.uid_property || !config.target.uid_property) {
+    showToast('Please configure source and target UID properties first', 'error');
+    return;
+  }
+
+  // Build link definition from discovered import config
+  const linkDefinition = {
+    name: `${config.source.label} → ${config.relationship.type} → ${config.target.label}`,
+    source_label: config.source.label,
+    target_label: config.target.label,
+    relationship_type: config.relationship.type,
+    match_strategy: 'table_import',
+    match_config: {
+      source_database: config.database,
+      source_uid_property: config.source.uid_property,
+      target_uid_property: config.target.uid_property,
+      import_rel_properties: config.relationship.import_properties
+    },
+    source_config: {},
+    target_config: {},
+    relationship_props: {},
+    status: 'pending'
+  };
+
+  showToast('Saving link definition...', 'info');
+
+  try {
+    const response = await fetch(window.SCIDK_BASE + '/api/links', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(linkDefinition)
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || result.status === 'error') {
+      throw new Error(result.error || 'Failed to save link definition');
+    }
+
+    showToast('Link definition saved! Find it in the Pending tab.', 'success');
+
+    // Refresh link definitions list
+    loadLinkDefinitions();
+
+    // Switch to Pending tab to show the saved link
+    currentFilter = 'pending';
+    renderLinkList();
+
+    // Update tab styling
+    document.querySelectorAll('.link-filter-tab').forEach(tab => {
+      tab.classList.toggle('active', tab.dataset.filter === 'pending');
+    });
+  } catch (err) {
+    console.error('Failed to save link definition:', err);
+    showToast(`Failed to save: ${err.message}`, 'error');
   }
 }
 

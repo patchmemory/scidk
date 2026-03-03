@@ -1185,9 +1185,18 @@ class LinkService:
                     pass
 
             # Query all configured external profiles
+            # Filter out read-only profiles - they should not be auto-promoted to Active
             profiles = list_neo4j_profiles()
             for profile in profiles:
                 profile_name = profile['name']
+                profile_role = profile.get('role', '').lower()
+
+                # Skip read-only profiles - relationships from read-only databases
+                # should not appear in Active tab since they can't be synced/managed
+                if profile_role == 'readonly':
+                    logger.info(f"Skipping read-only profile '{profile_name}' in discovery scan")
+                    continue
+
                 try:
                     client = get_neo4j_client_for_profile(profile_name)
                     if client:

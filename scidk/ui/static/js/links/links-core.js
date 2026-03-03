@@ -1805,15 +1805,19 @@ async function openImportWizardForRelationship(rel) {
 
     // Update the clickable triple display (function defined in links-import.js)
     updateDiscoveredImportDisplay();
+
+    // Auto-load the relationship index/preview after configuration completes
+    // This populates the "View & Download" section immediately
+    await loadDiscoveredInstances();
   } catch (err) {
     console.error('Failed to load properties:', err);
     showToast('Failed to load properties', 'error');
-  }
 
-  // Show empty preview - user must click "Load Preview" explicitly
-  const previewContainer = document.getElementById('preview-container');
-  if (previewContainer) {
-    previewContainer.innerHTML = '<div class="empty-state small">Configure all three components to preview matches</div>';
+    // Show empty preview on error
+    const previewContainer = document.getElementById('preview-container');
+    if (previewContainer) {
+      previewContainer.innerHTML = '<div class="empty-state small">Failed to load relationship preview</div>';
+    }
   }
 }
 
