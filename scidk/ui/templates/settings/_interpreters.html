@@ -96,7 +96,7 @@
             const iid = e.target.getAttribute('data-iid');
             const enabled = e.target.checked;
             try {
-              const resp = await fetch(`/api/interpreters/${encodeURIComponent(iid)}/toggle`, {
+              const resp = await fetch(window.SCIDK_BASE + `/api/interpreters/${encodeURIComponent(iid)}/toggle`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled })
               });
               if (!resp.ok) throw new Error('HTTP ' + resp.status);

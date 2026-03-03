@@ -155,7 +155,7 @@ async function loadPropertyValuesForSource(filterIndex, propertyName) {
   if (!datalist) return;
 
   try {
-    const response = await fetch(`/api/labels/${tripleBuilder.source.label}/property-values/${propertyName}?limit=50`);
+    const response = await fetch(window.SCIDK_BASE + `/api/labels/${tripleBuilder.source.label}/property-values/${propertyName}?limit=50`);
     const data = await response.json();
 
     if (data.status === 'success' && data.values) {
@@ -272,7 +272,7 @@ async function loadPropertyValuesForTarget(filterIndex, propertyName) {
   if (!datalist) return;
 
   try {
-    const response = await fetch(`/api/labels/${tripleBuilder.target.label}/property-values/${propertyName}?limit=50`);
+    const response = await fetch(window.SCIDK_BASE + `/api/labels/${tripleBuilder.target.label}/property-values/${propertyName}?limit=50`);
     const data = await response.json();
 
     if (data.status === 'success' && data.values) {
@@ -732,7 +732,7 @@ function loadPreview() {
       const linkId = saveResult.link.id;
       tripleBuilder.link_id = linkId;
 
-      return fetch(`/api/links/${linkId}/preview`, {
+      return fetch(window.SCIDK_BASE + `/api/links/${linkId}/preview`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit: 10 })
@@ -789,7 +789,7 @@ function exportMatchesCsv() {
 
   showToast('Exporting matches to CSV...', 'info');
 
-  fetch(`/api/links/${tripleBuilder.link_id}/export-csv`, {
+  fetch(window.SCIDK_BASE + `/api/links/${tripleBuilder.link_id}/export-csv`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ limit: 1000 })
@@ -833,7 +833,7 @@ function importValidatedCsv(file) {
   const formData = new FormData();
   formData.append('file', file);
 
-  fetch(`/api/links/${tripleBuilder.link_id}/import-csv`, {
+  fetch(window.SCIDK_BASE + `/api/links/${tripleBuilder.link_id}/import-csv`, {
     method: 'POST',
     body: formData
   })

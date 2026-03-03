@@ -275,7 +275,7 @@
             btn.textContent = 'Restoring...';
 
             // Fetch the backup file and restore it
-            const backupResp = await fetch(`/backups/${filename}`);
+            const backupResp = await fetch(window.SCIDK_BASE + `/backups/${filename}`);
             const backupBlob = await backupResp.blob();
 
             const formData = new FormData();
@@ -319,7 +319,7 @@
           }
 
           try {
-            const resp = await fetch(`/api/settings/backups/${filename}`, {
+            const resp = await fetch(window.SCIDK_BASE + `/api/settings/backups/${filename}`, {
               method: 'DELETE',
               credentials: 'same-origin'
             });

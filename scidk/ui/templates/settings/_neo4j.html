@@ -210,7 +210,7 @@
     async function testConnection(profileName){
       try {
         // Load full profile including password
-        const profileResp = await fetch(`/api/settings/neo4j/profiles/${encodeURIComponent(profileName)}`);
+        const profileResp = await fetch(window.SCIDK_BASE + `/api/settings/neo4j/profiles/${encodeURIComponent(profileName)}`);
         if (!profileResp.ok) {
           return { connected: false, error: 'Failed to load profile' };
         }
@@ -288,7 +288,7 @@
 
       // Load full profile including password
       try {
-        const r = await fetch(`/api/settings/neo4j/profiles/${encodeURIComponent(name)}`);
+        const r = await fetch(window.SCIDK_BASE + `/api/settings/neo4j/profiles/${encodeURIComponent(name)}`);
         const j = await r.json();
         const fullProfile = j.profile;
 
@@ -317,7 +317,7 @@
 
         if (connStatus.connected) {
           // If connection succeeds, activate it for its role
-          const activateResp = await fetch(`/api/settings/neo4j/profiles/${encodeURIComponent(name)}/activate`, {
+          const activateResp = await fetch(window.SCIDK_BASE + `/api/settings/neo4j/profiles/${encodeURIComponent(name)}/activate`, {
             method: 'PUT'
           });
           if (!activateResp.ok) {
@@ -357,7 +357,7 @@
       if (!confirm(`Delete profile '${name}'?`)) return;
 
       try {
-        const r = await fetch(`/api/settings/neo4j/profiles/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        const r = await fetch(window.SCIDK_BASE + `/api/settings/neo4j/profiles/${encodeURIComponent(name)}`, { method: 'DELETE' });
         if (!r.ok){ const j = await r.json(); alert('Delete failed: ' + (j.error || r.status)); return; }
 
         await loadProfiles();

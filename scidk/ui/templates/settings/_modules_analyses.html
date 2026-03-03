@@ -261,7 +261,7 @@
     }
 
     try {
-      const resp = await fetch(`/api/scripts/analyses/restore/${scriptId}`, { method: 'POST' });
+      const resp = await fetch(window.SCIDK_BASE + `/api/scripts/analyses/restore/${scriptId}`, { method: 'POST' });
       const result = await resp.json();
 
       if (result.status === 'ok') {

@@ -48,7 +48,7 @@ async function loadDiscoveredInstances() {
   `;
 
   try {
-    const response = await fetch(`/api/neo4j/query`, {
+    const response = await fetch(window.SCIDK_BASE + `/api/neo4j/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ database: database, query: query })
@@ -439,7 +439,7 @@ async function executeDiscoveredImport() {
 // Check if there's a running job for this link and resume progress tracking
 async function checkAndResumeRunningJob(linkId) {
   try {
-    const response = await fetch(`/api/links/${linkId}/job-status`);
+    const response = await fetch(window.SCIDK_BASE + `/api/links/${linkId}/job-status`);
     const data = await response.json();
 
     if (data.running && data.task_id) {
@@ -494,7 +494,7 @@ function pollDiscoveredImportStatus(taskId, config) {
   }
 
   activePollingInterval = setInterval(() => {
-    fetch(`/api/tasks/${taskId}`)
+    fetch(window.SCIDK_BASE + `/api/tasks/${taskId}`)
       .then(r => {
         if (r.status === 404) {
           clearInterval(activePollingInterval);
@@ -608,7 +608,7 @@ async function cancelDiscoveredImport(taskId) {
   }
 
   try {
-    const response = await fetch(`/api/tasks/${taskId}/cancel`, {
+    const response = await fetch(window.SCIDK_BASE + `/api/tasks/${taskId}/cancel`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     });

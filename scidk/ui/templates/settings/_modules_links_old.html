@@ -925,7 +925,7 @@
   window.restoreLink = async function(scriptId) {
     if (!confirm('Replace with original built-in version? This cannot be undone.')) return;
     try {
-      const resp = await fetch(`/api/scripts/links/restore/${scriptId}`, { method: 'POST' });
+      const resp = await fetch(window.SCIDK_BASE + `/api/scripts/links/restore/${scriptId}`, { method: 'POST' });
       const result = await resp.json();
       if (result.status === 'ok') {
         alert('✓ Restored');

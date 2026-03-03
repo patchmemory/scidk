@@ -796,7 +796,7 @@
   // Global functions for query library
   window.loadQueryById = async (queryId, queryName) => {
     try {
-      const resp = await fetch(`/api/queries/${queryId}`);
+      const resp = await fetch(window.SCIDK_BASE + `/api/queries/${queryId}`);
       const data = await resp.json();
 
       if (resp.ok && data.query) {
@@ -806,7 +806,7 @@
         document.querySelector('[style*="fixed"]')?.remove();
 
         // Record usage
-        fetch(`/api/queries/${queryId}/use`, { method: 'POST' }).catch(() => {});
+        fetch(window.SCIDK_BASE + `/api/queries/${queryId}/use`, { method: 'POST' }).catch(() => {});
 
         setTimeout(() => {
           queryStatus.textContent = '';
@@ -821,7 +821,7 @@
     if (!confirm('Delete this query from the library?')) return;
 
     try {
-      const resp = await fetch(`/api/queries/${queryId}`, { method: 'DELETE' });
+      const resp = await fetch(window.SCIDK_BASE + `/api/queries/${queryId}`, { method: 'DELETE' });
 
       if (resp.ok) {
         document.querySelector('[style*="fixed"]')?.remove();
@@ -1944,7 +1944,7 @@
           let resp;
           if (mapIdToUpdate) {
             // Update existing map
-            resp = await fetch(`/api/maps/saved/${mapIdToUpdate}`, {
+            resp = await fetch(window.SCIDK_BASE + `/api/maps/saved/${mapIdToUpdate}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload)
@@ -2057,7 +2057,7 @@
           // Global functions for this tab's query library
           window[`loadQueryById_${tabId}`] = async (queryId, queryName) => {
             try {
-              const resp = await fetch(`/api/queries/${queryId}`);
+              const resp = await fetch(window.SCIDK_BASE + `/api/queries/${queryId}`);
               const data = await resp.json();
 
               if (resp.ok && data.query) {
@@ -2067,7 +2067,7 @@
                 overlay.remove();
 
                 // Record usage
-                fetch(`/api/queries/${queryId}/use`, { method: 'POST' }).catch(() => {});
+                fetch(window.SCIDK_BASE + `/api/queries/${queryId}/use`, { method: 'POST' }).catch(() => {});
 
                 setTimeout(() => { statusEl.textContent = 'Ready'; statusEl.style.color = '#666'; }, 3000);
               }
@@ -2080,7 +2080,7 @@
             if (!confirm('Delete this query from the library?')) return;
 
             try {
-              const resp = await fetch(`/api/queries/${queryId}`, { method: 'DELETE' });
+              const resp = await fetch(window.SCIDK_BASE + `/api/queries/${queryId}`, { method: 'DELETE' });
 
               if (resp.ok) {
                 overlay.remove();
@@ -2447,7 +2447,7 @@
   // Load a map
   async function loadMap(mapId) {
     try {
-      const response = await fetch(`/api/maps/saved/${mapId}`);
+      const response = await fetch(window.SCIDK_BASE + `/api/maps/saved/${mapId}`);
       const data = await response.json();
 
       if (data.status === 'ok' && data.map) {
@@ -2458,7 +2458,7 @@
         console.log('📦 Visualization config:', map.visualization);
 
         // Track usage
-        fetch(`/api/maps/saved/${mapId}/use`, { method: 'POST' });
+        fetch(window.SCIDK_BASE + `/api/maps/saved/${mapId}/use`, { method: 'POST' });
 
         // Apply filters if present
         if (map.filters) {
@@ -2641,7 +2641,7 @@
     if (!confirm(`Delete map "${map.name}"?`)) return;
 
     try {
-      const response = await fetch(`/api/maps/saved/${mapId}`, { method: 'DELETE' });
+      const response = await fetch(window.SCIDK_BASE + `/api/maps/saved/${mapId}`, { method: 'DELETE' });
       const data = await response.json();
 
       if (data.status === 'ok') {
@@ -3360,7 +3360,7 @@ window.populateInstancesTable = async function(results, tabId) {
     const firstLabel = Array.from(labels)[0];
     const selectedConnection = window.getSelectedNeo4jConnection ? window.getSelectedNeo4jConnection() : null;
     const connParam = selectedConnection ? `&connection=${encodeURIComponent(selectedConnection)}` : '';
-    const response = await fetch(`/api/graph/instances?label=${encodeURIComponent(firstLabel)}&limit=100${connParam}`);
+    const response = await fetch(window.SCIDK_BASE + `/api/graph/instances?label=${encodeURIComponent(firstLabel)}&limit=100${connParam}`);
     const data = await response.json();
 
     if (!response.ok || data.error) {

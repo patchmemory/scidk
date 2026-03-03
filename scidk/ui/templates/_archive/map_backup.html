@@ -608,7 +608,7 @@
   // Global functions for query library
   window.loadQueryById = async (queryId, queryName) => {
     try {
-      const resp = await fetch(`/api/queries/${queryId}`);
+      const resp = await fetch(window.SCIDK_BASE + `/api/queries/${queryId}`);
       const data = await resp.json();
 
       if (resp.ok && data.query) {
@@ -618,7 +618,7 @@
         document.querySelector('[style*="fixed"]')?.remove();
 
         // Record usage
-        fetch(`/api/queries/${queryId}/use`, { method: 'POST' }).catch(() => {});
+        fetch(window.SCIDK_BASE + `/api/queries/${queryId}/use`, { method: 'POST' }).catch(() => {});
 
         setTimeout(() => {
           queryStatus.textContent = '';
@@ -633,7 +633,7 @@
     if (!confirm('Delete this query from the library?')) return;
 
     try {
-      const resp = await fetch(`/api/queries/${queryId}`, { method: 'DELETE' });
+      const resp = await fetch(window.SCIDK_BASE + `/api/queries/${queryId}`, { method: 'DELETE' });
 
       if (resp.ok) {
         document.querySelector('[style*="fixed"]')?.remove();

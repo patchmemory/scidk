@@ -851,7 +851,7 @@ window.addEventListener('DOMContentLoaded', () => {
         let data;
         if (nodeType === 'server') {
           // Load roots (first level only)
-          const r = await fetch(`/api/provider_roots?provider_id=${encodeURIComponent(nodeId)}`);
+          const r = await fetch(window.SCIDK_BASE + `/api/provider_roots?provider_id=${encodeURIComponent(nodeId)}`);
           const roots = await r.json();
           data = roots.map(root => ({
             id: root.id,
@@ -1714,7 +1714,7 @@ window.addEventListener('DOMContentLoaded', () => {
       collapseRight.click();
     }
 
-    fetch(`/api/scans`).then(r => r.json()).then(scans => {
+    fetch(window.SCIDK_BASE + `/api/scans`).then(r => r.json()).then(scans => {
       const scan = scans.find(s => s.id == scanId);
       if (!scan) return;
 
@@ -1753,7 +1753,7 @@ window.addEventListener('DOMContentLoaded', () => {
   window.deleteScanDirect = async (scanId) => {
     if (!confirm(`Delete scan #${scanId}?`)) return;
     try {
-      await fetch(`/api/scans/${scanId}`, { method: 'DELETE' });
+      await fetch(window.SCIDK_BASE + `/api/scans/${scanId}`, { method: 'DELETE' });
       showMessage('Scan deleted', 'success');
       loadScans();
     } catch (e) {
@@ -1917,7 +1917,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (path) qs.set('path', path);
 
     try {
-      const r = await fetch(`/api/scans/${encodeURIComponent(scanId)}/browse?` + qs.toString());
+      const r = await fetch(window.SCIDK_BASE + `/api/scans/${encodeURIComponent(scanId)}/browse?` + qs.toString());
       const j = await r.json();
 
       if (!r.ok) {
@@ -1994,7 +1994,7 @@ window.addEventListener('DOMContentLoaded', () => {
         if (!confirm(`Delete "${path}" from snapshot #${scanId}?`)) return;
 
         try {
-          const r = await fetch(`/api/scans/${scanId}/entries`, {
+          const r = await fetch(window.SCIDK_BASE + `/api/scans/${scanId}/entries`, {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path: path })
@@ -2235,7 +2235,7 @@ window.addEventListener('DOMContentLoaded', () => {
         btn.textContent = 'Refreshing...';
 
         try {
-          const r = await fetch(`/api/scans/${scanId}/rescan`, {
+          const r = await fetch(window.SCIDK_BASE + `/api/scans/${scanId}/rescan`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
           });
@@ -2411,7 +2411,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
       // Search across all scans in parallel
       const searchPromises = scans.map(scan =>
-        fetch(`/api/scans/${scan.id}/browse?page_size=1000`)
+        fetch(window.SCIDK_BASE + `/api/scans/${scan.id}/browse?page_size=1000`)
           .then(r => r.json())
           .then(data => ({
             scanId: scan.id,
@@ -2469,7 +2469,7 @@ window.addEventListener('DOMContentLoaded', () => {
             if (!confirm(`Delete "${path}" from snapshot #${scanId}?`)) return;
 
             try {
-              const r = await fetch(`/api/scans/${scanId}/entries`, {
+              const r = await fetch(window.SCIDK_BASE + `/api/scans/${scanId}/entries`, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ path: path })
@@ -2693,11 +2693,11 @@ window.addEventListener('DOMContentLoaded', () => {
   loadScanConfigForReconfigure = async function(scanId) {
     try {
       // Fetch scan details
-      const scanResp = await fetch(`/api/scans/${scanId}`);
+      const scanResp = await fetch(window.SCIDK_BASE + `/api/scans/${scanId}`);
       const scan = await scanResp.json();
 
       // Fetch saved config
-      const configResp = await fetch(`/api/scans/${scanId}/config`);
+      const configResp = await fetch(window.SCIDK_BASE + `/api/scans/${scanId}/config`);
       const config = await configResp.json();
 
       const nameInput = document.getElementById('snapshot-name-input');
@@ -2941,7 +2941,7 @@ window.addEventListener('DOMContentLoaded', () => {
     try {
       if (modalMode === 'reconfigure') {
         // Update existing scan config
-        const configResp = await fetch(`/api/scans/${modalScanId}/config`, {
+        const configResp = await fetch(window.SCIDK_BASE + `/api/scans/${modalScanId}/config`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(selection)
@@ -2951,7 +2951,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
         if (startScan) {
           // Trigger rescan
-          const rescanResp = await fetch(`/api/scans/${modalScanId}/rescan`, {
+          const rescanResp = await fetch(window.SCIDK_BASE + `/api/scans/${modalScanId}/rescan`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
           });

@@ -1729,7 +1729,7 @@ function updateBatchActionsVisibility() {
 }
 
 function loadLabel(name) {
-  fetch(`/api/labels/${name}`)
+  fetch(window.SCIDK_BASE + `/api/labels/${name}`)
     .then(r => r.json())
     .then(data => {
       if (data.status === 'success') {
@@ -2125,7 +2125,7 @@ async function addIncomingRelationshipOLD() {
 
       try {
         // Fetch the source label
-        const resp = await fetch(`/api/labels/${sourceLabel}`);
+        const resp = await fetch(window.SCIDK_BASE + `/api/labels/${sourceLabel}`);
         const data = await resp.json();
 
         if (data.status !== 'success') {
@@ -2172,7 +2172,7 @@ async function addIncomingRelationshipOLD() {
           showToast(`Added relationship from ${sourceLabel}`, 'success');
 
           // Reload current label to update incoming relationships display
-          const refreshResp = await fetch(`/api/labels/${currentLabel.name}`);
+          const refreshResp = await fetch(window.SCIDK_BASE + `/api/labels/${currentLabel.name}`);
           const refreshData = await refreshResp.json();
 
           if (refreshData.status === 'success') {
@@ -2341,7 +2341,7 @@ async function saveLabel() {
     await applyIncomingRelationshipChanges(name, incomingRelationships);
 
     // Refresh the label to get updated incoming relationships
-    const refreshResp = await fetch(`/api/labels/${name}`);
+    const refreshResp = await fetch(window.SCIDK_BASE + `/api/labels/${name}`);
     const refreshData = await refreshResp.json();
 
     if (refreshData.status === 'success') {
@@ -2385,7 +2385,7 @@ async function applyIncomingRelationshipChanges(targetLabel, desiredIncoming) {
   // Remove relationships from source labels
   for (const rel of toRemove) {
     try {
-      const resp = await fetch(`/api/labels/${rel.source_label}`);
+      const resp = await fetch(window.SCIDK_BASE + `/api/labels/${rel.source_label}`);
       const data = await resp.json();
 
       if (data.status === 'success') {
@@ -2414,7 +2414,7 @@ async function applyIncomingRelationshipChanges(targetLabel, desiredIncoming) {
   // Add relationships to source labels
   for (const rel of toAdd) {
     try {
-      const resp = await fetch(`/api/labels/${rel.source_label}`);
+      const resp = await fetch(window.SCIDK_BASE + `/api/labels/${rel.source_label}`);
       const data = await resp.json();
 
       if (data.status === 'success') {
@@ -2459,7 +2459,7 @@ function deleteLabel() {
 
   if (!confirm(`Delete label "${currentLabel.name}"?`)) return;
 
-  fetch(`/api/labels/${currentLabel.name}`, { method: 'DELETE' })
+  fetch(window.SCIDK_BASE + `/api/labels/${currentLabel.name}`, { method: 'DELETE' })
     .then(r => r.json())
     .then(data => {
       if (data.status === 'success') {
@@ -2492,7 +2492,7 @@ async function deleteIncomingRelationship(sourceLabel, relType, targetLabel) {
 
       try {
         // Fetch the source label
-        const resp = await fetch(`/api/labels/${sourceLabel}`);
+        const resp = await fetch(window.SCIDK_BASE + `/api/labels/${sourceLabel}`);
         const data = await resp.json();
 
         if (data.status !== 'success') {
@@ -2524,7 +2524,7 @@ async function deleteIncomingRelationship(sourceLabel, relType, targetLabel) {
           showToast(`Removed relationship from ${sourceLabel}`, 'success');
 
           // Reload current label to update incoming relationships display
-          const refreshResp = await fetch(`/api/labels/${targetLabel}`);
+          const refreshResp = await fetch(window.SCIDK_BASE + `/api/labels/${targetLabel}`);
           const refreshData = await refreshResp.json();
 
           if (refreshData.status === 'success') {
@@ -2620,7 +2620,7 @@ async function closeTransferModal() {
   // Cancel transfer if running
   if (currentLabel) {
     try {
-      await fetch(`/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-cancel`, {
+      await fetch(window.SCIDK_BASE + `/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-cancel`, {
         method: 'POST'
       });
     } catch (error) {
@@ -2636,7 +2636,7 @@ async function startTransfer() {
 
   // Check if transfer already running
   try {
-    const statusResponse = await fetch(`/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-status`);
+    const statusResponse = await fetch(window.SCIDK_BASE + `/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-status`);
     const statusData = await statusResponse.json();
 
     if (statusData.transfer_active) {
@@ -2678,7 +2678,7 @@ async function startTransfer() {
 
   const pollInterval = setInterval(async () => {
     try {
-      const statusResp = await fetch(`/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-status`);
+      const statusResp = await fetch(window.SCIDK_BASE + `/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-status`);
       const statusData = await statusResp.json();
 
       if (statusData.transfer_active && statusData.progress) {
@@ -2758,7 +2758,7 @@ async function startTransfer() {
   }, 1000); // Poll every second
 
   try {
-    const response = await fetch(`/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-to-primary?batch_size=${batchSize}&mode=${mode}&create_missing_targets=${createPlaceholders}`, {
+    const response = await fetch(window.SCIDK_BASE + `/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-to-primary?batch_size=${batchSize}&mode=${mode}&create_missing_targets=${createPlaceholders}`, {
       method: 'POST'
     });
 
@@ -2813,7 +2813,7 @@ async function startTransfer() {
 
 async function getInstanceCount(labelName) {
   try {
-    const response = await fetch(`/api/labels/${labelName}/instance-count`);
+    const response = await fetch(window.SCIDK_BASE + `/api/labels/${labelName}/instance-count`);
     const data = await response.json();
     return data;
   } catch (error) {
@@ -2834,7 +2834,7 @@ function pullFromNeo4j() {
     ],
     () => {
       showToast('Pulling from Neo4j...', 'info');
-      fetch(`/api/labels/${currentLabel.name}/pull`, { method: 'POST' })
+      fetch(window.SCIDK_BASE + `/api/labels/${currentLabel.name}/pull`, { method: 'POST' })
         .then(r => r.json())
         .then(data => {
           if (data.status === 'success') {
@@ -2900,7 +2900,7 @@ function pullFromConnection(profileName) {
 
   showToast(`Pulling labels from ${profileName}...`, 'info');
 
-  fetch(`/api/labels/pull?connection=${encodeURIComponent(profileName)}`, { method: 'POST' })
+  fetch(window.SCIDK_BASE + `/api/labels/pull?connection=${encodeURIComponent(profileName)}`, { method: 'POST' })
     .then(r => r.json())
     .then(data => {
       if (data.status === 'success') {
@@ -3158,7 +3158,7 @@ async function loadInstanceCount(labelName) {
   countDiv.innerHTML = '<div class="small" style="color: #666;">Loading...</div>';
 
   try {
-    const resp = await fetch(`/api/labels/${labelName}/instance-count`);
+    const resp = await fetch(window.SCIDK_BASE + `/api/labels/${labelName}/instance-count`);
     const result = await resp.json();
 
     if (result.status === 'success') {
@@ -3192,7 +3192,7 @@ async function pullInstances() {
   const withRelationships = document.getElementById('toggle-with-relationships').checked;
 
   try {
-    const resp = await fetch(`/api/labels/${currentLabel.name}/instances?limit=${instanceLimit}&offset=${instancePage * instanceLimit}&with_relationships=${withRelationships}`);
+    const resp = await fetch(window.SCIDK_BASE + `/api/labels/${currentLabel.name}/instances?limit=${instanceLimit}&offset=${instancePage * instanceLimit}&with_relationships=${withRelationships}`);
     const result = await resp.json();
 
     if (result.status === 'success') {
@@ -3247,7 +3247,7 @@ async function pushInstances(mode = 'merge') {
       });
 
       try {
-        const resp = await fetch(`/api/labels/${currentLabel.name}/instances/${instanceId}`, {
+        const resp = await fetch(window.SCIDK_BASE + `/api/labels/${currentLabel.name}/instances/${instanceId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ properties: completeProperties, mode: 'overwrite' })
@@ -3275,7 +3275,7 @@ async function pushInstances(mode = 'merge') {
     for (const [instanceId, changes] of Object.entries(instanceChanges)) {
       for (const [prop, value] of Object.entries(changes)) {
         try {
-          const resp = await fetch(`/api/labels/${currentLabel.name}/instances/${instanceId}`, {
+          const resp = await fetch(window.SCIDK_BASE + `/api/labels/${currentLabel.name}/instances/${instanceId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ property: prop, value: value })

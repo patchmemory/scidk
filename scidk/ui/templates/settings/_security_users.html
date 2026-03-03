@@ -224,7 +224,7 @@
       const action = confirm('Enable or disable this user?\n\nOK = Enable, Cancel = Disable');
 
       try {
-        const response = await fetch(`/api/users/${userId}`, {
+        const response = await fetch(window.SCIDK_BASE + `/api/users/${userId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ enabled: action }),
@@ -249,7 +249,7 @@
       }
 
       try {
-        const response = await fetch(`/api/users/${userId}`, {
+        const response = await fetch(window.SCIDK_BASE + `/api/users/${userId}`, {
           method: 'DELETE',
         });
 

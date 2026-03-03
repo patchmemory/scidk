@@ -624,7 +624,7 @@ function renderLinkList() {
 }
 
 function loadLinkDefinition(linkId) {
-  fetch(`/api/links/${linkId}`)
+  fetch(window.SCIDK_BASE + `/api/links/${linkId}`)
     .then(r => r.json())
     .then(data => {
       if (data.status === 'success') {
@@ -940,7 +940,7 @@ function deleteLinkDefinition() {
   if (!wizardData.id) return;
   if (!confirm('Delete this link definition?')) return;
 
-  fetch(`/api/links/${wizardData.id}`, { method: 'DELETE' })
+  fetch(window.SCIDK_BASE + `/api/links/${wizardData.id}`, { method: 'DELETE' })
     .then(r => r.json())
     .then(result => {
       if (result.status === 'success') {
@@ -980,7 +980,7 @@ function loadPreview() {
       const linkId = saveResult.link.id;
       wizardData.id = linkId;
 
-      return fetch(`/api/links/${linkId}/preview`, {
+      return fetch(window.SCIDK_BASE + `/api/links/${linkId}/preview`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit: 10 })
@@ -1041,7 +1041,7 @@ function executeLink() {
 
   showToast('Starting execution...', 'info');
 
-  fetch(`/api/integrations/${wizardData.id}/execute`, { method: 'POST' })
+  fetch(window.SCIDK_BASE + `/api/integrations/${wizardData.id}/execute`, { method: 'POST' })
     .then(r => r.json())
     .then(result => {
       if (result.status === 'success') {
@@ -1117,7 +1117,7 @@ function renderLinkTasks(tasks) {
     btn.addEventListener('click', async () => {
       const taskId = btn.getAttribute('data-cancel-task');
       try {
-        const r = await fetch(`/api/tasks/${taskId}/cancel`, { method: 'POST' });
+        const r = await fetch(window.SCIDK_BASE + `/api/tasks/${taskId}/cancel`, { method: 'POST' });
         if (!r.ok) showToast('Cancel failed', 'error');
         else showToast('Canceling task...', 'info');
       } catch (e) {

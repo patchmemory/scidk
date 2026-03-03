@@ -105,14 +105,14 @@
           const btnLogs = document.createElement('button'); btnLogs.textContent = 'Logs'; btnLogs.className = 'btn btn-sm btn-outline-secondary';
           btnLogs.addEventListener('click', async () => {
             logsBox.textContent = 'Loading logs...';
-            const r2 = await fetch(`/api/rclone/mounts/${encodeURIComponent(m.id)}/logs?tail=200`);
+            const r2 = await fetch(window.SCIDK_BASE + `/api/rclone/mounts/${encodeURIComponent(m.id)}/logs?tail=200`);
             const j2 = await r2.json();
             logsBox.textContent = (j2.lines||[]).join('\n');
           });
           const btnDel = document.createElement('button'); btnDel.textContent = 'Unmount'; btnDel.className = 'btn btn-sm btn-outline-danger'; btnDel.style.marginLeft = '.25rem';
           btnDel.addEventListener('click', async () => {
             if (!confirm('Unmount ' + (m.name||m.id) + '?')) return;
-            const r3 = await fetch(`/api/rclone/mounts/${encodeURIComponent(m.id)}`, { method:'DELETE' });
+            const r3 = await fetch(window.SCIDK_BASE + `/api/rclone/mounts/${encodeURIComponent(m.id)}`, { method:'DELETE' });
             await refreshMounts();
           });
           tdAct.appendChild(btnLogs); tdAct.appendChild(btnDel);

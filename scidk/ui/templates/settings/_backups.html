@@ -541,7 +541,7 @@
     }
 
     function verifyBackup(backupId) {
-      fetch(`/api/backups/verify/${backupId}`, { method: 'POST' })
+      fetch(window.SCIDK_BASE + `/api/backups/verify/${backupId}`, { method: 'POST' })
         .then(res => res.json())
         .then(data => {
           if (data.verified) {
@@ -569,7 +569,7 @@
       btn.disabled = true;
       btn.textContent = 'Restoring...';
 
-      fetch(`/api/backups/${selectedBackupId}/restore`, {
+      fetch(window.SCIDK_BASE + `/api/backups/${selectedBackupId}/restore`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ create_backup_first: true })
@@ -599,7 +599,7 @@
         return;
       }
 
-      fetch(`/api/backups/${backupId}`, { method: 'DELETE' })
+      fetch(window.SCIDK_BASE + `/api/backups/${backupId}`, { method: 'DELETE' })
         .then(res => res.json())
         .then(data => {
           if (data.success) {

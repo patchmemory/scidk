@@ -155,7 +155,7 @@
     }
 
     try {
-      const response = await fetch(`/api/labels/${labelName}/push`, {
+      const response = await fetch(window.SCIDK_BASE + `/api/labels/${labelName}/push`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -180,7 +180,7 @@
 
     try {
       // Same as push - just re-push the updated definition
-      const response = await fetch(`/api/labels/${labelName}/push`, {
+      const response = await fetch(window.SCIDK_BASE + `/api/labels/${labelName}/push`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });

@@ -81,7 +81,7 @@ function escapeHtml(text) {
 // Fetch properties for a label from external database
 async function fetchLabelProperties(label, database) {
   try {
-    const response = await fetch(`/api/neo4j/label-properties`, {
+    const response = await fetch(window.SCIDK_BASE + `/api/neo4j/label-properties`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ database: database, label: label })
@@ -102,7 +102,7 @@ async function fetchLabelProperties(label, database) {
 async function fetchRelationshipProperties(sourceLabel, relType, targetLabel, database) {
   try {
     const query = `MATCH (a:${sourceLabel})-[r:${relType}]->(b:${targetLabel}) RETURN keys(r) as props LIMIT 1`;
-    const response = await fetch(`/api/neo4j/query`, {
+    const response = await fetch(window.SCIDK_BASE + `/api/neo4j/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ database: database, query: query })
@@ -423,7 +423,7 @@ function initializeEventListeners() {
   document.getElementById('menu-script-link').addEventListener('click', (e) => {
     e.preventDefault();
     dropdownMenu.style.display = 'none';
-    window.location.href = '/scripts?new=link';
+    window.location.href = window.SCIDK_BASE + '/scripts?new=link';
   });
 
   // Import link option - switch to Discovered tab
@@ -988,7 +988,7 @@ function loadLinkDefinition(linkId) {
   // Reset wizard panel to clean state (prevents state bleed)
   // Note: resetWizard() is defined below, called by import/discovery modules
 
-  fetch(`/api/links/${linkId}`)
+  fetch(window.SCIDK_BASE + `/api/links/${linkId}`)
     .then(r => r.json())
     .then(data => {
       console.log('[loadLinkDefinition] Response:', JSON.stringify(data, null, 2));
@@ -1539,7 +1539,7 @@ function deleteLinkDefinition() {
   if (!tripleBuilder.link_id) return;
   if (!confirm('Delete this link definition?')) return;
 
-  fetch(`/api/links/${tripleBuilder.link_id}`, { method: 'DELETE' })
+  fetch(window.SCIDK_BASE + `/api/links/${tripleBuilder.link_id}`, { method: 'DELETE' })
     .then(r => r.json())
     .then(result => {
       if (result.status === 'success') {
@@ -1579,7 +1579,7 @@ function executeLink() {
     </div>
   `;
 
-  fetch(`/api/links/${tripleBuilder.link_id}/execute`, { method: 'POST' })
+  fetch(window.SCIDK_BASE + `/api/links/${tripleBuilder.link_id}/execute`, { method: 'POST' })
     .then(r => r.json())
     .then(result => {
       if (result.status === 'success') {
@@ -1604,7 +1604,7 @@ function pollTaskStatus(taskId) {
   }
 
   activeTaskPollingInterval = setInterval(() => {
-    fetch(`/api/tasks/${taskId}`)
+    fetch(window.SCIDK_BASE + `/api/tasks/${taskId}`)
       .then(r => {
         if (r.status === 404) {
           clearInterval(activeTaskPollingInterval);

@@ -326,7 +326,7 @@
 
     async function toggleAlert(alertId, enabled) {
       try {
-        const resp = await fetch(`/api/settings/alerts/${alertId}`, {
+        const resp = await fetch(window.SCIDK_BASE + `/api/settings/alerts/${alertId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ enabled })
@@ -370,7 +370,7 @@
       }
 
       try {
-        const resp = await fetch(`/api/settings/alerts/${alertId}`, {
+        const resp = await fetch(window.SCIDK_BASE + `/api/settings/alerts/${alertId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -400,7 +400,7 @@
       btn.textContent = 'Sending...';
 
       try {
-        const resp = await fetch(`/api/settings/alerts/${alertId}/test`, {
+        const resp = await fetch(window.SCIDK_BASE + `/api/settings/alerts/${alertId}/test`, {
           method: 'POST'
         });
 

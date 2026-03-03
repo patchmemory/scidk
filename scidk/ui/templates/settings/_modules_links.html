@@ -297,7 +297,7 @@
     resultDiv.innerHTML = '';
 
     try {
-      const response = await fetch(`/api/v2/links/${linkId}/run`, {
+      const response = await fetch(window.SCIDK_BASE + `/api/v2/links/${linkId}/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})
@@ -349,7 +349,7 @@
 
     try {
       // Use old wizard execution endpoint
-      const response = await fetch(`/api/links/${linkId}/execute`, {
+      const response = await fetch(window.SCIDK_BASE + `/api/links/${linkId}/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -384,7 +384,7 @@
     const runBtn = document.getElementById(`run-btn-${linkId}`);
 
     try {
-      const response = await fetch(`/api/links/jobs/${jobId}`);
+      const response = await fetch(window.SCIDK_BASE + `/api/links/jobs/${jobId}`);
       const data = await response.json();
 
       if (data.status === 'success' && data.job) {

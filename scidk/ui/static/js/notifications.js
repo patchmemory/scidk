@@ -73,7 +73,7 @@ class NotificationManager {
                 if (options.url) {
                     window.location.href = options.url;
                 } else {
-                    window.location.href = '/#alerts';
+                    window.location.href = window.SCIDK_BASE + '/#alerts';
                 }
                 notification.close();
             };

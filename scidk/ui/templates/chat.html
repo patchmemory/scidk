@@ -785,7 +785,7 @@
 
         // Save all messages
         for (const msg of messages) {
-          await fetch(`/api/chat/sessions/${sessionId}/messages`, {
+          await fetch(window.SCIDK_BASE + `/api/chat/sessions/${sessionId}/messages`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -815,7 +815,7 @@
       }
 
       try {
-        const resp = await fetch(`/api/chat/sessions/${sessionId}`);
+        const resp = await fetch(window.SCIDK_BASE + `/api/chat/sessions/${sessionId}`);
         const data = await resp.json();
 
         if (!resp.ok) {
@@ -924,7 +924,7 @@
       if (!newName || newName === currentName) return;
 
       try {
-        const resp = await fetch(`/api/chat/sessions/${sessionId}`, {
+        const resp = await fetch(window.SCIDK_BASE + `/api/chat/sessions/${sessionId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: newName })
@@ -946,7 +946,7 @@
 
     window.exportSessionById = async (sessionId) => {
       try {
-        const resp = await fetch(`/api/chat/sessions/${sessionId}/export`);
+        const resp = await fetch(window.SCIDK_BASE + `/api/chat/sessions/${sessionId}/export`);
         const data = await resp.json();
 
         if (!resp.ok) {
@@ -973,7 +973,7 @@
       if (!confirm('Delete this session permanently?')) return;
 
       try {
-        const resp = await fetch(`/api/chat/sessions/${sessionId}`, {
+        const resp = await fetch(window.SCIDK_BASE + `/api/chat/sessions/${sessionId}`, {
           method: 'DELETE'
         });
 
@@ -994,7 +994,7 @@
     window.shareSessionById = async (sessionId, sessionName) => {
       try {
         // Get current permissions and visibility
-        const permResp = await fetch(`/api/chat/sessions/${sessionId}/permissions`);
+        const permResp = await fetch(window.SCIDK_BASE + `/api/chat/sessions/${sessionId}/permissions`);
         let permissions = [];
         if (permResp.ok) {
           const data = await permResp.json();
@@ -1002,7 +1002,7 @@
         }
 
         // Get session details for current visibility
-        const sessionResp = await fetch(`/api/chat/sessions/${sessionId}`);
+        const sessionResp = await fetch(window.SCIDK_BASE + `/api/chat/sessions/${sessionId}`);
         const sessionData = await sessionResp.json();
         const currentVisibility = sessionData.session?.visibility || 'private';
 
@@ -1082,7 +1082,7 @@
       }
 
       try {
-        const resp = await fetch(`/api/chat/sessions/${sessionId}/permissions`, {
+        const resp = await fetch(window.SCIDK_BASE + `/api/chat/sessions/${sessionId}/permissions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username, permission })
@@ -1105,7 +1105,7 @@
       if (!confirm(`Remove ${username}'s access?`)) return;
 
       try {
-        const resp = await fetch(`/api/chat/sessions/${sessionId}/permissions/${username}`, {
+        const resp = await fetch(window.SCIDK_BASE + `/api/chat/sessions/${sessionId}/permissions/${username}`, {
           method: 'DELETE'
         });
 
@@ -1125,7 +1125,7 @@
       const visibility = document.getElementById('session-visibility').value;
 
       try {
-        const resp = await fetch(`/api/chat/sessions/${sessionId}/visibility`, {
+        const resp = await fetch(window.SCIDK_BASE + `/api/chat/sessions/${sessionId}/visibility`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ visibility })
@@ -1406,7 +1406,7 @@
     // Global functions for query library
     window.loadQueryById = async (queryId, queryName) => {
       try {
-        const resp = await fetch(`/api/queries/${queryId}`);
+        const resp = await fetch(window.SCIDK_BASE + `/api/queries/${queryId}`);
         const data = await resp.json();
 
         if (resp.ok && data.query) {
@@ -1416,7 +1416,7 @@
           document.querySelector('[style*="fixed"]')?.remove();
 
           // Record usage
-          fetch(`/api/queries/${queryId}/use`, { method: 'POST' }).catch(() => {});
+          fetch(window.SCIDK_BASE + `/api/queries/${queryId}/use`, { method: 'POST' }).catch(() => {});
 
           setTimeout(() => {
             queryInfoText.textContent = 'Ready';
@@ -1432,7 +1432,7 @@
       if (!confirm('Delete this query from the library?')) return;
 
       try {
-        const resp = await fetch(`/api/queries/${queryId}`, { method: 'DELETE' });
+        const resp = await fetch(window.SCIDK_BASE + `/api/queries/${queryId}`, { method: 'DELETE' });
 
         if (resp.ok) {
           document.querySelector('[style*="fixed"]')?.remove();

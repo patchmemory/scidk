@@ -256,7 +256,7 @@ async function showSyncStatusForActiveImportLink(linkId, link) {
   `;
 
   try {
-    const response = await fetch(`/api/links/${linkId}/sync-status`);
+    const response = await fetch(window.SCIDK_BASE + `/api/links/${linkId}/sync-status`);
     const data = await response.json();
 
     console.log(`[showSyncStatusForActiveImportLink] Link ${linkId} sync status:`, data);
@@ -481,7 +481,7 @@ async function executeDiscoveredImport() {
 // Check if there's a running job for this link and resume progress tracking
 async function checkAndResumeRunningJob(linkId) {
   try {
-    const response = await fetch(`/api/links/${linkId}/job-status`);
+    const response = await fetch(window.SCIDK_BASE + `/api/links/${linkId}/job-status`);
     const data = await response.json();
 
     if (data.running && data.task_id) {
@@ -686,7 +686,7 @@ async function enrichSelectedRelationships(linkId) {
     const allSelected = selectedProps.length === enrichPropertiesSelection.properties.length;
     const propertiesToSend = allSelected ? [] : selectedProps;
 
-    const response = await fetch(`/api/links/${linkId}/enrich`, {
+    const response = await fetch(window.SCIDK_BASE + `/api/links/${linkId}/enrich`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -741,7 +741,7 @@ function pollEnrichmentStatus(taskId, linkId) {
 
   activePollingInterval = setInterval(async () => {
     try {
-      const response = await fetch(`/api/tasks/${taskId}`);
+      const response = await fetch(window.SCIDK_BASE + `/api/tasks/${taskId}`);
       const task = await response.json();
 
       console.log('[pollEnrichmentStatus] Task status:', task);
@@ -803,7 +803,7 @@ async function cancelEnrichment(taskId) {
   }
 
   try {
-    const response = await fetch(`/api/tasks/${taskId}/cancel`, {
+    const response = await fetch(window.SCIDK_BASE + `/api/tasks/${taskId}/cancel`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     });

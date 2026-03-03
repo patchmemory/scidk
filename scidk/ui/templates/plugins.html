@@ -410,7 +410,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!usedByContainer || !usedByList) continue;
 
     try {
-      const response = await fetch(`/api/plugins/dependencies/${encodeURIComponent(pluginId)}`);
+      const response = await fetch(window.SCIDK_BASE + `/api/plugins/dependencies/${encodeURIComponent(pluginId)}`);
       const data = await response.json();
 
       if (data.status === 'success' && data.used_by && data.used_by.length > 0) {
@@ -421,7 +421,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         usedByList.innerHTML = data.used_by.map(dep => {
           const typeLabel = dep.type === 'interpreter' ? '🔬 Interpreter' :
                            dep.type === 'link' ? '🔗 Link' : '🔌 Plugin';
-          return `<a href="/scripts#script-${dep.id}" class="used-by-item" title="${dep.name}">
+          return `<a href="${window.SCIDK_BASE}/scripts#script-${dep.id}" class="used-by-item" title="${dep.name}">
             ${typeLabel}: ${dep.name}
           </a>`;
         }).join('');

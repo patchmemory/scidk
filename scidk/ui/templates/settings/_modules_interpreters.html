@@ -370,7 +370,7 @@
       try {
         let response;
         if (editingFormatId) {
-          response = await fetch(`/api/settings/table-formats/${editingFormatId}`, {
+          response = await fetch(window.SCIDK_BASE + `/api/settings/table-formats/${editingFormatId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(formatData)
@@ -460,7 +460,7 @@
     // Global functions for onclick handlers
     window.tableFormatsEdit = async function(id) {
       try {
-        const response = await fetch(`/api/settings/table-formats/${id}`);
+        const response = await fetch(window.SCIDK_BASE + `/api/settings/table-formats/${id}`);
         const data = await response.json();
 
         if (data.status === 'success' && data.format) {
@@ -515,7 +515,7 @@
       }
 
       try {
-        const response = await fetch(`/api/settings/table-formats/${id}`, {
+        const response = await fetch(window.SCIDK_BASE + `/api/settings/table-formats/${id}`, {
           method: 'DELETE'
         });
         const data = await response.json();
