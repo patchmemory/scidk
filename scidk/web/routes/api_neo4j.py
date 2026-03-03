@@ -424,6 +424,20 @@ def api_neo4j_profile_save():
             password_key = f'neo4j_profile_password_{name.replace(" ", "_")}'
             set_setting(password_key, data['password'])
 
+        # If this is a primary profile, immediately update app.extensions so it takes effect
+        if role == 'primary':
+            try:
+                from ...core.settings import get_setting
+                cfg = _get_ext().setdefault('neo4j_config', {})
+                cfg['uri'] = profile_data.get('uri')
+                cfg['user'] = profile_data.get('user')
+                cfg['database'] = profile_data.get('database')
+                if data.get('password'):
+                    cfg['password'] = data['password']
+                current_app.logger.info(f"Updated runtime Neo4j config from saved primary profile '{name}'")
+            except Exception as e:
+                current_app.logger.warning(f"Failed to update runtime config after saving primary profile: {e}")
+
         return jsonify({'status': 'ok', 'name': name, 'role': role}), 200
     except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)}), 500
