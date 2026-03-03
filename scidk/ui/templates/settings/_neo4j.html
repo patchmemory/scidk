@@ -192,7 +192,7 @@
 
       for (const role of roles) {
         try {
-          const r = await fetch(`/api/settings/neo4j/profiles/by-role/${role}`);
+          const r = await fetch(window.SCIDK_BASE + `/api/settings/neo4j/profiles/by-role/${role}`);
           const j = await r.json();
           if (j.profile && j.profile.name) {
             // Mark this profile as connected (it's activated for its role)

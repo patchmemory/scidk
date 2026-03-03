@@ -78,7 +78,7 @@
       if (searchQuery) params.append('search', searchQuery);
       params.append('limit', '100');
 
-      fetch(`/api/logs/viewer?${params}`)
+      fetch(window.SCIDK_BASE + `/api/logs/viewer?${params}`)
         .then(res => res.json())
         .then(data => {
           const container = document.getElementById('logs-container');
