@@ -43,7 +43,7 @@ async function loadRelationshipIndexPage(containerId) {
 
   try {
     // Build query URL
-    let url = `/api/links/${state.linkId}/index?page=${state.page}&page_size=${state.pageSize}`;
+    let url = window.SCIDK_BASE + `/api/links/${state.linkId}/index?page=${state.page}&page_size=${state.pageSize}`;
 
     // For discovered relationships, add query params
     if (state.config?.source_label) {
@@ -214,7 +214,7 @@ async function downloadRelationshipIndex(containerId, format) {
     const totalPages = Math.ceil(state.total / 1000); // Fetch in chunks of 1000
 
     for (let page = 1; page <= totalPages; page++) {
-      let url = `/api/links/${state.linkId}/index?page=${page}&page_size=1000`;
+      let url = window.SCIDK_BASE + `/api/links/${state.linkId}/index?page=${page}&page_size=1000`;
 
       if (state.config?.source_label) {
         url += `&source_label=${encodeURIComponent(state.config.source_label)}`;

@@ -375,7 +375,7 @@
       params.source = source;
 
       const q = qs(params);
-      const url = '/api/graph/schema/combined' + (q ? '?' + q : '');
+      const url = window.SCIDK_BASE + '/api/graph/schema/combined' + (q ? '?' + q : '');
       const res = await fetch(url);
       return await res.json();
     } catch (e) {
