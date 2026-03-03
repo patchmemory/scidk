@@ -6,6 +6,8 @@ with all necessary extensions, services, and route blueprints.
 Most initialization logic has been extracted to separate modules in scidk/core/
 and scidk/services/ to keep this file lean and maintainable.
 """
+from dotenv import load_dotenv
+load_dotenv()
 
 from flask import Flask
 from pathlib import Path
