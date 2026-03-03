@@ -716,7 +716,7 @@ function loadPreview() {
 
   // Save first if new
   const savePromise = tripleBuilder.link_id ? Promise.resolve({ link: data }) :
-    fetch('/api/links', {
+    fetch(window.SCIDK_BASE + '/api/links', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)

@@ -134,7 +134,7 @@ async function loadUIDPropertyOptions(link) {
 
   try {
     // Fetch source properties
-    const sourceResponse = await fetch('/api/neo4j/label-properties', {
+    const sourceResponse = await fetch(window.SCIDK_BASE + '/api/neo4j/label-properties', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ database: 'PRIMARY', label: sourceLabel })
@@ -152,7 +152,7 @@ async function loadUIDPropertyOptions(link) {
     }
 
     // Fetch target properties
-    const targetResponse = await fetch('/api/neo4j/label-properties', {
+    const targetResponse = await fetch(window.SCIDK_BASE + '/api/neo4j/label-properties', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ database: 'PRIMARY', label: targetLabel })
@@ -191,7 +191,7 @@ async function updateActiveLinkUIDProperty(side, value) {
 
   // Save link definition with updated match_config
   try {
-    const response = await fetch('/api/links', {
+    const response = await fetch(window.SCIDK_BASE + '/api/links', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -421,7 +421,7 @@ async function executeDiscoveredImport() {
   showToast('Starting import...', 'info');
 
   try {
-    const response = await fetch('/api/links/discovered/import', {
+    const response = await fetch(window.SCIDK_BASE + '/api/links/discovered/import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -539,7 +539,7 @@ async function fetchRelationshipProperties(sourceDatabase, sourceLabel, relType,
   console.log('[fetchRelationshipProperties] Fetching properties for:', {sourceDatabase, sourceLabel, relType, targetLabel});
 
   try {
-    const response = await fetch('/api/neo4j/relationship-properties', {
+    const response = await fetch(window.SCIDK_BASE + '/api/neo4j/relationship-properties', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

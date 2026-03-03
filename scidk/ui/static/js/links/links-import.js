@@ -296,7 +296,7 @@ async function previewDiscoveredImport() {
   showToast('Generating preview...', 'info');
 
   try {
-    const response = await fetch('/api/links/discovered/import/preview', {
+    const response = await fetch(window.SCIDK_BASE + '/api/links/discovered/import/preview', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -379,7 +379,7 @@ async function executeDiscoveredImport() {
   showToast('Starting import...', 'info');
 
   try {
-    const response = await fetch('/api/links/discovered/import', {
+    const response = await fetch(window.SCIDK_BASE + '/api/links/discovered/import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

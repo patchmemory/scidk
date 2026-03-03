@@ -234,7 +234,7 @@ class ScriptsManager:
         cur = self.conn.cursor()
         cur.execute(
             """
-            INSERT INTO scripts
+            INSERT OR IGNORE INTO scripts
             (id, name, description, language, category, code, parameters, tags,
              created_at, created_by, updated_at, validation_status, validation_errors,
              validation_output, validation_timestamp, is_active, docstring, is_file_based,

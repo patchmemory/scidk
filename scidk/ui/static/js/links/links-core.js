@@ -295,7 +295,7 @@ function loadLinksPage() {
 document.addEventListener('DOMContentLoaded', loadLinksPage);
 
 function loadAvailableLabels() {
-  fetch('/api/links/available-labels')
+  fetch(window.SCIDK_BASE + '/api/links/available-labels')
     .then(r => r.json())
     .then(data => {
       if (data.status === 'success') {
@@ -357,7 +357,7 @@ function initializeEventListeners() {
 
       // Step 1: Verify Active links against primary graph
       try {
-        const verifyResponse = await fetch('/api/links/verify', {
+        const verifyResponse = await fetch(window.SCIDK_BASE + '/api/links/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
@@ -501,7 +501,7 @@ function initializeEventListeners() {
 }
 
 function loadLinkDefinitions() {
-  fetch('/api/links')
+  fetch(window.SCIDK_BASE + '/api/links')
     .then(r => r.json())
     .then(data => {
       if (data.status === 'success') {
@@ -514,7 +514,7 @@ function loadLinkDefinitions() {
 }
 
 function loadDiscoveredRelationships() {
-  fetch('/api/links/discovered')
+  fetch(window.SCIDK_BASE + '/api/links/discovered')
     .then(r => r.json())
     .then(data => {
       if (data.status === 'success') {

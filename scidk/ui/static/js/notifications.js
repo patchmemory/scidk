@@ -127,7 +127,7 @@ let lastAlertCheck = Date.now();
 
 async function checkForNewAlerts() {
     try {
-        const response = await fetch('/api/settings/alerts/history?limit=10');
+        const response = await fetch(window.SCIDK_BASE + '/api/settings/alerts/history?limit=10');
         if (!response.ok) return;
 
         const data = await response.json();
