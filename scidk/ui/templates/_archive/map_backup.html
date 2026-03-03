@@ -371,7 +371,7 @@
   if (rlt) rlt.onchange = onFilter;
   if (layoutSel) layoutSel.onchange = () => runLayout(layoutSel.value);
   const btn = document.getElementById('download-csv');
-  if (btn) btn.onclick = () => { window.location = '/api/graph/schema.csv'; };
+  if (btn) btn.onclick = () => { window.location = window.SCIDK_BASE + '/api/graph/schema.csv'; };
   const btnSave = document.getElementById('save-positions');
   const btnLoad = document.getElementById('load-positions');
   if (btnSave) btnSave.onclick = savePositions;

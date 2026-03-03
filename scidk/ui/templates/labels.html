@@ -1598,7 +1598,7 @@ function getSourceDisplayText(sourceType, sourceId) {
 
 function navigateToPluginInstance(instanceId) {
   // Navigate to Settings > Plugins
-  window.location.href = '/settings#plugins';
+  window.location.href = window.SCIDK_BASE + '/settings#plugins';
   // Store the instance ID to highlight after navigation
   sessionStorage.setItem('highlight_plugin_instance', instanceId);
 }
@@ -3020,7 +3020,7 @@ async function importFromArrows() {
 async function exportToArrows() {
   try {
     showToast('Exporting schema...', 'info');
-    window.location = '/api/labels/export/arrows';
+    window.location = window.SCIDK_BASE + '/api/labels/export/arrows';
     setTimeout(() => showToast('Schema exported successfully', 'success'), 500);
   } catch (e) {
     showToast('Export error: ' + e.message, 'error');

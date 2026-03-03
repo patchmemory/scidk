@@ -136,7 +136,9 @@ def check_auth():
             return jsonify({'error': 'Authentication required'}), 401
         else:
             # UI requests redirect to login
-            return redirect(url_for('ui.login', redirect=request.path))
+            # Use request.script_root + request.path to get full path for subpath deployments
+            redirect_target = request.script_root + request.path
+            return redirect(url_for('ui.login', redirect=redirect_target))
 
 
 def init_auth_middleware(app):
