@@ -163,7 +163,9 @@
       </form>
     </div>
   </div>
-
+  <script>
+      window.SCIDK_BASE = "{{ request.script_root }}";
+  </script>
   <script>
     (function() {
       const form = document.getElementById('login-form');
