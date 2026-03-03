@@ -1166,6 +1166,12 @@ function resetWizard() {
     linkNameInput.value = '';
   }
 
+  // Ensure main-triple-display is visible (may have been hidden by Active link panel)
+  const mainTripleDisplay = document.getElementById('main-triple-display');
+  if (mainTripleDisplay) {
+    mainTripleDisplay.style.display = 'block';
+  }
+
   // Clear preview
   const previewContainer = document.getElementById('preview-container');
   if (previewContainer) {
@@ -1500,7 +1506,7 @@ function saveLinkDefinition() {
   showToast('Saving link definition...', 'info');
 
   const method = tripleBuilder.link_id ? 'PUT' : 'POST';
-  const url = tripleBuilder.link_id ? `/api/links/${tripleBuilder.link_id}` : '/api/links';
+  const url = tripleBuilder.link_id ? window.SCIDK_BASE + `/api/links/${tripleBuilder.link_id}` : window.SCIDK_BASE + '/api/links';
 
   fetch(url, {
     method: method,
@@ -1763,6 +1769,7 @@ async function openImportWizardForRelationship(rel) {
   // Show loading state in triple display
   const mainTripleDisplay = document.getElementById('main-triple-display');
   if (mainTripleDisplay) {
+    mainTripleDisplay.style.display = 'block'; // Ensure it's visible
     mainTripleDisplay.innerHTML = '<div style="text-align: center; padding: 2rem; color: #999;">Loading properties...</div>';
   }
 
@@ -1771,7 +1778,7 @@ async function openImportWizardForRelationship(rel) {
     const [sourceProps, targetProps, relProps] = await Promise.all([
       fetchLabelProperties(rel.source_label, database),
       fetchLabelProperties(rel.target_label, database),
-      fetchRelationshipProperties(rel.source_label, rel.rel_type, rel.target_label, database)
+      fetchRelationshipProperties(database, rel.source_label, rel.rel_type, rel.target_label)
     ]);
 
     discoveredImportConfig.source.available_properties = sourceProps;
