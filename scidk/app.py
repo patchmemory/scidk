@@ -183,7 +183,7 @@ def create_app():
 
     # Hydrate Neo4j connection settings from SQLite on startup
     try:
-        from .core.settings import get_setting, get_settings_by_prefix
+        from .core.settings import get_setting
         import json
         neo4j_config_json = get_setting('neo4j_config')
         if neo4j_config_json:
@@ -194,55 +194,6 @@ def create_app():
         neo4j_password = get_setting('neo4j_password')
         if neo4j_password:
             app.extensions['scidk']['neo4j_config']['password'] = neo4j_password
-
-        # FALLBACK: If legacy config is empty, load from primary profile
-        cfg = app.extensions['scidk']['neo4j_config']
-        if not cfg.get('uri'):
-            # Scan for active primary profile
-            active_primary = get_setting('neo4j_active_role_primary')
-            if active_primary:
-                # Load the primary profile
-                profile_key = f'neo4j_profile_{active_primary.replace(" ", "_")}'
-                profile_json = get_setting(profile_key)
-                if profile_json:
-                    profile = json.loads(profile_json)
-                    # Load password (will be auto-decrypted by get_setting)
-                    password_key = f'neo4j_profile_password_{active_primary.replace(" ", "_")}'
-                    password = get_setting(password_key)
-
-                    # Update runtime config
-                    cfg['uri'] = profile.get('uri')
-                    cfg['user'] = profile.get('user')
-                    cfg['database'] = profile.get('database')
-                    if password:
-                        cfg['password'] = password
-
-                    app.logger.info(f"Loaded primary Neo4j profile '{active_primary}' at startup")
-            else:
-                # No active primary set, scan for any profile with role='primary'
-                profiles = get_settings_by_prefix('neo4j_profile_')
-                for key, value in profiles.items():
-                    if key.endswith('_password'):
-                        continue
-                    try:
-                        profile = json.loads(value)
-                        if profile.get('role') == 'primary':
-                            profile_name = key.replace('neo4j_profile_', '').replace('_', ' ')
-                            # Load password
-                            password_key = f'neo4j_profile_password_{profile_name.replace(" ", "_")}'
-                            password = get_setting(password_key)
-
-                            # Update runtime config
-                            cfg['uri'] = profile.get('uri')
-                            cfg['user'] = profile.get('user')
-                            cfg['database'] = profile.get('database')
-                            if password:
-                                cfg['password'] = password
-
-                            app.logger.info(f"Loaded primary Neo4j profile '{profile_name}' at startup")
-                            break
-                    except Exception:
-                        continue
     except Exception as e:
         app.logger.warning(f"Failed to load persisted Neo4j settings: {e}")
 
