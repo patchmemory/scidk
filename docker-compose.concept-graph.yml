@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  neo4j-concept:
+    image: neo4j:5.13.0
+    container_name: scidk-concept-graph
+    ports:
+      - "7689:7687"  # Bolt protocol
+      - "7476:7474"  # HTTP (browser access)
+    environment:
+      - NEO4J_AUTH=neo4j/concept-graph-password
+      - NEO4J_server_memory_heap_initial__size=512m
+      - NEO4J_server_memory_heap_max__size=2G
+      - NEO4J_server_memory_pagecache_size=512m
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      - NEO4J_dbms_security_procedures_allowlist=apoc.*
+    volumes:
+      - concept-graph-data:/data
+      - concept-graph-logs:/logs
+    networks:
+      - scidk-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  concept-graph-data:
+    driver: local
+  concept-graph-logs:
+    driver: local
+
+networks:
+  scidk-network:
+    driver: bridge
