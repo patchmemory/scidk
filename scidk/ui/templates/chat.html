@@ -31,6 +31,12 @@
     <div id="chat-history" class="chat-scroll" data-testid="chat-history"></div>
 
     <form id="chat-form" class="chat-input-form">
+      <!-- Attachment chip (hidden by default) -->
+      <div id="query-attachment" class="query-attachment" style="display: none;">
+        <span class="attachment-icon">📎</span>
+        <span id="attachment-preview" class="attachment-preview"></span>
+        <button type="button" id="remove-attachment" class="remove-attachment" title="Remove attachment">×</button>
+      </div>
       <textarea id="chat-input" class="chat-textarea" placeholder="Example: Find all files in my project&#10;Example: How many File nodes are in the database?&#10;Example: Show me recent scans" data-testid="chat-input"></textarea>
       <div class="chat-actions">
         <button type="submit" class="btn btn-sm btn-primary" data-testid="chat-send">Send</button>
@@ -68,7 +74,7 @@
           </div>
           <div class="result-format-content">
             <div id="table-results" class="result-format-view active">
-              <div class="empty-state">
+              <div class="empty-state" style="display:none">
                 <p class="small text-muted">Query results will appear here</p>
               </div>
             </div>
@@ -80,10 +86,10 @@
 
         <!-- Graph Visualization Tab -->
         <div id="graph-tab" class="tab-content">
-          <div class="empty-state">
+          <div class="empty-state" style="display:none">
             <p class="small text-muted">Graph visualization will appear here</p>
           </div>
-          <div id="graph-viz" style="display: none;"></div>
+          <div id="graph-viz" style="display: none; width: 100%; height: 100%;"></div>
         </div>
       </div>
     </div>
@@ -93,10 +99,21 @@
 
     <!-- Bottom Section: Query Editor -->
     <div class="query-editor-panel" id="query-editor-panel">
+      <!-- Query Navigator -->
+      <div id="query-navigator" class="query-navigator" style="display:none;">
+        <span style="font-size: 0.85rem; margin-right: 0.5rem;">📋</span>
+        <select id="nav-select" class="form-select form-select-sm" style="flex: 1; max-width: 300px; margin-right: 0.5rem;" title="Select query">
+          <option value="">Select a query...</option>
+        </select>
+        <span id="nav-count" class="nav-count" style="font-size: 0.75rem; color: #666; margin-right: 0.5rem;">0 / 0</span>
+        <button class="btn btn-sm btn-outline-primary" id="nav-use" title="Load query and open save dialog">Use</button>
+      </div>
+
       <div class="query-editor-header">
         <h3>Query Editor</h3>
         <div class="query-controls">
           <button class="btn btn-sm btn-success" id="run-query-btn" title="Run query">▶ Run</button>
+          <button class="btn btn-sm btn-outline-primary" id="attach-query-btn" title="Attach query to chat message">Attach query →</button>
           <button class="btn btn-sm btn-outline-secondary" id="save-query-btn" title="Save/Bookmark query">💾 Save</button>
           <button class="btn btn-sm btn-outline-secondary" id="load-query-btn" title="Load from library">📚 Library</button>
           <button class="btn btn-sm btn-outline-secondary" id="clear-query-btn" title="Clear editor">Clear</button>
@@ -111,6 +128,9 @@
 </div>
 {% endblock %}
 {% block head %}
+<!-- Cytoscape.js for graph visualization -->
+<script src="https://unpkg.com/cytoscape@3.27.0/dist/cytoscape.min.js"></script>
+
 <!-- CodeMirror 5 with Cypher mode -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.css" />
@@ -194,6 +214,47 @@
     background: #f9f9f9;
   }
 
+  /* Query Attachment Chip */
+  .query-attachment {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.5rem;
+    background: #e3f2fd;
+    border: 1px solid #2196f3;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+  }
+
+  .attachment-icon {
+    font-size: 1rem;
+  }
+
+  .attachment-preview {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #1976d2;
+  }
+
+  .remove-attachment {
+    border: none;
+    background: transparent;
+    color: #666;
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 0.25rem;
+    transition: color 0.15s ease;
+  }
+
+  .remove-attachment:hover {
+    color: #d32f2f;
+  }
+
   .chat-textarea {
     width: 100%;
     height: 5rem;
@@ -217,6 +278,7 @@
     display: flex;
     flex-direction: column;
     background: #fff;
+    height: 100%;
   }
 
   /* Top Section: Data Output */
@@ -226,6 +288,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    height: 100%;
   }
 
   .data-panel-header {
@@ -265,16 +328,24 @@
 
   .data-panel-content {
     flex: 1;
-    overflow-y: auto;
-    padding: 1.5rem;
+    overflow: hidden;
+    padding: 0;
+    height: 100%;
   }
 
   .tab-content {
     display: none;
+    height: 100%;
   }
 
   .tab-content.active {
     display: block;
+    height: 100%;
+  }
+
+  #results-tab {
+    padding: 1.5rem;
+    overflow-y: auto;
   }
 
   /* Result Format Tabs (Table/JSON within Results) */
@@ -440,6 +511,19 @@
     white-space: pre-wrap;
     line-height: 1.5;
   }
+  .message-attachment {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    margin-bottom: 0.5rem;
+    background: rgba(33, 150, 243, 0.1);
+    border: 1px solid rgba(33, 150, 243, 0.3);
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+    color: #1976d2;
+  }
   .chat-metadata {
     margin-top: 0.5rem;
     padding-top: 0.5rem;
@@ -553,6 +637,208 @@
     font-size: 0.9rem;
     resize: vertical;
   }
+
+  /* ========== Query Navigator Styles ========== */
+  .query-navigator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    background: #f9f9f9;
+    border-bottom: 1px solid #e0e0e0;
+    flex-wrap: wrap;
+  }
+
+  .nav-label {
+    flex: 1;
+    min-width: 200px;
+    font-size: 0.9rem;
+    color: #333;
+    font-weight: 500;
+  }
+
+  /* ========== Open in Editor Button Styles ========== */
+  .open-in-editor-btn {
+    display: inline-block;
+    padding: 0.35rem 0.75rem;
+    margin: 0.25rem;
+    font-size: 0.85em;
+    color: #4a90e2;
+    background: white;
+    border: 1px solid #4a90e2;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .open-in-editor-btn:hover {
+    background: #4a90e2;
+    color: white;
+    box-shadow: 0 2px 4px rgba(74, 144, 226, 0.3);
+  }
+
+  .open-in-editor-btn:active {
+    transform: translateY(1px);
+  }
+
+  /* ========== Editor Highlight Animation ========== */
+  @keyframes editor-pulse {
+    0%, 100% {
+      border-color: #e0e0e0;
+      box-shadow: none;
+    }
+    50% {
+      border-color: #4a90e2;
+      box-shadow: 0 0 12px rgba(74, 144, 226, 0.6);
+    }
+  }
+
+  .editor-highlight {
+    animation: editor-pulse 1s ease;
+  }
+
+  /* ========== Manual Query Message Styling ========== */
+  .chat-message.assistant.manual-query {
+    background: #fff3e0;
+    border-left: 3px solid #ff9800;
+  }
+
+  .chat-message.assistant.manual-query .chat-message-role::after {
+    content: ' (Manual)';
+    font-size: 0.75em;
+    color: #ff9800;
+    font-weight: normal;
+  }
+
+  /* ========== Cytoscape Graph Visualization ========== */
+  #graph-viz {
+    width: 100%;
+    height: 100%;
+    min-height: 400px;
+    background: #fafafa;
+    position: relative;
+  }
+
+  #graph-viz.empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .graph-empty-message {
+    text-align: center;
+    color: #999;
+    font-size: 0.9rem;
+  }
+
+  .graph-controls {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    display: flex;
+    gap: 0.5rem;
+    z-index: 10;
+  }
+
+  .graph-control-btn {
+    padding: 0.4rem 0.8rem;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    transition: all 0.2s;
+  }
+
+  .graph-control-btn:hover {
+    background: #f0f0f0;
+    border-color: #4a90e2;
+  }
+
+  /* ========== Token Streaming Thinking Section ========== */
+  .thinking-section {
+    margin: 0.75rem 0;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    background: #f9f9f9;
+    overflow: hidden;
+    transition: all 0.3s ease;
+  }
+
+  .thinking-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    background: #f0f0f0;
+    border-bottom: 1px solid #e0e0e0;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #666;
+    user-select: none;
+  }
+
+  .thinking-header:hover {
+    background: #e8e8e8;
+  }
+
+  .thinking-toggle {
+    font-size: 0.8rem;
+    transition: transform 0.3s ease;
+  }
+
+  .thinking-toggle.collapsed {
+    transform: rotate(180deg);
+  }
+
+  .thinking-content {
+    padding: 0.75rem;
+    max-height: 150px;
+    overflow-y: auto;
+    font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: #333;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    transition: height 0.2s ease-out, opacity 0.15s ease-out;
+  }
+
+  .thinking-content.collapsed {
+    height: 0 !important;
+    opacity: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    overflow: hidden;
+  }
+
+  .thinking-content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .thinking-content::-webkit-scrollbar-track {
+    background: #f1f1f1;
+  }
+
+  .thinking-content::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 3px;
+  }
+
+  .thinking-content::-webkit-scrollbar-thumb:hover {
+    background: #555;
+  }
+
+  .thinking-cursor {
+    animation: blink 1s step-end infinite;
+  }
+
+  @keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+  }
 </style>
 <script>
   window.addEventListener('DOMContentLoaded', () => {
@@ -569,6 +855,13 @@
     const loadQueryBtn = document.getElementById('load-query-btn');
     const clearQueryBtn = document.getElementById('clear-query-btn');
     const queryInfoText = document.getElementById('query-info-text');
+
+    // ========== Session Query Tracking State (Phase 1) ==========
+    // MUST be declared early - referenced in renderHistory() which runs during page load
+    // Tracks all Cypher queries generated in current session
+    // Structure: {id, label, cypher, timestamp, messageIndex, stepNumber?, saved}
+    let sessionQueries = [];
+    let currentNavIndex = 0; // Current position in navigator
 
     // Initialize CodeMirror for query editor
     let queryEditor = null;
@@ -590,6 +883,330 @@
       });
     }
     initQueryEditor();
+
+    // ========== Cytoscape Graph Initialization ==========
+    let cy = null;
+
+    function initCytoscape() {
+      if (typeof cytoscape === 'undefined') {
+        setTimeout(initCytoscape, 100);
+        return;
+      }
+
+      const graphViz = document.getElementById('graph-viz');
+
+      cy = cytoscape({
+        container: graphViz,
+        elements: [],
+        style: [
+          {
+            selector: 'node',
+            style: {
+              'background-color': '#95a5a6',  // Default gray for unknown types
+              'label': 'data(displayLabel)',  // Use displayLabel instead of label
+              'color': '#333',
+              'text-valign': 'bottom',
+              'text-halign': 'center',
+              'font-size': '10px',
+              'text-max-width': '80px',
+              'text-wrap': 'ellipsis',
+              'width': 30,
+              'height': 30
+            }
+          },
+          // Color-code nodes by type
+          {
+            selector: 'node[label="Folder"]',
+            style: {
+              'background-color': '#4a90e2'  // Blue for Folders
+            }
+          },
+          {
+            selector: 'node[label="File"]',
+            style: {
+              'background-color': '#7bc67e'  // Green for Files
+            }
+          },
+          {
+            selector: 'node[label="Sample"]',
+            style: {
+              'background-color': '#f5a623'  // Orange for Samples
+            }
+          },
+          {
+            selector: 'node[label="Scan"]',
+            style: {
+              'background-color': '#9b59b6'  // Purple for Scans
+            }
+          },
+          {
+            selector: 'node[label="SampleType"]',
+            style: {
+              'background-color': '#e74c3c'  // Red for SampleTypes
+            }
+          },
+          {
+            selector: 'edge',
+            style: {
+              'width': 1.5,
+              'line-color': '#aaa',
+              'target-arrow-color': '#aaa',
+              'target-arrow-shape': 'triangle',
+              'curve-style': 'bezier',
+              'label': 'data(label)',
+              'font-size': '9px',
+              'color': '#666',
+              'text-rotation': 'autorotate',
+              'text-margin-y': -10
+            }
+          }
+        ],
+        layout: { name: 'preset' }
+      });
+
+      console.log('Cytoscape initialized for chat graph visualization');
+
+      // Show empty state initially
+      showGraphEmptyState();
+    }
+
+    initCytoscape();
+
+    // ========== Graph Visualization Helper Functions ==========
+
+    /**
+     * Show empty state message in graph panel
+     */
+    function showGraphEmptyState(message = 'No graph data — results contain no nodes') {
+      if (!cy) return;
+
+      const graphViz = document.getElementById('graph-viz');
+      graphViz.classList.add('empty');
+      graphViz.style.display = 'flex';
+
+      // Clear any existing content
+      graphViz.innerHTML = `<div class="graph-empty-message">${message}</div>`;
+
+      // Remove Cytoscape instance if it exists
+      if (cy && cy.elements().length > 0) {
+        cy.elements().remove();
+      }
+    }
+
+    /**
+     * Safely extract ID from Neo4j Integer format or plain value
+     * @param {*} val - Neo4j Integer {low, high} or plain number/string
+     * @returns {string|null} String representation of ID
+     */
+    function toId(val) {
+      // Handle Neo4j Integer format { low, high }
+      if (val && typeof val === 'object' && 'low' in val) {
+        return val.low.toString();
+      }
+      // Handle plain number or string
+      if (val !== undefined && val !== null) {
+        return val.toString();
+      }
+      return null;
+    }
+
+    /**
+     * Detect if query results contain Neo4j nodes or relationships
+     * @param {Array} records - Array of result records from query
+     * @returns {Object} {hasNodes: boolean, hasRels: boolean, nodes: Array, rels: Array}
+     */
+    function detectGraphData(records) {
+      if (!records || !Array.isArray(records) || records.length === 0) {
+        return { hasNodes: false, hasRels: false, nodes: [], rels: [] };
+      }
+
+      const nodes = [];
+      const rels = [];
+      const nodeIds = new Set();
+
+      records.forEach(record => {
+        Object.values(record).forEach(value => {
+          if (!value || typeof value !== 'object') return;
+
+          // Detect Neo4j node: has id (or identity) and labels array
+          if ((value.id !== undefined || value.identity !== undefined) && Array.isArray(value.labels)) {
+            const rawId = value.id !== undefined ? value.id : value.identity;
+            const nodeId = toId(rawId);
+            if (nodeId && !nodeIds.has(nodeId)) {
+              nodes.push({
+                id: nodeId,
+                labels: value.labels,
+                properties: value.properties || {}
+              });
+              nodeIds.add(nodeId);
+            }
+          }
+
+          // Detect Neo4j relationship: has type, and start_node/end_node OR start/end OR startNodeElementId/endNodeElementId
+          if (value.type && (value.start_node !== undefined || value.start !== undefined || value.startNodeElementId !== undefined)) {
+            let startId = null;
+            let endId = null;
+            let relId = null;
+
+            // Current driver format: uses start_node/end_node
+            if (value.start_node !== undefined && value.end_node !== undefined) {
+              startId = toId(value.start_node);
+              endId = toId(value.end_node);
+              relId = toId(value.id !== undefined ? value.id : value.identity);
+            }
+            // Modern driver: uses elementId strings
+            else if (value.startNodeElementId && value.endNodeElementId) {
+              startId = value.startNodeElementId;
+              endId = value.endNodeElementId;
+              relId = value.elementId || toId(value.id || value.identity);
+            }
+            // Legacy driver: uses start/end integers
+            else if (value.start !== undefined && value.end !== undefined) {
+              startId = toId(value.start);
+              endId = toId(value.end);
+              relId = toId(value.id !== undefined ? value.id : value.identity);
+            }
+
+            if (startId && endId) {
+              rels.push({
+                id: relId,
+                type: value.type,
+                start: startId,
+                end: endId,
+                properties: value.properties || {}
+              });
+            }
+          }
+        });
+      });
+
+      return {
+        hasNodes: nodes.length > 0,
+        hasRels: rels.length > 0,
+        nodes,
+        rels
+      };
+    }
+
+    /**
+     * Transform Neo4j nodes and relationships to Cytoscape elements format
+     * @param {Array} nodes - Neo4j node objects
+     * @param {Array} rels - Neo4j relationship objects
+     * @returns {Array} Cytoscape elements array
+     */
+    function transformToCytoscape(nodes, rels) {
+      const elements = [];
+
+      // Add nodes
+      nodes.forEach(node => {
+        const nodeId = node.id;  // Already normalized to string by detectGraphData
+        const label = node.labels && node.labels.length > 0 ? node.labels[0] : 'Node';
+        const props = node.properties || {};
+
+        // Compute displayLabel: name → last segment of path → title → label
+        let displayLabel = props.name;
+        if (!displayLabel && props.path) {
+          // Extract last segment from path (e.g. "mit-sharepoint-site:CAC" → "CAC")
+          const pathSegments = props.path.split(/[/:]/);
+          displayLabel = pathSegments[pathSegments.length - 1];
+        }
+        if (!displayLabel) {
+          displayLabel = props.title || label;
+        }
+
+        elements.push({
+          data: {
+            id: nodeId,
+            label: label,  // Node type (Folder, File, etc.)
+            displayLabel: displayLabel,  // Human-readable label
+            labels: node.labels,
+            ...props  // Spread properties as additional data
+          }
+        });
+      });
+
+      // Add relationships
+      rels.forEach(rel => {
+        // Use fallback chain in case normalization didn't happen
+        const source = toId(rel.start_node || rel.start || rel.startNodeElementId);
+        const target = toId(rel.end_node || rel.end || rel.endNodeElementId);
+        const edgeId = rel.id || `${source}-${rel.type}-${target}`;
+
+        elements.push({
+          data: {
+            id: edgeId,
+            source: source,
+            target: target,
+            label: rel.type
+          }
+        });
+      });
+
+      return elements;
+    }
+
+    /**
+     * Render graph visualization in Cytoscape
+     * @param {Array} records - Query result records
+     * @returns {boolean} True if graph was rendered, false if no graph data
+     */
+    function renderGraph(records) {
+      if (!cy) {
+        console.error('Cytoscape not initialized');
+        return false;
+      }
+
+      const graphData = detectGraphData(records);
+
+      if (!graphData.hasNodes) {
+        showGraphEmptyState();
+        return false;
+      }
+
+      // Transform to Cytoscape format
+      const elements = transformToCytoscape(graphData.nodes, graphData.rels);
+      const graphViz = document.getElementById('graph-viz');
+      graphViz.style.display = 'block';
+      graphViz.classList.remove('empty');
+      graphViz.innerHTML = '';
+
+      const elementsToRender = graphData.nodes.length > 200
+         ? elements.slice(0, 200)
+         : elements;
+
+      if (graphData.nodes.length > 200) {
+        const warning = document.createElement('div');
+        warning.style.cssText = 'padding:0.5rem 1rem;background:#fff3cd;border:1px solid #ffc107;border-radius:4px;margin-bottom:1rem;font-size:0.85rem;';
+        warning.textContent = `⚠️ Large graph — showing first 200 of ${graphData.nodes.length} nodes`;
+        graphViz.appendChild(warning);
+      }
+
+      const savedStyle = cy.style().json();  // save BEFORE destroy
+      cy.destroy();
+      cy = cytoscape({
+          container: graphViz,
+          elements: elementsToRender,
+          style: savedStyle,
+          layout: { name: 'cose', animate: true,
+                     animationDuration: 500, padding: 50,
+                    stop: function() { if (cy) cy.fit(null, 50); } }
+      });
+
+      console.log(`Graph rendered: ${graphData.nodes.length} nodes, ${graphData.rels.length} relationships`);
+      return true;
+    }
+
+    /**
+     * Fit graph to container
+     */
+    function fitGraph() {
+      if (cy && cy.elements().length > 0) {
+        cy.fit(null, 50);
+      }
+    }
+
+    // Make fitGraph available globally for control button
+    window.fitGraph = fitGraph;
 
     // Resizable panels
     const resizeHandle = document.getElementById('resize-handle');
@@ -1230,18 +1847,8 @@
           queryInfoText.textContent = `Query executed successfully - ${data.result_count || 0} results in ${data.execution_time_ms || 0}ms`;
           queryInfoText.style.color = '#28a745';
 
-          // Add query execution to chat history
-          const resultSummary = data.result_count === 0
-            ? 'Query executed but returned no results.'
-            : `Query returned ${data.result_count} result${data.result_count !== 1 ? 's' : ''} in ${data.execution_time_ms}ms.`;
-
-          appendMessage('assistant', resultSummary, {
-            cypher_query: query,
-            raw_results: data.results,
-            execution_time_ms: data.execution_time_ms,
-            result_count: data.result_count,
-            query_source: 'manual_query_editor'
-          });
+          // Note: Manual query execution does NOT add to chat history
+          // Results are shown only in the Data Output panel below
 
           // Display results in Table view
           const tableResults = document.getElementById('table-results');
@@ -1273,16 +1880,30 @@
 
             // Update JSON view
             jsonResults.querySelector('pre').textContent = JSON.stringify(data.results, null, 2);
+
+            // Try to render graph visualization
+            const hasGraph = renderGraph(data.results);
+
+            // Auto-switch to Graph tab if nodes detected
+            if (hasGraph) {
+              document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+              document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+              document.querySelector('[data-tab="graph"]').classList.add('active');
+              document.getElementById('graph-tab').classList.add('active');
+            }
           } else {
             tableResults.innerHTML = '<p class="small text-muted">Query executed but returned no results.</p>';
             jsonResults.querySelector('pre').textContent = '[]';
+            showGraphEmptyState();
           }
 
-          // Switch to Results tab
-          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-          document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-          document.querySelector('[data-tab="results"]').classList.add('active');
-          document.getElementById('results-tab').classList.add('active');
+          // Switch to Results tab (unless graph auto-switch happened above)
+          if (!document.querySelector('[data-tab="graph"]').classList.contains('active')) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelector('[data-tab="results"]').classList.add('active');
+            document.getElementById('results-tab').classList.add('active');
+          }
         } else {
           queryInfoText.textContent = `Error: ${data.error || 'Query failed'}`;
           queryInfoText.style.color = '#dc3545';
@@ -1301,6 +1922,46 @@
         runQueryBtn.classList.remove('btn-danger');
         runQueryBtn.classList.add('btn-success');
       }
+    });
+
+    // Attach Query: Attach query to chat message (replaces Send to Chat)
+    let attachedQuery = null;
+
+    document.getElementById('attach-query-btn')?.addEventListener('click', () => {
+      const query = queryEditor.getValue().trim();
+      if (!query) {
+        queryInfoText.textContent = 'Please enter a query to attach';
+        queryInfoText.style.color = '#dc3545';
+        return;
+      }
+
+      // Store the query
+      attachedQuery = query;
+
+      // Show attachment chip
+      const attachmentDiv = document.getElementById('query-attachment');
+      const attachmentPreview = document.getElementById('attachment-preview');
+
+      // Truncate query for preview (first 60 chars)
+      const preview = query.length > 60 ? query.substring(0, 60) + '...' : query;
+      attachmentPreview.textContent = preview;
+      attachmentDiv.style.display = 'flex';
+
+      queryInfoText.textContent = '✓ Query attached to chat';
+      queryInfoText.style.color = '#28a745';
+      setTimeout(() => {
+        queryInfoText.textContent = 'Ready';
+        queryInfoText.style.color = '#666';
+      }, 2000);
+
+      // Focus chat input
+      input.focus();
+    });
+
+    // Remove attachment
+    document.getElementById('remove-attachment')?.addEventListener('click', () => {
+      attachedQuery = null;
+      document.getElementById('query-attachment').style.display = 'none';
     });
 
     saveQueryBtn.addEventListener('click', async () => {
@@ -1453,9 +2114,267 @@
       queryInfoText.style.color = '#666';
     });
 
+    // ========== Query Navigator Event Handlers ==========
+
+    // Dropdown selection handler
+    document.getElementById('nav-select')?.addEventListener('change', (e) => {
+      const selectedIndex = parseInt(e.target.value);
+      if (!isNaN(selectedIndex) && selectedIndex >= 0 && selectedIndex < sessionQueries.length) {
+        currentNavIndex = selectedIndex;
+        updateNavigator();
+      }
+    });
+
+    // Use button: Load query into editor AND open save dialog
+    document.getElementById('nav-use')?.addEventListener('click', async () => {
+      if (sessionQueries.length === 0) return;
+
+      // Load query into editor first
+      openQueryInEditor(currentNavIndex);
+
+      // Then open save dialog pre-filled
+      const query = sessionQueries[currentNavIndex];
+
+      const name = prompt('Enter a name for this query:', query.label);
+      if (!name) return; // User cancelled, but query is still loaded in editor
+
+      const description = prompt('Description (optional):', query.label) || '';
+      const tagsInput = prompt('Tags (comma-separated, optional):', '') || '';
+      const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
+
+      try {
+        // Save to database via API
+        const resp = await fetch(window.SCIDK_BASE + '/api/queries', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            query: query.cypher,
+            description: description || undefined,
+            tags: tags.length > 0 ? tags : undefined,
+            metadata: {
+              source: 'chat_ai',
+              source_session_id: currentSessionId,
+              message_index: query.messageIndex,
+              step_number: query.stepNumber,
+              generated_at: query.timestamp
+            }
+          })
+        });
+
+        if (resp.ok) {
+          // Mark as saved
+          sessionQueries[currentNavIndex].saved = true;
+          updateNavigator();
+
+          queryInfoText.textContent = `Query saved as "${name}" ✓`;
+          queryInfoText.style.color = '#28a745';
+          setTimeout(() => {
+            queryInfoText.textContent = 'Ready';
+            queryInfoText.style.color = '#666';
+          }, 2000);
+        } else {
+          const data = await resp.json();
+          alert(`Failed to save query: ${data.error || 'Unknown error'}`);
+        }
+      } catch (err) {
+        alert(`Failed to save query: ${err.message}`);
+      }
+    });
+
+    /**
+     * Download full query results as CSV.
+     * Re-executes the query without limit and streams to CSV file.
+     */
+    window.downloadQueryResultsCSV = async function(cypher, filename) {
+      try {
+        // Execute query to get full results
+        const resp = await fetch(window.SCIDK_BASE + '/api/graph/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: cypher })
+        });
+        const data = await resp.json();
+
+        if (!resp.ok || data.status !== 'ok' || !data.results) {
+          alert('Failed to download results: ' + (data.error || 'Unknown error'));
+          return;
+        }
+
+        // Convert results to CSV
+        const results = data.results;
+        if (results.length === 0) {
+          alert('No results to download');
+          return;
+        }
+
+        // Build CSV content
+        const keys = Object.keys(results[0]);
+        let csvContent = keys.map(k => `"${k}"`).join(',') + '\n';
+
+        results.forEach(row => {
+          const values = keys.map(k => {
+            const val = row[k];
+            if (val === null || val === undefined) return '';
+            if (typeof val === 'object') return `"${JSON.stringify(val).replace(/"/g, '""')}"`;
+            return `"${String(val).replace(/"/g, '""')}"`;
+          });
+          csvContent += values.join(',') + '\n';
+        });
+
+        // Trigger download
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename || `query-results-${Date.now()}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        alert('Failed to download CSV: ' + err.message);
+      }
+    };
+
+    /**
+     * Open a query in the editor from session history.
+     * Called by "Open in Editor" buttons in chat messages.
+     */
+    window.openQueryInEditor = function(queryIndex) {
+      if (queryIndex < 0 || queryIndex >= sessionQueries.length) {
+        console.error('Invalid query index:', queryIndex);
+        return;
+      }
+
+      const query = sessionQueries[queryIndex];
+
+      // Load query into editor (does not auto-run)
+      queryEditor.setValue(query.cypher);
+
+      // Update navigator to this query
+      currentNavIndex = queryIndex;
+      updateNavigator();
+
+      // Scroll editor into view if not visible
+      const editorPanel = document.getElementById('query-editor-panel');
+      if (editorPanel) {
+        editorPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+        // Pulse animation to highlight the update
+        editorPanel.classList.add('editor-highlight');
+        setTimeout(() => {
+          editorPanel.classList.remove('editor-highlight');
+        }, 1000);
+      }
+
+      // Update status text
+      queryInfoText.textContent = `Loaded: ${query.label}`;
+      queryInfoText.style.color = '#28a745';
+      setTimeout(() => {
+        queryInfoText.textContent = 'Ready';
+        queryInfoText.style.color = '#666';
+      }, 2000);
+    };
+
     let lastUserQuery = ''; // Store last query for feedback
     const llmSelector = document.getElementById('llm-selector');
     let currentStreamedMessage = ''; // Track streaming message
+
+    // ========== Session Query Tracking Functions (Phase 1) ==========
+    // State variables declared at top of script (lines ~659-660)
+
+    /**
+     * Rebuild sessionQueries from loaded chat history.
+     * Called after renderHistory() on page load.
+     */
+    function rebuildSessionQueries() {
+      const messages = JSON.parse(localStorage.getItem('chat_messages') || '[]');
+      sessionQueries = [];
+
+      messages.forEach((msg, idx) => {
+        if (msg.role !== 'assistant' || !msg.metadata) return;
+
+        // Single query from LOOKUP/REASONING/SUMMARIZE
+        if (msg.metadata.cypher_query) {
+          const label = deriveLabelFromMessage(msg, idx);
+          sessionQueries.push({
+            id: `msg-${idx}`,
+            label: label,
+            cypher: msg.metadata.cypher_query,
+            timestamp: msg.timestamp || Date.now(),
+            messageIndex: idx,
+            saved: false
+          });
+        }
+
+        // Multiple queries from REACT step_log
+        if (msg.metadata.engine === 'react' && msg.metadata.step_log) {
+          msg.metadata.step_log.forEach((step, stepIdx) => {
+            if (step.action_type === 'QUERY' && step.content) {
+              const stepLabel = step.thought || `Query from step ${step.step_num || stepIdx + 1}`;
+              sessionQueries.push({
+                id: `msg-${idx}-step-${stepIdx}`,
+                label: stepLabel.slice(0, 60) + (stepLabel.length > 60 ? '...' : ''),
+                cypher: step.content,
+                timestamp: msg.timestamp || Date.now(),
+                messageIndex: idx,
+                stepNumber: stepIdx,
+                saved: false
+              });
+            }
+          });
+        }
+      });
+
+      updateNavigator();
+    }
+
+    /**
+     * Derive a human-readable label from message context.
+     */
+    function deriveLabelFromMessage(msg, idx) {
+      // Try to get original user question
+      const messages = JSON.parse(localStorage.getItem('chat_messages') || '[]');
+      const userMsg = messages[idx - 1]; // Assuming assistant follows user
+      if (userMsg && userMsg.role === 'user') {
+        const text = userMsg.content.slice(0, 50);
+        return text + (userMsg.content.length > 50 ? '...' : '');
+      }
+
+      // Fallback: use engine type
+      const engine = msg.metadata?.engine || 'query';
+      return `${engine.charAt(0).toUpperCase() + engine.slice(1)} query`;
+    }
+
+    /**
+     * Add a new query to session tracking.
+     * Called when new assistant message arrives with cypher.
+     */
+    function addQueryToSession(cypher, label, messageIndex, stepNumber = null) {
+      const id = stepNumber !== null
+        ? `msg-${messageIndex}-step-${stepNumber}`
+        : `msg-${messageIndex}`;
+
+      // Deduplicate by ID
+      if (sessionQueries.find(q => q.id === id)) {
+        return;
+      }
+
+      sessionQueries.push({
+        id,
+        label: label.slice(0, 60) + (label.length > 60 ? '...' : ''),
+        cypher,
+        timestamp: Date.now(),
+        messageIndex,
+        stepNumber,
+        saved: false
+      });
+
+      // Update navigator to latest query
+      currentNavIndex = sessionQueries.length - 1;
+      updateNavigator();
+    }
 
     // Load and check provider status on page load
     async function checkProviderStatus() {
@@ -1631,18 +2550,39 @@
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const message = input.value.trim();
-      if (!message) return;
+
+      // Allow empty message if there's an attachment
+      if (!message && !attachedQuery) return;
+
+      // Build the full message with attachment if present
+      let fullMessage = message;
+      const hasAttachment = !!attachedQuery;
+
+      if (attachedQuery) {
+        if (message) {
+          fullMessage = `${message}\n\n[Attached query]\n${attachedQuery}`;
+        } else {
+          // Empty message, just send the query
+          fullMessage = `[Attached query]\n${attachedQuery}`;
+        }
+      }
 
       // Store query for feedback
-      lastUserQuery = message;
+      lastUserQuery = fullMessage;
 
       // Get selected provider
       const selectedProvider = llmSelector.value;
       const provider = selectedProvider !== 'none' ? selectedProvider : undefined;
 
-      // Add user message immediately
-      appendMessage('user', message);
+      // Add user message immediately (show attachment in UI)
+      appendMessage('user', message || '', { attached_query: attachedQuery });
       input.value = '';
+
+      // Clear attachment after sending
+      if (attachedQuery) {
+        attachedQuery = null;
+        document.getElementById('query-attachment').style.display = 'none';
+      }
 
       // Show tool indicator
       const toolIndicator = document.getElementById('tool-indicator');
@@ -1650,57 +2590,405 @@
         toolIndicator.style.display = 'block';
       }
 
-      // Add thinking indicator
-      const thinkingMsg = appendThinkingMessage();
+      // Try streaming first, fall back to non-streaming
+      let streamingSuccess = false;
 
       try {
-        // Use main GraphRAG endpoint (now with intent classification)
-        const resp = await fetch(window.SCIDK_BASE + '/api/chat/graphrag', {
+        // Attempt streaming with POST + ReadableStream
+        const streamResp = await fetch(window.SCIDK_BASE + '/api/chat/graphrag/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message, provider, verbose: verboseCheckbox.checked })
+          body: JSON.stringify({
+            message: fullMessage,
+            provider,
+            verbose: verboseCheckbox.checked,
+            session_id: currentSessionId || 'default'
+          })
         });
 
-        if (!resp.ok) {
+        if (streamResp.ok && streamResp.body) {
+          // Streaming available - use it
+          streamingSuccess = true;
+
+          // Create live message container for ReAct steps
+          const streamContainer = document.createElement('div');
+          streamContainer.className = 'chat-message assistant';
+          streamContainer.innerHTML = `
+            <div class="chat-message-role">🤖 Assistant <span style="font-size:0.7em; color:#4a90e2;">(streaming)</span></div>
+            <div class="stream-steps-container"></div>
+          `;
+          history.appendChild(streamContainer);
+          history.scrollTop = history.scrollHeight;
+
+          const stepsContainer = streamContainer.querySelector('.stream-steps-container');
+          let finalReply = '';
+          let finalMetadata = {};
+
+          // Token streaming state
+          let currentThinkingBlock = null;
+          let currentThinkingText = null;
+          let currentThinkingCursor = null;
+          let tokenBuffer = '';
+          let flushPending = false;
+          let currentThinkingStep = null;
+          let thinkingTextAccumulator = '';
+
+          // Step accumulation for persisting ReAct steps
+          let currentStreamSteps = [];
+
+          // Create a new thinking block for a specific step
+          function createThinkingBlock(stepNum) {
+            const thinkingBlock = document.createElement('div');
+            thinkingBlock.className = 'thinking-section';
+            thinkingBlock.innerHTML = `
+              <div class="thinking-header">
+                <span>💭 Step ${stepNum} thinking</span>
+                <span class="thinking-toggle">▲</span>
+              </div>
+              <div class="thinking-content">
+                <span class="thinking-text"></span><span class="thinking-cursor">▌</span>
+              </div>
+            `;
+            stepsContainer.appendChild(thinkingBlock);
+
+            // Toggle collapse on header click
+            thinkingBlock.querySelector('.thinking-header').addEventListener('click', () => {
+              const content = thinkingBlock.querySelector('.thinking-content');
+              const toggle = thinkingBlock.querySelector('.thinking-toggle');
+              if (content.classList.contains('collapsed')) {
+                // Expand
+                content.classList.remove('collapsed');
+                content.style.height = content.scrollHeight + 'px';
+                toggle.classList.remove('collapsed');
+                // Remove inline height after transition completes
+                setTimeout(() => {
+                  if (!content.classList.contains('collapsed')) {
+                    content.style.height = '';
+                  }
+                }, 200);
+              } else {
+                // Collapse
+                content.style.height = content.scrollHeight + 'px';
+                toggle.classList.add('collapsed');
+                requestAnimationFrame(() => {
+                  content.classList.add('collapsed');
+                });
+              }
+            });
+
+            return thinkingBlock;
+          }
+
+          // Buffer and flush tokens to avoid DOM thrashing
+          function bufferToken(token) {
+            tokenBuffer += token;
+            if (!flushPending) {
+              flushPending = true;
+              requestAnimationFrame(() => {
+                if (currentThinkingText && currentThinkingCursor) {
+                  // Accumulate text
+                  thinkingTextAccumulator += tokenBuffer;
+
+                  // Strip THINK:/QUERY: prefix from start (only first tokens)
+                  let displayText = thinkingTextAccumulator;
+                  if (displayText.length < 50) { // Only check prefix in first 50 chars
+                    displayText = displayText.replace(/^THINK:\s*/i, '').replace(/^QUERY:\s*/i, '');
+                    thinkingTextAccumulator = displayText; // Update accumulator with stripped version
+                  }
+
+                  // Update text content (cursor stays separate)
+                  currentThinkingText.textContent = displayText;
+
+                  // Auto-scroll thinking content
+                  const thinkingContent = currentThinkingBlock.querySelector('.thinking-content');
+                  if (thinkingContent) {
+                    thinkingContent.scrollTop = thinkingContent.scrollHeight;
+                  }
+                }
+                tokenBuffer = '';
+                flushPending = false;
+              });
+            }
+          }
+
+          // Start new thinking block for a THINK step
+          function startThinkingBlock(stepNum) {
+            currentThinkingStep = stepNum;
+            currentThinkingBlock = createThinkingBlock(stepNum);
+            currentThinkingText = currentThinkingBlock.querySelector('.thinking-text');
+            currentThinkingCursor = currentThinkingBlock.querySelector('.thinking-cursor');
+            thinkingTextAccumulator = ''; // Reset accumulator for new block
+          }
+
+          // Collapse current thinking block when QUERY or FINAL_ANSWER starts
+          function collapseCurrentThinking() {
+            if (currentThinkingBlock && currentThinkingCursor) {
+              // Append completion signal before collapsing
+              const textEl = currentThinkingBlock.querySelector('.thinking-text');
+              if (textEl) {
+                const signal = document.createElement('span');
+                signal.style.cssText = 'color: #999; font-style: italic;';
+                signal.textContent = ' → Running query...';
+                textEl.appendChild(signal);
+              }
+
+              // Remove cursor (thinking complete)
+              currentThinkingCursor.remove();
+              currentThinkingCursor = null;
+
+              // Collapse content with smooth transition
+              const content = currentThinkingBlock.querySelector('.thinking-content');
+              const toggle = currentThinkingBlock.querySelector('.thinking-toggle');
+              if (content) {
+                // Set explicit height first for transition
+                content.style.height = content.scrollHeight + 'px';
+                toggle.classList.add('collapsed');
+
+                // Trigger transition in next frame
+                requestAnimationFrame(() => {
+                  content.classList.add('collapsed');
+                });
+              }
+
+              // Clear current references (ready for next thinking block)
+              currentThinkingBlock = null;
+              currentThinkingText = null;
+            }
+          }
+
+          // Format observation text for better readability
+          function formatObservation(observation) {
+            if (!observation) return '';
+
+            // Try to parse if it looks like JSON/Python dict format
+            if (observation.includes('[{') || observation.includes("Top 5:")) {
+              try {
+                // Extract the array part if prefixed with text like "N rows: " or "Top 5: "
+                let match = observation.match(/(\d+)\s+rows?(?:\s+returned)?(?:\.\s*Top\s+\d+:)?\s*(\[.+\])/i);
+                if (!match) {
+                  match = observation.match(/(\[.+\])/);
+                }
+
+                if (match) {
+                  const arrayStr = match[match.length - 1];
+                  // Convert Python-style dict to JSON (single quotes to double quotes)
+                  const jsonStr = arrayStr.replace(/'/g, '"').replace(/None/g, 'null').replace(/True/g, 'true').replace(/False/g, 'false');
+                  const data = JSON.parse(jsonStr);
+
+                  if (Array.isArray(data) && data.length > 0) {
+                    // Format as inline comma-separated values or compact table
+                    if (data.length === 1) {
+                      // Single row: show as key-value pairs
+                      const pairs = Object.entries(data[0]).map(([k, v]) => `${k}: ${v}`).join(', ');
+                      return `Result: ${pairs}`;
+                    } else {
+                      // Multiple rows: show count + compact list
+                      const preview = data.slice(0, 3).map(row => {
+                        const values = Object.values(row);
+                        return values.join(', ');
+                      }).join(' | ');
+                      return `${data.length} rows: ${preview}${data.length > 3 ? '...' : ''}`;
+                    }
+                  }
+                }
+              } catch (e) {
+                // Parsing failed, return original
+                return observation;
+              }
+            }
+
+            return observation;
+          }
+
+          // Parse SSE stream
+          const reader = streamResp.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            // Process complete SSE messages (format: "data: {...}\n\n")
+            const lines = buffer.split('\n\n');
+            buffer = lines.pop(); // Keep incomplete message in buffer
+
+            for (const line of lines) {
+              if (!line.trim() || !line.startsWith('data: ')) continue;
+
+              const jsonStr = line.substring(6); // Remove "data: " prefix
+              try {
+                const event = JSON.parse(jsonStr);
+
+                if (event.type === 'token') {
+                  // Token streaming event - buffer and display
+                  if (event.step && event.step !== currentThinkingStep) {
+                    // New THINK step starting - create new thinking block
+                    startThinkingBlock(event.step);
+                  }
+                  // Support both event.token (ReAct) and event.content (Reasoning)
+                  const tokenText = event.token || event.content || '';
+                  if (tokenText) {
+                    bufferToken(tokenText);
+                  }
+
+                } else if (event.type === 'step') {
+                  // Accumulate step for persistence
+                  currentStreamSteps.push({
+                    action: event.action,
+                    step_num: event.step_num,
+                    content: event.content,
+                    observation: event.observation || ''
+                  });
+
+                  // Collapse current thinking block when moving to QUERY or FINAL_ANSWER
+                  if (event.action === 'QUERY' || event.action === 'FINAL_ANSWER') {
+                    collapseCurrentThinking();
+                  }
+
+                  // Display live ReAct step
+                  const stepEl = document.createElement('div');
+                  stepEl.className = 'react-step';
+                  stepEl.style.cssText = 'margin: 0.5rem 0; padding: 0.5rem; background: #f8f9fa; border-left: 3px solid #4a90e2; border-radius: 4px;';
+
+                  let stepContent = '';
+                  if (event.action === 'THINK') {
+                    stepContent = `<strong>💭 Step ${event.step_num}: Thinking</strong><br><span style="color:#555;">${escapeHtml(event.content)}</span>`;
+                  } else if (event.action === 'QUERY') {
+                    stepContent = `<strong>🔍 Step ${event.step_num}: Querying</strong><br><code style="display:block; background:#fff; padding:0.25rem; margin:0.25rem 0; font-size:0.85em; overflow-x:auto;">${escapeHtml(event.content)}</code>`;
+                    if (event.observation) {
+                      const formattedObs = formatObservation(event.observation);
+                      stepContent += `<span style="color:#666; font-size:0.9em;">→ ${escapeHtml(formattedObs)}</span>`;
+                    }
+                  } else if (event.action === 'FINAL_ANSWER') {
+                    stepContent = `<strong>✅ Step ${event.step_num}: Final Answer</strong>`;
+                  }
+
+                  stepEl.innerHTML = stepContent;
+                  stepsContainer.appendChild(stepEl);
+                  history.scrollTop = history.scrollHeight;
+
+                } else if (event.type === 'done') {
+                  // Stream completed - show final answer
+                  finalReply = event.reply;
+                  finalMetadata = event.metadata || {};
+
+                  // Add final answer section
+                  const answerEl = document.createElement('div');
+                  answerEl.className = 'chat-message-content';
+                  answerEl.style.cssText = 'margin-top: 1rem; padding-top: 1rem; border-top: 2px solid #4a90e2;';
+                  answerEl.textContent = finalReply;
+                  streamContainer.appendChild(answerEl);
+
+                  // Add metadata if verbose
+                  if (verboseCheckbox.checked && finalMetadata) {
+                    const metaEl = document.createElement('div');
+                    metaEl.className = 'chat-metadata';
+                    metaEl.innerHTML = `
+                      <strong>Engine:</strong> ${event.engine || 'unknown'} |
+                      <strong>Steps:</strong> ${finalMetadata.steps_taken || 0} |
+                      <strong>Queries:</strong> ${finalMetadata.queries_executed || 0} |
+                      <strong>Time:</strong> ${finalMetadata.execution_time_ms || 0}ms
+                    `;
+                    streamContainer.appendChild(metaEl);
+                  }
+
+                  // Update badge
+                  updateEngineBadge(event.engine);
+
+                  history.scrollTop = history.scrollHeight;
+
+                  // Store steps for persistence
+                  window._lastStreamSteps = currentStreamSteps;
+
+                  // Save assistant response to localStorage and re-render
+                  finalizeStreamingMessage(streamContainer, finalReply, finalMetadata, lastUserQuery);
+
+                } else if (event.type === 'error') {
+                  // Stream error
+                  const errorEl = document.createElement('div');
+                  errorEl.style.cssText = 'color: #d32f2f; padding: 0.5rem; background: #ffebee; border-radius: 4px; margin-top: 0.5rem;';
+                  errorEl.textContent = `Error: ${event.error}`;
+                  stepsContainer.appendChild(errorEl);
+                  history.scrollTop = history.scrollHeight;
+                }
+
+              } catch (parseErr) {
+                console.error('Failed to parse SSE event:', parseErr, jsonStr);
+              }
+            }
+          }
+
+          // Hide tool indicator
+          if (toolIndicator) {
+            toolIndicator.style.display = 'none';
+          }
+
+          // Messages saved via finalizeStreamingMessage() call after stream completes
+
+        } else {
+          // Streaming failed or unavailable - fall back
+          streamingSuccess = false;
+        }
+
+      } catch (streamErr) {
+        console.warn('Streaming failed, falling back to non-streaming:', streamErr);
+        streamingSuccess = false;
+      }
+
+      // Fallback to non-streaming if streaming failed
+      if (!streamingSuccess) {
+        const thinkingMsg = appendThinkingMessage();
+
+        try {
+          const resp = await fetch(window.SCIDK_BASE + '/api/chat/graphrag', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message: fullMessage,
+              provider,
+              verbose: verboseCheckbox.checked,
+              session_id: currentSessionId || 'default'
+            })
+          });
+
+          if (!resp.ok) {
+            removeThinkingMessage(thinkingMsg);
+            if (toolIndicator) {
+              toolIndicator.style.display = 'none';
+            }
+            const errorData = await resp.json();
+            appendMessage('assistant', `Error: ${errorData.error || 'Unknown error'}`, null, lastUserQuery);
+            return;
+          }
+
+          const data = await resp.json();
+          removeThinkingMessage(thinkingMsg);
+
+          if (toolIndicator) {
+            toolIndicator.style.display = 'none';
+          }
+
+          updateEngineBadge(data.engine);
+
+          const metadata = {
+            ...data.metadata,
+            engine: data.engine,
+            cypher_query: data.cypher_query
+          };
+
+          appendMessage('assistant', data.reply, metadata, lastUserQuery);
+
+        } catch (err) {
           removeThinkingMessage(thinkingMsg);
           if (toolIndicator) {
             toolIndicator.style.display = 'none';
           }
-          const errorData = await resp.json();
-          appendMessage('assistant', `Error: ${errorData.error || 'Unknown error'}`, null, lastUserQuery);
-          return;
+          appendMessage('assistant', `Error: ${err.message}`, null, lastUserQuery);
         }
-
-        // Handle JSON response (non-streaming)
-        const data = await resp.json();
-
-        // Remove thinking indicator
-        removeThinkingMessage(thinkingMsg);
-
-        // Hide tool indicator
-        if (toolIndicator) {
-          toolIndicator.style.display = 'none';
-        }
-
-        // Update badge based on engine type
-        updateEngineBadge(data.engine);
-
-        // Build metadata object including cypher_query for citations
-        const metadata = {
-          ...data.metadata,
-          engine: data.engine,
-          cypher_query: data.cypher_query
-        };
-
-        // Add assistant message
-        appendMessage('assistant', data.reply, metadata, lastUserQuery);
-
-      } catch (err) {
-        removeThinkingMessage(thinkingMsg);
-        if (toolIndicator) {
-          toolIndicator.style.display = 'none';
-        }
-        appendMessage('assistant', `Error: ${err.message}`, null, lastUserQuery);
       }
     });
 
@@ -1757,11 +3045,21 @@
     }
 
     function finalizeStreamingMessage(msgEl, content, metadata, query) {
-      // Add to localStorage
+      // Add to localStorage with steps
       const messages = JSON.parse(localStorage.getItem('chat_messages') || '[]');
-      const msg = { role: 'assistant', content, metadata, query, timestamp: Date.now() };
+      const msg = {
+        role: 'assistant',
+        content,           // final answer text
+        steps: window._lastStreamSteps || [],  // ReAct steps
+        metadata,
+        query,
+        timestamp: Date.now()
+      };
       messages.push(msg);
       localStorage.setItem('chat_messages', JSON.stringify(messages));
+
+      // Clear steps for next stream
+      window._lastStreamSteps = [];
 
       // Re-render to show feedback buttons and full formatting
       renderHistory();
@@ -1772,6 +3070,28 @@
       const msg = { role, content, metadata, query, timestamp: Date.now() };
       messages.push(msg);
       localStorage.setItem('chat_messages', JSON.stringify(messages));
+
+      // Track queries in session for navigator
+      if (role === 'assistant' && metadata) {
+        const messageIndex = messages.length - 1;
+
+        // Single query from LOOKUP/REASONING/SUMMARIZE
+        if (metadata.cypher_query) {
+          const label = query || content.slice(0, 50); // Use original user query as label
+          addQueryToSession(metadata.cypher_query, label, messageIndex);
+        }
+
+        // Multiple queries from REACT step_log
+        if (metadata.engine === 'react' && metadata.step_log) {
+          metadata.step_log.forEach((step, stepIdx) => {
+            if (step.action_type === 'QUERY' && step.content) {
+              const stepLabel = step.thought || `Query from step ${step.step_num || stepIdx + 1}`;
+              addQueryToSession(step.content, stepLabel, messageIndex, stepIdx);
+            }
+          });
+        }
+      }
+
       renderHistory();
     }
 
@@ -1825,17 +3145,85 @@
         // Add citations panel for graph queries (always render, empty if no cypher)
         let citationsHtml = '';
         const cypherQuery = msg.metadata?.cypher_query || msg.cypher_query;
-        if (msg.role === 'assistant' && cypherQuery) {
-          citationsHtml = `
-            <div class="citations-panel" style="margin-top:0.75rem; padding-top:0.75rem; border-top:1px dashed #ddd;">
-              <details style="cursor:pointer;">
-                <summary style="font-size:0.85em; color:#666; user-select:none;">
-                  <strong>📊 Source Query</strong> (click to expand)
-                </summary>
-                <pre style="margin-top:0.5rem; padding:0.75rem; background:#f8f9fa; border-radius:4px; font-size:0.85em; overflow-x:auto; max-height:200px; overflow-y:auto;">${escapeHtml(cypherQuery)}</pre>
-              </details>
-            </div>
-          `;
+
+        // Check for ReAct multi-query scenario
+        const isReAct = msg.metadata?.engine === 'react' && msg.metadata?.step_log;
+        const hasStepQueries = isReAct && msg.metadata.step_log.some(s => s.action_type === 'QUERY');
+
+        if (msg.role === 'assistant' && (cypherQuery || hasStepQueries)) {
+          // Single query case
+          if (cypherQuery && !hasStepQueries) {
+            // Find this query in sessionQueries to get its index
+            const queryIndex = sessionQueries.findIndex(q => q.messageIndex === idx && q.stepNumber === undefined);
+            const openBtnHtml = queryIndex >= 0
+              ? `<button class="open-in-editor-btn" onclick="openQueryInEditor(${queryIndex})" style="margin-top:0.5rem;">📝 Open in Editor →</button>`
+              : '';
+
+            // Add CSV download link if results are truncated
+            const isTruncated = msg.metadata?.results_truncated || false;
+            const csvDownloadHtml = isTruncated
+              ? `<button class="open-in-editor-btn" onclick="downloadQueryResultsCSV(${JSON.stringify(cypherQuery).replace(/"/g, '&quot;')}, 'query-results-${idx}.csv')" style="margin-top:0.5rem; margin-left:0.5rem;">💾 Download full results as CSV</button>`
+              : '';
+
+            citationsHtml = `
+              <div class="citations-panel" style="margin-top:0.75rem; padding-top:0.75rem; border-top:1px dashed #ddd;">
+                <details style="cursor:pointer;">
+                  <summary style="font-size:0.85em; color:#666; user-select:none;">
+                    <strong>📊 Source Query</strong> (click to expand)
+                  </summary>
+                  <pre style="margin-top:0.5rem; padding:0.75rem; background:#f8f9fa; border-radius:4px; font-size:0.85em; overflow-x:auto; max-height:200px; overflow-y:auto;">${escapeHtml(cypherQuery)}</pre>
+                  <div style="margin-top:0.5rem;">
+                    ${openBtnHtml}
+                    ${csvDownloadHtml}
+                    ${isTruncated ? '<div class="small text-muted" style="margin-top:0.25rem;">⚠️ Results limited to 50 rows for display</div>' : ''}
+                  </div>
+                </details>
+              </div>
+            `;
+          }
+
+          // ReAct multi-query case
+          if (hasStepQueries) {
+            const queryButtons = msg.metadata.step_log
+              .map((step, stepIdx) => {
+                if (step.action_type !== 'QUERY' || !step.content) return '';
+
+                // Find this query in sessionQueries
+                const queryIndex = sessionQueries.findIndex(q =>
+                  q.messageIndex === idx && q.stepNumber === stepIdx
+                );
+
+                if (queryIndex < 0) return '';
+
+                const stepLabel = step.thought || `Query ${stepIdx + 1}`;
+                const shortLabel = stepLabel.slice(0, 40) + (stepLabel.length > 40 ? '...' : '');
+
+                return `
+                  <div style="margin-bottom:0.5rem;">
+                    <details style="cursor:pointer;">
+                      <summary style="font-size:0.85em; color:#666;">
+                        <strong>📊 ${escapeHtml(shortLabel)}</strong>
+                      </summary>
+                      <pre style="margin-top:0.5rem; padding:0.75rem; background:#f8f9fa; border-radius:4px; font-size:0.85em; overflow-x:auto; max-height:200px; overflow-y:auto;">${escapeHtml(step.content)}</pre>
+                      <button class="open-in-editor-btn" onclick="openQueryInEditor(${queryIndex})" style="margin-top:0.5rem;">📝 Open in Editor →</button>
+                    </details>
+                  </div>
+                `;
+              })
+              .filter(html => html)
+              .join('');
+
+            if (queryButtons) {
+              citationsHtml = `
+                <div class="citations-panel" style="margin-top:0.75rem; padding-top:0.75rem; border-top:1px dashed #ddd;">
+                  <div style="font-size:0.85em; color:#666; margin-bottom:0.5rem;">
+                    <strong>📊 Source Queries</strong> (${msg.metadata.step_log.filter(s => s.action_type === 'QUERY').length} queries)
+                  </div>
+                  ${queryButtons}
+                </div>
+              `;
+            }
+          }
         }
 
         // Add feedback UI for assistant messages
@@ -1892,8 +3280,52 @@
           `;
         }
 
-        return `<div class="chat-message ${msg.role}" data-testid="chat-message-${msg.role}">
+        // Add manual-query class for manually executed queries
+        const isManualQuery = msg.metadata?.is_manual_query || false;
+        const extraClass = isManualQuery ? ' manual-query' : '';
+
+        // Show attachment chip for user messages with attached queries
+        let attachmentHtml = '';
+        if (msg.role === 'user' && msg.metadata?.attached_query) {
+          const preview = msg.metadata.attached_query.length > 60
+            ? msg.metadata.attached_query.substring(0, 60) + '...'
+            : msg.metadata.attached_query;
+          attachmentHtml = `<div class="message-attachment">📎 ${escapeHtml(preview)}</div>`;
+        }
+
+        // Render saved ReAct steps for assistant messages
+        let stepsHtml = '';
+        if (msg.role === 'assistant' && msg.steps && msg.steps.length > 0) {
+          const stepsContent = msg.steps.map(step => {
+            let stepContent = '';
+            if (step.action === 'THINK') {
+              stepContent = `<strong>💭 Step ${step.step_num}: Thinking</strong><br><span style="color:#555;">${escapeHtml(step.content)}</span>`;
+            } else if (step.action === 'QUERY') {
+              stepContent = `<strong>🔍 Step ${step.step_num}: Querying</strong><br><code style="display:block; background:#fff; padding:0.25rem; margin:0.25rem 0; font-size:0.85em; overflow-x:auto;">${escapeHtml(step.content)}</code>`;
+              if (step.observation) {
+                const formattedObs = typeof step.observation === 'string' ? step.observation : JSON.stringify(step.observation);
+                stepContent += `<span style="color:#666; font-size:0.9em;">→ ${escapeHtml(formattedObs)}</span>`;
+              }
+            } else if (step.action === 'FINAL_ANSWER') {
+              stepContent = `<strong>✅ Step ${step.step_num}: Final Answer</strong>`;
+            }
+            return `<div class="react-step" style="margin: 0.5rem 0; padding: 0.5rem; background: #f8f9fa; border-left: 3px solid #4a90e2; border-radius: 4px;">${stepContent}</div>`;
+          }).join('');
+
+          stepsHtml = `
+            <details class="react-steps-container" style="margin: 0.5rem 0;">
+              <summary style="cursor:pointer; font-size:0.9em; color:#666; user-select:none; padding:0.25rem 0;">
+                <strong>🔄 ReAct Steps</strong> (${msg.steps.length} steps)
+              </summary>
+              <div style="margin-top:0.5rem;">${stepsContent}</div>
+            </details>
+          `;
+        }
+
+        return `<div class="chat-message ${msg.role}${extraClass}" data-testid="chat-message-${msg.role}">
           <div class="chat-message-role">${msg.role === 'user' ? '👤 You' : '🤖 Assistant'}</div>
+          ${attachmentHtml}
+          ${stepsHtml}
           <div class="chat-message-content">${escapeHtml(msg.content)}</div>
           ${metadataHtml}
           ${citationsHtml}
@@ -1903,6 +3335,46 @@
 
       // Scroll to bottom
       history.scrollIntoView({ behavior: 'smooth', block: 'end' });
+
+      // Rebuild session queries from loaded history
+      rebuildSessionQueries();
+    }
+
+    /**
+     * Update navigator UI to reflect current sessionQueries state.
+     */
+    function updateNavigator() {
+      const navigator = document.getElementById('query-navigator');
+      const navSelect = document.getElementById('nav-select');
+      const navCount = document.getElementById('nav-count');
+
+      if (!navigator || !navSelect || !navCount) return;
+
+      // Show/hide navigator based on query count
+      if (sessionQueries.length === 0) {
+        navigator.style.display = 'none';
+        return;
+      }
+
+      navigator.style.display = 'flex';
+
+      // Clamp currentNavIndex to valid range
+      if (currentNavIndex < 0) currentNavIndex = 0;
+      if (currentNavIndex >= sessionQueries.length) currentNavIndex = sessionQueries.length - 1;
+
+      const totalQueries = sessionQueries.length;
+
+      // Populate dropdown with all queries
+      navSelect.innerHTML = sessionQueries.map((q, idx) => {
+        const label = q.label.length > 50 ? q.label.substring(0, 50) + '...' : q.label;
+        return `<option value="${idx}" ${idx === currentNavIndex ? 'selected' : ''}>${label}</option>`;
+      }).join('');
+
+      // Update count badge
+      const currentNum = currentNavIndex + 1;
+      navCount.textContent = `${currentNum} / ${totalQueries}`;
+
+      // Note: Use button is always enabled if there are queries (no saved state check needed)
     }
 
     function escapeHtml(text) {
@@ -2061,14 +3533,18 @@
       const resultsOutput = document.getElementById('results-output');
       const resultsEmpty = document.querySelector('#results-tab .empty-state');
 
-      resultsEmpty.style.display = 'block';
-      resultsOutput.style.display = 'none';
-      resultsOutput.innerHTML = '';
+      if (resultsEmpty) resultsEmpty.style.display = 'block';
+      if (resultsOutput) {
+        resultsOutput.style.display = 'none';
+        resultsOutput.innerHTML = '';
+      }
 
       // Clear query editor
-      queryEditor.setValue('');
-      queryInfoText.textContent = 'Ready';
-      queryInfoText.style.color = '#666';
+      if (queryEditor) queryEditor.setValue('');
+      if (queryInfoText) {
+        queryInfoText.textContent = 'Ready';
+        queryInfoText.style.color = '#666';
+      }
     }
   });
 </script>
