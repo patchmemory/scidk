@@ -75,3 +75,4 @@ backups/
 dev/test-runs/tmp/
 dev/code-imports/
 docs/archive/
+gunicorn.log
