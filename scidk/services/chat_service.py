@@ -415,6 +415,76 @@ class ChatService:
         finally:
             conn.close()
 
+    def get_recent_turns(self, session_id: str, n: int = 4) -> str:
+        """Get recent conversation turns formatted for context injection.
+
+        Args:
+            session_id: Session UUID
+            n: Number of recent turns to fetch (default 4 = last 3-4 exchanges)
+
+        Returns:
+            Formatted string with User/Assistant pairs, or empty string if no history
+        """
+        # DEBUG: Log what we're querying
+        print(f"DEBUG get_recent_turns: session_id={session_id}, n={n}")
+
+        conn = self._get_conn()
+        try:
+            # Fetch last n*2 messages in reverse chronological order
+            query = """
+                SELECT id, session_id, role, content, metadata, timestamp
+                FROM chat_messages
+                WHERE session_id = ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """
+            cur = conn.execute(query, (session_id, n * 2))
+
+            # DEBUG: Count results
+            print(f"DEBUG get_recent_turns: Executing query with session_id={session_id}, limit={n*2}")
+
+            messages = []
+            for row in cur.fetchall():
+                messages.append(ChatMessage(
+                    id=row['id'],
+                    session_id=row['session_id'],
+                    role=row['role'],
+                    content=row['content'],
+                    timestamp=row['timestamp'],
+                    metadata=json.loads(row['metadata']) if row['metadata'] else None
+                ))
+
+            # DEBUG: Log result count
+            print(f"DEBUG get_recent_turns: Found {len(messages)} messages")
+
+            if not messages:
+                return ""
+
+            # Reverse to get chronological order (oldest to newest of recent messages)
+            messages.reverse()
+
+            # Filter out messages marked with skip_context
+            messages = [
+                msg for msg in messages
+                if not (msg.metadata and msg.metadata.get('skip_context'))
+            ]
+
+            if not messages:
+                return ""
+
+            # Format as conversation turns
+            lines = ["[Previous turns]"]
+            for msg in messages:
+                role_label = "User" if msg.role == "user" else "Assistant"
+                # Truncate long messages to 150 chars
+                content = msg.content[:150] + "..." if len(msg.content) > 150 else msg.content
+                lines.append(f"{role_label}: {content}")
+
+            lines.append("---")
+            return "\n".join(lines)
+        finally:
+            conn.close()
+
     # ========== Export/Import ==========
 
     def export_session(self, session_id: str) -> Optional[Dict[str, Any]]:
