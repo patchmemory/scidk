@@ -1,13 +1,21 @@
 """
 Blueprint for Chat/LLM API routes.
 """
-from flask import Blueprint, jsonify, request, current_app
+from flask import Blueprint, jsonify, request, current_app, Response
 from pathlib import Path
 import json
 import os
 import time
+import threading
 
 bp = Blueprint('chat', __name__, url_prefix='/api')
+
+# ========== SSE Connection Limiter ==========
+# Track active SSE connections to prevent worker pool exhaustion
+# With 16 sync gunicorn workers, limit to 12 concurrent streams
+_sse_connection_lock = threading.Lock()
+_active_sse_connections = 0
+MAX_SSE_CONNECTIONS = 12
 
 def _get_ext():
     """Get SciDK extensions from current Flask current_app."""
@@ -24,6 +32,23 @@ def _get_feedback_service():
     from ...services.graphrag_feedback_service import get_graphrag_feedback_service
     db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
     return get_graphrag_feedback_service(db_path=db_path)
+
+def _map_concept_intent_to_legacy(intent_name: str):
+    """Map concept graph intent name back to legacy Intent enum for execution routing."""
+    from ...services.graphrag.intent_classifier import Intent
+
+    # Map concept intent names to legacy execution paths
+    INTENT_MAP = {
+        'data_lookup': Intent.LOOKUP,
+        'count_simple': Intent.LOOKUP,
+        'count_filtered': Intent.REACT,
+        'summarize_dataset': Intent.SUMMARIZE,
+        'relationship_traversal': Intent.REACT,
+        'property_exploration': Intent.REASONING,
+        'reasoning_multi_step': Intent.REACT,
+    }
+
+    return INTENT_MAP.get(intent_name, Intent.REASONING)  # Default to REASONING for safety
 
 @bp.post('/chat')
 def api_chat():
@@ -56,6 +81,27 @@ def api_chat_graphrag():
         message = (data.get('message') or '').strip()
         if not message:
             return jsonify({"status": "error", "error": "message required"}), 400
+
+        # Fetch recent conversation context from SQLite for continuity
+        session_id = data.get('session_id', 'default')
+
+        # DEBUG: Log session_id being used
+        print(f"DEBUG session_id from request: {session_id}")
+        print(f"DEBUG request data keys: {list(data.keys())}")
+
+        chat_service = _get_chat_service()
+        conversation_context = chat_service.get_recent_turns(session_id, n=4)
+
+        # DEBUG: Log conversation context
+        print(f"DEBUG context length: {len(conversation_context)}")
+        print(f"DEBUG conversation_context: {conversation_context}")
+
+        # Prepend context to message for intent classification and execution
+        message_with_context = f"{conversation_context}\n{message}" if conversation_context else message
+
+        # DEBUG: Log enriched message
+        print(f"DEBUG message_with_context: {message_with_context[:300]}")
+
         # Reuse existing Neo4j connection params
         try:
             from ...services.neo4j_client import get_neo4j_params
@@ -122,50 +168,332 @@ def api_chat_graphrag():
                 schema_cache['last_loaded_ts'] = now
             neo4j_schema = schema_cache.get('schema') or {"labels": [], "relationships": []}
 
-            # Classify intent for routing (LOOKUP vs REASONING)
+            # Classify intent for routing using Concept Graph or fallback to hard-coded classifier
             from ...services.graphrag.intent_classifier import classify, Intent
-            intent = classify(message)
+            concept_driver = _get_ext().get('concept_driver')
+            traversal_log = None
+
+            try:
+                if concept_driver is not None:
+                    # Use Concept Graph for intent classification and planning
+                    from ...services.concept_graph_service import (
+                        classify_intent, plan_execution, build_traversal_log,
+                        ConceptGraphUnavailableError
+                    )
+                    from ...services.schema_intelligence import get_relevant_schema_context
+
+                    # Get SQLite connection
+                    chat_service_tmp = _get_chat_service()
+                    sqlite_conn_tmp = chat_service_tmp._get_conn()
+
+                    try:
+                        ollama_url = os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT', 'http://localhost:11434')
+
+                        # Get relevant schema context (for semantic retrieval)
+                        schema_context = get_relevant_schema_context(
+                            message_with_context, sqlite_conn_tmp, driver,
+                            ollama_url, database=database or "neo4j"
+                        )
+                        relevant_labels = schema_context.get('labels', [])
+
+                        # Classify intent using concept graph
+                        intent_name, intent_confidence = classify_intent(
+                            message_with_context, concept_driver, sqlite_conn_tmp, ollama_url
+                        )
+
+                        # Plan execution
+                        plan = plan_execution(intent_name, relevant_labels, concept_driver)
+
+                        # Build traversal log
+                        traversal_log = build_traversal_log(
+                            query=message,
+                            intent_matched=intent_name,
+                            intent_confidence=intent_confidence,
+                            plan=plan,
+                            labels_considered=list(schema_context.get('labels', []))
+                        )
+
+                        # Map concept intent to legacy Intent enum
+                        intent = _map_concept_intent_to_legacy(intent_name)
+
+                        # Log traversal to SQLite
+                        sqlite_conn_tmp.execute(
+                            "INSERT INTO usage_event (event_type, label_name, session_id, "
+                            "source, traversal_json) VALUES (?, ?, ?, ?, ?)",
+                            ('concept_graph_plan', '', data.get('session_id', 'default'),
+                             'chat', json.dumps(traversal_log))
+                        )
+                        sqlite_conn_tmp.commit()
+
+                    finally:
+                        sqlite_conn_tmp.close()
+
+                else:
+                    # Fallback to hard-coded classifier
+                    intent = classify(message_with_context)
+
+            except Exception as e:
+                # Concept graph error — fall back to hard-coded classifier
+                import logging
+                logging.warning(f"Concept graph classification failed: {e}")
+                intent = classify(message_with_context)
+                traversal_log = None
+
+            # DEBUG: Log classified intent
+            print(f"DEBUG classified intent: {intent}")
+            print(f"DEBUG intent value: {intent.value}")
 
             # Route based on intent
             if intent == Intent.LOOKUP:
-                # LOOKUP path: Fast Text2Cypher via QueryEngine
-                from ...services.graphrag.query_engine import QueryEngine
-                anthropic_key = os.environ.get('SCIDK_ANTHROPIC_API_KEY')
-                verbose = (os.environ.get('SCIDK_GRAPHRAG_VERBOSE') or '').strip().lower() in ('1','true','yes')
+                # LOOKUP path: Direct Cypher generation using provider
+                # This path bypasses QueryEngine to avoid neo4j-graphrag LLM interface requirements
+                from ...ai.cypher_utils import build_cypher_system_prompt, extract_cypher
+                from ...ai.provider_factory import LLMProviderFactory
 
-                query_engine = QueryEngine(
-                    driver=driver,
-                    neo4j_schema=neo4j_schema,
-                    anthropic_api_key=anthropic_key,
-                    database=database,
-                    verbose=verbose
-                )
+                # Build settings dict from environment/config
+                settings = {
+                    'chat_llm_provider': data.get('provider') or os.environ.get('SCIDK_CHAT_LLM_PROVIDER'),
+                    'chat_ollama_endpoint': os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT'),
+                    'chat_ollama_model': os.environ.get('SCIDK_CHAT_OLLAMA_MODEL'),
+                    'chat_claude_api_key': os.environ.get('SCIDK_CHAT_CLAUDE_API_KEY'),
+                    'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
+                }
 
-                # Execute query
-                result = query_engine.query(message)
+                provider_obj = LLMProviderFactory.from_settings(settings)
+                start_time_lookup = time.time()
+
+                # Step 1: Generate Cypher using specialized prompt
+                cypher_prompt = build_cypher_system_prompt(neo4j_schema)
+
+                try:
+                    cypher_response = provider_obj.complete(
+                        user_message=message_with_context,
+                        system_prompt=cypher_prompt,
+                        schema_context=None  # Don't inject schema - already in cypher_prompt
+                    )
+
+                    # Step 2: Extract Cypher from response
+                    cypher_query = extract_cypher(cypher_response)
+
+                    if cypher_query is None:
+                        # Fallback to REASONING path if no valid Cypher extracted
+                        from ...ai.schema_context import get_schema_context
+                        import os as os_mod
+                        try:
+                            from ...services.schema_intelligence import get_relevant_schema_context
+                            chat_service_tmp = _get_chat_service()
+                            sqlite_conn_tmp = chat_service_tmp._get_conn()
+                            try:
+                                schema_context = get_relevant_schema_context(
+                                    user_query=message_with_context,
+                                    sqlite_conn=sqlite_conn_tmp,
+                                    neo4j_driver=driver,
+                                    ollama_url=os_mod.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT', 'http://localhost:11434'),
+                                    database=database or "neo4j"
+                                )
+                            finally:
+                                sqlite_conn_tmp.close()
+                        except Exception as e:
+                            import logging
+                            logging.warning(f"Schema intelligence failed: {e}")
+                            schema_context = get_schema_context(driver, database=database or "neo4j")
+                        base_prompt = "You are a research data assistant for SciDK. Answer questions about the knowledge graph and scientific data."
+
+                        response_text = provider_obj.complete(
+                            user_message=message_with_context,
+                            system_prompt=base_prompt,
+                            schema_context=schema_context
+                        )
+
+                        elapsed_ms = int((time.time() - start_time_lookup) * 1000)
+                        response_data = {
+                            "status": "ok",
+                            "reply": response_text,
+                            "engine": "reasoning_fallback",
+                            "metadata": {
+                                "note": "Could not generate valid Cypher, used reasoning instead",
+                                "execution_time_ms": elapsed_ms
+                            }
+                        }
+                    else:
+                        # Step 3: Execute Cypher
+                        with driver.session(database=database) if database else driver.session() as session:
+                            try:
+                                result = session.run(cypher_query)
+                                records = [record.data() for record in result]
+                                result_count = len(records)
+
+                                # Phase 1: Log query usage (never fails)
+                                try:
+                                    chat_service = _get_chat_service()
+                                    sqlite_conn = chat_service._get_conn()
+                                    try:
+                                        from ...services.schema_intelligence import log_query_usage
+                                        log_query_usage(cypher_query, session_id, sqlite_conn, source='chat')
+                                    finally:
+                                        sqlite_conn.close()
+                                except Exception:
+                                    pass  # Logging must never fail a query
+
+                            except Exception as query_error:
+                                # Cypher execution failed - return error with query for debugging
+                                elapsed_ms = int((time.time() - start_time_lookup) * 1000)
+                                return jsonify({
+                                    "status": "error",
+                                    "error": f"Query execution failed: {str(query_error)}",
+                                    "cypher_query": cypher_query,
+                                    "metadata": {
+                                        "execution_time_ms": elapsed_ms
+                                    }
+                                }), 500
+
+                        # Step 4: Synthesize natural language answer from results
+                        synthesis_prompt = f"""You are a research data assistant. A user asked a question and we ran a database query.
+
+Context and Question:
+{message_with_context}
+
+Query Results: {records[:10]}  # Limit to first 10 for context window
+Result Count: {result_count}
+
+Provide a clear, concise natural language answer based on these results.
+If there are many results, summarize the key findings.
+If there are no results, say so clearly."""
+
+                        answer = provider_obj.complete(
+                            user_message="Synthesize the answer from the query results above.",
+                            system_prompt=synthesis_prompt,
+                            schema_context=None
+                        )
+
+                        elapsed_ms = int((time.time() - start_time_lookup) * 1000)
+
+                        response_data = {
+                            "status": "ok",
+                            "reply": answer,
+                            "engine": "lookup",
+                            "cypher_query": cypher_query,
+                            "metadata": {
+                                "result_count": result_count,
+                                "execution_time_ms": elapsed_ms
+                            }
+                        }
+
+                except Exception as e:
+                    # Provider error - return error response
+                    elapsed_ms = int((time.time() - start_time_lookup) * 1000)
+                    return jsonify({
+                        "status": "error",
+                        "error": f"LOOKUP path failed: {str(e)}",
+                        "metadata": {
+                            "execution_time_ms": elapsed_ms
+                        }
+                    }), 500
+
+            elif intent == Intent.SUMMARIZE:
+                # SUMMARIZE path: Run count queries and synthesize narrative overview
+                from ...ai.summarization import generate_summary
+                from ...ai.provider_factory import LLMProviderFactory
+
+                # Build settings dict from environment/config
+                settings = {
+                    'chat_llm_provider': data.get('provider') or os.environ.get('SCIDK_CHAT_LLM_PROVIDER'),
+                    'chat_ollama_endpoint': os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT'),
+                    'chat_ollama_model': os.environ.get('SCIDK_CHAT_OLLAMA_MODEL'),
+                    'chat_claude_api_key': os.environ.get('SCIDK_CHAT_CLAUDE_API_KEY'),
+                    'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
+                }
+
+                provider_obj = LLMProviderFactory.from_settings(settings)
+
+                # Generate summary with count queries
+                result = generate_summary(driver, database or "neo4j", provider_obj, neo4j_schema)
 
                 if result.get('status') == 'error':
                     return jsonify(result), 500
 
-                result_text = result.get('answer', 'No results found')
+                response_data = result
 
-                # Build response with engine type and cypher for UI
-                response_data = {
-                    "status": "ok",
-                    "reply": result_text,
-                    "engine": result.get('engine', 'graph_query'),  # For UI badge
-                    "cypher_query": result.get('cypher_query'),  # For citations panel
+            elif intent == Intent.REACT:
+                # REACT path: Multi-step reasoning loop with query execution
+                from ...ai.react_loop import run_react_loop
+                from ...ai.schema_context import get_schema_context
+                from ...ai.provider_factory import LLMProviderFactory
+                from ...ai.chat_graph import retrieve_relevant_context, format_context_for_prompt
+                from ...services.chat_neo4j_client import get_chat_neo4j_client
+
+                # Get schema context with semantic retrieval
+                try:
+                    from ...services.schema_intelligence import get_relevant_schema_context
+                    chat_service_tmp = _get_chat_service()
+                    sqlite_conn_tmp = chat_service_tmp._get_conn()
+                    try:
+                        schema_context = get_relevant_schema_context(
+                            user_query=message_with_context,
+                            sqlite_conn=sqlite_conn_tmp,
+                            neo4j_driver=driver,
+                            ollama_url=os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT', 'http://localhost:11434'),
+                            database=database or "neo4j"
+                        )
+                    finally:
+                        sqlite_conn_tmp.close()
+                except Exception as e:
+                    logger.warning(f"Schema intelligence failed: {e}")
+                    schema_context = get_schema_context(driver, database=database or "neo4j")
+
+                # Build settings dict - override model for REACT path
+                # REACT requires stronger reasoning to avoid hallucination
+                react_model = os.environ.get('SCIDK_REACT_MODEL', 'qwen2.5:72b')
+
+                settings = {
+                    'chat_llm_provider': data.get('provider') or os.environ.get('SCIDK_CHAT_LLM_PROVIDER', 'ollama'),
+                    'chat_ollama_endpoint': os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT'),
+                    'chat_ollama_model': react_model,  # Use REACT-specific model
+                    'chat_claude_api_key': os.environ.get('SCIDK_CHAT_CLAUDE_API_KEY'),
+                    'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
                 }
 
-                # Include metadata
-                response_data["metadata"] = {
-                    "entities": result.get('entities', {}),
-                    "execution_time_ms": result.get('execution_time_ms', 0),
-                    "result_count": result.get('result_count', 0)
-                }
+                provider_obj = LLMProviderFactory.from_settings(settings)
 
-                if verbose and 'results' in result:
-                    response_data["metadata"]["results"] = result['results']
+                # Get chat Neo4j client for context retrieval
+                chat_driver = get_chat_neo4j_client()
+
+                # Retrieve relevant past context (if chat Neo4j available)
+                retrieved_history = ""
+                session_id = data.get('session_id', 'default')  # Get from request or use default
+
+                if chat_driver:
+                    try:
+                        relevant_messages = retrieve_relevant_context(
+                            current_query=message,
+                            session_id=session_id,
+                            chat_driver=chat_driver,
+                            research_driver=driver,
+                            embedding_model=os.environ.get('SCIDK_CHAT_EMBEDDING_MODEL', 'nomic-embed-text'),
+                            top_k=int(os.environ.get('SCIDK_CHAT_CONTEXT_RETRIEVAL_TOP_K', 3))
+                        )
+                        retrieved_history = format_context_for_prompt(relevant_messages)
+                    except Exception as e:
+                        # Context retrieval failure shouldn't block the query
+                        import logging
+                        logging.warning(f"Context retrieval failed: {e}")
+
+                # Run ReAct loop
+                result = run_react_loop(
+                    user_query=message_with_context,
+                    session_id=session_id,
+                    provider=provider_obj,
+                    research_driver=driver,
+                    chat_driver=chat_driver,
+                    schema_context=schema_context,
+                    retrieved_history=retrieved_history,
+                    max_steps=int(os.environ.get('SCIDK_CHAT_REACT_MAX_STEPS', 4))
+                )
+
+                if result.get('status') == 'error':
+                    return jsonify(result), 500
+
+                response_data = result
 
             else:
                 # REASONING path: Use existing /v2 provider architecture
@@ -173,7 +501,23 @@ def api_chat_graphrag():
                 from ...ai.schema_context import get_schema_context
                 from ...ai.provider_factory import LLMProviderFactory
 
-                schema_context = get_schema_context(driver, database=database or "neo4j")
+                try:
+                    from ...services.schema_intelligence import get_relevant_schema_context
+                    chat_service_tmp = _get_chat_service()
+                    sqlite_conn_tmp = chat_service_tmp._get_conn()
+                    try:
+                        schema_context = get_relevant_schema_context(
+                            user_query=message_with_context,
+                            sqlite_conn=sqlite_conn_tmp,
+                            neo4j_driver=driver,
+                            ollama_url=os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT', 'http://localhost:11434'),
+                            database=database or "neo4j"
+                        )
+                    finally:
+                        sqlite_conn_tmp.close()
+                except Exception as e:
+                    logger.warning(f"Schema intelligence failed: {e}")
+                    schema_context = get_schema_context(driver, database=database or "neo4j")
 
                 # Build settings dict from environment/config
                 settings = {
@@ -192,7 +536,7 @@ def api_chat_graphrag():
                 # Complete (non-streaming)
                 start_time_reasoning = time.time()
                 response_text = provider_obj.complete(
-                    user_message=message,
+                    user_message=message_with_context,
                     system_prompt=base_prompt,
                     schema_context=schema_context
                 )
@@ -214,6 +558,38 @@ def api_chat_graphrag():
                     }
                 }
 
+            # Save messages to SQLite for conversation context
+            try:
+                # Ensure session exists (create if needed using INSERT OR IGNORE)
+                existing_session = chat_service.get_session(session_id)
+                if not existing_session:
+                    # Directly insert with the provided session_id
+                    conn = chat_service._get_conn()
+                    try:
+                        import time as time_module
+                        now = time_module.time()
+                        conn.execute(
+                            """
+                            INSERT OR IGNORE INTO chat_sessions (id, name, created_at, updated_at, message_count, metadata)
+                            VALUES (?, ?, ?, ?, 0, NULL)
+                            """,
+                            (session_id, f"Chat {session_id[:8]}", now, now)
+                        )
+                        conn.commit()
+                        print(f"DEBUG: Created new session {session_id}")
+                    finally:
+                        conn.close()
+
+                # Save user message and assistant response
+                chat_service.add_message(session_id, "user", message)
+                chat_service.add_message(session_id, "assistant", response_data.get('reply', ''))
+                print(f"DEBUG: Saved messages to SQLite for session {session_id}")
+            except Exception as e:
+                # Non-fatal - conversation context won't work but query still succeeds
+                print(f"DEBUG: Failed to save messages to SQLite: {e}")
+                import traceback
+                traceback.print_exc()
+
             # Track history and minimal audit
             store = _get_ext().setdefault('chat', {"history": []})
             store['history'].extend([{"role":"user","content":message},{"role":"assistant","content":response_data.get('reply','')}])
@@ -229,12 +605,675 @@ def api_chat_graphrag():
             except Exception:
                 pass
 
+            # Log to chat Neo4j (background, non-blocking)
+            # This logs the final answer + all ReAct steps for full audit trail
+            try:
+                from ...services.chat_neo4j_client import get_chat_neo4j_client
+                chat_driver = get_chat_neo4j_client()
+
+                if chat_driver and intent in (Intent.REACT, Intent.LOOKUP, Intent.SUMMARIZE):
+                    import threading
+
+                    def log_to_chat_neo4j():
+                        try:
+                            from ...ai.chat_graph import log_chat_message
+
+                            # Generate a unique sqlite_id (in real impl, this would be from chat_service)
+                            import uuid
+                            sqlite_id = str(uuid.uuid4())
+                            session_id = data.get('session_id', 'default')
+
+                            # For REACT, log each step as a separate record
+                            if intent == Intent.REACT and 'step_log' in response_data:
+                                for step in response_data['step_log']:
+                                    step_sqlite_id = f"{sqlite_id}_step_{step.get('step_num')}"
+                                    log_chat_message(
+                                        chat_driver=chat_driver,
+                                        research_driver=driver,
+                                        sqlite_id=step_sqlite_id,
+                                        session_id=session_id,
+                                        role="assistant",
+                                        intent=intent.value,
+                                        content_summary=f"ReAct Step {step.get('step_num')}: {step.get('action_type')}",
+                                        finding_text=step.get('content', '')[:150],
+                                        finding_type="REACT_STEP",
+                                        cypher_used=step.get('content', '') if step.get('action_type') == 'QUERY' else None,
+                                        referenced_labels=[],  # Could parse from Cypher
+                                        embedding=None
+                                    )
+
+                            # Log final answer
+                            log_chat_message(
+                                chat_driver=chat_driver,
+                                research_driver=driver,
+                                sqlite_id=sqlite_id,
+                                session_id=session_id,
+                                role="assistant",
+                                intent=intent.value,
+                                content_summary=response_data.get('reply', '')[:200],
+                                finding_text=response_data.get('reply', '')[:150],
+                                finding_type="COUNT" if intent == Intent.SUMMARIZE else "RELATIONAL",
+                                cypher_used=response_data.get('cypher_query'),
+                                referenced_labels=[],  # Could extract from schema/query
+                                embedding=None
+                            )
+
+                        except Exception as e:
+                            import logging
+                            logging.error(f"Chat Neo4j logging failed: {e}")
+
+                    # Run in background thread to avoid blocking response
+                    thread = threading.Thread(target=log_to_chat_neo4j)
+                    thread.daemon = True
+                    thread.start()
+
+            except Exception as e:
+                # Logging failure shouldn't break the response
+                pass
+
             # Add history to response
             response_data["history"] = store['history']
 
             return jsonify(response_data), 200
         except Exception as e:
             return jsonify({"status": "error", "error": str(e)}), 500
+
+
+@bp.post('/chat/graphrag/stream')
+def api_chat_graphrag_stream():
+    """
+    GraphRAG with Server-Sent Events (SSE) streaming for live ReAct step updates.
+
+    Critical: Uses POST + fetch() ReadableStream (not EventSource GET) to support
+    long messages with attached Cypher queries that exceed GET param limits.
+
+    SSE Message Format:
+        data: {"type": "step", "step_num": 1, "action": "THINK", "content": "...", "observation": ""}
+        data: {"type": "step", "step_num": 2, "action": "QUERY", "content": "MATCH...", "observation": "..."}
+        data: {"type": "done", "reply": "...", "engine": "react", "metadata": {...}}
+        data: {"type": "error", "error": "..."}
+
+    Connection Limiting:
+        Max 12 concurrent SSE connections to prevent worker pool exhaustion.
+        Returns 429 Too Many Requests if limit exceeded.
+
+    Intent Routing:
+        - REACT: Stream each step as it happens
+        - LOOKUP/SUMMARIZE/REASONING: Buffer and send all at once, then close stream
+    """
+    global _active_sse_connections
+
+    # Check connection limit before processing
+    with _sse_connection_lock:
+        if _active_sse_connections >= MAX_SSE_CONNECTIONS:
+            return jsonify({
+                "status": "error",
+                "error": "Too many active streaming connections. Please try again shortly.",
+                "code": "SSE_CAPACITY_EXCEEDED"
+            }), 429
+
+        # Reserve slot
+        _active_sse_connections += 1
+        current_count = _active_sse_connections
+
+    print(f"DEBUG: SSE connection opened. Active: {current_count}/{MAX_SSE_CONNECTIONS}")
+
+    # GraphRAG enabled check
+    enabled = (os.environ.get('SCIDK_GRAPHRAG_ENABLED') or '').strip().lower() in ('1','true','yes','on','y')
+    if not enabled:
+        with _sse_connection_lock:
+            _active_sse_connections -= 1
+        from ...services.graphrag_schema import normalize_error
+        return jsonify(normalize_error(status="disabled", error="GraphRAG disabled", code="GR_DISABLED", hint="Set SCIDK_GRAPHRAG_ENABLED=1")), 501
+
+    data = request.get_json(force=True, silent=True) or {}
+    message = (data.get('message') or '').strip()
+    if not message:
+        with _sse_connection_lock:
+            _active_sse_connections -= 1
+        return jsonify({"status": "error", "error": "message required"}), 400
+
+    # Capture app for thread context
+    _app = current_app._get_current_object()
+
+    def generate_stream():
+        """SSE generator with connection cleanup."""
+        global _active_sse_connections
+
+        # Push app context for entire generator - needed for _get_chat_service() and chat_service methods
+        with _app.app_context():
+            try:
+                # Get session context - chat_service needs app context
+                session_id = data.get('session_id', 'default')
+                print(f"DEBUG: Stream session_id: {session_id}")
+
+                chat_service = _get_chat_service()
+                conversation_context = chat_service.get_recent_turns(session_id, n=4)
+                message_with_context = f"{conversation_context}\n{message}" if conversation_context else message
+
+                # Get Neo4j connection
+                try:
+                    from ...services.neo4j_client import get_neo4j_params
+                    uri, user, pwd, database, auth_mode = get_neo4j_params(_app)
+                except Exception:
+                    uri = user = pwd = database = auth_mode = None
+
+                if not uri:
+                    yield f"data: {json.dumps({'type': 'error', 'error': 'Neo4j not configured'})}\n\n"
+                    return
+
+                from neo4j import GraphDatabase
+                auth = None if (auth_mode or 'basic').lower() == 'none' else (user, pwd)
+                driver = GraphDatabase.driver(uri, auth=auth)
+
+                # Get schema and classify intent
+                from ...services.graphrag_schema import parse_ttl, filter_schema
+                schema_cache = _get_ext().setdefault('graphrag_schema', {})
+                last = schema_cache.get('last_loaded_ts') or 0
+                ttl = 0
+                ttl_env = os.environ.get('SCIDK_GRAPHRAG_SCHEMA_CACHE_TTL_SEC') or os.environ.get('SCIDK_GRAPHRAG_SCHEMA_CACHE_TTL')
+                if ttl_env:
+                    ttl = parse_ttl(ttl_env)
+                now = int(time.time())
+
+                if (now - last) > max(0, ttl):
+                    with driver.session(database=database) if database else driver.session() as s:
+                        labels = [r[0] for r in s.run("CALL db.labels()").values()]
+                        rels = [r[0] for r in s.run("CALL db.relationshipTypes()").values()]
+                    raw_schema = {"labels": labels, "relationships": rels}
+                    allow_labels = [x.strip() for x in (os.environ.get('SCIDK_GRAPHRAG_ALLOW_LABELS') or '').split(',') if x.strip()]
+                    deny_labels = [x.strip() for x in (os.environ.get('SCIDK_GRAPHRAG_DENY_LABELS') or '').split(',') if x.strip()]
+                    prop_excl = [x.strip() for x in (os.environ.get('SCIDK_GRAPHRAG_EXCLUDE_PROPERTIES') or '').split(',') if x.strip()]
+                    filtered = filter_schema(raw_schema, allow_labels or None, deny_labels or None, prop_excl or None)
+                    schema_cache['schema'] = filtered
+                    schema_cache['last_loaded_ts'] = now
+
+                neo4j_schema = schema_cache.get('schema') or {"labels": [], "relationships": []}
+
+                # Classify intent using Concept Graph or fallback to hard-coded classifier
+                from ...services.graphrag.intent_classifier import classify, Intent
+                concept_driver = _get_ext().get('concept_driver')
+                traversal_log = None
+
+                try:
+                    if concept_driver is not None:
+                        # Use Concept Graph for intent classification and planning
+                        from ...services.concept_graph_service import (
+                            classify_intent, plan_execution, build_traversal_log,
+                            ConceptGraphUnavailableError
+                        )
+                        from ...services.schema_intelligence import get_relevant_schema_context
+
+                        # Get SQLite connection
+                        chat_service_tmp = _get_chat_service()
+                        sqlite_conn_tmp = chat_service_tmp._get_conn()
+
+                        try:
+                            ollama_url = os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT', 'http://localhost:11434')
+
+                            # Get relevant schema context (for semantic retrieval)
+                            schema_context = get_relevant_schema_context(
+                                message_with_context, sqlite_conn_tmp, driver,
+                                ollama_url, database=database or "neo4j"
+                            )
+                            relevant_labels = schema_context.get('labels', [])
+
+                            # Classify intent using concept graph
+                            intent_name, intent_confidence = classify_intent(
+                                message_with_context, concept_driver, sqlite_conn_tmp, ollama_url
+                            )
+
+                            # Plan execution
+                            plan = plan_execution(intent_name, relevant_labels, concept_driver)
+
+                            # Build traversal log
+                            traversal_log = build_traversal_log(
+                                query=message,
+                                intent_matched=intent_name,
+                                intent_confidence=intent_confidence,
+                                plan=plan,
+                                labels_considered=list(schema_context.get('labels', []))
+                            )
+
+                            # Map concept intent to legacy Intent enum
+                            intent = _map_concept_intent_to_legacy(intent_name)
+
+                            # Log traversal to SQLite
+                            sqlite_conn_tmp.execute(
+                                "INSERT INTO usage_event (event_type, label_name, session_id, "
+                                "source, traversal_json) VALUES (?, ?, ?, ?, ?)",
+                                ('concept_graph_plan', '', data.get('session_id', 'default'),
+                                 'chat', json.dumps(traversal_log))
+                            )
+                            sqlite_conn_tmp.commit()
+
+                        finally:
+                            sqlite_conn_tmp.close()
+
+                    else:
+                        # Fallback to hard-coded classifier
+                        intent = classify(message_with_context)
+
+                except Exception as e:
+                    # Concept graph error — fall back to hard-coded classifier
+                    import logging
+                    logging.warning(f"Concept graph classification failed (streaming): {e}")
+                    intent = classify(message_with_context)
+                    traversal_log = None
+
+                print(f"DEBUG: Stream intent: {intent.value}")
+
+                # Route based on intent
+                if intent == Intent.REACT:
+                    # REACT path: Stream steps in real-time
+                    from ...ai.react_loop import run_react_loop
+                    from ...ai.schema_context import get_schema_context
+                    from ...ai.provider_factory import LLMProviderFactory
+                    from ...ai.chat_graph import retrieve_relevant_context, format_context_for_prompt
+                    from ...services.chat_neo4j_client import get_chat_neo4j_client
+
+                    try:
+                        from ...services.schema_intelligence import get_relevant_schema_context
+                        chat_service_tmp = _get_chat_service()
+                        sqlite_conn_tmp = chat_service_tmp._get_conn()
+                        try:
+                            schema_context = get_relevant_schema_context(
+                                user_query=message,
+                                sqlite_conn=sqlite_conn_tmp,
+                                neo4j_driver=driver,
+                                ollama_url=os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT', 'http://localhost:11434'),
+                                database=database or "neo4j"
+                            )
+                        finally:
+                            sqlite_conn_tmp.close()
+                    except Exception as e:
+                        import logging
+                        logging.warning(f"Schema intelligence failed: {e}")
+                        schema_context = get_schema_context(driver, database=database or "neo4j")
+
+                    react_model = os.environ.get('SCIDK_REACT_MODEL', 'qwen2.5:72b')
+                    settings = {
+                        'chat_llm_provider': data.get('provider') or os.environ.get('SCIDK_CHAT_LLM_PROVIDER', 'ollama'),
+                        'chat_ollama_endpoint': os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT'),
+                        'chat_ollama_model': react_model,
+                        'chat_claude_api_key': os.environ.get('SCIDK_CHAT_CLAUDE_API_KEY'),
+                        'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
+                    }
+
+                    provider_obj = LLMProviderFactory.from_settings(settings)
+                    chat_driver = get_chat_neo4j_client()
+
+                    # Retrieve context
+                    retrieved_history = ""
+                    if chat_driver:
+                        try:
+                            relevant_messages = retrieve_relevant_context(
+                                current_query=message,
+                                session_id=session_id,
+                                chat_driver=chat_driver,
+                                research_driver=driver,
+                                embedding_model=os.environ.get('SCIDK_CHAT_EMBEDDING_MODEL', 'nomic-embed-text'),
+                                top_k=int(os.environ.get('SCIDK_CHAT_CONTEXT_RETRIEVAL_TOP_K', 3))
+                            )
+                            retrieved_history = format_context_for_prompt(relevant_messages)
+                        except Exception as e:
+                            import logging
+                            logging.warning(f"Context retrieval failed: {e}")
+
+                    # Define step callback for streaming
+                    def step_callback(step_dict):
+                        """Stream step updates as SSE events."""
+                        sse_data = {
+                            "type": "step",
+                            "step_num": step_dict["step_num"],
+                            "action": step_dict["action_type"],
+                            "content": step_dict["content"],
+                            "observation": step_dict.get("observation", "")
+                        }
+                        # Must use nonlocal or return value - can't yield from nested function
+                        # Instead, we'll collect steps and check them in the main loop
+                        # For now, print for debugging
+                        print(f"DEBUG: Step callback fired: {sse_data['action']} step {sse_data['step_num']}")
+
+                    # We need to refactor this - can't yield from callback
+                    # Solution: Use queues to communicate between callback and generator
+                    import queue
+                    step_queue = queue.Queue()
+                    token_queue = queue.Queue()
+
+                    def streaming_step_callback(step_dict):
+                        step_queue.put(step_dict)
+
+                    def token_callback(token, step_num):
+                        """Called by provider.stream() - enqueue tokens for SSE transmission."""
+                        token_queue.put({"type": "token", "token": token, "step": step_num})
+
+                    # Run ReAct in separate thread so we can yield steps as they arrive
+                    result_container = {}
+                    def run_react_thread():
+                        # Push app context for Flask operations - use captured app object
+                        with _app.app_context():
+                            result = run_react_loop(
+                                user_query=message_with_context,
+                                session_id=session_id,
+                                provider=provider_obj,
+                                research_driver=driver,
+                                chat_driver=chat_driver,
+                                schema_context=schema_context,
+                                retrieved_history=retrieved_history,
+                                max_steps=int(os.environ.get('SCIDK_CHAT_REACT_MAX_STEPS', 4)),
+                                on_step_callback=streaming_step_callback,
+                                on_token_callback=token_callback
+                            )
+                            result_container['result'] = result
+                            step_queue.put(None)  # Sentinel to signal completion
+
+                    react_thread = threading.Thread(target=run_react_thread)
+                    react_thread.start()
+
+                    # Stream loop - drain BOTH queues (tokens + steps)
+                    import time as time_module
+                    while True:
+                        # Drain token queue first (non-blocking)
+                        while not token_queue.empty():
+                            try:
+                                token_event = token_queue.get_nowait()
+                                yield f"data: {json.dumps(token_event)}\n\n"
+                            except queue.Empty:
+                                break
+
+                        # Then check for step events (blocking with timeout)
+                        try:
+                            step_dict = step_queue.get(timeout=0.05)  # 50ms poll
+
+                            if step_dict is None:
+                                # Thread completed - drain remaining tokens
+                                while not token_queue.empty():
+                                    try:
+                                        token_event = token_queue.get_nowait()
+                                        yield f"data: {json.dumps(token_event)}\n\n"
+                                    except queue.Empty:
+                                        break
+                                break
+
+                            # After receiving step, pause briefly and drain remaining tokens for this step
+                            time_module.sleep(0.05)  # let token_queue drain
+                            while not token_queue.empty():
+                                try:
+                                    token_event = token_queue.get_nowait()
+                                    yield f"data: {json.dumps(token_event)}\n\n"
+                                except queue.Empty:
+                                    break
+
+                            # Now yield the step event
+                            sse_data = {
+                                "type": "step",
+                                "step_num": step_dict["step_num"],
+                                "action": step_dict["action_type"],
+                                "content": step_dict["content"],
+                                "observation": step_dict.get("observation", "")
+                            }
+                            yield f"data: {json.dumps(sse_data)}\n\n"
+
+                        except queue.Empty:
+                            # No step yet - continue draining tokens
+                            continue
+
+                    react_thread.join()
+                    result = result_container.get('result', {})
+
+                    if result.get('status') == 'error':
+                        yield f"data: {json.dumps({'type': 'error', 'error': result.get('reply', 'Unknown error')})}\n\n"
+                        return
+
+                    # Send completion
+                    done_data = {
+                        "type": "done",
+                        "reply": result.get('reply', ''),
+                        "engine": result.get('engine', 'react'),
+                        "metadata": result.get('metadata', {})
+                    }
+                    yield f"data: {json.dumps(done_data)}\n\n"
+
+                    # Save to SQLite
+                    try:
+                        existing_session = chat_service.get_session(session_id)
+                        if not existing_session:
+                            conn = chat_service._get_conn()
+                            try:
+                                import time as time_module
+                                now = time_module.time()
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO chat_sessions (id, name, created_at, updated_at, message_count, metadata) VALUES (?, ?, ?, ?, 0, NULL)",
+                                    (session_id, f"Chat {session_id[:8]}", now, now)
+                                )
+                                conn.commit()
+                            finally:
+                                conn.close()
+
+                        chat_service.add_message(session_id, "user", message)
+                        chat_service.add_message(session_id, "assistant", result.get('reply', ''))
+                    except Exception as e:
+                        print(f"DEBUG: Failed to save messages: {e}")
+
+                elif intent == Intent.LOOKUP:
+                    # LOOKUP path: Generate Cypher, execute, synthesize answer with streaming
+                    from ...ai.cypher_utils import build_cypher_system_prompt, extract_cypher
+                    from ...ai.provider_factory import LLMProviderFactory
+                    from ...ai.schema_context import get_schema_context
+
+                    settings = {
+                        'chat_llm_provider': data.get('provider') or os.environ.get('SCIDK_CHAT_LLM_PROVIDER'),
+                        'chat_ollama_endpoint': os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT'),
+                        'chat_ollama_model': os.environ.get('SCIDK_CHAT_OLLAMA_MODEL'),
+                        'chat_claude_api_key': os.environ.get('SCIDK_CHAT_CLAUDE_API_KEY'),
+                        'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
+                    }
+
+                    provider_obj = LLMProviderFactory.from_settings(settings)
+                    start_time = time.time()
+
+                    # Generate Cypher query
+                    cypher_prompt = build_cypher_system_prompt(neo4j_schema)
+                    cypher_response = provider_obj.complete(
+                        user_message=message_with_context,
+                        system_prompt=cypher_prompt,
+                        schema_context=None
+                    )
+                    cypher_query = extract_cypher(cypher_response)
+
+                    if cypher_query is None:
+                        # Fallback to reasoning if no valid Cypher
+                        try:
+                            from ...services.schema_intelligence import get_relevant_schema_context
+                            chat_service_tmp = _get_chat_service()
+                            sqlite_conn_tmp = chat_service_tmp._get_conn()
+                            try:
+                                schema_context = get_relevant_schema_context(
+                                    user_query=message_with_context,
+                                    sqlite_conn=sqlite_conn_tmp,
+                                    neo4j_driver=driver,
+                                    ollama_url=os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT', 'http://localhost:11434'),
+                                    database=database or "neo4j"
+                                )
+                            finally:
+                                sqlite_conn_tmp.close()
+                        except Exception as e:
+                            import logging
+                            logging.warning(f"Schema intelligence failed: {e}")
+                            schema_context = get_schema_context(driver, database=database or "neo4j")
+                        base_prompt = "You are a research data assistant for SciDK."
+
+                        final_answer = ''
+                        for token in provider_obj.stream(
+                            user_message=message_with_context,
+                            system_prompt=base_prompt,
+                            schema_context=schema_context
+                        ):
+                            final_answer += token
+                            yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
+
+                        elapsed_ms = int((time.time() - start_time) * 1000)
+                        yield f"data: {json.dumps({'type': 'done', 'reply': final_answer, 'engine': 'reasoning_fallback', 'metadata': {'execution_time_ms': elapsed_ms, 'note': 'Could not generate valid Cypher'}})}\n\n"
+                    else:
+                        # Execute Cypher query
+                        try:
+                            with driver.session(database=database) if database else driver.session() as session:
+                                result = session.run(cypher_query)
+                                records = [record.data() for record in result]
+                                result_count = len(records)
+                        except Exception as query_error:
+                            elapsed_ms = int((time.time() - start_time) * 1000)
+                            yield f"data: {json.dumps({'type': 'error', 'error': f'Query execution failed: {str(query_error)}', 'cypher_query': cypher_query, 'metadata': {'execution_time_ms': elapsed_ms}})}\n\n"
+                            return
+
+                        # Synthesize answer with streaming
+                        synthesis_prompt = f"""You are a research data assistant. A user asked a question and we ran a database query.
+
+Context and Question:
+{message_with_context}
+
+Query Results: {records[:10]}
+Result Count: {result_count}
+
+Provide a clear, concise natural language answer based on these results."""
+
+                        final_answer = ''
+                        for token in provider_obj.stream(
+                            user_message="Synthesize the answer from the query results above.",
+                            system_prompt=synthesis_prompt,
+                            schema_context=None
+                        ):
+                            final_answer += token
+                            yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
+
+                        elapsed_ms = int((time.time() - start_time) * 1000)
+                        result_metadata = {
+                            'cypher_query': cypher_query,
+                            'result_count': result_count,
+                            'execution_time_ms': elapsed_ms
+                        }
+                        yield f"data: {json.dumps({'type': 'done', 'reply': final_answer, 'engine': 'lookup', 'metadata': result_metadata})}\n\n"
+
+                        # Save messages
+                        chat_service.add_message(session_id, "user", message)
+                        chat_service.add_message(session_id, "assistant", final_answer)
+
+                elif intent == Intent.SUMMARIZE:
+                    # SUMMARIZE path: Generate summary with streaming
+                    from ...ai.summarization import generate_summary
+                    from ...ai.provider_factory import LLMProviderFactory
+
+                    settings = {
+                        'chat_llm_provider': data.get('provider') or os.environ.get('SCIDK_CHAT_LLM_PROVIDER'),
+                        'chat_ollama_endpoint': os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT'),
+                        'chat_ollama_model': os.environ.get('SCIDK_CHAT_OLLAMA_MODEL'),
+                        'chat_claude_api_key': os.environ.get('SCIDK_CHAT_CLAUDE_API_KEY'),
+                        'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
+                    }
+
+                    provider_obj = LLMProviderFactory.from_settings(settings)
+
+                    # Note: generate_summary currently returns complete result, not streaming
+                    # For now, get result and stream it out token by token
+                    # TODO: Refactor generate_summary to support streaming internally
+                    result = generate_summary(driver, database or "neo4j", provider_obj, neo4j_schema)
+
+                    if result.get('status') == 'error':
+                        yield f"data: {json.dumps({'type': 'error', 'error': result.get('error', 'Unknown error')})}\n\n"
+                    else:
+                        # Stream the summary text token by token (simulate streaming for now)
+                        summary_text = result.get('reply', '')
+                        # Split into words for pseudo-streaming
+                        import time as time_module
+                        words = summary_text.split()
+                        streamed_text = ''
+                        for i, word in enumerate(words):
+                            token = word if i == 0 else f" {word}"
+                            streamed_text += token
+                            yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
+                            time_module.sleep(0.01)  # Small delay to simulate streaming
+
+                        yield f"data: {json.dumps({'type': 'done', 'reply': streamed_text, 'engine': 'summarize', 'metadata': result.get('metadata', {})})}\n\n"
+
+                        # Save messages
+                        chat_service.add_message(session_id, "user", message)
+                        chat_service.add_message(session_id, "assistant", streamed_text)
+
+                else:
+                    # REASONING path: Default streaming response with schema grounding
+                    from ...ai.schema_context import get_schema_context
+                    from ...ai.provider_factory import LLMProviderFactory
+
+                    try:
+                        from ...services.schema_intelligence import get_relevant_schema_context
+                        chat_service_tmp = _get_chat_service()
+                        sqlite_conn_tmp = chat_service_tmp._get_conn()
+                        try:
+                            schema_context = get_relevant_schema_context(
+                                user_query=message_with_context,
+                                sqlite_conn=sqlite_conn_tmp,
+                                neo4j_driver=driver,
+                                ollama_url=os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT', 'http://localhost:11434'),
+                                database=database or "neo4j"
+                            )
+                        finally:
+                            sqlite_conn_tmp.close()
+                    except Exception as e:
+                        import logging
+                        logging.warning(f"Schema intelligence failed: {e}")
+                        schema_context = get_schema_context(driver, database=database or "neo4j")
+
+                    settings = {
+                        'chat_llm_provider': data.get('provider') or os.environ.get('SCIDK_CHAT_LLM_PROVIDER'),
+                        'chat_ollama_endpoint': os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT'),
+                        'chat_ollama_model': os.environ.get('SCIDK_CHAT_OLLAMA_MODEL'),
+                        'chat_claude_api_key': os.environ.get('SCIDK_CHAT_CLAUDE_API_KEY'),
+                        'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
+                    }
+
+                    provider = LLMProviderFactory.from_settings(settings)
+                    base_prompt = "You are a research data assistant for SciDK."
+
+                    start_time = time.time()
+                    final_answer = ''
+                    for token in provider.stream(
+                        user_message=message_with_context,
+                        system_prompt=base_prompt,
+                        schema_context=schema_context
+                    ):
+                        final_answer += token
+                        yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
+
+                    elapsed_ms = int((time.time() - start_time) * 1000)
+                    provider_info = provider.health_check()
+                    yield f"data: {json.dumps({'type': 'done', 'reply': final_answer, 'metadata': {'provider': provider_info.get('provider'), 'model': provider_info.get('model'), 'execution_time_ms': elapsed_ms}, 'engine': 'reasoning'})}\n\n"
+
+                    # Save messages
+                    chat_service.add_message(session_id, "user", message)
+                    chat_service.add_message(session_id, "assistant", final_answer)
+
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+
+            finally:
+                # Always release connection slot
+                with _sse_connection_lock:
+                    _active_sse_connections -= 1
+                    remaining = _active_sse_connections
+                print(f"DEBUG: SSE connection closed. Active: {remaining}/{MAX_SSE_CONNECTIONS}")
+
+    return Response(
+        generate_stream(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+            'X-Stream-Capacity': f'{_active_sse_connections}/{MAX_SSE_CONNECTIONS}'
+        }
+    )
 
 
 @bp.get('/chat/history')
@@ -1064,7 +2103,23 @@ def api_chat_graphrag_v2():
 
         # Get schema context for grounding (provider integrates it)
         from ...ai.schema_context import get_schema_context
-        schema_context = get_schema_context(driver, database=database or "neo4j")
+        try:
+            from ...services.schema_intelligence import get_relevant_schema_context
+            chat_service_tmp = _get_chat_service()
+            sqlite_conn_tmp = chat_service_tmp._get_conn()
+            try:
+                schema_context = get_relevant_schema_context(
+                    user_query=message,
+                    sqlite_conn=sqlite_conn_tmp,
+                    neo4j_driver=driver,
+                    ollama_url=os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT', 'http://localhost:11434'),
+                    database=database or "neo4j"
+                )
+            finally:
+                sqlite_conn_tmp.close()
+        except Exception as e:
+            logger.warning(f"Schema intelligence failed: {e}")
+            schema_context = get_schema_context(driver, database=database or "neo4j")
 
         # Get provider (allow override via request body)
         from ...ai.provider_factory import LLMProviderFactory
@@ -1129,8 +2184,8 @@ def api_chat_graphrag_v2_stream():
 
     Returns:
         200: Server-Sent Events (SSE) stream
-            data: {"type": "token", "content": "..."}
-            data: {"type": "done", "metadata": {...}}
+            data: {"type": "token", "token": "..."}
+            data: {"type": "done", "reply": "...", "metadata": {...}}
     """
     enabled = (os.environ.get('SCIDK_GRAPHRAG_ENABLED') or '').strip().lower() in ('1','true','yes','on','y')
     if not enabled:
@@ -1162,7 +2217,27 @@ def api_chat_graphrag_v2_stream():
 
             # Get schema context for grounding
             from ...ai.schema_context import get_schema_context
-            schema_context = get_schema_context(driver, database=database or "neo4j")
+            try:
+                from ...services.schema_intelligence import get_relevant_schema_context
+                from ...services.chat_service import get_chat_service
+                import os as os_mod
+                db_path = os_mod.environ.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+                chat_service_tmp = get_chat_service(db_path=db_path)
+                sqlite_conn_tmp = chat_service_tmp._get_conn()
+                try:
+                    schema_context = get_relevant_schema_context(
+                        user_query=message,
+                        sqlite_conn=sqlite_conn_tmp,
+                        neo4j_driver=driver,
+                        ollama_url=os_mod.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT', 'http://localhost:11434'),
+                        database=database or "neo4j"
+                    )
+                finally:
+                    sqlite_conn_tmp.close()
+            except Exception as e:
+                import logging
+                logging.warning(f"Schema intelligence failed: {e}")
+                schema_context = get_schema_context(driver, database=database or "neo4j")
 
             # Get provider
             from ...ai.provider_factory import LLMProviderFactory
@@ -1181,18 +2256,20 @@ def api_chat_graphrag_v2_stream():
 
             # Stream tokens - schema grounding built into interface
             start_time = time.time()
+            final_answer = ''
             for token in provider.stream(
                 user_message=message,
                 system_prompt=base_prompt,
                 schema_context=schema_context
             ):
-                yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                final_answer += token
+                yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
 
             elapsed_ms = int((time.time() - start_time) * 1000)
 
             # Send completion metadata with engine field for UI badge
             provider_info = provider.health_check()
-            yield f"data: {json.dumps({'type': 'done', 'metadata': {'provider': provider_info.get('provider'), 'model': provider_info.get('model'), 'execution_time_ms': elapsed_ms, 'engine': 'reasoning'}})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'reply': final_answer, 'metadata': {'provider': provider_info.get('provider'), 'model': provider_info.get('model'), 'execution_time_ms': elapsed_ms, 'engine': 'reasoning'}})}\n\n"
 
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
@@ -1205,6 +2282,129 @@ def api_chat_graphrag_v2_stream():
             'X-Accel-Buffering': 'no'
         }
     )
+
+
+# ============================================================================
+# Schema Intelligence Layer API (Phases 1-3 + 6)
+# ============================================================================
+
+@bp.post('/chat/schema/refresh-embeddings')
+def api_chat_schema_refresh_embeddings():
+    """
+    Refresh schema embeddings (Phase 6).
+
+    Re-embeds all labels and relationship types from live Neo4j schema.
+    Called manually from Settings, or automatically after imports/description edits.
+
+    Returns:
+        200: {embedded: int, failed: int}
+        500: {status: error, error: str}
+    """
+    enabled = (os.environ.get('SCIDK_GRAPHRAG_ENABLED') or '').strip().lower() in ('1','true','yes','on','y')
+    if not enabled:
+        return jsonify({
+            "status": "disabled",
+            "error": "GraphRAG disabled",
+            "hint": "Set SCIDK_GRAPHRAG_ENABLED=1"
+        }), 501
+
+    try:
+        from ...services.neo4j_client import get_neo4j_params
+        from neo4j import GraphDatabase
+        uri, user, pwd, database, auth_mode = get_neo4j_params(current_app)
+
+        if not uri:
+            return jsonify({
+                "status": "error",
+                "error": "Neo4j not configured"
+            }), 500
+
+        auth = None if (auth_mode or 'basic').lower() == 'none' else (user, pwd)
+        driver = GraphDatabase.driver(uri, auth=auth)
+
+        # Get SQLite connection
+        chat_service = _get_chat_service()
+        sqlite_conn = chat_service._get_conn()
+
+        try:
+            from ...services.schema_intelligence import refresh_schema_embeddings
+            ollama_url = os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT', 'http://localhost:11434')
+            result = refresh_schema_embeddings(
+                neo4j_driver=driver,
+                sqlite_conn=sqlite_conn,
+                ollama_url=ollama_url,
+                database=database or "neo4j"
+            )
+            return jsonify(result), 200
+        finally:
+            sqlite_conn.close()
+            driver.close()
+
+    except Exception as e:
+        logger.error(f"Schema embedding refresh failed: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+
+@bp.get('/chat/schema/status')
+def api_chat_schema_status():
+    """
+    Get schema intelligence layer status.
+
+    Returns statistics about:
+    - Embedded labels/relationships
+    - Last embedding update timestamp
+    - Property ranking coverage
+    - Usage event counts
+
+    Returns:
+        200: {labels_embedded, relationships_embedded, last_embedding_update, ...}
+    """
+    try:
+        chat_service = _get_chat_service()
+        sqlite_conn = chat_service._get_conn()
+
+        try:
+            cursor = sqlite_conn.cursor()
+
+            label_count = cursor.execute(
+                "SELECT COUNT(*) FROM label_profile WHERE embedding IS NOT NULL"
+            ).fetchone()[0]
+
+            rel_count = cursor.execute(
+                "SELECT COUNT(*) FROM relationship_profile WHERE embedding IS NOT NULL"
+            ).fetchone()[0]
+
+            last_updated = cursor.execute(
+                "SELECT MAX(embedded_at) FROM label_profile WHERE embedding IS NOT NULL"
+            ).fetchone()[0]
+
+            ranking_count = cursor.execute(
+                "SELECT COUNT(DISTINCT label_name) FROM property_ranking"
+            ).fetchone()[0]
+
+            event_count = cursor.execute(
+                "SELECT COUNT(*) FROM usage_event"
+            ).fetchone()[0]
+
+            return jsonify({
+                'labels_embedded': label_count,
+                'relationships_embedded': rel_count,
+                'last_embedding_update': last_updated,
+                'labels_with_rankings': ranking_count,
+                'total_usage_events': event_count
+            }), 200
+        finally:
+            sqlite_conn.close()
+
+    except Exception as e:
+        logger.error(f"Schema status check failed: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
 
 
 @bp.get('/chat/providers')
@@ -1265,3 +2465,57 @@ def api_chat_schema_cache_stats():
     stats = get_cache_stats()
 
     return jsonify(stats), 200
+
+
+@bp.post('/chat/concept-graph/feedback')
+def api_concept_graph_feedback():
+    """
+    Receive feedback on concept graph classification outcomes.
+
+    Called by frontend after query completion (fire-and-forget).
+    Updates SATISFIES edge weights in concept graph based on success/failure.
+
+    Request body:
+        {
+            "intent": "data_lookup",
+            "tool": "run_safe_cypher",
+            "success": true,
+            "session_id": "abc123"
+        }
+
+    Returns:
+        200: {"status": "ok"}
+        400: {"status": "error", "error": "..."}
+        501: {"status": "disabled", "error": "Concept graph not available"}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+
+    intent_name = data.get('intent')
+    tool_name = data.get('tool')
+    success = data.get('success')
+
+    if not intent_name or not tool_name or success is None:
+        return jsonify({
+            "status": "error",
+            "error": "Missing required fields: intent, tool, success"
+        }), 400
+
+    # Get concept driver
+    concept_driver = _get_ext().get('concept_driver')
+    if concept_driver is None:
+        return jsonify({
+            "status": "disabled",
+            "error": "Concept graph not available"
+        }), 501
+
+    # Update weights
+    from ...services.concept_graph_service import update_traversal_weights
+    result = update_traversal_weights(intent_name, tool_name, bool(success), concept_driver)
+
+    if result:
+        return jsonify({"status": "ok"}), 200
+    else:
+        return jsonify({
+            "status": "error",
+            "error": "Failed to update weights"
+        }), 500

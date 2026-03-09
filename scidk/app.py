@@ -126,6 +126,18 @@ def create_app():
     # Core singletons: graph backend (Neo4j or InMemory)
     graph = create_graph_backend(app)
 
+    # Concept Graph driver (optional — graceful degradation if unavailable)
+    concept_enabled = os.environ.get('SCIDK_CONCEPT_GRAPH_ENABLED', '1') == '1'
+    if concept_enabled:
+        from .services.concept_graph_service import get_concept_driver
+        concept_driver = get_concept_driver(app)
+        if concept_driver:
+            app.logger.info("Concept graph connected")
+        else:
+            app.logger.warning("Concept graph unavailable — falling back to hard-coded classifier")
+    else:
+        concept_driver = None
+
     # Interpreter registry
     registry = InterpreterRegistry()
     register_interpreters(registry)
@@ -144,6 +156,7 @@ def create_app():
     # Store refs on app for easy access in routes
     app.extensions['scidk'] = {
         'graph': graph,
+        'concept_driver': concept_driver,  # Concept Graph driver (may be None)
         'registry': registry,
         'fs': fs,
         'providers': fs_providers,
