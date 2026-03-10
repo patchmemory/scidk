@@ -2407,6 +2407,214 @@ def api_chat_schema_status():
         }), 500
 
 
+@bp.get('/chat/schema/label/<label_name>')
+def api_chat_schema_label(label_name):
+    """
+    Get intelligence profile for a specific label.
+
+    Returns:
+        200: {
+            description, chat_context_mode, chat_context_n,
+            always_include, never_include,
+            embedding_status: 'embedded' | 'pending' | 'none',
+            property_rankings: [{property, query_count, rank}, ...]
+        }
+    """
+    try:
+        chat_service = _get_chat_service()
+        sqlite_conn = chat_service._get_conn()
+
+        try:
+            from ...services.schema_intelligence import get_label_profile
+            profile = get_label_profile(label_name, sqlite_conn)
+
+            # Check embedding status
+            cursor = sqlite_conn.cursor()
+            row = cursor.execute(
+                "SELECT embedding, embedded_at FROM label_profile WHERE label_name = ?",
+                (label_name,)
+            ).fetchone()
+
+            embedding_status = 'none'
+            if row and row[0]:
+                embedding_status = 'embedded'
+            elif row:
+                embedding_status = 'pending'
+
+            # Get property rankings
+            rankings = cursor.execute(
+                "SELECT property_name, query_count, rank "
+                "FROM property_ranking WHERE label_name = ? "
+                "ORDER BY rank DESC",
+                (label_name,)
+            ).fetchall()
+
+            property_rankings = [
+                {'property': r[0], 'query_count': r[1], 'rank': r[2]}
+                for r in rankings
+            ]
+
+            return jsonify({
+                **profile,
+                'embedding_status': embedding_status,
+                'property_rankings': property_rankings
+            }), 200
+        finally:
+            sqlite_conn.close()
+
+    except Exception as e:
+        logger.error(f"Failed to get label profile for {label_name}: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+
+@bp.put('/chat/schema/label/<label_name>')
+def api_chat_schema_label_update(label_name):
+    """
+    Update intelligence profile for a label.
+
+    Request body:
+    {
+        description: str (optional),
+        chat_context_mode: 'top_n' | 'all' | 'exclude',
+        chat_context_n: int,
+        always_include: [str, ...],
+        never_include: [str, ...]
+    }
+
+    Side effect: Re-embeds label if description changed.
+
+    Returns:
+        200: {success: true}
+    """
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        chat_service = _get_chat_service()
+        sqlite_conn = chat_service._get_conn()
+
+        try:
+            from ...services.schema_intelligence import get_label_profile, embed_text
+            cursor = sqlite_conn.cursor()
+
+            # Get existing profile to check if description changed
+            old_profile = get_label_profile(label_name, sqlite_conn)
+            description = data.get('description', old_profile.get('description'))
+            description_changed = description != old_profile.get('description')
+
+            # Update or insert profile
+            cursor.execute("""
+                INSERT INTO label_profile
+                (label_name, description, chat_context_mode, chat_context_n, always_include, never_include)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(label_name) DO UPDATE SET
+                    description = excluded.description,
+                    chat_context_mode = excluded.chat_context_mode,
+                    chat_context_n = excluded.chat_context_n,
+                    always_include = excluded.always_include,
+                    never_include = excluded.never_include
+            """, (
+                label_name,
+                description,
+                data.get('chat_context_mode', old_profile.get('chat_context_mode', 'top_n')),
+                data.get('chat_context_n', old_profile.get('chat_context_n', 5)),
+                json.dumps(data.get('always_include', old_profile.get('always_include', []))),
+                json.dumps(data.get('never_include', old_profile.get('never_include', [])))
+            ))
+            sqlite_conn.commit()
+
+            # Re-embed if description changed
+            if description_changed and description:
+                ollama_url = os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT', 'http://localhost:11434')
+                embedding = embed_text(description, ollama_url)
+                if embedding:
+                    from ...services.schema_intelligence import _vector_to_blob
+                    cursor.execute("""
+                        UPDATE label_profile
+                        SET embedding = ?, embedded_at = ?
+                        WHERE label_name = ?
+                    """, (_vector_to_blob(embedding), datetime.utcnow(), label_name))
+                    sqlite_conn.commit()
+
+            return jsonify({'success': True}), 200
+        finally:
+            sqlite_conn.close()
+
+    except Exception as e:
+        logger.error(f"Failed to update label profile for {label_name}: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+
+@bp.get('/chat/schema/export')
+def api_chat_schema_export():
+    """
+    Export schema intelligence layer as JSON.
+
+    Returns:
+        200: JSON download with label profiles and property rankings
+    """
+    try:
+        chat_service = _get_chat_service()
+        sqlite_conn = chat_service._get_conn()
+
+        try:
+            from ...services.schema_intelligence import export_schema_layer
+            layer = export_schema_layer(sqlite_conn)
+
+            response = jsonify(layer)
+            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            response.headers['Content-Disposition'] = f'attachment; filename=scidk_schema_layer_{timestamp}.json'
+            return response, 200
+        finally:
+            sqlite_conn.close()
+
+    except Exception as e:
+        logger.error(f"Schema export failed: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+
+@bp.post('/chat/schema/import')
+def api_chat_schema_import():
+    """
+    Import schema intelligence layer from JSON.
+
+    Request body: {layer JSON}
+
+    Returns:
+        200: {
+            imported_labels: int,
+            updated_labels: int,
+            skipped: int,
+            embeddings_triggered: int
+        }
+    """
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        chat_service = _get_chat_service()
+        sqlite_conn = chat_service._get_conn()
+
+        try:
+            from ...services.schema_intelligence import import_schema_layer
+            result = import_schema_layer(data, sqlite_conn)
+            return jsonify(result), 200
+        finally:
+            sqlite_conn.close()
+
+    except Exception as e:
+        logger.error(f"Schema import failed: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+
 @bp.get('/chat/providers')
 def api_chat_providers():
     """
