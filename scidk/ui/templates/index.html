@@ -144,7 +144,10 @@
       <span class="chevron">▸</span>
     </div>
     <div class="settings-subsection-list">
-      <a href="#connections/neo4j" class="settings-sidebar-item" data-section="connections-neo4j">Neo4j</a>
+      <a href="#connections/neo4j" class="settings-sidebar-item" data-section="connections-neo4j">Research Graph</a>
+      <a href="#connections/chat-history" class="settings-sidebar-item" data-section="connections-chat-history">Chat History</a>
+      <a href="#connections/concept-graph" class="settings-sidebar-item" data-section="connections-concept-graph">Concept Graph</a>
+      <a href="#connections/schema-map" class="settings-sidebar-item" data-section="connections-schema-map">Schema Map</a>
       <a href="#connections/local-storage" class="settings-sidebar-item" data-section="connections-local-storage">Local Storage</a>
       <a href="#connections/rclone" class="settings-sidebar-item" data-section="connections-rclone">Rclone</a>
     </div>
@@ -158,8 +161,6 @@
       <a href="#ai-chat/llm-provider" class="settings-sidebar-item" data-section="ai-chat-llm-provider">LLM Provider</a>
       <a href="#ai-chat/behavior" class="settings-sidebar-item" data-section="ai-chat-behavior">Behavior</a>
       <a href="#ai-chat/schema" class="settings-sidebar-item" data-section="ai-chat-schema">Schema Intelligence</a>
-      <a href="#ai-chat/concept-graph" class="settings-sidebar-item" data-section="ai-chat-concept-graph">Concept Graph</a>
-      <a href="#ai-chat/history" class="settings-sidebar-item" data-section="ai-chat-history">Chat History</a>
     </div>
 
     <!-- Security Section -->
@@ -204,6 +205,9 @@
 
     <!-- Connections sections -->
     {% include 'settings/_neo4j.html' %}
+    {% include 'settings/_connections_chat_history.html' %}
+    {% include 'settings/_connections_concept_graph.html' %}
+    {% include 'settings/_connections_schema_map.html' %}
     {% include 'settings/_connections_local_storage.html' %}
     {% include 'settings/_rclone.html' %}
 
@@ -211,8 +215,6 @@
     {% include 'settings/_ai_llm_provider.html' %}
     {% include 'settings/_ai_behavior.html' %}
     {% include 'settings/_ai_schema.html' %}
-    {% include 'settings/_ai_concept_graph.html' %}
-    {% include 'settings/_ai_history.html' %}
 
     <!-- Security sections -->
     {% include 'settings/_security_overview.html' %}
