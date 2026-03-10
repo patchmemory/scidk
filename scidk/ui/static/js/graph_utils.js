@@ -107,23 +107,28 @@ window.SciDKGraph = {
    * @returns {Object} Cytoscape instance
    */
   init: function(container, elements = [], options = {}) {
-    const config = {
-      container: container,
-      elements: elements,
-      style: options.style || this.buildStylesheet(options.additionalStyles || []),
-      layout: options.layout || this.layouts.cose,
-      wheelSensitivity: options.wheelSensitivity || 0.2,
-      minZoom: options.minZoom || 0.3,
-      maxZoom: options.maxZoom || 3
-    };
+    try {
+      const config = {
+        container: container,
+        elements: elements,
+        style: options.style || this.buildStylesheet(options.additionalStyles || []),
+        layout: options.layout || this.layouts.cose,
+        wheelSensitivity: options.wheelSensitivity || 0.2,
+        minZoom: options.minZoom || 0.3,
+        maxZoom: options.maxZoom || 3
+      };
 
-    // Check if Cytoscape is loaded
-    if (typeof cytoscape === 'undefined') {
-      console.error('Cytoscape.js not loaded. Make sure to include the library script.');
-      return null;
+      // Check if Cytoscape is loaded
+      if (typeof cytoscape === 'undefined') {
+        console.error('Cytoscape.js not loaded. Make sure to include the library script.');
+        return null;
+      }
+
+      return cytoscape(config);
+    } catch (e) {
+      console.error('SciDKGraph.init() threw:', e);
+      throw e;
     }
-
-    return cytoscape(config);
   },
 
   /**

@@ -1191,42 +1191,47 @@
       // Destroy old instance and create new one with SciDKGraph
       cy.destroy();
 
-      // Use SciDKGraph.init for consistent styling
-      const chatStyles = [
-        {
-          selector: 'node',
-          style: {
-            'background-color': SciDKGraph.colors.default,
-            'label': 'data(displayLabel)',
-            'text-valign': 'bottom',
-            'font-size': '10px',
-            'text-max-width': '80px',
-            'text-wrap': 'ellipsis'
+      try {
+        // Use SciDKGraph.init for consistent styling
+        const chatStyles = [
+          {
+            selector: 'node',
+            style: {
+              'background-color': SciDKGraph.colors.default,
+              'label': 'data(displayLabel)',
+              'text-valign': 'bottom',
+              'font-size': '10px',
+              'text-max-width': '80px',
+              'text-wrap': 'ellipsis'
+            }
+          },
+          ...SciDKGraph.buildLabelColorStyles(),
+          {
+            selector: 'edge',
+            style: {
+              'width': 1.5,
+              'line-color': '#aaa',
+              'target-arrow-color': '#aaa'
+            }
           }
-        },
-        ...SciDKGraph.buildLabelColorStyles(),
-        {
-          selector: 'edge',
-          style: {
-            'width': 1.5,
-            'line-color': '#aaa',
-            'target-arrow-color': '#aaa'
+        ];
+
+        cy = SciDKGraph.init(graphViz, elementsToRender, {
+          additionalStyles: chatStyles,
+          layout: {
+            name: 'cose',
+            animate: true,
+            animationDuration: 500,
+            padding: 50,
+            stop: function() { if (cy) cy.fit(null, 50); }
           }
-        }
-      ];
+        });
 
-      cy = SciDKGraph.init(graphViz, elementsToRender, {
-        additionalStyles: chatStyles,
-        layout: {
-          name: 'cose',
-          animate: true,
-          animationDuration: 500,
-          padding: 50,
-          stop: function() { if (cy) cy.fit(null, 50); }
-        }
-      });
-
-      console.log(`[RENDER] Graph rendered: ${graphData.nodes.length} nodes, ${graphData.rels.length} relationships, cy.elements:`, cy.elements().length);
+        console.log(`[RENDER] Graph rendered: ${graphData.nodes.length} nodes, ${graphData.rels.length} relationships, cy.elements:`, cy.elements().length);
+      } catch (e) {
+        console.error('[RENDER] renderGraph failed:', e);
+        throw e;
+      }
       return true;
     }
 
