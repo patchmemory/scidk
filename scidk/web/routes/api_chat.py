@@ -197,12 +197,15 @@ def api_chat_graphrag():
                         relevant_labels = schema_context.get('labels', [])
 
                         # Classify intent using concept graph
+                        # Use raw message (not context) for intent - context pollutes classification
                         intent_name, intent_confidence = classify_intent(
-                            message_with_context, concept_driver, sqlite_conn_tmp, ollama_url
+                            message, concept_driver, sqlite_conn_tmp, ollama_url
                         )
+                        print(f"DEBUG concept_graph: intent_name={intent_name}, confidence={intent_confidence}")
 
                         # Plan execution
                         plan = plan_execution(intent_name, relevant_labels, concept_driver)
+                        print(f"DEBUG concept_graph: plan={plan}")
 
                         # Build traversal log
                         traversal_log = build_traversal_log(
@@ -215,6 +218,7 @@ def api_chat_graphrag():
 
                         # Map concept intent to legacy Intent enum
                         intent = _map_concept_intent_to_legacy(intent_name)
+                        print(f"DEBUG concept_graph: mapped to legacy intent={intent}, value={intent.value}")
 
                         # Log traversal to SQLite
                         sqlite_conn_tmp.execute(
@@ -819,12 +823,15 @@ def api_chat_graphrag_stream():
                             relevant_labels = schema_context.get('labels', [])
 
                             # Classify intent using concept graph
+                            # Use raw message (not context) for intent - context pollutes classification
                             intent_name, intent_confidence = classify_intent(
-                                message_with_context, concept_driver, sqlite_conn_tmp, ollama_url
+                                message, concept_driver, sqlite_conn_tmp, ollama_url
                             )
+                            print(f"DEBUG STREAM concept_graph: intent_name={intent_name}, confidence={intent_confidence}")
 
                             # Plan execution
                             plan = plan_execution(intent_name, relevant_labels, concept_driver)
+                            print(f"DEBUG STREAM concept_graph: plan={plan}")
 
                             # Build traversal log
                             traversal_log = build_traversal_log(
@@ -837,6 +844,7 @@ def api_chat_graphrag_stream():
 
                             # Map concept intent to legacy Intent enum
                             intent = _map_concept_intent_to_legacy(intent_name)
+                            print(f"DEBUG STREAM concept_graph: mapped to legacy intent={intent}, value={intent.value}")
 
                             # Log traversal to SQLite
                             sqlite_conn_tmp.execute(
