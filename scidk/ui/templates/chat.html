@@ -1179,6 +1179,15 @@
         graphViz.appendChild(warning);
       }
 
+      console.log('[RENDER] About to render graph:', {
+        nodeCount: graphData.nodes.length,
+        relCount: graphData.rels.length,
+        elementsCount: elementsToRender.length,
+        firstElement: elementsToRender[0],
+        container: graphViz,
+        containerVisible: graphViz.offsetParent !== null
+      });
+
       const savedStyle = cy.style().json();  // save BEFORE destroy
       cy.destroy();
       cy = cytoscape({
@@ -1190,7 +1199,7 @@
                     stop: function() { if (cy) cy.fit(null, 50); } }
       });
 
-      console.log(`Graph rendered: ${graphData.nodes.length} nodes, ${graphData.rels.length} relationships`);
+      console.log(`[RENDER] Graph rendered: ${graphData.nodes.length} nodes, ${graphData.rels.length} relationships, cy.elements:`, cy.elements().length);
       return true;
     }
 
