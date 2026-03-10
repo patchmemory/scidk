@@ -394,6 +394,69 @@
     justify-content: flex-end;
     gap: 0.5rem;
   }
+
+  /* Chat Intelligence Section */
+  .prop-usage-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+  }
+  .prop-name {
+    min-width: 120px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .prop-bar-container {
+    flex: 1;
+    height: 18px;
+    background: #e0e0e0;
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+  }
+  .prop-bar {
+    height: 100%;
+    background: #4a90e2;
+    transition: width 0.3s ease;
+  }
+  .prop-count {
+    min-width: 40px;
+    text-align: right;
+    color: #666;
+    font-size: 0.8rem;
+  }
+  .intelligence-tag {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    background: #e3f2fd;
+    color: #1976d2;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    margin-right: 0.3rem;
+    margin-bottom: 0.3rem;
+  }
+  .embedding-badge {
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-weight: 500;
+  }
+  .embedding-badge.embedded {
+    background: #e8f5e9;
+    color: #2e7d32;
+  }
+  .embedding-badge.pending {
+    background: #fff3e0;
+    color: #ef6c00;
+  }
+  .embedding-badge.none {
+    background: #f5f5f5;
+    color: #757575;
+  }
 </style>
 
 <h1>Labels</h1>
@@ -415,6 +478,7 @@
       <button id="btn-import-arrows" class="btn btn-sm btn-outline-info" data-testid="import-arrows-btn" style="flex: 1; font-size: 0.75rem; white-space: nowrap;">Import</button>
       <button id="btn-export-arrows" class="btn btn-sm btn-outline-info" data-testid="export-arrows-btn" style="flex: 1; font-size: 0.75rem; white-space: nowrap;">Export</button>
     </div>
+    <button id="btn-export-schema-layer" class="btn btn-sm btn-outline-secondary" data-testid="export-schema-layer-btn" style="width: 100%; font-size: 0.75rem; margin-bottom: 0.5rem;" title="Export schema intelligence layer">↓ Export Schema Layer</button>
     <button id="btn-new-label" class="btn btn-sm" data-testid="new-label-btn" style="width: 100%; font-weight: bold; background: #e0e0e0; color: #555; border: 1px solid #ccc; margin-bottom: 0.5rem;">+ Label</button>
     <!-- Batch action buttons (shown when multiple labels selected) -->
     <div id="batch-actions" style="display: none; margin-bottom: 0.5rem; padding: 0.5rem; background: #f0f8ff; border-radius: 4px; border: 1px solid #b3d9ff;">
@@ -469,6 +533,42 @@
       </div>
       <div id="readonly-incoming-relationships-container">
         <div class="empty-state small">No incoming relationships</div>
+      </div>
+
+      <!-- Chat Intelligence Section -->
+      <div class="section-header" style="margin-top: 1.5rem;">
+        <h4 class="small" style="margin: 0;">Chat Intelligence</h4>
+        <button id="btn-edit-intelligence" class="btn btn-sm btn-outline-secondary" style="font-size: 0.8rem;">Edit</button>
+      </div>
+      <div id="intelligence-section" style="padding: 0.75rem; background: #f9f9f9; border-radius: 4px; margin-bottom: 1rem;">
+        <div style="margin-bottom: 0.75rem;">
+          <label class="small" style="font-weight: 600; display: block; margin-bottom: 0.25rem;">Description</label>
+          <div id="intelligence-description" class="small" style="color: #666;">Not set</div>
+        </div>
+
+        <div style="margin-bottom: 0.75rem;">
+          <label class="small" style="font-weight: 600; display: block; margin-bottom: 0.25rem;">Chat Context Mode</label>
+          <div id="intelligence-context-mode" class="small"></div>
+        </div>
+
+        <div style="margin-bottom: 0.75rem;">
+          <label class="small" style="font-weight: 600; display: block; margin-bottom: 0.25rem;">Always Include Properties</label>
+          <div id="intelligence-always-include" class="small" style="color: #666;">None</div>
+        </div>
+
+        <div style="margin-bottom: 0.75rem;">
+          <label class="small" style="font-weight: 600; display: block; margin-bottom: 0.25rem;">Never Include Properties</label>
+          <div id="intelligence-never-include" class="small" style="color: #666;">None</div>
+        </div>
+
+        <div style="margin-bottom: 0.5rem;">
+          <label class="small" style="font-weight: 600; display: block; margin-bottom: 0.25rem;">Property Usage (Last 30 Days)</label>
+        </div>
+        <div id="intelligence-property-usage"></div>
+
+        <div style="margin-top: 0.5rem;">
+          <span id="intelligence-embedding-status" class="badge-type" style="font-size: 0.7rem;"></span>
+        </div>
       </div>
 
       <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
@@ -960,6 +1060,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Arrows.app Import/Export
   document.getElementById('btn-import-arrows')?.addEventListener('click', openImportModal);
   document.getElementById('btn-export-arrows')?.addEventListener('click', exportToArrows);
+  document.getElementById('btn-export-schema-layer')?.addEventListener('click', exportSchemaLayer);
 
   // Import type radio button handling
   document.querySelectorAll('input[name="import-type"]').forEach(radio => {
@@ -1984,6 +2085,90 @@ function populateEditor(label) {
       }
     });
   });
+
+  // Load intelligence profile
+  loadIntelligenceProfile(label.name);
+}
+
+function loadIntelligenceProfile(labelName) {
+  fetch(window.SCIDK_BASE + `/api/chat/schema/label/${labelName}`)
+    .then(r => r.json())
+    .then(data => {
+      // Description
+      const descEl = document.getElementById('intelligence-description');
+      descEl.textContent = data.description || 'Not set';
+      descEl.style.color = data.description ? '#333' : '#666';
+
+      // Context mode
+      const modeEl = document.getElementById('intelligence-context-mode');
+      const mode = data.chat_context_mode || 'top_n';
+      const n = data.chat_context_n || 5;
+      if (mode === 'top_n') {
+        modeEl.textContent = `Top ${n} properties by usage`;
+      } else if (mode === 'all') {
+        modeEl.textContent = 'All properties';
+      } else if (mode === 'exclude') {
+        modeEl.textContent = 'Exclude from chat';
+        modeEl.style.color = '#b00020';
+      }
+
+      // Always include
+      const alwaysEl = document.getElementById('intelligence-always-include');
+      if (data.always_include && data.always_include.length > 0) {
+        alwaysEl.innerHTML = data.always_include.map(p =>
+          `<span class="intelligence-tag">${p}</span>`
+        ).join('');
+      } else {
+        alwaysEl.textContent = 'None';
+      }
+
+      // Never include
+      const neverEl = document.getElementById('intelligence-never-include');
+      if (data.never_include && data.never_include.length > 0) {
+        neverEl.innerHTML = data.never_include.map(p =>
+          `<span class="intelligence-tag" style="background: #ffebee; color: #c62828;">${p}</span>`
+        ).join('');
+      } else {
+        neverEl.textContent = 'None';
+      }
+
+      // Property usage bars
+      const usageEl = document.getElementById('intelligence-property-usage');
+      if (data.property_rankings && data.property_rankings.length > 0) {
+        const maxCount = Math.max(...data.property_rankings.map(r => r.query_count || 0));
+        usageEl.innerHTML = data.property_rankings.slice(0, 10).map(ranking => {
+          const pct = maxCount > 0 ? (ranking.query_count / maxCount) * 100 : 0;
+          return `
+            <div class="prop-usage-row">
+              <span class="prop-name">${ranking.property}</span>
+              <div class="prop-bar-container">
+                <div class="prop-bar" style="width: ${pct}%"></div>
+              </div>
+              <span class="prop-count">${ranking.query_count || 0}</span>
+            </div>
+          `;
+        }).join('');
+      } else {
+        usageEl.innerHTML = '<div class="small" style="color: #999;">No usage data yet</div>';
+      }
+
+      // Embedding status
+      const statusEl = document.getElementById('intelligence-embedding-status');
+      const status = data.embedding_status || 'none';
+      statusEl.className = `embedding-badge ${status}`;
+      if (status === 'embedded') {
+        statusEl.textContent = '● Embedded';
+      } else if (status === 'pending') {
+        statusEl.textContent = '○ Not embedded';
+      } else {
+        statusEl.textContent = '○ No embedding';
+      }
+    })
+    .catch(err => {
+      console.error('Failed to load intelligence profile:', err);
+      document.getElementById('intelligence-section').innerHTML =
+        '<div class="small" style="color: #b00020;">Failed to load intelligence data</div>';
+    });
 }
 
 function getNextNavGroup(currentGroup) {
@@ -3022,6 +3207,16 @@ async function exportToArrows() {
     showToast('Exporting schema...', 'info');
     window.location = window.SCIDK_BASE + '/api/labels/export/arrows';
     setTimeout(() => showToast('Schema exported successfully', 'success'), 500);
+  } catch (e) {
+    showToast('Export error: ' + e.message, 'error');
+  }
+}
+
+async function exportSchemaLayer() {
+  try {
+    showToast('Exporting schema intelligence layer...', 'info');
+    window.location = window.SCIDK_BASE + '/api/chat/schema/export';
+    setTimeout(() => showToast('Schema layer exported successfully', 'success'), 500);
   } catch (e) {
     showToast('Export error: ' + e.message, 'error');
   }
