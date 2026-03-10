@@ -128,11 +128,28 @@ window.SciDKGraph = {
 
   /**
    * Convert Neo4j schema data to Cytoscape elements
-   * Expects format: {nodes: [{label, count, color, description}], edges: [{source, target, label}]}
+   * Handles two formats:
+   * 1. API format (already wrapped): {nodes: [{data: {id, label, ...}}], edges: [{data: {id, source, target, ...}}]}
+   * 2. Raw format: {nodes: [{label, count, color}], edges: [{source, target, label}]}
    * @param {Object} schemaData - Schema data from API
    * @returns {Array} Cytoscape elements array
    */
   schemaToElements: function(schemaData) {
+    // Check if data is already in Cytoscape format (has nested 'data' property)
+    const firstNode = (schemaData.nodes || [])[0];
+    if (firstNode && firstNode.data) {
+      // Already in Cytoscape format, ensure label field exists in data
+      const nodes = (schemaData.nodes || []).map(n => ({
+        data: {
+          ...n.data,
+          label: n.data.label || n.data.name || n.data.id  // ensure label exists
+        }
+      }));
+      const edges = schemaData.edges || [];
+      return [...nodes, ...edges];
+    }
+
+    // Raw format - needs wrapping
     const nodes = (schemaData.nodes || []).map(n => ({
       data: {
         id: n.id || n.label || n.name,
@@ -187,8 +204,9 @@ window.SciDKGraph = {
     const edges = (queryResults.rels || [])
       .map(r => {
         const edgeId = this._extractId(r.id);
-        const sourceId = this._extractId(r.startNode);
-        const targetId = this._extractId(r.endNode);
+        // Use fallback chain for Neo4j field name variations
+        const sourceId = this._extractId(r.start_node || r.start || r.startNode || r.startNodeElementId);
+        const targetId = this._extractId(r.end_node || r.end || r.endNode || r.endNodeElementId);
 
         return {
           edgeId,
