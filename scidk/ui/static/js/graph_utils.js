@@ -255,7 +255,18 @@ window.SciDKGraph = {
       })
       .map(e => ({ data: e.data }));  // Return only the data part
 
-    return [...nodes, ...edges];
+    // Deduplicate edges by ID (undirected queries return each edge twice)
+    const edgeMap = new Map();
+    edges.forEach(e => {
+      if (!edgeMap.has(e.data.id)) {
+        edgeMap.set(e.data.id, e);
+      }
+    });
+    const uniqueEdges = Array.from(edgeMap.values());
+
+    console.log('[DEBUG] Deduplicated edges:', edges.length, '->', uniqueEdges.length);
+
+    return [...nodes, ...uniqueEdges];
   },
 
   /**
