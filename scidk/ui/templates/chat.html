@@ -1134,9 +1134,21 @@
             displayLabel = props.title || el.data.label;
           }
 
+          // Preserve critical Cytoscape fields before merging properties
+          const preservedId = el.data.id;
+          const preservedLabel = el.data.label;
+          const preservedSource = el.data.source;
+          const preservedTarget = el.data.target;
+
           // Update displayLabel and spread properties as data
           el.data.displayLabel = displayLabel;
           Object.assign(el.data, props);
+
+          // Restore critical fields that must not be overwritten
+          el.data.id = preservedId;
+          el.data.label = preservedLabel;
+          if (preservedSource !== undefined) el.data.source = preservedSource;
+          if (preservedTarget !== undefined) el.data.target = preservedTarget;
         }
       });
 
