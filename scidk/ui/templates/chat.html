@@ -839,6 +839,65 @@
     0%, 50% { opacity: 1; }
     51%, 100% { opacity: 0; }
   }
+
+  /* Concept Graph Reasoning Block */
+  .reasoning-block {
+    margin: 0.5rem 0;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    background: #f8faff;
+  }
+  .reasoning-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    cursor: pointer;
+    user-select: none;
+    color: #4a5568;
+  }
+  .reasoning-header:hover {
+    background: #eef2ff;
+    border-radius: 6px;
+  }
+  .reasoning-toggle {
+    font-size: 0.7rem;
+    transition: transform 0.15s;
+  }
+  .reasoning-toggle.open {
+    transform: rotate(90deg);
+  }
+  .reasoning-confidence {
+    margin-left: auto;
+    font-size: 0.75rem;
+    color: #718096;
+  }
+  .reasoning-body {
+    padding: 0.5rem 0.75rem 0.75rem;
+    border-top: 1px solid #e2e8f0;
+  }
+  .reasoning-row {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.2rem 0;
+    align-items: baseline;
+  }
+  .reasoning-label {
+    min-width: 70px;
+    font-weight: 600;
+    color: #718096;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .reasoning-value {
+    color: #2d3748;
+  }
+  .reasoning-value.muted {
+    color: #a0aec0;
+    font-size: 0.8rem;
+  }
 </style>
 <script>
   window.addEventListener('DOMContentLoaded', () => {
@@ -2905,7 +2964,22 @@
                   window._lastStreamSteps = currentStreamSteps;
 
                   // Save assistant response to localStorage and re-render
-                  finalizeStreamingMessage(streamContainer, finalReply, finalMetadata, lastUserQuery);
+                  finalizeStreamingMessage(streamContainer, finalReply, finalMetadata, lastUserQuery, event.traversal_log);
+
+                  // Fire-and-forget concept graph feedback
+                  if (event.traversal_log && event.traversal_log.intent_matched) {
+                    const tlog = event.traversal_log;
+                    fetch(window.SCIDK_BASE + '/api/chat/concept-graph/feedback', {
+                      method: 'POST',
+                      headers: {'Content-Type': 'application/json'},
+                      body: JSON.stringify({
+                        intent: tlog.intent_matched,
+                        tool: tlog.tool_selected,
+                        success: true,  // query completed = success
+                        session_id: currentSessionId
+                      })
+                    }).catch(() => {});  // silently ignore failures
+                  }
 
                 } else if (event.type === 'error') {
                   // Stream error
@@ -3044,8 +3118,71 @@
       }
     }
 
-    function finalizeStreamingMessage(msgEl, content, metadata, query) {
-      // Add to localStorage with steps
+    function buildReasoningBlock(traversal_log) {
+      if (!traversal_log || !traversal_log.intent_matched) {
+        return ''; // Don't render if no traversal log
+      }
+
+      const intent = traversal_log.intent_matched || 'unknown';
+      const intentConf = traversal_log.intent_confidence || 0;
+      const tool = traversal_log.tool_selected || 'none';
+      const toolConf = traversal_log.tool_confidence || 0;
+      const labels = traversal_log.matched_labels || [];
+      const rels = traversal_log.matched_relationships || [];
+      const considered = traversal_log.labels_considered || [];
+
+      const confidenceStr = `${(intentConf * 100).toFixed(0)}%`;
+
+      return `
+        <div class="reasoning-block">
+          <div class="reasoning-header" onclick="toggleReasoning(this)">
+            <span class="reasoning-toggle">▶</span>
+            <span>🧠 Concept Graph Reasoning</span>
+            <span>${intent}</span>
+            <span class="reasoning-confidence">${confidenceStr}</span>
+          </div>
+          <div class="reasoning-body" style="display: none;">
+            <div class="reasoning-row">
+              <div class="reasoning-label">Intent</div>
+              <div class="reasoning-value">${intent} (${(intentConf * 100).toFixed(0)}%)</div>
+            </div>
+            <div class="reasoning-row">
+              <div class="reasoning-label">Tool</div>
+              <div class="reasoning-value">${tool} (${(toolConf * 100).toFixed(0)}%)</div>
+            </div>
+            ${labels.length > 0 ? `
+            <div class="reasoning-row">
+              <div class="reasoning-label">Labels</div>
+              <div class="reasoning-value">${labels.join(' → ')}</div>
+            </div>
+            ` : ''}
+            ${rels.length > 0 ? `
+            <div class="reasoning-row">
+              <div class="reasoning-label">Via</div>
+              <div class="reasoning-value">${rels.join(', ')}</div>
+            </div>
+            ` : ''}
+            ${considered.length > 0 ? `
+            <div class="reasoning-row">
+              <div class="reasoning-label">Considered</div>
+              <div class="reasoning-value muted">${considered.join(', ')}</div>
+            </div>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    function toggleReasoning(header) {
+      const body = header.nextElementSibling;
+      const toggle = header.querySelector('.reasoning-toggle');
+      const isOpen = body.style.display !== 'none';
+      body.style.display = isOpen ? 'none' : 'block';
+      toggle.classList.toggle('open', !isOpen);
+    }
+
+    function finalizeStreamingMessage(msgEl, content, metadata, query, traversal_log) {
+      // Add to localStorage with steps and traversal_log
       const messages = JSON.parse(localStorage.getItem('chat_messages') || '[]');
       const msg = {
         role: 'assistant',
@@ -3053,6 +3190,7 @@
         steps: window._lastStreamSteps || [],  // ReAct steps
         metadata,
         query,
+        traversal_log: traversal_log || null,  // Concept graph reasoning
         timestamp: Date.now()
       };
       messages.push(msg);
@@ -3293,6 +3431,12 @@
           attachmentHtml = `<div class="message-attachment">📎 ${escapeHtml(preview)}</div>`;
         }
 
+        // Render concept graph reasoning block if available
+        let reasoningHtml = '';
+        if (msg.role === 'assistant' && msg.traversal_log) {
+          reasoningHtml = buildReasoningBlock(msg.traversal_log);
+        }
+
         // Render saved ReAct steps for assistant messages
         let stepsHtml = '';
         if (msg.role === 'assistant' && msg.steps && msg.steps.length > 0) {
@@ -3325,6 +3469,7 @@
         return `<div class="chat-message ${msg.role}${extraClass}" data-testid="chat-message-${msg.role}">
           <div class="chat-message-role">${msg.role === 'user' ? '👤 You' : '🤖 Assistant'}</div>
           ${attachmentHtml}
+          ${reasoningHtml}
           ${stepsHtml}
           <div class="chat-message-content">${escapeHtml(msg.content)}</div>
           ${metadataHtml}
