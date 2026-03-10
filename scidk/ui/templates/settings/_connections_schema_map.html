@@ -96,12 +96,8 @@
       resetBtn.addEventListener('click', () => {
         if (schemaCy) {
           schemaCy.layout({
-            name: 'cose',
-            animate: true,
-            animationDuration: 500,
-            nodeRepulsion: 8000,
-            idealEdgeLength: 100,
-            nodeOverlap: 20
+            ...SciDKGraph.layouts.cose,
+            animationDuration: 500
           }).run();
         }
       });
@@ -138,78 +134,34 @@
       // Hide loading
       loading.style.display = 'none';
 
-      // Initialize Cytoscape
-      schemaCy = cytoscape({
-        container: container,
-        elements: {
-          nodes: data.nodes,
-          edges: data.edges
-        },
-        style: [
-          {
-            selector: 'node',
-            style: {
-              'background-color': 'data(color)',
-              'label': 'data(label)',
-              'width': function(ele) {
-                // Size nodes by count (logarithmic scale)
-                const count = ele.data('count') || 1;
-                return Math.max(30, Math.min(80, 30 + Math.log10(count + 1) * 15));
-              },
-              'height': function(ele) {
-                const count = ele.data('count') || 1;
-                return Math.max(30, Math.min(80, 30 + Math.log10(count + 1) * 15));
-              },
-              'text-valign': 'center',
-              'text-halign': 'center',
-              'font-size': '12px',
-              'font-weight': '600',
-              'color': '#333',
-              'text-outline-width': 2,
-              'text-outline-color': '#fff',
-              'border-width': 2,
-              'border-color': '#fff',
-              'cursor': 'pointer'
-            }
-          },
-          {
-            selector: 'node:hover',
-            style: {
-              'border-width': 3,
-              'border-color': '#2980b9'
-            }
-          },
-          {
-            selector: 'edge',
-            style: {
-              'width': 2,
-              'line-color': '#7f8c8d',
-              'target-arrow-color': '#7f8c8d',
-              'target-arrow-shape': 'triangle',
-              'curve-style': 'bezier',
-              'label': 'data(label)',
-              'font-size': '10px',
-              'text-rotation': 'autorotate',
-              'text-margin-y': -10,
-              'color': '#555',
-              'text-background-color': '#fff',
-              'text-background-opacity': 0.8,
-              'text-background-padding': '2px'
-            }
+      // Initialize Cytoscape with SciDKGraph utils
+      const elements = SciDKGraph.schemaToElements(data);
+
+      // Schema-specific styles: size by count, custom colors, hover effects
+      const schemaStyles = [
+        {
+          selector: 'node',
+          style: {
+            'background-color': 'data(color)',
+            'width': SciDKGraph.nodeSizeByCount(30, 80),
+            'height': SciDKGraph.nodeSizeByCount(30, 80),
+            'font-size': '12px',
+            'font-weight': '600',
+            'cursor': 'pointer'
           }
-        ],
-        layout: {
-          name: 'cose',
-          animate: true,
-          animationDuration: 1000,
-          nodeRepulsion: 8000,
-          idealEdgeLength: 100,
-          nodeOverlap: 20,
-          padding: 30
         },
-        wheelSensitivity: 0.2,
-        minZoom: 0.3,
-        maxZoom: 3
+        {
+          selector: 'node:hover',
+          style: {
+            'border-width': 3,
+            'border-color': '#2980b9'
+          }
+        }
+      ];
+
+      schemaCy = SciDKGraph.init(container, elements, {
+        additionalStyles: schemaStyles,
+        layout: SciDKGraph.layouts.cose
       });
 
       // Add click handler to navigate to Labels page

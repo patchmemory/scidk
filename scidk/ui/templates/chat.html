@@ -954,73 +954,33 @@
 
       const graphViz = document.getElementById('graph-viz');
 
-      cy = cytoscape({
-        container: graphViz,
-        elements: [],
-        style: [
-          {
-            selector: 'node',
-            style: {
-              'background-color': '#95a5a6',  // Default gray for unknown types
-              'label': 'data(displayLabel)',  // Use displayLabel instead of label
-              'color': '#333',
-              'text-valign': 'bottom',
-              'text-halign': 'center',
-              'font-size': '10px',
-              'text-max-width': '80px',
-              'text-wrap': 'ellipsis',
-              'width': 30,
-              'height': 30
-            }
-          },
-          // Color-code nodes by type
-          {
-            selector: 'node[label="Folder"]',
-            style: {
-              'background-color': '#4a90e2'  // Blue for Folders
-            }
-          },
-          {
-            selector: 'node[label="File"]',
-            style: {
-              'background-color': '#7bc67e'  // Green for Files
-            }
-          },
-          {
-            selector: 'node[label="Sample"]',
-            style: {
-              'background-color': '#f5a623'  // Orange for Samples
-            }
-          },
-          {
-            selector: 'node[label="Scan"]',
-            style: {
-              'background-color': '#9b59b6'  // Purple for Scans
-            }
-          },
-          {
-            selector: 'node[label="SampleType"]',
-            style: {
-              'background-color': '#e74c3c'  // Red for SampleTypes
-            }
-          },
-          {
-            selector: 'edge',
-            style: {
-              'width': 1.5,
-              'line-color': '#aaa',
-              'target-arrow-color': '#aaa',
-              'target-arrow-shape': 'triangle',
-              'curve-style': 'bezier',
-              'label': 'data(label)',
-              'font-size': '9px',
-              'color': '#666',
-              'text-rotation': 'autorotate',
-              'text-margin-y': -10
-            }
+      // Chat-specific styles: domain colors, displayLabel, smaller nodes
+      const chatStyles = [
+        {
+          selector: 'node',
+          style: {
+            'background-color': SciDKGraph.colors.default,
+            'label': 'data(displayLabel)',  // Use displayLabel instead of label
+            'text-valign': 'bottom',
+            'font-size': '10px',
+            'text-max-width': '80px',
+            'text-wrap': 'ellipsis'
           }
-        ],
-        layout: { name: 'preset' }
+        },
+        ...SciDKGraph.buildLabelColorStyles(),
+        {
+          selector: 'edge',
+          style: {
+            'width': 1.5,
+            'line-color': '#aaa',
+            'target-arrow-color': '#aaa'
+          }
+        }
+      ];
+
+      cy = SciDKGraph.init(graphViz, [], {
+        additionalStyles: chatStyles,
+        layout: SciDKGraph.layouts.preset
       });
 
       console.log('Cytoscape initialized for chat graph visualization');
@@ -1149,56 +1109,35 @@
 
     /**
      * Transform Neo4j nodes and relationships to Cytoscape elements format
+     * Uses SciDKGraph with custom displayLabel logic for path-based names
      * @param {Array} nodes - Neo4j node objects
      * @param {Array} rels - Neo4j relationship objects
      * @returns {Array} Cytoscape elements array
      */
     function transformToCytoscape(nodes, rels) {
-      const elements = [];
+      // Use SciDKGraph for base conversion
+      const elements = SciDKGraph.queryResultsToElements({nodes, rels});
 
-      // Add nodes
-      nodes.forEach(node => {
-        const nodeId = node.id;  // Already normalized to string by detectGraphData
-        const label = node.labels && node.labels.length > 0 ? node.labels[0] : 'Node';
-        const props = node.properties || {};
+      // Enhance nodes with custom displayLabel logic for this domain
+      elements.forEach(el => {
+        if (el.data.properties) {
+          const props = el.data.properties;
+          let displayLabel = props.name;
 
-        // Compute displayLabel: name → last segment of path → title → label
-        let displayLabel = props.name;
-        if (!displayLabel && props.path) {
-          // Extract last segment from path (e.g. "mit-sharepoint-site:CAC" → "CAC")
-          const pathSegments = props.path.split(/[/:]/);
-          displayLabel = pathSegments[pathSegments.length - 1];
-        }
-        if (!displayLabel) {
-          displayLabel = props.title || label;
-        }
-
-        elements.push({
-          data: {
-            id: nodeId,
-            label: label,  // Node type (Folder, File, etc.)
-            displayLabel: displayLabel,  // Human-readable label
-            labels: node.labels,
-            ...props  // Spread properties as additional data
+          // Extract last segment from path if available (e.g. "mit-sharepoint-site:CAC" → "CAC")
+          if (!displayLabel && props.path) {
+            const pathSegments = props.path.split(/[/:]/);
+            displayLabel = pathSegments[pathSegments.length - 1];
           }
-        });
-      });
 
-      // Add relationships
-      rels.forEach(rel => {
-        // Use fallback chain in case normalization didn't happen
-        const source = toId(rel.start_node || rel.start || rel.startNodeElementId);
-        const target = toId(rel.end_node || rel.end || rel.endNodeElementId);
-        const edgeId = rel.id || `${source}-${rel.type}-${target}`;
-
-        elements.push({
-          data: {
-            id: edgeId,
-            source: source,
-            target: target,
-            label: rel.type
+          if (!displayLabel) {
+            displayLabel = props.title || el.data.label;
           }
-        });
+
+          // Update displayLabel and spread properties as data
+          el.data.displayLabel = displayLabel;
+          Object.assign(el.data, props);
+        }
       });
 
       return elements;

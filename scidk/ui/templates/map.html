@@ -1193,46 +1193,22 @@
         console.log(`Tab ${tabId} already has mode: ${window.tabVisualizationModes[tabId]}`);
       }
 
-      // Create Cytoscape instance
-      const cy = cytoscape({
-        container: container,
-        elements: [],
-        style: [
-          {
-            selector: 'node',
-            style: {
-              'background-color': '#4e79a7',
-              'label': 'data(label)',
-              'color': '#fff',
-              'text-outline-color': '#000',
-              'text-outline-width': 2,
-              'font-size': '10px',
-              'width': 30,
-              'height': 30,
-              'text-valign': 'center',
-              'text-halign': 'center',
-              'text-wrap': 'wrap',
-              'text-max-width': '250px'
-            }
-          },
-          {
-            selector: 'edge',
-            style: {
-              'width': 2,
-              'line-color': '#999999',
-              'target-arrow-color': '#999999',
-              'target-arrow-shape': 'triangle',
-              'curve-style': 'bezier',
-              'label': 'data(label)',
-              'font-size': '8px',
-              'text-rotation': 'autorotate',
-              'text-margin-y': -10
-            }
+      // Create Cytoscape instance with SciDKGraph utils
+      const mapStyles = [
+        {
+          selector: 'node',
+          style: {
+            'color': '#fff',
+            'text-outline-color': '#000',
+            'text-wrap': 'wrap',
+            'text-max-width': '250px'
           }
-        ],
-        layout: {
-          name: 'preset' // Use preset layout for empty graph (no positioning)
         }
+      ];
+
+      const cy = SciDKGraph.init(container, [], {
+        additionalStyles: mapStyles,
+        layout: SciDKGraph.layouts.preset
       });
 
       // Store instance

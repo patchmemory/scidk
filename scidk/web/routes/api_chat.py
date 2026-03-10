@@ -1169,7 +1169,7 @@ Provide a clear, concise natural language answer based on these results."""
                         chat_service.add_message(session_id, "assistant", final_answer)
 
                 elif intent == Intent.SUMMARIZE:
-                    # SUMMARIZE path: Generate summary with streaming
+                    # SUMMARIZE path: Native streaming from LLM
                     from ...ai.summarization import generate_summary
                     from ...ai.provider_factory import LLMProviderFactory
 
@@ -1183,31 +1183,35 @@ Provide a clear, concise natural language answer based on these results."""
 
                     provider_obj = LLMProviderFactory.from_settings(settings)
 
-                    # Note: generate_summary currently returns complete result, not streaming
-                    # For now, get result and stream it out token by token
-                    # TODO: Refactor generate_summary to support streaming internally
-                    result = generate_summary(driver, database or "neo4j", provider_obj, neo4j_schema)
+                    # Stream summary with native LLM streaming
+                    summary_text = ''
+                    metadata = {}
 
-                    if result.get('status') == 'error':
-                        yield f"data: {json.dumps({'type': 'error', 'error': result.get('error', 'Unknown error')})}\n\n"
-                    else:
-                        # Stream the summary text token by token (simulate streaming for now)
-                        summary_text = result.get('reply', '')
-                        # Split into words for pseudo-streaming
-                        import time as time_module
-                        words = summary_text.split()
-                        streamed_text = ''
-                        for i, word in enumerate(words):
-                            token = word if i == 0 else f" {word}"
-                            streamed_text += token
+                    for event in generate_summary(driver, database or "neo4j", provider_obj, neo4j_schema):
+                        event_type = event.get('type')
+
+                        if event_type == 'error':
+                            yield f"data: {json.dumps({'type': 'error', 'error': event.get('error', 'Unknown error')})}\n\n"
+                            break
+
+                        elif event_type == 'metadata':
+                            # Store metadata for final done event
+                            metadata = event
+
+                        elif event_type == 'token':
+                            # Stream token to frontend
+                            token = event.get('content', '')
+                            summary_text += token
                             yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
-                            time_module.sleep(0.01)  # Small delay to simulate streaming
 
-                        yield f"data: {json.dumps({'type': 'done', 'reply': streamed_text, 'engine': 'summarize', 'metadata': result.get('metadata', {}), 'traversal_log': traversal_log})}\n\n"
+                        elif event_type == 'done':
+                            # Final event with complete text
+                            summary_text = event.get('reply', summary_text)
+                            yield f"data: {json.dumps({'type': 'done', 'reply': summary_text, 'engine': 'summarize', 'metadata': metadata, 'traversal_log': traversal_log})}\n\n"
 
-                        # Save messages
-                        chat_service.add_message(session_id, "user", message)
-                        chat_service.add_message(session_id, "assistant", streamed_text)
+                            # Save messages
+                            chat_service.add_message(session_id, "user", message)
+                            chat_service.add_message(session_id, "assistant", summary_text)
 
                 else:
                     # REASONING path: Default streaming response with schema grounding

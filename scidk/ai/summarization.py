@@ -4,20 +4,19 @@ Dataset summarization for GraphRAG SUMMARIZE intent.
 Generates comprehensive overviews of knowledge graph data by running
 count queries and synthesizing results into narrative form.
 """
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Generator
 import time
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-def generate_summary(driver, database: str, provider, schema_context: Dict[str, Any]) -> Dict[str, Any]:
+def generate_summary(driver, database: str, provider, schema_context: Dict[str, Any]) -> Generator[Dict[str, Any], None, None]:
     """
-    Generate a narrative summary of the knowledge graph dataset.
+    Generate a narrative summary of the knowledge graph dataset with streaming.
 
-    Runs count queries for labels and relationships, then uses the LLM provider
-    to synthesize a researcher-friendly overview. This is the handler for the
-    SUMMARIZE intent path.
+    Runs count queries for labels and relationships, then streams the LLM-generated
+    narrative overview token by token. This is the handler for the SUMMARIZE intent path.
 
     Performance notes:
     - Caps label queries at 20 to avoid runaway queries on large schemas
@@ -28,15 +27,15 @@ def generate_summary(driver, database: str, provider, schema_context: Dict[str, 
     Args:
         driver: Neo4j driver instance
         database: Database name (e.g., "neo4j")
-        provider: LLMProvider instance with .complete() method
+        provider: LLMProvider instance with .stream() method
         schema_context: Schema dict with 'labels', 'relationships', 'properties'
 
-    Returns:
+    Yields:
         Dict with:
-            - status: 'ok' or 'error'
-            - reply: Natural language summary narrative
-            - metadata: Raw counts and statistics
-            - execution_time_ms: Time taken for queries + synthesis
+            - type: 'metadata' (first), 'token' (streaming), or 'done' (last)
+            - For 'metadata': label_counts, relationship_counts, totals, execution_time_ms
+            - For 'token': content (the token string)
+            - For 'done': complete reply text
     """
     start_time = time.time()
     MAX_LABELS = 20
@@ -87,45 +86,61 @@ def generate_summary(driver, database: str, provider, schema_context: Dict[str, 
         # Build synthesis prompt for LLM
         synthesis_prompt = _build_synthesis_prompt(counts, schema_context)
 
-        # Use provider to generate narrative summary
+        # Yield metadata first (query execution time)
+        query_time_ms = int((time.time() - start_time) * 1000)
+        yield {
+            "type": "metadata",
+            "label_counts": counts["labels"],
+            "relationship_counts": counts["relationships"],
+            "total_nodes": counts["total_nodes"],
+            "total_relationships": counts["total_relationships"],
+            "labels_analyzed": len(all_labels),
+            "relationships_analyzed": len(all_rels),
+            "capped_at": {
+                "labels": MAX_LABELS,
+                "relationships": MAX_RELATIONSHIPS
+            },
+            "query_execution_time_ms": query_time_ms
+        }
+
+        # Stream narrative summary token by token
         # Note: We pass schema_context=None because we don't want schema details in the narrative
         # The counts dict IS the data we want the LLM to describe
-        summary_text = provider.complete(
-            user_message="Describe this knowledge graph dataset in plain language for a researcher.",
-            system_prompt=synthesis_prompt,
-            schema_context=None  # Don't include schema - we're describing data, not generating queries
-        )
+        summary_text = ""
+        try:
+            for token in provider.stream(
+                user_message="Describe this knowledge graph dataset in plain language for a researcher.",
+                system_prompt=synthesis_prompt,
+                schema_context=None  # Don't include schema - we're describing data, not generating queries
+            ):
+                summary_text += token
+                yield {
+                    "type": "token",
+                    "content": token
+                }
 
-        elapsed_ms = int((time.time() - start_time) * 1000)
-
-        return {
-            "status": "ok",
-            "reply": summary_text,
-            "engine": "summarize",  # For UI badge
-            "metadata": {
-                "label_counts": counts["labels"],
-                "relationship_counts": counts["relationships"],
-                "total_nodes": counts["total_nodes"],
-                "total_relationships": counts["total_relationships"],
-                "labels_analyzed": len(all_labels),
-                "relationships_analyzed": len(all_rels),
-                "capped_at": {
-                    "labels": MAX_LABELS,
-                    "relationships": MAX_RELATIONSHIPS
-                },
-                "execution_time_ms": elapsed_ms
+            # Yield final done event with complete text and timing
+            total_elapsed_ms = int((time.time() - start_time) * 1000)
+            yield {
+                "type": "done",
+                "reply": summary_text,
+                "execution_time_ms": total_elapsed_ms
             }
-        }
+
+        except Exception as e:
+            logger.error(f"Summarization streaming failed: {e}", exc_info=True)
+            yield {
+                "type": "error",
+                "error": str(e)
+            }
 
     except Exception as e:
         logger.error(f"Summarization failed: {e}", exc_info=True)
         elapsed_ms = int((time.time() - start_time) * 1000)
-        return {
-            "status": "error",
+        yield {
+            "type": "error",
             "error": str(e),
-            "metadata": {
-                "execution_time_ms": elapsed_ms
-            }
+            "execution_time_ms": elapsed_ms
         }
 
 
