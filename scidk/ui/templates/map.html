@@ -1170,9 +1170,9 @@
       return;
     }
 
-    // Wait for Cytoscape library to be loaded
+    // Wait for Cytoscape library and SciDKGraph utils to be loaded
     const tryInit = () => {
-      if (typeof cytoscape === 'undefined') {
+      if (typeof cytoscape === 'undefined' || typeof SciDKGraph === 'undefined') {
         setTimeout(tryInit, 100);
         return;
       }

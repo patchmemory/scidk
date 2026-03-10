@@ -80,6 +80,12 @@
   let schemaCy = null;
 
   function initSchemaMap() {
+    // Wait for Cytoscape and SciDKGraph to be loaded
+    if (typeof cytoscape === 'undefined' || typeof SciDKGraph === 'undefined') {
+      setTimeout(initSchemaMap, 100);
+      return;
+    }
+
     loadSchemaMap();
 
     // Refresh button

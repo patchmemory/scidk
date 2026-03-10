@@ -947,7 +947,7 @@
     let cy = null;
 
     function initCytoscape() {
-      if (typeof cytoscape === 'undefined') {
+      if (typeof cytoscape === 'undefined' || typeof SciDKGraph === 'undefined') {
         setTimeout(initCytoscape, 100);
         return;
       }
