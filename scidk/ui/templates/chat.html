@@ -3173,13 +3173,13 @@
       `;
     }
 
-    function toggleReasoning(header) {
+    window.toggleReasoning = function(header) {
       const body = header.nextElementSibling;
       const toggle = header.querySelector('.reasoning-toggle');
       const isOpen = body.style.display !== 'none';
       body.style.display = isOpen ? 'none' : 'block';
       toggle.classList.toggle('open', !isOpen);
-    }
+    };
 
     function finalizeStreamingMessage(msgEl, content, metadata, query, traversal_log) {
       // Add to localStorage with steps and traversal_log
