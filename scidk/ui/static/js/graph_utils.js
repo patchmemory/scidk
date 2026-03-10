@@ -179,14 +179,6 @@ window.SciDKGraph = {
    * @returns {Array} Cytoscape elements array
    */
   queryResultsToElements: function(queryResults) {
-    console.log('[DEBUG] queryResultsToElements input:', {
-      keys: Object.keys(queryResults),
-      nodeCount: (queryResults.nodes || []).length,
-      relCount: (queryResults.rels || []).length,
-      firstNode: (queryResults.nodes || [])[0],
-      firstRel: (queryResults.rels || [])[0]
-    });
-
     const nodes = (queryResults.nodes || []).map(n => {
       const nodeId = this._extractId(n.id);
       const label = n.labels && n.labels[0] ? n.labels[0] : 'Node';
@@ -205,11 +197,8 @@ window.SciDKGraph = {
       };
     });
 
-    console.log('[DEBUG] Processed nodes:', nodes.slice(0, 3).map(n => ({ id: n.data.id, label: n.data.label })));
-
     // Build set of valid node IDs for edge validation
     const nodeIds = new Set(nodes.map(n => n.data.id));
-    console.log('[DEBUG] Node IDs set:', Array.from(nodeIds).slice(0, 10));
 
     // Only create edges where both source and target nodes exist
     const edges = (queryResults.rels || [])
@@ -218,20 +207,6 @@ window.SciDKGraph = {
         // Use fallback chain for Neo4j field name variations
         const sourceId = this._extractId(r.start_node || r.start || r.startNode || r.startNodeElementId);
         const targetId = this._extractId(r.end_node || r.end || r.endNode || r.endNodeElementId);
-
-        console.log('[DEBUG] Edge:', {
-          edgeId,
-          sourceId,
-          targetId,
-          hasSource: nodeIds.has(sourceId),
-          hasTarget: nodeIds.has(targetId),
-          rawFields: {
-            start_node: r.start_node,
-            start: r.start,
-            end_node: r.end_node,
-            end: r.end
-          }
-        });
 
         return {
           edgeId,
@@ -263,8 +238,6 @@ window.SciDKGraph = {
       }
     });
     const uniqueEdges = Array.from(edgeMap.values());
-
-    console.log('[DEBUG] Deduplicated edges:', edges.length, '->', uniqueEdges.length);
 
     return [...nodes, ...uniqueEdges];
   },
