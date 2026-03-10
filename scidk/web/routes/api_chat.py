@@ -1031,7 +1031,8 @@ def api_chat_graphrag_stream():
                         "type": "done",
                         "reply": result.get('reply', ''),
                         "engine": result.get('engine', 'react'),
-                        "metadata": result.get('metadata', {})
+                        "metadata": result.get('metadata', {}),
+                        "traversal_log": traversal_log
                     }
                     yield f"data: {json.dumps(done_data)}\n\n"
 
@@ -1114,7 +1115,7 @@ def api_chat_graphrag_stream():
                             yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
 
                         elapsed_ms = int((time.time() - start_time) * 1000)
-                        yield f"data: {json.dumps({'type': 'done', 'reply': final_answer, 'engine': 'reasoning_fallback', 'metadata': {'execution_time_ms': elapsed_ms, 'note': 'Could not generate valid Cypher'}})}\n\n"
+                        yield f"data: {json.dumps({'type': 'done', 'reply': final_answer, 'engine': 'reasoning_fallback', 'metadata': {'execution_time_ms': elapsed_ms, 'note': 'Could not generate valid Cypher'}, 'traversal_log': traversal_log})}\n\n"
                     else:
                         # Execute Cypher query
                         try:
@@ -1153,7 +1154,7 @@ Provide a clear, concise natural language answer based on these results."""
                             'result_count': result_count,
                             'execution_time_ms': elapsed_ms
                         }
-                        yield f"data: {json.dumps({'type': 'done', 'reply': final_answer, 'engine': 'lookup', 'metadata': result_metadata})}\n\n"
+                        yield f"data: {json.dumps({'type': 'done', 'reply': final_answer, 'engine': 'lookup', 'metadata': result_metadata, 'traversal_log': traversal_log})}\n\n"
 
                         # Save messages
                         chat_service.add_message(session_id, "user", message)
@@ -1194,7 +1195,7 @@ Provide a clear, concise natural language answer based on these results."""
                             yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
                             time_module.sleep(0.01)  # Small delay to simulate streaming
 
-                        yield f"data: {json.dumps({'type': 'done', 'reply': streamed_text, 'engine': 'summarize', 'metadata': result.get('metadata', {})})}\n\n"
+                        yield f"data: {json.dumps({'type': 'done', 'reply': streamed_text, 'engine': 'summarize', 'metadata': result.get('metadata', {}), 'traversal_log': traversal_log})}\n\n"
 
                         # Save messages
                         chat_service.add_message(session_id, "user", message)
@@ -1247,7 +1248,7 @@ Provide a clear, concise natural language answer based on these results."""
 
                     elapsed_ms = int((time.time() - start_time) * 1000)
                     provider_info = provider.health_check()
-                    yield f"data: {json.dumps({'type': 'done', 'reply': final_answer, 'metadata': {'provider': provider_info.get('provider'), 'model': provider_info.get('model'), 'execution_time_ms': elapsed_ms}, 'engine': 'reasoning'})}\n\n"
+                    yield f"data: {json.dumps({'type': 'done', 'reply': final_answer, 'metadata': {'provider': provider_info.get('provider'), 'model': provider_info.get('model'), 'execution_time_ms': elapsed_ms}, 'engine': 'reasoning', 'traversal_log': traversal_log})}\n\n"
 
                     # Save messages
                     chat_service.add_message(session_id, "user", message)
@@ -2269,7 +2270,7 @@ def api_chat_graphrag_v2_stream():
 
             # Send completion metadata with engine field for UI badge
             provider_info = provider.health_check()
-            yield f"data: {json.dumps({'type': 'done', 'reply': final_answer, 'metadata': {'provider': provider_info.get('provider'), 'model': provider_info.get('model'), 'execution_time_ms': elapsed_ms, 'engine': 'reasoning'}})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'reply': final_answer, 'metadata': {'provider': provider_info.get('provider'), 'model': provider_info.get('model'), 'execution_time_ms': elapsed_ms, 'engine': 'reasoning'}, 'traversal_log': None})}\n\n"
 
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
