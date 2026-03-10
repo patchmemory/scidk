@@ -179,13 +179,6 @@ window.SciDKGraph = {
    * @returns {Array} Cytoscape elements array
    */
   queryResultsToElements: function(queryResults) {
-    console.log('queryResultsToElements called with:',
-      'keys:', Object.keys(queryResults),
-      'nodes:', (queryResults.nodes || []).length,
-      'rels:', (queryResults.rels || []).length,
-      'relationships:', (queryResults.relationships || []).length
-    );
-
     const nodes = (queryResults.nodes || []).map(n => {
       const nodeId = this._extractId(n.id);
       const label = n.labels && n.labels[0] ? n.labels[0] : 'Node';
@@ -206,36 +199,14 @@ window.SciDKGraph = {
 
     // Build set of valid node IDs for edge validation
     const nodeIds = new Set(nodes.map(n => n.data.id));
-    console.log('Node IDs:', Array.from(nodeIds));
 
     // Only create edges where both source and target nodes exist
-    const rawRels = queryResults.rels || [];
-    console.log('Processing', rawRels.length, 'relationships');
-    if (rawRels.length > 0) {
-      console.log('First rel sample:', JSON.stringify(rawRels[0]));
-    }
-
-    const edges = rawRels
-      .map((r, idx) => {
+    const edges = (queryResults.rels || [])
+      .map(r => {
         const edgeId = this._extractId(r.id);
         // Use fallback chain for Neo4j field name variations
         const sourceId = this._extractId(r.start_node || r.start || r.startNode || r.startNodeElementId);
         const targetId = this._extractId(r.end_node || r.end || r.endNode || r.endNodeElementId);
-
-        if (idx === 0) {
-          console.log('First edge - sourceId:', sourceId, 'targetId:', targetId,
-            'in nodeIds:', nodeIds.has(sourceId), nodeIds.has(targetId));
-          console.log('Field values:', {
-            start_node: r.start_node,
-            start: r.start,
-            startNode: r.startNode,
-            startNodeElementId: r.startNodeElementId,
-            end_node: r.end_node,
-            end: r.end,
-            endNode: r.endNode,
-            endNodeElementId: r.endNodeElementId
-          });
-        }
 
         return {
           edgeId,
@@ -264,14 +235,21 @@ window.SciDKGraph = {
 
   /**
    * Extract ID from Neo4j Integer format {low, high} or plain value
+   * IMPORTANT: Handles 0 correctly (0 is a valid ID, not falsy check)
    * @param {*} val - Neo4j Integer or plain number/string
    * @returns {string} String representation of ID
    */
   _extractId: function(val) {
-    if (val && typeof val === 'object' && 'low' in val) {
+    // Handle undefined/null first
+    if (val === undefined || val === null) {
+      return '';
+    }
+    // Handle Neo4j Integer format { low, high }
+    if (typeof val === 'object' && 'low' in val) {
       return val.low.toString();
     }
-    return val ? val.toString() : '';
+    // Handle plain number (including 0) or string
+    return val.toString();
   },
 
   /**
