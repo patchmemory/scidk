@@ -499,3 +499,177 @@ def get_relevant_schema_context(user_query: str,
         'cached': False,
         'cached_at': None
     }
+
+
+# ─────────────────────────────────────────────
+# PHASE 4+5: Export/Import Schema Layer
+# ─────────────────────────────────────────────
+
+def export_schema_layer(sqlite_conn: sqlite3.Connection) -> Dict[str, Any]:
+    """
+    Export complete schema intelligence layer to portable JSON.
+
+    Returns:
+        {
+            "scidk_schema_layer": "1.0",
+            "exported_at": ISO timestamp,
+            "source_instance": hostname or "unknown",
+            "label_profiles": [...],
+            "property_rankings": {...}
+        }
+    """
+    import socket
+    cursor = sqlite_conn.cursor()
+
+    # Get all label profiles
+    label_profiles = []
+    profile_rows = cursor.execute("""
+        SELECT label_name, description, chat_context_mode, chat_context_n,
+               always_include, never_include
+        FROM label_profile
+    """).fetchall()
+
+    for row in profile_rows:
+        label_profiles.append({
+            'label': row[0],
+            'description': row[1],
+            'chat_context_mode': row[2] or 'top_n',
+            'chat_context_n': row[3] or 5,
+            'always_include': json.loads(row[4]) if row[4] else [],
+            'never_include': json.loads(row[5]) if row[5] else []
+        })
+
+    # Get all property rankings
+    property_rankings = {}
+    ranking_rows = cursor.execute("""
+        SELECT label_name, property_name, rank
+        FROM property_ranking
+        ORDER BY label_name, rank DESC
+    """).fetchall()
+
+    for row in ranking_rows:
+        label = row[0]
+        if label not in property_rankings:
+            property_rankings[label] = []
+        property_rankings[label].append({
+            'property': row[1],
+            'rank': row[2]
+        })
+
+    # Get hostname for source tracking
+    try:
+        hostname = socket.gethostname()
+    except:
+        hostname = "unknown"
+
+    return {
+        'scidk_schema_layer': '1.0',
+        'exported_at': datetime.utcnow().isoformat() + 'Z',
+        'source_instance': hostname,
+        'label_profiles': label_profiles,
+        'property_rankings': property_rankings
+    }
+
+
+def import_schema_layer(layer: Dict[str, Any],
+                        sqlite_conn: sqlite3.Connection,
+                        ollama_url: str = None) -> Dict[str, Any]:
+    """
+    Import schema intelligence layer from JSON.
+    Non-destructive upsert — updates existing profiles, creates new ones.
+
+    Args:
+        layer: Exported schema layer JSON
+        sqlite_conn: SQLite connection
+        ollama_url: Ollama endpoint for re-embedding (optional)
+
+    Returns:
+        {
+            imported_labels: int,
+            updated_labels: int,
+            skipped: int,
+            embeddings_triggered: int
+        }
+    """
+    if layer.get('scidk_schema_layer') != '1.0':
+        raise ValueError("Invalid schema layer format")
+
+    cursor = sqlite_conn.cursor()
+    imported = 0
+    updated = 0
+    skipped = 0
+    embeddings_triggered = 0
+
+    # Import label profiles
+    for profile in layer.get('label_profiles', []):
+        label = profile.get('label')
+        if not label:
+            skipped += 1
+            continue
+
+        # Check if profile exists
+        existing = cursor.execute(
+            "SELECT description FROM label_profile WHERE label_name = ?",
+            (label,)
+        ).fetchone()
+
+        description_changed = False
+        if existing:
+            updated += 1
+            description_changed = existing[0] != profile.get('description')
+        else:
+            imported += 1
+
+        # Upsert profile
+        cursor.execute("""
+            INSERT INTO label_profile
+            (label_name, description, chat_context_mode, chat_context_n,
+             always_include, never_include)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(label_name) DO UPDATE SET
+                description = excluded.description,
+                chat_context_mode = excluded.chat_context_mode,
+                chat_context_n = excluded.chat_context_n,
+                always_include = excluded.always_include,
+                never_include = excluded.never_include,
+                updated_at = CURRENT_TIMESTAMP
+        """, (
+            label,
+            profile.get('description'),
+            profile.get('chat_context_mode', 'top_n'),
+            profile.get('chat_context_n', 5),
+            json.dumps(profile.get('always_include', [])),
+            json.dumps(profile.get('never_include', []))
+        ))
+
+        # Re-embed if description changed and we have Ollama
+        if description_changed and profile.get('description') and ollama_url:
+            vector = embed_text(profile.get('description'), ollama_url)
+            if vector:
+                cursor.execute("""
+                    UPDATE label_profile
+                    SET embedding = ?, embedded_at = ?
+                    WHERE label_name = ?
+                """, (_vector_to_blob(vector), datetime.utcnow(), label))
+                embeddings_triggered += 1
+
+    # Import property rankings
+    for label, rankings in layer.get('property_rankings', {}).items():
+        # Delete existing rankings for this label
+        cursor.execute("DELETE FROM property_ranking WHERE label_name = ?", (label,))
+
+        # Insert new rankings
+        for ranking in rankings:
+            cursor.execute("""
+                INSERT INTO property_ranking (label_name, property_name, rank, query_count)
+                VALUES (?, ?, ?, ?)
+            """, (label, ranking['property'], ranking['rank'], 0))  # query_count is reset
+
+    sqlite_conn.commit()
+
+    return {
+        'imported_labels': imported,
+        'updated_labels': updated,
+        'skipped': skipped,
+        'embeddings_triggered': embeddings_triggered
+    }
