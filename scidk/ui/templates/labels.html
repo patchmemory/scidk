@@ -457,6 +457,286 @@
     background: #f5f5f5;
     color: #757575;
   }
+
+  /* Chat Intelligence Editable Components */
+  .intel-unsaved-warning {
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.85rem;
+  }
+  .intel-warning-text {
+    flex: 1;
+    color: #856404;
+    font-weight: 500;
+  }
+  .btn-intel-save-warn,
+  .btn-intel-discard-warn {
+    padding: 0.25rem 0.6rem;
+    font-size: 0.78rem;
+    border-radius: 3px;
+    border: none;
+    cursor: pointer;
+  }
+  .btn-intel-save-warn {
+    background: #28a745;
+    color: white;
+  }
+  .btn-intel-save-warn:hover {
+    background: #218838;
+  }
+  .btn-intel-discard-warn {
+    background: #6c757d;
+    color: white;
+  }
+  .btn-intel-discard-warn:hover {
+    background: #5a6268;
+  }
+
+  .intel-description-input {
+    width: 100%;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 0.4rem 0.5rem;
+    font-size: 0.85rem;
+    resize: vertical;
+    min-height: 2.5rem;
+    font-family: inherit;
+    color: #2d3748;
+    background: #fff;
+    transition: border-color 0.15s;
+  }
+  .intel-description-input:focus {
+    outline: none;
+    border-color: #4a90e2;
+    box-shadow: 0 0 0 2px rgba(74,144,226,0.15);
+  }
+  .intel-hint {
+    font-size: 0.75rem;
+    color: #a0aec0;
+    margin-top: 0.25rem;
+    display: none;
+  }
+  .intel-description-input:focus ~ .intel-hint {
+    display: block;
+  }
+
+  .tag-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    min-height: 1.5rem;
+  }
+  .tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.15rem 0.5rem;
+    background: #edf2ff;
+    color: #3b5bdb;
+    border-radius: 999px;
+    font-size: 0.78rem;
+  }
+  .tag-chip.never {
+    background: #fff5f5;
+    color: #c53030;
+  }
+  .tag-chip-remove {
+    cursor: pointer;
+    opacity: 0.6;
+    font-size: 0.9rem;
+    background: none;
+    border: none;
+    padding: 0;
+    color: inherit;
+    line-height: 1;
+  }
+  .tag-chip-remove:hover {
+    opacity: 1;
+  }
+  .tag-add-container {
+    position: relative;
+  }
+  .tag-add-btn {
+    padding: 0.15rem 0.5rem;
+    font-size: 0.78rem;
+    border: 1px dashed #cbd5e0;
+    border-radius: 999px;
+    background: none;
+    cursor: pointer;
+    color: #718096;
+  }
+  .tag-add-btn:hover {
+    border-color: #4a90e2;
+    color: #4a90e2;
+  }
+
+  .property-dropdown {
+    position: absolute;
+    z-index: 100;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    min-width: 180px;
+    max-height: 200px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+  }
+  .prop-filter-input {
+    padding: 0.4rem 0.5rem;
+    border: none;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 0.82rem;
+    outline: none;
+  }
+  .prop-dropdown-list {
+    list-style: none;
+    margin: 0;
+    padding: 0.25rem 0;
+    overflow-y: auto;
+  }
+  .prop-dropdown-list li {
+    padding: 0.3rem 0.75rem;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+  .prop-dropdown-list li:hover {
+    background: #edf2ff;
+  }
+  .prop-dropdown-list li.disabled {
+    color: #cbd5e0;
+    cursor: default;
+  }
+  .prop-dropdown-list li.disabled:hover {
+    background: none;
+  }
+
+  .intel-mode-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .intel-mode-select {
+    padding: 0.25rem 0.5rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    background: white;
+    cursor: pointer;
+  }
+  .intel-mode-n-wrapper {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.85rem;
+    color: #4a5568;
+  }
+  .intel-n-input {
+    width: 3.5rem;
+    padding: 0.25rem 0.4rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    text-align: center;
+  }
+  .intel-exclude-warning {
+    font-size: 0.78rem;
+    color: #c53030;
+    margin-top: 0.25rem;
+    display: none;
+  }
+
+  .intel-save-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #e2e8f0;
+    animation: slideIn 0.15s ease;
+  }
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .intel-save-hint {
+    font-size: 0.78rem;
+    color: #718096;
+    flex: 1;
+  }
+  .btn-intel-save {
+    padding: 0.3rem 0.75rem;
+    font-size: 0.82rem;
+    background: #4a90e2;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .btn-intel-save:hover {
+    background: #3a7bd5;
+  }
+  .btn-intel-save:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .btn-intel-discard {
+    padding: 0.3rem 0.75rem;
+    font-size: 0.82rem;
+    background: none;
+    color: #718096;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .btn-intel-discard:hover {
+    border-color: #cbd5e0;
+    color: #4a5568;
+  }
+
+  .intel-save-toast {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    padding: 0.5rem 1rem;
+    background: #2d3748;
+    color: white;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    animation: toastIn 0.2s ease;
+    z-index: 1000;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+  .intel-save-toast.error {
+    background: #c53030;
+  }
+  @keyframes toastIn {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 </style>
 
 <h1>Labels</h1>
@@ -538,36 +818,105 @@
       <!-- Chat Intelligence Section -->
       <div class="section-header" style="margin-top: 1.5rem;">
         <h4 class="small" style="margin: 0;">Chat Intelligence</h4>
-        <button id="btn-edit-intelligence" class="btn btn-sm btn-outline-secondary" style="font-size: 0.8rem;">Edit</button>
       </div>
-      <div id="intelligence-section" style="padding: 0.75rem; background: #f9f9f9; border-radius: 4px; margin-bottom: 1rem;">
-        <div style="margin-bottom: 0.75rem;">
-          <label class="small" style="font-weight: 600; display: block; margin-bottom: 0.25rem;">Description</label>
-          <div id="intelligence-description" class="small" style="color: #666;">Not set</div>
+      <div id="intelligence-section" class="chat-intelligence-section" style="padding: 0.75rem; background: #f9f9f9; border-radius: 4px; margin-bottom: 1rem;">
+        <!-- Unsaved changes warning banner -->
+        <div id="intel-unsaved-warning" class="intel-unsaved-warning" style="display: none;">
+          <span class="intel-warning-text">You have unsaved changes.</span>
+          <button class="btn-intel-save-warn" onclick="saveIntelligenceProfile()">Save now</button>
+          <button class="btn-intel-discard-warn" onclick="discardAndSwitch()">Discard and switch</button>
         </div>
 
-        <div style="margin-bottom: 0.75rem;">
-          <label class="small" style="font-weight: 600; display: block; margin-bottom: 0.25rem;">Chat Context Mode</label>
-          <div id="intelligence-context-mode" class="small"></div>
+        <!-- Description -->
+        <div class="intel-row" style="margin-bottom: 0.75rem;">
+          <label class="small intel-label" style="font-weight: 600; display: block; margin-bottom: 0.25rem;">Description</label>
+          <div class="intel-value">
+            <textarea id="intelligence-description-input" class="intel-description-input"
+                      rows="2"
+                      placeholder="Describe this node type for the AI..."
+                      oninput="markIntelligenceDirty()"></textarea>
+            <div class="intel-hint">
+              Used in chat context and embedding. Editing will trigger re-embedding.
+            </div>
+          </div>
         </div>
 
-        <div style="margin-bottom: 0.75rem;">
-          <label class="small" style="font-weight: 600; display: block; margin-bottom: 0.25rem;">Always Include Properties</label>
-          <div id="intelligence-always-include" class="small" style="color: #666;">None</div>
+        <!-- Context Mode -->
+        <div class="intel-row" style="margin-bottom: 0.75rem;">
+          <label class="small intel-label" style="font-weight: 600; display: block; margin-bottom: 0.25rem;">Chat Context Mode</label>
+          <div class="intel-value intel-mode-row">
+            <select id="intelligence-mode-select" class="intel-mode-select" onchange="handleModeChange()">
+              <option value="top_n">Top N by usage</option>
+              <option value="all">All properties</option>
+              <option value="exclude">Exclude from chat</option>
+            </select>
+            <span id="intelligence-mode-n-wrapper" class="intel-mode-n-wrapper" style="display: none;">
+              Top
+              <input type="number" id="intelligence-n-input" class="intel-n-input"
+                     value="5" min="1" max="20"
+                     oninput="markIntelligenceDirty()" />
+              properties
+            </span>
+          </div>
+          <div id="intel-exclude-warning" class="intel-exclude-warning" style="display: none;">
+            ⚠ This label will not appear in chat context
+          </div>
         </div>
 
-        <div style="margin-bottom: 0.75rem;">
-          <label class="small" style="font-weight: 600; display: block; margin-bottom: 0.25rem;">Never Include Properties</label>
-          <div id="intelligence-never-include" class="small" style="color: #666;">None</div>
+        <!-- Always Include -->
+        <div class="intel-row" style="margin-bottom: 0.75rem;">
+          <label class="small intel-label" style="font-weight: 600; display: block; margin-bottom: 0.25rem;">Always Include Properties</label>
+          <div class="intel-value">
+            <div class="tag-input-wrapper" data-field="always_include">
+              <div id="always-include-chips" class="tag-chips"></div>
+              <div class="tag-add-container">
+                <button class="tag-add-btn" onclick="openPropertyDropdown('always_include', event)">+ add</button>
+                <div id="property-dropdown-always" class="property-dropdown" style="display:none">
+                  <input type="text" placeholder="Filter properties..."
+                         class="prop-filter-input"
+                         oninput="filterPropertyDropdown('always_include')" />
+                  <ul id="prop-list-always" class="prop-dropdown-list"></ul>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
+        <!-- Never Include -->
+        <div class="intel-row" style="margin-bottom: 0.75rem;">
+          <label class="small intel-label" style="font-weight: 600; display: block; margin-bottom: 0.25rem;">Never Include Properties</label>
+          <div class="intel-value">
+            <div class="tag-input-wrapper" data-field="never_include">
+              <div id="never-include-chips" class="tag-chips"></div>
+              <div class="tag-add-container">
+                <button class="tag-add-btn" onclick="openPropertyDropdown('never_include', event)">+ add</button>
+                <div id="property-dropdown-never" class="property-dropdown" style="display:none">
+                  <input type="text" placeholder="Filter properties..."
+                         class="prop-filter-input"
+                         oninput="filterPropertyDropdown('never_include')" />
+                  <ul id="prop-list-never" class="prop-dropdown-list"></ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Property Usage -->
         <div style="margin-bottom: 0.5rem;">
           <label class="small" style="font-weight: 600; display: block; margin-bottom: 0.25rem;">Property Usage (Last 30 Days)</label>
         </div>
         <div id="intelligence-property-usage"></div>
 
+        <!-- Embedding Status -->
         <div style="margin-top: 0.5rem;">
           <span id="intelligence-embedding-status" class="badge-type" style="font-size: 0.7rem;"></span>
+        </div>
+
+        <!-- Save/Discard Bar -->
+        <div id="intel-save-bar" class="intel-save-bar" style="display:none">
+          <span id="intel-save-hint" class="intel-save-hint"></span>
+          <button class="btn-intel-save" onclick="saveIntelligenceProfile()">Save Changes</button>
+          <button class="btn-intel-discard" onclick="discardIntelligenceChanges()">Discard</button>
         </div>
       </div>
 
@@ -1830,6 +2179,19 @@ function updateBatchActionsVisibility() {
 }
 
 function loadLabel(name) {
+  // Check for unsaved intelligence changes
+  if (intelligenceProfileDirty && currentLabel && currentLabel.name !== name) {
+    const warning = document.getElementById('intel-unsaved-warning');
+    warning.style.display = 'flex';
+
+    // Store the target label name for later
+    warning.dataset.targetLabel = name;
+
+    // Scroll to warning
+    document.getElementById('intelligence-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+
   fetch(window.SCIDK_BASE + `/api/labels/${name}`)
     .then(r => r.json())
     .then(data => {
@@ -2090,47 +2452,51 @@ function populateEditor(label) {
   loadIntelligenceProfile(label.name);
 }
 
+// Intelligence profile state
+let intelligenceProfileData = null;
+let intelligenceProfileDirty = false;
+
 function loadIntelligenceProfile(labelName) {
   fetch(window.SCIDK_BASE + `/api/chat/schema/label/${labelName}`)
     .then(r => r.json())
     .then(data => {
+      intelligenceProfileData = data;
+      intelligenceProfileDirty = false;
+
       // Description
-      const descEl = document.getElementById('intelligence-description');
-      descEl.textContent = data.description || 'Not set';
-      descEl.style.color = data.description ? '#333' : '#666';
+      const descInput = document.getElementById('intelligence-description-input');
+      descInput.value = data.description || '';
 
       // Context mode
-      const modeEl = document.getElementById('intelligence-context-mode');
+      const modeSelect = document.getElementById('intelligence-mode-select');
+      const nInput = document.getElementById('intelligence-n-input');
+      const nWrapper = document.getElementById('intelligence-mode-n-wrapper');
+      const excludeWarning = document.getElementById('intel-exclude-warning');
+
       const mode = data.chat_context_mode || 'top_n';
       const n = data.chat_context_n || 5;
+
+      modeSelect.value = mode;
+      nInput.value = n;
+
       if (mode === 'top_n') {
-        modeEl.textContent = `Top ${n} properties by usage`;
-      } else if (mode === 'all') {
-        modeEl.textContent = 'All properties';
+        nWrapper.style.display = 'inline-flex';
+        excludeWarning.style.display = 'none';
       } else if (mode === 'exclude') {
-        modeEl.textContent = 'Exclude from chat';
-        modeEl.style.color = '#b00020';
+        nWrapper.style.display = 'none';
+        excludeWarning.style.display = 'block';
+      } else {
+        nWrapper.style.display = 'none';
+        excludeWarning.style.display = 'none';
       }
 
-      // Always include
-      const alwaysEl = document.getElementById('intelligence-always-include');
-      if (data.always_include && data.always_include.length > 0) {
-        alwaysEl.innerHTML = data.always_include.map(p =>
-          `<span class="intelligence-tag">${p}</span>`
-        ).join('');
-      } else {
-        alwaysEl.textContent = 'None';
-      }
+      // Always include chips
+      const alwaysChips = document.getElementById('always-include-chips');
+      renderChips(alwaysChips, data.always_include || [], 'always');
 
-      // Never include
-      const neverEl = document.getElementById('intelligence-never-include');
-      if (data.never_include && data.never_include.length > 0) {
-        neverEl.innerHTML = data.never_include.map(p =>
-          `<span class="intelligence-tag" style="background: #ffebee; color: #c62828;">${p}</span>`
-        ).join('');
-      } else {
-        neverEl.textContent = 'None';
-      }
+      // Never include chips
+      const neverChips = document.getElementById('never-include-chips');
+      renderChips(neverChips, data.never_include || [], 'never');
 
       // Property usage bars
       const usageEl = document.getElementById('intelligence-property-usage');
@@ -2163,6 +2529,10 @@ function loadIntelligenceProfile(labelName) {
       } else {
         statusEl.textContent = '○ No embedding';
       }
+
+      // Hide save bar
+      document.getElementById('intel-save-bar').style.display = 'none';
+      document.getElementById('intel-unsaved-warning').style.display = 'none';
     })
     .catch(err => {
       console.error('Failed to load intelligence profile:', err);
@@ -2170,6 +2540,305 @@ function loadIntelligenceProfile(labelName) {
         '<div class="small" style="color: #b00020;">Failed to load intelligence data</div>';
     });
 }
+
+function renderChips(container, properties, type) {
+  if (properties.length === 0) {
+    container.innerHTML = '<span class="empty-chips-text" style="color: #999; font-size: 0.8rem;">None</span>';
+    return;
+  }
+
+  container.innerHTML = properties.map(prop => `
+    <span class="tag-chip ${type === 'never' ? 'never' : ''}">
+      ${prop}
+      <button class="tag-chip-remove" onclick="removeChip('${type === 'always' ? 'always_include' : 'never_include'}', '${prop}')" title="Remove">×</button>
+    </span>
+  `).join('');
+}
+
+function removeChip(field, property) {
+  const chips = field === 'always_include'
+    ? getChips('always-include-chips')
+    : getChips('never-include-chips');
+
+  const filtered = chips.filter(p => p !== property);
+
+  if (field === 'always_include') {
+    renderChips(document.getElementById('always-include-chips'), filtered, 'always');
+  } else {
+    renderChips(document.getElementById('never-include-chips'), filtered, 'never');
+  }
+
+  markIntelligenceDirty();
+}
+
+function getChips(containerId) {
+  const container = document.getElementById(containerId);
+  const chipEls = container.querySelectorAll('.tag-chip');
+  return Array.from(chipEls).map(chip => chip.textContent.replace('×', '').trim());
+}
+
+function openPropertyDropdown(field, event) {
+  event.stopPropagation();
+
+  const dropdownId = `property-dropdown-${field === 'always_include' ? 'always' : 'never'}`;
+  const dropdown = document.getElementById(dropdownId);
+  const listId = `prop-list-${field === 'always_include' ? 'always' : 'never'}`;
+  const list = document.getElementById(listId);
+
+  // Close other dropdowns
+  document.querySelectorAll('.property-dropdown').forEach(d => {
+    if (d.id !== dropdownId) d.style.display = 'none';
+  });
+
+  // Toggle this dropdown
+  if (dropdown.style.display === 'block') {
+    dropdown.style.display = 'none';
+    return;
+  }
+
+  // Get available properties
+  const availableProps = currentLabel ? currentLabel.properties.map(p => p.name) : [];
+  const alwaysInclude = getChips('always-include-chips');
+  const neverInclude = getChips('never-include-chips');
+
+  // Populate list
+  list.innerHTML = availableProps.map(prop => {
+    const isAlways = alwaysInclude.includes(prop);
+    const isNever = neverInclude.includes(prop);
+    const disabled = (field === 'always_include' && isAlways) || (field === 'never_include' && isNever);
+
+    return `
+      <li class="${disabled ? 'disabled' : ''}"
+          onclick="${disabled ? '' : `addChip('${field}', '${prop}')`}">
+        ${prop} ${disabled ? '(already added)' : ''}
+      </li>
+    `;
+  }).join('');
+
+  dropdown.style.display = 'block';
+
+  // Clear filter input
+  dropdown.querySelector('.prop-filter-input').value = '';
+}
+
+function filterPropertyDropdown(field) {
+  const dropdownId = `property-dropdown-${field === 'always_include' ? 'always' : 'never'}`;
+  const dropdown = document.getElementById(dropdownId);
+  const filter = dropdown.querySelector('.prop-filter-input').value.toLowerCase();
+  const items = dropdown.querySelectorAll('.prop-dropdown-list li');
+
+  items.forEach(item => {
+    const text = item.textContent.toLowerCase();
+    item.style.display = text.includes(filter) ? 'block' : 'none';
+  });
+}
+
+function addChip(field, property) {
+  const alwaysChips = getChips('always-include-chips');
+  const neverChips = getChips('never-include-chips');
+
+  // Check if property is in the other list (mutual exclusivity)
+  if (field === 'always_include' && neverChips.includes(property)) {
+    // Remove from never, add to always
+    const filtered = neverChips.filter(p => p !== property);
+    renderChips(document.getElementById('never-include-chips'), filtered, 'never');
+    renderChips(document.getElementById('always-include-chips'), [...alwaysChips, property], 'always');
+    showPropertyMoveIndicator(property, 'never', 'always');
+  } else if (field === 'never_include' && alwaysChips.includes(property)) {
+    // Remove from always, add to never
+    const filtered = alwaysChips.filter(p => p !== property);
+    renderChips(document.getElementById('always-include-chips'), filtered, 'always');
+    renderChips(document.getElementById('never-include-chips'), [...neverChips, property], 'never');
+    showPropertyMoveIndicator(property, 'always', 'never');
+  } else {
+    // Add to the target list
+    if (field === 'always_include' && !alwaysChips.includes(property)) {
+      renderChips(document.getElementById('always-include-chips'), [...alwaysChips, property], 'always');
+    } else if (field === 'never_include' && !neverChips.includes(property)) {
+      renderChips(document.getElementById('never-include-chips'), [...neverChips, property], 'never');
+    }
+  }
+
+  // Close dropdown
+  const dropdownId = `property-dropdown-${field === 'always_include' ? 'always' : 'never'}`;
+  document.getElementById(dropdownId).style.display = 'none';
+
+  markIntelligenceDirty();
+}
+
+function showPropertyMoveIndicator(property, from, to) {
+  // Brief visual indicator that property moved between lists
+  const hint = document.getElementById('intel-save-hint');
+  hint.textContent = `Moved "${property}" from ${from} → ${to}`;
+  setTimeout(() => updateSaveHint(), 2000);
+}
+
+function handleModeChange() {
+  const mode = document.getElementById('intelligence-mode-select').value;
+  const nWrapper = document.getElementById('intelligence-mode-n-wrapper');
+  const excludeWarning = document.getElementById('intel-exclude-warning');
+
+  if (mode === 'top_n') {
+    nWrapper.style.display = 'inline-flex';
+    excludeWarning.style.display = 'none';
+  } else if (mode === 'exclude') {
+    nWrapper.style.display = 'none';
+    excludeWarning.style.display = 'block';
+  } else {
+    nWrapper.style.display = 'none';
+    excludeWarning.style.display = 'none';
+  }
+
+  markIntelligenceDirty();
+}
+
+function markIntelligenceDirty() {
+  if (!intelligenceProfileData) return;
+
+  intelligenceProfileDirty = true;
+
+  // Show save bar
+  document.getElementById('intel-save-bar').style.display = 'flex';
+
+  updateSaveHint();
+}
+
+function updateSaveHint() {
+  if (!intelligenceProfileData) return;
+
+  const descInput = document.getElementById('intelligence-description-input');
+  const modeSelect = document.getElementById('intelligence-mode-select');
+  const nInput = document.getElementById('intelligence-n-input');
+
+  const descChanged = descInput.value !== (intelligenceProfileData.description || '');
+  const modeChanged = modeSelect.value !== (intelligenceProfileData.chat_context_mode || 'top_n');
+  const alwaysChips = getChips('always-include-chips');
+  const neverChips = getChips('never-include-chips');
+
+  const alwaysChanged = JSON.stringify(alwaysChips.sort()) !==
+    JSON.stringify((intelligenceProfileData.always_include || []).sort());
+  const neverChanged = JSON.stringify(neverChips.sort()) !==
+    JSON.stringify((intelligenceProfileData.never_include || []).sort());
+
+  const hint = document.getElementById('intel-save-hint');
+
+  if (descChanged) {
+    hint.textContent = 'Will re-embed after save';
+  } else if (modeChanged) {
+    hint.textContent = 'Chat context will update immediately';
+  } else if (alwaysChanged || neverChanged) {
+    hint.textContent = 'Property filters updated';
+  } else {
+    hint.textContent = '';
+  }
+}
+
+async function saveIntelligenceProfile() {
+  if (!currentLabel) return;
+
+  const descInput = document.getElementById('intelligence-description-input');
+  const modeSelect = document.getElementById('intelligence-mode-select');
+  const nInput = document.getElementById('intelligence-n-input');
+
+  const payload = {
+    description: descInput.value,
+    chat_context_mode: modeSelect.value,
+    chat_context_n: parseInt(nInput.value) || 5,
+    always_include: getChips('always-include-chips'),
+    never_include: getChips('never-include-chips')
+  };
+
+  const btn = document.querySelector('.btn-intel-save');
+  btn.textContent = 'Saving...';
+  btn.disabled = true;
+
+  try {
+    const resp = await fetch(
+      window.SCIDK_BASE + `/api/chat/schema/label/${encodeURIComponent(currentLabel.name)}`,
+      {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      }
+    );
+    const data = await resp.json();
+
+    if (data.success) {
+      intelligenceProfileDirty = false;
+      document.getElementById('intel-save-bar').style.display = 'none';
+      document.getElementById('intel-unsaved-warning').style.display = 'none';
+
+      // Update embedding status if re-embedded
+      const statusEl = document.getElementById('intelligence-embedding-status');
+      if (payload.description) {
+        statusEl.className = 'embedding-badge embedded';
+        statusEl.textContent = '● Embedded';
+      }
+
+      showIntelSaveToast(
+        payload.description && (payload.description !== intelligenceProfileData.description)
+          ? '✓ Saved and re-embedded'
+          : '✓ Saved'
+      );
+
+      // Reload profile data
+      loadIntelligenceProfile(currentLabel.name);
+    } else {
+      btn.textContent = 'Save Changes';
+      btn.disabled = false;
+      showIntelSaveToast('Save failed: ' + (data.error || 'Unknown error'), true);
+    }
+  } catch (e) {
+    console.error('Save error:', e);
+    btn.textContent = 'Save Changes';
+    btn.disabled = false;
+    showIntelSaveToast('Save failed', true);
+  }
+}
+
+function discardIntelligenceChanges() {
+  if (!currentLabel) return;
+
+  intelligenceProfileDirty = false;
+  document.getElementById('intel-save-bar').style.display = 'none';
+  document.getElementById('intel-unsaved-warning').style.display = 'none';
+
+  // Reload from saved data
+  loadIntelligenceProfile(currentLabel.name);
+}
+
+function discardAndSwitch() {
+  const warning = document.getElementById('intel-unsaved-warning');
+  const targetLabel = warning.dataset.targetLabel;
+
+  intelligenceProfileDirty = false;
+  warning.style.display = 'none';
+  document.getElementById('intel-save-bar').style.display = 'none';
+
+  if (targetLabel) {
+    loadLabel(targetLabel);
+  }
+}
+
+function showIntelSaveToast(message, isError = false) {
+  const toast = document.createElement('div');
+  toast.className = `intel-save-toast ${isError ? 'error' : ''}`;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+
+  setTimeout(() => {
+    toast.remove();
+  }, 3000);
+}
+
+// Close dropdowns when clicking outside
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.tag-add-container')) {
+    document.querySelectorAll('.property-dropdown').forEach(d => {
+      d.style.display = 'none';
+    });
+  }
+});
 
 function getNextNavGroup(currentGroup) {
   const groups = ['property', 'outgoing-rel', 'incoming-rel'];
