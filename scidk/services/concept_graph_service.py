@@ -547,7 +547,7 @@ def update_traversal_weights(intent_name: str, tool_name: str, success: bool,
                       -[s:SATISFIES]->(t:Concept_Tool {name: $tool})
                 SET s.weight = $new_weight,
                     s.usage_count = coalesce(s.usage_count, 0) + 1,
-                    s.last_used_at = datetime()
+                    s.last_updated = datetime()
             """, intent=intent_name, tool=tool_name, new_weight=new_weight)
 
         return True
