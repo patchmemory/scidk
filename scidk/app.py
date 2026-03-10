@@ -285,7 +285,9 @@ def create_app():
         )
 
         # Start scheduler (will only run if schedule_enabled is True in settings)
-        backup_scheduler.start()
+        # Pass concept_driver for weight decay job
+        concept_driver = app.extensions.get('scidk', {}).get('concept_driver')
+        backup_scheduler.start(concept_driver=concept_driver)
 
         # Store in app extensions for access in routes
         app.extensions['scidk']['backup_scheduler'] = backup_scheduler

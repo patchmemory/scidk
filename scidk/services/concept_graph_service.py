@@ -590,3 +590,475 @@ def build_traversal_log(query: str, intent_matched: str, intent_confidence: floa
         'labels_considered_count': len(labels_considered) if labels_considered else 0,
         'timestamp': datetime.utcnow().isoformat()
     }
+
+
+# ─────────────────────────────────────────────
+# Weight Decay (Concept Graph Phase 3)
+# ─────────────────────────────────────────────
+
+def apply_weight_decay(driver, half_life_days: int = 90) -> dict:
+    """
+    Apply exponential decay to SATISFIES edge weights toward neutral (0.5).
+
+    Weights drift toward 0.5 over time using exponential decay. This prevents
+    stale feedback from permanently biasing tool routing.
+
+    Formula:
+        decay_factor = 0.5 ^ (days_since_update / half_life_days)
+        new_weight = 0.5 + (current_weight - 0.5) * decay_factor
+
+    Only affects edges not updated in the last 7 days to avoid decaying
+    fresh feedback.
+
+    Args:
+        driver: Neo4j driver for concept graph
+        half_life_days: Days for weight to decay halfway to 0.5 (default 90)
+
+    Returns:
+        {
+            'edges_updated': int,
+            'edges_skipped': int,
+            'half_life_days': int,
+            'errors': List[str]
+        }
+    """
+    from datetime import datetime, timedelta
+
+    edges_updated = 0
+    edges_skipped = 0
+    errors = []
+
+    try:
+        with driver.session() as session:
+            # Get all SATISFIES edges with their current state
+            edges = session.run("""
+                MATCH (i:Concept_Intent)-[r:SATISFIES]->(t:Concept_Tool)
+                RETURN id(r) AS rel_id,
+                       r.weight AS weight,
+                       r.last_updated AS last_updated,
+                       i.name AS intent,
+                       t.name AS tool
+            """).data()
+
+            cutoff_date = datetime.utcnow() - timedelta(days=7)
+
+            for edge in edges:
+                last_updated = edge.get('last_updated')
+
+                # Skip if no last_updated timestamp (shouldn't happen after Phase 2)
+                if last_updated is None:
+                    logger.debug(f"Skipping edge {edge['intent']}→{edge['tool']}: no last_updated")
+                    edges_skipped += 1
+                    continue
+
+                # Parse datetime (Neo4j returns datetime objects or strings)
+                if isinstance(last_updated, str):
+                    try:
+                        last_updated = datetime.fromisoformat(
+                            last_updated.replace('Z', '+00:00')
+                        )
+                    except ValueError as e:
+                        logger.warning(f"Could not parse last_updated for edge {edge['rel_id']}: {e}")
+                        errors.append(f"Parse error: {edge['intent']}→{edge['tool']}")
+                        edges_skipped += 1
+                        continue
+
+                # Convert Neo4j datetime to Python datetime if needed
+                if hasattr(last_updated, 'to_native'):
+                    last_updated = last_updated.to_native()
+
+                # Make timezone-naive for comparison
+                if hasattr(last_updated, 'tzinfo') and last_updated.tzinfo is not None:
+                    last_updated = last_updated.replace(tzinfo=None)
+
+                # Calculate days since last update
+                days_since = (datetime.utcnow() - last_updated).days
+
+                # Skip recently updated edges (last 7 days)
+                if days_since < 7:
+                    logger.debug(f"Skipping recent edge {edge['intent']}→{edge['tool']}: {days_since} days")
+                    edges_skipped += 1
+                    continue
+
+                # Apply exponential decay
+                current_weight = edge['weight']
+                decay_factor = 0.5 ** (days_since / half_life_days)
+                new_weight = 0.5 + (current_weight - 0.5) * decay_factor
+
+                # Clamp to [0.0, 1.0]
+                new_weight = max(0.0, min(1.0, new_weight))
+
+                # Update edge weight
+                try:
+                    session.run("""
+                        MATCH ()-[r:SATISFIES]->()
+                        WHERE id(r) = $rel_id
+                        SET r.weight = $new_weight,
+                            r.decayed_at = datetime()
+                    """, rel_id=edge['rel_id'], new_weight=new_weight)
+
+                    logger.info(f"Decayed {edge['intent']}→{edge['tool']}: "
+                               f"{current_weight:.3f} → {new_weight:.3f} "
+                               f"(age: {days_since} days)")
+                    edges_updated += 1
+
+                except Exception as e:
+                    logger.error(f"Failed to update edge {edge['rel_id']}: {e}")
+                    errors.append(f"Update error: {edge['intent']}→{edge['tool']}")
+
+    except Exception as e:
+        logger.error(f"Weight decay failed: {e}")
+        errors.append(f"Fatal error: {str(e)}")
+
+    return {
+        'edges_updated': edges_updated,
+        'edges_skipped': edges_skipped,
+        'half_life_days': half_life_days,
+        'errors': errors
+    }
+
+
+# ─────────────────────────────────────────────
+# MCP Tool Seeding (Concept Graph Phase 3)
+# ─────────────────────────────────────────────
+
+def seed_mcp_tools(driver, ollama_endpoint: str) -> dict:
+    """
+    Embed MCP tool descriptions and add them as Concept_Tool nodes with source='mcp'.
+
+    Creates SATISFIES edges from relevant intents to MCP tools based on
+    predefined intent→tool mappings.
+
+    Args:
+        driver: Neo4j driver for concept graph
+        ollama_endpoint: Ollama API endpoint for embeddings
+
+    Returns:
+        {
+            'seeded': int,
+            'failed': int,
+            'edges_created': int,
+            'errors': List[str]
+        }
+    """
+    from ..ai.mcp_tools import MCP_TOOL_DEFINITIONS
+
+    seeded = 0
+    failed = 0
+    edges_created = 0
+    errors = []
+
+    try:
+        with driver.session() as session:
+            for tool in MCP_TOOL_DEFINITIONS:
+                try:
+                    # Embed tool description
+                    embedding = embed_text(tool['description'], ollama_endpoint)
+
+                    if embedding is None:
+                        logger.warning(f"Failed to embed MCP tool {tool['name']}")
+                        failed += 1
+                        errors.append(f"Embedding failed: {tool['name']}")
+                        continue
+
+                    # Upsert tool node
+                    session.run("""
+                        MERGE (t:Concept_Tool {name: $name})
+                        SET t.description = $description,
+                            t.source = 'mcp',
+                            t.active = true,
+                            t.embedding = $embedding,
+                            t.input_schema = $schema,
+                            t.updated_at = datetime()
+                    """,
+                        name=tool['name'],
+                        description=tool['description'],
+                        embedding=embedding,
+                        schema=json.dumps(tool.get('parameters', {}))
+                    )
+                    seeded += 1
+                    logger.info(f"Seeded MCP tool: {tool['name']}")
+
+                except Exception as e:
+                    failed += 1
+                    errors.append(f"Failed to seed {tool['name']}: {str(e)}")
+                    logger.error(f"Failed to seed MCP tool {tool['name']}: {e}")
+
+        # Wire intent→tool SATISFIES edges for MCP tools
+        # These mappings define which intents should route to which MCP tools
+        mcp_intent_mappings = [
+            ('data_lookup', 'query_knowledge_graph', 0.7),
+            ('count_simple', 'query_knowledge_graph', 0.7),
+            ('count_filtered', 'query_knowledge_graph', 0.7),
+            ('summarize_dataset', 'summarize_dataset', 0.8),
+            ('property_exploration', 'get_schema', 0.75),
+            ('property_exploration', 'get_label_profile', 0.7),
+        ]
+
+        with driver.session() as session:
+            for intent_name, tool_name, weight in mcp_intent_mappings:
+                try:
+                    session.run("""
+                        MATCH (i:Concept_Intent {name: $intent})
+                        MATCH (t:Concept_Tool {name: $tool})
+                        MERGE (i)-[r:SATISFIES]->(t)
+                        ON CREATE SET r.weight = $weight,
+                                      r.usage_count = 0,
+                                      r.last_updated = datetime()
+                    """,
+                        intent=intent_name,
+                        tool=tool_name,
+                        weight=weight
+                    )
+                    edges_created += 1
+                except Exception as e:
+                    errors.append(f"Failed to wire {intent_name}→{tool_name}: {str(e)}")
+                    logger.error(f"Failed to wire edge {intent_name}→{tool_name}: {e}")
+
+    except Exception as e:
+        errors.append(f"Fatal error: {str(e)}")
+        logger.error(f"MCP tool seeding failed: {e}")
+
+    return {
+        'seeded': seeded,
+        'failed': failed,
+        'edges_created': edges_created,
+        'errors': errors
+    }
+
+
+# ─────────────────────────────────────────────
+# Export/Import (Concept Graph Phase 3)
+# ─────────────────────────────────────────────
+
+def export_concept_graph(driver) -> dict:
+    """
+    Export complete Concept Graph state as portable JSON.
+
+    Does NOT export embedding BLOBs - they are regenerated on import.
+
+    Returns:
+        {
+            "scidk_concept_graph": "1.0",
+            "exported_at": ISO timestamp,
+            "source_instance": hostname,
+            "intents": [...],
+            "tools": [...],
+            "satisfies_edges": [...],
+            "retrieves_edges": [...]
+        }
+    """
+    import socket
+
+    try:
+        with driver.session() as session:
+            # Export intents (without embeddings)
+            intents_result = session.run("""
+                MATCH (i:Concept_Intent)
+                RETURN i.name AS name,
+                       i.description AS description,
+                       i.examples AS examples,
+                       CASE WHEN i.embedding IS NOT NULL THEN true ELSE false END AS embedding_present
+                ORDER BY i.name
+            """).data()
+
+            # Export tools
+            tools_result = session.run("""
+                MATCH (t:Concept_Tool)
+                RETURN t.name AS name,
+                       t.description AS description,
+                       t.source AS source,
+                       t.active AS active,
+                       t.input_schema AS input_schema
+                ORDER BY t.source, t.name
+            """).data()
+
+            # Export SATISFIES edges
+            satisfies_result = session.run("""
+                MATCH (i:Concept_Intent)-[r:SATISFIES]->(t:Concept_Tool)
+                RETURN i.name AS intent,
+                       t.name AS tool,
+                       r.weight AS weight,
+                       r.usage_count AS usage_count,
+                       r.last_updated AS last_updated
+                ORDER BY i.name, t.name
+            """).data()
+
+            # Convert Neo4j datetime to ISO string
+            for edge in satisfies_result:
+                if edge.get('last_updated'):
+                    if hasattr(edge['last_updated'], 'isoformat'):
+                        edge['last_updated'] = edge['last_updated'].isoformat()
+                    elif hasattr(edge['last_updated'], 'to_native'):
+                        edge['last_updated'] = edge['last_updated'].to_native().isoformat()
+
+            # Export RETRIEVES edges
+            retrieves_result = session.run("""
+                MATCH (t:Concept_Tool)-[r:RETRIEVES]->(l:Concept_Label)
+                RETURN t.name AS tool,
+                       l.name AS label
+                ORDER BY t.name, l.name
+            """).data()
+
+        return {
+            "scidk_concept_graph": "1.0",
+            "exported_at": datetime.utcnow().isoformat() + "Z",
+            "source_instance": socket.gethostname(),
+            "intents": intents_result,
+            "tools": tools_result,
+            "satisfies_edges": satisfies_result,
+            "retrieves_edges": retrieves_result
+        }
+
+    except Exception as e:
+        logger.error(f"Concept graph export failed: {e}")
+        raise
+
+
+def import_concept_graph(driver, data: dict, ollama_endpoint: str) -> dict:
+    """
+    Import Concept Graph snapshot (non-destructive upsert).
+
+    - Upserts intents and tools
+    - Re-embeds intents whose descriptions changed
+    - Upserts SATISFIES edges, preserving higher weight if conflict
+    - Upserts RETRIEVES edges
+
+    Args:
+        driver: Neo4j driver for concept graph
+        data: Exported concept graph JSON
+        ollama_endpoint: Ollama API endpoint for re-embedding
+
+    Returns:
+        {
+            'intents_imported': int,
+            'tools_imported': int,
+            'edges_imported': int,
+            're_embedded': int,
+            'errors': List[str]
+        }
+    """
+    intents_imported = 0
+    tools_imported = 0
+    edges_imported = 0
+    re_embedded = 0
+    errors = []
+
+    try:
+        # Import intents
+        with driver.session() as session:
+            for intent in data.get('intents', []):
+                try:
+                    # Check if description changed
+                    result = session.run("""
+                        MATCH (i:Concept_Intent {name: $name})
+                        RETURN i.description AS old_desc
+                    """, name=intent['name']).single()
+
+                    desc_changed = (result is None or
+                                   result['old_desc'] != intent['description'])
+
+                    # Upsert intent node
+                    session.run("""
+                        MERGE (i:Concept_Intent {name: $name})
+                        SET i.description = $description,
+                            i.examples = $examples
+                    """,
+                        name=intent['name'],
+                        description=intent['description'],
+                        examples=intent.get('examples', [])
+                    )
+                    intents_imported += 1
+
+                    # Re-embed if description changed
+                    if desc_changed and intent.get('embedding_present'):
+                        embed_text_content = f"{intent['description']}\n" + "\n".join(intent.get('examples', []))
+                        embedding = embed_text(embed_text_content, ollama_endpoint)
+                        if embedding:
+                            session.run("""
+                                MATCH (i:Concept_Intent {name: $name})
+                                SET i.embedding = $embedding
+                            """, name=intent['name'], embedding=embedding)
+                            re_embedded += 1
+
+                except Exception as e:
+                    errors.append(f"Failed to import intent {intent.get('name')}: {str(e)}")
+
+        # Import tools
+        with driver.session() as session:
+            for tool in data.get('tools', []):
+                try:
+                    # Upsert tool node (do not overwrite embeddings)
+                    session.run("""
+                        MERGE (t:Concept_Tool {name: $name})
+                        SET t.description = $description,
+                            t.source = $source,
+                            t.active = $active,
+                            t.input_schema = $input_schema
+                    """,
+                        name=tool['name'],
+                        description=tool.get('description'),
+                        source=tool.get('source', 'internal'),
+                        active=tool.get('active', True),
+                        input_schema=tool.get('input_schema')
+                    )
+                    tools_imported += 1
+
+                except Exception as e:
+                    errors.append(f"Failed to import tool {tool.get('name')}: {str(e)}")
+
+        # Import SATISFIES edges (preserve higher weight)
+        with driver.session() as session:
+            for edge in data.get('satisfies_edges', []):
+                try:
+                    session.run("""
+                        MATCH (i:Concept_Intent {name: $intent})
+                        MATCH (t:Concept_Tool {name: $tool})
+                        MERGE (i)-[r:SATISFIES]->(t)
+                        ON CREATE SET r.weight = $weight,
+                                      r.usage_count = $usage_count,
+                                      r.last_updated = datetime($last_updated)
+                        ON MATCH SET r.weight = CASE
+                                        WHEN $weight > r.weight THEN $weight
+                                        ELSE r.weight
+                                     END,
+                                     r.usage_count = $usage_count
+                    """,
+                        intent=edge['intent'],
+                        tool=edge['tool'],
+                        weight=edge.get('weight', 0.5),
+                        usage_count=edge.get('usage_count', 0),
+                        last_updated=edge.get('last_updated')
+                    )
+                    edges_imported += 1
+
+                except Exception as e:
+                    errors.append(f"Failed to import edge {edge.get('intent')}→{edge.get('tool')}: {str(e)}")
+
+        # Import RETRIEVES edges
+        with driver.session() as session:
+            for edge in data.get('retrieves_edges', []):
+                try:
+                    session.run("""
+                        MATCH (t:Concept_Tool {name: $tool})
+                        MERGE (l:Concept_Label {name: $label})
+                        MERGE (t)-[:RETRIEVES]->(l)
+                    """,
+                        tool=edge['tool'],
+                        label=edge['label']
+                    )
+
+                except Exception as e:
+                    errors.append(f"Failed to import RETRIEVES edge: {str(e)}")
+
+    except Exception as e:
+        errors.append(f"Fatal error: {str(e)}")
+        logger.error(f"Concept graph import failed: {e}")
+
+    return {
+        'intents_imported': intents_imported,
+        'tools_imported': tools_imported,
+        'edges_imported': edges_imported,
+        're_embedded': re_embedded,
+        'errors': errors
+    }

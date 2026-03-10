@@ -2738,6 +2738,193 @@ def api_concept_graph_feedback():
         }), 500
 
 
+@bp.post('/chat/concept-graph/decay')
+def api_concept_graph_decay():
+    """
+    Manually trigger weight decay on all SATISFIES edges.
+
+    Applies exponential decay toward neutral (0.5) weight based on edge age.
+    Half-life defaults to 90 days (SCIDK_CONCEPT_WEIGHT_HALFLIFE_DAYS env).
+
+    Returns:
+        200: {
+            "status": "ok",
+            "edges_updated": int,
+            "edges_skipped": int,
+            "half_life_days": int,
+            "errors": []
+        }
+        501: {"status": "disabled", "error": "Concept graph not available"}
+        500: {"status": "error", "error": "..."}
+    """
+    concept_driver = _get_ext().get('concept_driver')
+    if concept_driver is None:
+        return jsonify({
+            "status": "disabled",
+            "error": "Concept graph not available"
+        }), 501
+
+    try:
+        from ...services.concept_graph_service import apply_weight_decay
+        import os
+
+        half_life = int(os.environ.get('SCIDK_CONCEPT_WEIGHT_HALFLIFE_DAYS', '90'))
+        result = apply_weight_decay(concept_driver, half_life)
+
+        return jsonify({
+            "status": "ok",
+            **result
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+
+@bp.post('/chat/concept-graph/seed-mcp-tools')
+def api_concept_graph_seed_mcp_tools():
+    """
+    Seed MCP tool nodes into the Concept Graph.
+
+    Embeds MCP tool descriptions and creates :Concept_Tool nodes with source='mcp'.
+    Creates SATISFIES edges from relevant intents to MCP tools.
+
+    Returns:
+        200: {
+            "status": "ok",
+            "seeded": int,
+            "failed": int,
+            "edges_created": int,
+            "errors": []
+        }
+        501: {"status": "disabled", "error": "Concept graph not available"}
+        500: {"status": "error", "error": "..."}
+    """
+    concept_driver = _get_ext().get('concept_driver')
+    if concept_driver is None:
+        return jsonify({
+            "status": "disabled",
+            "error": "Concept graph not available"
+        }), 501
+
+    try:
+        from ...services.concept_graph_service import seed_mcp_tools
+        import os
+
+        ollama_endpoint = os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT', 'http://localhost:11434')
+        result = seed_mcp_tools(concept_driver, ollama_endpoint)
+
+        return jsonify({
+            "status": "ok",
+            **result
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+
+@bp.get('/chat/concept-graph/export')
+def api_concept_graph_export():
+    """
+    Export complete Concept Graph state as JSON download.
+
+    Returns portable snapshot without embedding BLOBs (regenerated on import).
+    """
+    concept_driver = _get_ext().get('concept_driver')
+    if concept_driver is None:
+        return jsonify({
+            "status": "disabled",
+            "error": "Concept graph not available"
+        }), 501
+
+    try:
+        from ...services.concept_graph_service import export_concept_graph
+        from datetime import datetime
+
+        data = export_concept_graph(concept_driver)
+
+        # Generate filename with timestamp
+        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        filename = f"scidk_concept_graph_{timestamp}.json"
+
+        response = jsonify(data)
+        response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+        response.headers['Content-Type'] = 'application/json'
+
+        return response, 200
+
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+
+@bp.post('/chat/concept-graph/import')
+def api_concept_graph_import():
+    """
+    Import Concept Graph snapshot (non-destructive upsert).
+
+    Re-embeds intents whose descriptions changed.
+    Preserves higher weights on conflicting SATISFIES edges.
+
+    Request body: Concept Graph JSON export
+
+    Returns:
+        200: {
+            "status": "ok",
+            "intents_imported": int,
+            "tools_imported": int,
+            "edges_imported": int,
+            "re_embedded": int,
+            "errors": []
+        }
+    """
+    concept_driver = _get_ext().get('concept_driver')
+    if concept_driver is None:
+        return jsonify({
+            "status": "disabled",
+            "error": "Concept graph not available"
+        }), 501
+
+    try:
+        data = request.get_json(force=True, silent=True)
+        if not data:
+            return jsonify({
+                "status": "error",
+                "error": "Invalid JSON"
+            }), 400
+
+        # Validate format
+        if data.get('scidk_concept_graph') != '1.0':
+            return jsonify({
+                "status": "error",
+                "error": "Invalid concept graph format"
+            }), 400
+
+        from ...services.concept_graph_service import import_concept_graph
+        import os
+
+        ollama_endpoint = os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT', 'http://localhost:11434')
+        result = import_concept_graph(concept_driver, data, ollama_endpoint)
+
+        return jsonify({
+            "status": "ok",
+            **result
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+
 # ========== Concept Graph Editor Endpoints ==========
 
 

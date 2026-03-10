@@ -97,10 +97,18 @@ class BackupScheduler:
             for key, default_value in defaults.items():
                 setattr(self, key, default_value)
 
-    def start(self):
-        """Start the backup scheduler."""
+    def start(self, concept_driver=None):
+        """
+        Start the backup scheduler.
+
+        Args:
+            concept_driver: Optional Neo4j driver for Concept Graph (for weight decay)
+        """
         if self._running:
             return
+
+        # Store concept_driver for weight decay job
+        self.concept_driver = concept_driver
 
         # Schedule daily backup
         self.scheduler.add_job(
@@ -110,6 +118,16 @@ class BackupScheduler:
             replace_existing=True,
             name='Daily Backup'
         )
+
+        # Schedule nightly weight decay at 03:00 UTC (if concept graph is available)
+        if concept_driver is not None:
+            self.scheduler.add_job(
+                self._run_weight_decay,
+                CronTrigger(hour=3, minute=0),
+                id='concept_graph_weight_decay',
+                replace_existing=True,
+                name='Concept Graph Weight Decay'
+            )
 
         self.scheduler.start()
         self._running = True
@@ -189,6 +207,28 @@ class BackupScheduler:
                     })
                 except Exception:
                     pass
+
+    def _run_weight_decay(self):
+        """Execute the Concept Graph weight decay workflow."""
+        try:
+            if self.concept_driver is None:
+                return
+
+            from ..services.concept_graph_service import apply_weight_decay
+            import os
+
+            half_life = int(os.environ.get('SCIDK_CONCEPT_WEIGHT_HALFLIFE_DAYS', '90'))
+            result = apply_weight_decay(self.concept_driver, half_life)
+
+            # Log results
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Concept graph weight decay completed: {result}")
+
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Concept graph weight decay failed: {e}")
 
     def verify_backup(self, backup_file: str) -> Dict[str, Any]:
         """

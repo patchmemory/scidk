@@ -13,7 +13,38 @@ from neo4j import Driver
 from .schema_context import get_schema_context
 
 
-# Tool definitions with JSON schemas
+# MCP tool definitions for Concept Graph seeding
+# Simplified format for embedding into Concept Graph as :Concept_Tool nodes
+MCP_TOOL_DEFINITIONS = [
+    {
+        "name": "query_knowledge_graph",
+        "description": "Execute a read-only Cypher query against the SciDK research knowledge graph. Returns structured results. Automatically blocks all write operations (CREATE/MERGE/DELETE). Use this to retrieve data, count nodes, or explore relationships.",
+        "parameters": {"cypher": "string", "limit": "integer"}
+    },
+    {
+        "name": "get_schema",
+        "description": "Return the current schema of the knowledge graph including all node labels, relationship types, and key properties per label. Essential for understanding what data is available before querying.",
+        "parameters": {}
+    },
+    {
+        "name": "summarize_dataset",
+        "description": "Generate a statistical summary of the entire knowledge graph: node counts per label, relationship counts per type, and key property distributions. Useful for dataset overview.",
+        "parameters": {"label": "string (optional)", "relationship": "string (optional)"}
+    },
+    {
+        "name": "get_label_profile",
+        "description": "Return the Schema Intelligence profile for a specific node label, including description, chat context mode, always/never include properties, and property usage rankings from the Schema Intelligence Layer.",
+        "parameters": {"label": "string"}
+    },
+    {
+        "name": "list_labels",
+        "description": "List all node labels in the knowledge graph with their node counts, sorted by count descending. Quick overview of what types of data exist.",
+        "parameters": {}
+    },
+]
+
+
+# Tool definitions with full JSON schemas (for MCP server registration)
 TOOL_DEFINITIONS = [
     {
         "name": "query_knowledge_graph",
