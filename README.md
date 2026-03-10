@@ -219,6 +219,14 @@ SciDK uses a modular Flask blueprint architecture for web routes:
 - **Clean separation**: Each blueprint is self-contained with proper import scoping
 - See `scidk/web/routes/README.md` for detailed blueprint documentation
 
+## MCP Server (Model Context Protocol)
+SciDK exposes core functionality via an MCP server for external AI agents (Claude Desktop, etc.):
+- **5 core tools**: `query_knowledge_graph`, `get_schema`, `summarize_dataset`, `get_label_profile`, `list_labels`
+- **Read-only safety**: All queries are validated to block write operations
+- **Stdio transport**: Uses standard MCP protocol over stdin/stdout
+- **Setup guide**: See `docs/mcp-setup.md` for Claude Desktop configuration
+- **Run**: `python3 -m scidk.mcp_server`
+
 ## Scanning progress and background tasks (MVP)
 - Current options:
   - Synchronous: POST /api/scan runs immediately and returns when complete.
