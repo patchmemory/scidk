@@ -27,18 +27,20 @@ window.SciDKGraph = {
       'border-color': '#fff',
       'text-wrap': 'ellipsis',
       'text-max-width': '100px'
+      // Note: cursor and :hover not supported in Cytoscape
     }
   },
 
   /**
    * Default edge stylesheet for SciDK graphs
+   * Uses hardcoded colors (edges don't have data.color field)
    */
   defaultEdgeStyle: {
     selector: 'edge',
     style: {
       'width': 2,
-      'line-color': '#7f8c8d',
-      'target-arrow-color': '#7f8c8d',
+      'line-color': '#94a3b8',          // hardcoded color, not data mapping
+      'target-arrow-color': '#94a3b8',  // hardcoded color, not data mapping
       'target-arrow-shape': 'triangle',
       'curve-style': 'bezier',
       'label': 'data(label)',
@@ -133,8 +135,8 @@ window.SciDKGraph = {
   schemaToElements: function(schemaData) {
     const nodes = (schemaData.nodes || []).map(n => ({
       data: {
-        id: n.label || n.id,
-        label: n.label || n.id,
+        id: n.id || n.label || n.name,
+        label: n.label || n.name || n.id,  // ensure label field exists
         count: n.count || 0,
         color: n.color || '#4e79a7',
         description: n.description || ''
@@ -178,20 +180,37 @@ window.SciDKGraph = {
       };
     });
 
-    const edges = (queryResults.rels || []).map(r => {
-      const edgeId = this._extractId(r.id);
-      const sourceId = this._extractId(r.startNode);
-      const targetId = this._extractId(r.endNode);
+    // Build set of valid node IDs for edge validation
+    const nodeIds = new Set(nodes.map(n => n.data.id));
 
-      return {
-        data: {
-          id: edgeId,
-          source: sourceId,
-          target: targetId,
-          label: r.type || ''
+    // Only create edges where both source and target nodes exist
+    const edges = (queryResults.rels || [])
+      .map(r => {
+        const edgeId = this._extractId(r.id);
+        const sourceId = this._extractId(r.startNode);
+        const targetId = this._extractId(r.endNode);
+
+        return {
+          edgeId,
+          sourceId,
+          targetId,
+          data: {
+            id: edgeId,
+            source: sourceId,
+            target: targetId,
+            label: r.type || ''
+          }
+        };
+      })
+      .filter(e => {
+        // Skip edges with missing source or target nodes
+        if (!nodeIds.has(e.sourceId) || !nodeIds.has(e.targetId)) {
+          console.warn(`Skipping edge ${e.edgeId}: missing node (source: ${e.sourceId}, target: ${e.targetId})`);
+          return false;
         }
-      };
-    });
+        return true;
+      })
+      .map(e => ({ data: e.data }));  // Return only the data part
 
     return [...nodes, ...edges];
   },
