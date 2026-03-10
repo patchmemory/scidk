@@ -107,28 +107,23 @@ window.SciDKGraph = {
    * @returns {Object} Cytoscape instance
    */
   init: function(container, elements = [], options = {}) {
-    try {
-      const config = {
-        container: container,
-        elements: elements,
-        style: options.style || this.buildStylesheet(options.additionalStyles || []),
-        layout: options.layout || this.layouts.cose,
-        wheelSensitivity: options.wheelSensitivity || 0.2,
-        minZoom: options.minZoom || 0.3,
-        maxZoom: options.maxZoom || 3
-      };
+    const config = {
+      container: container,
+      elements: elements,
+      style: options.style || this.buildStylesheet(options.additionalStyles || []),
+      layout: options.layout || this.layouts.cose,
+      wheelSensitivity: options.wheelSensitivity || 0.2,
+      minZoom: options.minZoom || 0.3,
+      maxZoom: options.maxZoom || 3
+    };
 
-      // Check if Cytoscape is loaded
-      if (typeof cytoscape === 'undefined') {
-        console.error('Cytoscape.js not loaded. Make sure to include the library script.');
-        return null;
-      }
-
-      return cytoscape(config);
-    } catch (e) {
-      console.error('SciDKGraph.init() threw:', e);
-      throw e;
+    // Check if Cytoscape is loaded
+    if (typeof cytoscape === 'undefined') {
+      console.error('Cytoscape.js not loaded. Make sure to include the library script.');
+      return null;
     }
+
+    return cytoscape(config);
   },
 
   /**
@@ -218,7 +213,7 @@ window.SciDKGraph = {
           sourceId,
           targetId,
           data: {
-            id: edgeId,
+            id: 'e' + edgeId,  // Prefix edge IDs to prevent collision with node IDs
             source: sourceId,
             target: targetId,
             label: r.type || ''
