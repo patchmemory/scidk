@@ -79,12 +79,13 @@ intents:
       Requests for overviews, summaries, descriptions of the whole knowledge graph.
     examples:
       - "summarize the dataset"
-      - "give me an overview of the data"
-      - "what does the knowledge graph contain?"
-      - "describe the database"
-      - "what types of data do we have?"
-      - "give me a picture of what's in here"
-      - "overview of the research data"
+      - "give me an overview of everything in the graph"
+      - "what does this knowledge graph contain?"
+      - "describe the database contents"
+      - "what types of data do we have and how much?"
+      - "give me a high-level summary"
+      - "what's in our research database?"
+      - "overview of the knowledge graph"
     maps_to_legacy: SUMMARIZE
     satisfies:
       - tool: generate_summary

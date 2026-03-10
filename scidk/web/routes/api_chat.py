@@ -2728,3 +2728,224 @@ def api_concept_graph_feedback():
             "status": "error",
             "error": "Failed to update weights"
         }), 500
+
+
+# ========== Concept Graph Editor Endpoints ==========
+
+
+@bp.get('/chat/concept-graph/intents')
+def api_concept_graph_intents():
+    """Get all intents with their top tool + edge weights."""
+    concept_driver = _get_ext().get('concept_driver')
+    if concept_driver is None:
+        return jsonify({
+            "status": "disabled",
+            "error": "Concept graph not available"
+        }), 501
+
+    try:
+        with concept_driver.session() as session:
+            result = session.run("""
+                MATCH (i:Concept_Intent)-[r:SATISFIES]->(t:Concept_Tool)
+                WITH i, t, r
+                ORDER BY r.weight DESC
+                WITH i, COLLECT({tool: t.name, weight: r.weight, usage_count: r.usage_count})[0] AS top_tool,
+                     i.description AS description,
+                     i.examples AS examples
+                RETURN i.name AS name,
+                       description,
+                       examples,
+                       top_tool.tool AS top_tool,
+                       top_tool.weight AS weight,
+                       top_tool.usage_count AS usage_count
+                ORDER BY i.name
+            """).data()
+
+            return jsonify({"status": "ok", "intents": result}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
+@bp.put('/chat/concept-graph/intent/<intent_name>')
+def api_concept_graph_intent_update(intent_name):
+    """Update intent description/examples + re-embed."""
+    concept_driver = _get_ext().get('concept_driver')
+    if concept_driver is None:
+        return jsonify({
+            "status": "disabled",
+            "error": "Concept graph not available"
+        }), 501
+
+    data = request.get_json(force=True, silent=True) or {}
+    description = data.get('description', '').strip()
+    examples = data.get('examples', [])
+
+    if not description:
+        return jsonify({"status": "error", "error": "description required"}), 400
+    if not isinstance(examples, list):
+        return jsonify({"status": "error", "error": "examples must be a list"}), 400
+
+    try:
+        # Update intent node
+        with concept_driver.session() as session:
+            session.run("""
+                MATCH (i:Concept_Intent {name: $name})
+                SET i.description = $description,
+                    i.examples = $examples
+            """, name=intent_name, description=description, examples=examples)
+
+        # Re-embed this intent
+        ollama_endpoint = os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT', 'http://localhost:11434')
+        from ...services.concept_graph_service import _embed_text
+        import json
+
+        # Build embedding text from description + examples
+        embed_text = f"{description}\n" + "\n".join(examples)
+        embedding = _embed_text(embed_text, ollama_endpoint)
+
+        if embedding:
+            with concept_driver.session() as session:
+                session.run("""
+                    MATCH (i:Concept_Intent {name: $name})
+                    SET i.embedding = $embedding
+                """, name=intent_name, embedding=embedding)
+
+        return jsonify({"status": "ok", "re_embedded": embedding is not None}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
+@bp.get('/chat/concept-graph/tools')
+def api_concept_graph_tools():
+    """Get all tools with active status + retrieves labels."""
+    concept_driver = _get_ext().get('concept_driver')
+    if concept_driver is None:
+        return jsonify({
+            "status": "disabled",
+            "error": "Concept graph not available"
+        }), 501
+
+    try:
+        with concept_driver.session() as session:
+            result = session.run("""
+                MATCH (t:Concept_Tool)
+                OPTIONAL MATCH (t)-[:RETRIEVES]->(l:Concept_Label)
+                WITH t, COLLECT(l.name) AS retrieves
+                RETURN t.name AS name,
+                       t.description AS description,
+                       COALESCE(t.active, true) AS active,
+                       t.source AS source,
+                       retrieves
+                ORDER BY t.name
+            """).data()
+
+            return jsonify({"status": "ok", "tools": result}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
+@bp.post('/chat/concept-graph/tool/<tool_name>/toggle')
+def api_concept_graph_tool_toggle(tool_name):
+    """Toggle tool active/inactive."""
+    concept_driver = _get_ext().get('concept_driver')
+    if concept_driver is None:
+        return jsonify({
+            "status": "disabled",
+            "error": "Concept graph not available"
+        }), 501
+
+    try:
+        with concept_driver.session() as session:
+            result = session.run("""
+                MATCH (t:Concept_Tool {name: $name})
+                SET t.active = NOT COALESCE(t.active, true)
+                RETURN t.active AS active
+            """, name=tool_name).single()
+
+            if result is None:
+                return jsonify({"status": "error", "error": "Tool not found"}), 404
+
+            return jsonify({"status": "ok", "name": tool_name, "active": result["active"]}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
+@bp.get('/chat/concept-graph/status')
+def api_concept_graph_status():
+    """Get concept graph status."""
+    concept_driver = _get_ext().get('concept_driver')
+    if concept_driver is None:
+        return jsonify({
+            "status": "disabled",
+            "connected": False,
+            "intents": 0,
+            "tools": 0,
+            "satisfies_edges": 0
+        }), 501
+
+    try:
+        with concept_driver.session() as session:
+            stats = session.run("""
+                MATCH (i:Concept_Intent)
+                WITH COUNT(i) AS intents
+                MATCH (t:Concept_Tool)
+                WITH intents, COUNT(t) AS tools
+                MATCH ()-[r:SATISFIES]->()
+                RETURN intents, tools, COUNT(r) AS satisfies_edges
+            """).single()
+
+            # Get last_seeded from a timestamp property if it exists
+            # For now, return None (could be added to concept graph metadata)
+            return jsonify({
+                "status": "ok",
+                "connected": True,
+                "intents": stats["intents"],
+                "tools": stats["tools"],
+                "satisfies_edges": stats["satisfies_edges"],
+                "last_seeded": None  # TODO: track seeding timestamp
+            }), 200
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "connected": False,
+            "error": str(e)
+        }), 500
+
+
+@bp.post('/chat/concept-graph/reseed')
+def api_concept_graph_reseed():
+    """Re-seed full concept graph."""
+    concept_driver = _get_ext().get('concept_driver')
+    if concept_driver is None:
+        return jsonify({
+            "status": "disabled",
+            "error": "Concept graph not available"
+        }), 501
+
+    try:
+        from ...services.concept_graph_service import seed_intents_from_yaml, seed_tools_from_yaml, sync_labels_from_research_graph
+
+        ollama_endpoint = os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT', 'http://localhost:11434')
+        intents_file = Path(__file__).parent.parent.parent / 'concept_graph' / 'intents.yaml'
+
+        # Seed intents
+        intent_result = seed_intents_from_yaml(concept_driver, str(intents_file), ollama_endpoint)
+
+        # Seed tools
+        tool_result = seed_tools_from_yaml(concept_driver, str(intents_file))
+
+        # Sync labels
+        research_driver = _get_ext().get('driver')
+        if research_driver:
+            label_result = sync_labels_from_research_graph(concept_driver, research_driver)
+        else:
+            label_result = {"synced": 0}
+
+        return jsonify({
+            "status": "ok",
+            "intents_seeded": intent_result.get('embedded', 0),
+            "tools_seeded": tool_result.get('seeded', 0),
+            "labels_synced": label_result.get('synced', 0)
+        }), 200
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
