@@ -7,10 +7,15 @@ Settings can be encrypted (for sensitive data like API keys) and are stored in t
 import json
 import sqlite3
 import logging
+from functools import lru_cache
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from pathlib import Path
 import os
+
+from cryptography.fernet import Fernet
+
+from scidk.core.alert_manager import get_encryption_key
 
 logger = logging.getLogger(__name__)
 
@@ -20,35 +25,40 @@ def _get_db_path() -> str:
     return os.environ.get('SCIDK_DB_PATH', os.path.join(os.getcwd(), 'scidk.db'))
 
 
-def _encrypt_value(value: str) -> str:
-    """Encrypt a sensitive value.
+@lru_cache(maxsize=1)
+def _get_cipher() -> Fernet:
+    """Get the Fernet cipher used to encrypt/decrypt sensitive settings.
 
-    TODO: Implement proper encryption. For now, this is a placeholder.
-    In production, use cryptography library with a proper key management system.
+    Uses the same key-derivation approach as the alert manager
+    (``SCIDK_ENCRYPTION_KEY`` env var, falling back to a generated key).
+    The cipher is cached so that values encrypted within a process can be
+    decrypted again in the same process even when no key is configured.
+    """
+    return Fernet(get_encryption_key().encode())
+
+
+def _encrypt_value(value: str) -> str:
+    """Encrypt a sensitive value using Fernet symmetric encryption.
 
     Args:
         value: Plain text value to encrypt
 
     Returns:
-        Encrypted value (currently just base64 encoded as placeholder)
+        Encrypted (token) value
     """
-    import base64
-    return base64.b64encode(value.encode()).decode()
+    return _get_cipher().encrypt(value.encode()).decode()
 
 
 def _decrypt_value(encrypted: str) -> str:
-    """Decrypt a sensitive value.
-
-    TODO: Implement proper decryption matching _encrypt_value.
+    """Decrypt a sensitive value previously produced by :func:`_encrypt_value`.
 
     Args:
-        encrypted: Encrypted value
+        encrypted: Encrypted (token) value
 
     Returns:
         Plain text value
     """
-    import base64
-    return base64.b64decode(encrypted.encode()).decode()
+    return _get_cipher().decrypt(encrypted.encode()).decode()
 
 
 def get_plugin_setting(plugin_name: str, key: str, default: Any = None) -> Any:
