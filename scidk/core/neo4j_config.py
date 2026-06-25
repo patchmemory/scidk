@@ -8,6 +8,43 @@ import os
 from typing import Tuple, Optional
 
 
+def hydrate_neo4j_config_from_env(app) -> bool:
+    """Fall back to environment variables for Neo4j config when SQLite has none.
+
+    Called after the SQLite hydration step at startup. If no Neo4j URI was
+    persisted in the settings DB (fresh install, or restart after a reset),
+    populate ``app.extensions['scidk']['neo4j_config']`` from the environment
+    (NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD, already loaded from .env via
+    python-dotenv). This gives a fresh instance a working Neo4j connection on
+    first boot without any Settings UI step.
+
+    SQLite-backed config always wins: if a URI is already present it is left
+    untouched. Returns True if env values were applied, False otherwise.
+
+    Args:
+        app: Flask application instance with extensions['scidk']['neo4j_config']
+
+    Returns:
+        bool: True if the env fallback populated the config, else False
+    """
+    cfg = app.extensions['scidk'].setdefault('neo4j_config', {})
+
+    # SQLite already provided a config; do not override it from env
+    if cfg.get('uri'):
+        return False
+
+    env_uri = (os.environ.get('NEO4J_URI') or os.environ.get('BOLT_URI') or '').strip()
+    if not env_uri:
+        return False
+
+    cfg['uri'] = env_uri
+    cfg['user'] = (os.environ.get('NEO4J_USER') or os.environ.get('NEO4J_USERNAME') or '').strip() or None
+    cfg['password'] = os.environ.get('NEO4J_PASSWORD') or None
+    if not cfg.get('database'):
+        cfg['database'] = (os.environ.get('SCIDK_NEO4J_DATABASE') or '').strip() or None
+    return True
+
+
 def get_neo4j_params(app) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str], str]:
     """Read Neo4j configuration, preferring in-app settings over environment.
 

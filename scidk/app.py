@@ -210,6 +210,15 @@ def create_app():
     except Exception as e:
         app.logger.warning(f"Failed to load persisted Neo4j settings: {e}")
 
+    # Fall back to env vars (NEO4J_URI/USER/PASSWORD) when SQLite has no config,
+    # so a fresh instance connects on first boot without a Settings UI step.
+    try:
+        from .core.neo4j_config import hydrate_neo4j_config_from_env
+        if hydrate_neo4j_config_from_env(app):
+            app.logger.info("Neo4j config loaded from environment variables (no SQLite config found)")
+    except Exception as e:
+        app.logger.warning(f"Failed to load Neo4j settings from environment: {e}")
+
     # Feature flags for file indexing
     _ff_index = (os.environ.get('SCIDK_FEATURE_FILE_INDEX') or '').strip().lower() in (
         '1', 'true', 'yes', 'y', 'on'
