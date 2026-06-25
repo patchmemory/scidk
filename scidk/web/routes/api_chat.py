@@ -7,6 +7,9 @@ import json
 import os
 import time
 import threading
+import logging
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint('chat', __name__, url_prefix='/api')
 
@@ -2995,12 +2998,12 @@ def api_concept_graph_intent_update(intent_name):
 
         # Re-embed this intent
         ollama_endpoint = os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT', 'http://localhost:11434')
-        from ...services.concept_graph_service import _embed_text
+        from ...services.concept_graph_service import embed_text
         import json
 
         # Build embedding text from description + examples
-        embed_text = f"{description}\n" + "\n".join(examples)
-        embedding = _embed_text(embed_text, ollama_endpoint)
+        embed_input = f"{description}\n" + "\n".join(examples)
+        embedding = embed_text(embed_input, ollama_endpoint)
 
         if embedding:
             with concept_driver.session() as session:
@@ -3122,7 +3125,7 @@ def api_concept_graph_reseed():
         }), 501
 
     try:
-        from ...services.concept_graph_service import seed_intents_from_yaml, seed_tools_from_yaml, sync_labels_from_research_graph
+        from ...services.concept_graph_service import seed_intents_from_yaml, seed_tools_from_yaml, sync_labels_from_schema
 
         ollama_endpoint = os.environ.get('SCIDK_CHAT_OLLAMA_ENDPOINT', 'http://localhost:11434')
         intents_file = Path(__file__).parent.parent.parent / 'concept_graph' / 'intents.yaml'
@@ -3131,12 +3134,16 @@ def api_concept_graph_reseed():
         intent_result = seed_intents_from_yaml(concept_driver, str(intents_file), ollama_endpoint)
 
         # Seed tools
-        tool_result = seed_tools_from_yaml(concept_driver, str(intents_file))
+        tool_result = seed_tools_from_yaml(concept_driver, str(intents_file), ollama_endpoint)
 
         # Sync labels
         research_driver = _get_ext().get('driver')
         if research_driver:
-            label_result = sync_labels_from_research_graph(concept_driver, research_driver)
+            sqlite_conn = _get_chat_service()._get_conn()
+            try:
+                label_result = sync_labels_from_schema(concept_driver, research_driver, sqlite_conn)
+            finally:
+                sqlite_conn.close()
         else:
             label_result = {"synced": 0}
 
