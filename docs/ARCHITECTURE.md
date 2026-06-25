@@ -79,7 +79,7 @@ SciDK is a scientific data knowledge management system that bridges filesystem d
   - Not ideal for high-concurrency writes (mitigated with WAL mode)
   - No built-in graph queries (use Neo4j for this)
 
-**Graph Database**: Neo4j 5.x (Optional)
+**Graph Database**: Neo4j 5.x (Optional but active in production)
 - **Why Neo4j**:
   - Industry-leading graph database
   - Cypher query language
@@ -119,26 +119,43 @@ SciDK is a scientific data knowledge management system that bridges filesystem d
 
 ### Web Layer
 
-**Blueprint Structure** (9 blueprints, 91+ routes):
+**Blueprint Structure** (~27 blueprints, 300+ routes). Blueprints are registered via `register_blueprints()` in `scidk/web/routes/__init__.py`:
 
 ```python
 scidk/web/routes/
-├── ui.py                    # User interface routes
-├── api_files.py             # File and dataset operations
-├── api_graph.py             # Graph queries and visualization
+├── ui.py                    # User interface (HTML) routes
+├── api_files.py             # File, scan, and dataset operations
+├── api_graph.py             # Graph schema, instances, RO-Crate export
+├── api_maps.py              # Map/visualization data
 ├── api_labels.py            # Schema/label management
 ├── api_links.py             # Link definitions and execution
+├── api_links_v2.py          # Link registry (v2)
 ├── api_integrations.py      # External API integrations
+├── api_neo4j.py             # Neo4j connection and operations
+├── api_providers.py         # Filesystem/rclone providers and mounts
+├── api_tasks.py             # Background task management
+├── api_scripts.py           # Analysis scripts
+├── api_results.py           # Analysis result panels
+├── api_queries.py           # Saved Cypher query library
+├── api_chat.py              # Chat / GraphRAG interface
+├── api_annotations.py       # Annotations
+├── api_plugins.py           # Plugin management and instances
+├── api_interpreters.py      # Interpreter configuration
 ├── api_settings.py          # Settings and configuration
 ├── api_auth.py              # Authentication endpoints
-└── api_chat.py              # Chat interface
+├── api_users.py             # User management
+├── api_audit.py             # Audit log access
+├── api_alerts.py            # Alert configuration
+├── api_logs.py              # Application logs
+├── api_admin.py             # Health / metrics / admin
+└── api_system.py            # System info
 ```
 
 **Advantages**:
 - Clean separation of concerns
 - Easy to add new features
 - Improved testability
-- Reduced file size (app.py reduced from 5,781 to 645 lines)
+- Lean application factory: `create_app()` lives in `scidk/app.py` (~314 lines); route definitions live in the per-area blueprint modules above
 
 ### Core Services
 
@@ -319,68 +336,74 @@ User Pushes to Neo4j
 
 ### SQLite Tables
 
-**files**:
+**files** (see `scidk/core/path_index_sqlite.py`):
 ```sql
-CREATE TABLE files (
-    id TEXT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS files (
+    path TEXT NOT NULL,
+    parent_path TEXT,
+    name TEXT NOT NULL,
+    depth INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    modified_time REAL,
+    file_extension TEXT,
+    mime_type TEXT,
+    etag TEXT,
+    hash TEXT,
+    remote TEXT,
     scan_id TEXT,
-    path TEXT NOT NULL,
-    name TEXT,
-    size INTEGER,
-    modified REAL,
-    extension TEXT,
-    provider_id TEXT,
-    checksum TEXT,
-    FOREIGN KEY (scan_id) REFERENCES scans(id)
+    extra_json TEXT
 );
-CREATE INDEX idx_files_scan ON files(scan_id);
-CREATE INDEX idx_files_path ON files(path);
-CREATE INDEX idx_files_extension ON files(extension);
+-- interpreted_as TEXT and interpretation_json TEXT are added via ALTER TABLE on init.
+-- Node identity is the composite (path, host); there is no surrogate `id` column.
 ```
 
-**scans**:
+**scans** (see `scidk/core/migrations.py`):
 ```sql
-CREATE TABLE scans (
+CREATE TABLE IF NOT EXISTS scans (
     id TEXT PRIMARY KEY,
-    path TEXT NOT NULL,
-    recursive INTEGER,
-    timestamp REAL,
+    root TEXT,
+    started REAL,
+    completed REAL,
     status TEXT,
-    file_count INTEGER,
-    provider_id TEXT
+    extra_json TEXT
 );
+-- Per-scan detail (recursive flag, counts, provider, etc.) is stored in extra_json
+-- and in companion tables (scan_items, scan_progress).
 ```
 
-**users**:
+**auth_users** (see `scidk/core/auth.py`):
 ```sql
-CREATE TABLE users (
-    id INTEGER PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS auth_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL,
-    created_at REAL,
+    role TEXT NOT NULL CHECK (role IN ('admin', 'user')),
+    enabled INTEGER DEFAULT 1,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    created_by TEXT,
     last_login REAL
 );
 ```
 
-**settings**:
+**settings** (see `scidk/core/migrations.py`):
 ```sql
-CREATE TABLE settings (
+CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
-    value TEXT,
-    updated_at TEXT
+    value TEXT
 );
 ```
 
-**audit_log**:
+**auth_audit_log** (see `scidk/core/auth.py`):
 ```sql
-CREATE TABLE audit_log (
-    id INTEGER PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS auth_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp REAL NOT NULL,
-    event_type TEXT NOT NULL,
-    user TEXT,
-    ip_address TEXT,
-    details TEXT
+    username TEXT NOT NULL,
+    action TEXT NOT NULL,
+    details TEXT,
+    ip_address TEXT
 );
 ```
 
@@ -392,12 +415,13 @@ CREATE TABLE audit_log (
 - **Scan**: Scan session metadata (timestamp, path, recursive)
 - **Custom Labels**: User-defined via Labels page
 
-**Relationships**:
+**Relationships** (see `scidk/services/neo4j_client.py`):
 - **(File)-[:SCANNED_IN]->(Scan)**: Files belong to scans
 - **(Folder)-[:SCANNED_IN]->(Scan)**: Folders belong to scans
-- **(File)-[:CONTAINED_IN]->(Folder)**: File hierarchy
-- **(Folder)-[:CONTAINED_IN]->(Folder)**: Folder hierarchy
-- **Custom Relationships**: User-defined via Links page
+- **(Folder)-[:CONTAINS]->(File)**: File hierarchy
+- **(Folder)-[:CONTAINS]->(Folder)**: Folder hierarchy
+- **(File)-[:INTERPRETED_AS]->(...)**: Interpretation results
+- **Custom Relationships**: User-defined via Links page (e.g. `DERIVED_FROM`)
 
 ## Scalability Considerations
 
@@ -564,7 +588,7 @@ app.register_blueprint(custom_bp)
 - High concurrent write load (>100 writes/sec)
 - Distributed deployment required
 
-### Why Neo4j (Optional)?
+### Why Neo4j (Optional but active in production)?
 
 **Advantages**:
 - Native graph queries (relationships are first-class)

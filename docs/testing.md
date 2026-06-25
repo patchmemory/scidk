@@ -166,7 +166,7 @@ Many features integrate with tools/services such as rclone and Neo4j. The test s
 - `SCIDK_PROVIDERS`: Feature-flag providers set (e.g., `local_fs,mounted_fs,rclone`)
 - `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD` / `NEO4J_AUTH`: Used to steer code paths; tests often set `NEO4J_AUTH=none` with a fake neo4j module
 - `SCIDK_RCLONE_MOUNTS` or `SCIDK_FEATURE_RCLONE_MOUNTS`: Enables rclone mount manager endpoints (tests mock subprocess)
-- `SCIDK_E2E`: Set to `1` to enable E2E tests in local runs (automatically set in CI)
+- `SCIDK_E2E`: Set to `1` to enable E2E tests in local runs (E2E is disabled in CI as of Feb 2026)
 
 ## Running Subsets and Debugging
 
@@ -228,20 +228,16 @@ A GitHub Actions workflow is provided at `.github/workflows/ci.yml`
 - Fast feedback on API/unit/contract tests
 
 **E2E smoke (Playwright):**
-- Sets up Python 3.12 (for Flask app)
-- Sets up Node 18
-- Installs deps and Playwright browsers (`npx playwright install --with-deps`)
-- Runs `npm run e2e`
-- Environment: `SCIDK_PROVIDERS=local_fs` to avoid external dependencies
-- Strict (no continue-on-error) now that smoke and core flows are stable
+- ⚠️ **Disabled in CI as of Feb 2026.** The E2E job is commented out in `.github/workflows/ci.yml`; CI runs only `pytest -m "not e2e"`. Continue writing E2E specs and run them **locally** — don't let E2E block PRs.
+- When re-enabled, the job sets up Python 3.12 + Node 18, installs Playwright browsers (`npx playwright install --with-deps`), runs `npm run e2e` with `SCIDK_PROVIDERS=local_fs`.
 
 ### Running Locally (CI-equivalent)
 
 ```bash
-# Python tests
+# Python tests (this is what CI runs)
 python -m pytest -q -m "not e2e"
 
-# E2E tests
+# E2E tests (local only — not run in CI)
 npm install
 npx playwright install --with-deps
 npm run e2e
@@ -324,10 +320,10 @@ npm run e2e:headed   # optional, debug mode
 
 ### CI Integration
 
-E2E tests run automatically in GitHub Actions on every push and PR. See `.github/workflows/ci.yml`:
+⚠️ **E2E tests are disabled in CI as of Feb 2026** — run them locally with `npm run e2e` or `pytest -m e2e`. The E2E job in `.github/workflows/ci.yml` is commented out; CI runs only `pytest -m "not e2e"`. When the job is re-enabled it will:
 
-- **Job: `e2e`**: Runs Playwright tests with `SCIDK_PROVIDERS=local_fs`
-- **On failure**: Uploads Playwright report and traces as artifacts
+- **Job: `e2e`**: Run Playwright tests with `SCIDK_PROVIDERS=local_fs`
+- **On failure**: Upload Playwright report and traces as artifacts
 - **Access artifacts**: Go to Actions → failed run → download `playwright-report`
 
 To view traces locally:

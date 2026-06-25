@@ -43,9 +43,10 @@ source scripts/init_env.fish --write-dotenv
 3) Run the server:
 ```
 scidk-serve
-# or
+# or the equivalent module form:
 python3 -m scidk.app
 ```
+> **Canonical launch command:** `scidk-serve` (entry point `scidk.app:main`). `python3 -m scidk.app` is exactly equivalent. Other docs reference this section rather than restating launch commands.
 
 4) Open the UI in your browser:
 - http://127.0.0.1:5000/
@@ -204,8 +205,8 @@ Details:
 - Add tests alongside new features in future cycles; see dev/cycles.md for cycle protocol.
 
 ## Notes
-- This MVP uses an in-memory graph; data resets on restart.
-- Neo4j deployment docs reside in dev/ops/deployment-neo4j.md, but Neo4j is not yet wired in the MVP code.
+- The graph backend is selectable via `SCIDK_GRAPH_BACKEND` (`memory` by default, `neo4j` to persist). Neo4j is fully wired: scans commit File/Folder/Scan nodes and relationships with post-commit verification (see `scidk/services/neo4j_client.py`).
+- With the in-memory backend, graph data resets on restart; use `SCIDK_GRAPH_BACKEND=neo4j` for persistence. Neo4j deployment docs reside in dev/ops/deployment-neo4j.md.
 
 ## Documentation
 - Delivery cycles and planning protocol: dev/cycles.md
@@ -214,8 +215,8 @@ Details:
 
 ## Architecture
 SciDK uses a modular Flask blueprint architecture for web routes:
-- **9 blueprints** organize 91 routes by functional area (UI, files, tasks, graph, Neo4j, providers, chat, admin, interpreters)
-- **Reduced footprint**: app.py reduced from 5,781 to 645 lines (89% reduction)
+- **~27 blueprints** organize 300+ routes by functional area (UI, files, tasks, graph, Neo4j, providers, chat, labels, links, admin, interpreters, and more)
+- **Application factory**: `create_app()` lives in `scidk/app.py` (~314 lines); blueprints are registered via `register_blueprints()` in `scidk/web/routes/__init__.py`
 - **Clean separation**: Each blueprint is self-contained with proper import scoping
 - See `scidk/web/routes/README.md` for detailed blueprint documentation
 
@@ -243,13 +244,11 @@ SciDK exposes core functionality via an MCP server for external AI agents (Claud
   - Preview and download instances for File, Folder, and Scan labels as CSV (XLSX if openpyxl is installed).
 
 ## Neo4j integration
-- Status: The app ships with docker-compose.neo4j.yml to run a local Neo4j, but the Flask app currently uses an in-memory graph.
-- Next steps to enable Neo4j writes/reads:
-  1) Add a GraphAdapter interface and a Neo4jAdapter implementing upsert_dataset, add_interpretation, commit_scan, schema_triples.
-  2) Add config/feature flag (e.g., SCIDK_GRAPH_BACKEND=neo4j) to switch adapters.
-  3) Map current in-memory structures to Neo4j schema: (:File), (:Folder), (:Scan) nodes and CONTAINS, INTERPRETED_AS, SCANNED_IN relationships.
-  4) Use Cypher or APOC to compute schema triples for /api/graph/schema.
-- Until then, data is not persisted to Neo4j. Use the CSV exports or the in-memory map for the demo.
+- Status: Neo4j is fully wired. The app ships with docker-compose.neo4j.yml to run a local Neo4j; set `SCIDK_GRAPH_BACKEND=neo4j` (plus `NEO4J_URI`/`NEO4J_AUTH`) to persist to it. With the default in-memory backend, graph data is not persisted across restarts.
+- How it works:
+  - The graph backend is selected at startup in `create_app()` via `SCIDK_GRAPH_BACKEND` (`memory` default, `neo4j` to persist); invalid Neo4j params fall back to in-memory.
+  - Committing a scan writes `(:File)`, `(:Folder)`, `(:Scan)` nodes with `(Folder)-[:CONTAINS]->(File|Folder)`, `(File|Folder)-[:SCANNED_IN]->(Scan)`, and `INTERPRETED_AS` relationships, via `scidk/services/neo4j_client.py`.
+  - Schema triples for `/api/graph/schema` are computed with Cypher (APOC variants available at `/api/graph/schema.apoc`).
 
 
 ## New in this cycle: Optional Neo4j schema endpoints and extra Instance exports
@@ -451,19 +450,17 @@ Local commands:
 - make e2e → pytest -m e2e tests/e2e -q
 - make check → runs unit, integration, and e2e sequentially
 
-See .github/workflows/tests.yml for the CI matrix that runs each tier.
+CI is defined in `.github/workflows/ci.yml` and runs pytest with `-m "not e2e"`. **E2E tests are disabled in CI as of Feb 2026** (the E2E job is commented out) — run them locally with `npm run e2e` or `pytest -m e2e`.
 
 ## Verify CI and Record Demo Artifacts
 
 Follow these steps to verify the full test suite and automatically capture screenshots/JSON for the demo.
 
 1) Verify CI on GitHub
-- Navigate to GitHub → Actions → "Tests" workflow (defined in `.github/workflows/tests.yml`).
-- Confirm that all three matrix jobs are green:
-  - tier=unit
-  - tier=integration
-  - tier=e2e (installs Playwright browsers automatically)
-- Click into the latest run to see logs if any job is red.
+- Navigate to GitHub → Actions → the CI workflow (defined in `.github/workflows/ci.yml`).
+- Confirm the pytest job is green (runs `pytest -m "not e2e"`).
+- E2E (Playwright) is not run in CI as of Feb 2026; verify E2E locally with `npm run e2e`.
+- Click into the latest run to see logs if the job is red.
 
 2) Run all tests locally (mirrors CI)
 ```

@@ -612,7 +612,7 @@ htop
    hashed = bcrypt.hashpw(password, bcrypt.gensalt())
 
    conn = sqlite3.connect('/path/to/files.db')
-   conn.execute("UPDATE users SET password_hash=? WHERE username='admin'", (hashed,))
+   conn.execute("UPDATE auth_users SET password_hash=? WHERE username='admin'", (hashed,))
    conn.commit()
    ```
 

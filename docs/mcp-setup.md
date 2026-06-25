@@ -42,7 +42,7 @@ Add the following to your Claude Desktop configuration file:
       "env": {
         "NEO4J_URI": "bolt://localhost:7687",
         "NEO4J_USER": "neo4j",
-        "NEO4J_PASSWORD": "password",
+        "NEO4J_PASSWORD": "neo4jiscool",
         "NEO4J_DATABASE": "neo4j"
       }
     }
@@ -260,7 +260,7 @@ The MCP server enforces strict safety rules:
    from scidk.ai import mcp_tools
    from neo4j import GraphDatabase
 
-   driver = GraphDatabase.driver("bolt://localhost:7687", auth=("neo4j", "password"))
+   driver = GraphDatabase.driver("bolt://localhost:7687", auth=("neo4j", "neo4jiscool"))
    result = mcp_tools.list_labels(driver, "neo4j")
    print(result)
    ```
@@ -269,4 +269,4 @@ The MCP server enforces strict safety rules:
 
 Once the MCP server is working, these tools can be integrated into the Concept Graph Phase 3 as `:Concept_Tool` nodes. The Concept Graph will then route user intents to MCP tools alongside native SciDK tools, creating a unified planning layer.
 
-See the [Production MVP Roadmap](../ROADMAP.md) for the full integration plan.
+See the [SciDK Architecture Vision](SciDK_Architecture_Vision.md) for the full integration plan.
