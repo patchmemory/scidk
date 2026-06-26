@@ -1,0 +1,22 @@
+profile_id: tiff_collection
+name: TIFF Image Collection
+version: "1.0"
+interpreter: null
+inherits: file_collection
+enabled: true
+trigger:
+  extensions: [".tif", ".tiff"]
+  filename_pattern: ".*\\.(tif|tiff)$"
+siblings:
+  - group: tiff_files
+    required: true
+    type: file
+    min_count: 1
+    patterns:
+      - ".*\\.(tif|tiff)$"
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: TIFFCollection
+    profile: tiff_collection

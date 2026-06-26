@@ -1,0 +1,22 @@
+profile_id: csv_collection
+name: CSV Data Collection
+version: "1.0"
+interpreter: null
+inherits: file_collection
+enabled: true
+trigger:
+  extensions: [".csv"]
+  filename_pattern: ".*\\.csv$"
+siblings:
+  - group: csv_files
+    required: true
+    type: file
+    min_count: 1
+    patterns:
+      - ".*\\.csv$"
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: CSVCollection
+    profile: csv_collection

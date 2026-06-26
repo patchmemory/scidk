@@ -1,0 +1,26 @@
+profile_id: scidk_dataset
+name: User-Defined SciDK Dataset
+version: "1.0"
+interpreter: null
+inherits: file_collection
+# Generic fallback for user-defined datasets: any directory containing a SciDK
+# descriptor file (.scidk.yaml or dataset.scidk.yaml). Disabled by default because
+# it is broad; users opt in via the Settings UI (stored in SQLite as
+# profile_enabled_scidk_dataset).
+enabled: false
+trigger:
+  extensions: [".yaml"]
+  filename_pattern: "^(\\.scidk\\.yaml|dataset\\.scidk\\.yaml)$"
+siblings:
+  - group: scidk_descriptor
+    required: true
+    type: file
+    min_count: 1
+    patterns:
+      - "^(\\.scidk\\.yaml|dataset\\.scidk\\.yaml)$"
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: UserDefinedDataset
+    profile: scidk_dataset

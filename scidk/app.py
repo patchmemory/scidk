@@ -142,6 +142,11 @@ def create_app():
     registry = InterpreterRegistry()
     register_interpreters(registry)
 
+    # Dataset profile registry (loaded from bundled profile YAMLs)
+    from .core.profile_registry import ProfileRegistry
+    profile_registry = ProfileRegistry()
+    profile_registry.load(Path(__file__).resolve().parent / 'interpreters' / 'profiles')
+
     # Compute effective interpreter enablement (CLI > settings > defaults)
     app.extensions = getattr(app, 'extensions', {})
     app.extensions['scidk'] = {}
@@ -158,6 +163,7 @@ def create_app():
         'graph': graph,
         'concept_driver': concept_driver,  # Concept Graph driver (may be None)
         'registry': registry,
+        'profile_registry': profile_registry,
         'fs': fs,
         'providers': fs_providers,
         'interpreters': {'effective_enabled': enabled_set, 'source': source},
