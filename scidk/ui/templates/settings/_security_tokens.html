@@ -1,0 +1,270 @@
+<!-- Security > API Tokens Section -->
+<section id="security-tokens-section" class="settings-section">
+  <h1>API Tokens</h1>
+  <p class="small">
+    Generate per-user Bearer tokens so external clients (Python, MATLAB, etc.) can
+    authenticate without a browser session. Each token carries its user's role.
+    <span class="badge" style="background:#ffc107; color:#000">Admin Only</span>
+  </p>
+
+  <div style="background:#f9f9f9; border:1px solid #e0e0e0; border-radius:4px; padding:1rem; max-width:900px">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem">
+      <h3 style="margin:0">Tokens</h3>
+      <button id="btn-add-token" style="padding:0.5rem 1rem; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer">+ Generate Token</button>
+    </div>
+    <div id="tokens-list-container">
+      <p class="small" style="color:#666">Loading tokens...</p>
+    </div>
+  </div>
+</section>
+
+<script>
+  function initTokenManagement() {
+    const addTokenBtn = document.getElementById('btn-add-token');
+    const tokensListContainer = document.getElementById('tokens-list-container');
+
+    if (!tokensListContainer) return;
+
+    let usersById = {};
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text == null ? '' : String(text);
+      return div.innerHTML;
+    }
+
+    function formatDate(value) {
+      if (!value) return 'Never';
+      // created_at / last_used_at are SQLite CURRENT_TIMESTAMP strings (UTC).
+      const d = new Date((value + '').replace(' ', 'T') + 'Z');
+      return isNaN(d.getTime()) ? escapeHtml(value) : d.toLocaleString();
+    }
+
+    async function loadUsersMap() {
+      try {
+        const response = await fetch(window.SCIDK_BASE + '/api/users?include_disabled=true');
+        if (response.ok) {
+          const data = await response.json();
+          usersById = {};
+          (data.users || []).forEach(u => { usersById[u.id] = u; });
+        }
+      } catch (error) {
+        console.error('Failed to load users:', error);
+      }
+    }
+
+    async function loadTokens() {
+      try {
+        const response = await fetch(window.SCIDK_BASE + '/api/settings/tokens');
+        if (response.ok) {
+          const data = await response.json();
+          renderTokensList(data.tokens || []);
+        } else if (response.status === 403) {
+          tokensListContainer.innerHTML = '<p class="small" style="color:#b00">Access denied. Admin role required.</p>';
+        } else {
+          tokensListContainer.innerHTML = '<p class="small" style="color:#b00">Failed to load tokens.</p>';
+        }
+      } catch (error) {
+        console.error('Failed to load tokens:', error);
+        tokensListContainer.innerHTML = '<p class="small" style="color:#b00">Connection error.</p>';
+      }
+    }
+
+    function renderTokensList(tokens) {
+      if (tokens.length === 0) {
+        tokensListContainer.innerHTML = '<p class="small" style="color:#666">No tokens yet. Generate one to let scripts authenticate.</p>';
+        return;
+      }
+
+      const table = document.createElement('table');
+      table.style.cssText = 'width:100%; border-collapse:collapse';
+      table.innerHTML = `
+        <thead>
+          <tr style="border-bottom:2px solid #ddd; text-align:left">
+            <th style="padding:0.5rem; font-size:0.9em">Label</th>
+            <th style="padding:0.5rem; font-size:0.9em">User</th>
+            <th style="padding:0.5rem; font-size:0.9em">Created</th>
+            <th style="padding:0.5rem; font-size:0.9em">Last Used</th>
+            <th style="padding:0.5rem; font-size:0.9em">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tokens.map(t => {
+            const u = usersById[t.user_id];
+            const userLabel = u ? `${escapeHtml(u.username)} (${escapeHtml(u.role)})` : `user #${escapeHtml(t.user_id)}`;
+            return `
+            <tr style="border-bottom:1px solid #eee">
+              <td style="padding:0.5rem; font-size:0.9em">${escapeHtml(t.label)}</td>
+              <td style="padding:0.5rem; font-size:0.9em">${userLabel}</td>
+              <td style="padding:0.5rem; font-size:0.9em">${formatDate(t.created_at)}</td>
+              <td style="padding:0.5rem; font-size:0.9em">${formatDate(t.last_used_at)}</td>
+              <td style="padding:0.5rem; font-size:0.9em">
+                <button class="btn-revoke-token" data-token-id="${escapeHtml(t.id)}" data-label="${escapeHtml(t.label)}" style="padding:0.25rem 0.5rem; border:1px solid #dc3545; border-radius:3px; background:#fff; color:#dc3545; cursor:pointer; font-size:0.85em">Revoke</button>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      `;
+
+      tokensListContainer.innerHTML = '';
+      tokensListContainer.appendChild(table);
+
+      table.querySelectorAll('.btn-revoke-token').forEach(btn => {
+        btn.addEventListener('click', () => revokeToken(btn.dataset.tokenId, btn.dataset.label));
+      });
+    }
+
+    if (addTokenBtn) {
+      addTokenBtn.addEventListener('click', () => showAddTokenDialog());
+    }
+
+    function showAddTokenDialog() {
+      const userOptions = Object.values(usersById)
+        .map(u => `<option value="${u.id}">${escapeHtml(u.username)} (${escapeHtml(u.role)})</option>`)
+        .join('');
+
+      const dialog = document.createElement('div');
+      dialog.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:9999';
+
+      dialog.innerHTML = `
+        <div style="background:#fff; border-radius:8px; padding:2rem; max-width:500px; width:90%">
+          <h3 style="margin-top:0">Generate API Token</h3>
+
+          <div style="margin-bottom:1rem">
+            <label style="display:block; font-size:0.9em; margin-bottom:0.25rem; font-weight:500">User</label>
+            <select id="new-token-user" style="width:100%; padding:0.5rem; border:1px solid #ccc; border-radius:4px">
+              ${userOptions || '<option value="">No users available</option>'}
+            </select>
+          </div>
+
+          <div style="margin-bottom:1.5rem">
+            <label style="display:block; font-size:0.9em; margin-bottom:0.25rem; font-weight:500">Label</label>
+            <input id="new-token-label" type="text" placeholder="e.g. Anderson MATLAB script" style="width:100%; padding:0.5rem; border:1px solid #ccc; border-radius:4px" />
+          </div>
+
+          <div style="display:flex; gap:0.5rem; justify-content:flex-end">
+            <button id="cancel-add-token" style="padding:0.5rem 1rem; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer">Cancel</button>
+            <button id="confirm-add-token" style="padding:0.5rem 1rem; border:none; border-radius:4px; background:#007bff; color:#fff; cursor:pointer">Generate</button>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(dialog);
+      setTimeout(() => document.getElementById('new-token-label').focus(), 100);
+
+      const close = () => { if (dialog.parentNode) document.body.removeChild(dialog); };
+
+      document.getElementById('cancel-add-token').addEventListener('click', close);
+
+      document.getElementById('confirm-add-token').addEventListener('click', () => {
+        const userId = document.getElementById('new-token-user').value;
+        const label = document.getElementById('new-token-label').value.trim();
+
+        if (!userId) { toast('Select a user', 'error'); return; }
+        if (!label) { toast('Label is required', 'error'); return; }
+
+        close();
+        createToken(parseInt(userId, 10), label);
+      });
+
+      dialog.addEventListener('click', (e) => { if (e.target === dialog) close(); });
+      const escapeHandler = (e) => {
+        if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escapeHandler); }
+      };
+      document.addEventListener('keydown', escapeHandler);
+    }
+
+    async function createToken(userId, label) {
+      try {
+        const response = await fetch(window.SCIDK_BASE + '/api/settings/tokens', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: userId, label }),
+        });
+        const data = await response.json();
+
+        if (response.ok) {
+          showTokenOnceDialog(data.token);
+          loadTokens();
+        } else {
+          toast(data.error || 'Failed to create token', 'error');
+        }
+      } catch (error) {
+        toast('Connection error', 'error');
+      }
+    }
+
+    // Show the plaintext token exactly once - it is never retrievable again.
+    function showTokenOnceDialog(token) {
+      const dialog = document.createElement('div');
+      dialog.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:9999';
+
+      dialog.innerHTML = `
+        <div style="background:#fff; border-radius:8px; padding:2rem; max-width:560px; width:90%">
+          <h3 style="margin-top:0">Token Generated</h3>
+          <p class="small" style="color:#b00; font-weight:500">
+            Copy this token now. For security it is hashed before storage and will never be shown again.
+          </p>
+          <div style="display:flex; gap:0.5rem; margin:1rem 0">
+            <input id="new-token-value" type="text" readonly value="${escapeHtml(token)}" style="flex:1; padding:0.5rem; border:1px solid #ccc; border-radius:4px; font-family:monospace; font-size:0.85em" />
+            <button id="copy-token-value" style="padding:0.5rem 1rem; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer">Copy</button>
+          </div>
+          <p class="small" style="color:#666">
+            Use it in requests as: <code>Authorization: Bearer &lt;token&gt;</code>
+          </p>
+          <div style="display:flex; justify-content:flex-end">
+            <button id="close-token-value" style="padding:0.5rem 1rem; border:none; border-radius:4px; background:#007bff; color:#fff; cursor:pointer">Done</button>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(dialog);
+      const close = () => { if (dialog.parentNode) document.body.removeChild(dialog); };
+
+      const input = document.getElementById('new-token-value');
+      setTimeout(() => { input.focus(); input.select(); }, 100);
+
+      document.getElementById('copy-token-value').addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(token);
+          toast('Token copied to clipboard', 'success');
+        } catch (e) {
+          input.select();
+          document.execCommand('copy');
+          toast('Token copied', 'success');
+        }
+      });
+
+      document.getElementById('close-token-value').addEventListener('click', close);
+    }
+
+    async function revokeToken(tokenId, label) {
+      if (!confirm(`Revoke token "${label}"?\n\nAny client using it will stop working immediately. This cannot be undone.`)) {
+        return;
+      }
+      try {
+        const response = await fetch(window.SCIDK_BASE + `/api/settings/tokens/${tokenId}`, {
+          method: 'DELETE',
+        });
+        if (response.ok) {
+          toast('Token revoked', 'success');
+          loadTokens();
+        } else {
+          const data = await response.json();
+          toast(data.error || 'Failed to revoke token', 'error');
+        }
+      } catch (error) {
+        toast('Connection error', 'error');
+      }
+    }
+
+    // Load users (for labels + the create dropdown) then tokens.
+    loadUsersMap().then(loadTokens);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initTokenManagement);
+  } else {
+    initTokenManagement();
+  }
+</script>
