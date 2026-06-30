@@ -181,16 +181,21 @@ def api_scan_commit(scan_id):
                         profile_registry = _get_ext().get('profile_registry')
                         ds_client = Neo4jClient(uri, user, pwd, database, auth_mode).connect()
                         try:
+                            current_app.logger.info(
+                                "Dataset node service: starting (scan_id=%s, host=%s)",
+                                scan_id, s.get('host_id'),
+                            )
                             dataset_result = write_dataset_nodes(
                                 scan_id=scan_id,
                                 host=s.get('host_id'),
                                 neo4j_client=ds_client,
                                 profile_registry=profile_registry,
                             )
+                            current_app.logger.info(f"Dataset node service result: {dataset_result}")
                         finally:
                             ds_client.close()
                     except Exception as de:
-                        current_app.logger.warning(f"Dataset node creation failed: {de}")
+                        current_app.logger.warning(f"Dataset node creation failed: {de}", exc_info=True)
                 except Exception as ne:
                     neo_error = str(ne)
                     neo_state['connected'] = False

@@ -196,12 +196,23 @@ def write_dataset_nodes(scan_id: str, host: str, neo4j_client, profile_registry)
         result["errors"].append(f"read_rows: {e}")
         return result
 
-    grouped = _group_by_directory(rows)
+    logger.info("write_dataset_nodes: read %d rows for scan %s", len(rows), scan_id)
 
+    grouped = _group_by_directory(rows)
+    logger.info(
+        "write_dataset_nodes: grouped scan %s into %d directories", scan_id, len(grouped)
+    )
+
+    matched_dirs = 0
     for dir_path, entries in grouped.items():
         profile = _best_profile(dir_path, entries, profile_registry)
         if profile is None:
             continue  # no profile matched -> no Dataset node for this directory
+        matched_dirs += 1
+        logger.info(
+            "write_dataset_nodes: directory %s matched profile %s",
+            dir_path, profile.get("profile_id"),
+        )
 
         graph_props = (profile.get("graph") or {}).get("properties") or {}
         ds_type = graph_props.get("type") or profile.get("profile_id")
@@ -262,4 +273,8 @@ def write_dataset_nodes(scan_id: str, host: str, neo4j_client, profile_registry)
             )
             result["errors"].append(f"{dir_path}: {e}")
 
+    logger.info(
+        "write_dataset_nodes: scan %s done — %d dirs matched, created=%d updated=%d errors=%d",
+        scan_id, matched_dirs, result["created"], result["updated"], len(result["errors"]),
+    )
     return result
