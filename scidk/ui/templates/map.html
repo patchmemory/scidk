@@ -1078,13 +1078,31 @@
             <button class="result-type-btn" data-result-type="table" style="padding: 0.5rem 1rem; border: none; border-bottom: 2px solid transparent; background: transparent; cursor: pointer; font-size: 0.9rem; color: #666;">Table</button>
             <button class="result-type-btn" data-result-type="json" style="padding: 0.5rem 1rem; border: none; border-bottom: 2px solid transparent; background: transparent; cursor: pointer; font-size: 0.9rem; color: #666;">JSON</button>
           </div>
-          <h2 style="margin: 0; font-size: 1rem; color: #999;">${tab.name}</h2>
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <!-- Explore / Canvas mode toggle -->
+            <div class="canvas-mode-toggle-${tab.id}" role="group" data-testid="canvas-mode-toggle-${tab.id}" style="display: inline-flex; border: 1px solid #2196f3; border-radius: 4px; overflow: hidden;">
+              <button class="canvas-mode-btn active" data-canvas-mode="explore" style="padding: 0.35rem 0.75rem; border: none; background: #2196f3; color: #fff; cursor: pointer; font-size: 0.8rem;">🧭 Explore</button>
+              <button class="canvas-mode-btn" data-canvas-mode="canvas" style="padding: 0.35rem 0.75rem; border: none; background: transparent; color: #2196f3; cursor: pointer; font-size: 0.8rem;">🎨 Canvas</button>
+            </div>
+            <h2 style="margin: 0; font-size: 1rem; color: #999;">${tab.name}</h2>
+          </div>
         </div>
 
         <!-- Content Area (switches based on active tab) -->
         <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
           <!-- Visualization View -->
           <div class="result-view-visualization-${tab.id} result-view active" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+            <!-- Canvas search panel (Canvas mode only) -->
+            <div class="canvas-panel-${tab.id}" data-testid="canvas-panel-${tab.id}" style="display: none; border: 1px solid #2196f3; border-bottom: none; background: #f5faff; padding: 0.5rem; flex-shrink: 0;">
+              <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <input type="search" class="canvas-search-input-${tab.id}" data-testid="canvas-search-input-${tab.id}"
+                  placeholder="Search graph nodes to add to canvas…"
+                  style="flex: 1; padding: 0.4rem 0.6rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85rem;" />
+                <span class="canvas-search-status-${tab.id} small text-muted"></span>
+              </div>
+              <div class="canvas-search-results-${tab.id}" data-testid="canvas-search-results-${tab.id}"
+                style="max-height: 180px; overflow: auto; margin-top: 0.4rem;"></div>
+            </div>
             <div class="graph-container-${tab.id}" data-testid="graph-container-${tab.id}" style="width: 100%; flex: 1; border: 1px solid #ddd;"></div>
 
             <!-- Instances Table (appears below visualization) -->
@@ -1158,6 +1176,130 @@
 
     // Initialize button handlers
     initQueryButtons(tab.id);
+
+    // Initialize Canvas mode (toggle + node search/add)
+    initCanvasMode(tab.id);
+  }
+
+  // ===== CANVAS MODE (Push 1: toggle + node search/add) =====
+  // Wires the Explore/Canvas toggle and the node search panel for a tab.
+  function initCanvasMode(tabId) {
+    const contentEl = document.querySelector(`.tab-content[data-tab-id="${tabId}"]`);
+    if (!contentEl) return;
+
+    const toggle = contentEl.querySelector(`.canvas-mode-toggle-${tabId}`);
+    const panel = contentEl.querySelector(`.canvas-panel-${tabId}`);
+    const searchInput = contentEl.querySelector(`.canvas-search-input-${tabId}`);
+    const resultsEl = contentEl.querySelector(`.canvas-search-results-${tabId}`);
+    const statusEl = contentEl.querySelector(`.canvas-search-status-${tabId}`);
+    if (!toggle || !panel) return;
+
+    // Mode toggle: Explore (existing read-only behavior) vs Canvas (whiteboarding)
+    toggle.querySelectorAll('.canvas-mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const mode = btn.dataset.canvasMode;
+        toggle.querySelectorAll('.canvas-mode-btn').forEach(b => {
+          const active = b === btn;
+          b.classList.toggle('active', active);
+          b.style.background = active ? '#2196f3' : 'transparent';
+          b.style.color = active ? '#fff' : '#2196f3';
+        });
+        if (!window.tabCanvasModes) window.tabCanvasModes = {};
+        window.tabCanvasModes[tabId] = mode;
+        panel.style.display = (mode === 'canvas') ? 'block' : 'none';
+        if (mode === 'canvas' && searchInput) searchInput.focus();
+      });
+    });
+
+    // Debounced node search against Neo4j
+    let searchTimer = null;
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        const q = searchInput.value.trim();
+        if (!q) { resultsEl.innerHTML = ''; if (statusEl) statusEl.textContent = ''; return; }
+        searchTimer = setTimeout(() => runCanvasSearch(tabId, q, resultsEl, statusEl), 300);
+      });
+    }
+  }
+
+  // Local HTML-escaper (escapeHtml in the other script block is not in this scope).
+  function canvasEsc(str) {
+    const d = document.createElement('div');
+    d.textContent = str == null ? '' : String(str);
+    return d.innerHTML;
+  }
+
+  async function runCanvasSearch(tabId, q, resultsEl, statusEl) {
+    if (statusEl) statusEl.textContent = 'Searching…';
+    try {
+      const url = window.SCIDK_BASE + `/api/canvas/nodes/search?q=${encodeURIComponent(q)}&limit=20`;
+      const resp = await fetch(url);
+      const data = await resp.json();
+      if (data.status !== 'ok') {
+        if (statusEl) statusEl.textContent = '';
+        resultsEl.innerHTML = `<p class="small" style="color:#c0392b; margin:0.25rem;">${canvasEsc(data.error || 'Search failed')}</p>`;
+        return;
+      }
+      renderCanvasResults(tabId, data.results || [], resultsEl, statusEl);
+    } catch (e) {
+      if (statusEl) statusEl.textContent = '';
+      resultsEl.innerHTML = `<p class="small" style="color:#c0392b; margin:0.25rem;">${canvasEsc(String(e))}</p>`;
+    }
+  }
+
+  function renderCanvasResults(tabId, results, resultsEl, statusEl) {
+    if (statusEl) statusEl.textContent = `${results.length} match${results.length === 1 ? '' : 'es'}`;
+    if (!results.length) {
+      resultsEl.innerHTML = '<p class="small text-muted" style="margin:0.25rem;">No matching nodes</p>';
+      return;
+    }
+    resultsEl.innerHTML = '';
+    results.forEach(node => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:0.5rem; padding:0.3rem 0.4rem; border-bottom:1px solid #e5eef7; cursor:pointer;';
+      row.setAttribute('data-testid', `canvas-result-${node.id}`);
+      row.innerHTML = `
+        <span style="min-width:0;">
+          <span class="badge" style="background:#4e79a7; color:#fff; font-size:0.7rem; padding:0.1rem 0.4rem; border-radius:3px;">${canvasEsc(node.label)}</span>
+          <span style="font-size:0.85rem; margin-left:0.4rem;">${canvasEsc(node.name)}</span>
+        </span>
+        <button class="btn btn-xs btn-outline-primary" style="font-size:0.7rem; flex-shrink:0;">+ Add</button>`;
+      const add = () => addCanvasNode(tabId, node);
+      row.addEventListener('click', add);
+      resultsEl.appendChild(row);
+    });
+  }
+
+  // Add a real graph node onto the tab's Cytoscape canvas (provisional:false).
+  function addCanvasNode(tabId, node) {
+    const cy = window.cytoscapeInstances && window.cytoscapeInstances[tabId];
+    if (!cy) { console.warn('No Cytoscape instance for tab', tabId); return; }
+
+    const id = String(node.id);
+    if (cy.getElementById(id).nonempty()) {
+      // Already present — just flash-select it
+      cy.getElementById(id).select();
+      return;
+    }
+
+    // Drop near the viewport center with a small random offset so stacked adds don't overlap.
+    const ext = cy.extent();
+    const cx = (ext.x1 + ext.x2) / 2 + (Math.random() - 0.5) * 120;
+    const cy_ = (ext.y1 + ext.y2) / 2 + (Math.random() - 0.5) * 120;
+
+    cy.add({
+      group: 'nodes',
+      data: {
+        id: id,
+        label: node.label,
+        displayLabel: node.name,
+        properties: node.properties || {},
+        provisional: false,
+      },
+      position: { x: cx, y: cy_ },
+      grabbable: true,   // draggable (Cytoscape default, set explicitly)
+    });
   }
 
   // Initialize Cytoscape graph for a tab

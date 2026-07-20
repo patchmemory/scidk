@@ -48,6 +48,7 @@ def register_blueprints(app):
     from . import api_logs
     from . import api_plugins
     from . import api_maps
+    from . import api_canvas
     from . import api_scripts
     from . import api_system
     from . import api_results
@@ -59,6 +60,7 @@ def register_blueprints(app):
     app.register_blueprint(api_files.bp)
     app.register_blueprint(api_graph.bp)
     app.register_blueprint(api_maps.bp)
+    app.register_blueprint(api_canvas.bp)  # Maps Canvas (whiteboarding) feature
     app.register_blueprint(api_scripts.bp)
     app.register_blueprint(api_tasks.bp)
     app.register_blueprint(api_chat.bp)
