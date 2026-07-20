@@ -176,11 +176,16 @@ def build_commit_plan(snapshot: Dict[str, Any]) -> Dict[str, Any]:
 
     Only *provisional* elements are committed (per the canvas storage model).
 
+    One MERGE path for everything. Nodes MERGE on their business property
+    (name); edges MATCH endpoints by (label, name) then MERGE the relationship.
+    We trust MERGE: provisional nodes are written first, so by the time edges
+    run both endpoints exist (either just written or pre-existing), and re-running
+    is idempotent. No elementId/name split — that was overcautious.
+
     Returns:
         {
           'node_decls': [...],   # for Neo4jClient.write_declared_nodes (name key)
-          'name_rels': [...],    # rel decls (>=1 provisional endpoint) for write_declared_nodes
-          'id_edges': [...],     # {source_element_id,target_element_id,rel} real->real (elementId MERGE)
+          'rels': [...],         # rel decls for write_declared_nodes (name-matched)
           'skipped': [...],      # human-readable reasons for anything dropped
         }
     """
@@ -189,8 +194,7 @@ def build_commit_plan(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     by_id = {str(n.get('id')): n for n in nodes}
 
     node_decls: List[Dict[str, Any]] = []
-    name_rels: List[Dict[str, Any]] = []
-    id_edges: List[Dict[str, Any]] = []
+    rels: List[Dict[str, Any]] = []
     skipped: List[str] = []
 
     # Provisional nodes -> MERGE on name.
@@ -209,7 +213,8 @@ def build_commit_plan(snapshot: Dict[str, Any]) -> Dict[str, Any]:
         props['name'] = name
         node_decls.append({'label': label, 'key_property': 'name', 'properties': props})
 
-    # Provisional edges only.
+    # Provisional edges -> MERGE, endpoints matched by (label, name). One path:
+    # MERGE either finds the pre-existing node or the one we just wrote above.
     for e in edges:
         if not e.get('provisional'):
             continue
@@ -223,29 +228,18 @@ def build_commit_plan(snapshot: Dict[str, Any]) -> Dict[str, Any]:
             skipped.append(f"edge {e.get('source')}->{e.get('target')}: endpoint not on canvas")
             continue
 
-        src_real = not src.get('provisional')
-        tgt_real = not tgt.get('provisional')
-        src_eid = src.get('element_id')
-        tgt_eid = tgt.get('element_id')
-
-        # Real -> real with both elementIds: match by elementId (exact node identity).
-        if src_real and tgt_real and src_eid and tgt_eid:
-            id_edges.append({'source_element_id': src_eid, 'target_element_id': tgt_eid, 'rel': rel})
-            continue
-
-        # Otherwise fall back to name-match via write_declared_nodes.
         src_label, src_name = src.get('label'), src.get('name')
         tgt_label, tgt_name = tgt.get('label'), tgt.get('name')
         if not (src_label and src_name and tgt_label and tgt_name):
-            skipped.append(f"edge {rel}: endpoint missing label/name for name-match")
+            skipped.append(f"edge {rel}: endpoint missing label/name for MERGE")
             continue
-        name_rels.append({
+        rels.append({
             'type': rel,
             'from_label': src_label, 'from_match': {'name': src_name},
             'to_label': tgt_label, 'to_match': {'name': tgt_name},
         })
 
-    return {'node_decls': node_decls, 'name_rels': name_rels, 'id_edges': id_edges, 'skipped': skipped}
+    return {'node_decls': node_decls, 'rels': rels, 'skipped': skipped}
 
 
 def _cypher_literal(v: Any) -> str:
@@ -321,30 +315,41 @@ def generate_cypher(snapshot: Dict[str, Any], layer_name: str = 'canvas') -> str
 def generate_python_fs(snapshot: Dict[str, Any], layer_name: str = 'canvas') -> str:
     """Generate a conservative pathlib/shutil script from the CONTAINS hierarchy.
 
-    Node positions/CONTAINS edges imply a folder tree. Directories are created
-    with mkdir(parents=True, exist_ok=True); Dataset nodes carrying a `path`
-    property are moved with shutil.move (guarded by src.exists()). Nothing runs
-    automatically — the admin reviews and runs it manually.
+    CONTAINS edges imply a folder structure. Directories are created with
+    mkdir(parents=True, exist_ok=True); Dataset nodes carrying a `path` property
+    are placed at their destination(s). Nothing runs automatically — the admin
+    reviews and runs it manually.
+
+    Filesystems are not trees: symlinks, hard links and bind mounts mean a real
+    filesystem already has multi-parent structure, and SciDK stores that
+    structure faithfully. So does this export — a node with two parents is
+    emitted at both paths (one per parent). No "picking one" / last-edge-wins.
     """
     nodes = (snapshot or {}).get('nodes') or []
     edges = (snapshot or {}).get('edges') or []
     by_id = {str(n.get('id')): n for n in nodes}
 
-    # parent map from CONTAINS edges (source CONTAINS target => parent=source)
-    parent = {}
+    # Parent map from CONTAINS edges (source CONTAINS target => parent=source).
+    # A node may have MANY parents — collect every one, don't overwrite.
+    parents: Dict[str, List[str]] = {}
     for e in edges:
         if (e.get('relationship') or '').upper() == 'CONTAINS':
-            parent[str(e.get('target'))] = str(e.get('source'))
+            parents.setdefault(str(e.get('target')), []).append(str(e.get('source')))
 
-    def rel_parts(nid: str, _seen=None):
-        _seen = _seen or set()
-        if nid in _seen or nid not in by_id:
+    def rel_paths(nid: str, _stack=()):  # -> List[List[str]]
+        """All root-relative path-part lists for a node (one per parent chain)."""
+        node = by_id.get(nid)
+        if node is None:
             return []
-        _seen.add(nid)
-        node = by_id[nid]
         seg = str(node.get('name') or nid)
-        p = parent.get(nid)
-        return (rel_parts(p, _seen) + [seg]) if p else [seg]
+        ps = [p for p in parents.get(nid, []) if p in by_id and p not in _stack and p != nid]
+        if not ps:
+            return [[seg]]
+        out: List[List[str]] = []
+        for p in ps:
+            for prefix in rel_paths(p, _stack + (nid,)):
+                out.append(prefix + [seg])
+        return out or [[seg]]
 
     def pyq(s):
         return repr(str(s))
@@ -353,6 +358,7 @@ def generate_python_fs(snapshot: Dict[str, Any], layer_name: str = 'canvas') -> 
     L.append('# Generated by SciDK Canvas Export')
     L.append(f'# Layer: {layer_name!r}')
     L.append('# Review before running — this will reorganize files on disk.')
+    L.append('# Multi-parent nodes appear at every path they hold in the graph.')
     L.append('')
     L.append('from pathlib import Path')
     L.append('import shutil')
@@ -360,16 +366,19 @@ def generate_python_fs(snapshot: Dict[str, Any], layer_name: str = 'canvas') -> 
     L.append('BASE = Path("/your/data/root")  # <-- update this path')
     L.append('')
     L.append('# Create directory structure')
-    dir_nodes = [nid for nid in by_id if any(parent.get(c) == nid for c in by_id) or nid in parent]
+    # A node participates in the tree if it has children or has a parent.
+    has_child = {str(e.get('source')) for e in edges
+                 if (e.get('relationship') or '').upper() == 'CONTAINS'}
+    dir_nodes = [nid for nid in by_id if nid in has_child or nid in parents]
     seen_dirs = set()
     for nid in dir_nodes:
-        parts = rel_parts(nid)
-        key = '/'.join(parts)
-        if key in seen_dirs:
-            continue
-        seen_dirs.add(key)
-        joined = ' / '.join(pyq(p) for p in parts)
-        L.append(f'(BASE / {joined}).mkdir(parents=True, exist_ok=True)')
+        for parts in rel_paths(nid):
+            key = '/'.join(parts)
+            if key in seen_dirs:
+                continue
+            seen_dirs.add(key)
+            joined = ' / '.join(pyq(p) for p in parts)
+            L.append(f'(BASE / {joined}).mkdir(parents=True, exist_ok=True)')
     L.append('')
     L.append('# Move datasets to their new locations')
     for nid, node in by_id.items():
@@ -378,18 +387,115 @@ def generate_python_fs(snapshot: Dict[str, Any], layer_name: str = 'canvas') -> 
         src_path = (node.get('properties') or {}).get('path')
         if not src_path:
             continue
-        parts = rel_parts(nid)
-        joined = ' / '.join(pyq(p) for p in parts)
+        # One destination per parent; a multi-parent node lands at each path.
+        dsts = rel_paths(nid)
         L.append(f'# Dataset: {node.get("name")}')
         L.append(f'src = Path({pyq(src_path)})')
-        L.append(f'dst = BASE / {joined}')
-        L.append('if src.exists():')
-        L.append('    shutil.move(str(src), str(dst))')
-        L.append('    print(f"Moved: {src} -> {dst}")')
-        L.append('else:')
-        L.append('    print(f"WARNING: Source not found: {src}")')
+        for i, parts in enumerate(dsts):
+            joined = ' / '.join(pyq(p) for p in parts)
+            L.append(f'dst = BASE / {joined}')
+            if i == 0:
+                # First path takes the file; later paths mirror it (multi-parent).
+                L.append('if src.exists():')
+                L.append('    shutil.move(str(src), str(dst))')
+                L.append('    print(f"Moved: {src} -> {dst}")')
+                L.append('else:')
+                L.append('    print(f"WARNING: Source not found: {src}")')
+            else:
+                L.append('if dst.parent.exists() and not dst.exists():')
+                L.append('    shutil.copy2(str(BASE / ' + ' / '.join(pyq(p) for p in dsts[0]) + '), str(dst))')
+                L.append('    print(f"Mirrored (multi-parent): {dst}")')
         L.append('')
     return '\n'.join(L)
+
+
+def generate_rocrate_export(snapshot: Dict[str, Any], layer_name: str = 'canvas') -> str:
+    """Serialize a canvas snapshot as a valid RO-Crate 1.1 metadata document.
+
+    RO-Crate is DAG-native: ``hasPart`` lets a child belong to any number of
+    parents, so multi-parent graphs need no special casing — each parent simply
+    lists the child in its ``hasPart`` array. This is also compatible with
+    NextSEEK's DAG-based provenance model. Whatever topology the graph has,
+    RO-Crate represents it.
+
+    Returns the JSON text of ``ro-crate-metadata.json``.
+    """
+    nodes = (snapshot or {}).get('nodes') or []
+    edges = (snapshot or {}).get('edges') or []
+    by_id = {str(n.get('id')): n for n in nodes}
+
+    def entity_id(node_id: str, node: Dict[str, Any]) -> str:
+        # Real nodes keep their Neo4j elementId; provisional nodes get a stable
+        # generated id (uuid5 over the canvas id so re-exports stay consistent).
+        if not node.get('provisional') and node.get('element_id'):
+            return str(node.get('element_id'))
+        return f"#{uuid.uuid5(uuid.NAMESPACE_URL, str(node_id))}"
+
+    def entity_type(node: Dict[str, Any]) -> str:
+        # Dataset/File labels map to a File entity; everything else to a Dataset.
+        return 'File' if str(node.get('label')) in ('Dataset', 'File') else 'Dataset'
+
+    # Build one entity per canvas node, keyed by @id.
+    id_by_node: Dict[str, str] = {}
+    entities: Dict[str, Dict[str, Any]] = {}
+    for node_id, node in by_id.items():
+        eid = entity_id(node_id, node)
+        id_by_node[node_id] = eid
+        props = node.get('properties') or {}
+        entity: Dict[str, Any] = {'@id': eid, '@type': entity_type(node)}
+        name = node.get('name') or props.get('name')
+        if name:
+            entity['name'] = str(name)
+        if props.get('description'):
+            entity['description'] = props.get('description')
+        if props.get('dateCreated'):
+            entity['dateCreated'] = props.get('dateCreated')
+        entities[eid] = entity
+
+    # Edge mapping. CONTAINS -> hasPart (multi-parent handled natively);
+    # ATTACHED_TO -> mentions; anything else -> relation named after the type.
+    has_incoming_contains = set()
+    for e in edges:
+        src_id, tgt_id = str(e.get('source')), str(e.get('target'))
+        if src_id not in id_by_node or tgt_id not in id_by_node:
+            continue
+        src_ent = entities[id_by_node[src_id]]
+        tgt_ref = {'@id': id_by_node[tgt_id]}
+        rel = (e.get('relationship') or '').strip().upper()
+        if rel == 'CONTAINS':
+            src_ent.setdefault('hasPart', []).append(tgt_ref)
+            has_incoming_contains.add(tgt_id)
+        elif rel == 'ATTACHED_TO':
+            src_ent.setdefault('mentions', []).append(tgt_ref)
+        else:
+            src_ent.setdefault('relation', []).append(
+                {'@id': id_by_node[tgt_id], 'name': (e.get('relationship') or '').strip()}
+            )
+
+    # Root Dataset (the layer) hasPart every top-level node — one with no
+    # incoming CONTAINS edge.
+    root = {
+        '@id': './',
+        '@type': 'Dataset',
+        'name': layer_name,
+        'hasPart': [
+            {'@id': id_by_node[nid]} for nid in by_id if nid not in has_incoming_contains
+        ],
+    }
+
+    graph: List[Dict[str, Any]] = [
+        {
+            '@type': 'CreativeWork',
+            '@id': 'ro-crate-metadata.json',
+            'conformsTo': {'@id': 'https://w3id.org/ro/crate/1.1'},
+            'about': {'@id': './'},
+        },
+        root,
+    ]
+    graph.extend(entities.values())
+
+    doc = {'@context': 'https://w3id.org/ro/crate/1.1/context', '@graph': graph}
+    return json.dumps(doc, indent=2, ensure_ascii=False)
 
 
 _canvas_service: Optional[CanvasService] = None

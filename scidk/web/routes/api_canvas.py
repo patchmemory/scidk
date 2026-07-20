@@ -328,9 +328,7 @@ def commit_canvas():
 
     summary = {
         'provisional_nodes': len(plan['node_decls']),
-        'provisional_edges': len(plan['name_rels']) + len(plan['id_edges']),
-        'edges_by_element_id': len(plan['id_edges']),
-        'edges_by_name': len(plan['name_rels']),
+        'provisional_edges': len(plan['rels']),
         'skipped': plan['skipped'],
     }
     if preview:
@@ -346,24 +344,12 @@ def commit_canvas():
         client = Neo4jClient(uri, user, password, database, auth_mode)
         client.connect()
         try:
-            # Provisional nodes (name key) + name-matched provisional-endpoint edges.
-            wd = client.write_declared_nodes(plan['node_decls'], plan['name_rels'])
+            # One MERGE path: nodes first (keyed on name), then edges matched by
+            # (label, name). MERGE finds the just-written or pre-existing node.
+            wd = client.write_declared_nodes(plan['node_decls'], plan['rels'])
             result['written_nodes'] += wd.get('written_nodes', 0)
             result['written_relationships'] += wd.get('written_relationships', 0)
             result['errors'].extend(wd.get('errors', []))
-
-            # Real -> real edges matched by elementId (exact node identity).
-            for e in plan['id_edges']:
-                try:
-                    cypher = (
-                        "MATCH (a) WHERE elementId(a) = $src "
-                        "MATCH (b) WHERE elementId(b) = $tgt "
-                        f"MERGE (a)-[r:{e['rel']}]->(b) RETURN elementId(r)"
-                    )
-                    client.execute_write(cypher, {'src': e['source_element_id'], 'tgt': e['target_element_id']})
-                    result['written_relationships'] += 1
-                except Exception as ex:  # noqa: BLE001
-                    result['errors'].append(f"edge {e['rel']} (elementId): {ex}")
         finally:
             client.close()
     except Exception as e:  # noqa: BLE001
@@ -402,6 +388,17 @@ def export_python():
     return Response(
         text, mimetype='text/x-python',
         headers={'Content-Disposition': 'attachment; filename="canvas_reorg.py"'},
+    )
+
+
+@bp.post('/export/rocrate')
+def export_rocrate():
+    from ...services.canvas_service import generate_rocrate_export
+
+    text = generate_rocrate_export(_snapshot_from_request(), _layer_name_from_request())
+    return Response(
+        text, mimetype='application/ld+json',
+        headers={'Content-Disposition': 'attachment; filename="ro-crate-metadata.json"'},
     )
 
 

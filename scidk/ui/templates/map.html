@@ -1111,6 +1111,7 @@
                 <button class="canvas-adopt-${tab.id} btn btn-xs btn-success" data-testid="canvas-adopt-${tab.id}" title="Write provisional nodes/edges to Neo4j (admin)">✅ Adopt to graph</button>
                 <button class="canvas-export-cypher-${tab.id} btn btn-xs btn-outline-secondary" data-testid="canvas-export-cypher-${tab.id}" title="Download provisional changes as Cypher">⬇ Cypher</button>
                 <button class="canvas-export-python-${tab.id} btn btn-xs btn-outline-secondary" data-testid="canvas-export-python-${tab.id}" title="Download filesystem reorg as Python">⬇ Python</button>
+                <button class="canvas-export-rocrate-${tab.id} btn btn-xs btn-outline-secondary" data-testid="canvas-export-rocrate-${tab.id}" title="Download as RO-Crate metadata (DAG-native, provenance-compatible)">⬇ RO-Crate</button>
                 <span class="canvas-session-status-${tab.id} small text-muted" style="margin-left:auto;"></span>
               </div>
               <!-- Node search -->
@@ -1266,9 +1267,11 @@
     const adoptBtn = q(`.canvas-adopt-${tabId}`);
     const expCypherBtn = q(`.canvas-export-cypher-${tabId}`);
     const expPythonBtn = q(`.canvas-export-python-${tabId}`);
+    const expRocrateBtn = q(`.canvas-export-rocrate-${tabId}`);
     if (adoptBtn) adoptBtn.addEventListener('click', () => adoptToGraph(tabId));
     if (expCypherBtn) expCypherBtn.addEventListener('click', () => exportCanvas(tabId, 'cypher'));
     if (expPythonBtn) expPythonBtn.addEventListener('click', () => exportCanvas(tabId, 'python'));
+    if (expRocrateBtn) expRocrateBtn.addEventListener('click', () => exportCanvas(tabId, 'rocrate'));
   }
 
   // Local HTML-escaper (escapeHtml in the other script block is not in this scope).
@@ -1901,7 +1904,8 @@
       const blob = await resp.blob();
       const dispo = resp.headers.get('Content-Disposition') || '';
       const m = dispo.match(/filename="?([^"]+)"?/);
-      const fname = m ? m[1] : (kind === 'cypher' ? 'canvas.cypher' : 'canvas_reorg.py');
+      const fnameDefaults = { cypher: 'canvas.cypher', python: 'canvas_reorg.py', rocrate: 'ro-crate-metadata.json' };
+      const fname = m ? m[1] : (fnameDefaults[kind] || 'canvas-export.txt');
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = fname; document.body.appendChild(a); a.click();
