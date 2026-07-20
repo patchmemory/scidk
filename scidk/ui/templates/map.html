@@ -336,6 +336,11 @@
     </div>
 
 <script src="https://unpkg.com/cytoscape@3.27.0/dist/cytoscape.min.js"></script>
+<!-- Canvas mode (Push 2): edge drawing.
+     cytoscape-edgehandles' UMD reads window._.memoize/throttle, so lodash must
+     load first; it then auto-registers cy.edgehandles against the global cytoscape. -->
+<script src="https://unpkg.com/lodash@4.17.21/lodash.min.js"></script>
+<script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
 
 <!-- CodeMirror 5 with Cypher mode -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.js"></script>
@@ -1092,8 +1097,19 @@
         <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
           <!-- Visualization View -->
           <div class="result-view-visualization-${tab.id} result-view active" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
-            <!-- Canvas search panel (Canvas mode only) -->
+            <!-- Canvas panel (Canvas mode only): toolbar + node search -->
             <div class="canvas-panel-${tab.id}" data-testid="canvas-panel-${tab.id}" style="display: none; border: 1px solid #2196f3; border-bottom: none; background: #f5faff; padding: 0.5rem; flex-shrink: 0;">
+              <!-- Toolbar -->
+              <div style="display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.4rem;">
+                <button class="canvas-add-node-${tab.id} btn btn-xs btn-outline-primary" data-testid="canvas-add-node-${tab.id}" title="Add a provisional node">➕ Node</button>
+                <button class="canvas-draw-edge-${tab.id} btn btn-xs btn-outline-primary" data-testid="canvas-draw-edge-${tab.id}" title="Toggle edge-drawing mode">🔗 Draw edge</button>
+                <button class="canvas-remove-${tab.id} btn btn-xs btn-outline-danger" data-testid="canvas-remove-${tab.id}" title="Remove selected">🗑️ Remove</button>
+                <span style="width:1px; height:18px; background:#cbd5e1;"></span>
+                <button class="canvas-save-layer-${tab.id} btn btn-xs btn-primary" data-testid="canvas-save-layer-${tab.id}" title="Save this canvas as a named layer">💾 Save layer</button>
+                <button class="canvas-layers-${tab.id} btn btn-xs btn-outline-secondary" data-testid="canvas-layers-${tab.id}" title="Open saved layers">📚 Layers</button>
+                <span class="canvas-session-status-${tab.id} small text-muted" style="margin-left:auto;"></span>
+              </div>
+              <!-- Node search -->
               <div style="display: flex; gap: 0.5rem; align-items: center;">
                 <input type="search" class="canvas-search-input-${tab.id}" data-testid="canvas-search-input-${tab.id}"
                   placeholder="Search graph nodes to add to canvas…"
@@ -1102,8 +1118,11 @@
               </div>
               <div class="canvas-search-results-${tab.id}" data-testid="canvas-search-results-${tab.id}"
                 style="max-height: 180px; overflow: auto; margin-top: 0.4rem;"></div>
+              <!-- Saved layers list (hidden until opened) -->
+              <div class="canvas-layers-list-${tab.id}" data-testid="canvas-layers-list-${tab.id}"
+                style="display:none; max-height: 160px; overflow: auto; margin-top: 0.4rem; border-top: 1px solid #dbe7f3; padding-top: 0.4rem;"></div>
             </div>
-            <div class="graph-container-${tab.id}" data-testid="graph-container-${tab.id}" style="width: 100%; flex: 1; border: 1px solid #ddd;"></div>
+            <div class="graph-container-${tab.id}" data-testid="graph-container-${tab.id}" style="width: 100%; flex: 1; border: 1px solid #ddd; position: relative;"></div>
 
             <!-- Instances Table (appears below visualization) -->
             <div class="instances-table-container-${tab.id}" style="max-height: 300px; overflow: auto; border: 1px solid #ddd; border-top: none; background: #fafafa; padding: 0.5rem; display: none;">
@@ -1207,7 +1226,13 @@
         if (!window.tabCanvasModes) window.tabCanvasModes = {};
         window.tabCanvasModes[tabId] = mode;
         panel.style.display = (mode === 'canvas') ? 'block' : 'none';
-        if (mode === 'canvas' && searchInput) searchInput.focus();
+        if (mode === 'canvas') {
+          enableCanvasTools(tabId);
+          loadCanvasSession(tabId);
+          if (searchInput) searchInput.focus();
+        } else {
+          disableCanvasTools(tabId);
+        }
       });
     });
 
@@ -1221,6 +1246,19 @@
         searchTimer = setTimeout(() => runCanvasSearch(tabId, q, resultsEl, statusEl), 300);
       });
     }
+
+    // Toolbar buttons
+    const q = sel => contentEl.querySelector(sel);
+    const addNodeBtn = q(`.canvas-add-node-${tabId}`);
+    const drawEdgeBtn = q(`.canvas-draw-edge-${tabId}`);
+    const removeBtn = q(`.canvas-remove-${tabId}`);
+    const saveLayerBtn = q(`.canvas-save-layer-${tabId}`);
+    const layersBtn = q(`.canvas-layers-${tabId}`);
+    if (addNodeBtn) addNodeBtn.addEventListener('click', () => addProvisionalNode(tabId));
+    if (drawEdgeBtn) drawEdgeBtn.addEventListener('click', () => toggleDrawEdge(tabId, drawEdgeBtn));
+    if (removeBtn) removeBtn.addEventListener('click', () => removeSelected(tabId));
+    if (saveLayerBtn) saveLayerBtn.addEventListener('click', () => saveCanvasLayer(tabId));
+    if (layersBtn) layersBtn.addEventListener('click', () => toggleLayersList(tabId));
   }
 
   // Local HTML-escaper (escapeHtml in the other script block is not in this scope).
@@ -1300,6 +1338,303 @@
       position: { x: cx, y: cy_ },
       grabbable: true,   // draggable (Cytoscape default, set explicitly)
     });
+    scheduleSessionSave(tabId);
+  }
+
+  // ===== CANVAS MODE (Push 2: edge drawing, provisional elements, persistence) =====
+
+  function getCy(tabId) {
+    return window.cytoscapeInstances && window.cytoscapeInstances[tabId];
+  }
+
+  // Cache relationship types from the schema for the edge picker.
+  let _relTypesCache = null;
+  async function getRelationshipTypes() {
+    if (_relTypesCache) return _relTypesCache;
+    try {
+      const resp = await fetch(window.SCIDK_BASE + '/api/canvas/relationship-types');
+      const data = await resp.json();
+      _relTypesCache = (data.status === 'ok' && data.relationship_types) ? data.relationship_types : [];
+    } catch (e) {
+      _relTypesCache = [];
+    }
+    return _relTypesCache;
+  }
+
+  // Enable edge-drawing + change tracking for a tab's canvas.
+  function enableCanvasTools(tabId) {
+    const cy = getCy(tabId);
+    if (!cy) { setTimeout(() => enableCanvasTools(tabId), 120); return; }
+    if (!window.canvasEh) window.canvasEh = {};
+    if (window.canvasEh[tabId]) return;  // already enabled
+
+    if (typeof cy.edgehandles !== 'function') {
+      console.warn('cytoscape-edgehandles not loaded');
+    } else {
+      const eh = cy.edgehandles({
+        snap: true,
+        canConnect: (s, t) => !s.same(t),
+        edgeParams: () => ({ data: { provisional: true, label: '', relationship: '' } }),
+      });
+      eh.disableDrawMode();  // start disabled; toolbar toggles it
+      window.canvasEh[tabId] = eh;
+
+      // When an edge is drawn, ask for its relationship type.
+      cy.on('ehcomplete', (event, sourceNode, targetNode, addedEdge) => {
+        onEdgeDrawn(tabId, addedEdge);
+      });
+    }
+
+    // Persist canvas on any structural/position change (debounced).
+    if (!window.canvasChangeBound) window.canvasChangeBound = {};
+    if (!window.canvasChangeBound[tabId]) {
+      cy.on('add remove position data', () => scheduleSessionSave(tabId));
+      window.canvasChangeBound[tabId] = true;
+    }
+  }
+
+  function disableCanvasTools(tabId) {
+    const eh = window.canvasEh && window.canvasEh[tabId];
+    if (eh) { try { eh.disableDrawMode(); } catch (e) {} }
+    // Reset the Draw-edge button visual if present
+    const btn = document.querySelector(`.canvas-draw-edge-${tabId}`);
+    if (btn) { btn.classList.remove('btn-primary'); btn.classList.add('btn-outline-primary'); }
+  }
+
+  function toggleDrawEdge(tabId, btn) {
+    const eh = window.canvasEh && window.canvasEh[tabId];
+    if (!eh) return;
+    const on = btn.classList.toggle('btn-primary');
+    btn.classList.toggle('btn-outline-primary', !on);
+    if (on) eh.enableDrawMode(); else eh.disableDrawMode();
+  }
+
+  async function onEdgeDrawn(tabId, edge) {
+    const types = await getRelationshipTypes();
+    const picked = await pickRelationshipType(tabId, types);
+    if (!picked) { edge.remove(); return; }  // cancelled → discard provisional edge
+    edge.data('relationship', picked);
+    edge.data('label', picked);
+    edge.data('provisional', true);
+    scheduleSessionSave(tabId);
+  }
+
+  // Small centered popup to choose a relationship type (dropdown + free text).
+  function pickRelationshipType(tabId, types) {
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.25); z-index:10000; display:flex; align-items:center; justify-content:center;';
+      const options = (types || []).map(t => `<option value="${canvasEsc(t)}">${canvasEsc(t)}</option>`).join('');
+      overlay.innerHTML = `
+        <div style="background:#fff; border-radius:8px; padding:1rem; width:320px; box-shadow:0 6px 24px rgba(0,0,0,0.2);">
+          <h4 style="margin:0 0 0.5rem;">Relationship type</h4>
+          <select class="rel-select" style="width:100%; padding:0.4rem; margin-bottom:0.5rem;">
+            ${options}
+            <option value="__custom__">➕ Custom…</option>
+          </select>
+          <input class="rel-custom" placeholder="CUSTOM_TYPE" style="width:100%; padding:0.4rem; margin-bottom:0.5rem; display:${types && types.length ? 'none' : 'block'};" />
+          <div style="display:flex; justify-content:flex-end; gap:0.5rem;">
+            <button class="rel-cancel btn btn-sm btn-outline-secondary">Cancel</button>
+            <button class="rel-ok btn btn-sm btn-primary">Add</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      const sel = overlay.querySelector('.rel-select');
+      const custom = overlay.querySelector('.rel-custom');
+      if (!types || !types.length) sel.value = '__custom__';
+      sel.addEventListener('change', () => {
+        custom.style.display = (sel.value === '__custom__') ? 'block' : 'none';
+        if (sel.value === '__custom__') custom.focus();
+      });
+      const done = (val) => { overlay.remove(); resolve(val); };
+      overlay.querySelector('.rel-cancel').addEventListener('click', () => done(null));
+      overlay.querySelector('.rel-ok').addEventListener('click', () => {
+        let val = sel.value === '__custom__' ? custom.value.trim() : sel.value;
+        done(val || null);
+      });
+      overlay.addEventListener('click', e => { if (e.target === overlay) done(null); });
+    });
+  }
+
+  // Add a provisional node (does not exist in Neo4j until committed in Push 3).
+  function addProvisionalNode(tabId) {
+    const cy = getCy(tabId);
+    if (!cy) return;
+    const label = (prompt('Node label (e.g. Dataset, Project, Person, Lab):', 'Dataset') || '').trim();
+    if (!label) return;
+    const name = (prompt('Node name:', '') || '').trim();
+    if (!name) return;
+    const ext = cy.extent();
+    const id = 'prov-' + Math.random().toString(36).slice(2, 10);
+    cy.add({
+      group: 'nodes',
+      data: { id, label, displayLabel: name, properties: { name }, provisional: true },
+      position: { x: (ext.x1 + ext.x2) / 2 + (Math.random() - 0.5) * 120,
+                  y: (ext.y1 + ext.y2) / 2 + (Math.random() - 0.5) * 120 },
+      grabbable: true,
+    });
+    scheduleSessionSave(tabId);
+  }
+
+  function removeSelected(tabId) {
+    const cy = getCy(tabId);
+    if (!cy) return;
+    const sel = cy.$(':selected');
+    if (sel.nonempty()) { sel.remove(); scheduleSessionSave(tabId); }
+  }
+
+  // Serialize the canvas to the addendum snapshot_json shape.
+  function serializeCanvas(tabId) {
+    const cy = getCy(tabId);
+    if (!cy) return { nodes: [], edges: [] };
+    const nodes = cy.nodes().map(n => ({
+      id: n.id(),
+      label: n.data('label'),
+      name: n.data('displayLabel') || (n.data('properties') || {}).name || n.id(),
+      properties: n.data('properties') || {},
+      position: { ...n.position() },
+      provisional: !!n.data('provisional'),
+    }));
+    const edges = cy.edges().map(e => ({
+      source: e.data('source'),
+      target: e.data('target'),
+      relationship: e.data('relationship') || e.data('label') || '',
+      provisional: !!e.data('provisional'),
+    }));
+    return { nodes, edges };
+  }
+
+  // Restore a snapshot onto the canvas (replaces current contents).
+  function restoreCanvas(tabId, snapshot) {
+    const cy = getCy(tabId);
+    if (!cy || !snapshot) return;
+    cy.elements().remove();
+    const els = [];
+    (snapshot.nodes || []).forEach(n => {
+      els.push({
+        group: 'nodes',
+        data: { id: String(n.id), label: n.label, displayLabel: n.name,
+                properties: n.properties || {}, provisional: !!n.provisional },
+        position: n.position || undefined,
+        grabbable: true,
+      });
+    });
+    const nodeIds = new Set((snapshot.nodes || []).map(n => String(n.id)));
+    (snapshot.edges || []).forEach((e, i) => {
+      if (!nodeIds.has(String(e.source)) || !nodeIds.has(String(e.target))) return;
+      els.push({
+        group: 'edges',
+        data: { id: 'e' + i + '-' + Math.random().toString(36).slice(2, 6),
+                source: String(e.source), target: String(e.target),
+                relationship: e.relationship || '', label: e.relationship || '',
+                provisional: !!e.provisional },
+      });
+    });
+    cy.add(els);
+  }
+
+  // --- Session persistence (SQLite-backed, per user) ---
+  let _sessionTimers = {};
+  function scheduleSessionSave(tabId) {
+    if (window.tabCanvasModes && window.tabCanvasModes[tabId] !== 'canvas') return;
+    if (window.__canvasRestoring) return;  // don't echo restores back to the server
+    clearTimeout(_sessionTimers[tabId]);
+    _sessionTimers[tabId] = setTimeout(() => saveCanvasSession(tabId), 600);
+  }
+
+  async function saveCanvasSession(tabId) {
+    const status = document.querySelector(`.canvas-session-status-${tabId}`);
+    try {
+      const canvas = serializeCanvas(tabId);
+      await fetch(window.SCIDK_BASE + '/api/canvas/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ canvas }),
+      });
+      if (status) { status.textContent = 'Saved'; setTimeout(() => { if (status.textContent === 'Saved') status.textContent = ''; }, 1500); }
+    } catch (e) { if (status) status.textContent = 'Save failed'; }
+  }
+
+  let _sessionLoaded = {};
+  async function loadCanvasSession(tabId) {
+    if (_sessionLoaded[tabId]) return;  // only restore once per tab per page load
+    _sessionLoaded[tabId] = true;
+    try {
+      const resp = await fetch(window.SCIDK_BASE + '/api/canvas/session');
+      const data = await resp.json();
+      if (data.status === 'ok' && data.canvas && (data.canvas.nodes || []).length) {
+        const cy = getCy(tabId);
+        if (!cy) return;
+        // Only restore into an empty canvas so we don't clobber query results.
+        if (cy.nodes().length === 0) {
+          window.__canvasRestoring = true;
+          restoreCanvas(tabId, data.canvas);
+          window.__canvasRestoring = false;
+        }
+      }
+    } catch (e) { /* no session yet */ }
+  }
+
+  // --- Save named layer (stored in saved_maps via /api/canvas/layers) ---
+  async function saveCanvasLayer(tabId) {
+    const name = (prompt('Name this layer:', 'Dataset grouping attempt 1') || '').trim();
+    if (!name) return;
+    const snapshot = serializeCanvas(tabId);
+    const displayMode = (window.tabVisualizationModes && window.tabVisualizationModes[tabId] === 'schema') ? 'schema' : 'instance';
+    try {
+      const resp = await fetch(window.SCIDK_BASE + '/api/canvas/layers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, display_mode: displayMode, snapshot_json: snapshot, layers: [] }),
+      });
+      const data = await resp.json();
+      const status = document.querySelector(`.canvas-session-status-${tabId}`);
+      if (data.status === 'ok') { if (status) { status.textContent = 'Layer saved'; setTimeout(() => status.textContent = '', 2000); } }
+      else alert('Save failed: ' + (data.error || 'unknown'));
+    } catch (e) { alert('Save failed: ' + e); }
+  }
+
+  async function toggleLayersList(tabId) {
+    const list = document.querySelector(`.canvas-layers-list-${tabId}`);
+    if (!list) return;
+    if (list.style.display !== 'none') { list.style.display = 'none'; return; }
+    list.style.display = 'block';
+    list.innerHTML = '<p class="small text-muted" style="margin:0.25rem;">Loading…</p>';
+    try {
+      const resp = await fetch(window.SCIDK_BASE + '/api/canvas/layers');
+      const data = await resp.json();
+      const layers = (data.layers || []);
+      if (!layers.length) { list.innerHTML = '<p class="small text-muted" style="margin:0.25rem;">No saved layers</p>'; return; }
+      list.innerHTML = '';
+      layers.forEach(l => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:0.5rem; padding:0.3rem 0.4rem; border-bottom:1px solid #e5eef7;';
+        row.innerHTML = `<span style="font-size:0.85rem;">${canvasEsc(l.name)} <span class="badge" style="background:#95a5a6;color:#fff;font-size:0.65rem;padding:0.05rem 0.35rem;border-radius:3px;">${canvasEsc(l.display_mode || 'instance')}</span></span>`;
+        const loadBtn = document.createElement('button');
+        loadBtn.className = 'btn btn-xs btn-outline-primary';
+        loadBtn.style.cssText = 'font-size:0.7rem; flex-shrink:0;';
+        loadBtn.textContent = 'Load';
+        loadBtn.addEventListener('click', () => loadCanvasLayer(tabId, l.layer_id));
+        row.appendChild(loadBtn);
+        list.appendChild(row);
+      });
+    } catch (e) {
+      list.innerHTML = `<p class="small" style="color:#c0392b; margin:0.25rem;">${canvasEsc(String(e))}</p>`;
+    }
+  }
+
+  async function loadCanvasLayer(tabId, layerId) {
+    try {
+      const resp = await fetch(window.SCIDK_BASE + `/api/canvas/layers/${encodeURIComponent(layerId)}`);
+      const data = await resp.json();
+      if (data.status !== 'ok') { alert('Load failed: ' + (data.error || 'unknown')); return; }
+      const snap = data.layer && data.layer.snapshot_json;
+      if (!snap) { alert('This layer has no saved canvas snapshot.'); return; }
+      window.__canvasRestoring = true;
+      restoreCanvas(tabId, snap);
+      window.__canvasRestoring = false;
+      scheduleSessionSave(tabId);
+    } catch (e) { alert('Load failed: ' + e); }
   }
 
   // Initialize Cytoscape graph for a tab
@@ -1351,6 +1686,45 @@
             'text-outline-color': '#000',
             'text-wrap': 'wrap',
             'text-max-width': '250px'
+          }
+        },
+        // Canvas mode (Push 2) — provisional elements are visually distinct:
+        // provisional nodes keep their color but get a dashed orange border at
+        // 60% opacity; provisional edges are dashed orange.
+        {
+          selector: 'node[?provisional]',
+          style: {
+            'border-style': 'dashed',
+            'border-width': 3,
+            'border-color': '#e67e22',
+            'opacity': 0.6
+          }
+        },
+        {
+          selector: 'edge[?provisional]',
+          style: {
+            'line-style': 'dashed',
+            'line-color': '#e67e22',
+            'target-arrow-color': '#e67e22'
+          }
+        },
+        // Snapshot diff (addendum): nodes flagged missing on reload are greyed.
+        {
+          selector: 'node[?missing]',
+          style: {
+            'background-color': '#bdc3c7',
+            'opacity': 0.4,
+            'border-style': 'dotted',
+            'border-color': '#7f8c8d'
+          }
+        },
+        // edgehandles preview/ghost styling
+        {
+          selector: '.eh-preview, .eh-ghost-edge',
+          style: {
+            'line-color': '#e67e22',
+            'target-arrow-color': '#e67e22',
+            'line-style': 'dashed'
           }
         }
       ];
