@@ -14,7 +14,24 @@ from typing import Any, Dict, List
 
 from flask import Blueprint, jsonify, request, current_app, g
 
+from ..decorators import require_role
+
 bp = Blueprint('api_canvas', __name__, url_prefix='/api/canvas')
+
+# Canvas tuning constants (shared with the frontend via GET /api/canvas/config).
+CANVAS_FANOUT_THRESHOLD = 20   # subtree size above which we collapse to an ellipsis node
+CANVAS_LAZY_LOAD_LIMIT = 50    # max children pulled when expanding an ellipsis
+CANVAS_MAX_DEPTH = 3           # max hops when expanding
+
+
+@bp.get('/config')
+def canvas_config():
+    return jsonify({
+        'status': 'ok',
+        'CANVAS_FANOUT_THRESHOLD': CANVAS_FANOUT_THRESHOLD,
+        'CANVAS_LAZY_LOAD_LIMIT': CANVAS_LAZY_LOAD_LIMIT,
+        'CANVAS_MAX_DEPTH': CANVAS_MAX_DEPTH,
+    }), 200
 
 
 def _settings_db():
@@ -109,7 +126,7 @@ def search_nodes():
         "  OR toLower(coalesce(n.path, '')) CONTAINS $q "
         "  OR toLower(coalesce(toString(n.id), '')) CONTAINS $q "
         ") "
-        "RETURN id(n) AS id, labels(n) AS labels, properties(n) AS props "
+        "RETURN id(n) AS id, elementId(n) AS element_id, labels(n) AS labels, properties(n) AS props "
         "LIMIT $limit"
     )
     params = {'q': q.lower(), 'label': label, 'limit': limit}
@@ -131,6 +148,7 @@ def search_nodes():
         props = {k: _json_safe(v) for k, v in (row.get('props') or {}).items()}
         results.append({
             'id': node_id,
+            'element_id': row.get('element_id'),
             'label': labels[0] if labels else 'Node',
             'labels': labels,
             'name': _display_name(props, node_id),
@@ -289,3 +307,208 @@ def delete_layer(layer_id: str):
     svc = get_saved_maps_service(db_path=_settings_db())
     ok = svc.delete_map(layer_id)
     return jsonify({'status': 'ok', 'deleted': ok}), (200 if ok else 404)
+
+
+def _snapshot_from_request():
+    """Pull a canvas snapshot from the request body ({snapshot|canvas:{...}} or bare)."""
+    body = request.get_json(silent=True) or {}
+    return body.get('snapshot') or body.get('canvas') or body
+
+
+# --- Commit provisional elements to Neo4j (admin only) ---
+@bp.post('/commit')
+@require_role('admin')
+def commit_canvas():
+    from ...services.neo4j_client import Neo4jClient, get_neo4j_params
+    from ...services.canvas_service import build_commit_plan
+
+    snapshot = _snapshot_from_request()
+    plan = build_commit_plan(snapshot)
+    preview = str(request.args.get('preview') or '').lower() in ('1', 'true', 'yes')
+
+    summary = {
+        'provisional_nodes': len(plan['node_decls']),
+        'provisional_edges': len(plan['name_rels']) + len(plan['id_edges']),
+        'edges_by_element_id': len(plan['id_edges']),
+        'edges_by_name': len(plan['name_rels']),
+        'skipped': plan['skipped'],
+    }
+    if preview:
+        return jsonify({'status': 'ok', 'preview': True, 'plan': summary,
+                        'nodes': plan['node_decls']}), 200
+
+    uri, user, password, database, auth_mode = get_neo4j_params(current_app)
+    if not uri:
+        return jsonify({'status': 'error', 'error': 'Neo4j not configured.'}), 500
+
+    result = {'written_nodes': 0, 'written_relationships': 0, 'errors': []}
+    try:
+        client = Neo4jClient(uri, user, password, database, auth_mode)
+        client.connect()
+        try:
+            # Provisional nodes (name key) + name-matched provisional-endpoint edges.
+            wd = client.write_declared_nodes(plan['node_decls'], plan['name_rels'])
+            result['written_nodes'] += wd.get('written_nodes', 0)
+            result['written_relationships'] += wd.get('written_relationships', 0)
+            result['errors'].extend(wd.get('errors', []))
+
+            # Real -> real edges matched by elementId (exact node identity).
+            for e in plan['id_edges']:
+                try:
+                    cypher = (
+                        "MATCH (a) WHERE elementId(a) = $src "
+                        "MATCH (b) WHERE elementId(b) = $tgt "
+                        f"MERGE (a)-[r:{e['rel']}]->(b) RETURN elementId(r)"
+                    )
+                    client.execute_write(cypher, {'src': e['source_element_id'], 'tgt': e['target_element_id']})
+                    result['written_relationships'] += 1
+                except Exception as ex:  # noqa: BLE001
+                    result['errors'].append(f"edge {e['rel']} (elementId): {ex}")
+        finally:
+            client.close()
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+    result['skipped'] = plan['skipped']
+    result['status'] = 'ok' if not result['errors'] else 'partial'
+    return jsonify(result), 200
+
+
+# --- Exports (download provisional changes as runnable scripts) ---
+from flask import Response  # noqa: E402
+
+
+def _layer_name_from_request() -> str:
+    body = request.get_json(silent=True) or {}
+    return (body.get('layer_name') or body.get('name') or 'canvas')
+
+
+@bp.post('/export/cypher')
+def export_cypher():
+    from ...services.canvas_service import generate_cypher
+
+    text = generate_cypher(_snapshot_from_request(), _layer_name_from_request())
+    return Response(
+        text, mimetype='text/plain',
+        headers={'Content-Disposition': 'attachment; filename="canvas.cypher"'},
+    )
+
+
+@bp.post('/export/python')
+def export_python():
+    from ...services.canvas_service import generate_python_fs
+
+    text = generate_python_fs(_snapshot_from_request(), _layer_name_from_request())
+    return Response(
+        text, mimetype='text/x-python',
+        headers={'Content-Disposition': 'attachment; filename="canvas_reorg.py"'},
+    )
+
+
+# --- Snapshot diff support (Item 4): which loaded nodes still exist in Neo4j ---
+@bp.post('/nodes/verify')
+def verify_nodes():
+    from ...services.neo4j_client import Neo4jClient, get_neo4j_params
+
+    body = request.get_json(silent=True) or {}
+    element_ids = [str(x) for x in (body.get('element_ids') or []) if x]
+    if not element_ids:
+        return jsonify({'status': 'ok', 'existing': [], 'missing': []}), 200
+
+    uri, user, password, database, auth_mode = get_neo4j_params(current_app)
+    if not uri:
+        return jsonify({'status': 'error', 'error': 'Neo4j not configured.'}), 500
+    try:
+        client = Neo4jClient(uri, user, password, database, auth_mode)
+        client.connect()
+        try:
+            rows = client.execute_read(
+                "MATCH (n) WHERE elementId(n) IN $ids RETURN elementId(n) AS eid",
+                {'ids': element_ids},
+            )
+        finally:
+            client.close()
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+    existing = {r.get('eid') for r in rows}
+    missing = [e for e in element_ids if e not in existing]
+    return jsonify({'status': 'ok', 'existing': sorted(existing), 'missing': missing}), 200
+
+
+# --- Ellipsis expansion (Item 5): a node's outgoing neighbours ---
+@bp.post('/nodes/expand')
+def expand_node():
+    from ...services.neo4j_client import Neo4jClient, get_neo4j_params
+
+    body = request.get_json(silent=True) or {}
+    element_id = body.get('element_id')
+    if not element_id:
+        return jsonify({'status': 'error', 'error': 'element_id required'}), 400
+    try:
+        limit = int(body.get('limit') or CANVAS_LAZY_LOAD_LIMIT)
+    except (TypeError, ValueError):
+        limit = CANVAS_LAZY_LOAD_LIMIT
+    limit = max(1, min(limit, CANVAS_LAZY_LOAD_LIMIT))
+
+    uri, user, password, database, auth_mode = get_neo4j_params(current_app)
+    if not uri:
+        return jsonify({'status': 'error', 'error': 'Neo4j not configured.'}), 500
+    try:
+        client = Neo4jClient(uri, user, password, database, auth_mode)
+        client.connect()
+        try:
+            total = client.execute_read(
+                "MATCH (n)-[r]->(m) WHERE elementId(n) = $id RETURN count(m) AS total",
+                {'id': element_id},
+            )
+            total_count = (total[0].get('total') if total else 0) or 0
+            rows = client.execute_read(
+                "MATCH (n)-[r]->(m) WHERE elementId(n) = $id "
+                "RETURN id(m) AS id, elementId(m) AS element_id, labels(m) AS labels, "
+                "properties(m) AS props, type(r) AS rel LIMIT $limit",
+                {'id': element_id, 'limit': limit},
+            )
+        finally:
+            client.close()
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+    children = []
+    for r in rows:
+        props = {k: _json_safe(v) for k, v in (r.get('props') or {}).items()}
+        labels = r.get('labels') or []
+        children.append({
+            'id': str(r.get('id')),
+            'element_id': r.get('element_id'),
+            'label': labels[0] if labels else 'Node',
+            'name': _display_name(props, str(r.get('id'))),
+            'relationship': r.get('rel'),
+            'properties': props,
+        })
+    return jsonify({
+        'status': 'ok',
+        'total': total_count,
+        'threshold': CANVAS_FANOUT_THRESHOLD,
+        'children': children,
+    }), 200
+
+
+@bp.put('/layers/<layer_id>')
+def update_layer(layer_id: str):
+    """Update a saved layer's snapshot (Item 4 Refresh: overwrite snapshot)."""
+    from ...services.saved_maps_service import get_saved_maps_service
+
+    body = request.get_json(silent=True) or {}
+    updates = {}
+    if 'snapshot_json' in body:
+        updates['snapshot_json'] = body.get('snapshot_json')
+    if 'name' in body:
+        updates['name'] = body.get('name')
+    if 'display_mode' in body:
+        updates['display_mode'] = body.get('display_mode')
+    svc = get_saved_maps_service(db_path=_settings_db())
+    m = svc.update_map(layer_id, **updates)
+    if not m:
+        return jsonify({'status': 'error', 'error': 'not found'}), 404
+    return jsonify({'status': 'ok', 'layer': m.to_dict()}), 200

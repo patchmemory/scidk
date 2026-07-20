@@ -1107,6 +1107,10 @@
                 <span style="width:1px; height:18px; background:#cbd5e1;"></span>
                 <button class="canvas-save-layer-${tab.id} btn btn-xs btn-primary" data-testid="canvas-save-layer-${tab.id}" title="Save this canvas as a named layer">💾 Save layer</button>
                 <button class="canvas-layers-${tab.id} btn btn-xs btn-outline-secondary" data-testid="canvas-layers-${tab.id}" title="Open saved layers">📚 Layers</button>
+                <span style="width:1px; height:18px; background:#cbd5e1;"></span>
+                <button class="canvas-adopt-${tab.id} btn btn-xs btn-success" data-testid="canvas-adopt-${tab.id}" title="Write provisional nodes/edges to Neo4j (admin)">✅ Adopt to graph</button>
+                <button class="canvas-export-cypher-${tab.id} btn btn-xs btn-outline-secondary" data-testid="canvas-export-cypher-${tab.id}" title="Download provisional changes as Cypher">⬇ Cypher</button>
+                <button class="canvas-export-python-${tab.id} btn btn-xs btn-outline-secondary" data-testid="canvas-export-python-${tab.id}" title="Download filesystem reorg as Python">⬇ Python</button>
                 <span class="canvas-session-status-${tab.id} small text-muted" style="margin-left:auto;"></span>
               </div>
               <!-- Node search -->
@@ -1259,6 +1263,12 @@
     if (removeBtn) removeBtn.addEventListener('click', () => removeSelected(tabId));
     if (saveLayerBtn) saveLayerBtn.addEventListener('click', () => saveCanvasLayer(tabId));
     if (layersBtn) layersBtn.addEventListener('click', () => toggleLayersList(tabId));
+    const adoptBtn = q(`.canvas-adopt-${tabId}`);
+    const expCypherBtn = q(`.canvas-export-cypher-${tabId}`);
+    const expPythonBtn = q(`.canvas-export-python-${tabId}`);
+    if (adoptBtn) adoptBtn.addEventListener('click', () => adoptToGraph(tabId));
+    if (expCypherBtn) expCypherBtn.addEventListener('click', () => exportCanvas(tabId, 'cypher'));
+    if (expPythonBtn) expPythonBtn.addEventListener('click', () => exportCanvas(tabId, 'python'));
   }
 
   // Local HTML-escaper (escapeHtml in the other script block is not in this scope).
@@ -1334,6 +1344,7 @@
         displayLabel: node.name,
         properties: node.properties || {},
         provisional: false,
+        element_id: node.element_id || null,  // Neo4j elementId for id-based edge commit
       },
       position: { x: cx, y: cy_ },
       grabbable: true,   // draggable (Cytoscape default, set explicitly)
@@ -1389,8 +1400,105 @@
     if (!window.canvasChangeBound) window.canvasChangeBound = {};
     if (!window.canvasChangeBound[tabId]) {
       cy.on('add remove position data', () => scheduleSessionSave(tabId));
+      // Item 5: double-tap a real node to expand its children (fan-out → ellipsis);
+      // tap an ellipsis node to lazy-load the collapsed subtree.
+      cy.on('dbltap', 'node', (evt) => {
+        const n = evt.target;
+        if (n.data('ellipsis')) return;
+        if (n.data('element_id')) expandNode(tabId, n);
+      });
+      cy.on('tap', 'node[?ellipsis]', (evt) => lazyLoadEllipsis(tabId, evt.target));
       window.canvasChangeBound[tabId] = true;
     }
+  }
+
+  // Canvas tuning constants (mirrors backend; refreshed from /api/canvas/config).
+  window.CANVAS_CFG = window.CANVAS_CFG || { CANVAS_FANOUT_THRESHOLD: 20, CANVAS_LAZY_LOAD_LIMIT: 50, CANVAS_MAX_DEPTH: 3 };
+  (async () => {
+    try {
+      const r = await fetch(window.SCIDK_BASE + '/api/canvas/config');
+      const d = await r.json();
+      if (d.status === 'ok') window.CANVAS_CFG = d;
+    } catch (e) { /* keep defaults */ }
+  })();
+
+  function _addChildNode(cy, child, pos) {
+    if (cy.getElementById(String(child.id)).nonempty()) return cy.getElementById(String(child.id));
+    return cy.add({
+      group: 'nodes',
+      data: { id: String(child.id), label: child.label, displayLabel: child.name,
+              properties: child.properties || {}, provisional: false, element_id: child.element_id || null },
+      position: pos, grabbable: true,
+    });
+  }
+
+  async function expandNode(tabId, node) {
+    const cy = getCy(tabId);
+    const eid = node.data('element_id');
+    if (!eid) return;
+    let data;
+    try {
+      const resp = await fetch(window.SCIDK_BASE + '/api/canvas/nodes/expand', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ element_id: eid }),
+      });
+      data = await resp.json();
+      if (data.status !== 'ok') { alert('Expand failed: ' + (data.error || 'unknown')); return; }
+    } catch (e) { alert('Expand failed: ' + e); return; }
+
+    if (data.total === 0) return;
+    const threshold = (window.CANVAS_CFG || {}).CANVAS_FANOUT_THRESHOLD || 20;
+    const base = node.position();
+    if (data.total > threshold) {
+      // Collapse to a single ellipsis node representing the subtree.
+      const childLabel = (data.children[0] && data.children[0].label) || 'Node';
+      const ellId = 'ellipsis-' + eid;
+      if (cy.getElementById(ellId).nonempty()) return;
+      cy.add({
+        group: 'nodes',
+        data: { id: ellId, label: `${childLabel} (${data.total})`, displayLabel: `${childLabel} (${data.total})`,
+                ellipsis: true, parentElementId: eid, childLabel: childLabel, provisional: false },
+        position: { x: base.x + 120, y: base.y + 60 }, grabbable: true,
+      });
+      cy.add({ group: 'edges', data: { id: 'ee-' + eid, source: node.id(), target: ellId, label: 'expands' } });
+    } else {
+      // Small enough — add children directly.
+      data.children.forEach((c, i) => {
+        const child = _addChildNode(cy, c, { x: base.x + 120 + (i % 5) * 40, y: base.y + 60 + Math.floor(i / 5) * 40 });
+        cy.add({ group: 'edges', data: { id: `ce-${eid}-${c.id}`, source: node.id(), target: String(c.id),
+                 relationship: c.relationship || '', label: c.relationship || '' } });
+      });
+    }
+    scheduleSessionSave(tabId);
+  }
+
+  async function lazyLoadEllipsis(tabId, ellipsisNode) {
+    const cy = getCy(tabId);
+    const parentEid = ellipsisNode.data('parentElementId');
+    const limit = (window.CANVAS_CFG || {}).CANVAS_LAZY_LOAD_LIMIT || 50;
+    let data;
+    try {
+      const resp = await fetch(window.SCIDK_BASE + '/api/canvas/nodes/expand', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ element_id: parentEid, limit }),
+      });
+      data = await resp.json();
+      if (data.status !== 'ok') { alert('Load failed: ' + (data.error || 'unknown')); return; }
+    } catch (e) { alert('Load failed: ' + e); return; }
+    // Find the parent node (source of the ellipsis edge) to anchor children.
+    const inc = ellipsisNode.incomers('node');
+    const parent = inc.nonempty() ? inc.first() : ellipsisNode;
+    const base = parent.position();
+    data.children.forEach((c, i) => {
+      const child = _addChildNode(cy, c, { x: base.x + 120 + (i % 8) * 40, y: base.y + 60 + Math.floor(i / 8) * 40 });
+      cy.add({ group: 'edges', data: { id: `ce-${parentEid}-${c.id}`, source: parent.id(), target: String(c.id),
+               relationship: c.relationship || '', label: c.relationship || '' } });
+    });
+    if (data.total > data.children.length) {
+      alert(`Loaded ${data.children.length} of ${data.total} (lazy-load limit ${limit}).`);
+    }
+    ellipsisNode.remove();
+    scheduleSessionSave(tabId);
   }
 
   function disableCanvasTools(tabId) {
@@ -1494,6 +1602,7 @@
       properties: n.data('properties') || {},
       position: { ...n.position() },
       provisional: !!n.data('provisional'),
+      element_id: n.data('element_id') || null,
     }));
     const edges = cy.edges().map(e => ({
       source: e.data('source'),
@@ -1514,7 +1623,8 @@
       els.push({
         group: 'nodes',
         data: { id: String(n.id), label: n.label, displayLabel: n.name,
-                properties: n.properties || {}, provisional: !!n.provisional },
+                properties: n.properties || {}, provisional: !!n.provisional,
+                element_id: n.element_id || null },
         position: n.position || undefined,
         grabbable: true,
       });
@@ -1633,8 +1743,170 @@
       window.__canvasRestoring = true;
       restoreCanvas(tabId, snap);
       window.__canvasRestoring = false;
+      if (!window.canvasLayerId) window.canvasLayerId = {};
+      window.canvasLayerId[tabId] = layerId;
       scheduleSessionSave(tabId);
+      // Item 4: verify loaded nodes still exist, in the background.
+      runSnapshotDiff(tabId);
     } catch (e) { alert('Load failed: ' + e); }
+  }
+
+  // --- Item 4: snapshot diff on open (grey out missing nodes, Refresh/Keep) ---
+  async function runSnapshotDiff(tabId) {
+    const cy = getCy(tabId);
+    if (!cy) return;
+    // Only real (non-provisional) nodes with a Neo4j elementId can be verified.
+    const realNodes = cy.nodes().filter(n => !n.data('provisional') && n.data('element_id'));
+    const eids = realNodes.map(n => n.data('element_id'));
+    if (!eids.length) return;
+    let missing = [];
+    try {
+      const resp = await fetch(window.SCIDK_BASE + '/api/canvas/nodes/verify', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ element_ids: eids }),
+      });
+      const data = await resp.json();
+      if (data.status !== 'ok') return;
+      missing = data.missing || [];
+    } catch (e) { return; }
+    if (!missing.length) return;
+    const missingSet = new Set(missing);
+    cy.nodes().forEach(n => {
+      if (missingSet.has(n.data('element_id'))) n.data('missing', true);
+    });
+    showDiffBanner(tabId, missing.length);
+  }
+
+  function showDiffBanner(tabId, count) {
+    const container = document.querySelector(`.graph-container-${tabId}`);
+    if (!container) return;
+    const existing = container.querySelector('.canvas-diff-banner');
+    if (existing) existing.remove();
+    const banner = document.createElement('div');
+    banner.className = 'canvas-diff-banner';
+    banner.setAttribute('data-testid', `canvas-diff-banner-${tabId}`);
+    banner.style.cssText = 'position:absolute; top:0; left:0; right:0; z-index:20; background:#fff3cd; border-bottom:1px solid #ffe08a; color:#664d03; padding:0.4rem 0.6rem; display:flex; align-items:center; gap:0.75rem; font-size:0.85rem;';
+    banner.innerHTML = `
+      <span style="flex:1;">⚠️ ${count} node(s) in this saved layer no longer exist in the graph (greyed out).</span>
+      <button class="diff-refresh btn btn-xs btn-warning" title="Overwrite the saved snapshot, dropping missing nodes">Refresh</button>
+      <button class="diff-keep btn btn-xs btn-outline-secondary" title="Keep the snapshot as-is">Keep</button>`;
+    container.appendChild(banner);
+    banner.querySelector('.diff-keep').addEventListener('click', () => banner.remove());
+    banner.querySelector('.diff-refresh').addEventListener('click', () => refreshSnapshot(tabId, banner));
+  }
+
+  async function refreshSnapshot(tabId, banner) {
+    const cy = getCy(tabId);
+    if (!cy) return;
+    // Drop the missing nodes, then overwrite session and (if loaded) the layer snapshot.
+    cy.nodes('[?missing]').remove();
+    const snapshot = serializeCanvas(tabId);
+    const layerId = window.canvasLayerId && window.canvasLayerId[tabId];
+    try {
+      if (layerId) {
+        await fetch(window.SCIDK_BASE + `/api/canvas/layers/${encodeURIComponent(layerId)}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ snapshot_json: snapshot }),
+        });
+      }
+      await saveCanvasSession(tabId);
+    } catch (e) { /* best effort */ }
+    if (banner) banner.remove();
+  }
+
+  // --- Commit provisional elements to Neo4j (admin only) ---
+  async function adoptToGraph(tabId) {
+    const snapshot = serializeCanvas(tabId);
+    const provNodes = snapshot.nodes.filter(n => n.provisional);
+    const provEdges = snapshot.edges.filter(e => e.provisional);
+    if (!provNodes.length && !provEdges.length) {
+      alert('Nothing to adopt — there are no provisional nodes or edges on this canvas.');
+      return;
+    }
+    // Preview via the server (server decides elementId vs name matching + skips).
+    let plan;
+    try {
+      const resp = await fetch(window.SCIDK_BASE + '/api/canvas/commit?preview=1', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ snapshot }),
+      });
+      if (resp.status === 401 || resp.status === 403) { alert('Adopting to the graph requires an admin account.'); return; }
+      plan = (await resp.json()).plan;
+    } catch (e) { alert('Preview failed: ' + e); return; }
+
+    const confirmed = await showCommitPreview(tabId, snapshot, plan);
+    if (!confirmed) return;
+
+    try {
+      const resp = await fetch(window.SCIDK_BASE + '/api/canvas/commit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ snapshot }),
+      });
+      if (resp.status === 401 || resp.status === 403) { alert('Adopting to the graph requires an admin account.'); return; }
+      const data = await resp.json();
+      if (data.status === 'error') { alert('Commit failed: ' + (data.error || 'unknown')); return; }
+      // On success flip provisional elements to live and restyle.
+      const cy = getCy(tabId);
+      if (!(data.errors && data.errors.length)) {
+        cy.elements('[?provisional]').forEach(el => el.data('provisional', false));
+      }
+      scheduleSessionSave(tabId);
+      const msg = `Adopted ${data.written_nodes} node(s), ${data.written_relationships} relationship(s).` +
+        (data.errors && data.errors.length ? `\n\nErrors:\n- ${data.errors.join('\n- ')}` : '') +
+        (data.skipped && data.skipped.length ? `\n\nSkipped:\n- ${data.skipped.join('\n- ')}` : '');
+      alert(msg);
+    } catch (e) { alert('Commit failed: ' + e); }
+  }
+
+  function showCommitPreview(tabId, snapshot, plan) {
+    return new Promise(resolve => {
+      const provNodes = snapshot.nodes.filter(n => n.provisional);
+      const provEdges = snapshot.edges.filter(e => e.provisional);
+      const nodeList = provNodes.map(n => `<li>${canvasEsc(n.label)}: <strong>${canvasEsc(n.name)}</strong></li>`).join('') || '<li class="text-muted">none</li>';
+      const edgeList = provEdges.map(e => `<li>${canvasEsc(e.source)} —[${canvasEsc(e.relationship || '?')}]→ ${canvasEsc(e.target)}</li>`).join('') || '<li class="text-muted">none</li>';
+      const skipped = (plan && plan.skipped && plan.skipped.length)
+        ? `<div style="margin-top:0.5rem; color:#b26a00;"><strong>Will be skipped:</strong><ul style="margin:0.25rem 0;">${plan.skipped.map(s => `<li>${canvasEsc(s)}</li>`).join('')}</ul></div>` : '';
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.3); z-index:10000; display:flex; align-items:center; justify-content:center;';
+      overlay.innerHTML = `
+        <div style="background:#fff; border-radius:8px; padding:1.25rem; width:460px; max-height:80vh; overflow:auto; box-shadow:0 8px 30px rgba(0,0,0,0.25);">
+          <h3 style="margin:0 0 0.5rem;">Adopt to graph</h3>
+          <p class="small text-muted" style="margin:0 0 0.75rem;">Only provisional elements are written. MERGE makes this idempotent.</p>
+          <div><strong>Nodes to create (${provNodes.length}):</strong><ul style="margin:0.25rem 0;">${nodeList}</ul></div>
+          <div><strong>Relationships to create (${provEdges.length}):</strong><ul style="margin:0.25rem 0;">${edgeList}</ul></div>
+          ${skipped}
+          <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1rem;">
+            <button class="cp-cancel btn btn-sm btn-outline-secondary">Cancel</button>
+            <button class="cp-ok btn btn-sm btn-success">Adopt to graph</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      const done = v => { overlay.remove(); resolve(v); };
+      overlay.querySelector('.cp-cancel').addEventListener('click', () => done(false));
+      overlay.querySelector('.cp-ok').addEventListener('click', () => done(true));
+      overlay.addEventListener('click', e => { if (e.target === overlay) done(false); });
+    });
+  }
+
+  // --- Export current canvas as a downloadable script ---
+  async function exportCanvas(tabId, kind) {
+    const snapshot = serializeCanvas(tabId);
+    if (!snapshot.nodes.length) { alert('Canvas is empty — nothing to export.'); return; }
+    try {
+      const resp = await fetch(window.SCIDK_BASE + `/api/canvas/export/${kind}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ snapshot }),
+      });
+      if (!resp.ok) { alert('Export failed (' + resp.status + ')'); return; }
+      const blob = await resp.blob();
+      const dispo = resp.headers.get('Content-Disposition') || '';
+      const m = dispo.match(/filename="?([^"]+)"?/);
+      const fname = m ? m[1] : (kind === 'cypher' ? 'canvas.cypher' : 'canvas_reorg.py');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = fname; document.body.appendChild(a); a.click();
+      a.remove(); URL.revokeObjectURL(url);
+    } catch (e) { alert('Export failed: ' + e); }
   }
 
   // Initialize Cytoscape graph for a tab
@@ -1725,6 +1997,21 @@
             'line-color': '#e67e22',
             'target-arrow-color': '#e67e22',
             'line-style': 'dashed'
+          }
+        },
+        // Ellipsis (collapsed subtree) nodes
+        {
+          selector: 'node[?ellipsis]',
+          style: {
+            'shape': 'round-rectangle',
+            'background-color': '#34495e',
+            'border-width': 2,
+            'border-color': '#2c3e50',
+            'border-style': 'dotted',
+            'width': 'label',
+            'height': 28,
+            'padding': '6px',
+            'font-size': '10px'
           }
         }
       ];

@@ -165,6 +165,233 @@ class CanvasService:
             conn.close()
 
 
+import re
+
+_REL_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+_LABEL_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+
+def build_commit_plan(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    """Translate a canvas snapshot into a Neo4j write plan.
+
+    Only *provisional* elements are committed (per the canvas storage model).
+
+    Returns:
+        {
+          'node_decls': [...],   # for Neo4jClient.write_declared_nodes (name key)
+          'name_rels': [...],    # rel decls (>=1 provisional endpoint) for write_declared_nodes
+          'id_edges': [...],     # {source_element_id,target_element_id,rel} real->real (elementId MERGE)
+          'skipped': [...],      # human-readable reasons for anything dropped
+        }
+    """
+    nodes = (snapshot or {}).get('nodes') or []
+    edges = (snapshot or {}).get('edges') or []
+    by_id = {str(n.get('id')): n for n in nodes}
+
+    node_decls: List[Dict[str, Any]] = []
+    name_rels: List[Dict[str, Any]] = []
+    id_edges: List[Dict[str, Any]] = []
+    skipped: List[str] = []
+
+    # Provisional nodes -> MERGE on name.
+    for n in nodes:
+        if not n.get('provisional'):
+            continue
+        label = n.get('label')
+        name = n.get('name') or (n.get('properties') or {}).get('name')
+        if not label or not _LABEL_RE.match(str(label)):
+            skipped.append(f"node {name!r}: invalid/blank label")
+            continue
+        if not name:
+            skipped.append(f"node with label {label}: missing name")
+            continue
+        props = dict(n.get('properties') or {})
+        props['name'] = name
+        node_decls.append({'label': label, 'key_property': 'name', 'properties': props})
+
+    # Provisional edges only.
+    for e in edges:
+        if not e.get('provisional'):
+            continue
+        rel = (e.get('relationship') or '').strip()
+        if not rel or not _REL_RE.match(rel):
+            skipped.append(f"edge {e.get('source')}->{e.get('target')}: invalid/blank relationship")
+            continue
+        src = by_id.get(str(e.get('source')))
+        tgt = by_id.get(str(e.get('target')))
+        if not src or not tgt:
+            skipped.append(f"edge {e.get('source')}->{e.get('target')}: endpoint not on canvas")
+            continue
+
+        src_real = not src.get('provisional')
+        tgt_real = not tgt.get('provisional')
+        src_eid = src.get('element_id')
+        tgt_eid = tgt.get('element_id')
+
+        # Real -> real with both elementIds: match by elementId (exact node identity).
+        if src_real and tgt_real and src_eid and tgt_eid:
+            id_edges.append({'source_element_id': src_eid, 'target_element_id': tgt_eid, 'rel': rel})
+            continue
+
+        # Otherwise fall back to name-match via write_declared_nodes.
+        src_label, src_name = src.get('label'), src.get('name')
+        tgt_label, tgt_name = tgt.get('label'), tgt.get('name')
+        if not (src_label and src_name and tgt_label and tgt_name):
+            skipped.append(f"edge {rel}: endpoint missing label/name for name-match")
+            continue
+        name_rels.append({
+            'type': rel,
+            'from_label': src_label, 'from_match': {'name': src_name},
+            'to_label': tgt_label, 'to_match': {'name': tgt_name},
+        })
+
+    return {'node_decls': node_decls, 'name_rels': name_rels, 'id_edges': id_edges, 'skipped': skipped}
+
+
+def _cypher_literal(v: Any) -> str:
+    """Render a Python value as a Cypher literal (safe-ish for a reviewable script)."""
+    if v is None:
+        return 'null'
+    if isinstance(v, bool):
+        return 'true' if v else 'false'
+    if isinstance(v, (int, float)):
+        return str(v)
+    if isinstance(v, (list, tuple)):
+        return '[' + ', '.join(_cypher_literal(x) for x in v) + ']'
+    s = str(v).replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
+    return f'"{s}"'
+
+
+def generate_cypher(snapshot: Dict[str, Any], layer_name: str = 'canvas') -> str:
+    """Generate a reviewable .cypher script for the provisional elements.
+
+    Nodes MERGE on name; edges MATCH endpoints by (label, name) then MERGE the
+    relationship — portable across databases (no internal ids baked in).
+    """
+    nodes = (snapshot or {}).get('nodes') or []
+    edges = (snapshot or {}).get('edges') or []
+    by_id = {str(n.get('id')): n for n in nodes}
+    prov_nodes = [n for n in nodes if n.get('provisional')]
+    prov_edges = [e for e in edges if e.get('provisional')]
+
+    lines: List[str] = []
+    lines.append(f'// SciDK Canvas export — layer: {layer_name}')
+    lines.append('// Review before running (Neo4j Browser or cypher-shell).')
+    lines.append('// MERGE makes this idempotent.')
+    lines.append('')
+    lines.append('// --- Before snapshot: current state of the named nodes ---')
+    names = [n.get('name') for n in prov_nodes if n.get('name')]
+    if names:
+        arr = '[' + ', '.join(_cypher_literal(n) for n in names) + ']'
+        lines.append(f'MATCH (n) WHERE n.name IN {arr} RETURN n.name AS name, labels(n) AS labels;')
+    else:
+        lines.append('// (no named provisional nodes)')
+    lines.append('')
+    lines.append('// --- Provisional nodes ---')
+    for n in prov_nodes:
+        label = n.get('label') or 'Node'
+        name = n.get('name')
+        if not name or not _LABEL_RE.match(str(label)):
+            continue
+        props = {k: v for k, v in (n.get('properties') or {}).items() if k != 'name'}
+        merge = f'MERGE (n:{label} {{name: {_cypher_literal(name)}}})'
+        if props:
+            sets = ', '.join(f'n.{k} = {_cypher_literal(v)}' for k, v in props.items() if _LABEL_RE.match(str(k)))
+            if sets:
+                merge += f'\n  SET {sets}'
+        lines.append(merge + ';')
+    lines.append('')
+    lines.append('// --- Provisional relationships ---')
+    for e in prov_edges:
+        rel = (e.get('relationship') or '').strip()
+        src, tgt = by_id.get(str(e.get('source'))), by_id.get(str(e.get('target')))
+        if not rel or not _REL_RE.match(rel) or not src or not tgt:
+            continue
+        if not (src.get('name') and tgt.get('name') and src.get('label') and tgt.get('label')):
+            continue
+        lines.append(
+            f'MATCH (a:{src["label"]} {{name: {_cypher_literal(src["name"])}}}), '
+            f'(b:{tgt["label"]} {{name: {_cypher_literal(tgt["name"])}}})\n'
+            f'  MERGE (a)-[:{rel}]->(b);'
+        )
+    lines.append('')
+    return '\n'.join(lines)
+
+
+def generate_python_fs(snapshot: Dict[str, Any], layer_name: str = 'canvas') -> str:
+    """Generate a conservative pathlib/shutil script from the CONTAINS hierarchy.
+
+    Node positions/CONTAINS edges imply a folder tree. Directories are created
+    with mkdir(parents=True, exist_ok=True); Dataset nodes carrying a `path`
+    property are moved with shutil.move (guarded by src.exists()). Nothing runs
+    automatically — the admin reviews and runs it manually.
+    """
+    nodes = (snapshot or {}).get('nodes') or []
+    edges = (snapshot or {}).get('edges') or []
+    by_id = {str(n.get('id')): n for n in nodes}
+
+    # parent map from CONTAINS edges (source CONTAINS target => parent=source)
+    parent = {}
+    for e in edges:
+        if (e.get('relationship') or '').upper() == 'CONTAINS':
+            parent[str(e.get('target'))] = str(e.get('source'))
+
+    def rel_parts(nid: str, _seen=None):
+        _seen = _seen or set()
+        if nid in _seen or nid not in by_id:
+            return []
+        _seen.add(nid)
+        node = by_id[nid]
+        seg = str(node.get('name') or nid)
+        p = parent.get(nid)
+        return (rel_parts(p, _seen) + [seg]) if p else [seg]
+
+    def pyq(s):
+        return repr(str(s))
+
+    L: List[str] = []
+    L.append('# Generated by SciDK Canvas Export')
+    L.append(f'# Layer: {layer_name!r}')
+    L.append('# Review before running — this will reorganize files on disk.')
+    L.append('')
+    L.append('from pathlib import Path')
+    L.append('import shutil')
+    L.append('')
+    L.append('BASE = Path("/your/data/root")  # <-- update this path')
+    L.append('')
+    L.append('# Create directory structure')
+    dir_nodes = [nid for nid in by_id if any(parent.get(c) == nid for c in by_id) or nid in parent]
+    seen_dirs = set()
+    for nid in dir_nodes:
+        parts = rel_parts(nid)
+        key = '/'.join(parts)
+        if key in seen_dirs:
+            continue
+        seen_dirs.add(key)
+        joined = ' / '.join(pyq(p) for p in parts)
+        L.append(f'(BASE / {joined}).mkdir(parents=True, exist_ok=True)')
+    L.append('')
+    L.append('# Move datasets to their new locations')
+    for nid, node in by_id.items():
+        if str(node.get('label')) != 'Dataset':
+            continue
+        src_path = (node.get('properties') or {}).get('path')
+        if not src_path:
+            continue
+        parts = rel_parts(nid)
+        joined = ' / '.join(pyq(p) for p in parts)
+        L.append(f'# Dataset: {node.get("name")}')
+        L.append(f'src = Path({pyq(src_path)})')
+        L.append(f'dst = BASE / {joined}')
+        L.append('if src.exists():')
+        L.append('    shutil.move(str(src), str(dst))')
+        L.append('    print(f"Moved: {src} -> {dst}")')
+        L.append('else:')
+        L.append('    print(f"WARNING: Source not found: {src}")')
+        L.append('')
+    return '\n'.join(L)
+
+
 _canvas_service: Optional[CanvasService] = None
 
 
