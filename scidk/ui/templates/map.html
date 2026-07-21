@@ -89,6 +89,69 @@
     color: #333;
   }
 
+  /* Selection Inspector (Push 6) */
+  #selection-inspector .si-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+  #selection-inspector .si-header h4 {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #666;
+    text-transform: uppercase;
+  }
+  .si-section {
+    margin-bottom: 0.5rem;
+  }
+  .si-caret-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+    padding: 0.25rem 0;
+    font-weight: 600;
+    font-size: 0.78rem;
+    color: #444;
+    user-select: none;
+  }
+  .si-caret {
+    display: inline-block;
+    font-size: 0.7rem;
+    color: #999;
+    transition: transform 0.15s ease;
+  }
+  .si-caret.si-collapsed {
+    transform: rotate(-90deg);
+  }
+  .si-group-list {
+    padding-left: 1.1rem;
+  }
+  .si-group-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.15rem 0;
+    font-size: 0.8rem;
+    cursor: pointer;
+    margin: 0;
+  }
+  .si-group-row input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+  }
+  .si-group-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .si-count {
+    color: #999;
+    font-size: 0.72rem;
+  }
+
   /* Empty state */
   .empty-state {
     text-align: center;
@@ -1476,6 +1539,11 @@
       window.canvasUr[tabId] = cy.undoRedo({ undoableDrag: false });
     }
 
+    // Selection inspector (Push 6). Called before the edgehandles early-return
+    // below so re-entering canvas mode still refreshes the panel; binding is
+    // idempotent per tab.
+    initSelectionInspector(tabId);
+
     if (!window.canvasEh) window.canvasEh = {};
     if (window.canvasEh[tabId]) return;  // already enabled
 
@@ -1509,6 +1577,32 @@
         if (n.data('element_id')) expandNode(tabId, n);
       });
       cy.on('tap', 'node[?ellipsis]', (evt) => lazyLoadEllipsis(tabId, evt.target));
+
+      // Geometry-based edge box-select (Push 6): a marquee should grab any edge
+      // whose segment passes through (or into) the rectangle, even when both
+      // endpoint nodes sit outside the box — Cytoscape's native box-select only
+      // takes elements whose area falls inside. We work in MODEL coordinates
+      // throughout so the test stays correct at any pan/zoom: box corners from
+      // evt.position (model) and edge ends from sourceEndpoint()/targetEndpoint()
+      // (model). Additive only — box-selected nodes stay selected, and we never
+      // clear the existing selection.
+      let boxStartPos = null;
+      cy.on('boxstart', (evt) => { boxStartPos = (evt && evt.position) ? { x: evt.position.x, y: evt.position.y } : null; });
+      cy.on('boxend', (evt) => {
+        const start = boxStartPos; boxStartPos = null;
+        const end = evt && evt.position;
+        if (!start || !end) return;
+        const rect = {
+          x1: Math.min(start.x, end.x), y1: Math.min(start.y, end.y),
+          x2: Math.max(start.x, end.x), y2: Math.max(start.y, end.y),
+        };
+        cy.edges().forEach(e => {
+          if (e.selected()) return;
+          const s = e.sourceEndpoint(), t = e.targetEndpoint();
+          if (segmentIntersectsRect(s, t, rect)) e.select();
+        });
+      });
+
       window.canvasChangeBound[tabId] = true;
     }
   }
@@ -1608,6 +1702,9 @@
     // Reset the Draw-edge button visual if present
     const btn = document.querySelector(`.canvas-draw-edge-${tabId}`);
     if (btn) { btn.classList.remove('btn-primary'); btn.classList.add('btn-outline-primary'); }
+    // Push 6: the selection inspector is canvas-only — hide it on the way out.
+    const insp = document.getElementById('selection-inspector');
+    if (insp) insp.style.display = 'none';
   }
 
   function toggleDrawEdge(tabId, btn) {
@@ -1734,6 +1831,238 @@
       if (ur) ur.do('remove', sel); else sel.remove();
       scheduleSessionSave(tabId);
     }
+  }
+
+  // ===== Geometry helpers (Push 6): segment ⇄ rectangle intersection =====
+  function _pointInRect(p, r) {
+    return p.x >= r.x1 && p.x <= r.x2 && p.y >= r.y1 && p.y <= r.y2;
+  }
+  // Signed area sign of triangle (a,b,c) — orientation test.
+  function _ccw(a, b, c) {
+    return (c.y - a.y) * (b.x - a.x) - (b.y - a.y) * (c.x - a.x);
+  }
+  // True when segment p1p2 crosses segment p3p4 (proper intersection).
+  function _segSeg(p1, p2, p3, p4) {
+    const d1 = _ccw(p3, p4, p1), d2 = _ccw(p3, p4, p2);
+    const d3 = _ccw(p1, p2, p3), d4 = _ccw(p1, p2, p4);
+    return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+  }
+  // True when segment p1p2 passes through, into, or is contained by rect r.
+  function segmentIntersectsRect(p1, p2, r) {
+    if (_pointInRect(p1, r) || _pointInRect(p2, r)) return true;
+    const c = [
+      { x: r.x1, y: r.y1 }, { x: r.x2, y: r.y1 },
+      { x: r.x2, y: r.y2 }, { x: r.x1, y: r.y2 },
+    ];
+    for (let i = 0; i < 4; i++) {
+      if (_segSeg(p1, p2, c[i], c[(i + 1) % 4])) return true;
+    }
+    return false;
+  }
+
+  // ===== SELECTION INSPECTOR (Push 6) =====
+  // A canvas-only panel in the right sidebar that lists the current selection
+  // grouped by node label / edge relationship (à la Neo4j Bloom). The panel DOM
+  // is shared across tabs; it always reflects the ACTIVE canvas tab, while the
+  // selection itself lives per-tab inside each Cytoscape instance.
+
+  // Per-tab UI state: caret open/closed + snapshots of unchecked groups so a
+  // re-check can restore exactly the elements that were deselected.
+  function ensureSiState(tabId) {
+    if (!window.__siState) window.__siState = {};
+    if (!window.__siState[tabId]) {
+      window.__siState[tabId] = { open: { nodes: true, edges: true }, unchecked: {} };
+    }
+    return window.__siState[tabId];
+  }
+
+  // The active tab id, but only if it is currently in canvas mode (else null).
+  function activeCanvasTabId() {
+    const el = document.querySelector('.map-tab.active');
+    const tid = el && el.dataset.tabId;
+    return (tid && isCanvasActive(tid)) ? tid : null;
+  }
+
+  // Group key helpers: nodes group by data('label'), edges by data('relationship').
+  function _siGroupName(type, el) {
+    return type === 'nodes'
+      ? (el.data('label') || '(no label)')
+      : (el.data('relationship') || 'unlabelled');
+  }
+  function _siEsc(s) {
+    return String(s).replace(/[&<>"']/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+  }
+
+  // Currently-selected elements of a single group (used to snapshot on uncheck).
+  function _siGroupSelected(cy, type, name) {
+    const base = type === 'nodes' ? cy.$(':selected').nodes() : cy.$(':selected').edges();
+    return base.filter(el => _siGroupName(type, el) === name);
+  }
+
+  // Bind once-per-tab selection listeners, and once-globally the panel buttons
+  // and delegated checkbox/caret handlers.
+  function initSelectionInspector(tabId) {
+    const cy = getCy(tabId);
+    if (!cy) return;
+
+    if (!window.__siBound) window.__siBound = {};
+    if (!window.__siBound[tabId]) {
+      window.__siBound[tabId] = true;
+      // Rebuild on any selection change, debounced 100ms (covers marquee drags,
+      // which fire a burst of select events).
+      let t = null;
+      cy.on('select unselect', () => {
+        clearTimeout(t);
+        t = setTimeout(() => updateSelectionInspector(tabId), 100);
+      });
+    }
+
+    if (!window.__siGlobalBound) {
+      window.__siGlobalBound = true;
+      const deselectBtn = document.getElementById('si-deselect-all');
+      const deleteBtn = document.getElementById('si-delete');
+      const groupsEl = document.getElementById('si-groups');
+
+      if (deselectBtn) deselectBtn.addEventListener('click', () => {
+        const tid = activeCanvasTabId(); if (!tid) return;
+        const cy2 = getCy(tid); if (!cy2) return;
+        cy2.$(':selected').unselect();
+        ensureSiState(tid).unchecked = {};
+        updateSelectionInspector(tid);
+      });
+
+      if (deleteBtn) deleteBtn.addEventListener('click', () => {
+        const tid = activeCanvasTabId(); if (!tid) return;
+        // Unchecked groups are already deselected, so removeSelected only deletes
+        // the still-checked (still-selected) elements — checkbox state == what dies.
+        removeSelected(tid);
+        updateSelectionInspector(tid);
+      });
+
+      if (groupsEl) {
+        // Checkbox toggles a whole group on/off.
+        groupsEl.addEventListener('change', (e) => {
+          const cb = e.target.closest('input[type="checkbox"]');
+          if (!cb) return;
+          const tid = activeCanvasTabId(); if (!tid) return;
+          toggleSelectionGroup(tid, cb.dataset.siType, cb.dataset.siKey, cb.checked);
+        });
+        // Caret expands/collapses the Nodes / Edges section.
+        groupsEl.addEventListener('click', (e) => {
+          const row = e.target.closest('.si-caret-row');
+          if (!row) return;
+          const tid = activeCanvasTabId(); if (!tid) return;
+          const st = ensureSiState(tid);
+          const sect = row.dataset.siSection;
+          st.open[sect] = !st.open[sect];
+          updateSelectionInspector(tid);
+        });
+      }
+    }
+
+    updateSelectionInspector(tabId);
+  }
+
+  // Rebuild the panel content and toggle its visibility. No-op unless tabId is
+  // the active canvas tab.
+  function updateSelectionInspector(tabId) {
+    const panel = document.getElementById('selection-inspector');
+    if (!panel) return;
+    if (activeCanvasTabId() !== tabId) return;
+
+    const cy = getCy(tabId);
+    if (!cy || !isCanvasActive(tabId)) { panel.style.display = 'none'; return; }
+
+    const state = ensureSiState(tabId);
+    const sel = cy.$(':selected');
+
+    // Selection empty → hide and forget any unchecked snapshots.
+    if (sel.length === 0) {
+      panel.style.display = 'none';
+      state.unchecked = {};
+      return;
+    }
+    panel.style.display = 'block';
+
+    // A group that the user manually re-selected on the canvas is no longer
+    // "unchecked" — drop those stale snapshots so it renders as checked.
+    Object.keys(state.unchecked).forEach(skey => {
+      const sep = skey.indexOf('|');
+      const type = skey.slice(0, sep), name = skey.slice(sep + 1);
+      const pool = type === 'nodes' ? sel.nodes() : sel.edges();
+      if (pool.some(el => _siGroupName(type, el) === name)) delete state.unchecked[skey];
+    });
+
+    // Tally selected elements per group.
+    const nodeGroups = {}, edgeGroups = {};
+    sel.nodes().forEach(n => {
+      const k = _siGroupName('nodes', n);
+      nodeGroups[k] = (nodeGroups[k] || 0) + 1;
+    });
+    sel.edges().forEach(e => {
+      const k = _siGroupName('edges', e);
+      edgeGroups[k] = (edgeGroups[k] || 0) + 1;
+    });
+    // Keep unchecked groups visible (0 selected) so they can be re-checked.
+    Object.keys(state.unchecked).forEach(skey => {
+      const sep = skey.indexOf('|');
+      const type = skey.slice(0, sep), name = skey.slice(sep + 1);
+      const target = type === 'nodes' ? nodeGroups : edgeGroups;
+      if (!(name in target)) target[name] = 0;
+    });
+
+    document.getElementById('si-total-count').textContent = sel.length;
+
+    const buildSection = (type, groups, selCount) => {
+      const names = Object.keys(groups).sort((a, b) => a.localeCompare(b));
+      if (names.length === 0) return '';
+      const open = state.open[type] !== false;
+      const title = type === 'nodes' ? 'Nodes' : 'Edges';
+      const rows = names.map(name => {
+        const skey = type + '|' + name;
+        const checked = !(skey in state.unchecked);
+        const count = checked
+          ? groups[name]
+          : (state.unchecked[skey] ? state.unchecked[skey].length : groups[name]);
+        return `<label class="si-group-row">
+          <input type="checkbox" data-si-type="${type}" data-si-key="${_siEsc(name)}" ${checked ? 'checked' : ''}>
+          <span class="si-group-name" title="${_siEsc(name)}">${_siEsc(name)}</span>
+          <span class="si-count">(${count})</span>
+        </label>`;
+      }).join('');
+      return `<div class="si-section">
+        <div class="si-caret-row" data-si-section="${type}">
+          <span class="si-caret${open ? '' : ' si-collapsed'}">▾</span>
+          <span class="si-section-title">${title} (${selCount})</span>
+        </div>
+        <div class="si-group-list" style="display:${open ? 'block' : 'none'}">${rows}</div>
+      </div>`;
+    };
+
+    document.getElementById('si-groups').innerHTML =
+      buildSection('nodes', nodeGroups, sel.nodes().length) +
+      buildSection('edges', edgeGroups, sel.edges().length);
+  }
+
+  // Check/uncheck a whole group. Uncheck snapshots the group's selected members
+  // then deselects them; check re-selects the snapshot.
+  function toggleSelectionGroup(tabId, type, name, checked) {
+    const cy = getCy(tabId);
+    if (!cy) return;
+    const state = ensureSiState(tabId);
+    const skey = type + '|' + name;
+    if (!checked) {
+      const coll = _siGroupSelected(cy, type, name);
+      state.unchecked[skey] = coll;   // remember exactly what we deselected
+      coll.unselect();
+    } else {
+      const snap = state.unchecked[skey];
+      if (snap) snap.select();
+      delete state.unchecked[skey];
+    }
+    updateSelectionInspector(tabId);
   }
 
   // Serialize the canvas to the addendum snapshot_json shape.
@@ -3279,6 +3608,10 @@
         console.log(`Synced radio buttons to tab ${tabId} mode: ${tabMode}`);
       }
     }
+
+    // Push 6: the selection inspector is shared DOM — refresh it for whichever
+    // tab is now active (shows the new tab's selection, or hides if not canvas).
+    if (typeof updateSelectionInspector === 'function') updateSelectionInspector(tabId);
 
     saveTabsState();
   }
@@ -5125,6 +5458,19 @@ window.populateInstancesTable = async function(results, tabId) {
   <div class="map-controls-panel">
     <div class="panel-header">
       <h3>⚙️ Visualization</h3>
+    </div>
+
+    <!-- Selection Inspector (Push 6): canvas-mode only; appears when elements
+         are selected on the canvas. Groups the current selection by node label /
+         edge relationship, à la Neo4j Bloom. Content is built at runtime by
+         updateSelectionInspector(). -->
+    <div id="selection-inspector" class="control-group" style="margin-bottom:1.5rem; display:none" data-testid="selection-inspector">
+      <div class="si-header">
+        <h4>Selection (<span id="si-total-count">0</span>)</h4>
+        <button id="si-deselect-all" class="btn btn-sm btn-outline-secondary" style="font-size:0.7rem; padding:0.15rem 0.5rem" data-testid="si-deselect-all">Deselect all</button>
+      </div>
+      <div id="si-groups"></div>
+      <button id="si-delete" class="btn btn-sm btn-outline-danger w-100" style="margin-top:0.75rem" data-testid="si-delete">🗑️ Delete selected</button>
     </div>
 
     <!-- Neo4j Connection Selection -->
