@@ -341,6 +341,9 @@
      load first; it then auto-registers cy.edgehandles against the global cytoscape. -->
 <script src="https://unpkg.com/lodash@4.17.21/lodash.min.js"></script>
 <script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
+<!-- Canvas mode (Push 5): undo/redo. Loads after cytoscape (and lodash, kept
+     before it for edgehandles); it auto-registers cy.undoRedo() on the global. -->
+<script src="https://unpkg.com/cytoscape-undo-redo@1.3.3/cytoscape-undo-redo.js"></script>
 
 <!-- CodeMirror 5 with Cypher mode -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.js"></script>
@@ -1233,6 +1236,11 @@
         panel.style.display = (mode === 'canvas') ? 'block' : 'none';
         if (mode === 'canvas') {
           enableCanvasTools(tabId);
+          // Showing the panel reflows the layout, so the Cytoscape renderer's
+          // cached dimensions/offset go stale — hit-testing ends up vertically
+          // displaced from the visual position. resize() recomputes them, but
+          // must run after the reflow settles (rAF fires too early here).
+          resizeCanvas(tabId);
           loadCanvasSession(tabId);
           if (searchInput) searchInput.focus();
         } else {
@@ -1272,6 +1280,61 @@
     if (expCypherBtn) expCypherBtn.addEventListener('click', () => exportCanvas(tabId, 'cypher'));
     if (expPythonBtn) expPythonBtn.addEventListener('click', () => exportCanvas(tabId, 'python'));
     if (expRocrateBtn) expRocrateBtn.addEventListener('click', () => exportCanvas(tabId, 'rocrate'));
+
+    // Push 5: canvas keyboard shortcuts (global listener, bound once).
+    initCanvasKeyboard();
+  }
+
+  // Push 5: keyboard shortcuts. Fire only when the active tab is in Canvas mode
+  // and focus is not inside a text-entry control (search box, CodeMirror, etc.).
+  // Bare (unmodified) keys are used for canvas actions to avoid clobbering
+  // browser shortcuts (Ctrl+F find, Ctrl+N new tab, Ctrl+S save page).
+  function initCanvasKeyboard() {
+    if (window.__canvasKeysBound) return;
+    window.__canvasKeysBound = true;
+
+    const isTextTarget = (t) => {
+      if (!t) return false;
+      const tag = t.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      if (t.isContentEditable) return true;
+      if (t.closest && t.closest('.CodeMirror')) return true;
+      return false;
+    };
+
+    document.addEventListener('keydown', (e) => {
+      const activeTab = document.querySelector('.map-tab.active');
+      const tabId = activeTab && activeTab.dataset.tabId;
+      if (!tabId || !isCanvasActive(tabId)) return;
+      if (isTextTarget(e.target)) return;
+
+      const ctrl = e.ctrlKey || e.metaKey;
+      const k = e.key.toLowerCase();
+      const ur = getUr(tabId);
+
+      // Modifier combos: keep the ones that don't collide with the browser.
+      if (ctrl && e.shiftKey && k === 's') { e.preventDefault(); saveCanvasLayer(tabId); return; }
+      if (ctrl && k === 'z') { e.preventDefault(); if (ur) ur.undo(); return; }
+      if (ctrl && k === 'y') { e.preventDefault(); if (ur) ur.redo(); return; }
+      if (ctrl || e.metaKey || e.altKey) return;  // leave other browser combos alone
+
+      // Bare keys (canvas focused, no input active).
+      // TODO(Push 5+): Shift+N quick-add multiple nodes — not built yet.
+      if (k === 'n') { e.preventDefault(); addProvisionalNode(tabId); return; }
+      if (k === '/') {
+        e.preventDefault();
+        const si = document.querySelector(`.canvas-search-input-${tabId}`);
+        if (si) si.focus();
+        return;
+      }
+      if (k === 'e') {
+        e.preventDefault();
+        const btn = document.querySelector(`.canvas-draw-edge-${tabId}`);
+        if (btn) toggleDrawEdge(tabId, btn);
+        return;
+      }
+      if (k === 'delete' || k === 'backspace') { e.preventDefault(); removeSelected(tabId); return; }
+    });
   }
 
   // Local HTML-escaper (escapeHtml in the other script block is not in this scope).
@@ -1339,7 +1402,7 @@
     const cx = (ext.x1 + ext.x2) / 2 + (Math.random() - 0.5) * 120;
     const cy_ = (ext.y1 + ext.y2) / 2 + (Math.random() - 0.5) * 120;
 
-    cy.add({
+    const def = {
       group: 'nodes',
       data: {
         id: id,
@@ -1351,7 +1414,9 @@
       },
       position: { x: cx, y: cy_ },
       grabbable: true,   // draggable (Cytoscape default, set explicitly)
-    });
+    };
+    const ur = getUr(tabId);
+    if (ur) ur.do('add', def); else cy.add(def);
     scheduleSessionSave(tabId);
   }
 
@@ -1359,6 +1424,27 @@
 
   function getCy(tabId) {
     return window.cytoscapeInstances && window.cytoscapeInstances[tabId];
+  }
+
+  // Undo/redo manager for a tab's canvas (Push 5), or null if unavailable.
+  function getUr(tabId) {
+    return window.canvasUr && window.canvasUr[tabId];
+  }
+
+  // True when the tab is currently in Canvas (whiteboarding) mode.
+  function isCanvasActive(tabId) {
+    return !!(window.tabCanvasModes && window.tabCanvasModes[tabId] === 'canvas');
+  }
+
+  // Recompute the Cytoscape renderer's cached dimensions after a layout change
+  // (panel shown, tab made visible). Deferred so it runs once the reflow has
+  // settled — otherwise the container has stale/zero size and hit-testing is
+  // vertically displaced from the visual node positions.
+  function resizeCanvas(tabId) {
+    setTimeout(() => {
+      const cy = getCy(tabId);
+      if (cy) cy.resize();
+    }, 150);
   }
 
   // Cache relationship types from the schema for the edge picker.
@@ -1379,6 +1465,17 @@
   function enableCanvasTools(tabId) {
     const cy = getCy(tabId);
     if (!cy) { setTimeout(() => enableCanvasTools(tabId), 120); return; }
+
+    // Multi-select support (Push 5): box selection + shift+click additive (the
+    // Cytoscape default 'single' selectionType already adds on shift+click).
+    try { cy.boxSelectionEnabled(true); } catch (e) {}
+
+    // Undo/redo manager (Push 5): one per tab, reused across enable/disable.
+    if (!window.canvasUr) window.canvasUr = {};
+    if (!window.canvasUr[tabId] && typeof cy.undoRedo === 'function') {
+      window.canvasUr[tabId] = cy.undoRedo({ undoableDrag: false });
+    }
+
     if (!window.canvasEh) window.canvasEh = {};
     if (window.canvasEh[tabId]) return;  // already enabled
 
@@ -1393,9 +1490,10 @@
       eh.disableDrawMode();  // start disabled; toolbar toggles it
       window.canvasEh[tabId] = eh;
 
-      // When an edge is drawn, ask for its relationship type.
+      // When an edge is drawn, ask for its relationship type. The drawn edge
+      // fans out to every selected target (Push 5 batch edge drawing).
       cy.on('ehcomplete', (event, sourceNode, targetNode, addedEdge) => {
-        onEdgeDrawn(tabId, addedEdge);
+        onEdgeDrawn(tabId, sourceNode, targetNode, addedEdge);
       });
     }
 
@@ -1520,13 +1618,48 @@
     if (on) eh.enableDrawMode(); else eh.disableDrawMode();
   }
 
-  async function onEdgeDrawn(tabId, edge) {
+  async function onEdgeDrawn(tabId, sourceNode, targetNode, edge) {
+    const cy = getCy(tabId);
     const types = await getRelationshipTypes();
     const picked = await pickRelationshipType(tabId, types);
     if (!picked) { edge.remove(); return; }  // cancelled → discard provisional edge
-    edge.data('relationship', picked);
-    edge.data('label', picked);
-    edge.data('provisional', true);
+
+    // Determine batch fan-out BEFORE we touch the drawn edge. The extras follow
+    // the drag — each selected node joins whichever END of the drag it sits on:
+    //   • drag source selected → other selected are co-sources → node → target
+    //   • drag target selected → other selected are co-targets → source → node
+    const selected = (cy ? cy.$(':selected') : null);
+    const sourceSelected = !!(selected && selected.not(edge).has(sourceNode));
+
+    // Rebuild every drawn/fan-out edge as element defs so the whole batch goes
+    // through undo/redo as a single action (Ctrl+Z removes them all). We drop the
+    // edge edgehandles created and re-add it via ur.do('add') below.
+    // baseType keeps the relationship TYPE stable for sidebar styling even if
+    // applyGraphFormatting later rewrites data('label') to a display name (Push 6).
+    const defs = [{
+      group: 'edges',
+      data: { id: 'e-' + Math.random().toString(36).slice(2, 10),
+              source: edge.data('source'), target: edge.data('target'),
+              relationship: picked, baseType: picked, label: picked, provisional: true },
+    }];
+    if (cy && sourceNode && targetNode && selected) {
+      selected.filter('node').forEach(n => {
+        if (n.same(sourceNode) || n.same(targetNode)) return;  // drawn edge covers these
+        const src = sourceSelected ? n.id() : sourceNode.id();
+        const tgt = sourceSelected ? targetNode.id() : n.id();
+        defs.push({
+          group: 'edges',
+          data: { id: 'e-' + Math.random().toString(36).slice(2, 10),
+                  source: src, target: tgt,
+                  relationship: picked, baseType: picked, label: picked, provisional: true },
+        });
+      });
+    }
+
+    edge.remove();  // remove the edgehandles-created edge; re-add via undo/redo
+    const ur = getUr(tabId);
+    if (ur) ur.do('add', defs); else if (cy) cy.add(defs);
+    ensureProvisionalInSidebar(tabId);  // Push 6: surface new relationship type for styling
     scheduleSessionSave(tabId);
   }
 
@@ -1577,13 +1710,18 @@
     if (!name) return;
     const ext = cy.extent();
     const id = 'prov-' + Math.random().toString(36).slice(2, 10);
-    cy.add({
+    const def = {
       group: 'nodes',
-      data: { id, label, displayLabel: name, properties: { name }, provisional: true },
+      // baseLabel keeps the node's TYPE stable for sidebar styling even if
+      // applyGraphFormatting later rewrites data('label') to a display name (Push 6).
+      data: { id, label, baseLabel: label, displayLabel: name, properties: { name }, provisional: true },
       position: { x: (ext.x1 + ext.x2) / 2 + (Math.random() - 0.5) * 120,
                   y: (ext.y1 + ext.y2) / 2 + (Math.random() - 0.5) * 120 },
       grabbable: true,
-    });
+    };
+    const ur = getUr(tabId);
+    if (ur) ur.do('add', def); else cy.add(def);
+    ensureProvisionalInSidebar(tabId);  // Push 6: surface new label for styling
     scheduleSessionSave(tabId);
   }
 
@@ -1591,7 +1729,11 @@
     const cy = getCy(tabId);
     if (!cy) return;
     const sel = cy.$(':selected');
-    if (sel.nonempty()) { sel.remove(); scheduleSessionSave(tabId); }
+    if (sel.nonempty()) {
+      const ur = getUr(tabId);
+      if (ur) ur.do('remove', sel); else sel.remove();
+      scheduleSessionSave(tabId);
+    }
   }
 
   // Serialize the canvas to the addendum snapshot_json shape.
@@ -1600,7 +1742,9 @@
     if (!cy) return { nodes: [], edges: [] };
     const nodes = cy.nodes().map(n => ({
       id: n.id(),
-      label: n.data('label'),
+      // Prefer the stable baseLabel: applyGraphFormatting may rewrite data('label')
+      // to a display name, but the TYPE (used for commit) must be preserved (Push 6).
+      label: n.data('baseLabel') || n.data('label'),
       name: n.data('displayLabel') || (n.data('properties') || {}).name || n.id(),
       properties: n.data('properties') || {},
       position: { ...n.position() },
@@ -1625,7 +1769,8 @@
     (snapshot.nodes || []).forEach(n => {
       els.push({
         group: 'nodes',
-        data: { id: String(n.id), label: n.label, displayLabel: n.name,
+        // Restore baseLabel = the stored TYPE so styling stays stable (Push 6).
+        data: { id: String(n.id), label: n.label, baseLabel: n.label, displayLabel: n.name,
                 properties: n.properties || {}, provisional: !!n.provisional,
                 element_id: n.element_id || null },
         position: n.position || undefined,
@@ -1639,11 +1784,55 @@
         group: 'edges',
         data: { id: 'e' + i + '-' + Math.random().toString(36).slice(2, 6),
                 source: String(e.source), target: String(e.target),
-                relationship: e.relationship || '', label: e.relationship || '',
-                provisional: !!e.provisional },
+                relationship: e.relationship || '', baseType: e.relationship || '',
+                label: e.relationship || '', provisional: !!e.provisional },
       });
     });
     cy.add(els);
+    ensureProvisionalInSidebar(tabId);  // Push 6: surface restored provisional labels/types
+  }
+
+  // Push 6: when a provisional element introduces a label / relationship type that
+  // isn't yet shown in the sidebar, add a styling entry for it (color / size / font /
+  // display-name controls) so provisional elements can be styled before being pushed
+  // to the graph. If the label/type already has an entry, do nothing.
+  function ensureProvisionalInSidebar(tabId) {
+    const cy = getCy(tabId);
+    if (!cy || !window.populateSchemaConfig) return;
+
+    // Labels / types already represented by a sidebar entry.
+    const haveLabels = new Set([...document.querySelectorAll('#schema-node-list .label-color-picker')].map(e => e.dataset.label));
+    const haveTypes = new Set([...document.querySelectorAll('#schema-rel-list .rel-color-picker')].map(e => e.dataset.type));
+
+    // Provisional labels / types currently on the canvas.
+    const provLabels = new Set();
+    const provTypes = new Set();
+    cy.nodes().forEach(n => {
+      if (!n.data('provisional') || n.data('ellipsis')) return;
+      const lbl = n.data('baseLabel') || n.data('label');
+      if (lbl) provLabels.add(lbl);
+    });
+    cy.edges().forEach(e => {
+      if (!e.data('provisional')) return;
+      const t = e.data('baseType') || e.data('relationship') || e.data('label');
+      if (t) provTypes.add(t);
+    });
+
+    const newLabels = [...provLabels].filter(l => !haveLabels.has(l));
+    const newTypes = [...provTypes].filter(t => !haveTypes.has(t));
+    if (!newLabels.length && !newTypes.length) return;  // nothing new → do nothing
+
+    // Rebuild the sidebar from any existing query results plus synthetic records for
+    // every provisional label/type. populateSchemaConfig dedupes by label/type and
+    // preserves existing colour/size/font/display-name choices via its window maps.
+    const base = (window.lastQueryResults && window.lastQueryResults.results) || [];
+    const synth = [];
+    provLabels.forEach(lbl => synth.push({ _prov: { id: 'prov:' + lbl, labels: [lbl], properties: {} } }));
+    provTypes.forEach(t => synth.push({ _prov: { type: t, start: 0, end: 1, properties: {} } }));
+
+    window.populateSchemaConfig(base.concat(synth));
+    const mode = (window.tabVisualizationModes && window.tabVisualizationModes[tabId]) || 'schema';
+    if (window.applySchemaSettingsMode) window.applySchemaSettingsMode(mode);
   }
 
   // --- Session persistence (SQLite-backed, per user) ---
@@ -1962,6 +2151,14 @@
             'text-outline-color': '#000',
             'text-wrap': 'wrap',
             'text-max-width': '250px'
+          }
+        },
+        // Edges must respond to events so a marquee/box selection captures them
+        // (and single click-select works). Push 6.
+        {
+          selector: 'edge',
+          style: {
+            'events': 'yes'
           }
         },
         // Canvas mode (Push 2) — provisional elements are visually distinct:
@@ -2382,6 +2579,10 @@
       // Populate schema configuration panel
       if (window.populateSchemaConfig) {
         window.populateSchemaConfig(results);
+        // Re-apply schema-settings enabled/disabled state — the panel re-renders
+        // its controls here, so instance mode needs them re-greyed (Push 5).
+        const vizMode = (window.tabVisualizationModes && window.tabVisualizationModes[tabId]) || 'schema';
+        if (window.applySchemaSettingsMode) window.applySchemaSettingsMode(vizMode);
       }
 
       // Populate instances table
@@ -3056,6 +3257,14 @@
       }
     });
 
+    // The tab's graph container was display:none while hidden, so its Cytoscape
+    // renderer has stale/zero dimensions. Recompute after the reflow settles,
+    // otherwise clicks hit-test at a vertically displaced position (Push 5).
+    setTimeout(() => {
+      const cy = window.cytoscapeInstances && window.cytoscapeInstances[tabId];
+      if (cy) cy.resize();
+    }, 150);
+
     // Sync visualization mode radio buttons with this tab's mode
     if (window.tabVisualizationModes && window.tabVisualizationModes[tabId]) {
       const tabMode = window.tabVisualizationModes[tabId];
@@ -3552,6 +3761,34 @@
   loadSavedMaps();
 })();
 
+// === SCHEMA-SETTINGS SIDEBAR VISIBILITY (Push 5) ===
+// The Schema Configuration panel (per-label/per-type property expansion) is now
+// shown in BOTH schema and instance mode. In instance mode we render every
+// instance, so expansion isn't meaningful — the controls are greyed out and
+// disabled with an explanatory tooltip.
+window.applySchemaSettingsMode = function(mode) {
+  const schemaSettings = document.getElementById('schema-settings');
+  if (!schemaSettings) return;
+  const show = (mode === 'schema' || mode === 'instance');
+  schemaSettings.style.display = show ? 'block' : 'none';
+
+  const instance = (mode === 'instance');
+  const tip = instance ? 'showing all instances — expansion not applicable' : '';
+  // Instance mode renders every instance, so per-label/type property EXPANSION
+  // isn't meaningful. Grey out and disable ONLY the expansion controls (the
+  // node/rel expansion selectors and the Apply button). Color pickers, size,
+  // font and display-name inputs stay fully active in both modes.
+  schemaSettings.querySelectorAll('.schema-node-expand, .schema-rel-expand, #apply-schema-display')
+    .forEach(ctrl => {
+      ctrl.disabled = instance;
+      ctrl.style.opacity = instance ? '0.5' : '';
+      ctrl.style.pointerEvents = instance ? 'none' : '';
+      ctrl.title = tip;
+    });
+  // TODO(Push 5+): per-instance color differentiation in instance mode — let the
+  // user color individual instance nodes distinctly rather than by shared label.
+};
+
 // === VISUALIZATION MODE SWITCHING ===
 (function() {
   // Wait for DOM to be ready
@@ -3573,11 +3810,10 @@
       console.log('=== MODE SWITCH DEBUG ===');
       console.log('Radio button changed to:', newMode);
 
-      // Show/hide mode-specific settings
-      const schemaSettings = document.getElementById('schema-settings');
+      // Show/hide mode-specific settings. schema-settings is shown in both
+      // schema and instance mode (disabled in instance mode) — see Push 5.
       const instanceSettings = document.getElementById('instance-settings');
-
-      if (schemaSettings) schemaSettings.style.display = newMode === 'schema' ? 'block' : 'none';
+      window.applySchemaSettingsMode(newMode);
       if (instanceSettings) instanceSettings.style.display = newMode === 'instance' ? 'block' : 'none';
 
       // Get active tab
@@ -4104,8 +4340,7 @@
   }
 
   // Initialize panel visibility based on default mode (schema)
-  const schemaSettings = document.getElementById('schema-settings');
-  if (schemaSettings) schemaSettings.style.display = 'block'; // Schema is checked by default
+  window.applySchemaSettingsMode('schema'); // Schema is checked by default
   }; // End of initModeSwitch
 
   // Call init when DOM is ready
