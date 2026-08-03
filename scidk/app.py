@@ -312,8 +312,9 @@ def create_app():
         'failed': plugin_loader.list_failed_plugins()
     }
 
-    # Initialize backup scheduler
+    # Initialize the process-wide scheduler and register the backup jobs into it
     try:
+        from .core.app_scheduler import get_app_scheduler
         from .core.backup_manager import get_backup_manager
         from .core.backup_scheduler import get_backup_scheduler
 
@@ -329,38 +330,145 @@ def create_app():
             # Alert manager optional
             pass
 
+        # One AppScheduler per process; features register jobs into it rather
+        # than standing up their own BackgroundScheduler.
+        app_scheduler = get_app_scheduler()
+        app.extensions['scidk']['app_scheduler'] = app_scheduler
+
         # Initialize backup manager and scheduler
         # Scheduler will load settings from database (schedule, retention, etc.)
         backup_manager = get_backup_manager()
         backup_scheduler = get_backup_scheduler(
             backup_manager=backup_manager,
             settings_db_path=settings_db,
-            alert_manager=alert_manager
+            alert_manager=alert_manager,
+            app_scheduler=app_scheduler
         )
 
-        # Start scheduler (will only run if schedule_enabled is True in settings)
-        # Pass concept_driver for weight decay job
-        concept_driver = app.extensions.get('scidk', {}).get('concept_driver')
-        backup_scheduler.start(concept_driver=concept_driver)
-
-        # Store in app extensions for access in routes
+        # Store in app extensions for access in routes. Do this before starting
+        # anything so the objects are reachable even when this process is not the
+        # one that owns the scheduler.
         app.extensions['scidk']['backup_scheduler'] = backup_scheduler
         app.extensions['scidk']['backup_manager'] = backup_manager
+
+        if _scheduler_should_start():
+            # Register the backup jobs (they only fire if enabled in settings)
+            # and pass concept_driver for the weight decay job.
+            concept_driver = app.extensions.get('scidk', {}).get('concept_driver')
+            backup_scheduler.start(concept_driver=concept_driver)
+
+            register_scheduled_jobs(app, app_scheduler)
+
+            app_scheduler.start()
+            app.logger.info(
+                f"Scheduler running (pid={os.getpid()}) with jobs: "
+                f"{[j['id'] for j in app_scheduler.list_jobs()]}"
+            )
+        else:
+            app.logger.info(
+                "Scheduler start skipped for this process "
+                "(reloader parent or SCIDK_DISABLE_SCHEDULER)"
+            )
     except Exception as e:
         # Backup scheduler is optional - log but don't fail startup
         import logging
         logging.warning(f"Failed to initialize backup scheduler: {e}")
 
+    # Nothing this factory opened may still be open when we return: under
+    # gunicorn --preload this runs in the master process, and any live handle is
+    # inherited by all 16 forked workers.
+    _release_startup_connections(app)
+
     return app
+
+
+def _release_startup_connections(app):
+    """Close database handles the startup path opened.
+
+    ``create_app()`` runs in the gunicorn master process under ``--preload``.
+    A SQLite connection or Neo4j connection pool left open here is inherited by
+    every forked worker, which then share one file descriptor — interleaved
+    writes, contended WAL locks, and corrupted Bolt traffic. Both objects below
+    reopen lazily on next use, so workers and scheduled jobs get their own
+    connection after the fork.
+
+    Anything added to ``app.extensions['scidk']`` that holds a connection open
+    from ``__init__`` belongs in this function.
+    """
+    ext = app.extensions.get('scidk', {})
+
+    for key in ('settings', 'alert_manager'):
+        holder = ext.get(key)
+        close = getattr(holder, 'close', None)
+        if callable(close):
+            try:
+                close()
+            except Exception as e:
+                app.logger.warning(f"Failed to release startup connection {key}: {e}")
+
+    scheduler = ext.get('backup_scheduler')
+    alert_manager = getattr(scheduler, 'alert_manager', None)
+    close = getattr(alert_manager, 'close', None)
+    if callable(close):
+        try:
+            close()
+        except Exception as e:
+            app.logger.warning(
+                f"Failed to release backup scheduler alert connection: {e}"
+            )
+
+
+def _scheduler_should_start() -> bool:
+    """Whether this process should own the scheduler.
+
+    Two processes must not both start one:
+
+    * The Werkzeug reloader runs the whole module twice — a parent that only
+      watches files and a child that serves. ``main()`` sets
+      ``SCIDK_RELOADER_ACTIVE`` before building the app, and Werkzeug sets
+      ``WERKZEUG_RUN_MAIN=true`` only in the child, so the parent is skipped.
+      Under gunicorn ``SCIDK_RELOADER_ACTIVE`` is never set and this is a no-op.
+    * ``SCIDK_DISABLE_SCHEDULER=1`` opts out entirely, for CLI commands and
+      one-shot scripts that import the app factory.
+    """
+    if (os.environ.get('SCIDK_DISABLE_SCHEDULER') or '').strip().lower() in (
+        '1', 'true', 'yes', 'y', 'on'
+    ):
+        return False
+
+    reloader_active = os.environ.get('SCIDK_RELOADER_ACTIVE') == '1'
+    if reloader_active and os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
+        return False
+
+    return True
+
+
+def register_scheduled_jobs(app, app_scheduler):
+    """Register recurring jobs owned by services rather than by BackupScheduler.
+
+    Called once from ``create_app()``, only in the process that owns the
+    scheduler. Job functions must open their own database connections and
+    drivers — under ``--preload`` they run in the gunicorn master process, so
+    anything captured here has crossed a fork.
+    """
+    from .core.scheduled_jobs import register_all as register_all_jobs
+    register_all_jobs(app, app_scheduler)
 
 
 def main():
     """Run the Flask development server."""
-    app = create_app()
     # Read host/port from env for convenience
     host = os.environ.get('SCIDK_HOST', '0.0.0.0')
     port = int(os.environ.get('SCIDK_PORT', '5000'))
     debug = os.environ.get('SCIDK_DEBUG', '1') == '1'
+
+    # Flag the reloader before building the app: with debug on, Werkzeug runs
+    # this module in both a watcher parent and a serving child, and only the
+    # child should own the scheduler. See _scheduler_should_start().
+    if debug:
+        os.environ['SCIDK_RELOADER_ACTIVE'] = '1'
+
+    app = create_app()
     app.run(host=host, port=port, debug=debug)
 
 

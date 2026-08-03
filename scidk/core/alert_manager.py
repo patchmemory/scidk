@@ -27,9 +27,7 @@ class AlertManager:
             encryption_key: Fernet key for SMTP password encryption (base64-encoded)
         """
         self.db_path = db_path
-        self.db = sqlite3.connect(db_path, check_same_thread=False)
-        self.db.execute('PRAGMA journal_mode=WAL;')
-        self.db.row_factory = sqlite3.Row
+        self._db = None
 
         # Initialize encryption for SMTP passwords
         if encryption_key:
@@ -37,8 +35,40 @@ class AlertManager:
         else:
             self.cipher = Fernet(Fernet.generate_key())
 
-        self.init_tables()
-        self.bootstrap_default_alerts()
+    @property
+    def db(self) -> sqlite3.Connection:
+        """Open (and remember) this process's connection on first access.
+
+        Deliberately lazy: create_app() constructs an AlertManager and hands it
+        to the backup scheduler, and gunicorn runs create_app() in the master
+        process under --preload. An open SQLite handle there would be inherited
+        by every forked worker, sharing one file descriptor and one set of WAL
+        locks. Opening on first use means each worker — and each scheduled job
+        running in the master — gets its own connection after the fork.
+
+        Table creation and default-alert bootstrap happen here rather than in
+        __init__ for the same reason.
+        """
+        if self._db is None:
+            self._db = sqlite3.connect(self.db_path, check_same_thread=False)
+            self._db.execute('PRAGMA journal_mode=WAL;')
+            self._db.row_factory = sqlite3.Row
+            self.init_tables()
+            self.bootstrap_default_alerts()
+        return self._db
+
+    def close(self):
+        """Close this process's connection, if one is open.
+
+        Called at the end of create_app() so the gunicorn master holds nothing
+        across fork. The next attribute access reopens lazily.
+        """
+        if self._db is not None:
+            try:
+                self._db.close()
+            except Exception:
+                pass
+            self._db = None
 
     def init_tables(self):
         """Create alert-related tables if they don't exist."""

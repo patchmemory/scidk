@@ -71,10 +71,23 @@ def get_concept_driver(app=None):
             user, password = parts
             auth = (user, password)
 
-        driver = GraphDatabase.driver(uri, auth=auth)
-        driver.verify_connectivity()
+        # Verify with a throwaway driver, then hand back a fresh unused one.
+        #
+        # verify_connectivity() opens a real socket and leaves it idle in the
+        # driver's connection pool. This function runs inside create_app(), which
+        # gunicorn runs in the master process under --preload — a pooled
+        # connection there is inherited by all 16 workers, which would then
+        # interleave Bolt traffic on one shared file descriptor. A driver that has
+        # never been used holds no socket, so it crosses the fork safely and each
+        # worker opens its own connection on first query.
+        probe = GraphDatabase.driver(uri, auth=auth)
+        try:
+            probe.verify_connectivity()
+        finally:
+            probe.close()
+
         logger.info(f"Concept graph connected at {uri}")
-        return driver
+        return GraphDatabase.driver(uri, auth=auth)
 
     except Exception as e:
         logger.warning(f"Concept graph unavailable: {e}")
