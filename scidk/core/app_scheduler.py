@@ -98,6 +98,13 @@ class AppScheduler:
             True if this call started it, False if it was already running.
         """
         if self._scheduler.running:
+            # Already running. If no owner is recorded, the underlying
+            # BackgroundScheduler was started through some other path in this
+            # same process — claim it, so is_owner() does not report False in
+            # the process that holds the timer thread. A forked worker inherits
+            # a non-None owner_pid and so never reaches this.
+            if self._owner_pid is None:
+                self._owner_pid = os.getpid()
             return False
         self._scheduler.start()
         self._owner_pid = os.getpid()

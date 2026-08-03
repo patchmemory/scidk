@@ -128,6 +128,10 @@ def test_backup_scheduler_registers_into_an_injected_app_scheduler(
         backup.start()
         assert backup.scheduler is app_scheduler.scheduler
         assert 'daily_backup' in [j['id'] for j in app_scheduler.list_jobs()]
+        # Ownership must be recorded on the AppScheduler too, not only on the
+        # BackupScheduler that happened to start it.
+        assert app_scheduler.is_owner()
+        assert app_scheduler.owner_pid == os.getpid()
     finally:
         backup.stop()
 

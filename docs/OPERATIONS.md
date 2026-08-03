@@ -150,6 +150,38 @@ SciDK includes a backup scheduler. Configure in Settings → Backup:
 - Set retention policy
 - Configure backup location
 
+> **Schedule changes need a restart under gunicorn.** All recurring jobs run in a
+> single scheduler owned by the gunicorn master process (`--preload` in
+> `restart_gunicorn.sh`), which is what stops every job firing once per worker.
+> API requests are served by workers, so a schedule change is saved to
+> `scidk_settings.db` but does not reach the live scheduler until the app
+> restarts. A warning is logged when this happens — grep for "does not own the
+> running scheduler".
+
+### Scheduled Jobs
+
+| Job id | Default schedule | Timezone |
+|---|---|---|
+| `daily_backup` | 02:00, configurable in Settings → Backup | system-local |
+| `concept_graph_weight_decay` | 03:00 | system-local |
+| `schema_intelligence_ranking_flush` | every 6h at :17 | UTC |
+
+Environment overrides:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `SCIDK_RANKING_FLUSH_INTERVAL_HOURS` | `6` | Hours between property-ranking recomputes (1–24; out-of-range falls back to the default) |
+| `SCIDK_CONCEPT_WEIGHT_HALFLIFE_DAYS` | `90` | Half-life for Concept Graph edge weight decay |
+| `SCIDK_SCHEDULER_TIMEZONE` | `UTC` | Timezone for jobs that do not state their own |
+| `SCIDK_DISABLE_SCHEDULER` | unset | Set to `1` to start no scheduler at all — for CLI commands and one-shot scripts that import the app factory |
+
+To confirm one scheduler is running rather than sixteen, check that the job
+registration line appears exactly once per restart:
+
+```bash
+grep "Scheduler running (pid=" gunicorn.log
+```
+
 **Manual SQLite backup**:
 ```bash
 # Stop the application first (important!)

@@ -150,8 +150,15 @@ class BackupScheduler:
                 name='Concept Graph Weight Decay'
             )
 
-        if not self.scheduler.running:
+        # Start through the AppScheduler when sharing one, so ownership is
+        # recorded in a single place. Starting the underlying BackgroundScheduler
+        # directly would leave AppScheduler.is_owner() reporting False in the very
+        # process that owns the timer thread.
+        if self.app_scheduler is not None:
+            self.app_scheduler.start()
+        elif not self.scheduler.running:
             self.scheduler.start()
+
         self._running = True
         self._owner_pid = os.getpid()
 
