@@ -24,6 +24,126 @@ DEFAULT_TOP_K = 5
 
 
 # ─────────────────────────────────────────────
+# PHASE 0: Table Creation
+# ─────────────────────────────────────────────
+#
+# These four tables live in scidk_settings.db, NOT files.db — do not route them
+# through core/migrations.py. This module owns the DDL; it is the single source
+# of truth. (An orphaned copy previously sat in core/migrations/schema_intelligence.sql
+# with no caller, so on any clean deploy the whole layer silently degraded:
+# log_query_usage swallowed its insert failure and get_ranked_properties fell
+# back to unranked order.)
+
+SI_TABLE_DDL = (
+    # Phase 1: Raw usage event log (append-only)
+    """
+    CREATE TABLE IF NOT EXISTS usage_event (
+        id              INTEGER PRIMARY KEY,
+        event_type      TEXT NOT NULL,  -- 'query_executed' | 'concept_graph_plan'
+        label_name      TEXT NOT NULL,
+        property_name   TEXT,           -- NULL for label-level events
+        session_id      TEXT,
+        source          TEXT,           -- 'chat' | 'labels_ui'
+        traversal_json  TEXT,           -- Concept Graph traversal metadata
+        created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    # Phase 2+3+6: Per-label enrichment, ranking, and embeddings
+    """
+    CREATE TABLE IF NOT EXISTS label_profile (
+        id                INTEGER PRIMARY KEY,
+        label_name        TEXT UNIQUE NOT NULL,
+        description       TEXT,
+        chat_context_mode TEXT DEFAULT 'top_n',  -- 'top_n'|'all'|'exclude'
+        chat_context_n    INTEGER DEFAULT 5,
+        always_include    TEXT,   -- JSON array: ["treatment", "genotype"]
+        never_include     TEXT,   -- JSON array: ["_imported_stub"]
+        embedding         BLOB,
+        embedding_model   TEXT,
+        embedding_text    TEXT,
+        embedded_at       DATETIME,
+        created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    # Phase 2: Usage-weighted property ranking per label
+    """
+    CREATE TABLE IF NOT EXISTS property_ranking (
+        id            INTEGER PRIMARY KEY,
+        label_name    TEXT NOT NULL,
+        property_name TEXT NOT NULL,
+        query_count   INTEGER DEFAULT 0,
+        session_count INTEGER DEFAULT 0,
+        last_used_at  DATETIME,
+        rank          REAL DEFAULT 0.0,
+        UNIQUE (label_name, property_name)
+    )
+    """,
+    # Phase 6: Relationship type embeddings
+    """
+    CREATE TABLE IF NOT EXISTS relationship_profile (
+        id              INTEGER PRIMARY KEY,
+        rel_type        TEXT UNIQUE NOT NULL,
+        description     TEXT,
+        embedding       BLOB,
+        embedding_model TEXT,
+        embedding_text  TEXT,
+        embedded_at     DATETIME,
+        created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    # Indexes
+    "CREATE INDEX IF NOT EXISTS idx_usage_event_label ON usage_event(label_name, property_name)",
+    "CREATE INDEX IF NOT EXISTS idx_usage_event_session ON usage_event(session_id)",
+    "CREATE INDEX IF NOT EXISTS idx_property_ranking_label ON property_ranking(label_name)",
+    "CREATE INDEX IF NOT EXISTS idx_label_profile_embedding "
+    "ON label_profile(embedding) WHERE embedding IS NOT NULL",
+)
+
+# Columns added after a table's first release. Databases created before the
+# column existed get it back-filled via ALTER TABLE; new databases already have
+# it from SI_TABLE_DDL. Keyed by table, then column -> column definition.
+SI_ADDED_COLUMNS = {
+    'usage_event': {
+        # Was migrations.py v25, which ALTERed a table that did not exist yet on
+        # a clean deploy and swallowed the OperationalError.
+        'traversal_json': 'TEXT',
+    },
+}
+
+
+def ensure_schema_intelligence_tables(sqlite_conn: sqlite3.Connection) -> None:
+    """Create the four Schema Intelligence tables if they are missing.
+
+    Idempotent — safe to call on every startup. Uses CREATE TABLE IF NOT EXISTS
+    for tables and PRAGMA table_info + ALTER TABLE for columns added to tables
+    that already exist in older databases.
+
+    Raises on failure: if the SI tables cannot be created the layer is inert,
+    and callers at startup should see that rather than degrade silently.
+    """
+    cursor = sqlite_conn.cursor()
+
+    for statement in SI_TABLE_DDL:
+        cursor.execute(statement)
+
+    for table, columns in SI_ADDED_COLUMNS.items():
+        existing = {row[1] for row in
+                    cursor.execute(f"PRAGMA table_info({table})").fetchall()}
+        for column, coltype in columns.items():
+            if column not in existing:
+                cursor.execute(
+                    f"ALTER TABLE {table} ADD COLUMN {column} {coltype}"
+                )
+                logger.info(
+                    f"ensure_schema_intelligence_tables: added "
+                    f"{table}.{column}"
+                )
+
+    sqlite_conn.commit()
+
+
+# ─────────────────────────────────────────────
 # PHASE 1: Usage Event Logging
 # ─────────────────────────────────────────────
 

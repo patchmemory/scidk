@@ -741,15 +741,19 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 24)
             version = 24
 
-        # v25: Add traversal_json column to usage_event for Concept Graph logging
+        # v25: (retired) Add traversal_json column to usage_event.
+        #
+        # This step used to run `ALTER TABLE usage_event ADD COLUMN traversal_json
+        # TEXT` inside a swallowed OperationalError. usage_event is a Schema
+        # Intelligence table living in scidk_settings.db, which this module does
+        # not own — on a clean deploy the table did not exist yet, the ALTER
+        # failed, and the error was discarded.
+        #
+        # Ownership now sits with schema_intelligence.ensure_schema_intelligence_tables(),
+        # which creates usage_event *with* traversal_json and back-fills the column
+        # on databases that predate it (SI_ADDED_COLUMNS). The step is retired
+        # rather than deleted so the version sequence stays intact.
         if version < 25:
-            # Add traversal_json to store concept graph traversal metadata
-            try:
-                cur.execute("ALTER TABLE usage_event ADD COLUMN traversal_json TEXT;")
-            except sqlite3.OperationalError:
-                # Column may already exist
-                pass
-
             conn.commit()
             _set_version(conn, 25)
             version = 25

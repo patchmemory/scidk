@@ -31,6 +31,20 @@ from .core.rclone_settings import load_rclone_interpretation_settings
 from .core.rclone_mounts_loader import rehydrate_rclone_mounts
 
 
+def _resolve_settings_db_path(app) -> str:
+    """Resolve the scidk_settings.db path the same way every consumer does.
+
+    Precedence: app.config (set by tests) > SCIDK_SETTINGS_DB env > cwd default.
+    Route modules read this from ``app.config``; ``react_loop`` reads the env var
+    directly, so both are consulted here to keep them pointing at one file.
+    """
+    return (
+        app.config.get('SCIDK_SETTINGS_DB')
+        or os.environ.get('SCIDK_SETTINGS_DB')
+        or 'scidk_settings.db'
+    )
+
+
 def create_app():
     """Create and configure the Flask application.
 
@@ -113,6 +127,31 @@ def create_app():
     except Exception:
         # Defer reporting to /api/health if needed via app.extensions
         pass
+
+    # Create the Schema Intelligence tables in scidk_settings.db if missing.
+    # These are NOT part of migrations.py (that module owns files.db) — the DDL
+    # lives in services/schema_intelligence.py. Without this, a clean deploy has
+    # no usage_event / property_ranking tables and the whole SI layer silently
+    # degrades: usage logging swallows its insert error and property ranking
+    # falls back to unranked order.
+    settings_db = _resolve_settings_db_path(app)
+    app.config.setdefault('SCIDK_SETTINGS_DB', settings_db)
+    try:
+        import sqlite3 as _sqlite3
+        from .services.schema_intelligence import ensure_schema_intelligence_tables
+        _si_conn = _sqlite3.connect(settings_db)
+        try:
+            ensure_schema_intelligence_tables(_si_conn)
+        finally:
+            _si_conn.close()
+    except Exception as e:
+        # Non-fatal: the app still serves without the SI layer. Log loudly —
+        # this used to be invisible.
+        import logging
+        logging.error(
+            f"Failed to create Schema Intelligence tables in {settings_db}: {e}. "
+            "Usage logging and property ranking will be inert."
+        )
 
     # State backend toggle (sqlite|memory) for app registries (reads)
     try:
