@@ -150,3 +150,73 @@ def test_trailing_semicolon_stripped_before_limit():
     mcp_tools.query_knowledge_graph(driver, "MATCH (n) RETURN n;", limit=5)
 
     assert driver.calls[0]['cypher'] == 'MATCH (n) RETURN n LIMIT 5'
+
+
+# ── Task B: label is guarded before it reaches Cypher ────────────────────────
+
+MALFORMED_LABELS = [
+    # Backtick escapes the quoting and appends a clause.
+    'Sample` ) DETACH DELETE (n) //',
+    '`',
+    # Whitespace / punctuation / operators.
+    'Sample Type',
+    'Sample-Type',
+    'Sample:Type',
+    'Sample(n)',
+    'Sample;MATCH',
+    'Sample\nMATCH',
+    # Leading digit is not a valid identifier.
+    '1Sample',
+    # Non-string.
+    42,
+    ['Sample'],
+]
+
+# Falsy values are a missing label rather than a malformed one. get_label_profile
+# requires a label so they are still an error there; summarize_dataset treats a
+# falsy label as "summarize the whole dataset", so it is not passed them.
+UNSAFE_LABELS = MALFORMED_LABELS + ['', None]
+
+
+@pytest.mark.parametrize('label', UNSAFE_LABELS)
+def test_get_label_profile_rejects_unsafe_label(label):
+    driver = _FakeDriver()
+    result = mcp_tools.get_label_profile(driver, label)
+
+    assert result['status'] == 'error'
+    assert result['profile'] is None
+    assert 'Invalid label' in result['error']
+    # Rejected before any Cypher was built or run.
+    assert driver.calls == []
+
+
+@pytest.mark.parametrize('label', MALFORMED_LABELS)
+def test_summarize_dataset_rejects_unsafe_label(label):
+    driver = _FakeDriver()
+    result = mcp_tools.summarize_dataset(driver, label=label)
+
+    assert result['status'] == 'error'
+    assert 'Invalid label' in result['error']
+    assert driver.calls == []
+
+
+def test_summarize_dataset_rejects_unsafe_relationship():
+    driver = _FakeDriver()
+    result = mcp_tools.summarize_dataset(
+        driver, relationship='REL`]->() DETACH DELETE (n) //'
+    )
+
+    assert result['status'] == 'error'
+    assert 'Invalid relationship' in result['error']
+    assert driver.calls == []
+
+
+@pytest.mark.parametrize('label', ['Sample', '_Internal', 'Sample_Type', 'File2'])
+def test_get_label_profile_accepts_valid_labels(label):
+    driver = _FakeDriver(responses={'count(n) as count': [{'count': 3}]})
+    result = mcp_tools.get_label_profile(driver, label)
+
+    assert result['status'] == 'success', result['error']
+    assert result['profile']['label'] == label
+    # The label reached the query inside backticks, so the label index is used.
+    assert f'(n:`{label}`)' in driver.calls[0]['cypher']

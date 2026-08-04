@@ -22,6 +22,36 @@ FORBIDDEN_KEYWORDS = frozenset(
 )
 
 
+# Guard for identifiers that must be interpolated into Cypher rather than
+# passed as parameters. Same pattern as canvas_service._LABEL_RE / _REL_RE,
+# which guards the write path; kept local so importing this module does not
+# pull in the services layer (the MCP server runs as its own process).
+#
+# Interpolation rather than `WHERE $label IN labels(n)` is deliberate here.
+# Parameterizing the label removes it from the node pattern, so Neo4j can no
+# longer use the label index and each of these reads degrades into a scan of
+# the entire graph. The pattern below admits no backtick, whitespace, or
+# operator character, so a label that passes it cannot escape the quoting.
+_IDENTIFIER_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+
+def _validate_identifier(value: Any, kind: str) -> Optional[str]:
+    """Return an error message if ``value`` is unsafe to interpolate, else None.
+
+    Args:
+        value: The caller-supplied label or relationship type.
+        kind: What the value names, for the error message ("label"/"relationship").
+    """
+    if not isinstance(value, str) or not value:
+        return f"Invalid {kind}: expected a non-empty string, got {value!r}."
+    if not _IDENTIFIER_RE.match(value):
+        return (
+            f"Invalid {kind} {value!r}: must start with a letter or underscore "
+            "and contain only letters, digits, and underscores."
+        )
+    return None
+
+
 def _cypher_tokens(cypher: str) -> Set[str]:
     """Split Cypher into upper-cased word tokens for keyword matching.
 
@@ -308,6 +338,16 @@ def summarize_dataset(
             "error": str | null
         }
     """
+    # Same interpolation guard as get_label_profile: both identifiers land
+    # inside backticks in the patterns below, and both come from the caller.
+    invalid = (
+        _validate_identifier(label, 'label') if label
+        else _validate_identifier(relationship, 'relationship') if relationship
+        else None
+    )
+    if invalid:
+        return {"status": "error", "summary": None, "error": invalid}
+
     try:
         if label:
             query = f"""
@@ -378,6 +418,13 @@ def get_label_profile(
             "error": str | null
         }
     """
+    # The label is interpolated into the node patterns below to keep the label
+    # index in play, so it must be validated first — a backtick would otherwise
+    # escape the quoting, and the write-keyword filter does not cover this path.
+    invalid = _validate_identifier(label, 'label')
+    if invalid:
+        return {"status": "error", "profile": None, "error": invalid}
+
     try:
         # Get node count
         count_query = f"MATCH (n:`{label}`) RETURN count(n) as count"
