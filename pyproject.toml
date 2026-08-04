@@ -23,6 +23,11 @@ dependencies = [
   "rapidfuzz>=3.0",
   "bcrypt>=4.0",
   "APScheduler>=3.10",
+  # APScheduler's SQLAlchemyJobStore: the persistent jobstore that lets a
+  # schedule change made in a worker reach the scheduler in the gunicorn master.
+  "SQLAlchemy>=1.4",
+  # Validates Pipeline mapping configs against scidk/pipeline/mapping_schema.json.
+  "jsonschema>=4.0",
   "flasgger>=0.9.7",
 ]
 
