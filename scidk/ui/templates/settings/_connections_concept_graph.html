@@ -20,7 +20,15 @@
               <a href="#connections/overview" data-goto-section="connections-overview">Connections → Overview</a>.
             </div>
           </div>
-          <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <div style="display: flex; gap: 0.75rem; align-items: center;">
+            <!-- Export/import (Cycle 8 Task C). Deliberately plain: the snapshot is
+                 for moving a tuned graph to another instance, not an everyday action. -->
+            <a href="#" id="link-export-concept-graph" class="small">Export</a>
+            <label for="input-import-concept-graph" class="small" style="margin: 0; cursor: pointer;">
+              Import
+              <input type="file" id="input-import-concept-graph" accept=".json,application/json"
+                     style="font-size: 0.75rem; max-width: 11rem;">
+            </label>
             <button id="btn-reseed-concept-graph" class="btn btn-sm btn-primary">↺ Re-seed</button>
           </div>
         </div>
@@ -189,6 +197,87 @@
       } finally {
         reseedBtn.disabled = false;
         reseedBtn.textContent = '↺ Re-seed';
+      }
+    });
+
+    // Export the graph as a JSON snapshot. Fetched rather than linked so a 501
+    // (concept graph unavailable) surfaces as a toast instead of a downloaded
+    // error document named concept_graph.json.
+    const exportLink = document.getElementById('link-export-concept-graph');
+    exportLink.addEventListener('click', async (e) => {
+      e.preventDefault();
+      try {
+        const resp = await fetch(window.SCIDK_BASE + '/api/connections/concept-graph/export');
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          window.toast('Export failed: ' + (data.error || resp.status), 'error');
+          return;
+        }
+
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'concept_graph.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        const tools = (data.tools || []).length;
+        const intents = (data.intents || []).length;
+        window.toast(`Exported ${intents} intents and ${tools} tools`, 'success');
+      } catch (err) {
+        window.toast('Export failed: ' + err.message, 'error');
+      }
+    });
+
+    // Import a snapshot. Upsert, not replace — existing SATISFIES edges keep the
+    // higher of the two weights, so this cannot silently discard learned feedback.
+    const importInput = document.getElementById('input-import-concept-graph');
+    importInput.addEventListener('change', async () => {
+      const file = importInput.files && importInput.files[0];
+      if (!file) return;
+
+      importInput.disabled = true;
+      window.toast(`Importing ${file.name}...`, 'info');
+
+      try {
+        const body = new FormData();
+        body.append('file', file);
+        const resp = await fetch(window.SCIDK_BASE + '/api/connections/concept-graph/import', {
+          method: 'POST',
+          body: body
+        });
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          window.toast('Import failed: ' + (data.error || resp.status), 'error');
+          return;
+        }
+
+        window.toast(
+          `Imported ${data.intents_imported} intents, ${data.tools_imported} tools, ` +
+          `${data.edges_imported} edges (${data.re_embedded} re-embedded)`, 'success');
+
+        // Per-item failures come back in the payload rather than as a non-200, so
+        // they need saying out loud — a partial import otherwise reads as clean.
+        const errors = data.errors || [];
+        if (errors.length) {
+          window.toast(`${errors.length} item(s) failed — see the console`, 'error');
+          errors.forEach(err => console.warn('Concept graph import:', err));
+        }
+
+        loadConceptGraphStatus();
+        loadIntents();
+        loadTools();
+      } catch (err) {
+        window.toast('Import failed: ' + err.message, 'error');
+      } finally {
+        // Cleared so re-selecting the same file fires change again.
+        importInput.value = '';
+        importInput.disabled = false;
       }
     });
 
