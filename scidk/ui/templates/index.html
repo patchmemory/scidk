@@ -194,6 +194,20 @@
       <a href="#modules/analyses" class="settings-sidebar-item" data-section="modules-analyses">Analyses</a>
       <a href="#modules/scripts" class="settings-sidebar-item" data-section="modules-scripts">Scripts</a>
     </div>
+
+    <!-- Advanced Section -->
+    <!-- Admin tools that used to sit in the top nav. These leave the Settings
+         page rather than switching an in-page section, so they carry
+         settings-sidebar-external and are excluded from the click handler
+         below. -->
+    <div class="settings-section-header" data-section="advanced">
+      <span>Advanced</span>
+      <span class="chevron">▸</span>
+    </div>
+    <div class="settings-subsection-list" id="advanced-subsection-list">
+      <a href="{{ request.script_root }}/scripts" class="settings-sidebar-item settings-sidebar-external admin-only" data-testid="settings-advanced-scripts">Scripts</a>
+      <a href="{{ request.script_root }}/plugins" class="settings-sidebar-item settings-sidebar-external" data-testid="settings-advanced-plugins">Plugins</a>
+    </div>
   </nav>
 
   <!-- Content Area -->
@@ -241,7 +255,9 @@
   // Settings navigation - hierarchical collapsible sections
   document.addEventListener('DOMContentLoaded', async () => {
     const sectionHeaders = document.querySelectorAll('.settings-section-header');
-    const navItems = document.querySelectorAll('.settings-sidebar-item');
+    // Items that switch an in-page section. External items (Advanced) are real
+    // links out of this page, so they must keep their default click behaviour.
+    const navItems = document.querySelectorAll('.settings-sidebar-item:not(.settings-sidebar-external)');
     const sections = document.querySelectorAll('.settings-section');
 
     // Check auth status and apply admin-only restrictions

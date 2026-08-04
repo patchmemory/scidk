@@ -40,12 +40,9 @@
     <a href="{{ request.script_root }}/results" data-testid="nav-results">Results</a>
     <a href="{{ request.script_root }}/chat" data-testid="nav-chats">Chats</a>
     <a href="{{ request.script_root }}/map" data-testid="nav-maps">Maps</a>
-    <a href="{{ request.script_root }}/labels" data-testid="nav-labels">Labels</a>
-    <a href="{{ request.script_root }}/links" data-testid="nav-links">Links</a>
+    <a href="{{ request.script_root }}/entities" data-testid="nav-entities">Entities</a>
     <a href="{{ request.script_root }}/datasets" data-testid="nav-files">Files</a>
-    <a href="{{ request.script_root }}/scripts" data-testid="nav-scripts">Scripts</a>
-    <a href="{{ request.script_root }}/pipeline/sources" data-testid="nav-pipeline">Pipeline</a>
-    <a href="{{ request.script_root }}/plugins" data-testid="nav-plugins">Plugins</a>
+    <a href="{{ request.script_root }}/pipeline/sources" data-testid="nav-pipeline">Pipelines</a>
   </nav>
   <div id="auth-status" style="margin-left:auto; display:none;">
     <span id="auth-username" style="color:var(--muted); font-size:0.9em; margin-right:0.5rem;"></span>
@@ -54,6 +51,7 @@
 </header>
 <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 <main data-testid="main">
+  {% if entities_tab %}{% include '_entities_tabs.html' %}{% endif %}
   {% block content %}{% endblock %}
 </main>
 <script>
@@ -132,10 +130,12 @@
     checkAuthStatus();
   })();
 
-  // Set active nav link based on current page
+  // Set active nav link based on current page.
+  // Scoped to the header: in-page tab strips (see _entities_tabs.html) are also
+  // <nav> elements and mark their own active tab server-side.
   (function(){
     const path = window.location.pathname;
-    const navLinks = document.querySelectorAll('nav a');
+    const navLinks = document.querySelectorAll('header nav a');
     navLinks.forEach(link => {
       const href = link.getAttribute('href');
       if ((href === '/' && path === '/') || (href !== '/' && path.startsWith(href))) {

@@ -290,22 +290,43 @@ def rocrate_view():
     return render_template('rocrate_view.html', metadata_url=metadata_url, embed_mode=embed_mode, prov_id=prov_id, root_id=root_id, path=sel_path)
 
 
+@bp.get('/entities')
+def entities():
+    """Entities page: the Labels and Links pages as two tabs under one nav item.
+
+    The tab is selected server-side and each tab is a full page load, so only one
+    of the two subpage templates is ever in the document. That is deliberate, not
+    incidental: ``labels.html``'s inline scripts and ``static/js/links/*.js`` each
+    declare top-level ``showToast``, ``escapeHtml``, ``handleGlobalKeydown`` and
+    ``returnFocusToSidePanel``, so rendering both into one DOM would leave the
+    later-parsed definitions bound for both tabs and break the keyboard and focus
+    handling on one of them.
+
+    Neither subpage template is modified; ``entities_tab`` only tells base.html to
+    render the tab strip above the content.
+    """
+    tab = (request.args.get('tab') or '').strip().lower()
+    if tab == 'relationships':
+        return render_template('links.html', entities_tab='relationships')
+    return render_template('labels.html', entities_tab='entities')
+
+
 @bp.get('/labels')
 def labels():
-    """Label definitions page for graph schema management."""
-    return render_template('labels.html')
+    """Backward compatibility redirect: /labels → the Entities tab."""
+    return redirect(url_for('ui.entities', tab='entities'))
 
 
 @bp.get('/links')
 def links():
-    """Links page for relationship creation workflows (wizard + script)."""
-    return render_template('links.html')
+    """Backward compatibility redirect: /links → the Relationships tab."""
+    return redirect(url_for('ui.entities', tab='relationships'))
 
 
 @bp.get('/integrate')
 def integrate_redirect():
-    """Backward compatibility redirect: /integrate → /links"""
-    return redirect(url_for('ui.links'))
+    """Backward compatibility redirect: /integrate → the Relationships tab."""
+    return redirect(url_for('ui.entities', tab='relationships'))
 
 
 @bp.get('/settings')

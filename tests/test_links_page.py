@@ -2,13 +2,25 @@
 Basic smoke tests for the Links page UI.
 
 Tests that the modal-based triple builder renders correctly.
+
+The page now lives as the Relationships tab of /entities; /links is kept as a
+redirect for existing bookmarks and in-app links.
 """
 import pytest
 
+RELATIONSHIPS_URL = '/entities?tab=relationships'
+
+
+def test_links_url_redirects_to_relationships_tab(client):
+    """/links redirects to the Relationships tab rather than rendering."""
+    response = client.get('/links')
+    assert response.status_code == 302
+    assert response.headers['Location'].endswith('/entities?tab=relationships')
+
 
 def test_links_page_loads(client):
-    """Test that /links page loads successfully."""
-    response = client.get('/links')
+    """Test that the Relationships tab loads successfully."""
+    response = client.get(RELATIONSHIPS_URL)
     assert response.status_code == 200
     html = response.data.decode('utf-8')
 
@@ -20,7 +32,7 @@ def test_links_page_loads(client):
 
 def test_links_page_has_modal_buttons(client):
     """Test that the new modal-based UI elements are present."""
-    response = client.get('/links')
+    response = client.get(RELATIONSHIPS_URL)
     assert response.status_code == 200
     html = response.data.decode('utf-8')
 
@@ -38,7 +50,7 @@ def test_links_page_has_modal_buttons(client):
 
 def test_links_page_has_modal_functions(client):
     """Test that modal-related JavaScript modules are loaded."""
-    response = client.get('/links')
+    response = client.get(RELATIONSHIPS_URL)
     assert response.status_code == 200
     html = response.data.decode('utf-8')
 
@@ -51,7 +63,7 @@ def test_links_page_has_modal_functions(client):
 
 def test_links_page_has_csv_validation_functions(client):
     """Test that CSV export/import modules are loaded."""
-    response = client.get('/links')
+    response = client.get(RELATIONSHIPS_URL)
     assert response.status_code == 200
     html = response.data.decode('utf-8')
 
@@ -62,7 +74,7 @@ def test_links_page_has_csv_validation_functions(client):
 
 def test_links_page_has_new_ui_not_old_steps(client):
     """Test that new modal UI is present and replaces old 3-step wizard."""
-    response = client.get('/links')
+    response = client.get(RELATIONSHIPS_URL)
     assert response.status_code == 200
     html = response.data.decode('utf-8')
 
