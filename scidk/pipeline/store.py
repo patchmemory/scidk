@@ -35,8 +35,9 @@ _PIPELINE_JSON_COLUMNS = ("dag_json",)
 #: anything reaching the query string has to come from this tuple and not from a
 #: request body.
 _SOURCE_UPDATABLE = (
-    "name", "plugin_type", "source_path", "schema_json", "mapping_json",
-    "last_run_at", "last_run_status", "last_run_summary", "fair_status", "fair_checked_at",
+    "name", "plugin_type", "source_path", "schema_json", "schema_saved_at",
+    "mapping_json", "last_run_at", "last_run_status", "last_run_summary",
+    "fair_status", "fair_checked_at",
 )
 
 _PIPELINE_UPDATABLE = (
@@ -79,6 +80,7 @@ class PipelineStore:
                     plugin_type      TEXT NOT NULL,
                     source_path      TEXT,
                     schema_json      TEXT,
+                    schema_saved_at  DATETIME,
                     mapping_json     TEXT,
                     last_run_at      DATETIME,
                     last_run_status  TEXT,
@@ -111,8 +113,14 @@ class PipelineStore:
                 "ON pipeline_source(updated_at DESC)"
             )
             # Columns added after a deployment already has these tables go here,
-            # guarded by PRAGMA table_info. Empty today; the guard is the point.
-            self._add_missing_columns(conn, "pipeline_source", {})
+            # guarded by PRAGMA table_info.
+            self._add_missing_columns(conn, "pipeline_source", {
+                # When the schema canvas last committed (Task C). Distinct from
+                # updated_at, which any edit moves: the canvas compares its
+                # working session against this to decide whether the session
+                # holds unsaved work, and a rename must not look like a save.
+                "schema_saved_at": "DATETIME",
+            })
             self._add_missing_columns(conn, "pipeline", {})
             conn.commit()
             logger.debug("Ensured pipeline_source and pipeline tables exist in %s", self.db_path)
@@ -264,6 +272,22 @@ class PipelineStore:
             last_run_at=ran_at or utc_now(),
             last_run_status=status,
             last_run_summary=summary,
+        )
+
+    def save_schema(self, source_id: str, schema: Optional[Any]) -> Optional[Dict[str, Any]]:
+        """Commit the source's schema target (Task C).
+
+        Stamps ``schema_saved_at`` alongside it. The schema canvas needs to know
+        whether its working session is newer than the last save, and ``updated_at``
+        cannot answer that — a rename moves it too.
+
+        Args:
+            schema: A validated Arrows document (see
+                :func:`scidk.pipeline.schema_arrows.parse_arrows`), or None to
+                clear the schema.
+        """
+        return self.update_source(
+            source_id, schema_json=schema, schema_saved_at=utc_now() if schema else None
         )
 
     def record_fair_check(

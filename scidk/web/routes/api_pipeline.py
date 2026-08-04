@@ -9,6 +9,10 @@ Task A  ``GET /pipeline/sources`` (page), and CRUD under ``/api/pipeline/sources
 Task B  ``POST /api/pipeline/sources/test-connection`` and ``.../upload`` — both
         produce the same thing, a column list plus a row sample, so the column
         mapping step does not care which one the user chose.
+Task C  ``.../schema`` (GET/PUT), ``.../schema/export/arrows``,
+        ``.../schema/import/arrows`` and ``GET /api/pipeline/schema/derive`` — the
+        Arrows.app document the schema canvas edits. See
+        :mod:`scidk.pipeline.schema_arrows`.
 Task F  ``.../run`` at both levels, plus pipeline CRUD and ``.../schedule``.
 
 Plugin type discovery is ``GET /api/plugins/templates?category=data_import``,
@@ -16,6 +20,7 @@ which already existed; this module does not duplicate it.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -331,6 +336,171 @@ def _unschedule(pipeline_id: str) -> None:
         get_schedule_store(_settings_db()).remove(pipeline_id)
     except Exception as e:  # noqa: BLE001
         logger.debug("Could not unschedule pipeline %s: %s", pipeline_id, e)
+
+
+# ------------------------------------------ Task C: schema (the mapping target)
+#
+# A source's schema is held as an Arrows.app document, so the same bytes the
+# schema canvas saves can be opened in arrows.app and brought back. Every write
+# goes through schema_arrows.parse_arrows: the schema is Task D's mapping target,
+# and one that names a label Cypher cannot address would produce a mapping that
+# can never run.
+#
+# Nothing in this section touches Neo4j except the derive route, which only reads.
+
+@bp.get('/sources/<source_id>/schema')
+@require_role(*_READ_ROLES)
+def get_source_schema(source_id: str):
+    """The source's committed schema, or null when it has none.
+
+    ``context_id`` is returned so the canvas does not have to construct the
+    namespaced string itself — the scope of its working session is the server's
+    definition, not the page's.
+    """
+    from ...pipeline.schema_arrows import schema_summary
+    from ...services.canvas_service import pipeline_source_context
+
+    source = _store().get_source(source_id)
+    if source is None:
+        return _error('source not found', 404)
+
+    schema = source.get('schema_json')
+    return jsonify({
+        'status': 'ok',
+        'source': {'id': source['id'], 'name': source.get('name')},
+        'schema': schema,
+        'saved_at': source.get('schema_saved_at'),
+        'summary': schema_summary(schema),
+        'context_id': pipeline_source_context(source_id),
+    }), 200
+
+
+@bp.put('/sources/<source_id>/schema')
+@require_role(*_WRITE_ROLES)
+def put_source_schema(source_id: str):
+    """Commit a schema to ``pipeline_source.schema_json``.
+
+    Body: an Arrows document, or ``{"schema": <arrows document>}``.
+
+    This is the only write the schema canvas performs. It does not write to Neo4j
+    — a schema is a mapping target, and creating the labels it names in the graph
+    before any data has been mapped onto them would put empty nodes in the graph.
+    """
+    from ...pipeline.schema_arrows import SchemaError, parse_arrows, schema_summary
+
+    store = _store()
+    if store.get_source(source_id) is None:
+        return _error('source not found', 404)
+
+    body = _body()
+    payload = body.get('schema') if 'schema' in body else body
+    try:
+        schema = parse_arrows(payload)
+    except SchemaError as e:
+        return _error(str(e), 400, problems=e.problems, ok=False)
+
+    source = store.save_schema(source_id, schema)
+    logger.info("Saved schema for pipeline source %s by %s (%d label(s))",
+                source_id, current_user_key(), len(schema['nodes']))
+    return jsonify({
+        'status': 'ok',
+        'saved_at': (source or {}).get('schema_saved_at'),
+        'schema': schema,
+        'summary': schema_summary(schema),
+    }), 200
+
+
+@bp.get('/sources/<source_id>/schema/export/arrows')
+@require_role(*_READ_ROLES)
+def export_source_schema(source_id: str):
+    """Download the schema as ``schema.arrows.json``, ready to open in arrows.app."""
+    from flask import Response
+
+    source = _store().get_source(source_id)
+    if source is None:
+        return _error('source not found', 404)
+    schema = source.get('schema_json')
+    if not schema:
+        return _error('this source has no schema to export', 404)
+
+    return Response(
+        json.dumps(schema, indent=2),
+        mimetype='application/json',
+        headers={'Content-Disposition': 'attachment; filename="schema.arrows.json"'},
+    )
+
+
+@bp.post('/sources/<source_id>/schema/import/arrows')
+@require_role(*_READ_ROLES)
+def import_source_schema(source_id: str):
+    """Validate an Arrows document without saving it.
+
+    Option A's gate. The canvas must never open on a broken schema, so the paste
+    is checked here first and the canvas is only entered on a 200. Saving is a
+    separate, deliberate act (the PUT above) — importing something and finding it
+    had already overwritten the previous schema would be a nasty surprise.
+
+    A 400 carries ``problems``: every offending element, so a malformed export can
+    be fixed in one pass rather than one reload per mistake.
+    """
+    from ...pipeline.schema_arrows import SchemaError, parse_arrows, schema_summary
+
+    if _store().get_source(source_id) is None:
+        return _error('source not found', 404)
+
+    # An unparseable body is the case this route exists to report, so the raw text
+    # is used when Flask could not read it as JSON — otherwise a syntax error in
+    # the paste would arrive as an empty dict and be reported as "no nodes array".
+    body = request.get_json(silent=True)
+    if isinstance(body, dict):
+        payload = body.get('schema') if 'schema' in body else body
+    else:
+        payload = request.get_data(as_text=True)
+
+    try:
+        schema = parse_arrows(payload)
+    except SchemaError as e:
+        return _error(str(e), 400, problems=e.problems, ok=False)
+
+    return jsonify({
+        'status': 'ok', 'ok': True, 'schema': schema,
+        'summary': schema_summary(schema),
+    }), 200
+
+
+@bp.get('/schema/derive')
+@require_role(*_READ_ROLES)
+def derive_schema():
+    """Option B: the live Neo4j schema as an Arrows document.
+
+    Read-only, and not scoped to a source — the graph's shape is the same whichever
+    source is being configured. ``strategy`` says which of the three derivation
+    paths answered, and ``notes`` says why the earlier ones did not, because "your
+    schema is empty" and "this Neo4j has no db.schema.visualization" look identical
+    on the canvas otherwise.
+    """
+    from ...pipeline.schema_arrows import derive_from_graph, schema_summary
+    from ...services.neo4j_client import Neo4jClient, get_neo4j_params
+
+    uri, user, password, database, auth_mode = get_neo4j_params(current_app)
+    if not uri:
+        return _error('Neo4j is not configured. Configure a connection in Settings, '
+                      'or import a schema from Arrows.app instead.', 400)
+
+    try:
+        client = Neo4jClient(uri, user, password, database, auth_mode)
+        client.connect()
+        try:
+            result = derive_from_graph(client.execute_read)
+        finally:
+            client.close()
+    except Exception as e:  # noqa: BLE001 - a connection failure is the user's to see
+        logger.warning("Could not derive a schema from Neo4j: %s", e, exc_info=True)
+        return _error(f'Could not read the graph: {e}', 502)
+
+    result['summary'] = schema_summary(result['schema'])
+    result['status'] = 'ok'
+    return jsonify(result), 200
 
 
 # ---------------------------------------------------- Task B: connection
