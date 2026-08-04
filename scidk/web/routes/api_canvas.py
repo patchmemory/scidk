@@ -363,6 +363,14 @@ def commit_canvas():
 # --- Exports (download provisional changes as runnable scripts) ---
 from flask import Response  # noqa: E402
 
+# Exports only serialize a client-supplied snapshot, so they are read-like and
+# do not need /commit's admin gate — but they should not be open either. Every
+# authenticated role is listed rather than a single 'staff' role because there
+# is no staff role: auth_users constrains role to ('admin', 'user')
+# (core/auth.py:60) and require_role is a plain membership test, not a
+# hierarchy, so @require_role('staff') would 403 every real user.
+_EXPORT_ROLES = ('admin', 'user')
+
 
 def _layer_name_from_request() -> str:
     body = request.get_json(silent=True) or {}
@@ -370,6 +378,7 @@ def _layer_name_from_request() -> str:
 
 
 @bp.post('/export/cypher')
+@require_role(*_EXPORT_ROLES)
 def export_cypher():
     from ...services.canvas_service import generate_cypher
 
@@ -381,6 +390,7 @@ def export_cypher():
 
 
 @bp.post('/export/python')
+@require_role(*_EXPORT_ROLES)
 def export_python():
     from ...services.canvas_service import generate_python_fs
 
@@ -392,6 +402,7 @@ def export_python():
 
 
 @bp.post('/export/rocrate')
+@require_role(*_EXPORT_ROLES)
 def export_rocrate():
     from ...services.canvas_service import generate_rocrate_export
 
