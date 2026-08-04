@@ -126,13 +126,16 @@ def list_sources():
 
 
 def _display_path(source: Dict[str, Any]) -> str:
-    """The one-line location shown under a source's name on its card."""
-    config = source.get('source_path')
-    if isinstance(config, dict):
-        return str(config.get('upload_name') or config.get('source_path') or '')
-    if isinstance(config, str):
-        return config
-    return ''
+    """The one-line location shown under a source's name on its card.
+
+    Goes through ``source_config_of`` rather than re-reading the column, so the
+    card and the runner agree about what a source points at — including for the
+    dict/bare-string/unparseable cases that helper already handles.
+    """
+    from ...pipeline.orchestrator import source_config_of
+
+    config = source_config_of(source)
+    return str(config.get('upload_name') or config.get('source_path') or '')
 
 
 @bp.get('/sources/<source_id>')
@@ -770,9 +773,19 @@ def get_pipeline_schedule(pipeline_id: str):
     return jsonify({'status': 'ok', 'schedule': _schedule_view(pipeline)}), 200
 
 
-def _schedule_view(pipeline: Dict[str, Any]) -> Dict[str, Any]:
-    """What is stored, plus what the live scheduler actually holds."""
-    job = _scheduled_jobs().get(pipeline['id']) or {}
+def _schedule_view(
+    pipeline: Dict[str, Any], job: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """What is stored, plus what the live scheduler actually holds.
+
+    Args:
+        pipeline: The pipeline record.
+        job: The jobstore entry, when the caller already has it. Reading it costs
+            a paused scheduler with its own thread and SQLAlchemy engine, and a
+            write path has just been given one back by ``upsert``.
+    """
+    if job is None:
+        job = _scheduled_jobs().get(pipeline['id']) or {}
     paused = bool(pipeline.get('schedule_paused'))
     return {
         'pipeline_id': pipeline['id'],
@@ -831,10 +844,13 @@ def _apply_schedule(store, pipeline_id: str, body: Dict[str, Any]):
     pipeline = store.update_pipeline(pipeline_id, schedule=cron, schedule_paused=paused)
 
     warning = None
+    job: Dict[str, Any] = {}
     try:
         schedules = get_schedule_store(_settings_db())
         if cron and not paused:
-            schedules.upsert(pipeline_id, cron)
+            # upsert already reports the job it wrote, so the view below does not
+            # need to open a second scheduler to read it back.
+            job = schedules.upsert(pipeline_id, cron)
         else:
             # Pausing removes the job but keeps `schedule` on the record, which is
             # what "paused without clearing the cron" means. run_scheduled_pipeline
@@ -852,7 +868,7 @@ def _apply_schedule(store, pipeline_id: str, body: Dict[str, Any]):
             'take effect until the app restarts.'
         )
 
-    view = _schedule_view(store.get_pipeline(pipeline_id) or pipeline)
+    view = _schedule_view(store.get_pipeline(pipeline_id) or pipeline, job=job)
     if warning:
         view['warning'] = warning
     return jsonify({'status': 'ok', 'schedule': view}), 200

@@ -17,6 +17,8 @@ import os
 
 import pytest
 
+from .conftest import CapturingWriter
+
 MAPPING = {
     "version": "1.0",
     "node_mappings": [
@@ -33,11 +35,25 @@ MAPPING = {
 }
 
 
+#: Neo4j settings that would otherwise leak in from the environment. ``scidk/app.py``
+#: calls ``load_dotenv()`` at import, so a full-suite run has real credentials for a
+#: local dev graph while a single-file run does not — which made these tests both
+#: non-deterministic and capable of writing into a real database. Cleared here so
+#: no test reaches a graph by accident; the ones that need a working write get an
+#: explicit fake through the ``fake_graph`` fixture.
+_NEO4J_ENV = (
+    "NEO4J_URI", "BOLT_URI", "NEO4J_USER", "NEO4J_USERNAME",
+    "NEO4J_PASSWORD", "NEO4J_AUTH", "SCIDK_NEO4J_DATABASE",
+)
+
+
 @pytest.fixture
 def app(tmp_path, monkeypatch):
     monkeypatch.setenv("SCIDK_DISABLE_SCHEDULER", "1")
     monkeypatch.setenv("SCIDK_PIPELINE_UPLOAD_DIR", str(tmp_path / "uploads"))
     monkeypatch.setenv("SCIDK_SETTINGS_DB", str(tmp_path / "scidk_settings.db"))
+    for name in _NEO4J_ENV:
+        monkeypatch.delenv(name, raising=False)
 
     from scidk.app import create_app
 
@@ -45,12 +61,36 @@ def app(tmp_path, monkeypatch):
     application.config["TESTING"] = True
     application.config["SCIDK_SETTINGS_DB"] = str(tmp_path / "scidk_settings.db")
     application.config["SCIDK_PIPELINE_UPLOAD_DIR"] = str(tmp_path / "uploads")
+    # A UI-configured connection would override the cleared environment.
+    application.extensions["scidk"]["neo4j_config"] = {}
     return application
 
 
 @pytest.fixture
 def client(app):
     return app.test_client()
+
+
+@pytest.fixture
+def fake_graph(monkeypatch):
+    """Give the HTTP run path a working writer without touching a database.
+
+    The routes build their own client via ``orchestrator.neo4j_writer``, so that
+    is what is replaced. Keeps the request path — routing, RBAC, orchestration —
+    exactly as it is in production while the write lands in memory.
+    """
+    from contextlib import contextmanager
+
+    from scidk.pipeline import orchestrator
+
+    writer = CapturingWriter()
+
+    @contextmanager
+    def fake_writer(app=None):
+        yield writer
+
+    monkeypatch.setattr(orchestrator, "neo4j_writer", fake_writer)
+    return writer
 
 
 @pytest.fixture
@@ -446,9 +486,26 @@ def test_a_source_run_without_neo4j_configured_fails_without_pretending(client, 
                content_type="application/json")
 
     run = client.post(f"/api/pipeline/sources/{source['id']}/run").get_json()["run"]
-    assert run["status"] in ("error", "success", "partial")
-    if run["status"] == "error":
-        assert run["nodes_written"] == 0
+    assert run["status"] == "error"
+    assert run["nodes_written"] == 0
+    assert any("Neo4j is not configured" in e for e in run["errors"])
+    # And the failure is recorded on the source, not left looking un-run.
+    stored = client.get(f"/api/pipeline/sources/{source['id']}").get_json()["source"]
+    assert stored["last_run_status"] == "error"
+
+
+def test_a_source_run_writes_what_the_mapping_declares(client, csv_path, fake_graph):
+    source = make_source(client, csv_path)
+    client.put(f"/api/pipeline/sources/{source['id']}",
+               data=json.dumps({"mapping_json": MAPPING}),
+               content_type="application/json")
+
+    run = client.post(f"/api/pipeline/sources/{source['id']}/run").get_json()["run"]
+
+    assert run["status"] == "success", run["errors"]
+    assert run["nodes_written"] == 2
+    assert {n["properties"]["asset_id"] for n in fake_graph.nodes} == {"A-1", "A-2"}
+    assert all(n["label"] == "Asset" for n in fake_graph.nodes)
 
 
 def test_a_dry_run_writes_nothing_and_reports_what_it_would(client, csv_path):
@@ -489,7 +546,7 @@ def test_a_pipeline_referencing_an_unknown_source_is_refused(client):
     assert "unknown source" in response.get_json()["error"]
 
 
-def test_a_pipeline_run_records_per_step_results(client, csv_path):
+def test_a_pipeline_run_records_per_step_results(client, csv_path, fake_graph):
     source = make_source(client, csv_path)
     client.put(f"/api/pipeline/sources/{source['id']}",
                data=json.dumps({"mapping_json": MAPPING}),
@@ -510,7 +567,7 @@ def test_a_pipeline_run_records_per_step_results(client, csv_path):
 
 
 def test_a_fair_failure_is_a_skipped_step_and_the_run_is_not_a_flat_failure(
-    client, csv_path, tmp_path
+    client, csv_path, tmp_path, fake_graph
 ):
     good = make_source(client, csv_path, name="good")
     client.put(f"/api/pipeline/sources/{good['id']}",

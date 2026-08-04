@@ -22,26 +22,11 @@ from scidk.pipeline.identifiers import check_identifier
 from scidk.pipeline.plugin_registry import resolve_plugin
 from scidk.pipeline.runner import PipelineRunner
 
+from .conftest import CapturingWriter
+
 REPO = Path(__file__).resolve().parents[2]
 REFERENCE_CONFIG = REPO / "plugins/sharepoint_intake/configs/aipt_intake_mapping.json"
 FIXTURE = REPO / "tests/plugins/fixtures/sharepoint_intake_sample.csv"
-
-
-class CapturingWriter:
-    """Records what would be written and reports it as fully written."""
-
-    def __init__(self):
-        self.nodes = []
-        self.relationships = []
-
-    def write_declared_nodes(self, nodes, relationships):
-        self.nodes.extend(nodes)
-        self.relationships.extend(relationships)
-        return {
-            "written_nodes": len(nodes),
-            "written_relationships": len(relationships),
-            "errors": [],
-        }
 
 
 @pytest.fixture(scope="module")
