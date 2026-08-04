@@ -594,84 +594,21 @@ def generate_rocrate_export(snapshot: Dict[str, Any], layer_name: str = 'canvas'
     NextSEEK's DAG-based provenance model. Whatever topology the graph has,
     RO-Crate represents it.
 
+    The mapping itself now lives in :mod:`scidk.rocrate_bridge`, which is also
+    how the Files page builds a crate (Cycle 7, Task A). This stays as the
+    canvas's name for it, so ``POST /api/canvas/export/rocrate`` and the Maps
+    page are untouched and there is one implementation of the mapping rather
+    than two that can drift. ``tests/test_rocrate_golden_master.py`` pins the
+    output this produced before the move.
+
     Returns the JSON text of ``ro-crate-metadata.json``.
     """
-    nodes = instance_elements((snapshot or {}).get('nodes'))
-    edges = instance_elements((snapshot or {}).get('edges'))
-    by_id = {str(n.get('id')): n for n in nodes}
+    # Imported here rather than at module scope: rocrate_bridge imports
+    # instance_elements from this module, and a top-level import either way round
+    # would be a cycle.
+    from ..rocrate_bridge import build_from_map
 
-    def entity_id(node_id: str, node: Dict[str, Any]) -> str:
-        # Real nodes keep their Neo4j elementId; provisional nodes get a stable
-        # generated id (uuid5 over the canvas id so re-exports stay consistent).
-        if not node.get('provisional') and node.get('element_id'):
-            return str(node.get('element_id'))
-        return f"#{uuid.uuid5(uuid.NAMESPACE_URL, str(node_id))}"
-
-    def entity_type(node: Dict[str, Any]) -> str:
-        # Dataset/File labels map to a File entity; everything else to a Dataset.
-        return 'File' if str(node.get('label')) in ('Dataset', 'File') else 'Dataset'
-
-    # Build one entity per canvas node, keyed by @id.
-    id_by_node: Dict[str, str] = {}
-    entities: Dict[str, Dict[str, Any]] = {}
-    for node_id, node in by_id.items():
-        eid = entity_id(node_id, node)
-        id_by_node[node_id] = eid
-        props = node.get('properties') or {}
-        entity: Dict[str, Any] = {'@id': eid, '@type': entity_type(node)}
-        name = node.get('name') or props.get('name')
-        if name:
-            entity['name'] = str(name)
-        if props.get('description'):
-            entity['description'] = props.get('description')
-        if props.get('dateCreated'):
-            entity['dateCreated'] = props.get('dateCreated')
-        entities[eid] = entity
-
-    # Edge mapping. CONTAINS -> hasPart (multi-parent handled natively);
-    # ATTACHED_TO -> mentions; anything else -> relation named after the type.
-    has_incoming_contains = set()
-    for e in edges:
-        src_id, tgt_id = str(e.get('source')), str(e.get('target'))
-        if src_id not in id_by_node or tgt_id not in id_by_node:
-            continue
-        src_ent = entities[id_by_node[src_id]]
-        tgt_ref = {'@id': id_by_node[tgt_id]}
-        rel = (e.get('relationship') or '').strip().upper()
-        if rel == 'CONTAINS':
-            src_ent.setdefault('hasPart', []).append(tgt_ref)
-            has_incoming_contains.add(tgt_id)
-        elif rel == 'ATTACHED_TO':
-            src_ent.setdefault('mentions', []).append(tgt_ref)
-        else:
-            src_ent.setdefault('relation', []).append(
-                {'@id': id_by_node[tgt_id], 'name': (e.get('relationship') or '').strip()}
-            )
-
-    # Root Dataset (the layer) hasPart every top-level node — one with no
-    # incoming CONTAINS edge.
-    root = {
-        '@id': './',
-        '@type': 'Dataset',
-        'name': layer_name,
-        'hasPart': [
-            {'@id': id_by_node[nid]} for nid in by_id if nid not in has_incoming_contains
-        ],
-    }
-
-    graph: List[Dict[str, Any]] = [
-        {
-            '@type': 'CreativeWork',
-            '@id': 'ro-crate-metadata.json',
-            'conformsTo': {'@id': 'https://w3id.org/ro/crate/1.1'},
-            'about': {'@id': './'},
-        },
-        root,
-    ]
-    graph.extend(entities.values())
-
-    doc = {'@context': 'https://w3id.org/ro/crate/1.1/context', '@graph': graph}
-    return json.dumps(doc, indent=2, ensure_ascii=False)
+    return build_from_map(snapshot=snapshot, layer_name=layer_name)
 
 
 _canvas_service: Optional[CanvasService] = None

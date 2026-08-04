@@ -19,6 +19,10 @@ SQLAlchemy>=1.4
 # Validates Pipeline mapping configs against scidk/pipeline/mapping_schema.json.
 jsonschema>=4.0
 flasgger>=0.9.7
+# Parses incoming RO-Crates in scidk/rocrate_bridge.py:ingest_crate(). Reading
+# only — the export path there is hand-rolled in-memory JSON, because most SciDK
+# entities have no file on disk for this library to materialize.
+rocrate>=0.15.0
 watchdog>=3.0
 mcp>=1.0.0
 

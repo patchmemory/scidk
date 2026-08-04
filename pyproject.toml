@@ -29,6 +29,9 @@ dependencies = [
   # Validates Pipeline mapping configs against scidk/pipeline/mapping_schema.json.
   "jsonschema>=4.0",
   "flasgger>=0.9.7",
+  # Parses incoming RO-Crates in scidk/rocrate_bridge.py:ingest_crate(). Reading
+  # only; the export path there is hand-rolled in-memory JSON.
+  "rocrate>=0.15.0",
 ]
 
 [project.optional-dependencies]
