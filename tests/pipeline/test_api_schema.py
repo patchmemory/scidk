@@ -239,6 +239,78 @@ def test_a_derived_schema_saves_without_further_editing(client, csv_path, fake_n
                {"schema": derived}).status_code == 200
 
 
+# ------------------------------------------------------- the canvas page itself
+
+def test_the_schema_canvas_page_renders_for_a_source(client, csv_path):
+    source = make_source(client, csv_path, name="AIPT Intake Form")
+    response = client.get(f"/pipeline/sources/{source['id']}/schema")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'data-testid="schema-canvas-page"' in body
+    # The breadcrumb Task C specifies: Data Sources -> [source name] -> Schema.
+    assert "AIPT Intake Form" in body and "Schema" in body
+    # Scoped to this source's canvas context, never the main Maps canvas.
+    assert f"pipeline_source:{source['id']}" in body
+    assert 'data-testid="schema-mode-indicator"' in body
+
+
+def test_the_page_carries_the_committed_schema_so_it_paints_without_a_round_trip(
+    client, csv_path
+):
+    source = make_source(client, csv_path)
+    put(client, f"/api/pipeline/sources/{source['id']}/schema", {"schema": ARROWS})
+
+    body = client.get(f"/pipeline/sources/{source['id']}/schema").get_data(as_text=True)
+    assert '"PI_OF"' in body
+
+
+def test_the_three_entry_points_are_accepted_and_anything_else_ignored(client, csv_path):
+    source = make_source(client, csv_path)
+    for start in ("arrows", "neo4j", "blank"):
+        body = client.get(
+            f"/pipeline/sources/{source['id']}/schema?start={start}"
+        ).get_data(as_text=True)
+        assert f'data-start="{start}"' in body
+
+    body = client.get(
+        f"/pipeline/sources/{source['id']}/schema?start=../evil"
+    ).get_data(as_text=True)
+    assert 'data-start=""' in body
+
+
+def test_the_schema_canvas_page_404s_for_an_unknown_source(client):
+    assert client.get("/pipeline/sources/nope/schema").status_code == 404
+
+
+def test_the_rendered_page_javascript_parses(client, csv_path, tmp_path):
+    """A syntax error in an inline template script is silent until someone opens it.
+
+    Checked against the *rendered* page, so a Jinja expression that produces
+    invalid JavaScript is caught too. Skipped when node is unavailable.
+    """
+    import re
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not on PATH")
+
+    source = make_source(client, csv_path)
+    put(client, f"/api/pipeline/sources/{source['id']}/schema", {"schema": ARROWS})
+    html = client.get(f"/pipeline/sources/{source['id']}/schema").get_data(as_text=True)
+
+    blocks = re.findall(r"<script>(.*?)</script>", html, re.S)
+    assert blocks, "no inline script found in the schema canvas page"
+    for index, block in enumerate(blocks):
+        path = tmp_path / f"block{index}.js"
+        path.write_text(block, encoding="utf-8")
+        result = subprocess.run([node, "--check", str(path)],
+                                capture_output=True, text=True, timeout=30)
+        assert result.returncode == 0, result.stderr
+
+
 # ----------------------------------------------- the scoped canvas session
 
 def test_deleting_a_source_clears_its_schema_canvas_session(client, csv_path):

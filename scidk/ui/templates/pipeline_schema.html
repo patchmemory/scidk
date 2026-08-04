@@ -1,0 +1,940 @@
+{% extends "base.html" %}
+{% block title %}-SciDK-> Schema — {{ source.name }}{% endblock %}
+
+{#
+  The Maps canvas in Schema mode, scoped to one Pipeline source — Cycle 3B Task C.
+
+  Its own page rather than a mode inside map.html. The two share what actually
+  matters (the Cytoscape engine, SciDKGraph, the schema-space element conventions
+  and styles, cytoscape-edgehandles, and the canvas_session persistence keyed by
+  context_id) but not map.html's tab machinery, query editor or localStorage tab
+  state, none of which a source-scoped schema editor has any use for — and one of
+  which (the shared tab state) it would have interfered with. The breadcrumb Task C
+  specifies, "Data Sources -> [source] -> Schema", is a page-level element anyway.
+
+  What this canvas commits: pipeline_source.schema_json, via
+  PUT /api/pipeline/sources/<id>/schema. Never Neo4j. A schema is a mapping
+  target; creating the labels it names in the graph before any data has been
+  mapped onto them would put empty nodes in the graph.
+
+  No instance elements ever appear here. On a general Maps canvas the two spaces
+  can coexist (a schema rule above the data it describes); in this scoped canvas
+  the schema is the whole subject.
+#}
+
+{% block head %}
+<style>
+  main { padding: 0; }
+  .schema-page { display:flex; flex-direction:column; height:calc(100vh - 60px); }
+
+  .crumbs { display:flex; align-items:center; gap:.4rem; padding:.6rem 1rem .4rem;
+            font-size:.9rem; }
+  .crumbs a { color:var(--accent); text-decoration:none; }
+  .crumbs a:hover { text-decoration:underline; }
+  .crumbs .sep { color:#bbb; }
+  .crumbs .here { font-weight:600; }
+
+  /* The mode indicator is dashed and muted for the same reason the elements are:
+     it should be impossible to mistake this canvas for one holding real data. */
+  .mode-chip { display:inline-flex; align-items:center; gap:.35rem; margin-left:.6rem;
+               border:2px dashed #64748b; background:#eef2f7; color:#1e293b;
+               border-radius:12px; padding:.05rem .6rem; font-size:.78rem;
+               font-weight:600; letter-spacing:.02em; }
+
+  .toolbar { display:flex; gap:.35rem; align-items:center; flex-wrap:wrap;
+             padding:.5rem 1rem; border-top:1px solid #eee; border-bottom:1px solid #eee;
+             background:#f8fafc; }
+  .toolbar .sep { width:1px; height:18px; background:#cbd5e1; margin:0 .2rem; }
+  .toolbar .status { margin-left:auto; font-size:.82rem; color:var(--muted); }
+
+  button.btn { font-size:.85rem; padding:.25rem .6rem; border:1px solid #ccc;
+               border-radius:5px; background:#fff; cursor:pointer; }
+  button.btn:hover:not(:disabled) { background:#f1f5f9; }
+  button.btn:disabled { opacity:.5; cursor:not-allowed; }
+  button.btn.primary { border-color:var(--accent); color:#046c4a; font-weight:600; }
+  button.btn.on { background:#2563eb; border-color:#2563eb; color:#fff; }
+
+  .canvas-row { flex:1; display:flex; min-height:0; }
+  #schema-canvas { flex:1; min-width:0; background:
+      linear-gradient(90deg, #f8fafc 1px, transparent 1px) 0 0/24px 24px,
+      linear-gradient(#f8fafc 1px, transparent 1px) 0 0/24px 24px, #fff; }
+
+  .inspector { width:290px; flex-shrink:0; border-left:1px solid #eee; overflow:auto;
+               padding:.75rem .9rem; background:#fff; }
+  .inspector h4 { margin:.2rem 0 .6rem; font-size:.95rem; }
+  .inspector .empty { font-size:.85rem; color:var(--muted); }
+  .field { margin-bottom:.7rem; }
+  .field label { display:block; font-size:.8rem; font-weight:600; margin-bottom:.2rem; }
+  .field input[type=text], .field select, .field textarea {
+    width:100%; padding:.35rem .45rem; border:1px solid #ccc; border-radius:5px;
+    font-size:.86rem; font-family:inherit; }
+  .field textarea { min-height:100px; resize:vertical;
+                    font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .field .hint { font-size:.76rem; color:var(--muted); margin-top:.15rem; }
+  .field .bad { font-size:.78rem; color:#a1002a; margin-top:.2rem; }
+
+  dialog.sheet { border:1px solid #ddd; border-radius:10px; padding:0;
+                 width:min(680px, 94vw); box-shadow:0 8px 30px rgba(0,0,0,.18); }
+  dialog.sheet::backdrop { background:rgba(0,0,0,.35); }
+  .sheet-head { padding:.8rem 1rem; border-bottom:1px solid #eee; }
+  .sheet-head h3 { margin:0; font-size:1.05rem; }
+  .sheet-body { padding:1rem; max-height:min(70vh,560px); overflow:auto; }
+  .sheet-foot { padding:.7rem 1rem; border-top:1px solid #eee; display:flex;
+                gap:.5rem; align-items:center; }
+  .sheet-foot .spacer { margin-left:auto; }
+
+  .notice { padding:.5rem .7rem; border-radius:6px; font-size:.85rem; margin-top:.6rem; }
+  .notice.ok  { background:#eaf8f1; border:1px solid #9ddcc0; color:#046c4a; }
+  .notice.bad { background:#fdeef0; border:1px solid #f0b3bd; color:#a1002a; }
+  .notice.info{ background:#f6f8fa; border:1px solid #e1e4e8; color:#444; }
+  .notice ul { margin:.3rem 0 0; padding-left:1.1rem; }
+
+  .banner { padding:.5rem 1rem; background:#fdf6e6; border-bottom:1px solid #f0d9a0;
+            font-size:.86rem; display:flex; gap:.5rem; align-items:center; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="schema-page" data-testid="schema-canvas-page"
+     data-source-id="{{ source.id }}"
+     data-context-id="{{ context_id }}"
+     data-start="{{ start or '' }}"
+     data-saved-at="{{ saved_at or '' }}">
+
+  <div class="crumbs" data-testid="schema-breadcrumb">
+    <a href="{{ request.script_root }}/pipeline/sources">Data Sources</a>
+    <span class="sep">→</span>
+    <a href="{{ request.script_root }}/pipeline/sources?source={{ source.id }}"
+       data-testid="crumb-source">{{ source.name }}</a>
+    <span class="sep">→</span>
+    <span class="here">Schema</span>
+    <span class="mode-chip" data-testid="schema-mode-indicator">◌ Schema mode</span>
+  </div>
+
+  <div id="restore-banner" class="banner" hidden data-testid="restore-banner">
+    <span id="restore-text"></span>
+    <button class="btn" id="restore-session" data-testid="restore-session">
+      Restore unsaved edits
+    </button>
+    <button class="btn" id="discard-session" data-testid="discard-session">
+      Use the saved schema
+    </button>
+  </div>
+
+  <div class="toolbar" data-testid="schema-toolbar">
+    <button class="btn" id="add-label" data-testid="add-label"
+            title="Add a label node (or double-click the canvas)">➕ Label</button>
+    <button class="btn" id="draw-rel" data-testid="draw-rel"
+            title="Drag from one label to another to declare a relationship type">
+      🔗 Draw relationship</button>
+    <button class="btn" id="remove-selected" data-testid="remove-selected"
+            title="Remove the selected elements (Delete)">🗑️ Remove</button>
+    <span class="sep"></span>
+    <button class="btn" id="import-arrows" data-testid="import-arrows"
+            title="Import an Arrows.app export">⤓ Import Arrows</button>
+    <button class="btn" id="derive-schema" data-testid="derive-schema"
+            title="Load the labels and relationship types already in Neo4j">
+      🌐 Derive from graph</button>
+    <button class="btn" id="export-arrows" data-testid="export-arrows"
+            title="Download as schema.arrows.json">⬆ Export Arrows</button>
+    <span class="sep"></span>
+    <button class="btn primary" id="save-schema" data-testid="save-schema"
+            title="Write this schema to the source">💾 Save schema</button>
+    <span class="status" id="canvas-status" data-testid="canvas-status"></span>
+  </div>
+
+  <div class="canvas-row">
+    <div id="schema-canvas" data-testid="schema-canvas"></div>
+
+    <aside class="inspector" data-testid="schema-inspector">
+      <h4>Selection</h4>
+      <p class="empty" id="inspector-empty">
+        Nothing selected. Click a label to edit its name, properties and key
+        property; click a relationship to change its type.
+      </p>
+
+      <div id="node-inspector" hidden data-testid="node-inspector">
+        <div class="field">
+          <label for="node-label">Label</label>
+          <input type="text" id="node-label" data-testid="node-label" autocomplete="off">
+          <div class="hint">Letters, digits and underscores; must start with a
+            letter.</div>
+          <div class="bad" id="node-label-error" hidden></div>
+        </div>
+        <div class="field">
+          <label for="node-props">Properties</label>
+          <textarea id="node-props" data-testid="node-props"
+                    placeholder="one property name per line"></textarea>
+          <div class="bad" id="node-props-error" hidden></div>
+        </div>
+        <div class="field">
+          <label for="node-key">Key property</label>
+          <select id="node-key" data-testid="node-key"></select>
+          <div class="hint">The unique identifier the column mapping will MERGE on.</div>
+        </div>
+        <div class="field">
+          <label for="node-description">Description</label>
+          <input type="text" id="node-description" data-testid="node-description"
+                 autocomplete="off" placeholder="optional">
+        </div>
+      </div>
+
+      <div id="edge-inspector" hidden data-testid="edge-inspector">
+        <div class="field">
+          <label for="edge-type">Relationship type</label>
+          <input type="text" id="edge-type" data-testid="edge-type" autocomplete="off">
+          <div class="hint" id="edge-endpoints"></div>
+          <div class="bad" id="edge-type-error" hidden></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- ---------------------------------------------------------- import Arrows -->
+<dialog class="sheet" id="import-sheet" data-testid="import-sheet">
+  <div class="sheet-head"><h3>Import from Arrows.app</h3></div>
+  <div class="sheet-body">
+    <div class="field">
+      <label for="arrows-file">Arrows.app export file</label>
+      <input type="file" id="arrows-file" data-testid="arrows-file" accept=".json">
+    </div>
+    <div class="field">
+      <label for="arrows-text">…or paste the JSON</label>
+      <textarea id="arrows-text" data-testid="arrows-text" style="min-height:200px"
+                placeholder='{"nodes": [...], "relationships": [...]}'></textarea>
+    </div>
+    <p class="small">This replaces what is on the canvas. Nothing is written to the
+      source until you press Save schema.</p>
+    <div id="import-result"></div>
+  </div>
+  <div class="sheet-foot">
+    <span class="spacer"></span>
+    <button class="btn" id="import-cancel" data-testid="import-cancel">Cancel</button>
+    <button class="btn primary" id="import-apply" data-testid="import-apply">
+      Validate and render
+    </button>
+  </div>
+</dialog>
+
+<!-- ------------------------------------------------------ relationship type -->
+<dialog class="sheet" id="rel-sheet" data-testid="rel-sheet" style="width:min(360px,94vw)">
+  <div class="sheet-head"><h3>Relationship type</h3></div>
+  <div class="sheet-body">
+    <div class="field">
+      <label for="rel-type">Type</label>
+      <input type="text" id="rel-type" data-testid="rel-type" list="rel-type-options"
+             autocomplete="off" placeholder="PI_OF">
+      <datalist id="rel-type-options"></datalist>
+      <div class="hint" id="rel-endpoints"></div>
+      <div class="bad" id="rel-error" hidden></div>
+    </div>
+  </div>
+  <div class="sheet-foot">
+    <span class="spacer"></span>
+    <button class="btn" id="rel-cancel" data-testid="rel-cancel">Cancel</button>
+    <button class="btn primary" id="rel-ok" data-testid="rel-ok">Add</button>
+  </div>
+</dialog>
+
+<script src="https://unpkg.com/cytoscape@3.27.0/dist/cytoscape.min.js"></script>
+<!-- Same load order as map.html: cytoscape-edgehandles' UMD reads
+     window._.memoize/throttle, so lodash must come first. -->
+<script src="https://unpkg.com/lodash@4.17.21/lodash.min.js"></script>
+<script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
+<script src="{{ url_for('static', filename='js/graph_utils.js') }}"></script>
+
+<script>
+(function () {
+  'use strict';
+
+  const BASE = window.SCIDK_BASE || '';
+  const $ = (id) => document.getElementById(id);
+  const page = document.querySelector('[data-testid="schema-canvas-page"]');
+  const SOURCE_ID = page.dataset.sourceId;
+  const CONTEXT_ID = page.dataset.contextId;
+  const START = page.dataset.start;
+  const SAVED_AT = page.dataset.savedAt;
+
+  // The committed schema, rendered into the page so the canvas has something to
+  // show before any request completes.
+  const COMMITTED = {{ schema_json | tojson }};
+
+  // Where Step 2 leaves an already-validated Arrows document when it sends the
+  // user here via Option A. sessionStorage rather than a query parameter: a
+  // schema does not fit in a URL, and it has already been checked server-side.
+  const IMPORT_KEY = 'scidk.schemaImport.' + SOURCE_ID;
+
+  const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+  let cy = null;
+  let eh = null;
+  let saveTimer = null;
+  let restoring = false;
+  let dirtySinceSave = false;
+
+  const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g,
+    (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  function status(text, sticky) {
+    $('canvas-status').textContent = text || '';
+    if (text && !sticky) {
+      setTimeout(() => {
+        if ($('canvas-status').textContent === text) $('canvas-status').textContent = '';
+      }, 2500);
+    }
+  }
+
+  function notify(message, kind) {
+    if (typeof window.toast === 'function') window.toast(message, kind || 'success', 4500);
+  }
+
+  async function api(path, options) {
+    const res = await fetch(BASE + path, options);
+    let data = {};
+    try { data = await res.json(); } catch (e) { /* a non-JSON error page */ }
+    if (!res.ok) {
+      const error = new Error(data.error || `${res.status} ${res.statusText}`);
+      error.problems = data.problems || [];
+      throw error;
+    }
+    return data;
+  }
+
+  // ------------------------------------------------------------ canvas setup
+
+  function viewportSize() {
+    const box = $('schema-canvas').getBoundingClientRect();
+    return { width: Math.max(box.width, 320), height: Math.max(box.height, 240) };
+  }
+
+  function initCanvas(done) {
+    const container = $('schema-canvas');
+    // Cytoscape caches container dimensions at construction, and edgehandles
+    // derives its hit-testing from them — the failure map.html hits when a canvas
+    // is built inside a hidden panel. This page's canvas is visible on load, but
+    // the guard is kept: web fonts and the CDN scripts both land after first
+    // paint, so a zero-size first measurement is still possible.
+    if (typeof cytoscape === 'undefined' || typeof SciDKGraph === 'undefined'
+        || !container.offsetParent || container.getBoundingClientRect().width < 10) {
+      setTimeout(() => initCanvas(done), 100);
+      return;
+    }
+
+    cy = SciDKGraph.init(container, [], {
+      layout: SciDKGraph.layouts.preset,
+      additionalStyles: SciDKGraph.schemaStyles.concat([
+        {
+          // edgehandles' preview and ghost edge, matched to schema styling.
+          selector: '.eh-preview, .eh-ghost-edge',
+          style: { 'line-color': '#2563eb', 'target-arrow-color': '#2563eb',
+                   'line-style': 'dashed' }
+        },
+        { selector: '.eh-handle', style: { 'background-color': '#2563eb' } }
+      ])
+    });
+    window.schemaCy = cy;  // for debugging and for the e2e tests
+
+    cy.boxSelectionEnabled(true);
+
+    if (typeof cy.edgehandles === 'function') {
+      eh = cy.edgehandles({
+        snap: true,
+        canConnect: () => true,   // a self-referencing schema edge is meaningful
+        edgeParams: () => ({ data: { _space: SciDKGraph.SPACE_SCHEMA } })
+      });
+      eh.disableDrawMode();
+      cy.on('ehcomplete', (event, source, target, added) => {
+        onRelationshipDrawn(source, target, added);
+      });
+    } else {
+      $('draw-rel').disabled = true;
+      $('draw-rel').title = 'Edge drawing is unavailable (cytoscape-edgehandles ' +
+                            'did not load)';
+    }
+
+    cy.on('add remove position data', scheduleSave);
+    cy.on('select unselect', refreshInspector);
+    cy.on('dbltap', (event) => { if (event.target === cy) addLabelNode(event.position); });
+
+    window.addEventListener('resize', () => cy.resize());
+    done();
+  }
+
+  // ----------------------------------------------------- render / serialize
+
+  /** Replace the canvas contents with an Arrows document. */
+  function renderArrows(arrows, options) {
+    const size = viewportSize();
+    const converted = SciDKGraph.arrowsToElements(arrows, {
+      width: size.width, height: size.height
+    });
+    restoring = true;
+    cy.elements().remove();
+    cy.add(converted.elements);
+    restoring = false;
+    cy.fit(undefined, 60);
+    if (converted.warnings.length) {
+      notify(converted.warnings.join(' '), 'error');
+    }
+    refreshInspector();
+    return converted;
+  }
+
+  /**
+   * The canvas as a session snapshot, in the same shape map.html reads and
+   * writes — one canvas_session format, so a schema session opened from Maps
+   * renders as schema rather than as unrecognized nodes.
+   */
+  function serialize() {
+    const nodes = cy.nodes().map((n) => ({
+      id: n.id(),
+      label: n.data('baseLabel') || n.data('label'),
+      name: n.data('label'),
+      properties: n.data('properties') || [],
+      position: Object.assign({}, n.position()),
+      provisional: true,
+      element_id: null,
+      _space: SciDKGraph.SPACE_SCHEMA,
+      key_property: n.data('key_property') || null,
+      description: n.data('description') || '',
+      propertyTypes: n.data('propertyTypes') || {}
+    }));
+    const edges = cy.edges().map((e) => ({
+      source: e.data('source'),
+      target: e.data('target'),
+      relationship: e.data('type') || e.data('relationship') || '',
+      provisional: true,
+      _space: SciDKGraph.SPACE_SCHEMA
+    }));
+    return { nodes: nodes, edges: edges };
+  }
+
+  function restoreSnapshot(snapshot) {
+    restoring = true;
+    cy.elements().remove();
+    const nodes = (snapshot.nodes || []).filter((n) => n.label);
+    const ids = {};
+    nodes.forEach((n) => {
+      const data = {
+        id: String(n.id), label: n.label, baseLabel: n.label,
+        _space: SciDKGraph.SPACE_SCHEMA,
+        properties: SciDKGraph._propertyNames(n.properties),
+        key_property: n.key_property || null,
+        description: n.description || '',
+        propertyTypes: n.propertyTypes || {}
+      };
+      data.schemaLabel = SciDKGraph.schemaLabelFor(data);
+      ids[data.id] = true;
+      cy.add({ group: 'nodes', data: data, position: n.position || undefined,
+               grabbable: true });
+    });
+    (snapshot.edges || []).forEach((e) => {
+      const type = e.relationship || '';
+      if (!type || !ids[String(e.source)] || !ids[String(e.target)]) return;
+      const id = SciDKGraph.schemaEdgeId(String(e.source), type, String(e.target));
+      if (cy.getElementById(id).nonempty()) return;
+      cy.add({ group: 'edges', data: {
+        id: id, source: String(e.source), target: String(e.target), type: type,
+        relationship: type, baseType: type, label: type,
+        _space: SciDKGraph.SPACE_SCHEMA } });
+    });
+    restoring = false;
+    if (cy.nodes().length) cy.fit(undefined, 60);
+    refreshInspector();
+  }
+
+  // ------------------------------------------------------------- session I/O
+
+  function scheduleSave() {
+    if (restoring) return;
+    dirtySinceSave = true;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveSession, 600);
+  }
+
+  async function saveSession() {
+    try {
+      await fetch(BASE + '/api/canvas/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ context_id: CONTEXT_ID, canvas: serialize() })
+      });
+      status('Draft saved');
+    } catch (e) { status('Draft not saved', true); }
+  }
+
+  async function loadSession() {
+    try {
+      const data = await api('/api/canvas/session?context_id='
+                             + encodeURIComponent(CONTEXT_ID));
+      return data.canvas && (data.canvas.nodes || []).length
+        ? { canvas: data.canvas, updated_at: data.updated_at } : null;
+    } catch (e) { return null; }
+  }
+
+  async function clearSession() {
+    try {
+      await fetch(BASE + '/api/canvas/session?context_id='
+                  + encodeURIComponent(CONTEXT_ID), { method: 'DELETE' });
+    } catch (e) { /* a stale draft is harmless once the schema is saved */ }
+  }
+
+  // -------------------------------------------------------------- first load
+
+  /**
+   * Decide what the canvas opens with.
+   *
+   * The working session and the committed schema are deliberately different
+   * things: the session is what is being edited, schema_json is what was
+   * committed. When the session is *newer* than the last save it holds work the
+   * user never saved, and silently preferring either one would be wrong — so the
+   * user is asked, and the saved schema is what renders until they answer.
+   */
+  async function openCanvas() {
+    if (START === 'arrows') {
+      const stashed = sessionStorage.getItem(IMPORT_KEY);
+      sessionStorage.removeItem(IMPORT_KEY);
+      if (stashed) {
+        renderArrows(JSON.parse(stashed));
+        status('Imported from Arrows.app — not saved yet', true);
+        scheduleSave();
+        return;
+      }
+      openImport();  // arrived without the stash (a reload); ask again
+      return;
+    }
+    if (START === 'neo4j') { await deriveFromGraph(); return; }
+
+    if (COMMITTED && (COMMITTED.nodes || []).length) renderArrows(COMMITTED);
+
+    const session = await loadSession();
+    if (!session) return;
+    const sessionAt = (session.updated_at || 0) * 1000;   // epoch seconds -> ms
+    const savedAt = SAVED_AT ? Date.parse(SAVED_AT) : 0;
+    if (!COMMITTED || !isFinite(savedAt) || sessionAt > savedAt + 1000) {
+      window.__schemaSession = session.canvas;
+      $('restore-text').textContent = COMMITTED
+        ? 'This canvas has unsaved edits from a previous visit, made after the '
+          + 'schema was last saved.'
+        : 'This canvas has unsaved edits from a previous visit.';
+      $('restore-banner').hidden = false;
+      if (!COMMITTED) restoreSnapshot(session.canvas);  // nothing else to show
+    }
+  }
+
+  $('restore-session').addEventListener('click', () => {
+    if (window.__schemaSession) restoreSnapshot(window.__schemaSession);
+    $('restore-banner').hidden = true;
+    status('Unsaved edits restored — not saved yet', true);
+  });
+
+  $('discard-session').addEventListener('click', () => {
+    if (COMMITTED) renderArrows(COMMITTED);
+    $('restore-banner').hidden = true;
+    scheduleSave();  // the draft now matches the saved schema
+  });
+
+  // ------------------------------------------------------------ editing tools
+
+  function addLabelNode(position) {
+    const label = (window.prompt('Label (e.g. Sample, Person, Project):', '') || '')
+      .trim();
+    if (!label) return;
+    if (!IDENTIFIER.test(label)) {
+      notify(`“${label}” is not a usable Neo4j label — letters, digits and `
+             + `underscores only, starting with a letter.`, 'error');
+      return;
+    }
+    const id = SciDKGraph.schemaNodeId(label);
+    if (cy.getElementById(id).nonempty()) {
+      cy.getElementById(id).select();
+      notify(`“${label}” is already on the canvas.`, 'error');
+      return;
+    }
+    const extent = cy.extent();
+    const data = { id: id, label: label, baseLabel: label,
+                   _space: SciDKGraph.SPACE_SCHEMA, properties: [],
+                   key_property: null, description: '', propertyTypes: {} };
+    data.schemaLabel = SciDKGraph.schemaLabelFor(data);
+    cy.add({
+      group: 'nodes', data: data, grabbable: true,
+      position: position || { x: (extent.x1 + extent.x2) / 2 + (Math.random() - .5) * 120,
+                              y: (extent.y1 + extent.y2) / 2 + (Math.random() - .5) * 120 }
+    });
+    cy.$(':selected').unselect();
+    cy.getElementById(id).select();
+    $('node-label').focus();
+  }
+
+  $('add-label').addEventListener('click', () => addLabelNode(null));
+
+  $('draw-rel').addEventListener('click', () => {
+    if (!eh) return;
+    const on = $('draw-rel').classList.toggle('on');
+    if (on) eh.enableDrawMode(); else eh.disableDrawMode();
+    status(on ? 'Drag from one label to another' : '');
+  });
+
+  $('remove-selected').addEventListener('click', removeSelected);
+
+  function removeSelected() {
+    const selected = cy.$(':selected');
+    if (selected.nonempty()) { selected.remove(); refreshInspector(); }
+  }
+
+  document.addEventListener('keydown', (event) => {
+    const tag = event.target && event.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault(); removeSelected();
+    } else if (event.key === 'n' && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault(); addLabelNode(null);
+    }
+  });
+
+  /** Ask for the type of a freshly drawn edge; discard it if cancelled. */
+  function onRelationshipDrawn(source, target, added) {
+    const sourceId = added.data('source');
+    const targetId = added.data('target');
+    added.remove();  // re-added with its type, or not at all
+
+    const known = {};
+    cy.edges().forEach((e) => { if (e.data('type')) known[e.data('type')] = true; });
+    fetch(BASE + '/api/canvas/relationship-types')
+      .then((r) => r.json())
+      .then((d) => (d.relationship_types || []).forEach((t) => { known[t] = true; }))
+      .catch(() => {})
+      .finally(() => {
+        $('rel-type-options').innerHTML = Object.keys(known).sort()
+          .map((t) => `<option value="${esc(t)}"></option>`).join('');
+      });
+
+    $('rel-type').value = '';
+    $('rel-error').hidden = true;
+    $('rel-endpoints').textContent =
+      `${labelOf(sourceId)} → ${labelOf(targetId)}`;
+    $('rel-sheet').returnValue = '';
+    $('rel-sheet').showModal();
+    $('rel-type').focus();
+
+    const finish = (ok) => {
+      $('rel-ok').onclick = null;
+      $('rel-cancel').onclick = null;
+      if (!ok) { $('rel-sheet').close(); return; }
+      const type = $('rel-type').value.trim();
+      if (!IDENTIFIER.test(type)) {
+        $('rel-error').textContent =
+          'Letters, digits and underscores only, starting with a letter (e.g. PI_OF).';
+        $('rel-error').hidden = false;
+        bind();
+        return;
+      }
+      const id = SciDKGraph.schemaEdgeId(sourceId, type, targetId);
+      if (cy.getElementById(id).nonempty()) {
+        notify(`${labelOf(sourceId)}-[:${type}]->${labelOf(targetId)} is already `
+               + `declared.`, 'error');
+      } else {
+        cy.add({ group: 'edges', data: {
+          id: id, source: sourceId, target: targetId, type: type,
+          relationship: type, baseType: type, label: type,
+          _space: SciDKGraph.SPACE_SCHEMA } });
+      }
+      $('rel-sheet').close();
+    };
+    const bind = () => {
+      $('rel-ok').onclick = () => finish(true);
+      $('rel-cancel').onclick = () => finish(false);
+    };
+    bind();
+  }
+
+  function labelOf(nodeId) {
+    const node = cy.getElementById(nodeId);
+    return node.nonempty() ? (node.data('baseLabel') || node.data('label')) : nodeId;
+  }
+
+  // -------------------------------------------------------------- inspector
+
+  function refreshInspector() {
+    const nodes = cy.$('node:selected');
+    const edges = cy.$('edge:selected');
+    const node = nodes.length === 1 && edges.length === 0 ? nodes[0] : null;
+    const edge = edges.length === 1 && nodes.length === 0 ? edges[0] : null;
+
+    $('node-inspector').hidden = !node;
+    $('edge-inspector').hidden = !edge;
+    $('inspector-empty').hidden = !!(node || edge);
+    if (nodes.length + edges.length > 1) {
+      $('inspector-empty').hidden = false;
+      $('inspector-empty').textContent =
+        `${nodes.length + edges.length} elements selected. Delete removes them all.`;
+    } else if (!node && !edge) {
+      $('inspector-empty').textContent =
+        'Nothing selected. Click a label to edit its name, properties and key '
+        + 'property; click a relationship to change its type.';
+    }
+
+    if (node) {
+      $('node-label').value = node.data('baseLabel') || node.data('label') || '';
+      $('node-props').value = (node.data('properties') || []).join('\n');
+      $('node-description').value = node.data('description') || '';
+      fillKeyOptions(node);
+      $('node-label-error').hidden = true;
+      $('node-props-error').hidden = true;
+    }
+    if (edge) {
+      $('edge-type').value = edge.data('type') || '';
+      $('edge-endpoints').textContent =
+        `${labelOf(edge.data('source'))} → ${labelOf(edge.data('target'))}`;
+      $('edge-type-error').hidden = true;
+    }
+  }
+
+  function fillKeyOptions(node) {
+    const properties = node.data('properties') || [];
+    const key = node.data('key_property');
+    $('node-key').innerHTML = ['<option value="">(none)</option>'].concat(
+      properties.map((p) => `<option value="${esc(p)}"${p === key ? ' selected' : ''}>`
+                            + `${esc(p)}</option>`)).join('');
+  }
+
+  function selectedNode() {
+    const nodes = cy.$('node:selected');
+    return nodes.length === 1 ? nodes[0] : null;
+  }
+
+  /** Renaming a label changes the node's identity, so its edges move with it. */
+  function renameNode(node, label) {
+    const oldId = node.id();
+    const newId = SciDKGraph.schemaNodeId(label);
+    if (newId === oldId) return node;
+    if (cy.getElementById(newId).nonempty()) {
+      $('node-label-error').textContent = `“${label}” is already on the canvas.`;
+      $('node-label-error').hidden = false;
+      return null;
+    }
+    const data = Object.assign({}, node.data(), { id: newId, label: label,
+                                                  baseLabel: label });
+    data.schemaLabel = SciDKGraph.schemaLabelFor(data);
+    const position = Object.assign({}, node.position());
+    const edges = node.connectedEdges().map((e) => ({
+      source: e.data('source') === oldId ? newId : e.data('source'),
+      target: e.data('target') === oldId ? newId : e.data('target'),
+      type: e.data('type')
+    }));
+    node.remove();
+    const added = cy.add({ group: 'nodes', data: data, position: position,
+                           grabbable: true });
+    edges.forEach((e) => {
+      const id = SciDKGraph.schemaEdgeId(e.source, e.type, e.target);
+      if (cy.getElementById(id).nonempty()) return;
+      cy.add({ group: 'edges', data: {
+        id: id, source: e.source, target: e.target, type: e.type,
+        relationship: e.type, baseType: e.type, label: e.type,
+        _space: SciDKGraph.SPACE_SCHEMA } });
+    });
+    added.select();
+    return added;
+  }
+
+  $('node-label').addEventListener('change', () => {
+    const node = selectedNode();
+    if (!node) return;
+    const label = $('node-label').value.trim();
+    if (!IDENTIFIER.test(label)) {
+      $('node-label-error').textContent =
+        'Letters, digits and underscores only, starting with a letter.';
+      $('node-label-error').hidden = false;
+      return;
+    }
+    $('node-label-error').hidden = true;
+    renameNode(node, label);
+  });
+
+  $('node-props').addEventListener('change', () => {
+    const node = selectedNode();
+    if (!node) return;
+    const names = $('node-props').value.split('\n').map((s) => s.trim())
+      .filter(Boolean);
+    const bad = names.filter((n) => !IDENTIFIER.test(n));
+    if (bad.length) {
+      $('node-props-error').textContent =
+        `Not usable as property names: ${bad.join(', ')}. Letters, digits and `
+        + `underscores only, starting with a letter.`;
+      $('node-props-error').hidden = false;
+      return;
+    }
+    $('node-props-error').hidden = true;
+    const unique = names.filter((n, i) => names.indexOf(n) === i);
+    node.data('properties', unique);
+    if (unique.indexOf(node.data('key_property')) === -1) {
+      node.data('key_property', null);
+    }
+    node.data('schemaLabel', SciDKGraph.schemaLabelFor(node.data()));
+    fillKeyOptions(node);
+  });
+
+  $('node-key').addEventListener('change', () => {
+    const node = selectedNode();
+    if (!node) return;
+    node.data('key_property', $('node-key').value || null);
+    node.data('schemaLabel', SciDKGraph.schemaLabelFor(node.data()));
+  });
+
+  $('node-description').addEventListener('change', () => {
+    const node = selectedNode();
+    if (node) node.data('description', $('node-description').value.trim());
+  });
+
+  $('edge-type').addEventListener('change', () => {
+    const edges = cy.$('edge:selected');
+    if (edges.length !== 1) return;
+    const edge = edges[0];
+    const type = $('edge-type').value.trim();
+    if (!IDENTIFIER.test(type)) {
+      $('edge-type-error').textContent =
+        'Letters, digits and underscores only, starting with a letter.';
+      $('edge-type-error').hidden = false;
+      return;
+    }
+    $('edge-type-error').hidden = true;
+    const source = edge.data('source');
+    const target = edge.data('target');
+    const id = SciDKGraph.schemaEdgeId(source, type, target);
+    if (id !== edge.id() && cy.getElementById(id).nonempty()) {
+      $('edge-type-error').textContent = 'That relationship is already declared.';
+      $('edge-type-error').hidden = false;
+      return;
+    }
+    edge.remove();
+    cy.add({ group: 'edges', data: {
+      id: id, source: source, target: target, type: type, relationship: type,
+      baseType: type, label: type, _space: SciDKGraph.SPACE_SCHEMA } }).select();
+  });
+
+  // ------------------------------------------------------------ import / derive
+
+  function openImport() {
+    $('arrows-text').value = '';
+    $('arrows-file').value = '';
+    $('import-result').innerHTML = '';
+    $('import-sheet').showModal();
+  }
+
+  $('import-arrows').addEventListener('click', openImport);
+  $('import-cancel').addEventListener('click', () => $('import-sheet').close());
+
+  $('arrows-file').addEventListener('change', async () => {
+    const file = ($('arrows-file').files || [])[0];
+    if (!file) return;
+    $('arrows-text').value = await file.text();
+  });
+
+  $('import-apply').addEventListener('click', async () => {
+    const text = $('arrows-text').value.trim();
+    if (!text) {
+      $('import-result').innerHTML =
+        '<div class="notice bad">Paste an export, or choose a file.</div>';
+      return;
+    }
+    $('import-apply').disabled = true;
+    try {
+      // Validated server-side before anything reaches the canvas: the canvas must
+      // never render a schema that could not be saved.
+      const data = await api(
+        `/api/pipeline/sources/${SOURCE_ID}/schema/import/arrows`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: text }
+      );
+      $('import-sheet').close();
+      renderArrows(data.schema);
+      scheduleSave();
+      const summary = data.summary || {};
+      notify(`Imported ${summary.node_count || 0} label(s) and `
+             + `${summary.relationship_count || 0} relationship(s). Press Save schema `
+             + `to keep them.`, 'success');
+    } catch (e) {
+      $('import-result').innerHTML = `<div class="notice bad" data-testid="import-error">`
+        + `${esc(e.message)}`
+        + ((e.problems || []).length > 1
+            ? '<ul>' + e.problems.map((p) => `<li>${esc(p)}</li>`).join('') + '</ul>'
+            : '')
+        + `</div>`;
+    } finally {
+      $('import-apply').disabled = false;
+    }
+  });
+
+  async function deriveFromGraph() {
+    status('Reading the graph…', true);
+    try {
+      const data = await api('/api/pipeline/schema/derive');
+      renderArrows(data.schema);
+      scheduleSave();
+      const summary = data.summary || {};
+      if (!summary.node_count) {
+        notify((data.notes || []).slice(-1)[0]
+               || 'The graph has no labels to derive a schema from.', 'error');
+        status('');
+      } else {
+        status(`Derived ${summary.node_count} label(s) via ${data.strategy} — `
+               + `not saved yet`, true);
+      }
+    } catch (e) {
+      notify(e.message, 'error');
+      status('');
+    }
+  }
+
+  $('derive-schema').addEventListener('click', () => {
+    if (cy.nodes().length && !window.confirm(
+        'Replace the canvas with the schema currently in Neo4j?')) return;
+    deriveFromGraph();
+  });
+
+  $('export-arrows').addEventListener('click', () => {
+    // The download serves what was *saved*, so what leaves matches what the
+    // Pipeline will map against. Unsaved edits are named as such rather than
+    // silently included.
+    if (dirtySinceSave) {
+      notify('Exporting the last saved schema. Press Save schema first to include '
+             + 'your current edits.', 'error');
+    }
+    window.location.href =
+      BASE + `/api/pipeline/sources/${SOURCE_ID}/schema/export/arrows`;
+  });
+
+  // ---------------------------------------------------------------- save
+
+  $('save-schema').addEventListener('click', async () => {
+    const arrows = SciDKGraph.elementsToArrows(cy);
+    $('save-schema').disabled = true;
+    status('Saving…', true);
+    try {
+      const data = await api(`/api/pipeline/sources/${SOURCE_ID}/schema`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ schema: arrows })
+      });
+      const summary = data.summary || {};
+      dirtySinceSave = false;
+      // The draft has been superseded by the commit; leaving it behind would make
+      // the next visit offer to "restore unsaved edits" that are already saved.
+      await clearSession();
+      status(`Saved ${summary.node_count || 0} label(s), `
+             + `${summary.relationship_count || 0} relationship(s)`, true);
+      notify(`Schema saved. ${summary.node_count || 0} label(s) are now the mapping `
+             + `target for this source.`, 'success');
+    } catch (e) {
+      status('');
+      const detail = (e.problems || []).length ? ' ' + e.problems.join(' ') : '';
+      notify('Could not save: ' + e.message + detail, 'error');
+    } finally {
+      $('save-schema').disabled = false;
+    }
+  });
+
+  initCanvas(() => { openCanvas(); });
+})();
+</script>
+{% endblock %}

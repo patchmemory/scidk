@@ -187,6 +187,39 @@ def pipeline_sources():
     return render_template('pipeline_sources.html')
 
 
+@bp.get('/pipeline/sources/<source_id>/schema')
+def pipeline_source_schema(source_id):
+    """The Maps canvas in Schema mode, scoped to one Pipeline source (Task C).
+
+    Unlike the sources list, this page is rendered with data: the committed schema
+    and the source's name go into the template so the canvas and the breadcrumb are
+    correct on first paint rather than after a round trip. The three entry points
+    differ only in what is loaded — ``?start=arrows|neo4j|blank``, chosen in Step 2
+    of the add flow.
+    """
+    from flask import abort
+
+    from ...pipeline.store import PipelineStore
+    from ...services.canvas_service import pipeline_source_context
+
+    db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+    source = PipelineStore(db_path).get_source(source_id)
+    if source is None:
+        abort(404)
+
+    start = (request.args.get('start') or '').strip().lower()
+    if start not in ('arrows', 'neo4j', 'blank'):
+        start = ''
+    return render_template(
+        'pipeline_schema.html',
+        source={'id': source['id'], 'name': source.get('name') or source['id']},
+        context_id=pipeline_source_context(source_id),
+        schema_json=source.get('schema_json'),
+        saved_at=source.get('schema_saved_at'),
+        start=start,
+    )
+
+
 @bp.get('/interpreters')
 def interpreters():
     """Redirect to landing page interpreters section (backward compatibility)."""
