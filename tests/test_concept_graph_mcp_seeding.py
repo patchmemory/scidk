@@ -96,6 +96,19 @@ def test_stores_the_real_json_schema_not_an_empty_dict(seeded):
     ]
 
 
+def test_stores_the_registry_category(seeded):
+    """Cycle 8 Task B. Deferred in Cycle 6 until export/import could carry it —
+    see tests/test_concept_graph_export_import.py for the round trip."""
+    from scidk.ai import mcp_tools
+
+    _, driver = seeded
+    registry = {t['name']: t for t in mcp_tools.TOOL_DEFINITIONS}
+
+    for name, params in _tool_writes(driver).items():
+        assert params['category'] == registry[name]['category']
+        assert params['category'] in mcp_tools.TOOL_CATEGORIES
+
+
 def test_descriptions_come_from_the_registry(seeded):
     from scidk.ai import mcp_tools
 
