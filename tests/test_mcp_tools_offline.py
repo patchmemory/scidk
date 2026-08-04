@@ -1,12 +1,15 @@
 """Tests for MCP tools that do not need a live Neo4j.
 
 `tests/test_mcp_tools.py` exercises the same module against a real database and
-skips/fails without one. These tests use a fake driver so the safety filter and
-the query construction are covered on every run.
+skips/fails without one. These tests use a fake driver so the safety filter, the
+query construction, and the Schema Intelligence routing are covered on every run.
 """
+import sqlite3
+
 import pytest
 
 from scidk.ai import mcp_tools
+from scidk.services.schema_intelligence import ensure_schema_intelligence_tables
 
 
 # ── Fakes ────────────────────────────────────────────────────────────────────
@@ -212,11 +215,246 @@ def test_summarize_dataset_rejects_unsafe_relationship():
 
 
 @pytest.mark.parametrize('label', ['Sample', '_Internal', 'Sample_Type', 'File2'])
-def test_get_label_profile_accepts_valid_labels(label):
+def test_get_label_profile_accepts_valid_labels(label, missing_settings_db):
     driver = _FakeDriver(responses={'count(n) as count': [{'count': 3}]})
-    result = mcp_tools.get_label_profile(driver, label)
+    result = mcp_tools.get_label_profile(
+        driver, label, settings_db_path=missing_settings_db
+    )
 
     assert result['status'] == 'success', result['error']
     assert result['profile']['label'] == label
     # The label reached the query inside backticks, so the label index is used.
     assert f'(n:`{label}`)' in driver.calls[0]['cypher']
+
+
+# ── Task C: get_label_profile is shaped by the Schema Intelligence layer ──────
+
+# Neo4j frequency order for the fixture label. Ranking must be able to reorder
+# this, so the assertions below only hold if SI actually drove the order.
+PROFILE_RESPONSES = {
+    'count(n) as count': [{'count': 42}],
+    'UNWIND keys(n) AS prop': [
+        {'prop': 'name', 'freq': 42},
+        {'prop': 'path', 'freq': 40},
+        {'prop': 'size', 'freq': 30},
+        {'prop': 'genotype', 'freq': 3},
+        {'prop': '_imported_stub', 'freq': 1},
+    ],
+    'WITH type(r) as rel_type': [
+        {'rel_type': 'CONTAINS', 'target_label': 'File', 'freq': 12},
+    ],
+}
+
+
+@pytest.fixture()
+def si_db(tmp_path):
+    """A settings DB with the Schema Intelligence tables created."""
+    path = tmp_path / 'scidk_settings.db'
+    conn = sqlite3.connect(str(path))
+    ensure_schema_intelligence_tables(conn)
+    conn.commit()
+    yield conn, str(path)
+    conn.close()
+
+
+@pytest.fixture()
+def missing_settings_db(tmp_path):
+    """A path where no settings DB exists, to force the fallback path."""
+    return str(tmp_path / 'does_not_exist.db')
+
+
+def _profile_driver():
+    return _FakeDriver(responses=PROFILE_RESPONSES)
+
+
+def _rank(conn, label, prop, rank):
+    conn.execute(
+        "INSERT INTO property_ranking (label_name, property_name, rank) "
+        "VALUES (?, ?, ?)",
+        (label, prop, rank),
+    )
+    conn.commit()
+
+
+def test_properties_returned_in_rank_order_not_frequency_order(si_db):
+    conn, path = si_db
+    # Rank the rarest property highest — the opposite of frequency order.
+    _rank(conn, 'Sample', 'genotype', 9.0)
+    _rank(conn, 'Sample', 'size', 5.0)
+
+    result = mcp_tools.get_label_profile(
+        _profile_driver(), 'Sample', sqlite_conn=conn
+    )
+
+    profile = result['profile']
+    assert profile['schema_intelligence'] == 'applied'
+    names = [p['name'] for p in profile['properties']]
+    assert names[:2] == ['genotype', 'size']
+    # Frequencies from Neo4j survive the reordering.
+    assert profile['properties'][0]['frequency'] == 3
+    # Unranked properties follow, and nothing is lost.
+    assert set(names) == {'name', 'path', 'size', 'genotype', '_imported_stub'}
+    assert path  # fixture sanity
+
+
+def test_profile_includes_context_mode_and_pins(si_db):
+    conn, _ = si_db
+    conn.execute(
+        "INSERT INTO label_profile (label_name, description, chat_context_mode, "
+        "chat_context_n, always_include, never_include) VALUES (?, ?, ?, ?, ?, ?)",
+        ('Sample', 'A biological sample', 'top_n', 3,
+         '["genotype"]', '["_imported_stub"]'),
+    )
+    conn.commit()
+
+    result = mcp_tools.get_label_profile(
+        _profile_driver(), 'Sample', sqlite_conn=conn
+    )
+
+    profile = result['profile']
+    assert profile['description'] == 'A biological sample'
+    assert profile['chat_context_mode'] == 'top_n'
+    assert profile['chat_context_n'] == 3
+    assert profile['always_include'] == ['genotype']
+    assert profile['never_include'] == ['_imported_stub']
+
+    names = [p['name'] for p in profile['properties']]
+    # always_include is pinned to the front...
+    assert names[0] == 'genotype'
+    # ...and never_include is dropped entirely.
+    assert '_imported_stub' not in names
+    # chat_context_properties is the truncated view the chat path would send.
+    assert profile['chat_context_properties'] == names[:3]
+
+
+def test_excluded_label_reports_empty_chat_context(si_db):
+    conn, _ = si_db
+    conn.execute(
+        "INSERT INTO label_profile (label_name, chat_context_mode) VALUES (?, ?)",
+        ('Sample', 'exclude'),
+    )
+    conn.commit()
+
+    profile = mcp_tools.get_label_profile(
+        _profile_driver(), 'Sample', sqlite_conn=conn
+    )['profile']
+
+    assert profile['chat_context_mode'] == 'exclude'
+    assert profile['chat_context_properties'] == []
+    # The label is excluded from chat prompts, not from an explicit lookup.
+    assert profile['node_count'] == 42
+    assert len(profile['properties']) == 5
+
+
+def test_falls_back_to_si_defaults_when_no_profile_row(si_db):
+    """Tables exist, this label has no label_profile row."""
+    conn, _ = si_db
+
+    profile = mcp_tools.get_label_profile(
+        _profile_driver(), 'Sample', sqlite_conn=conn
+    )['profile']
+
+    assert profile['schema_intelligence'] == 'applied'
+    assert profile['description'] is None
+    assert profile['chat_context_mode'] == 'top_n'
+    assert profile['chat_context_n'] == 5
+    assert profile['always_include'] == []
+    assert profile['never_include'] == []
+    # No ranking rows either, so frequency order is preserved.
+    assert [p['name'] for p in profile['properties']] == [
+        'name', 'path', 'size', 'genotype', '_imported_stub'
+    ]
+
+
+def test_falls_back_when_settings_db_is_absent(missing_settings_db):
+    result = mcp_tools.get_label_profile(
+        _profile_driver(), 'Sample', settings_db_path=missing_settings_db
+    )
+
+    profile = result['profile']
+    assert result['status'] == 'success'
+    assert profile['schema_intelligence'] == 'unavailable'
+    assert profile['node_count'] == 42
+    assert [p['name'] for p in profile['properties']] == [
+        'name', 'path', 'size', 'genotype', '_imported_stub'
+    ]
+    assert profile['chat_context_mode'] == 'top_n'
+
+
+def test_absent_settings_db_is_not_created(missing_settings_db):
+    import os
+
+    mcp_tools.get_label_profile(
+        _profile_driver(), 'Sample', settings_db_path=missing_settings_db
+    )
+
+    assert not os.path.exists(missing_settings_db)
+
+
+def test_falls_back_when_si_tables_are_missing(tmp_path):
+    """A settings DB that predates the SI tables must not break the tool."""
+    path = tmp_path / 'bare.db'
+    conn = sqlite3.connect(str(path))
+    conn.execute("CREATE TABLE unrelated (id INTEGER)")
+    conn.commit()
+
+    result = mcp_tools.get_label_profile(
+        _profile_driver(), 'Sample', sqlite_conn=conn
+    )
+    conn.close()
+
+    assert result['status'] == 'success'
+    assert result['profile']['schema_intelligence'] == 'unavailable'
+    assert len(result['profile']['properties']) == 5
+
+
+def test_caller_supplied_connection_is_left_open(si_db):
+    conn, _ = si_db
+
+    mcp_tools.get_label_profile(_profile_driver(), 'Sample', sqlite_conn=conn)
+
+    # Still usable — the tool only closes connections it opened itself.
+    conn.execute("SELECT 1").fetchone()
+
+
+def test_property_truncation_is_reported(si_db):
+    conn, _ = si_db
+    many = [
+        {'prop': f'p{i}', 'freq': mcp_tools.MAX_PROPERTY_KEYS - i}
+        for i in range(mcp_tools.MAX_PROPERTY_KEYS)
+    ]
+    driver = _FakeDriver(responses={
+        'count(n) as count': [{'count': 1}],
+        'UNWIND keys(n) AS prop': many,
+        'WITH type(r) as rel_type': [],
+    })
+
+    profile = mcp_tools.get_label_profile(
+        driver, 'Sample', sqlite_conn=conn
+    )['profile']
+
+    assert profile['properties_truncated'] is True
+    assert f'LIMIT {mcp_tools.MAX_PROPERTY_KEYS}' in driver.calls[1]['cypher']
+
+
+def test_property_truncation_flag_false_for_small_labels(si_db):
+    conn, _ = si_db
+
+    profile = mcp_tools.get_label_profile(
+        _profile_driver(), 'Sample', sqlite_conn=conn
+    )['profile']
+
+    assert profile['properties_truncated'] is False
+
+
+def test_no_raw_count_ordering_left_in_the_response(si_db):
+    """The relationship list is still Neo4j's, and still shaped as before."""
+    conn, _ = si_db
+
+    profile = mcp_tools.get_label_profile(
+        _profile_driver(), 'Sample', sqlite_conn=conn
+    )['profile']
+
+    assert profile['relationships'] == [
+        {'type': 'CONTAINS', 'target': 'File', 'frequency': 12}
+    ]

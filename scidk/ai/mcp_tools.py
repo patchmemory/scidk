@@ -7,11 +7,16 @@ Keeping tools separate from the server allows them to be:
 - Reused in other contexts (web API, CLI, etc.)
 - Documented with their schemas in one place
 """
+import logging
+import os
 import re
+import sqlite3
 from typing import Dict, Any, List, Optional, Set
 from neo4j import Driver
 
 from .schema_context import get_schema_context
+
+logger = logging.getLogger(__name__)
 
 
 # Clauses that mutate the graph. Checked as whole tokens, never as substrings —
@@ -163,7 +168,7 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "get_label_profile",
-        "description": "Get detailed Schema Intelligence profile for a specific label, including property rankings and relationship patterns.",
+        "description": "Get the detailed Schema Intelligence profile for a specific label: node count, description, chat context mode, always/never include pins, properties in usage-rank order, and relationship patterns.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -391,20 +396,69 @@ def summarize_dataset(
         }
 
 
+# Ceiling on the property keys pulled from Neo4j before ranking is applied.
+# Ranking can only reorder what this query returned, so the cap is generous
+# rather than presentational; a label carrying more distinct keys than this has
+# the rest dropped, and `properties_truncated` says so in the response.
+MAX_PROPERTY_KEYS = 200
+
+
+def _settings_db_path(explicit: Optional[str] = None) -> str:
+    """Resolve scidk_settings.db the way scidk.app._resolve_settings_db_path does.
+
+    The MCP server runs as its own process with no Flask app, so app.config is
+    not available here — the env var and the cwd default are.
+    """
+    return explicit or os.environ.get('SCIDK_SETTINGS_DB') or 'scidk_settings.db'
+
+
+def _open_settings_db(path: str) -> Optional[sqlite3.Connection]:
+    """Open the settings DB, or return None if it is not there.
+
+    Deliberately does not create the file: sqlite3.connect() on a missing path
+    would leave an empty database behind in whatever directory the MCP server
+    happened to start in, and an empty database is indistinguishable from a real
+    one with no Schema Intelligence rows. Nothing here writes to it.
+    """
+    if not os.path.exists(path):
+        return None
+    try:
+        return sqlite3.connect(path)
+    except Exception:
+        return None
+
+
 def get_label_profile(
     driver: Driver,
     label: str,
-    database: str = "neo4j"
+    database: str = "neo4j",
+    sqlite_conn=None,
+    settings_db_path: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Get the Schema Intelligence profile for a specific label.
 
-    Returns property rankings, usage statistics, and relationship patterns.
+    Neo4j supplies the facts about the graph — node count, which property keys
+    exist and how often, outgoing relationships. The Schema Intelligence layer
+    in scidk_settings.db supplies how that label should be *presented*: its
+    description, its chat context mode, the always/never include pins, and the
+    usage-weighted property ranking. Properties come back in rank order with
+    never_include dropped and always_include pinned to the front, which is the
+    same shaping the chat path gets from get_enriched_schema_context.
+
+    Falls back to raw frequency order when the settings database or the SI
+    tables are unreachable, and to SI defaults when the label simply has no
+    label_profile row. Either way `schema_intelligence` in the response says
+    which happened.
 
     Args:
         driver: Neo4j driver instance
         label: Label name to get profile for
         database: Database name (default "neo4j")
+        sqlite_conn: Open connection to scidk_settings.db. When omitted, one is
+            opened from settings_db_path and closed before returning.
+        settings_db_path: Override for the settings DB location. Defaults to
+            $SCIDK_SETTINGS_DB, then scidk_settings.db in the cwd.
 
     Returns:
         {
@@ -412,8 +466,16 @@ def get_label_profile(
             "profile": {
                 "label": str,
                 "node_count": int,
-                "properties": [...],
-                "relationships": [...]
+                "description": str | null,
+                "chat_context_mode": "top_n" | "all" | "exclude",
+                "chat_context_n": int,
+                "always_include": [str],
+                "never_include": [str],
+                "properties": [{"name": str, "frequency": int}],
+                "properties_truncated": bool,
+                "chat_context_properties": [str],
+                "relationships": [...],
+                "schema_intelligence": "applied" | "unavailable"
             } | null,
             "error": str | null
         }
@@ -434,14 +496,15 @@ def get_label_profile(
             count_record = count_result.single()
             node_count = count_record['count'] if count_record else 0
 
-            # Get properties with frequency
+            # Get properties with frequency. Frequency order is only the input
+            # to ranking below, not the order returned to the caller.
             props_query = f"""
             MATCH (n:`{label}`)
             UNWIND keys(n) AS prop
             WITH prop, count(*) as freq
             RETURN prop, freq
             ORDER BY freq DESC
-            LIMIT 20
+            LIMIT {MAX_PROPERTY_KEYS}
             """
 
             props_result = session.run(props_query)
@@ -469,16 +532,23 @@ def get_label_profile(
                 for record in rels_result
             ]
 
-            return {
-                "status": "success",
-                "profile": {
-                    "label": label,
-                    "node_count": node_count,
-                    "properties": properties,
-                    "relationships": relationships
-                },
-                "error": None
-            }
+        # Shape the Neo4j facts through the Schema Intelligence layer. Done
+        # outside the driver session — it reads SQLite, not Neo4j.
+        si = _apply_schema_intelligence(
+            label, properties, sqlite_conn, settings_db_path
+        )
+
+        return {
+            "status": "success",
+            "profile": {
+                "label": label,
+                "node_count": node_count,
+                "properties_truncated": len(properties) >= MAX_PROPERTY_KEYS,
+                "relationships": relationships,
+                **si,
+            },
+            "error": None
+        }
 
     except Exception as e:
         return {
@@ -486,6 +556,101 @@ def get_label_profile(
             "profile": None,
             "error": str(e)
         }
+
+
+def _apply_schema_intelligence(
+    label: str,
+    properties: List[Dict[str, Any]],
+    sqlite_conn=None,
+    settings_db_path: Optional[str] = None
+) -> Dict[str, Any]:
+    """Reorder `properties` by usage rank and attach the label's SI profile.
+
+    `properties` arrives in Neo4j frequency order. Returns the profile fields
+    plus a `properties` list reordered by ``get_ranked_properties`` — pinned
+    first, then ranked, then unranked — with ``never_include`` dropped.
+
+    Never raises: on any failure the caller keeps frequency order and the
+    response reports ``schema_intelligence: 'unavailable'``.
+    """
+    frequencies = {p['name']: p['frequency'] for p in properties}
+    fallback = {
+        'description': None,
+        'chat_context_mode': 'top_n',
+        'chat_context_n': 5,
+        'always_include': [],
+        'never_include': [],
+        'properties': properties,
+        'chat_context_properties': [p['name'] for p in properties[:5]],
+        'schema_intelligence': 'unavailable',
+    }
+
+    conn = sqlite_conn
+    opened_here = False
+    if conn is None:
+        conn = _open_settings_db(_settings_db_path(settings_db_path))
+        if conn is None:
+            return fallback
+        opened_here = True
+
+    try:
+        # Imported here rather than at module scope: schema_intelligence pulls in
+        # numpy and requests for the embedding phases, and the MCP server should
+        # not pay for those on import.
+        from ..services import schema_intelligence as si
+
+        profile = si.get_label_profile(label, conn)
+        all_names = list(frequencies.keys())
+
+        ranked = si.get_ranked_properties(
+            label_name=label,
+            sqlite_conn=conn,
+            all_properties=all_names,
+            top_n=0,  # 0 = no truncation; this tool reports the whole label
+            always_include=profile['always_include'],
+            never_include=profile['never_include'],
+        )
+
+        # What the chat path would actually put in the prompt for this label.
+        # Mirrors get_enriched_schema_context, including its handling of
+        # chat_context_mode: 'exclude' drops the label, and every other mode
+        # truncates to chat_context_n.
+        if profile['chat_context_mode'] == 'exclude':
+            chat_context = []
+        else:
+            chat_context = si.get_ranked_properties(
+                label_name=label,
+                sqlite_conn=conn,
+                all_properties=all_names,
+                top_n=profile['chat_context_n'],
+                always_include=profile['always_include'],
+                never_include=profile['never_include'],
+            )
+
+        return {
+            **profile,
+            'properties': [
+                {'name': name, 'frequency': frequencies.get(name, 0)}
+                for name in ranked
+            ],
+            'chat_context_properties': chat_context,
+            'schema_intelligence': 'applied',
+        }
+
+    except Exception as e:  # noqa: BLE001
+        # A missing table, a locked database, an import failure — the graph facts
+        # are still worth returning, so degrade instead of failing the tool.
+        logger.warning(
+            "Schema Intelligence unavailable for label %r, "
+            "falling back to frequency order: %s", label, e
+        )
+        return fallback
+    finally:
+        if opened_here:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def list_labels(
