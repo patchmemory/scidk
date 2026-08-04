@@ -52,9 +52,19 @@ llm = [
 
 [project.scripts]
 scidk-serve = "scidk.app:main"
+# Concept Graph seeding and clean re-initialisation (Cycle 8 Task C). Also
+# reachable as `python -m scidk.concept_graph`.
+scidk-concept-graph = "scidk.concept_graph.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "."}
+
+[tool.setuptools.package-data]
+# intents.yaml is what `scidk-concept-graph seed` reads, so it has to be in the
+# wheel. Until Cycle 8 scidk/concept_graph/ had no __init__.py and was not
+# collected as a package at all. Note that this declares data for this package
+# only — templates, static JS and interpreter profiles are still undeclared.
+"scidk.concept_graph" = ["*.yaml", "*.cypher"]
 
 [tool.setuptools.packages.find]
 include = ["scidk*"]
