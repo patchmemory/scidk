@@ -91,6 +91,9 @@
 
   .banner { padding:.5rem 1rem; background:#fdf6e6; border-bottom:1px solid #f0d9a0;
             font-size:.86rem; display:flex; gap:.5rem; align-items:center; }
+  /* display:flex outranks the UA's [hidden] { display:none }, so an empty banner
+     would sit there permanently without this. */
+  .banner[hidden] { display:none; }
 </style>
 {% endblock %}
 
@@ -108,7 +111,7 @@
        data-testid="crumb-source">{{ source.name }}</a>
     <span class="sep">→</span>
     <span class="here">Schema</span>
-    <span class="mode-chip" data-testid="schema-mode-indicator">◌ Schema mode</span>
+    <span class="mode-chip" data-testid="schema-mode-indicator">Schema mode</span>
   </div>
 
   <div id="restore-banner" class="banner" hidden data-testid="restore-banner">
@@ -131,12 +134,12 @@
             title="Remove the selected elements (Delete)">🗑️ Remove</button>
     <span class="sep"></span>
     <button class="btn" id="import-arrows" data-testid="import-arrows"
-            title="Import an Arrows.app export">⤓ Import Arrows</button>
+            title="Import an Arrows.app export">Import Arrows</button>
     <button class="btn" id="derive-schema" data-testid="derive-schema"
             title="Load the labels and relationship types already in Neo4j">
-      🌐 Derive from graph</button>
+      Derive from graph</button>
     <button class="btn" id="export-arrows" data-testid="export-arrows"
-            title="Download as schema.arrows.json">⬆ Export Arrows</button>
+            title="Download as schema.arrows.json">⬇ Export Arrows</button>
     <span class="sep"></span>
     <button class="btn primary" id="save-schema" data-testid="save-schema"
             title="Write this schema to the source">💾 Save schema</button>
@@ -473,6 +476,43 @@
     } catch (e) { return null; }
   }
 
+  /**
+   * A comparable fingerprint of a schema, from either representation — an Arrows
+   * document or a canvas_session snapshot.
+   *
+   * Positions and Arrows property types are deliberately excluded. A draft that
+   * differs from the saved schema only by where a node sits is not unsaved *work*,
+   * and interrupting the next visit to ask about it would train the user to
+   * dismiss the question.
+   */
+  function signature(schema) {
+    if (!schema) return '';
+    let nodes;
+    let edges;
+    if (Array.isArray(schema.relationships)) {
+      const byId = {};
+      (schema.nodes || []).forEach((n) => { byId[n.id] = (n.labels || [])[0]; });
+      nodes = (schema.nodes || []).map((n) => [
+        (n.labels || [])[0],
+        Object.keys(n.properties || {}).sort().join(','),
+        n.key_property || ''
+      ]);
+      edges = schema.relationships.map((r) => [byId[r.fromId], r.type, byId[r.toId]]);
+    } else {
+      const byId = {};
+      (schema.nodes || []).forEach((n) => { byId[String(n.id)] = n.label; });
+      nodes = (schema.nodes || []).map((n) => [
+        n.label,
+        SciDKGraph._propertyNames(n.properties).slice().sort().join(','),
+        n.key_property || ''
+      ]);
+      edges = (schema.edges || []).map(
+        (e) => [byId[String(e.source)], e.relationship, byId[String(e.target)]]);
+    }
+    const join = (rows) => rows.map((r) => r.join('|')).sort().join(';');
+    return join(nodes) + ' // ' + join(edges);
+  }
+
   async function clearSession() {
     try {
       await fetch(BASE + '/api/canvas/session?context_id='
@@ -510,6 +550,10 @@
 
     const session = await loadSession();
     if (!session) return;
+    // Two conditions, both necessary. The draft has to actually *differ* from what
+    // was saved — a draft the last save superseded is not unsaved work — and it has
+    // to be newer, or a save made afterwards (another tab, say) would lose to it.
+    if (signature(session.canvas) === signature(COMMITTED)) return;
     const sessionAt = (session.updated_at || 0) * 1000;   // epoch seconds -> ms
     const savedAt = SAVED_AT ? Date.parse(SAVED_AT) : 0;
     if (!COMMITTED || !isFinite(savedAt) || sessionAt > savedAt + 1000) {
@@ -537,6 +581,34 @@
 
   // ------------------------------------------------------------ editing tools
 
+  /**
+   * A spot in the viewport no existing label already occupies.
+   *
+   * Dropping every new node at the centre with a small random jitter — the
+   * map.html idiom — stacks them: a schema node is a wide box, and two of them
+   * 40px apart look like one. Walking outward on a grid keeps successive labels
+   * legible without a layout run that would move what the user has arranged.
+   */
+  function freePosition() {
+    const extent = cy.extent();
+    const centre = { x: (extent.x1 + extent.x2) / 2, y: (extent.y1 + extent.y2) / 2 };
+    const stepX = 230;
+    const stepY = 150;
+    const taken = cy.nodes().map((n) => n.position());
+    const clear = (p) => !taken.some((t) => Math.abs(t.x - p.x) < stepX * 0.8
+                                         && Math.abs(t.y - p.y) < stepY * 0.8);
+    for (let ring = 0; ring < 12; ring += 1) {
+      for (let dy = -ring; dy <= ring; dy += 1) {
+        for (let dx = -ring; dx <= ring; dx += 1) {
+          if (ring > 0 && Math.abs(dx) !== ring && Math.abs(dy) !== ring) continue;
+          const candidate = { x: centre.x + dx * stepX, y: centre.y + dy * stepY };
+          if (clear(candidate)) return candidate;
+        }
+      }
+    }
+    return centre;
+  }
+
   function addLabelNode(position) {
     const label = (window.prompt('Label (e.g. Sample, Person, Project):', '') || '')
       .trim();
@@ -552,16 +624,12 @@
       notify(`“${label}” is already on the canvas.`, 'error');
       return;
     }
-    const extent = cy.extent();
     const data = { id: id, label: label, baseLabel: label,
                    _space: SciDKGraph.SPACE_SCHEMA, properties: [],
                    key_property: null, description: '', propertyTypes: {} };
     data.schemaLabel = SciDKGraph.schemaLabelFor(data);
-    cy.add({
-      group: 'nodes', data: data, grabbable: true,
-      position: position || { x: (extent.x1 + extent.x2) / 2 + (Math.random() - .5) * 120,
-                              y: (extent.y1 + extent.y2) / 2 + (Math.random() - .5) * 120 }
-    });
+    cy.add({ group: 'nodes', data: data, grabbable: true,
+             position: position || freePosition() });
     cy.$(':selected').unselect();
     cy.getElementById(id).select();
     $('node-label').focus();
@@ -920,6 +988,9 @@
       dirtySinceSave = false;
       // The draft has been superseded by the commit; leaving it behind would make
       // the next visit offer to "restore unsaved edits" that are already saved.
+      // Cancelling the pending autosave first matters: a save clicked within the
+      // debounce window would otherwise recreate the draft a moment later.
+      clearTimeout(saveTimer);
       await clearSession();
       status(`Saved ${summary.node_count || 0} label(s), `
              + `${summary.relationship_count || 0} relationship(s)`, true);
