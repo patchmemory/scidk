@@ -132,12 +132,17 @@ async def main():
     # Register tools
     @server.list_tools()
     async def list_tools() -> List[Tool]:
-        """List available tools from centralized definitions."""
+        """List available tools from the canonical registry in mcp_tools.
+
+        `input_schema` is the registry's spelling — snake_case, matching the
+        :Concept_Tool node property — and `inputSchema` is MCP's. This is the
+        one place the two meet.
+        """
         return [
             Tool(
                 name=tool_def["name"],
                 description=tool_def["description"],
-                inputSchema=tool_def["inputSchema"]
+                inputSchema=tool_def["input_schema"]
             )
             for tool_def in mcp_tools.TOOL_DEFINITIONS
         ]

@@ -754,7 +754,9 @@ def seed_mcp_tools(driver, ollama_endpoint: str) -> dict:
             'errors': List[str]
         }
     """
-    from ..ai.mcp_tools import MCP_TOOL_DEFINITIONS
+    # The canonical registry, shared with the MCP server and
+    # GET /api/platform/tools. Before Cycle 6 this read a second, drifted list.
+    from ..ai.mcp_tools import TOOL_DEFINITIONS
 
     seeded = 0
     failed = 0
@@ -763,7 +765,7 @@ def seed_mcp_tools(driver, ollama_endpoint: str) -> dict:
 
     try:
         with driver.session() as session:
-            for tool in MCP_TOOL_DEFINITIONS:
+            for tool in TOOL_DEFINITIONS:
                 try:
                     # Embed tool description
                     embedding = embed_text(tool['description'], ollama_endpoint)
@@ -787,7 +789,7 @@ def seed_mcp_tools(driver, ollama_endpoint: str) -> dict:
                         name=tool['name'],
                         description=tool['description'],
                         embedding=embedding,
-                        schema=json.dumps(tool.get('parameters', {}))
+                        schema=json.dumps(tool.get('input_schema', {}))
                     )
                     seeded += 1
                     logger.info(f"Seeded MCP tool: {tool['name']}")

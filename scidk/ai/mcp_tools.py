@@ -77,43 +77,42 @@ def _cypher_tokens(cypher: str) -> Set[str]:
     return set(re.split(r'\W+', cypher.upper()))
 
 
-# MCP tool definitions for Concept Graph seeding
-# Simplified format for embedding into Concept Graph as :Concept_Tool nodes
-MCP_TOOL_DEFINITIONS = [
-    {
-        "name": "query_knowledge_graph",
-        "description": "Execute a read-only Cypher query against the SciDK research knowledge graph. Returns structured results. Automatically blocks all write operations (CREATE/MERGE/DELETE). Use this to retrieve data, count nodes, or explore relationships.",
-        "parameters": {"cypher": "string", "limit": "integer"}
-    },
-    {
-        "name": "get_schema",
-        "description": "Return the current schema of the knowledge graph including all node labels, relationship types, and key properties per label. Essential for understanding what data is available before querying.",
-        "parameters": {}
-    },
-    {
-        "name": "summarize_dataset",
-        "description": "Generate a statistical summary of the entire knowledge graph: node counts per label, relationship counts per type, and key property distributions. Useful for dataset overview.",
-        "parameters": {"label": "string (optional)", "relationship": "string (optional)"}
-    },
-    {
-        "name": "get_label_profile",
-        "description": "Return the Schema Intelligence profile for a specific node label, including description, chat context mode, always/never include properties, and property usage rankings from the Schema Intelligence Layer.",
-        "parameters": {"label": "string"}
-    },
-    {
-        "name": "list_labels",
-        "description": "List all node labels in the knowledge graph with their node counts, sorted by count descending. Quick overview of what types of data exist.",
-        "parameters": {}
-    },
-]
+# ─────────────────────────────────────────────────────────────────────────────
+# Tool registry — the single source of truth for what SciDK exposes as a tool.
+#
+# Three consumers read this list and nothing else defines a tool:
+#   1. the MCP server's `list_tools` handler (scidk/mcp_server.py)
+#   2. Concept Graph seeding (concept_graph_service.seed_mcp_tools), which embeds
+#      `description` and stores `input_schema` on the :Concept_Tool node
+#   3. GET /api/platform/tools (scidk/web/routes/api_platform.py), the in-app
+#      "what this platform can do" display
+#
+# Until Cycle 6 there were two lists — MCP_TOOL_DEFINITIONS for seeding, this one
+# for MCP — and they had already drifted. The seeding copy carried a `parameters`
+# pseudo-schema (`{"cypher": "string"}`) that omitted query_knowledge_graph's
+# `parameters` argument and claimed get_schema took none, while the functions
+# below accept both; that copy is gone. Its *prose* was the better of the two and
+# has been kept, so descriptions here are longer than they were on the MCP side.
+#
+# Entry shape: {name, description, input_schema, category}. `input_schema` is
+# snake_case to match the `input_schema` property on :Concept_Tool nodes and the
+# key `seed_tools_from_yaml` reads from intents.yaml; mcp_server.py maps it to
+# MCP's `inputSchema` at the protocol boundary, so the wire format is unchanged.
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: Categories a registry entry may declare. Drives the UI filter on
+#: GET /api/platform/tools; a tool naming anything else is a bug, not a new
+#: category, so `get_tool_definitions` rejects unknown values rather than
+#: answering with an empty list.
+TOOL_CATEGORIES = ('data_query', 'schema', 'summarization')
 
 
-# Tool definitions with full JSON schemas (for MCP server registration)
 TOOL_DEFINITIONS = [
     {
         "name": "query_knowledge_graph",
-        "description": "Execute a safe read-only Cypher query against the Neo4j knowledge graph. Returns structured results.",
-        "inputSchema": {
+        "description": "Execute a read-only Cypher query against the SciDK research knowledge graph. Returns structured results. Automatically blocks all write operations (CREATE/MERGE/DELETE). Use this to retrieve data, count nodes, or explore relationships.",
+        "category": "data_query",
+        "input_schema": {
             "type": "object",
             "properties": {
                 "cypher": {
@@ -134,8 +133,9 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "get_schema",
-        "description": "Get the current Neo4j schema including labels, relationships, and properties. Essential for understanding what data is available.",
-        "inputSchema": {
+        "description": "Return the current schema of the knowledge graph including all node labels, relationship types, and key properties per label. Essential for understanding what data is available before querying.",
+        "category": "schema",
+        "input_schema": {
             "type": "object",
             "properties": {
                 "max_labels": {
@@ -151,8 +151,9 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "summarize_dataset",
-        "description": "Generate statistical summary of the dataset or specific label/relationship. Provides counts, distributions, and patterns.",
-        "inputSchema": {
+        "description": "Generate a statistical summary of the knowledge graph, or of a single label or relationship type when one is named: node counts per label and relationship counts per type. Useful for a dataset overview before querying in detail.",
+        "category": "summarization",
+        "input_schema": {
             "type": "object",
             "properties": {
                 "label": {
@@ -168,8 +169,9 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "get_label_profile",
-        "description": "Get the detailed Schema Intelligence profile for a specific label: node count, description, chat context mode, always/never include pins, properties in usage-rank order, and relationship patterns.",
-        "inputSchema": {
+        "description": "Return the Schema Intelligence profile for a specific node label: node count, description, chat context mode, always/never include pins, properties in usage-rank order from the Schema Intelligence Layer, and relationship patterns.",
+        "category": "schema",
+        "input_schema": {
             "type": "object",
             "properties": {
                 "label": {
@@ -182,13 +184,39 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "list_labels",
-        "description": "Get all label names with their node counts, sorted by count descending.",
-        "inputSchema": {
+        "description": "List all node labels in the knowledge graph with their node counts, sorted by count descending. Quick overview of what types of data exist.",
+        "category": "schema",
+        "input_schema": {
             "type": "object",
             "properties": {}
         }
     }
 ]
+
+
+def get_tool_definitions(category: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Return the canonical tool registry, optionally narrowed to one category.
+
+    Args:
+        category: One of ``TOOL_CATEGORIES``, or None for the whole registry.
+
+    Returns:
+        A new list of the matching registry entries. The entry dicts themselves
+        are the module-level ones, not copies — read them, do not mutate them.
+
+    Raises:
+        ValueError: if ``category`` is not a known category. An unrecognised
+            category is a caller mistake; answering it with ``[]`` would read as
+            "no tool does that", which is a different and wrong statement.
+    """
+    if category is None:
+        return list(TOOL_DEFINITIONS)
+    if category not in TOOL_CATEGORIES:
+        raise ValueError(
+            f"Unknown category {category!r}: expected one of "
+            f"{', '.join(TOOL_CATEGORIES)}."
+        )
+    return [tool for tool in TOOL_DEFINITIONS if tool['category'] == category]
 
 
 def query_knowledge_graph(

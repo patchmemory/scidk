@@ -146,7 +146,81 @@ def test_tool_definitions_complete():
     for tool_def in mcp_tools.TOOL_DEFINITIONS:
         assert "name" in tool_def
         assert "description" in tool_def
-        assert "inputSchema" in tool_def
-        assert "type" in tool_def["inputSchema"]
-        assert tool_def["inputSchema"]["type"] == "object"
-        assert "properties" in tool_def["inputSchema"]
+        assert "input_schema" in tool_def
+        assert "type" in tool_def["input_schema"]
+        assert tool_def["input_schema"]["type"] == "object"
+        assert "properties" in tool_def["input_schema"]
+        assert tool_def["category"] in mcp_tools.TOOL_CATEGORIES
+
+
+def test_registry_is_the_only_tool_list():
+    """The pre-Cycle-6 second list is gone, not merely unused.
+
+    Both the MCP server and Concept Graph seeding read TOOL_DEFINITIONS now.
+    A reintroduced MCP_TOOL_DEFINITIONS would silently take one of them back.
+    """
+    from scidk.ai import mcp_tools
+
+    assert not hasattr(mcp_tools, 'MCP_TOOL_DEFINITIONS')
+
+
+def test_every_category_is_used():
+    """No declared category is dead, and every tool's category is declared."""
+    from scidk.ai import mcp_tools
+
+    declared = set(mcp_tools.TOOL_CATEGORIES)
+    used = {t['category'] for t in mcp_tools.TOOL_DEFINITIONS}
+
+    assert used == declared
+
+
+def test_get_tool_definitions_unfiltered_returns_whole_registry():
+    from scidk.ai import mcp_tools
+
+    tools = mcp_tools.get_tool_definitions()
+
+    assert [t['name'] for t in tools] == [
+        t['name'] for t in mcp_tools.TOOL_DEFINITIONS
+    ]
+    # A new list, so a caller appending to it cannot corrupt the registry.
+    assert tools is not mcp_tools.TOOL_DEFINITIONS
+
+
+def test_get_tool_definitions_filters_by_category():
+    from scidk.ai import mcp_tools
+
+    schema_tools = mcp_tools.get_tool_definitions('schema')
+
+    assert {t['name'] for t in schema_tools} == {
+        'get_schema', 'get_label_profile', 'list_labels'
+    }
+    assert [t['name'] for t in mcp_tools.get_tool_definitions('data_query')] == [
+        'query_knowledge_graph'
+    ]
+    assert [t['name'] for t in mcp_tools.get_tool_definitions('summarization')] == [
+        'summarize_dataset'
+    ]
+
+
+def test_get_tool_definitions_rejects_unknown_category():
+    """An unknown category raises rather than answering with an empty list."""
+    from scidk.ai import mcp_tools
+
+    with pytest.raises(ValueError, match='Unknown category'):
+        mcp_tools.get_tool_definitions('nonexistent')
+
+
+def test_mcp_list_tools_shape_matches_registry():
+    """The MCP boundary maps input_schema → inputSchema for every entry.
+
+    Asserted against the registry rather than the running server: importing
+    scidk.mcp_server needs the `mcp` package, which is not a test dependency.
+    What can break here is a registry entry missing the key the handler reads.
+    """
+    from scidk.ai import mcp_tools
+
+    for tool_def in mcp_tools.TOOL_DEFINITIONS:
+        # The three keys scidk/mcp_server.py:list_tools subscripts directly.
+        assert isinstance(tool_def['name'], str) and tool_def['name']
+        assert isinstance(tool_def['description'], str) and tool_def['description']
+        assert isinstance(tool_def['input_schema'], dict)

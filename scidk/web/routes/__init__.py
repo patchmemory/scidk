@@ -54,6 +54,7 @@ def register_blueprints(app):
     from . import api_system
     from . import api_results
     from . import api_pipeline
+    from . import api_platform
 
     # Register UI blueprint
     app.register_blueprint(ui.bp)
@@ -88,3 +89,4 @@ def register_blueprints(app):
     app.register_blueprint(api_system.bp)  # Chat self-awareness tools
     app.register_blueprint(api_results.bp)  # Results page API
     app.register_blueprint(api_pipeline.bp)  # Pipeline sources, runs, schedules
+    app.register_blueprint(api_platform.bp)  # Platform capabilities (tool registry)
