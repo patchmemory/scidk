@@ -1,0 +1,69 @@
+{
+  "layer_name": "multi_parent",
+  "snapshot": {
+    "nodes": [
+      {
+        "id": "10",
+        "label": "Project",
+        "name": "Cohort A",
+        "provisional": false,
+        "element_id": "4:aipt:10",
+        "properties": {
+          "name": "Cohort A"
+        }
+      },
+      {
+        "id": "11",
+        "label": "Project",
+        "name": "Cohort B",
+        "provisional": false,
+        "element_id": "4:aipt:11",
+        "properties": {
+          "name": "Cohort B"
+        }
+      },
+      {
+        "id": "12",
+        "label": "Dataset",
+        "name": "shared_slide.svs",
+        "provisional": false,
+        "element_id": "4:aipt:12",
+        "properties": {
+          "name": "shared_slide.svs",
+          "path": "/data/shared/shared_slide.svs",
+          "description": "One slide, two cohorts"
+        }
+      },
+      {
+        "id": "13",
+        "label": "Person",
+        "name": "R. Curator",
+        "provisional": false,
+        "element_id": "4:aipt:13",
+        "properties": {
+          "name": "R. Curator"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "10",
+        "target": "12",
+        "relationship": "CONTAINS",
+        "provisional": false
+      },
+      {
+        "source": "11",
+        "target": "12",
+        "relationship": "CONTAINS",
+        "provisional": false
+      },
+      {
+        "source": "13",
+        "target": "12",
+        "relationship": "ATTACHED_TO",
+        "provisional": false
+      }
+    ]
+  }
+}

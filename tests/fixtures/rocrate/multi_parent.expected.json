@@ -1,0 +1,67 @@
+{
+  "@context": "https://w3id.org/ro/crate/1.1/context",
+  "@graph": [
+    {
+      "@type": "CreativeWork",
+      "@id": "ro-crate-metadata.json",
+      "conformsTo": {
+        "@id": "https://w3id.org/ro/crate/1.1"
+      },
+      "about": {
+        "@id": "./"
+      }
+    },
+    {
+      "@id": "./",
+      "@type": "Dataset",
+      "name": "multi_parent",
+      "hasPart": [
+        {
+          "@id": "4:aipt:10"
+        },
+        {
+          "@id": "4:aipt:11"
+        },
+        {
+          "@id": "4:aipt:13"
+        }
+      ]
+    },
+    {
+      "@id": "4:aipt:10",
+      "@type": "Dataset",
+      "name": "Cohort A",
+      "hasPart": [
+        {
+          "@id": "4:aipt:12"
+        }
+      ]
+    },
+    {
+      "@id": "4:aipt:11",
+      "@type": "Dataset",
+      "name": "Cohort B",
+      "hasPart": [
+        {
+          "@id": "4:aipt:12"
+        }
+      ]
+    },
+    {
+      "@id": "4:aipt:12",
+      "@type": "File",
+      "name": "shared_slide.svs",
+      "description": "One slide, two cohorts"
+    },
+    {
+      "@id": "4:aipt:13",
+      "@type": "Dataset",
+      "name": "R. Curator",
+      "mentions": [
+        {
+          "@id": "4:aipt:12"
+        }
+      ]
+    }
+  ]
+}

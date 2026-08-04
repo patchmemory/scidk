@@ -1,0 +1,73 @@
+{
+  "layer_name": "mixed",
+  "snapshot": {
+    "nodes": [
+      {
+        "id": "42",
+        "label": "Project",
+        "name": "AIPT",
+        "provisional": false,
+        "element_id": "4:aipt:42",
+        "properties": {
+          "name": "AIPT",
+          "dateCreated": "2025-11-02T09:30:00Z"
+        }
+      },
+      {
+        "id": "prov-1",
+        "label": "Dataset",
+        "name": "new_scan.tiff",
+        "provisional": true,
+        "properties": {
+          "name": "new_scan.tiff",
+          "description": "Added on the canvas, not yet committed"
+        }
+      },
+      {
+        "id": "43",
+        "label": "File",
+        "name": "manifest.csv",
+        "provisional": false,
+        "element_id": "4:aipt:43",
+        "properties": {
+          "name": "manifest.csv"
+        }
+      },
+      {
+        "id": "prov-2",
+        "label": "Assay",
+        "name": "IHC panel",
+        "provisional": true,
+        "properties": {
+          "name": "IHC panel"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "42",
+        "target": "prov-1",
+        "relationship": "CONTAINS",
+        "provisional": true
+      },
+      {
+        "source": "42",
+        "target": "43",
+        "relationship": "CONTAINS",
+        "provisional": false
+      },
+      {
+        "source": "prov-2",
+        "target": "prov-1",
+        "relationship": "MEASURES",
+        "provisional": true
+      },
+      {
+        "source": "43",
+        "target": "prov-2",
+        "relationship": "ATTACHED_TO",
+        "provisional": false
+      }
+    ]
+  }
+}

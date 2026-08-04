@@ -1,0 +1,49 @@
+{
+  "layer_name": "schema_space",
+  "snapshot": {
+    "nodes": [
+      {
+        "id": "schema-Sample",
+        "label": "Sample",
+        "_space": "schema",
+        "provisional": true,
+        "key_property": "uuid",
+        "properties": ["uuid", "treatment"]
+      },
+      {
+        "id": "prov-1",
+        "label": "Sample",
+        "name": "S1",
+        "provisional": true,
+        "properties": {
+          "name": "S1"
+        }
+      },
+      {
+        "id": "44",
+        "label": "Sample",
+        "name": "S0",
+        "provisional": false,
+        "element_id": "4:aipt:44",
+        "properties": {
+          "name": "S0"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "schema-Sample",
+        "target": "schema-Sample",
+        "_space": "schema",
+        "relationship": "DERIVED_FROM",
+        "provisional": true
+      },
+      {
+        "source": "prov-1",
+        "target": "44",
+        "relationship": "DERIVED_FROM",
+        "provisional": true
+      }
+    ]
+  }
+}
