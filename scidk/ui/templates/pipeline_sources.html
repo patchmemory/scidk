@@ -2,7 +2,7 @@
 {% block title %}-SciDK-> Pipeline Sources{% endblock %}
 
 {#
-  Pipeline source management — Cycle 3B Tasks A, B and F.
+  Pipeline source management — Cycle 3B Tasks A, B, E and F.
 
   A Pipeline page, not a plugin page. It never names a plugin: the "+ Add source"
   picker is populated from /api/plugins/templates?category=data_import, and each
@@ -13,6 +13,12 @@
   is Task D and opens /pipeline/sources/<id>/mapping — both are pages of their own
   rather than panes in this sheet, so the flow's job here is to say what state each
   step is in and hand off.
+
+  The FAIR check (Task E) is the one result that lives on the card itself: it says
+  what a run *would* write, so it belongs next to the Run button rather than behind
+  a page of its own. Its badge and its preview panel both update from the response
+  without reloading the list — the check writes nothing, so there is nothing else on
+  the page that could have changed.
 #}
 
 {% block head %}
@@ -122,6 +128,24 @@
   .entry-body textarea { width:100%; min-height:130px; padding:.4rem .5rem;
     border:1px solid #ccc; border-radius:5px; font-size:.82rem;
     font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  /* FAIR check result (Task E). An expandable panel rather than an always-open
+     one: the preview is the most valuable thing on the card while you are
+     configuring a source and noise once it works. */
+  .fair-panel { margin-top:.5rem; }
+  .fair-panel details { border:1px solid #eee; border-radius:6px; margin-top:.5rem; }
+  .fair-panel summary { cursor:pointer; padding:.35rem .6rem; font-size:.85rem;
+                        background:#fafafa; border-radius:6px; }
+  .fair-panel details[open] summary { border-bottom:1px solid #eee;
+                                      border-radius:6px 6px 0 0; }
+  .fair-preview { list-style:none; margin:0; padding:.4rem .6rem;
+    font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.78rem;
+    overflow-x:auto; }
+  .fair-preview li { padding:.1rem 0; white-space:pre; }
+  .fair-panel table { font-size:.78rem; width:100%; }
+  .fair-panel th, .fair-panel td { padding:3px 7px; text-align:left;
+                                   border-top:1px solid #f0f0f0; }
+  .fair-letters { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
 </style>
 {% endblock %}
 
@@ -382,17 +406,124 @@
 
   // ------------------------------------------------------------- cards
 
-  function fairBadge(source) {
-    const fair = source.fair_status;
-    if (!fair) return '<span class="badge neutral" title="No check run yet">FAIR —</span>';
-    const letters = ['F', 'A', 'I', 'R'];
-    if (letters.every((l) => fair[l])) {
-      return '<span class="badge ok">FAIR ✅</span>';
+  // ------------------------------------------------- FAIR status (Task E)
+
+  const FAIR_LETTERS = ['F', 'A', 'I', 'R'];
+  const FAIR_GLYPH = { pass: '✅', warn: '⚠️', fail: '❌', skipped: '—' };
+
+  /** One letter's verdict, tolerating the booleans an older preflight stored. */
+  function letterResult(value) {
+    if (typeof value === 'boolean') return value ? 'pass' : 'fail';
+    return (value && value.result) || 'skipped';
+  }
+
+  /** What the letter has to say, for the badge's tooltip. */
+  function letterDetail(letter, value) {
+    if (!value || typeof value !== 'object') return `${letter}: ${letterResult(value)}`;
+    const parts = [`${letter}: ${letterResult(value)}`];
+    if (value.error) parts.push(value.error);
+    if (value.note) parts.push(value.note);
+    (value.errors || []).slice(0, 3).forEach((e) => parts.push(e));
+    (value.warnings || []).slice(0, 3).forEach((w) => parts.push(w));
+    return parts.join(' — ');
+  }
+
+  function fairBadgeHtml(fair) {
+    const wrap = (kind, text, title) =>
+      `<span class="badge ${kind}" data-testid="fair-badge" title="${esc(title)}">`
+      + `${text}</span>`;
+    if (!fair) {
+      return wrap('neutral', 'FAIR —', 'No check has been run for this source yet');
     }
-    const rendered = letters
-      .map((l) => `${l}${fair[l] ? '✅' : fair[l] === false ? '⚠️' : '—'}`)
-      .join(' ');
-    return `<span class="badge warn">${esc(rendered)}</span>`;
+    const results = FAIR_LETTERS.map((l) => letterResult(fair[l]));
+    const title = FAIR_LETTERS.map((l) => letterDetail(l, fair[l])).join('\n');
+    const overall = fair.overall
+      || (results.includes('fail') ? 'fail'
+        : results.includes('warn') ? 'warn'
+          : results.every((r) => r === 'pass') ? 'pass' : 'warn');
+
+    if (overall === 'pass') return wrap('ok', 'FAIR ✅', title);
+    // On a failure the sequence stopped, so the letters after it were never
+    // checked. Showing them at all would imply they were.
+    let last = -1;
+    results.forEach((r, i) => { if (r !== 'skipped') last = i; });
+    const letters = (overall === 'fail' ? results.slice(0, last + 1) : results)
+      .map((r, i) => `${FAIR_LETTERS[i]}${FAIR_GLYPH[r] || '—'}`).join(' ');
+    const lead = overall === 'fail' ? '❌' : '⚠️';
+    return wrap(overall === 'fail' ? 'err' : 'warn',
+                `${lead} <span class="fair-letters">${esc(letters)}</span>`, title);
+  }
+
+  function fairBadge(source) {
+    return fairBadgeHtml(source.fair_status);
+  }
+
+  /** The expandable result panel: the preview table, and what to fix. */
+  function fairPanelHtml(fair) {
+    if (!fair) return '';
+    const step = fair.I || {};
+    const kind = fair.overall === 'pass' ? 'ok' : fair.overall === 'warn' ? 'warn' : 'bad';
+    const failed = FAIR_LETTERS.filter((l) => letterResult(fair[l]) === 'fail');
+
+    let html = `<div class="notice ${kind}" data-testid="fair-result">`
+      + `<strong>FAIR check: ${esc(fair.overall || 'unknown')}</strong>`;
+    if (failed.length) html += ` — failed on ${esc(failed.join(', '))}`;
+    if (step.sample_size) {
+      const nodes = step.nodes || {};
+      html += `<br>${step.sample_size} row(s) sampled: ${step.rows_resolved} resolved`
+            + `${step.rows_skipped ? `, ${step.rows_skipped} skipped` : ''} → `
+            + `${nodes.total || 0} node(s) (${nodes.new || 0} new, `
+            + `${nodes.merge || 0} merge`
+            + `${nodes.unknown ? `, ${nodes.unknown} unknown` : ''}), `
+            + `${step.relationships || 0} relationship(s). Nothing was written.`;
+    }
+    html += fairMessages(fair);
+    html += '</div>';
+
+    const preview = step.preview || [];
+    if (preview.length) {
+      html += `<details open data-testid="fair-preview">
+        <summary>Preview — what a run would write for ${preview.length} sampled row(s)</summary>
+        <ol class="fair-preview">${
+          preview.map((line) => `<li>${esc(line)}</li>`).join('')}</ol></details>`;
+    }
+    const failures = (step.transform_failures || []).concat(step.other_failures || []);
+    if (failures.length) {
+      html += `<details data-testid="fair-transform-failures">
+        <summary>${failures.length} transform failure(s)</summary>
+        <table><thead><tr><th>Row</th><th>Column</th><th>Problem</th></tr></thead>
+        <tbody>${failures.map((f) => `<tr><td>${esc(f.row)}</td>`
+          + `<td>${esc(f.column || f.property || '—')}</td>`
+          + `<td>${esc(f.error)}</td></tr>`).join('')}</tbody></table></details>`;
+    }
+    if ((step.key_failures || []).length) {
+      html += `<details data-testid="fair-key-failures">
+        <summary>${step.key_failures.length} row(s) with no merge key</summary>
+        <table><thead><tr><th>Row</th><th>Problem</th></tr></thead>
+        <tbody>${step.key_failures.map((f) => `<tr><td>${esc(f.row)}</td>`
+          + `<td>${esc(f.error)}</td></tr>`).join('')}</tbody></table></details>`;
+    }
+    return html;
+  }
+
+  /** Every letter's errors and warnings, as one list. */
+  function fairMessages(fair) {
+    const messages = [];
+    FAIR_LETTERS.forEach((letter) => {
+      const step = fair[letter];
+      if (!step || typeof step !== 'object') return;
+      if (step.error) messages.push(`${letter}: ${step.error}`);
+      (step.errors || []).forEach((e) => messages.push(`${letter}: ${e}`));
+      (step.warnings || []).forEach((w) => messages.push(`${letter}: ${w}`));
+      if (step.note) messages.push(`${letter}: ${step.note}`);
+    });
+    if ((fair.I || {}).missing_columns && fair.I.missing_columns.length) {
+      messages.push(`I: column(s) not in the source: ${fair.I.missing_columns.join(', ')}`);
+    }
+    if (!messages.length) return '';
+    return '<ul>' + messages.slice(0, 10).map((m) => `<li>${esc(m)}</li>`).join('')
+      + (messages.length > 10 ? `<li>…and ${messages.length - 10} more</li>` : '')
+      + '</ul>';
   }
 
   function runLine(source) {
@@ -467,6 +598,9 @@
                     title="Open the schema canvas for this source">Schema</button>
             <button class="btn" data-act="mapping" data-testid="mapping-source-btn"
                     title="Map this source's columns onto the schema">Mapping</button>
+            <button class="btn" data-act="fair" data-testid="fair-check-btn"
+                    title="Preview what a run would write. Nothing is written."
+                    ${unavailable ? 'disabled' : ''}>FAIR check</button>
             <button class="btn" data-act="run" data-testid="run-source-btn"
                     ${unavailable ? 'disabled' : ''}>Run</button>
             <button class="btn" data-act="schedule" data-testid="schedule-source-btn"
@@ -485,6 +619,7 @@
             'A source with no mapping has nothing to write; Mapping is Step 3.</div>'}
         </div>
         <div class="run-log" data-testid="source-run-log"></div>
+        <div class="fair-panel" data-testid="fair-panel" hidden></div>
       </div>`;
   }
 
@@ -542,6 +677,7 @@
       return;
     }
     if (button.dataset.act === 'delete') return deleteSource(sourceId, name);
+    if (button.dataset.act === 'fair') return fairCheck(sourceId, cardEl, button);
     if (button.dataset.act === 'run') return runSource(sourceId, cardEl, button);
     if (button.dataset.act === 'schedule') return openSchedule(sourceId, name);
     if (button.dataset.act === 'edit') return openEdit(sourceId);
@@ -585,6 +721,34 @@
     const cardEl = document.querySelector(`[data-source-id="${sourceId}"]`);
     if (!cardEl) return;
     cardEl.querySelector('[data-testid=source-run-log]').innerHTML = html;
+  }
+
+  /** Run the FAIR check and update this card in place.
+   *
+   *  Deliberately does NOT call loadSources(): the check writes nothing to the
+   *  graph, so re-rendering every card would be a page-wide refresh to show one
+   *  card's result — and it would throw away the panel the way the run log had
+   *  to be worked around above. The badge is replaced from the response instead.
+   */
+  async function fairCheck(sourceId, cardEl, button) {
+    const panel = cardEl.querySelector('[data-testid=fair-panel]');
+    button.disabled = true;
+    panel.hidden = false;
+    panel.innerHTML = '<div class="notice info"><span class="spin"></span> '
+                    + 'Checking F, A, I and R… nothing is written.</div>';
+    try {
+      const data = await api(`/api/pipeline/sources/${sourceId}/fair-check`,
+                             { method: 'POST' });
+      const fair = data.fair || {};
+      const badge = cardEl.querySelector('[data-testid=fair-badge]');
+      if (badge) badge.outerHTML = fairBadgeHtml(fair);
+      panel.innerHTML = fairPanelHtml(fair);
+    } catch (e) {
+      panel.innerHTML = `<div class="notice bad">Could not run the FAIR check: `
+                      + `${esc(e.message)}</div>`;
+    } finally {
+      button.disabled = false;
+    }
   }
 
   async function runSource(sourceId, cardEl, button) {

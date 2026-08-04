@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "DagError",
     "build_runner",
+    "missing_mapping_reason",
     "run_pipeline",
     "run_source",
     "source_config_of",
@@ -126,10 +127,25 @@ def source_config_of(source: Dict[str, Any]) -> Dict[str, Any]:
     return config
 
 
+def missing_mapping_reason(source: Dict[str, Any]) -> Optional[str]:
+    """Why this source has nothing to run, or None when it has a mapping.
+
+    Shared by :func:`build_runner`, which refuses, and by the FAIR check, which
+    reports it as a failed I and carries on — F and A do not depend on a mapping.
+    """
+    if source.get("mapping_json"):
+        return None
+    return (
+        f"source {source.get('name') or source.get('id')!r} has no mapping "
+        "config; define the column mapping before running it"
+    )
+
+
 def build_runner(
     source: Dict[str, Any],
     writer: Optional[Any] = None,
     upload_dir: Optional[str] = None,
+    require_mapping: bool = True,
 ) -> PipelineRunner:
     """Assemble a runner for one stored source.
 
@@ -141,18 +157,23 @@ def build_runner(
             crafted ``source_path`` on an uploaded source cannot read arbitrary
             files, while an admin who configured ``/data/exports/x.csv`` by hand
             is still trusted — that path came from a setting, not from a browser.
+        require_mapping: Refuse a source with no mapping config. False builds a
+            runner over an empty config instead, for the FAIR check: a mapping is
+            not needed to ask whether the source is reachable, and "no mapping
+            yet" is a report to show rather than an exception to raise.
 
     Raises:
         PluginNotAvailable: No plugin implements this source's ``plugin_type``.
         ValueError: The source has no mapping config, so there is nothing to run.
+            Suppressed by ``require_mapping=False``.
     """
     config = source_config_of(source)
     mapping = source.get("mapping_json")
     if not mapping:
-        raise ValueError(
-            f"source {source.get('name') or source.get('id')!r} has no mapping "
-            "config; define the column mapping before running it"
-        )
+        problem = missing_mapping_reason(source)
+        if require_mapping:
+            raise ValueError(problem)
+        mapping = {}
 
     kwargs: Dict[str, Any] = {}
     if config.get("upload_name") and upload_dir:

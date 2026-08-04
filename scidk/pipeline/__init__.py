@@ -16,14 +16,16 @@ The pieces, roughly in the order a run touches them:
 ``mapping_engine``   Row stream + mapping config → node/relationship declarations.
 ``mapping_schema``   JSON Schema the mapping config format must satisfy.
 ``runner``           One source: find → access → validate → fetch → map → write.
+``fair_check``       What a run would write, sampled and previewed, writing nothing.
 ``orchestrator``     One source, or a whole DAG of them in dependency order.
 ``store``            ``pipeline_source`` and ``pipeline`` persistence.
 ``run_history``      ``pipeline_run`` persistence.
 ``scheduler``        Cron schedules, in a jobstore the gunicorn master shares.
 
-Imports here are kept to the light modules. ``runner``, ``orchestrator``,
-``store`` and ``scheduler`` pull in Neo4j, SQLite and APScheduler, so importing
-this package does not drag those in — import them directly instead.
+Imports here are kept to the light modules. ``runner``, ``fair_check``,
+``orchestrator``, ``store`` and ``scheduler`` pull in Neo4j, SQLite and
+APScheduler, so importing this package does not drag those in — import them
+directly instead.
 """
 
 from .identifiers import IdentifierError, check_identifier, require_identifier

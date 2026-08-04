@@ -702,6 +702,24 @@ class MappingEngine:
             )
         return blocking, informational
 
+    def property_columns(self) -> Dict[str, Dict[str, List[str]]]:
+        """``{mapping_id: {property_name: [column, ...]}}`` for the whole config.
+
+        Which columns feed which property, which is the question a failure report
+        has to answer: the engine attributes a transform error to a *property*,
+        and the user is looking at a spreadsheet of *columns*. More than one column
+        per property because of fallbacks, and because a transform may name its
+        columns in ``transform_args`` rather than taking a ``column`` of its own.
+        """
+        out: Dict[str, Dict[str, List[str]]] = {}
+        for index, mapping in enumerate(self.node_mappings):
+            mapping_id = str(mapping.get("id") or f"node_mappings[{index}]")
+            out[mapping_id] = {
+                name: sorted(columns)
+                for name, columns in self._property_columns(mapping).items()
+            }
+        return out
+
     def _property_columns(self, mapping: Mapping[str, Any]) -> Dict[str, Set[str]]:
         """Property name → every column that could fill it.
 

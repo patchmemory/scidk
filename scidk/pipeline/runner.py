@@ -36,10 +36,13 @@ The FAIR letters
         reproducible from config plus transform library alone.
 ======= ============================================================
 
-Task E builds the full FAIR check — the sampled row-by-row preview with
-merge-vs-create lookups against live Neo4j. :meth:`PipelineRunner.preflight` is
-the gate that check will sit on top of: same four letters, no Neo4j reads, no
-sample preview.
+:meth:`PipelineRunner.preflight` is the cheap gate: those four letters, no Neo4j
+reads and no data rows. :mod:`scidk.pipeline.fair_check` is the full check Task E
+builds on top of it — it samples rows through :meth:`PipelineRunner.resolve_rows`
+and looks each resolved key up in the live graph. Both read this module's
+:meth:`~PipelineRunner.find`, :meth:`~PipelineRunner.access` and
+:meth:`~PipelineRunner.resolve_rows` rather than calling the plugin themselves,
+so a dry run and a real run cannot drift apart.
 """
 from __future__ import annotations
 
@@ -47,7 +50,8 @@ import logging
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Protocol, Sequence
+from itertools import islice
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Protocol, Sequence, Tuple
 
 from .mapping_engine import DeclarationCollector, MappingEngine, RowMapping
 from .plugin_base import DataSourcePlugin
@@ -58,10 +62,13 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "DEFAULT_WRITE_BATCH_ROWS",
     "MAX_REPORTED_MESSAGES",
+    "Neo4jReader",
     "Neo4jWriter",
     "PipelineRunner",
     "RunReport",
+    "neo4j_reader",
     "neo4j_writer",
+    "open_neo4j_reader",
 ]
 
 #: Rows mapped before the accumulated declarations are written. Bounds memory on
@@ -86,6 +93,20 @@ class Neo4jWriter(Protocol):
     def write_declared_nodes(
         self, nodes: List[Dict[str, Any]], relationships: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
+        ...
+
+
+class Neo4jReader(Protocol):
+    """The read half, for callers that must not be able to write.
+
+    The FAIR check needs to know whether a key already exists and nothing more,
+    so it is handed one of these rather than a full client — a reader cannot
+    write by accident.
+    """
+
+    def execute_read(
+        self, query: str, parameters: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
         ...
 
 
@@ -235,6 +256,38 @@ class PipelineRunner:
             vocabulary=vocabulary,
         )
 
+    # ------------------------------------------------------- plugin probes
+
+    def find(self) -> Dict[str, Any]:
+        """``plugin.find()`` against this source's config, as a ``FindResult``.
+
+        The contract says ``find()`` reports failure in its return value and
+        never raises; a plugin that raises anyway is turned into ``ok: False``
+        here, so every caller sees one shape. :meth:`preflight` and the FAIR
+        check both come through here rather than calling the plugin, so F means
+        the same thing in both.
+        """
+        return self._as_result(
+            self._safe_call("find", lambda: self.plugin.find(self.source_config))
+        )
+
+    def access(self) -> Dict[str, Any]:
+        """``plugin.access()`` against this source's config, as an ``AccessResult``.
+
+        Independent of the mapping config on purpose: whether a credential works
+        is not a question about which columns are mapped.
+        """
+        return self._as_result(
+            self._safe_call("access", lambda: self.plugin.access(self.source_config))
+        )
+
+    @staticmethod
+    def _as_result(value: Any) -> Dict[str, Any]:
+        """A plugin's result dict, or a failure carrying what came back instead."""
+        if isinstance(value, Mapping):
+            return dict(value)
+        return {"ok": False, "error": str(value)}
+
     # ---------------------------------------------------------- preflight
 
     def preflight(self, report: Optional[RunReport] = None) -> RunReport:
@@ -251,24 +304,18 @@ class PipelineRunner:
         report = report or RunReport(started_at=time.time())
 
         # F — Findable.
-        find = self._safe_call("find", lambda: self.plugin.find(self.source_config))
-        if isinstance(find, dict):
-            report.fair["F"] = bool(find.get("ok"))
-            report.columns = list(find.get("columns") or [])
-            report.row_count_estimate = find.get("row_count")
-            if not find.get("ok"):
-                report.add_error(f"find: {find.get('error') or 'source not found'}")
-        else:
-            report.add_error(f"find: {find}")
+        find = self.find()
+        report.fair["F"] = bool(find.get("ok"))
+        report.columns = list(find.get("columns") or [])
+        report.row_count_estimate = find.get("row_count")
+        if not find.get("ok"):
+            report.add_error(f"find: {find.get('error') or 'source not found'}")
 
         # A — Accessible.
-        access = self._safe_call("access", lambda: self.plugin.access(self.source_config))
-        if isinstance(access, dict):
-            report.fair["A"] = bool(access.get("ok"))
-            if not access.get("ok"):
-                report.add_error(f"access: {access.get('error') or 'access denied'}")
-        else:
-            report.add_error(f"access: {access}")
+        access = self.access()
+        report.fair["A"] = bool(access.get("ok"))
+        if not access.get("ok"):
+            report.add_error(f"access: {access.get('error') or 'access denied'}")
 
         # R — Reproducible. Computed before I so an unknown transform is named as
         # a reproducibility failure and not only as a config error.
@@ -316,6 +363,33 @@ class PipelineRunner:
             logger.warning("plugin %s() raised: %s", stage, e, exc_info=True)
             return f"plugin raised {type(e).__name__}: {e}"
 
+    # ----------------------------------------------------------- resolve
+
+    def resolve_rows(self, limit: Optional[int] = None) -> Iterator[RowMapping]:
+        """Fetch rows and resolve each into nodes and relationships. No writes.
+
+        The resolve half of a run, on its own and with nothing to write to.
+        :meth:`run` consumes this and writes each batch; the FAIR check consumes
+        the first few and inspects them. That is why it exists: a dry run that
+        resolved rows by a second code path would be a baseline the real run does
+        not share.
+
+        Args:
+            limit: Stop after this many rows. None reads the whole source.
+
+        Yields:
+            RowMapping: one per input row, including any errors that row hit.
+
+        Raises:
+            Exception: whatever ``plugin.fetch`` raises, on the first row rather
+                than at call time — a generator, so a broken stream surfaces
+                inside the caller's own error handling.
+        """
+        rows = self.plugin.fetch(self.source_config)
+        if limit is not None:
+            rows = islice(rows, max(0, int(limit)))
+        yield from self.engine.map_rows(rows)
+
     # --------------------------------------------------------------- run
 
     def run(self, dry_run: bool = False, limit: Optional[int] = None) -> RunReport:
@@ -343,8 +417,7 @@ class PipelineRunner:
         collector = DeclarationCollector()
         aborted = False
         try:
-            rows = self.plugin.fetch(self.source_config)
-            for mapping in self.engine.map_rows(rows):
+            for mapping in self.resolve_rows(limit):
                 report.rows_read += 1
                 self._absorb(mapping, report)
                 collector.add_row(mapping)
@@ -358,8 +431,6 @@ class PipelineRunner:
                     break
                 if report.rows_read % self.batch_rows == 0:
                     self._flush(collector, report)
-                if limit is not None and report.rows_read >= limit:
-                    break
         except Exception as e:  # noqa: BLE001 - a broken stream is a run outcome
             logger.error("Pipeline run failed while streaming rows: %s", e, exc_info=True)
             report.add_error(f"fetch: {type(e).__name__}: {e}")
@@ -468,3 +539,59 @@ def neo4j_writer(app: Optional[Any] = None) -> Iterator[Optional[Neo4jWriter]]:
             client.close()
         except Exception as e:  # noqa: BLE001
             logger.warning("Failed to close Neo4j client after run: %s", e)
+
+
+def open_neo4j_reader(app: Optional[Any] = None) -> Tuple[Optional[Neo4jReader], Optional[str]]:
+    """Connect for reads, reporting why it could not rather than raising.
+
+    :func:`neo4j_writer` raises when the graph is unreachable, which is right for
+    a run: an ingest that cannot write has failed. A FAIR check is not a run — it
+    is a report about a mapping, and "Neo4j is unreachable" degrades one line of
+    that report rather than invalidating it. So the failure is a value here.
+
+    Args:
+        app: Flask app whose settings supply the connection, or None to read the
+            environment.
+
+    Returns:
+        ``(reader, None)`` when connected, or ``(None, reason)`` — a sentence
+        naming why the graph cannot answer, suitable for showing to the user.
+        The caller owns closing it; :func:`neo4j_reader` does that for you.
+    """
+    from ..services.neo4j_client import Neo4jClient, get_neo4j_params
+
+    uri, user, password, database, auth_mode = get_neo4j_params(app)
+    if not uri:
+        return None, "Neo4j is not configured"
+
+    client = Neo4jClient(uri, user, password, database, auth_mode)
+    try:
+        client.connect()
+    except Exception as e:  # noqa: BLE001 - an unreachable graph is an answer here
+        logger.warning("Could not open a Neo4j reader: %s", e)
+        return None, f"Neo4j could not be reached ({type(e).__name__}: {e})"
+    return client, None
+
+
+@contextmanager
+def neo4j_reader(
+    app: Optional[Any] = None,
+) -> Iterator[Tuple[Optional[Neo4jReader], Optional[str]]]:
+    """:func:`open_neo4j_reader` with the close handled.
+
+    Yields the ``(reader, reason)`` pair rather than just the reader, because a
+    caller that has to explain the absence needs the reason as much as the
+    reader::
+
+        with neo4j_reader(app) as (reader, unavailable):
+            ...
+    """
+    client, reason = open_neo4j_reader(app)
+    try:
+        yield client, reason
+    finally:
+        if client is not None:
+            try:
+                client.close()  # type: ignore[attr-defined]
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Failed to close the Neo4j reader: %s", e)

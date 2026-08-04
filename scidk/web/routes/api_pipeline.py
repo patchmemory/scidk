@@ -1,6 +1,6 @@
 """Pipeline source and pipeline management API.
 
-Routes for Cycle 3B Tasks A, B and F. Plugin-agnostic throughout — nothing here
+Routes for Cycle 3B, Tasks A through F. Plugin-agnostic throughout — nothing here
 knows what a SharePoint list is. A source names a ``plugin_type``,
 :mod:`scidk.pipeline.plugin_registry` turns that into a plugin, and the plugin's
 four contract methods do the rest.
@@ -15,6 +15,9 @@ Task C  ``.../schema`` (GET/PUT), ``.../schema/export/arrows``,
         :mod:`scidk.pipeline.schema_arrows`.
 Task D  ``.../mapping`` (GET/PUT) and ``.../columns`` — the mapping config the
         column mapping page builds, and the live column list it maps *from*.
+Task E  ``.../preflight`` (the cheap config gate) and ``.../fair-check`` (the
+        sampled test run: F→A→I→R, a merge-vs-create preview, zero writes). See
+        :mod:`scidk.pipeline.fair_check`.
 Task F  ``.../run`` at both levels, plus pipeline CRUD and ``.../schedule``.
 
 Plugin type discovery is ``GET /api/plugins/templates?category=data_import``,
@@ -952,8 +955,9 @@ def run_source_now(source_id: str):
 def preflight_source(source_id: str):
     """Report F, A, I and R without fetching data or writing anything.
 
-    The gate the full FAIR check (Task E) will sit on top of: same four letters,
-    no Neo4j reads, no sampled row preview.
+    The cheap gate the FAIR check below sits on top of: same four letters, no
+    Neo4j reads, no sampled row preview. Both write ``fair_status`` in the same
+    shape, so the card's badge reads the same whichever one ran last.
     """
     from ...pipeline.orchestrator import build_runner
     from ...pipeline.plugin_registry import PluginNotAvailable
@@ -976,13 +980,136 @@ def preflight_source(source_id: str):
         }), 200
 
     report = runner.preflight()
-    store.record_fair_check(source_id, {
-        **report.fair,
-        'fair_ok': report.fair_ok,
-        'errors': report.errors,
-        'warnings': report.warnings,
-    })
+    store.record_fair_check(source_id, _preflight_status(report))
     return jsonify({'status': 'ok', 'preflight': report.to_dict()}), 200
+
+
+def _preflight_status(report) -> Dict[str, Any]:
+    """A preflight report in the ``fair_status`` shape the FAIR check writes.
+
+    One column, one shape. The preflight's letters are booleans and its detail is
+    a flat error list, so each letter becomes ``{"result": "pass"|"fail"}`` with a
+    note saying what this cheaper check actually verified — a badge that said
+    "FAIR ✅" for a config check and for a sampled dry run without distinguishing
+    them would overstate the first.
+    """
+    from ...pipeline.fair_check import FAIL, PASS
+
+    notes = {
+        'F': 'the source was found',
+        'A': 'the credential was accepted',
+        'I': 'the mapping config validates and its columns exist',
+        'R': 'every transform the config names resolves',
+    }
+    letters = {
+        letter: {
+            'result': PASS if report.fair.get(letter) else FAIL,
+            'note': notes[letter],
+        }
+        for letter in ('F', 'A', 'I', 'R')
+    }
+    return {
+        'check': 'preflight',
+        **letters,
+        'overall': PASS if report.fair_ok else FAIL,
+        'fair_ok': report.fair_ok,
+        'errors': list(report.errors),
+        'warnings': list(report.warnings),
+        'checked_at': report.completed_at,
+    }
+
+
+# --------------------------------------------------- Task E: the FAIR check
+#
+# The test run. Everything a real run would do except the write: F and A against
+# the plugin, the mapping cross-referenced against the columns the source actually
+# has, and a sample of rows resolved through the mapping engine with every merge
+# key looked up in the live graph, so the preview can say [new] or [merge].
+#
+# Zero writes is structural, not careful: the runner is built with no writer, the
+# sample comes from PipelineRunner.resolve_rows, and the graph is reached through a
+# read-only client. See scidk/pipeline/fair_check.py.
+
+@bp.post('/sources/<source_id>/fair-check')
+@require_role(*_READ_ROLES)
+def fair_check_source(source_id: str):
+    """Run the full FAIR check and store the result on the source.
+
+    Query params:
+        sample_size: Rows to preview. Default 10, capped at 50.
+
+    A failing check is a 200 with the failure in the payload: a misconfigured
+    mapping is the answer to the question that was asked, not an HTTP error. The
+    result lands in ``fair_status`` / ``fair_checked_at`` and never in
+    ``last_run_*``, which belongs to runs that actually wrote.
+    """
+    from ...pipeline.fair_check import (
+        clamp_sample_size,
+        neo4j_key_lookup,
+        prior_run_for_source,
+        run_fair_check,
+    )
+    from ...pipeline.orchestrator import build_runner, missing_mapping_reason
+    from ...pipeline.plugin_registry import PluginNotAvailable
+    from ...pipeline.runner import neo4j_reader
+
+    store = _store()
+    source = store.get_source(source_id)
+    if source is None:
+        return _error('source not found', 404)
+
+    sample_size = clamp_sample_size(request.args.get('sample_size'))
+
+    # No writer, ever: a runner with nothing to write to cannot write by mistake.
+    # require_mapping=False because F and A do not depend on a mapping — a source
+    # that has not reached Step 3 should still learn whether it is reachable.
+    try:
+        runner = build_runner(source, upload_dir=_upload_dir(), require_mapping=False)
+    except PluginNotAvailable as e:
+        return jsonify({'status': 'ok', 'fair': _plugin_missing_status(str(e))}), 200
+
+    prior = prior_run_for_source(
+        _history(), source_id, pipeline_id=store.implicit_pipeline_id(source_id)
+    )
+
+    with neo4j_reader(current_app) as (reader, unavailable):
+        result = run_fair_check(
+            runner,
+            sample_size=sample_size,
+            key_lookup=neo4j_key_lookup(reader) if reader is not None else None,
+            lookup_unavailable=unavailable,
+            prior=prior,
+            mapping_problem=missing_mapping_reason(source),
+        )
+
+    store.record_fair_check(source_id, result)
+    logger.info(
+        "FAIR check on pipeline source %s by %s: %s (%d row(s) sampled)",
+        source_id, current_user_key(), result['overall'], result['I'].get('sample_size', 0),
+    )
+    return jsonify({'status': 'ok', 'fair': result}), 200
+
+
+def _plugin_missing_status(message: str) -> Dict[str, Any]:
+    """A ``fair_status`` document for a source whose plugin cannot be resolved.
+
+    F fails, because nothing can be found without something to look with, and the
+    rest are skipped rather than failed — the mapping was never examined.
+    """
+    from ...pipeline.fair_check import FAIL, SKIPPED
+    from ...pipeline.store import utc_now
+
+    return {
+        'check': 'fair-check',
+        'F': {'result': FAIL, 'error': message, 'columns': [], 'row_count': None},
+        'A': {'result': SKIPPED},
+        'I': {'result': SKIPPED},
+        'R': {'result': SKIPPED},
+        'overall': FAIL,
+        'fair_ok': False,
+        'sample_size': 0,
+        'checked_at': utc_now(),
+    }
 
 
 # ------------------------------------------------- Task F: pipelines (DAGs)
