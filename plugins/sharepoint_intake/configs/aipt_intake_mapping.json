@@ -1,0 +1,184 @@
+{
+  "version": "1.0",
+  "name": "AIPT SharePoint Intake",
+  "description": "Reference mapping for the AIPT SharePoint intake list. Column names come from the harmonized AIPT intake dataset (merged_list.csv and the live SharePoint list). Consumed by scidk/pipeline/ — the plugin never reads it.",
+  "plugin": "sharepoint",
+  "source_type": "sharepoint_list",
+  "documentation": "plugins/sharepoint_intake/README.md",
+
+  "conventions": {
+    "key_property": "A string names the merge key. A list is a preference order: the first property with a non-empty value becomes the merge key (so a Person keys on email when known and falls back to display name).",
+    "properties": "Column-per-property form. Each entry names a target property and the source column, with an optional transform.",
+    "source_and_property_map": "Transform-per-node form, used when one column expands into several properties. The transform returns a dict (or a list of dicts when cardinality is many) and property_map renames its keys onto node properties.",
+    "cardinality": "'one' emits at most one node per row; 'many' emits one node per element the transform returns.",
+    "transform_args": "Extra keyword arguments passed to the transform. sp_colresolution also receives the whole row.",
+    "fallback": "Consulted only when the primary column or transform yields nothing. 'template' interpolates row columns plus __row_index__.",
+    "omit_empty_properties": "Properties resolving to empty/None are left off the node rather than written blank.",
+    "identifier_safety": "Labels, relationship types, and property names are interpolated raw into Cypher by write_declared_nodes. The Pipeline mapping engine must sanitize every identifier in this file before writing."
+  },
+
+  "source": {
+    "source_path_setting": "sharepoint_intake_sync_remote",
+    "source_path_env": "SCIDK_SHAREPOINT_INTAKE_SYNC_REMOTE",
+    "format": "delimited",
+    "header_normalization": "collapse_internal_whitespace",
+    "notes": "The plugin already collapses internal whitespace in headers, so 'PI  Archived' matches 'PI Archived'. Attachment columns are written back by the Power Automate mirror flow."
+  },
+
+  "options": {
+    "write_mode": "merge",
+    "deduplicate_nodes_by": ["label", "key"],
+    "on_row_error": "record_and_continue",
+    "omit_empty_properties": true
+  },
+
+  "row_filter": {
+    "require_any_non_empty": ["CACProtocol", "ShortDescription"],
+    "on_reject": "record_error",
+    "error_message": "row has neither CACProtocol nor ShortDescription"
+  },
+
+  "node_mappings": [
+    {
+      "id": "project",
+      "label": "Project",
+      "key_property": "project_id",
+      "cardinality": "one",
+      "properties": [
+        {
+          "name": "project_id",
+          "column": "CACProtocol",
+          "required": true,
+          "fallback": {
+            "template": "{ShortDescription}|{RecordSource}|{__row_index__}",
+            "notes": "Deterministic so re-running the same export converges on the same node."
+          }
+        },
+        {"name": "short_description", "column": "ShortDescription"},
+        {"name": "study_status", "column": "StudyStatus"},
+        {"name": "record_source", "column": "RecordSource"},
+        {"name": "drupal_id", "column": "DrupalID"},
+        {"name": "review_status", "column": "ReviewStatus"},
+        {"name": "service_type", "column": "ServiceType"},
+        {"name": "needs_imaging", "column": "NeedsImaging"},
+        {"name": "imaging_modalities", "column": "ImagingModalities"},
+        {"name": "sample_type", "column": "SampleType"},
+        {"name": "compound_type", "column": "CompoundType"},
+        {"name": "multiple_timepoints", "column": "MultipleTimepoints"},
+        {"name": "timepoints", "column": "Timepoints"},
+        {"name": "contrast_agent", "column": "ContrastAgent"},
+        {"name": "known_toxicity", "column": "KnownToxicity"},
+        {
+          "name": "study_type",
+          "transform": "sp_colresolution",
+          "transform_args": {"prefer_col": "StudyType_sp", "fallback_col": "StudyType_orig"}
+        },
+        {
+          "name": "cell_toxicity",
+          "transform": "sp_colresolution",
+          "transform_args": {"prefer_col": "CellToxicity_sp", "fallback_col": "CellToxicity_orig"}
+        },
+        {
+          "name": "measurements",
+          "transform": "sp_colresolution",
+          "transform_args": {"prefer_col": "Measurements_sp", "fallback_col": "Measurements_orig"}
+        }
+      ]
+    },
+    {
+      "id": "submitter",
+      "label": "Person",
+      "key_property": ["email", "name"],
+      "cardinality": "one",
+      "optional": true,
+      "notes": "SharePoint-native rows carry a People-picker display name in User_sp with no address; legacy Drupal rows carry plain text in UserName_orig / UserEmail_orig.",
+      "properties": [
+        {
+          "name": "name",
+          "transform": "sp_colresolution",
+          "transform_args": {"prefer_col": "User_sp", "fallback_col": "UserName_orig"}
+        },
+        {"name": "email", "column": "UserEmail_orig", "transform": "lowercase_strip"}
+      ],
+      "skip_when_all_empty": ["email", "name"]
+    },
+    {
+      "id": "pi",
+      "label": "Person",
+      "key_property": ["email", "name"],
+      "cardinality": "one",
+      "optional": true,
+      "source": {
+        "column": "PI Archived",
+        "transform": "parse_rfc5322",
+        "fallback": {"column": "PI_display", "transform": "parse_rfc5322"},
+        "notes": "The archived plain-text column holds 'Jane Smith <j@mit.edu>'. PI_display is the raw People-picker name, which yields no address."
+      },
+      "property_map": {"name": "name", "email": "email"},
+      "skip_when_all_empty": ["email", "name"]
+    },
+    {
+      "id": "collaborators",
+      "label": "Person",
+      "key_property": ["email", "name"],
+      "cardinality": "many",
+      "optional": true,
+      "source": {
+        "column": "Collaborators Archived",
+        "transform": "parse_rfc5322_list"
+      },
+      "property_map": {"name": "name", "email": "email"},
+      "skip_when_all_empty": ["email", "name"]
+    },
+    {
+      "id": "attachment",
+      "label": "Attachment",
+      "key_property": ["path", "filename"],
+      "cardinality": "one",
+      "optional": true,
+      "condition": {"column": "AttachmentStatus", "equals": "available"},
+      "notes": "Only a mirrored attachment is materialized. status 'not_copied' means the Power Automate flow saw the file but did not copy it, so there is nothing to point at.",
+      "properties": [
+        {"name": "path", "column": "AttachmentPath"},
+        {"name": "filename", "column": "AttachmentFilename"},
+        {"name": "status", "column": "AttachmentStatus"},
+        {"name": "has_large", "column": "HasLargeAttachment", "transform": "lowercase_strip"}
+      ],
+      "skip_when_all_empty": ["path", "filename"]
+    }
+  ],
+
+  "relationship_mappings": [
+    {"type": "SUBMITTED", "from": "submitter", "to": "project"},
+    {"type": "PI_OF", "from": "pi", "to": "project"},
+    {"type": "COLLABORATES_ON", "from": "collaborators", "to": "project"},
+    {"type": "HAS_ATTACHMENT", "from": "project", "to": "attachment"}
+  ],
+
+  "vocabulary_check": {
+    "enabled": true,
+    "severity": "warning",
+    "notes": "A soft consistency check: values outside the list are reported and never block a run. The authoritative vocabulary is expected to live in a SharePoint list pulled via rclone; default_vocabulary is the fallback when none is configured.",
+    "source_setting": "sharepoint_intake_vocab_path",
+    "source_env": "SCIDK_SHAREPOINT_INTAKE_VOCAB_PATH",
+    "source_format": "One column per field, column header is the field name, column values are the allowed terms.",
+    "match": "case_insensitive",
+    "multi_value_transform": "sp_multiselect",
+    "fields": [
+      "imaging_modalities",
+      "study_type",
+      "service_type",
+      "sample_type",
+      "compound_type"
+    ],
+    "default_vocabulary": {
+      "imaging_modalities": [
+        "MRI", "PET", "CT", "SPECT", "Ultrasound", "Optical", "Bioluminescence", "Fluorescence"
+      ],
+      "study_type": ["Longitudinal", "Cross-sectional", "Terminal", "Pilot"],
+      "service_type": ["Imaging", "Analysis", "Consultation", "Training"],
+      "sample_type": ["Mouse", "Rat", "Cell line", "Tissue", "Phantom"],
+      "compound_type": ["Small molecule", "Antibody", "Nanoparticle", "Radiotracer", "None"]
+    }
+  }
+}

@@ -17,7 +17,7 @@ from typing import Any, Callable, Dict, Iterator, Optional
 from scidk.pipeline.plugin_base import AccessResult, DataSourcePlugin, FindResult
 
 from . import config as cfg
-from . import ingest
+from . import ingest, source
 from .transforms import SHAREPOINT_TRANSFORMS
 
 logger = logging.getLogger(__name__)
@@ -73,9 +73,9 @@ class SharePointPlugin(DataSourcePlugin):
     def _timeout(config: Dict[str, Any]) -> float:
         """Fetch timeout in seconds for buffered reads (default 120)."""
         try:
-            return float((config or {}).get("timeout_sec", ingest.DEFAULT_TIMEOUT_SEC))
+            return float((config or {}).get("timeout_sec", source.DEFAULT_TIMEOUT_SEC))
         except (TypeError, ValueError):
-            return ingest.DEFAULT_TIMEOUT_SEC
+            return source.DEFAULT_TIMEOUT_SEC
 
     # ------------------------------------------------------- FAIR: Findable
 
@@ -96,10 +96,10 @@ class SharePointPlugin(DataSourcePlugin):
             FindResult: never raises — an unreachable source is ``ok: False``
             with the reason in ``error``.
         """
-        source = self.resolve_source(config)
+        target = self.resolve_source(config)
         empty: FindResult = {"ok": False, "columns": [], "row_count": None,
                              "sample": [], "metadata": {}}
-        if not source:
+        if not target:
             return {**empty, "error": _NO_SOURCE}
 
         try:
@@ -107,18 +107,18 @@ class SharePointPlugin(DataSourcePlugin):
         except (TypeError, ValueError):
             sample_rows = 3
 
-        metadata = ingest.source_metadata(source, provider=self._provider)
-        metadata["source_path"] = source
+        metadata = source.describe(target, provider=self._provider)
+        metadata["source_path"] = target
         try:
             scan = ingest.scan_source(
-                source,
+                target,
                 provider=self._provider,
                 timeout_sec=self._timeout(config),
                 sample_rows=sample_rows,
                 sheet=(config or {}).get("sheet"),
             )
         except Exception as e:  # noqa: BLE001 - discovery failure is a result
-            logger.warning("SharePoint find() failed for %r: %s", source, e)
+            logger.warning("SharePoint find() failed for %r: %s", target, e)
             return {**empty, "metadata": metadata, "error": str(e)}
 
         if scan["truncated"]:
@@ -148,14 +148,14 @@ class SharePointPlugin(DataSourcePlugin):
             AccessResult: never raises — a rejected credential is ``ok: False``
             with the provider's message in ``error``.
         """
-        source = self.resolve_source(config)
-        if not source:
+        target = self.resolve_source(config)
+        if not target:
             return {"ok": False, "auth_method": None, "error": _NO_SOURCE}
-        auth_method = ingest.detect_auth_method(source)
+        auth_method = source.detect_auth_method(target)
         try:
-            ingest.verify_read(source, provider=self._provider, timeout_sec=self._timeout(config))
+            source.verify_read(target, provider=self._provider, timeout_sec=self._timeout(config))
         except Exception as e:  # noqa: BLE001 - a rejected credential is a result
-            logger.info("SharePoint access() denied for %r: %s", source, e)
+            logger.info("SharePoint access() denied for %r: %s", target, e)
             return {"ok": False, "auth_method": auth_method, "error": str(e)}
         return {"ok": True, "auth_method": auth_method, "error": None}
 
@@ -181,11 +181,11 @@ class SharePointPlugin(DataSourcePlugin):
             ValueError: No source is configured. Raised eagerly, not on first
                 iteration, so a misconfiguration surfaces where it happened.
         """
-        source = self.resolve_source(config)
-        if not source:
+        target = self.resolve_source(config)
+        if not target:
             raise ValueError(_NO_SOURCE)
         return ingest.iter_rows(
-            source,
+            target,
             provider=self._provider,
             timeout_sec=self._timeout(config),
             sheet=(config or {}).get("sheet"),
