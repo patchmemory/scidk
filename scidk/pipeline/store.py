@@ -36,8 +36,8 @@ _PIPELINE_JSON_COLUMNS = ("dag_json",)
 #: request body.
 _SOURCE_UPDATABLE = (
     "name", "plugin_type", "source_path", "schema_json", "schema_saved_at",
-    "mapping_json", "last_run_at", "last_run_status", "last_run_summary",
-    "fair_status", "fair_checked_at",
+    "mapping_json", "mapping_saved_at", "last_run_at", "last_run_status",
+    "last_run_summary", "fair_status", "fair_checked_at",
 )
 
 _PIPELINE_UPDATABLE = (
@@ -82,6 +82,7 @@ class PipelineStore:
                     schema_json      TEXT,
                     schema_saved_at  DATETIME,
                     mapping_json     TEXT,
+                    mapping_saved_at DATETIME,
                     last_run_at      DATETIME,
                     last_run_status  TEXT,
                     last_run_summary TEXT,
@@ -120,6 +121,10 @@ class PipelineStore:
                 # working session against this to decide whether the session
                 # holds unsaved work, and a rename must not look like a save.
                 "schema_saved_at": "DATETIME",
+                # When the column mapping was last committed (Task D). Same
+                # reasoning: the mapping page shows when it last saved, and
+                # updated_at moves for a rename.
+                "mapping_saved_at": "DATETIME",
             })
             self._add_missing_columns(conn, "pipeline", {})
             conn.commit()
@@ -288,6 +293,23 @@ class PipelineStore:
         """
         return self.update_source(
             source_id, schema_json=schema, schema_saved_at=utc_now() if schema else None
+        )
+
+    def save_mapping(self, source_id: str, mapping: Optional[Any]) -> Optional[Dict[str, Any]]:
+        """Commit the source's column mapping (Task D).
+
+        Deliberately stores whatever it is given, valid or not. The mapping page
+        saves at any point — a half-finished mapping is worth keeping so the user
+        can come back to it — and the engine validates on *load*, so an incomplete
+        config in this column cannot cause a run to write something wrong. What it
+        does cause is a failed FAIR check, which is where the user is told.
+
+        Args:
+            mapping: A mapping config (``mapping_schema.json`` format), or None to
+                clear it.
+        """
+        return self.update_source(
+            source_id, mapping_json=mapping, mapping_saved_at=utc_now() if mapping else None
         )
 
     def record_fair_check(

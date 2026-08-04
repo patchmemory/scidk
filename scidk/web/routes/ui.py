@@ -220,6 +220,48 @@ def pipeline_source_schema(source_id):
     )
 
 
+@bp.get('/pipeline/sources/<source_id>/mapping')
+def pipeline_source_mapping(source_id):
+    """Step 3: column mapping, scoped to one Pipeline source (Task D).
+
+    Rendered with the schema, the mapping and the transform catalogue inline, so the
+    two panels are populated on first paint. The *source columns* are not: reading
+    them means a live ``find()`` against the source, which is bounded at 10s and
+    must not be able to hold up the page. The page fetches
+    ``/api/pipeline/sources/<id>/columns`` for those and says so while it waits.
+
+    The transform catalogue is per-source because it depends on the plugin: which
+    names a mapping config may use is the core library plus this plugin's
+    ``transform_library()``, and offering a name the engine will not resolve would
+    produce a config that fails its own R check.
+    """
+    from flask import abort
+
+    from ...pipeline.mapping_ui import describe_transforms
+    from ...pipeline.plugin_registry import resolve_plugin, transform_library_for
+    from ...pipeline.store import PipelineStore
+
+    db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+    source = PipelineStore(db_path).get_source(source_id)
+    if source is None:
+        abort(404)
+
+    try:
+        plugin = resolve_plugin(source.get('plugin_type') or '')
+    except Exception:  # noqa: BLE001 - an unavailable plugin still has core transforms
+        plugin = None
+
+    return render_template(
+        'pipeline_mapping.html',
+        source={'id': source['id'], 'name': source.get('name') or source['id'],
+                'plugin_type': source.get('plugin_type') or ''},
+        schema_json=source.get('schema_json'),
+        mapping_json=source.get('mapping_json'),
+        saved_at=source.get('mapping_saved_at'),
+        transforms=describe_transforms(transform_library_for(plugin)),
+    )
+
+
 @bp.get('/interpreters')
 def interpreters():
     """Redirect to landing page interpreters section (backward compatibility)."""

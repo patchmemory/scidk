@@ -13,6 +13,8 @@ Task C  ``.../schema`` (GET/PUT), ``.../schema/export/arrows``,
         ``.../schema/import/arrows`` and ``GET /api/pipeline/schema/derive`` — the
         Arrows.app document the schema canvas edits. See
         :mod:`scidk.pipeline.schema_arrows`.
+Task D  ``.../mapping`` (GET/PUT) and ``.../columns`` — the mapping config the
+        column mapping page builds, and the live column list it maps *from*.
 Task F  ``.../run`` at both levels, plus pipeline CRUD and ``.../schedule``.
 
 Plugin type discovery is ``GET /api/plugins/templates?category=data_import``,
@@ -26,7 +28,7 @@ import os
 import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -115,9 +117,15 @@ def list_sources():
 
     ``plugin_available`` is included so the UI can show a source whose plugin
     does not implement the contract without offering a Run button that would
-    only fail. ``schema_summary`` is computed here rather than on the page so the
-    card and the schema canvas agree about what "schema defined" means.
+    only fail. ``schema_summary`` and ``mapping_summary`` are computed here rather
+    than on the page so the card, the schema canvas and the mapping page agree
+    about what "schema defined" and "mapping defined" mean.
+
+    Both summaries are structural. Neither resolves a plugin or validates a
+    transform name, because this route runs once per source on every page load;
+    whether a mapping can actually run is ``GET .../mapping``'s answer.
     """
+    from ...pipeline.mapping_ui import mapping_summary
     from ...pipeline.plugin_registry import is_available
     from ...pipeline.schema_arrows import schema_summary
 
@@ -130,6 +138,7 @@ def list_sources():
         source['plugin_available'] = availability[plugin_type]
         source['display_path'] = _display_path(source)
         source['schema_summary'] = schema_summary(source.get('schema_json'))
+        source['mapping_summary'] = mapping_summary(source.get('mapping_json'))
     return jsonify({'status': 'ok', 'sources': sources}), 200
 
 
@@ -149,6 +158,7 @@ def _display_path(source: Dict[str, Any]) -> str:
 @bp.get('/sources/<source_id>')
 @require_role(*_READ_ROLES)
 def get_source(source_id: str):
+    from ...pipeline.mapping_ui import mapping_summary
     from ...pipeline.schema_arrows import schema_summary
 
     source = _store().get_source(source_id)
@@ -156,6 +166,7 @@ def get_source(source_id: str):
         return _error('source not found', 404)
     source['display_path'] = _display_path(source)
     source['schema_summary'] = schema_summary(source.get('schema_json'))
+    source['mapping_summary'] = mapping_summary(source.get('mapping_json'))
     return jsonify({'status': 'ok', 'source': source}), 200
 
 
@@ -509,6 +520,207 @@ def derive_schema():
     return jsonify(result), 200
 
 
+# --------------------------------------------- Task D: the column mapping
+#
+# Step 3. The schema above says what the target graph looks like; the mapping says
+# which source column fills which of its properties. The format is
+# scidk/pipeline/mapping_schema.json and the consumer is MappingEngine, so these
+# routes report that engine's verdict rather than inventing a second opinion about
+# what a usable mapping is.
+#
+# The asymmetry with the schema routes is deliberate: parse_arrows *refuses* an
+# unusable schema, and PUT .../mapping *accepts* an unusable mapping. A schema that
+# cannot be written to is not worth storing; a half-finished mapping is exactly what
+# a user closing the browser mid-task should come back to. The engine validates on
+# load, so nothing incomplete here can make a run write something wrong — it makes
+# the FAIR check fail, which is where the user is told.
+
+#: Written into a config that arrives without one. The only version there is, and
+#: the schema requires it — a config rejected solely for its absence would be a
+#: validation error about nothing the user did.
+MAPPING_CONFIG_VERSION = '1.0'
+
+
+@bp.get('/sources/<source_id>/mapping')
+@require_role(*_READ_ROLES)
+def get_source_mapping(source_id: str):
+    """The source's committed mapping, its summary, and whether it would run.
+
+    ``validation`` is :meth:`MappingEngine.validate`'s report, so the page can say
+    "this mapping is complete" with the same authority the runner will use. A source
+    with no mapping at all reports ``mapping: null`` and no validation, which the
+    Step 3 indicator reads as "not started" rather than "broken".
+    """
+    from ...pipeline.mapping_ui import mapping_summary
+    from ...pipeline.schema_arrows import schema_summary
+
+    source = _store().get_source(source_id)
+    if source is None:
+        return _error('source not found', 404)
+
+    mapping = source.get('mapping_json')
+    return jsonify({
+        'status': 'ok',
+        'source': {'id': source['id'], 'name': source.get('name')},
+        'mapping': mapping,
+        'saved_at': source.get('mapping_saved_at'),
+        'summary': mapping_summary(mapping),
+        'validation': _mapping_validation(source, mapping) if mapping else None,
+        'schema_summary': schema_summary(source.get('schema_json')),
+    }), 200
+
+
+@bp.put('/sources/<source_id>/mapping')
+@require_role(*_WRITE_ROLES)
+def put_source_mapping(source_id: str):
+    """Commit a mapping config to ``pipeline_source.mapping_json``.
+
+    Body: a mapping config, or ``{"mapping": <config>}``. ``null`` clears it.
+
+    Saves first and validates second, and returns the validation report either way.
+    A partial mapping is a legitimate thing to store — Task D's flow saves at any
+    point — so the only rejection here is a body that is not a JSON object at all,
+    which is a client bug rather than an unfinished mapping.
+    """
+    from ...pipeline.mapping_ui import mapping_summary
+
+    store = _store()
+    if store.get_source(source_id) is None:
+        return _error('source not found', 404)
+
+    body = request.get_json(silent=True)
+    if isinstance(body, dict) and 'mapping' in body:
+        payload = body['mapping']
+    else:
+        payload = body
+
+    if payload in (None, {}, ''):
+        source = store.save_mapping(source_id, None)
+        logger.info("Cleared the mapping for pipeline source %s by %s",
+                    source_id, current_user_key())
+        return jsonify({'status': 'ok', 'mapping': None, 'saved_at': None,
+                        'summary': mapping_summary(None), 'validation': None}), 200
+
+    if not isinstance(payload, dict):
+        return _error(
+            'a mapping config is a JSON object with "node_mappings"; this is '
+            f'{type(payload).__name__}'
+        )
+
+    mapping = dict(payload)
+    mapping.setdefault('version', MAPPING_CONFIG_VERSION)
+
+    source = store.save_mapping(source_id, mapping) or {}
+    validation = _mapping_validation(source, mapping)
+    summary = mapping_summary(mapping)
+    logger.info(
+        "Saved mapping for pipeline source %s by %s (%d node mapping(s), valid=%s)",
+        source_id, current_user_key(), summary['node_mapping_count'], validation['ok'],
+    )
+    return jsonify({
+        'status': 'ok',
+        'mapping': mapping,
+        'saved_at': source.get('mapping_saved_at'),
+        'summary': summary,
+        'validation': validation,
+    }), 200
+
+
+def _mapping_validation(
+    source: Dict[str, Any], mapping: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """``MappingEngine.validate()`` for one source's mapping.
+
+    The transform library is the plugin's, because whether ``parse_rfc5322``
+    resolves depends on which plugin serves this source. A plugin that cannot be
+    loaded yields the core transforms and a warning saying so — reporting its
+    transforms as unknown *errors* would condemn a mapping for a deployment problem
+    it does not have.
+    """
+    from ...pipeline.mapping_engine import MappingConfigError, MappingEngine
+    from ...pipeline.plugin_registry import resolve_plugin, transform_library_for
+
+    plugin_type = str(source.get('plugin_type') or '')
+    notes: List[str] = []
+    try:
+        plugin = resolve_plugin(plugin_type)
+    except Exception as e:  # noqa: BLE001 - availability is the answer here
+        plugin = None
+        notes.append(
+            f'the plugin for {plugin_type!r} could not be loaded ({e}), so only the '
+            'core transforms were checked'
+        )
+
+    try:
+        engine = MappingEngine(mapping or {}, transform_library=transform_library_for(plugin))
+        report = engine.validate().to_dict()
+    except MappingConfigError as e:
+        return {'ok': False, 'errors': [str(e)], 'warnings': notes}
+    report['warnings'] = notes + list(report.get('warnings') or [])
+    return report
+
+
+@bp.get('/sources/<source_id>/columns')
+@require_role(*_READ_ROLES)
+def source_columns(source_id: str):
+    """The columns the mapping page maps *from*, read live from the source.
+
+    Not served from the source record, because nothing stores them: Task B's
+    preview lives in the browser for the length of the add flow. Reading them live
+    is also the more useful answer — a column the source dropped since the mapping
+    was written shows up here as missing rather than as a property that silently
+    stops being filled.
+
+    ``missing_columns`` is :meth:`MappingEngine.missing_columns` against what the
+    source actually has, so the page can flag a mapping that has drifted from its
+    source without running anything.
+    """
+    from ...pipeline.orchestrator import source_config_of
+    from ...pipeline.plugin_registry import PluginNotAvailable, resolve_plugin
+
+    store = _store()
+    source = store.get_source(source_id)
+    if source is None:
+        return _error('source not found', 404)
+
+    plugin_type = str(source.get('plugin_type') or '')
+    config = dict(source_config_of(source))
+    config.setdefault('sample_rows', PREVIEW_ROWS)
+    config.setdefault('timeout_sec', TEST_CONNECTION_TIMEOUT_SEC)
+
+    kwargs: Dict[str, Any] = {}
+    if config.get('upload_name'):
+        kwargs['base_dir'] = _upload_dir()
+    try:
+        plugin = resolve_plugin(plugin_type, **kwargs)
+    except PluginNotAvailable as e:
+        return jsonify({'status': 'error', 'ok': False, 'error': str(e),
+                        'columns': [], 'sample': []}), 200
+
+    result, failure = _bounded_find(plugin, config, plugin_type)
+    if failure is not None:
+        return jsonify({'status': 'error', 'ok': False, 'error': failure,
+                        'columns': [], 'sample': []}), 200
+
+    preview = _preview(result)
+    preview['missing_columns'] = _drifted_columns(source, preview['columns'])
+    return jsonify({'status': 'ok' if preview['ok'] else 'error', **preview}), 200
+
+
+def _drifted_columns(source: Dict[str, Any], columns: List[str]) -> List[str]:
+    """Mapped columns the source no longer has. Empty when there is no mapping."""
+    mapping = source.get('mapping_json')
+    if not isinstance(mapping, dict):
+        return []
+    from ...pipeline.mapping_engine import MappingEngine
+
+    try:
+        return MappingEngine(mapping).missing_columns(columns)
+    except Exception as e:  # noqa: BLE001 - a broken config is validate()'s to report
+        logger.debug("Could not compute missing columns for %s: %s", source.get('id'), e)
+        return []
+
+
 # ---------------------------------------------------- Task B: connection
 
 @bp.post('/sources/test-connection')
@@ -546,34 +758,46 @@ def test_connection():
     except PluginNotAvailable as e:
         return _error(str(e))
 
-    # Not a `with` block: ThreadPoolExecutor.__exit__ calls shutdown(wait=True),
-    # which joins the worker thread and so waits out exactly the hang the timeout
-    # exists to escape. shutdown(wait=False) returns immediately and leaves the
-    # thread to finish on its own — Python cannot cancel one, and a bounded read
-    # will end.
-    pool = ThreadPoolExecutor(max_workers=1)
-    try:
-        result = pool.submit(plugin.find, config).result(
-            timeout=TEST_CONNECTION_TIMEOUT_SEC
-        )
-    except FutureTimeout:
-        return jsonify({
-            'status': 'error',
-            'ok': False,
-            'error': (
-                f'The source did not respond within {TEST_CONNECTION_TIMEOUT_SEC} seconds. '
-                'Check the path and that the remote is reachable.'
-            ),
-        }), 200
-    except Exception as e:  # noqa: BLE001 - the contract says find() reports, not raises
-        logger.warning("Test connection failed for %r: %s", plugin_type, e, exc_info=True)
-        return jsonify({'status': 'error', 'ok': False,
-                        'error': f'{type(e).__name__}: {e}'}), 200
-    finally:
-        pool.shutdown(wait=False)
+    result, failure = _bounded_find(plugin, config, plugin_type)
+    if failure is not None:
+        return jsonify({'status': 'error', 'ok': False, 'error': failure}), 200
 
     preview = _preview(result)
     return jsonify({'status': 'ok' if preview['ok'] else 'error', **preview}), 200
+
+
+def _bounded_find(
+    plugin: Any, config: Dict[str, Any], label: str
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Call ``plugin.find()`` under a wall-clock limit.
+
+    Returns:
+        ``(result, None)`` on a call that returned, or ``(None, message)`` when it
+        timed out or raised. A raising ``find()`` is a contract violation — the
+        contract says it reports failure in its return value — so it is reported as
+        a message rather than propagated as a 500.
+
+    Not a ``with`` block: ``ThreadPoolExecutor.__exit__`` calls
+    ``shutdown(wait=True)``, which joins the worker thread and so waits out exactly
+    the hang the timeout exists to escape. ``shutdown(wait=False)`` returns
+    immediately and leaves the thread to finish on its own — Python cannot cancel
+    one, and a bounded read will end.
+    """
+    pool = ThreadPoolExecutor(max_workers=1)
+    try:
+        return pool.submit(plugin.find, config).result(
+            timeout=TEST_CONNECTION_TIMEOUT_SEC
+        ), None
+    except FutureTimeout:
+        return None, (
+            f'The source did not respond within {TEST_CONNECTION_TIMEOUT_SEC} seconds. '
+            'Check the path and that the remote is reachable.'
+        )
+    except Exception as e:  # noqa: BLE001 - the contract says find() reports, not raises
+        logger.warning("find() failed for %r: %s", label, e, exc_info=True)
+        return None, f'{type(e).__name__}: {e}'
+    finally:
+        pool.shutdown(wait=False)
 
 
 def _connection_target(body: Dict[str, Any]) -> Tuple[str, Dict[str, Any], Optional[str]]:

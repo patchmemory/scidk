@@ -1,0 +1,885 @@
+{% extends "base.html" %}
+{% block title %}-SciDK-> Mapping — {{ source.name }}{% endblock %}
+
+{#
+  Step 3: column mapping, scoped to one Pipeline source — Cycle 3B Task D.
+
+  Two panels. Left: the columns the source actually has, read live. Right: the
+  schema saved in Step 2, with a place to say which column fills each of its
+  properties. What the page produces is a mapping config in the format
+  scidk/pipeline/mapping_schema.json specifies and MappingEngine consumes — the
+  acceptance criterion is that the engine takes it unmodified, so the page reports
+  the engine's own validation rather than deciding for itself what "complete" means.
+
+  Three things about the format that shape the whole UI:
+
+  * A node mapping's `id` is what the task description calls a *role*. Two entries
+    may share a `label`, and `relationship_mappings` reference entries by id, not
+    by label — that is how one row produces both a PI Person and a submitter Person
+    with different relationships. So a "role" here is a whole mapping block, and
+    every relationship needs a role at *both* ends, not just the From end.
+  * The merge key is a *property*, not a column. The key column is whichever column
+    is assigned to the key property, which is why the key control is a property
+    selector with its column beside it rather than a second column dropdown.
+  * Two node forms exist. Column-per-property is the common one. When one column
+    expands into several properties — "Jane Smith <j@mit.edu>" is a name *and* an
+    address — the format uses `source` plus `property_map`, and a transform whose
+    return annotation says it produces an object is only offered there.
+
+  What this page deliberately does not edit, per the task's out-of-scope list:
+  `column_resolution` (the _sp/_orig transforms, which take no cell value at all
+  and so cannot attach to a column), property `fallback`, `row_filter`, `condition`,
+  `options` and `vocabulary_check`. It does not *drop* them either: everything it
+  cannot express round-trips untouched, so opening the AIPT reference config here
+  and saving it again does not quietly delete two thirds of it.
+#}
+
+{% block head %}
+<style>
+  main { padding: 0; }
+  .mapping-page { display:flex; flex-direction:column; height:calc(100vh - 60px); }
+
+  .crumbs { display:flex; align-items:center; gap:.4rem; padding:.6rem 1rem .4rem;
+            font-size:.9rem; }
+  .crumbs a { color:var(--accent); text-decoration:none; }
+  .crumbs a:hover { text-decoration:underline; }
+  .crumbs .sep { color:#bbb; }
+  .crumbs .here { font-weight:600; }
+  .step-chip { display:inline-flex; align-items:center; gap:.35rem; margin-left:.6rem;
+               border:1px solid var(--accent); background:#eaf8f1; color:#046c4a;
+               border-radius:12px; padding:.05rem .6rem; font-size:.78rem;
+               font-weight:600; }
+
+  .toolbar { display:flex; gap:.35rem; align-items:center; flex-wrap:wrap;
+             padding:.5rem 1rem; border-top:1px solid #eee; border-bottom:1px solid #eee;
+             background:#f8fafc; }
+  .toolbar .status { margin-left:auto; font-size:.82rem; color:var(--muted); }
+
+  button.btn { font-size:.85rem; padding:.25rem .6rem; border:1px solid #ccc;
+               border-radius:5px; background:#fff; cursor:pointer; }
+  button.btn:hover:not(:disabled) { background:#f1f5f9; }
+  button.btn:disabled { opacity:.5; cursor:not-allowed; }
+  button.btn.primary { border-color:var(--accent); color:#046c4a; font-weight:600; }
+  button.btn.tiny { font-size:.76rem; padding:.1rem .4rem; }
+
+  .panels { flex:1; display:flex; min-height:0; }
+
+  /* ------------------------------------------------------- left: columns */
+  .columns-panel { width:290px; flex-shrink:0; border-right:1px solid #eee;
+                   display:flex; flex-direction:column; background:#fcfcfd; }
+  .columns-head { padding:.6rem .75rem .4rem; border-bottom:1px solid #eee; }
+  .columns-head h4 { margin:0 0 .35rem; font-size:.92rem; }
+  .columns-head input { width:100%; padding:.3rem .45rem; border:1px solid #ccc;
+                        border-radius:5px; font-size:.84rem; }
+  .columns-list { flex:1; overflow:auto; padding:.35rem .5rem .75rem; }
+  .column-item { border:1px solid #eee; border-radius:6px; background:#fff;
+                 padding:.3rem .45rem; margin-bottom:.3rem; }
+  .column-item.assigned { border-color:#9ddcc0; background:#f6fdf9; }
+  .column-item.missing { border-color:#f0b3bd; background:#fdeef0; }
+  .column-item .c-name { font-size:.84rem; font-weight:600; word-break:break-all;
+                         font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .column-item .c-sample { font-size:.76rem; color:var(--muted); margin-top:.1rem;
+                           overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .column-item .c-used { font-size:.72rem; color:#046c4a; margin-top:.15rem; }
+
+  /* ------------------------------------------------------- right: schema */
+  .targets-panel { flex:1; min-width:0; overflow:auto; padding:.75rem 1rem 3rem; }
+  .targets-panel > h3 { margin:.2rem 0 .1rem; font-size:1rem; }
+  .targets-panel > p.small { margin:.1rem 0 .8rem; }
+
+  .label-block { border:1px solid #e5e5e5; border-radius:8px; background:#fff;
+                 margin-bottom:.8rem; }
+  .label-head { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap;
+                padding:.5rem .7rem; border-bottom:1px solid #f0f0f0; background:#fafafa;
+                border-radius:8px 8px 0 0; }
+  .label-head .l-name { font-weight:600; }
+  .label-head .spacer { margin-left:auto; }
+
+  .role-block { padding:.55rem .7rem; border-top:1px solid #f4f4f4; }
+  .role-block:first-child { border-top:none; }
+  .role-head { display:flex; align-items:center; gap:.4rem; flex-wrap:wrap;
+               margin-bottom:.45rem; }
+  .role-head label { font-size:.78rem; color:var(--muted); }
+  .role-head input.role-name { width:11rem; padding:.2rem .4rem; border:1px solid #ccc;
+    border-radius:5px; font-size:.84rem;
+    font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .role-head .spacer { margin-left:auto; }
+  .role-head .check { display:inline-flex; align-items:center; gap:.25rem;
+                      font-size:.78rem; color:#444; }
+
+  table.props { width:100%; border-collapse:collapse; font-size:.83rem; }
+  table.props th { text-align:left; font-weight:600; color:var(--muted);
+                   font-size:.76rem; padding:0 .35rem .2rem; }
+  table.props td { padding:.12rem .35rem; vertical-align:middle; }
+  table.props tr.is-key td { background:#f7fbff; }
+  table.props .p-name { font-family:ui-monospace, SFMono-Regular, Menlo, monospace;
+                        white-space:nowrap; }
+  table.props select { width:100%; padding:.18rem .3rem; border:1px solid #ccc;
+                       border-radius:5px; font-size:.82rem; background:#fff; }
+  table.props select.unset { color:#999; }
+  table.props .advanced-cell { font-size:.78rem; color:var(--muted);
+    font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  .key-row { display:flex; align-items:center; gap:.4rem; flex-wrap:wrap;
+             margin-bottom:.4rem; font-size:.82rem; }
+  .key-row select { padding:.2rem .35rem; border:1px solid #ccc; border-radius:5px;
+                    font-size:.82rem; }
+  .key-row .hint { color:var(--muted); font-size:.78rem; }
+
+  .shape-row { display:flex; align-items:center; gap:.8rem; margin-bottom:.45rem;
+               font-size:.8rem; color:#444; }
+  .shape-row label { display:inline-flex; align-items:center; gap:.25rem; }
+
+  .map-row { display:flex; align-items:center; gap:.35rem; margin-bottom:.25rem;
+             font-size:.82rem; }
+  .map-row input { width:9rem; padding:.18rem .35rem; border:1px solid #ccc;
+    border-radius:5px; font-size:.82rem;
+    font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .map-row select { padding:.18rem .3rem; border:1px solid #ccc; border-radius:5px;
+                    font-size:.82rem; }
+
+  table.rels { width:100%; border-collapse:collapse; font-size:.84rem; }
+  table.rels th { text-align:left; font-size:.76rem; color:var(--muted);
+                  font-weight:600; padding:0 .4rem .25rem; }
+  table.rels td { padding:.2rem .4rem; border-top:1px solid #f4f4f4; }
+  table.rels select { padding:.18rem .3rem; border:1px solid #ccc; border-radius:5px;
+                      font-size:.82rem; }
+  table.rels .r-type { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .rel-fixed { font-size:.8rem; color:var(--muted); }
+
+  .badge { display:inline-block; font-size:.72rem; padding:.05rem .4rem; border-radius:10px;
+           border:1px solid #ddd; background:#f7f7f7; color:#444; white-space:nowrap; }
+  .badge.ok   { border-color:#9ddcc0; background:#eaf8f1; color:#046c4a; }
+  .badge.warn { border-color:#f0d9a0; background:#fdf6e6; color:#8a5a00; }
+  .badge.err  { border-color:#f0b3bd; background:#fdeef0; color:#a1002a; }
+
+  .notice { padding:.5rem .7rem; border-radius:6px; font-size:.85rem; margin:.6rem 0; }
+  .notice.ok  { background:#eaf8f1; border:1px solid #9ddcc0; color:#046c4a; }
+  .notice.bad { background:#fdeef0; border:1px solid #f0b3bd; color:#a1002a; }
+  .notice.warn{ background:#fdf6e6; border:1px solid #f0d9a0; color:#8a5a00; }
+  .notice.info{ background:#f6f8fa; border:1px solid #e1e4e8; color:#444; }
+  .notice ul { margin:.3rem 0 0; padding-left:1.1rem; }
+  .notice li { margin-bottom:.1rem; }
+
+  .spin { display:inline-block; width:.75em; height:.75em; border:2px solid #ccc;
+          border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite;
+          vertical-align:-1px; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  .section-head { display:flex; align-items:center; gap:.5rem; margin:1.1rem 0 .4rem; }
+  .section-head h4 { margin:0; font-size:.95rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mapping-page" data-testid="mapping-page"
+     data-source-id="{{ source.id }}"
+     data-saved-at="{{ saved_at or '' }}">
+
+  <div class="crumbs" data-testid="mapping-breadcrumb">
+    <a href="{{ request.script_root }}/pipeline/sources">Data Sources</a>
+    <span class="sep">→</span>
+    <a href="{{ request.script_root }}/pipeline/sources?source={{ source.id }}&amp;step=mapping"
+       data-testid="crumb-source">{{ source.name }}</a>
+    <span class="sep">→</span>
+    <span class="here">Mapping</span>
+    <span class="step-chip" data-testid="mapping-step-chip">Step 3 · Column mapping</span>
+  </div>
+
+  <div class="toolbar" data-testid="mapping-toolbar">
+    <button class="btn primary" id="save-mapping" data-testid="save-mapping">
+      💾 Save mapping</button>
+    <button class="btn" id="reload-columns" data-testid="reload-columns"
+            title="Read the source again — its columns may have changed">
+      ↻ Reload columns</button>
+    <a class="btn" href="{{ request.script_root }}/pipeline/sources/{{ source.id }}/schema"
+       data-testid="open-schema-canvas"
+       style="text-decoration:none; color:inherit">✎ Edit schema</a>
+    <span class="status" id="mapping-status" data-testid="mapping-status"></span>
+  </div>
+
+  <div class="panels">
+    <!-- ------------------------------------------------ left: source columns -->
+    <aside class="columns-panel" data-testid="columns-panel">
+      <div class="columns-head">
+        <h4>Source columns <span class="badge" id="column-count"
+                                data-testid="column-count">…</span></h4>
+        <input type="text" id="column-filter" data-testid="column-filter"
+               placeholder="Filter columns…" autocomplete="off">
+      </div>
+      <div class="columns-list" id="columns-list" data-testid="columns-list">
+        <p class="small"><span class="spin"></span> Reading the source…</p>
+      </div>
+    </aside>
+
+    <!-- ----------------------------------------------------- right: targets -->
+    <section class="targets-panel" data-testid="targets-panel">
+      <div id="validation-box" data-testid="validation-box"></div>
+      <div id="targets" data-testid="targets"></div>
+    </section>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/pipeline_mapping.js') }}"></script>
+
+<script>
+(function () {
+  'use strict';
+
+  const BASE = window.SCIDK_BASE || '';
+  const $ = (id) => document.getElementById(id);
+  const page = document.querySelector('[data-testid="mapping-page"]');
+  const SOURCE_ID = page.dataset.sourceId;
+
+  // Rendered inline so both panels' *targets* are populated on first paint. The
+  // source columns are not here: reading them is a live find() against the source.
+  const SCHEMA = {{ schema_json | tojson }} || { nodes: [], relationships: [] };
+  const SAVED_MAPPING = {{ mapping_json | tojson }};
+  const TRANSFORMS = {{ transforms | tojson }};
+
+  // The format layer: schema + stored config -> edit state -> config to save. It is
+  // a separate file because the definition of done is a property of it — that what
+  // this page emits passes MappingEngine.validate() — and a shared module can be
+  // run against the real engine under Node instead of only through a browser.
+  const M = window.PipelineMapping;
+  const OBJECT_RETURNS = M.OBJECT_RETURNS;
+
+  const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g,
+    (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  //: Everything the page holds. `config`, `roles`, `rels` and `orphanRels` are the
+  //: model's (see pipeline_mapping.js); the rest is what only the view needs.
+  let state = {
+    config: {},
+    labels: [],
+    edges: [],
+    roles: [],
+    rels: [],
+    orphanRels: [],
+    columns: [],
+    sample: [],
+    columnsError: null,
+    missingColumns: [],
+    dirty: false,
+    saving: false,
+  };
+  let saveTimer = null;
+
+  function status(text, sticky) {
+    $('mapping-status').textContent = text || '';
+    if (text && !sticky) {
+      setTimeout(() => {
+        if ($('mapping-status').textContent === text) $('mapping-status').textContent = '';
+      }, 2500);
+    }
+  }
+
+  function notify(message, kind) {
+    if (typeof window.toast === 'function') window.toast(message, kind || 'success', 5000);
+  }
+
+  async function api(path, options) {
+    const res = await fetch(BASE + path, options);
+    let data = {};
+    try { data = await res.json(); } catch (e) { /* a non-JSON error page */ }
+    if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);
+    return data;
+  }
+
+  // ------------------------------------------------------- the model layer
+  //
+  // schemaLabels / schemaEdges / buildState / buildConfig and the role helpers
+  // all live in pipeline_mapping.js — the format layer this page is a view of.
+  // What follows is only rendering and events.
+
+  const LABELS = M.schemaLabels(SCHEMA);
+  const EDGES = M.schemaEdges(SCHEMA);
+
+  const rolesOf = (label) => M.rolesOf(state, label);
+  const roleHasContent = M.roleHasContent;
+  const buildConfig = () => M.buildConfig(state);
+  const columnUsage = () => M.columnUsage(state.roles);
+
+  // ---------------------------------------------------------------- render
+
+  function transformOptions(selected, wantObject) {
+    const usable = TRANSFORMS.filter((t) => {
+      if (!t.selectable) return false;
+      const isObject = OBJECT_RETURNS.indexOf(t.returns) !== -1;
+      return wantObject ? isObject : !isObject;
+    });
+    const options = ['<option value="">(no transform)</option>'];
+    // A transform already named in the config is always offered, even when this
+    // page would not have proposed it — otherwise selecting anything else would be
+    // the only way to keep the dropdown honest, and the stored value would vanish.
+    if (selected && !usable.some((t) => t.name === selected)) {
+      options.push(`<option value="${esc(selected)}" selected>${esc(selected)}` +
+                   ` (from the saved config)</option>`);
+    }
+    usable.forEach((t) => {
+      options.push(`<option value="${esc(t.name)}"${t.name === selected ? ' selected' : ''}` +
+                   ` title="${esc(t.summary)}">${esc(t.name)}</option>`);
+    });
+    return options.join('');
+  }
+
+  function columnOptions(selected) {
+    const options = [`<option value=""${selected ? '' : ' selected'}>(none)</option>`];
+    const known = state.columns.slice();
+    if (selected && known.indexOf(selected) === -1) {
+      // A column the source no longer has. Kept and marked, rather than reset to
+      // (none), which would quietly discard the assignment.
+      options.push(`<option value="${esc(selected)}" selected>${esc(selected)}` +
+                   ` — not in the source</option>`);
+    }
+    known.forEach((column) => {
+      options.push(`<option value="${esc(column)}"` +
+                   `${column === selected ? ' selected' : ''}>${esc(column)}</option>`);
+    });
+    return options.join('');
+  }
+
+  function propsTable(role) {
+    const key = role.keys[0] || '';
+    const rows = role.props.map((row, index) => {
+      if (row.advanced) {
+        const args = JSON.stringify((row.raw || {}).transform_args || {});
+        return `<tr data-uid="${role.uid}" data-prop="${index}">
+          <td class="p-name">${row.name === key ? '🔑 ' : ''}${esc(row.name)}</td>
+          <td colspan="2" class="advanced-cell" data-testid="advanced-prop">
+            ${esc(row.transform)}(${esc(args)})
+            <span class="badge" title="This form resolves a value from the row rather
+                  than from one column. Edit it in the JSON.">advanced</span>
+          </td>
+        </tr>`;
+      }
+      return `<tr class="${row.name === key ? 'is-key' : ''}"
+                  data-uid="${role.uid}" data-prop="${index}">
+        <td class="p-name">${row.name === key ? '🔑 ' : ''}${esc(row.name)}</td>
+        <td><select data-act="prop-column" data-testid="prop-column"
+                    class="${row.column ? '' : 'unset'}"
+                    aria-label="Source column for ${esc(row.name)}">
+              ${columnOptions(row.column)}</select></td>
+        <td><select data-act="prop-transform" data-testid="prop-transform"
+                    class="${row.transform ? '' : 'unset'}"
+                    aria-label="Transform for ${esc(row.name)}">
+              ${transformOptions(row.transform, false)}</select></td>
+      </tr>`;
+    }).join('');
+
+    return `<table class="props">
+      <thead><tr><th style="width:32%">Property</th><th style="width:38%">Source column</th>
+        <th style="width:30%">Transform</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="3" class="small">This label declares no ' +
+        'properties yet. Add them on the schema canvas.</td></tr>'}</tbody>
+    </table>`;
+  }
+
+  function sourceForm(role) {
+    const rows = role.propertyMap.map((entry, index) => `
+      <div class="map-row" data-uid="${role.uid}" data-map="${index}">
+        <input type="text" value="${esc(entry.from)}" data-act="map-from"
+               data-testid="map-from" placeholder="output key"
+               aria-label="Transform output key">
+        <span>→</span>
+        <select data-act="map-to" data-testid="map-to" aria-label="Node property">
+          <option value="">(none)</option>
+          ${role.schemaProperties.concat(
+              role.schemaProperties.indexOf(entry.to) === -1 && entry.to ? [entry.to] : []
+            ).map((p) => `<option value="${esc(p)}"` +
+                         `${p === entry.to ? ' selected' : ''}>${esc(p)}</option>`).join('')}
+        </select>
+        <button class="btn tiny" data-act="map-remove" title="Remove">✕</button>
+      </div>`).join('');
+
+    return `
+      <div class="map-row">
+        <label class="small" style="width:8rem">Source column</label>
+        <select data-act="source-column" data-testid="source-column" data-uid="${role.uid}"
+                style="max-width:16rem">${columnOptions(role.sourceColumn)}</select>
+        <label class="small" style="margin-left:.5rem">Transform</label>
+        <select data-act="source-transform" data-testid="source-transform"
+                data-uid="${role.uid}">${transformOptions(role.sourceTransform, true)}</select>
+        <label class="small" style="margin-left:.5rem">Emits</label>
+        <select data-act="cardinality" data-testid="cardinality" data-uid="${role.uid}">
+          <option value="one"${role.cardinality === 'one' ? ' selected' : ''}>one node
+            per row</option>
+          <option value="many"${role.cardinality === 'many' ? ' selected' : ''}>one node
+            per value</option>
+        </select>
+      </div>
+      <p class="small" style="margin:.2rem 0 .35rem">
+        The transform returns an object; each of its keys becomes a property.
+      </p>
+      ${rows}
+      <button class="btn tiny" data-act="map-add" data-uid="${role.uid}"
+              data-testid="map-add">+ Add output key</button>`;
+  }
+
+  function keyRow(role) {
+    const declared = role.props.map((p) => p.name);
+    const key = role.keys[0] || '';
+    const fallbacks = role.keys.slice(1);
+    const assigned = role.form === 'source'
+      ? role.propertyMap.some((m) => m.to === key)
+      : role.props.some((p) => p.name === key && (p.column || p.transform));
+
+    return `<div class="key-row" data-uid="${role.uid}">
+      <strong>Key property</strong>
+      <select data-act="key" data-testid="key-property" aria-label="Key property">
+        <option value=""${key ? '' : ' selected'}>(none — required)</option>
+        ${declared.map((p) => `<option value="${esc(p)}"` +
+                              `${p === key ? ' selected' : ''}>${esc(p)}</option>`).join('')}
+      </select>
+      ${key
+        ? (assigned
+            ? '<span class="badge ok" data-testid="key-ok">rows MERGE on this</span>'
+            : '<span class="badge warn" data-testid="key-unassigned">no source column ' +
+              'assigned to it yet</span>')
+        : '<span class="badge err" data-testid="key-missing">a node mapping needs ' +
+          'a key</span>'}
+      ${fallbacks.length
+        ? `<span class="hint">falls back to ${esc(fallbacks.join(', '))} when empty
+           (preference order kept from the saved config)</span>`
+        : ''}
+    </div>`;
+  }
+
+  function roleBlock(role, index, total) {
+    return `<div class="role-block" data-testid="role-block" data-uid="${role.uid}">
+      <div class="role-head">
+        <label for="role-name-${role.uid}">Role</label>
+        <input class="role-name" id="role-name-${role.uid}" type="text"
+               value="${esc(role.id)}" data-act="role-id" data-testid="role-id"
+               data-uid="${role.uid}"
+               title="Relationships reference a node mapping by this name">
+        ${total > 1 ? `<span class="badge">${index + 1} of ${total}</span>` : ''}
+        <label class="check">
+          <input type="checkbox" data-act="optional" data-testid="role-optional"
+                 data-uid="${role.uid}"${role.optional ? ' checked' : ''}>
+          optional</label>
+        <span class="spacer"></span>
+        ${roleHasContent(role) ? '' :
+          '<span class="badge" data-testid="role-empty">nothing mapped yet</span>'}
+        ${total > 1 ? `<button class="btn tiny" data-act="role-remove"
+              data-uid="${role.uid}" data-testid="role-remove">Remove role</button>` : ''}
+      </div>
+
+      <div class="shape-row">
+        <label><input type="radio" name="form-${role.uid}" value="properties"
+                      data-act="form" data-uid="${role.uid}"
+                      data-testid="form-properties"
+                      ${role.form === 'properties' ? 'checked' : ''}>
+          one column per property</label>
+        <label><input type="radio" name="form-${role.uid}" value="source"
+                      data-act="form" data-uid="${role.uid}" data-testid="form-source"
+                      ${role.form === 'source' ? 'checked' : ''}>
+          one column expands into several properties</label>
+      </div>
+
+      ${keyRow(role)}
+      ${role.form === 'source' ? sourceForm(role) : propsTable(role)}
+    </div>`;
+  }
+
+  function labelBlock(label) {
+    const roles = rolesOf(label.label);
+    return `<div class="label-block" data-testid="label-block"
+                 data-label="${esc(label.label)}">
+      <div class="label-head">
+        <span class="l-name">:${esc(label.label)}</span>
+        <span class="badge">${label.properties.length} propert${
+          label.properties.length === 1 ? 'y' : 'ies'}</span>
+        ${roles.length > 1 ? `<span class="badge ok">${roles.length} roles</span>` : ''}
+        <span class="spacer"></span>
+        <button class="btn tiny" data-act="role-add" data-label="${esc(label.label)}"
+                data-testid="role-add"
+                title="A second role of this label — e.g. both the PI and the submitter
+                       are Person nodes">+ Add a role</button>
+      </div>
+      ${roles.map((role, i) => roleBlock(role, i, roles.length)).join('')}
+    </div>`;
+  }
+
+  function roleOptions(label, selected) {
+    const roles = rolesOf(label);
+    return [`<option value=""${selected ? '' : ' selected'}>(choose)</option>`]
+      .concat(roles.map((r) => `<option value="${esc(r.id)}"` +
+              `${r.id === selected ? ' selected' : ''}>${esc(r.id)}</option>`)).join('');
+  }
+
+  function relEnd(rel, end) {
+    const label = end === 'from' ? rel.fromLabel : rel.toLabel;
+    const roles = rolesOf(label);
+    if (roles.length === 1) {
+      // One role, so there is nothing to choose: shown as the fact it is rather
+      // than as a dropdown with a single entry.
+      return `<span class="rel-fixed" data-testid="rel-${end}-fixed">${esc(roles[0].id)}
+        </span>`;
+    }
+    return `<select data-act="rel-${end}" data-testid="rel-${end}" data-key="${esc(rel.key)}"
+                    aria-label="${end === 'from' ? 'From' : 'To'} role">
+      ${roleOptions(label, end === 'from' ? rel.from : rel.to)}</select>`;
+  }
+
+  function relTable() {
+    if (!state.rels.length) {
+      return `<p class="small">The schema declares no relationships. Draw them on the
+        schema canvas and they appear here.</p>`;
+    }
+    const rows = state.rels.map((rel) => `
+      <tr data-testid="rel-row" data-key="${esc(rel.key)}">
+        <td><input type="checkbox" data-act="rel-include" data-key="${esc(rel.key)}"
+                   data-testid="rel-include"${rel.include ? ' checked' : ''}
+                   aria-label="Include ${esc(rel.type)}"></td>
+        <td>:${esc(rel.fromLabel)}</td>
+        <td>${relEnd(rel, 'from')}</td>
+        <td class="r-type">-[:${esc(rel.type)}]→</td>
+        <td>:${esc(rel.toLabel)}</td>
+        <td>${relEnd(rel, 'to')}</td>
+      </tr>`).join('');
+    return `<table class="rels">
+      <thead><tr><th></th><th>From label</th><th>From role</th><th>Type</th>
+        <th>To label</th><th>To role</th></tr></thead>
+      <tbody>${rows}</tbody></table>`;
+  }
+
+  function orphanBlock() {
+    const roles = state.roles.filter((r) => !r.inSchema);
+    if (!roles.length && !state.orphanRels.length) return '';
+    return `<div class="section-head"><h4>Not in the schema</h4></div>
+      <div class="notice warn" data-testid="orphans">
+        The saved mapping names things this source's schema does not declare. They are
+        kept exactly as they are and still run — but nothing on the schema canvas
+        describes them.
+        <ul>
+          ${roles.map((r) => `<li><code>${esc(r.id)}</code> → :${esc(r.label)}</li>`)
+            .join('')}
+          ${state.orphanRels.map((r) => `<li><code>${esc(r.from)}</code>
+            -[:${esc(r.type)}]→ <code>${esc(r.to)}</code></li>`).join('')}
+        </ul>
+      </div>
+      ${roles.map((r) => `<div class="label-block">${roleBlock(r, 0, 1)}</div>`).join('')}`;
+  }
+
+  function render() {
+    if (!LABELS.length) {
+      $('targets').innerHTML = `<div class="notice info" data-testid="no-schema">
+        <strong>No target schema yet.</strong> A mapping says which source column
+        fills which property of which label, so there is nothing to map onto until
+        Step 2 is done.
+        <br><a href="${BASE}/pipeline/sources/${SOURCE_ID}/schema">Define the schema</a>
+      </div>`;
+      renderColumns();
+      return;
+    }
+    $('targets').innerHTML =
+      `<h3>Target schema</h3>
+       <p class="small">One <em>role</em> per node mapping. Two roles of the same label
+         are how one row produces two nodes of it — a PI and a submitter — with
+         different relationships.</p>
+       ${LABELS.map(labelBlock).join('')}
+       <div class="section-head"><h4>Relationships</h4></div>
+       ${relTable()}
+       ${orphanBlock()}`;
+    renderColumns();
+  }
+
+  function renderColumns() {
+    const box = $('columns-list');
+    if (state.columnsError) {
+      $('column-count').textContent = '—';
+      box.innerHTML = `<div class="notice bad" data-testid="columns-error">
+        Could not read the source: ${esc(state.columnsError)}
+        <br><span class="small">The dropdowns below still hold whatever the saved
+        mapping names, so an existing mapping stays editable.</span></div>`;
+      return;
+    }
+    const usage = columnUsage();
+    const filter = ($('column-filter').value || '').trim().toLowerCase();
+    const shown = state.columns.filter(
+      (c) => !filter || c.toLowerCase().indexOf(filter) !== -1);
+    $('column-count').textContent = String(state.columns.length);
+
+    if (!state.columns.length) {
+      box.innerHTML = '<p class="small">The source reported no columns.</p>';
+      return;
+    }
+    box.innerHTML = shown.map((column) => {
+      const used = usage[column] || [];
+      const sample = firstSample(column);
+      return `<div class="column-item ${used.length ? 'assigned' : ''}"
+                   data-testid="column-item" data-column="${esc(column)}">
+        <div class="c-name">${esc(column)}${used.length
+          ? ' <span class="badge ok" data-testid="column-assigned">assigned</span>' : ''}</div>
+        <div class="c-sample" title="${esc(sample)}">${
+          sample ? esc(sample) : '<em>empty in the sample</em>'}</div>
+        ${used.length ? `<div class="c-used">${esc(used.join(', '))}</div>` : ''}
+      </div>`;
+    }).join('') || '<p class="small">No column matches that filter.</p>';
+
+    if (state.missingColumns.length) {
+      box.insertAdjacentHTML('afterbegin', `<div class="notice bad"
+        data-testid="drifted-columns">The saved mapping reads
+        ${state.missingColumns.length} column(s) this source no longer has:
+        ${esc(state.missingColumns.join(', '))}.</div>`);
+    }
+  }
+
+  /** The first non-empty value for a column across the sampled rows. */
+  function firstSample(column) {
+    for (let i = 0; i < state.sample.length; i += 1) {
+      const value = state.sample[i][column];
+      if (value !== null && value !== undefined && String(value).trim() !== '') {
+        return String(value);
+      }
+    }
+    return '';
+  }
+
+  // ---------------------------------------------------------------- events
+
+  function roleByUid(uid) {
+    return state.roles.filter((r) => r.uid === uid)[0] || null;
+  }
+
+  function relByKey(key) {
+    return state.rels.filter((r) => r.key === key)[0] || null;
+  }
+
+  function changed(rerender) {
+    state.dirty = true;
+    if (rerender !== false) render();
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => save(false), 1200);
+    status('Unsaved changes', true);
+  }
+
+  $('targets').addEventListener('change', (event) => {
+    const control = event.target;
+    const act = control.dataset.act;
+    if (!act) return;
+
+    // Property rows carry their indices on the <tr>/.map-row, not on the control.
+    const holder = control.closest('[data-uid]');
+    const role = roleByUid(control.dataset.uid || (holder && holder.dataset.uid));
+
+    if (act === 'prop-column' || act === 'prop-transform') {
+      const row = control.closest('tr');
+      const target = role && role.props[Number(row.dataset.prop)];
+      if (!target) return;
+      if (act === 'prop-column') target.column = control.value;
+      else target.transform = control.value;
+      changed();
+      return;
+    }
+    if (act === 'key' && role) {
+      const chosen = control.value;
+      // Replace the primary key, keeping any preference-order fallbacks the saved
+      // config had rather than discarding them as a side effect.
+      role.keys = chosen
+        ? [chosen].concat(role.keys.slice(1).filter((k) => k !== chosen))
+        : [];
+      changed();
+      return;
+    }
+    if (act === 'optional' && role) { role.optional = control.checked; changed(); return; }
+    if (act === 'form' && role) { role.form = control.value; changed(); return; }
+    if (act === 'cardinality' && role) { role.cardinality = control.value; changed(); return; }
+    if (act === 'source-column' && role) { role.sourceColumn = control.value; changed(); return; }
+    if (act === 'source-transform' && role) {
+      role.sourceTransform = control.value; changed(); return;
+    }
+    if (act === 'map-from' || act === 'map-to') {
+      const entry = role && role.propertyMap[Number(holder.dataset.map)];
+      if (!entry) return;
+      if (act === 'map-from') entry.from = control.value.trim();
+      else entry.to = control.value;
+      changed();
+      return;
+    }
+    if (act === 'role-id' && role) {
+      // Renaming carries the relationships that point at the old name; the model
+      // owns that, because forgetting it is how a rename silently breaks them.
+      const problem = M.renameRole(state, role, control.value.trim());
+      if (problem) { notify(problem, 'error'); render(); return; }
+      changed();
+      return;
+    }
+    if (act === 'rel-include') {
+      const rel = relByKey(control.dataset.key);
+      if (!rel) return;
+      rel.include = control.checked;
+      if (rel.include) M.autoSelectRoles(state, rel);
+      changed();
+      return;
+    }
+    if (act === 'rel-from' || act === 'rel-to') {
+      const rel = relByKey(control.dataset.key);
+      if (!rel) return;
+      if (act === 'rel-from') rel.from = control.value; else rel.to = control.value;
+      // Choosing an end is the act of wanting the relationship.
+      if (rel.from && rel.to) rel.include = true;
+      changed();
+    }
+  });
+
+  $('targets').addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-act]');
+    if (!button) return;
+    const act = button.dataset.act;
+    const holder = button.closest('[data-uid]');
+    const role = roleByUid(button.dataset.uid || (holder && holder.dataset.uid));
+
+    if (act === 'role-add') {
+      const label = LABELS.filter((l) => l.label === button.dataset.label)[0];
+      if (!label) return;
+      const added = M.newRole(label.label, label.properties, label.key_property,
+                              state.roles);
+      state.roles.push(added);
+      changed();
+      notify(`Added a second :${label.label} role, “${added.id}”. Name it for what it `
+             + `represents — the relationship panel points at it by that name.`, 'success');
+      return;
+    }
+    if (act === 'role-remove' && role) {
+      if (!M.removeRole(state, role)) return;
+      changed();
+      return;
+    }
+    if (act === 'map-add' && role) {
+      role.propertyMap.push({ from: '', to: '' });
+      changed();
+      return;
+    }
+    if (act === 'map-remove' && role) {
+      role.propertyMap.splice(Number(holder.dataset.map), 1);
+      changed();
+    }
+  });
+
+  $('column-filter').addEventListener('input', renderColumns);
+
+  // ------------------------------------------------------------------ save
+
+  function renderValidation(validation, summary, note) {
+    const box = $('validation-box');
+    if (!validation) { box.innerHTML = ''; return; }
+    const errors = validation.errors || [];
+    const warnings = validation.warnings || [];
+    const counted = summary
+      ? `${summary.node_mapping_count} node mapping(s), ` +
+        `${summary.relationship_mapping_count} relationship(s), ` +
+        `${(summary.mapped_columns || []).length} column(s) mapped`
+      : '';
+
+    if (!errors.length) {
+      box.innerHTML = `<div class="notice ok" data-testid="validation-ok">
+        <strong>${esc(note || 'Saved.')}</strong> The mapping engine accepts this
+        config — ${esc(counted)}.
+        ${warnings.length ? '<ul>' + warnings.map((w) =>
+          `<li>${esc(w)}</li>`).join('') + '</ul>' : ''}</div>`;
+      return;
+    }
+    box.innerHTML = `<div class="notice bad" data-testid="validation-errors">
+      <strong>${esc(note || 'Saved')} — ${errors.length} thing(s) still to fix
+      before this can run.</strong> A partial mapping is stored; the FAIR check
+      reports the same list.
+      <ul>${errors.slice(0, 12).map((e) => `<li>${esc(e)}</li>`).join('')}
+      ${errors.length > 12 ? `<li>…and ${errors.length - 12} more</li>` : ''}</ul>
+      ${warnings.length ? '<div class="small" style="margin-top:.3rem">Warnings: '
+        + warnings.map(esc).join('; ') + '</div>' : ''}</div>`;
+  }
+
+  async function save(explicit) {
+    if (state.saving) return;
+    clearTimeout(saveTimer);
+    state.saving = true;
+    $('save-mapping').disabled = true;
+    status('Saving…', true);
+    try {
+      const data = await api(`/api/pipeline/sources/${SOURCE_ID}/mapping`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mapping: buildConfig() }),
+      });
+      state.dirty = false;
+      // The stored config is now the baseline: anything this page preserved but
+      // does not edit has to come from what the server holds, not from the
+      // document that was rendered at page load.
+      if (data.mapping) state.config = data.mapping;
+      renderValidation(data.validation, data.summary,
+                       explicit ? 'Mapping saved.' : 'Draft saved');
+      status(data.saved_at ? `Saved ${data.saved_at}` : 'Saved', !explicit);
+      if (explicit) {
+        const ok = !((data.validation || {}).errors || []).length;
+        notify(ok ? 'Mapping saved. The engine accepts it, so this source can run.'
+                  : 'Mapping saved, incomplete. The list above is what is still missing.',
+               ok ? 'success' : 'error');
+      }
+    } catch (e) {
+      status('');
+      renderValidation({ errors: [e.message], warnings: [] }, null, 'Could not save');
+      notify(`Could not save the mapping: ${e.message}`, 'error');
+    } finally {
+      state.saving = false;
+      $('save-mapping').disabled = false;
+    }
+  }
+
+  $('save-mapping').addEventListener('click', () => save(true));
+
+  window.addEventListener('beforeunload', (event) => {
+    if (!state.dirty) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
+
+  // -------------------------------------------------------------- columns
+
+  async function loadColumns() {
+    state.columnsError = null;
+    $('columns-list').innerHTML =
+      '<p class="small"><span class="spin"></span> Reading the source…</p>';
+    try {
+      const data = await api(`/api/pipeline/sources/${SOURCE_ID}/columns`);
+      if (!data.ok) throw new Error(data.error || 'the source could not be read');
+      state.columns = data.columns || [];
+      state.sample = data.sample || [];
+      state.missingColumns = data.missing_columns || [];
+    } catch (e) {
+      state.columnsError = e.message;
+      // Fall back to what the mapping already names, so an unreachable source does
+      // not make an existing mapping uneditable.
+      state.columns = ((state.config || {}).node_mappings || []).length
+        ? Object.keys(columnUsage()) : [];
+      state.sample = [];
+    }
+    render();
+  }
+
+  /**
+   * Report the engine's verdict on the mapping as it stands, before anything is
+   * edited. Otherwise a user opening an incomplete mapping sees a page that looks
+   * finished and only learns what is missing by pressing Save.
+   */
+  async function loadValidation() {
+    if (!SAVED_MAPPING) return;
+    try {
+      const data = await api(`/api/pipeline/sources/${SOURCE_ID}/mapping`);
+      if (state.dirty) return;  // an edit landed first; its own save will report
+      renderValidation(data.validation, data.summary, 'Saved mapping.');
+    } catch (e) { /* the page is usable without the verdict */ }
+  }
+
+  $('reload-columns').addEventListener('click', loadColumns);
+
+  // The edit state is built from the schema and the stored config only — the source
+  // columns arrive later and are never needed to decide what the targets are.
+  state = Object.assign(state, M.buildState(SCHEMA, SAVED_MAPPING));
+  render();
+  loadColumns();
+  loadValidation();
+})();
+</script>
+{% endblock %}

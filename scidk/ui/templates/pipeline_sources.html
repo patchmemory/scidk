@@ -10,8 +10,9 @@
 
   Step 2 (schema definition) is Task C: its three entry points live here, and each
   opens the schema canvas at /pipeline/sources/<id>/schema. Step 3 (column mapping)
-  is Task D and is not built yet, so the flow stops after the schema is defined and
-  says so — rather than a "Next" button that leads nowhere.
+  is Task D and opens /pipeline/sources/<id>/mapping — both are pages of their own
+  rather than panes in this sheet, so the flow's job here is to say what state each
+  step is in and hand off.
 #}
 
 {% block head %}
@@ -147,8 +148,8 @@
           <span class="num">1</span> Connection</span>
         <span class="step" id="step-dot-schema" data-testid="step-dot-schema">
           <span class="num">2</span> Schema</span>
-        <span class="step future" id="step-dot-mapping" data-testid="step-dot-mapping"
-              title="Column mapping is Cycle 3B Task D">
+        <span class="step" id="step-dot-mapping" data-testid="step-dot-mapping"
+              title="Which source column fills which schema property">
           <span class="num">3</span> Mapping</span>
       </div>
     </div>
@@ -268,6 +269,14 @@
             relationships by hand.</span>
         </button>
       </section>
+
+      <!-- Step 3 (Task D): which source column fills which schema property. Like
+           the schema canvas, the mapping UI is a page of its own — two panels and a
+           row per property do not belong in a modal sheet — so this step reports
+           where the mapping stands and hands off to it. -->
+      <section id="step-mapping" data-testid="step-mapping" hidden>
+        <div id="mapping-status-box" data-testid="mapping-status-box"></div>
+      </section>
     </div>
 
     <div class="sheet-foot">
@@ -279,6 +288,10 @@
       </button>
       <button class="btn primary" id="sheet-next" data-testid="sheet-next" hidden>
         Next: Schema →
+      </button>
+      <button class="btn primary" id="sheet-next-mapping" data-testid="sheet-next-mapping"
+              hidden>
+        Next: Mapping →
       </button>
       <button class="btn" id="sheet-done" data-testid="sheet-done" hidden>Done</button>
     </div>
@@ -404,6 +417,28 @@
          + ` (${summary.node_count})</span>`;
   }
 
+  function mappingBadge(source) {
+    const summary = source.mapping_summary || {};
+    if (!summary.defined) {
+      return '<span class="badge neutral" title="Step 3 — no column mapping yet">'
+           + 'no mapping</span>';
+    }
+    // Structural only, which is what the list route computes: how many roles and
+    // relationships, not whether the engine accepts it. The mapping page and the
+    // FAIR check are where the verdict comes from.
+    const unkeyed = summary.unkeyed_roles || [];
+    const detail = `${summary.node_mapping_count} node mapping(s), `
+                 + `${(summary.mapped_columns || []).length} column(s)`;
+    if (unkeyed.length) {
+      return `<span class="badge warn" data-testid="mapping-partial-badge"
+                    title="${esc(detail)}">Mapping incomplete`
+           + ` (${unkeyed.length} role(s) with no key)</span>`;
+    }
+    return `<span class="badge ok" data-testid="mapping-defined-badge"
+                  title="${esc(detail)}">Mapping defined`
+         + ` (${summary.node_mapping_count})</span>`;
+  }
+
   function card(source) {
     const type = types.find((t) => t.id === source.plugin_type
                                || t.plugin === source.plugin_type) || {};
@@ -421,6 +456,7 @@
           <span class="card-name" data-testid="source-card-name">${esc(source.name)}</span>
           <span class="badge neutral">${esc(source.plugin_type)}</span>
           ${schemaBadge(source)}
+          ${mappingBadge(source)}
           ${fairBadge(source)}
           ${unavailable
             ? '<span class="badge err" title="This plugin does not implement the '
@@ -429,6 +465,8 @@
           <span class="card-actions">
             <button class="btn" data-act="schema" data-testid="schema-source-btn"
                     title="Open the schema canvas for this source">Schema</button>
+            <button class="btn" data-act="mapping" data-testid="mapping-source-btn"
+                    title="Map this source's columns onto the schema">Mapping</button>
             <button class="btn" data-act="run" data-testid="run-source-btn"
                     ${unavailable ? 'disabled' : ''}>Run</button>
             <button class="btn" data-act="schedule" data-testid="schedule-source-btn"
@@ -444,7 +482,7 @@
           <div>${schedule}</div>
           ${source.mapping_json ? '' :
             '<div><span class="badge warn">no column mapping yet</span> ' +
-            'Mapping is Cycle 3B Task D.</div>'}
+            'A source with no mapping has nothing to write; Mapping is Step 3.</div>'}
         </div>
         <div class="run-log" data-testid="source-run-log"></div>
       </div>`;
@@ -497,6 +535,10 @@
 
     if (button.dataset.act === 'schema') {
       window.location.href = `${BASE}/pipeline/sources/${sourceId}/schema`;
+      return;
+    }
+    if (button.dataset.act === 'mapping') {
+      window.location.href = `${BASE}/pipeline/sources/${sourceId}/mapping`;
       return;
     }
     if (button.dataset.act === 'delete') return deleteSource(sourceId, name);
@@ -569,13 +611,18 @@
     $('step-type').hidden = step !== 'type';
     $('step-connect').hidden = step !== 'connect';
     $('step-schema').hidden = step !== 'schema';
+    $('step-mapping').hidden = step !== 'mapping';
     $('sheet-back').hidden = step === 'type' || (step === 'connect' && draft.id);
-    $('sheet-save').hidden = step === 'schema';
+    $('sheet-save').hidden = step === 'schema' || step === 'mapping';
     $('sheet-save').disabled = step !== 'connect' || !draft.preview;
     // "Next" only exists once there is a source id to scope a schema to — the
     // schema canvas is stored per source, so Step 2 needs Step 1 committed first.
     $('sheet-next').hidden = step !== 'connect' || !draft.id;
-    $('sheet-done').hidden = step !== 'schema';
+    // Step 3 has nothing to map onto until Step 2 has produced a schema, so the
+    // way forward appears when the schema exists rather than when the step is
+    // reached.
+    $('sheet-next-mapping').hidden = step !== 'schema' || !draft.schemaDefined;
+    $('sheet-done').hidden = step !== 'schema' && step !== 'mapping';
     $('sheet-title').textContent = draft.id ? 'Edit source' : 'Add source';
     updateStepIndicator();
   }
@@ -591,8 +638,9 @@
     });
     if (draft.id) $('step-dot-connect').dataset.done = 'true';
     if (draft.schemaDefined) $('step-dot-schema').dataset.done = 'true';
-    const here = currentStep === 'schema' ? 'schema'
-               : currentStep === 'connect' ? 'connect' : null;
+    if (draft.mappingDefined) $('step-dot-mapping').dataset.done = 'true';
+    const here = ['connect', 'schema', 'mapping'].indexOf(currentStep) !== -1
+      ? currentStep : null;
     if (here) $(dots[here]).setAttribute('aria-current', 'step');
   }
 
@@ -859,7 +907,9 @@
           <br><a href="${schemaPath(draft.id)}" data-testid="open-schema-canvas">Open
           the schema canvas</a> ·
           <a href="${BASE}/api/pipeline/sources/${draft.id}/schema/export/arrows"
-             data-testid="export-schema-link">Export to Arrows.app</a>
+             data-testid="export-schema-link">Export to Arrows.app</a> ·
+          <a href="${mappingPath(draft.id)}" data-testid="open-mapping-from-schema">Map
+          columns onto it</a>
         </div>`;
     } catch (e) {
       box.innerHTML = `<div class="notice bad">${esc(e.message)}</div>`;
@@ -921,6 +971,57 @@
 
   $('sheet-next').addEventListener('click', openSchemaStep);
 
+  // ------------------------------------------------- step 3: mapping (Task D)
+
+  const mappingPath = (sourceId) => `${BASE}/pipeline/sources/${sourceId}/mapping`;
+
+  async function openMappingStep() {
+    showStep('mapping');
+    await renderMappingStatus();
+  }
+
+  async function renderMappingStatus() {
+    const box = $('mapping-status-box');
+    box.innerHTML = '<p class="small"><span class="spin"></span> Checking…</p>';
+    try {
+      const data = await api(`/api/pipeline/sources/${draft.id}/mapping`);
+      const summary = data.summary || {};
+      const validation = data.validation;
+      draft.mappingDefined = !!summary.defined;
+      updateStepIndicator();
+
+      const open = `<a href="${mappingPath(draft.id)}" data-testid="open-mapping">Open
+        the column mapping</a>`;
+      if (!summary.defined) {
+        box.innerHTML = `<div class="notice info">
+          <strong>No column mapping yet.</strong> The mapping says which source column
+          fills which property of which label in the schema, and which node role each
+          relationship connects.
+          <br>${open}</div>`;
+        return;
+      }
+      const errors = (validation || {}).errors || [];
+      const counted = `${summary.node_mapping_count} node mapping(s), ` +
+        `${summary.relationship_mapping_count} relationship(s), ` +
+        `${(summary.mapped_columns || []).length} column(s) mapped`;
+      box.innerHTML = errors.length
+        ? `<div class="notice bad" data-testid="mapping-incomplete">
+             <strong>Mapping incomplete.</strong> ${esc(counted)}, and
+             ${errors.length} thing(s) the engine will not accept yet.
+             <ul>${errors.slice(0, 5).map((e) => `<li>${esc(e)}</li>`).join('')}
+             ${errors.length > 5 ? `<li>…and ${errors.length - 5} more</li>` : ''}</ul>
+             ${open}</div>`
+        : `<div class="notice ok" data-testid="mapping-defined-notice">
+             <strong>Mapping defined.</strong> ${esc(counted)}. The engine accepts it,
+             so this source can run.
+             <br>${open}</div>`;
+    } catch (e) {
+      box.innerHTML = `<div class="notice bad">${esc(e.message)}</div>`;
+    }
+  }
+
+  $('sheet-next-mapping').addEventListener('click', openMappingStep);
+
   $('sheet-done').addEventListener('click', () => {
     sheet.close();
     loadSources();
@@ -962,6 +1063,7 @@
         plugin_type: source.plugin_type,
         config: typeof config === 'object' ? config : { source_path: config },
         schemaDefined: !!(source.schema_summary || {}).defined,
+        mappingDefined: !!(source.mapping_summary || {}).defined,
         // An already-saved source has a working connection; re-testing is
         // optional rather than a precondition for saving a rename.
         preview: { ok: true, columns: [], sample: [] },
@@ -979,7 +1081,11 @@
     }
   }
 
-  $('sheet-back').addEventListener('click', () => showStep('type'));
+  $('sheet-back').addEventListener('click', () => {
+    if (currentStep === 'mapping') return openSchemaStep();
+    if (currentStep === 'schema') return showStep('connect');
+    return showStep('type');
+  });
   $('sheet-cancel').addEventListener('click', () => sheet.close());
 
   // ------------------------------------------------------------ schedule
@@ -1050,13 +1156,17 @@
 
   $('schedule-cancel').addEventListener('click', () => scheduleSheet.close());
 
-  // The schema canvas breadcrumb links back here as ?source=<id>. Reopening that
-  // source's flow at Step 2 is what makes the middle crumb go somewhere.
+  // The schema canvas and the mapping page both link back here as ?source=<id>,
+  // the mapping page adding &step=mapping. Reopening that source's flow at the step
+  // it came from is what makes the middle crumb go somewhere.
   async function openFromQuery() {
-    const sourceId = new URLSearchParams(window.location.search).get('source');
+    const query = new URLSearchParams(window.location.search);
+    const sourceId = query.get('source');
     if (!sourceId) return;
     await openEdit(sourceId);
-    if (draft.id === sourceId) await openSchemaStep();
+    if (draft.id !== sourceId) return;
+    if (query.get('step') === 'mapping') await openMappingStep();
+    else await openSchemaStep();
   }
 
   loadTypes().then(loadSources).then(openFromQuery);
