@@ -7,10 +7,39 @@ Keeping tools separate from the server allows them to be:
 - Reused in other contexts (web API, CLI, etc.)
 - Documented with their schemas in one place
 """
-from typing import Dict, Any, List, Optional
+import re
+from typing import Dict, Any, List, Optional, Set
 from neo4j import Driver
 
 from .schema_context import get_schema_context
+
+
+# Clauses that mutate the graph. Checked as whole tokens, never as substrings —
+# `created_at`, `dataset`, and `OFFSET` all contain a forbidden keyword as a
+# substring and are perfectly valid in a read query.
+FORBIDDEN_KEYWORDS = frozenset(
+    {'CREATE', 'MERGE', 'DELETE', 'REMOVE', 'SET', 'DROP', 'DETACH'}
+)
+
+
+def _cypher_tokens(cypher: str) -> Set[str]:
+    """Split Cypher into upper-cased word tokens for keyword matching.
+
+    Splitting on ``\\W+`` isolates every keyword, because Cypher requires a
+    non-word character (whitespace, parenthesis, colon, comma, operator) on
+    both sides of a clause keyword. That holds for the operator spellings too:
+    ``IS NULL`` and ``STARTS WITH`` split into their own word tokens, and
+    punctuation-only operators like ``<>`` and ``->`` split into empty strings,
+    which never match a keyword.
+
+    The check stays deliberately conservative in one direction: string literals
+    and comments are tokenized along with the query, so a read query containing
+    the word ``set`` inside a quoted value is rejected. Stripping literals first
+    would need to model quote escaping correctly, and getting that wrong would
+    let a real write clause through — for a safety filter, a false rejection is
+    the better failure.
+    """
+    return set(re.split(r'\W+', cypher.upper()))
 
 
 # MCP tool definitions for Concept Graph seeding
@@ -138,7 +167,8 @@ def query_knowledge_graph(
     Execute a safe read-only Cypher query against the Neo4j knowledge graph.
 
     Safety features:
-    - Blocks write keywords (CREATE, MERGE, DELETE, etc.)
+    - Blocks write keywords (CREATE, MERGE, DELETE, etc.) as whole tokens, so
+      read queries mentioning `created_at`, `dataset`, or `OFFSET` are allowed
     - Adds LIMIT if not present
     - Parameterized queries supported
 
@@ -157,21 +187,23 @@ def query_knowledge_graph(
             "error": str | null
         }
     """
-    # Safety check: block write operations
-    cypher_upper = cypher.upper()
-    forbidden_keywords = ['CREATE', 'MERGE', 'DELETE', 'REMOVE', 'SET', 'DROP', 'DETACH']
+    # Safety check: block write operations. Token matching, not substring
+    # matching — see _cypher_tokens.
+    tokens = _cypher_tokens(cypher)
+    found = tokens & FORBIDDEN_KEYWORDS
 
-    for keyword in forbidden_keywords:
-        if keyword in cypher_upper:
-            return {
-                "status": "error",
-                "rows": None,
-                "row_count": 0,
-                "error": f"Forbidden keyword '{keyword}' detected. Only read-only queries allowed."
-            }
+    if found:
+        keyword = sorted(found)[0]
+        return {
+            "status": "error",
+            "rows": None,
+            "row_count": 0,
+            "error": f"Forbidden keyword '{keyword}' detected. Only read-only queries allowed."
+        }
 
-    # Add LIMIT if not present
-    if 'LIMIT' not in cypher_upper:
+    # Add LIMIT if not present. Also a token check: a query selecting a property
+    # named `limit_value` has no LIMIT clause and still needs one appended.
+    if 'LIMIT' not in tokens:
         cypher = f"{cypher.rstrip(';')} LIMIT {limit}"
 
     try:
