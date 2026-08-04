@@ -172,6 +172,16 @@ class TabularFilePlugin(DataSourcePlugin):
             logger.warning("TabularFilePlugin.find failed for %r: %s", real, e)
             return {**empty, "metadata": metadata, "error": str(e)}
 
+        # No header row means no columns, and a source with no columns cannot be
+        # mapped onto anything. Reported as a failure rather than an empty
+        # success: a header-only file is a legitimate source that describes its
+        # schema, but a file with no header at all describes nothing.
+        if not columns:
+            return {
+                **empty, "metadata": metadata,
+                "error": "the file has no header row, so it has no columns to map",
+            }
+
         sample: List[Dict[str, Any]] = []
         count = 0
         truncated = False

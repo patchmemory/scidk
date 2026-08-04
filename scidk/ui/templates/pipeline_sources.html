@@ -1,0 +1,813 @@
+{% extends "base.html" %}
+{% block title %}-SciDK-> Pipeline Sources{% endblock %}
+
+{#
+  Pipeline source management — Cycle 3B Tasks A, B and F.
+
+  A Pipeline page, not a plugin page. It never names a plugin: the "+ Add source"
+  picker is populated from /api/plugins/templates?category=data_import, and each
+  card renders from whatever plugin_type its source declares.
+
+  Steps 2 and 3 of the add flow (schema definition on the Maps canvas, and column
+  mapping) are Tasks C and D and are not built yet. The flow deliberately stops
+  after Step 1 with the source saved, so a user can connect a source now and map
+  it when that UI lands — rather than being walked into a dead end.
+#}
+
+{% block head %}
+<style>
+  .pipeline-page { max-width: 1100px; margin: 0 auto; padding: 0 .5rem; }
+  .page-head { display:flex; align-items:baseline; gap:1rem; margin-bottom:.25rem; }
+  .page-head h2 { margin:0; font-size:1.25rem; }
+
+  .source-card {
+    border:1px solid #e5e5e5; border-radius:8px; padding:.75rem .9rem; margin-bottom:.6rem;
+    background:#fff;
+  }
+  .source-card.unavailable { background:#fcfcfc; border-style:dashed; }
+  .card-top { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
+  .card-icon { font-size:1.1rem; }
+  .card-name { font-weight:600; }
+  .card-actions { margin-left:auto; display:flex; gap:.35rem; }
+  .card-path { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.85em;
+               color:var(--muted); margin:.35rem 0 .2rem; word-break:break-all; }
+  .card-meta { font-size:.85em; color:var(--muted); }
+  .card-meta div + div { margin-top:.15rem; }
+
+  .badge { display:inline-block; font-size:.72rem; padding:.1rem .4rem; border-radius:10px;
+           border:1px solid #ddd; background:#f7f7f7; color:#444; white-space:nowrap; }
+  .badge.ok      { border-color:#9ddcc0; background:#eaf8f1; color:#046c4a; }
+  .badge.warn    { border-color:#f0d9a0; background:#fdf6e6; color:#8a5a00; }
+  .badge.err     { border-color:#f0b3bd; background:#fdeef0; color:#a1002a; }
+  .badge.neutral { border-color:#ddd;    background:#f7f7f7; color:#555; }
+
+  button.btn { font-size:.85rem; padding:.25rem .6rem; border:1px solid #ccc; border-radius:5px;
+               background:#fff; cursor:pointer; }
+  button.btn:hover:not(:disabled) { background:#f3f3f3; }
+  button.btn:disabled { opacity:.5; cursor:not-allowed; }
+  button.btn.primary { border-color:var(--accent); color:#046c4a; font-weight:600; }
+  button.btn.danger:hover:not(:disabled) { background:#fdeef0; border-color:#f0b3bd; }
+
+  dialog.sheet { border:1px solid #ddd; border-radius:10px; padding:0; width:min(720px, 94vw);
+                 box-shadow:0 8px 30px rgba(0,0,0,.18); }
+  dialog.sheet::backdrop { background:rgba(0,0,0,.35); }
+  .sheet-head { padding:.8rem 1rem; border-bottom:1px solid #eee; display:flex; align-items:center; }
+  .sheet-head h3 { margin:0; font-size:1.05rem; }
+  .sheet-body { padding:1rem; max-height:min(70vh, 620px); overflow:auto; }
+  .sheet-foot { padding:.7rem 1rem; border-top:1px solid #eee; display:flex; gap:.5rem;
+                align-items:center; }
+  .sheet-foot .spacer { margin-left:auto; }
+
+  .field { margin-bottom:.85rem; }
+  .field label { display:block; font-size:.85rem; font-weight:600; margin-bottom:.25rem; }
+  .field input[type=text], .field select, .field input[type=file] {
+    width:100%; padding:.4rem .5rem; border:1px solid #ccc; border-radius:5px; font-size:.9rem;
+  }
+  .field .hint { font-size:.8rem; color:var(--muted); margin-top:.2rem; }
+
+  .type-option { display:flex; gap:.6rem; align-items:flex-start; width:100%; text-align:left;
+                 padding:.6rem .7rem; border:1px solid #e2e2e2; border-radius:7px;
+                 background:#fff; cursor:pointer; margin-bottom:.4rem; }
+  .type-option:hover { background:#f7f7f7; }
+  .type-option[aria-pressed=true] { border-color:var(--accent); background:#eaf8f1; }
+  .type-option .t-name { font-weight:600; font-size:.92rem; }
+  .type-option .t-desc { font-size:.82rem; color:var(--muted); }
+
+  .tabs { display:flex; gap:.3rem; margin-bottom:.9rem; border-bottom:1px solid #eee; }
+  .tabs button { border:none; background:none; padding:.4rem .7rem; cursor:pointer;
+                 font-size:.9rem; border-bottom:2px solid transparent; color:var(--muted); }
+  .tabs button[aria-selected=true] { color:var(--fg); font-weight:600;
+                                     border-bottom-color:var(--accent); }
+
+  .preview-wrap { overflow-x:auto; border:1px solid #eee; border-radius:6px; margin-top:.5rem; }
+  .preview-wrap table { font-size:.8rem; }
+  .preview-wrap td, .preview-wrap th { padding:4px 7px; white-space:nowrap;
+    max-width:220px; overflow:hidden; text-overflow:ellipsis; }
+
+  .notice { padding:.5rem .7rem; border-radius:6px; font-size:.86rem; margin-top:.6rem; }
+  .notice.ok  { background:#eaf8f1; border:1px solid #9ddcc0; color:#046c4a; }
+  .notice.bad { background:#fdeef0; border:1px solid #f0b3bd; color:#a1002a; }
+  .notice.info{ background:#f6f8fa; border:1px solid #e1e4e8; color:#444; }
+  .notice ul { margin:.3rem 0 0; padding-left:1.1rem; }
+
+  .empty { border:1px dashed #ddd; border-radius:8px; padding:2rem 1rem; text-align:center;
+           color:var(--muted); }
+  .spin { display:inline-block; width:.75em; height:.75em; border:2px solid #ccc;
+          border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite;
+          vertical-align:-1px; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .run-log { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.78rem;
+             white-space:pre-wrap; margin:.4rem 0 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pipeline-page" data-testid="pipeline-sources-page">
+
+  <div class="page-head">
+    <h2>Pipeline sources</h2>
+    <span class="small">Data sources the Pipeline maps into the knowledge graph.</span>
+    <button class="btn primary" id="add-source-btn" data-testid="add-source-btn"
+            style="margin-left:auto">+ Add source</button>
+  </div>
+
+  <div id="sources-list" data-testid="sources-list" aria-busy="true">
+    <p class="small"><span class="spin"></span> Loading sources…</p>
+  </div>
+
+  <!-- ------------------------------------------------ Add / edit source -->
+  <dialog class="sheet" id="source-sheet" data-testid="source-sheet">
+    <div class="sheet-head"><h3 id="sheet-title">Add source</h3></div>
+    <div class="sheet-body">
+
+      <!-- Step 0: which kind of source. Plugin types come from the template
+           registry. -->
+      <section id="step-type" data-testid="step-type">
+        <div class="field">
+          <label>Source type</label>
+          <div id="type-options" data-testid="type-options">
+            <p class="small"><span class="spin"></span> Loading source types…</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Step 1 (Task B): where the data comes from.
+           The format preset is the second-level choice under the type (Table
+           Loader -> CSV / Excel / TSV) and lives here rather than in the type
+           step, because that step is hidden the moment a type is picked — a
+           dropdown in it would be unreachable. It also belongs next to the path:
+           choosing Excel is what reveals the worksheet field. -->
+      <section id="step-connect" data-testid="step-connect" hidden>
+        <div class="field" id="preset-field" hidden>
+          <label for="preset-select">Format</label>
+          <select id="preset-select" data-testid="preset-select"></select>
+          <div class="hint" id="preset-hint"></div>
+        </div>
+        <div class="field">
+          <label for="source-name">Name</label>
+          <input type="text" id="source-name" data-testid="source-name"
+                 placeholder="e.g. AIPT Intake Form" autocomplete="off">
+        </div>
+
+        <div class="tabs" role="tablist" data-testid="connect-tabs">
+          <button role="tab" id="tab-remote" aria-selected="true"
+                  data-testid="tab-remote">Remote path</button>
+          <button role="tab" id="tab-upload" aria-selected="false"
+                  data-testid="tab-upload">Upload a file</button>
+        </div>
+
+        <div id="pane-remote" data-testid="pane-remote">
+          <div class="field">
+            <label for="source-path">rclone remote path</label>
+            <input type="text" id="source-path" data-testid="source-path"
+                   placeholder="sharepoint:SiteName/Lists/ListName.csv" autocomplete="off">
+            <div class="hint">A local path to the same export also works.</div>
+          </div>
+          <div class="field" id="sheet-field" hidden>
+            <label for="source-sheet-name">Worksheet (Excel only)</label>
+            <input type="text" id="source-sheet-name" data-testid="source-sheet-name"
+                   placeholder="Leave blank for the first sheet" autocomplete="off">
+          </div>
+          <button class="btn" id="test-connection-btn" data-testid="test-connection-btn">
+            Test connection
+          </button>
+        </div>
+
+        <div id="pane-upload" data-testid="pane-upload" hidden>
+          <div class="field">
+            <label for="upload-file">CSV, TSV or Excel file</label>
+            <input type="file" id="upload-file" data-testid="upload-file"
+                   accept=".csv,.tsv,.tab,.txt,.xlsx,.xlsm">
+            <div class="hint">Columns and a preview are shown as soon as it uploads.</div>
+          </div>
+          <button class="btn" id="upload-btn" data-testid="upload-btn">Upload and preview</button>
+        </div>
+
+        <div id="connect-result" data-testid="connect-result"></div>
+      </section>
+    </div>
+
+    <div class="sheet-foot">
+      <button class="btn" id="sheet-back" data-testid="sheet-back" hidden>Back</button>
+      <span class="spacer"></span>
+      <button class="btn" id="sheet-cancel" data-testid="sheet-cancel">Cancel</button>
+      <button class="btn primary" id="sheet-save" data-testid="sheet-save" disabled>
+        Save source
+      </button>
+    </div>
+  </dialog>
+
+  <!-- ------------------------------------------------------- Schedule -->
+  <dialog class="sheet" id="schedule-sheet" data-testid="schedule-sheet">
+    <div class="sheet-head"><h3>Schedule</h3></div>
+    <div class="sheet-body">
+      <p class="small" id="schedule-for"></p>
+      <div class="field">
+        <label for="schedule-mode">Run</label>
+        <select id="schedule-mode" data-testid="schedule-mode">
+          <option value="manual">Manual only</option>
+          <option value="hourly">Hourly</option>
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="cron">Custom cron</option>
+        </select>
+      </div>
+      <div class="field" id="schedule-time-field" hidden>
+        <label for="schedule-time">At</label>
+        <input type="time" id="schedule-time" data-testid="schedule-time" value="02:00">
+      </div>
+      <div class="field" id="schedule-day-field" hidden>
+        <label for="schedule-day">On</label>
+        <select id="schedule-day" data-testid="schedule-day">
+          <option value="0">Monday</option><option value="1">Tuesday</option>
+          <option value="2">Wednesday</option><option value="3">Thursday</option>
+          <option value="4">Friday</option><option value="5">Saturday</option>
+          <option value="6">Sunday</option>
+        </select>
+      </div>
+      <div class="field" id="schedule-cron-field" hidden>
+        <label for="schedule-cron">Cron expression</label>
+        <input type="text" id="schedule-cron" data-testid="schedule-cron"
+               placeholder="0 2 * * *" autocomplete="off">
+        <div class="hint">Five fields: minute hour day-of-month month day-of-week.</div>
+      </div>
+      <div class="field">
+        <label style="font-weight:400; display:flex; gap:.4rem; align-items:center;">
+          <input type="checkbox" id="schedule-paused" data-testid="schedule-paused"
+                 style="width:auto">
+          Paused — keep this schedule but do not run it
+        </label>
+      </div>
+      <div id="schedule-result"></div>
+    </div>
+    <div class="sheet-foot">
+      <span class="spacer"></span>
+      <button class="btn" id="schedule-cancel" data-testid="schedule-cancel">Cancel</button>
+      <button class="btn primary" id="schedule-save" data-testid="schedule-save">
+        Save schedule
+      </button>
+    </div>
+  </dialog>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const BASE = window.SCIDK_BASE || '';
+  const $ = (id) => document.getElementById(id);
+
+  // Draft state for the add/edit flow. `preview` is what Task B produced and
+  // what Steps 2 and 3 will consume once they exist.
+  let draft = {};
+  let types = [];
+  let scheduleTarget = null;
+
+  const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g,
+    (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  async function api(path, options) {
+    const res = await fetch(BASE + path, options);
+    let data = {};
+    try { data = await res.json(); } catch (e) { /* a non-JSON error page */ }
+    if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);
+    return data;
+  }
+
+  // base.html exposes its makeToast helper as window.toast(message, type, timeoutMs).
+  // Named differently here so the wrapper cannot shadow the global it calls.
+  function notify(message, kind) {
+    if (typeof window.toast === 'function') window.toast(message, kind || 'success', 4500);
+  }
+
+  // ------------------------------------------------------------- cards
+
+  function fairBadge(source) {
+    const fair = source.fair_status;
+    if (!fair) return '<span class="badge neutral" title="No check run yet">FAIR —</span>';
+    const letters = ['F', 'A', 'I', 'R'];
+    if (letters.every((l) => fair[l])) {
+      return '<span class="badge ok">FAIR ✅</span>';
+    }
+    const rendered = letters
+      .map((l) => `${l}${fair[l] ? '✅' : fair[l] === false ? '⚠️' : '—'}`)
+      .join(' ');
+    return `<span class="badge warn">${esc(rendered)}</span>`;
+  }
+
+  function runLine(source) {
+    if (!source.last_run_at) return 'Never run';
+    const summary = source.last_run_summary || {};
+    const status = source.last_run_status || 'unknown';
+    const kind = status === 'success' ? 'ok' : status === 'partial' ? 'warn' : 'err';
+    const detail = summary.summary || `${status}`;
+    return `Last run: ${esc(source.last_run_at)} · ` +
+           `<span class="badge ${kind}">${esc(status)}</span> ${esc(detail)}`;
+  }
+
+  function card(source) {
+    const type = types.find((t) => t.id === source.plugin_type
+                               || t.plugin === source.plugin_type) || {};
+    const icon = type.icon || '📄';
+    const unavailable = source.plugin_available === false;
+    const schedule = source.schedule
+      ? `Schedule: ${esc(source.schedule)}${source.schedule_paused ? ' (paused)' : ''}`
+      : 'Schedule: manual only';
+
+    return `
+      <div class="source-card ${unavailable ? 'unavailable' : ''}"
+           data-testid="source-card" data-source-id="${esc(source.id)}">
+        <div class="card-top">
+          <span class="card-icon">${esc(icon)}</span>
+          <span class="card-name" data-testid="source-card-name">${esc(source.name)}</span>
+          <span class="badge neutral">${esc(source.plugin_type)}</span>
+          ${fairBadge(source)}
+          ${unavailable
+            ? '<span class="badge err" title="This plugin does not implement the '
+              + 'DataSourcePlugin contract">no plugin</span>'
+            : ''}
+          <span class="card-actions">
+            <button class="btn" data-act="run" data-testid="run-source-btn"
+                    ${unavailable ? 'disabled' : ''}>Run</button>
+            <button class="btn" data-act="schedule" data-testid="schedule-source-btn"
+                    ${unavailable ? 'disabled' : ''}>Schedule</button>
+            <button class="btn" data-act="edit" data-testid="edit-source-btn">Edit</button>
+            <button class="btn danger" data-act="delete"
+                    data-testid="delete-source-btn">Delete</button>
+          </span>
+        </div>
+        <div class="card-path">${esc(source.display_path || '(no path configured)')}</div>
+        <div class="card-meta">
+          <div>${runLine(source)}</div>
+          <div>${schedule}</div>
+          ${source.mapping_json ? '' :
+            '<div><span class="badge warn">no column mapping yet</span> ' +
+            'Mapping is Cycle 3B Task D.</div>'}
+        </div>
+        <div class="run-log" data-testid="source-run-log"></div>
+      </div>`;
+  }
+
+  async function loadSources() {
+    const list = $('sources-list');
+    list.setAttribute('aria-busy', 'true');
+    try {
+      const [sourceData, pipelineData] = await Promise.all([
+        api('/api/pipeline/sources'),
+        api('/api/pipeline/pipelines').catch(() => ({ pipelines: [] })),
+      ]);
+      // A source's schedule lives on its pipeline, so fold it back in for display.
+      const bySource = {};
+      (pipelineData.pipelines || []).forEach((p) => {
+        (p.source_ids || []).forEach((sid) => {
+          if (!bySource[sid] || p.implicit) bySource[sid] = p;
+        });
+      });
+      const sources = (sourceData.sources || []).map((s) => {
+        const pipeline = bySource[s.id];
+        return Object.assign({}, s, {
+          schedule: pipeline ? pipeline.schedule : null,
+          schedule_paused: pipeline ? pipeline.schedule_paused : 0,
+          pipeline_id: pipeline ? pipeline.id : null,
+        });
+      });
+      list.innerHTML = sources.length
+        ? sources.map(card).join('')
+        : `<div class="empty" data-testid="sources-empty">
+             No data sources configured yet.<br>
+             <span class="small">Use “+ Add source” to connect one.</span>
+           </div>`;
+    } catch (e) {
+      list.innerHTML = `<div class="notice bad">Could not load sources: ${esc(e.message)}</div>`;
+    } finally {
+      list.removeAttribute('aria-busy');
+    }
+  }
+
+  // ---------------------------------------------------------- card actions
+
+  $('sources-list').addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-act]');
+    if (!button) return;
+    const cardEl = button.closest('[data-source-id]');
+    const sourceId = cardEl.dataset.sourceId;
+    const name = cardEl.querySelector('[data-testid=source-card-name]').textContent;
+
+    if (button.dataset.act === 'delete') return deleteSource(sourceId, name);
+    if (button.dataset.act === 'run') return runSource(sourceId, cardEl, button);
+    if (button.dataset.act === 'schedule') return openSchedule(sourceId, name);
+    if (button.dataset.act === 'edit') return openEdit(sourceId);
+  });
+
+  async function deleteSource(sourceId, name) {
+    if (!window.confirm(
+      `Delete “${name}”?\n\nThis removes the source, its schema canvas, its ` +
+      `schedule and its run history. Any uploaded file is left on disk.`)) return;
+    try {
+      const data = await api(`/api/pipeline/sources/${sourceId}`, { method: 'DELETE' });
+      const removed = data.removed || {};
+      notify(`Deleted “${name}” (${removed.runs || 0} run(s) of history removed)`, 'success');
+      loadSources();
+    } catch (e) {
+      notify(`Could not delete: ${e.message}`, 'error');
+    }
+  }
+
+  function runResultHtml(run) {
+    const kind = run.status === 'success' ? 'ok' : run.status === 'partial' ? 'warn' : 'bad';
+    let html = `<div class="notice ${kind}"><strong>${esc(run.status)}</strong> — `
+             + `${esc(run.summary || '')}`;
+    if (!run.fair_ok) {
+      const failed = Object.keys(run.fair || {}).filter((l) => !run.fair[l]);
+      html += `<br>FAIR check failed on ${esc(failed.join(', '))}; nothing was written.`;
+    }
+    const errors = run.errors || [];
+    if (errors.length) {
+      html += '<ul>' + errors.slice(0, 8).map((e) => `<li>${esc(e)}</li>`).join('');
+      if (run.errors_truncated) html += `<li>…and ${run.errors_truncated} more</li>`;
+      html += '</ul>';
+    }
+    return html + '</div>';
+  }
+
+  // The result has to be written AFTER the refresh, not before: loadSources()
+  // re-renders every card, so anything written into the old card element is
+  // discarded a moment later and the user sees the run produce nothing.
+  function showRunResult(sourceId, html) {
+    const cardEl = document.querySelector(`[data-source-id="${sourceId}"]`);
+    if (!cardEl) return;
+    cardEl.querySelector('[data-testid=source-run-log]').innerHTML = html;
+  }
+
+  async function runSource(sourceId, cardEl, button) {
+    const log = cardEl.querySelector('[data-testid=source-run-log]');
+    button.disabled = true;
+    log.innerHTML = '<span class="spin"></span> Running…';
+    let html;
+    try {
+      const data = await api(`/api/pipeline/sources/${sourceId}/run`, { method: 'POST' });
+      html = runResultHtml(data.run || {});
+    } catch (e) {
+      html = `<div class="notice bad">${esc(e.message)}</div>`;
+    }
+    await loadSources();
+    showRunResult(sourceId, html);
+  }
+
+  // ------------------------------------------------------- add/edit flow
+
+  const sheet = $('source-sheet');
+
+  function showStep(step) {
+    $('step-type').hidden = step !== 'type';
+    $('step-connect').hidden = step !== 'connect';
+    $('sheet-back').hidden = step === 'type' || draft.id;
+    $('sheet-save').disabled = step !== 'connect' || !draft.preview;
+    $('sheet-title').textContent = draft.id ? 'Edit source' : 'Add source';
+  }
+
+  async function loadTypes() {
+    const box = $('type-options');
+    try {
+      // The route already existed; the Pipeline just asks for one category.
+      const data = await api('/api/plugins/templates?category=data_import');
+      types = data.templates || [];
+      if (!types.length) {
+        box.innerHTML = '<div class="notice info">No data source plugins are '
+                      + 'registered.</div>';
+        return;
+      }
+      box.innerHTML = types.map((t, i) => `
+        <button type="button" class="type-option" data-testid="type-option"
+                data-index="${i}" aria-pressed="false">
+          <span class="card-icon">${esc(t.icon || '📄')}</span>
+          <span>
+            <span class="t-name">${esc(t.name || t.id)}</span><br>
+            <span class="t-desc">${esc(t.description || '')}</span>
+          </span>
+        </button>`).join('');
+    } catch (e) {
+      box.innerHTML = `<div class="notice bad">${esc(e.message)}</div>`;
+    }
+  }
+
+  $('type-options').addEventListener('click', (event) => {
+    const option = event.target.closest('.type-option');
+    if (!option) return;
+    document.querySelectorAll('.type-option')
+      .forEach((o) => o.setAttribute('aria-pressed', String(o === option)));
+
+    const type = types[Number(option.dataset.index)];
+    // The plugin's own `plugin` field is the DataSourcePlugin name the registry
+    // resolves; the template id is the fallback for a plugin that omits it.
+    draft.plugin_type = type.plugin || type.id;
+    draft.preset = '';
+    draft.preview = null;
+
+    // Presets are the second level of the picker: Table Loader -> CSV/Excel/TSV.
+    const presets = type.preset_configs || {};
+    const keys = Object.keys(presets);
+    const field = $('preset-field');
+    if (keys.length) {
+      $('preset-select').innerHTML = keys.map((k) =>
+        `<option value="${esc(k)}">${esc(presets[k].name || k)}</option>`).join('');
+      $('preset-hint').textContent = presets[keys[0]].description || '';
+      draft.preset = keys[0];
+      field.hidden = false;
+    } else {
+      field.hidden = true;
+    }
+    if (!$('source-name').value.trim()) {
+      $('source-name').value = type.name || '';
+    }
+    showStep('connect');
+    updateSheetFields();
+  });
+
+  $('preset-select').addEventListener('change', (event) => {
+    draft.preset = event.target.value;
+    draft.preview = null;
+    const type = types.find((t) => (t.plugin || t.id) === draft.plugin_type) || {};
+    const preset = (type.preset_configs || {})[draft.preset] || {};
+    $('preset-hint').textContent = preset.description || '';
+    updateSheetFields();
+    $('connect-result').innerHTML = '';
+    $('sheet-save').disabled = true;
+  });
+
+  function updateSheetFields() {
+    // The worksheet field only means anything for a spreadsheet.
+    const type = types.find((t) => (t.plugin || t.id) === draft.plugin_type) || {};
+    const preset = (type.preset_configs || {})[draft.preset] || {};
+    const config = preset.config || {};
+    const excelish = /excel|xlsx/i.test(draft.preset || '')
+      || /excel|xlsx/i.test(String(config.file_type || ''))
+      || /\.xlsx?$/i.test($('source-path').value || '');
+    $('sheet-field').hidden = !excelish;
+  }
+
+  $('source-path').addEventListener('input', updateSheetFields);
+
+  function selectTab(which) {
+    const remote = which === 'remote';
+    $('tab-remote').setAttribute('aria-selected', String(remote));
+    $('tab-upload').setAttribute('aria-selected', String(!remote));
+    $('pane-remote').hidden = !remote;
+    $('pane-upload').hidden = remote;
+    // Switching how you connect invalidates the preview from the other way.
+    draft.preview = null;
+    draft.config = null;
+    $('connect-result').innerHTML = '';
+    $('sheet-save').disabled = true;
+  }
+  $('tab-remote').addEventListener('click', () => selectTab('remote'));
+  $('tab-upload').addEventListener('click', () => selectTab('upload'));
+
+  function renderPreview(result, note) {
+    const box = $('connect-result');
+    if (!result.ok) {
+      box.innerHTML = `<div class="notice bad" data-testid="connect-error">
+        ${esc(result.error || 'Could not read the source.')}</div>`;
+      return false;
+    }
+    const columns = result.columns || [];
+    const sample = result.sample || [];
+    const rows = sample.map((row) =>
+      '<tr>' + columns.map((c) => `<td>${esc(row[c])}</td>`).join('') + '</tr>').join('');
+    box.innerHTML = `
+      <div class="notice ok" data-testid="connect-success">
+        ${esc(note || 'Connected.')} ${columns.length} column(s)${
+          result.row_count != null ? `, ${result.row_count} row(s)` : ''}.
+      </div>
+      <div class="preview-wrap" data-testid="connect-preview">
+        <table>
+          <thead><tr>${columns.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+    return true;
+  }
+
+  $('test-connection-btn').addEventListener('click', async (event) => {
+    const path = $('source-path').value.trim();
+    if (!path) {
+      $('connect-result').innerHTML =
+        '<div class="notice bad">Enter a remote path first.</div>';
+      return;
+    }
+    const config = { source_path: path };
+    const sheetName = $('source-sheet-name').value.trim();
+    if (sheetName) config.sheet = sheetName;
+
+    event.target.disabled = true;
+    $('connect-result').innerHTML =
+      '<div class="notice info"><span class="spin"></span> Testing connection…</div>';
+    try {
+      const result = await api('/api/pipeline/sources/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plugin_type: draft.plugin_type, preset: draft.preset, config }),
+      });
+      if (renderPreview(result, 'Connected.')) {
+        draft.config = config;
+        draft.preview = result;
+        $('sheet-save').disabled = false;
+      }
+    } catch (e) {
+      $('connect-result').innerHTML = `<div class="notice bad">${esc(e.message)}</div>`;
+    } finally {
+      event.target.disabled = false;
+    }
+  });
+
+  $('upload-btn').addEventListener('click', async (event) => {
+    const file = ($('upload-file').files || [])[0];
+    if (!file) {
+      $('connect-result').innerHTML = '<div class="notice bad">Choose a file first.</div>';
+      return;
+    }
+    const form = new FormData();
+    form.append('file', file);
+
+    event.target.disabled = true;
+    $('connect-result').innerHTML =
+      '<div class="notice info"><span class="spin"></span> Uploading…</div>';
+    try {
+      const result = await api('/api/pipeline/sources/upload',
+                               { method: 'POST', body: form });
+      if (renderPreview(result, `Uploaded ${esc(file.name)}.`)) {
+        draft.config = result.config;
+        draft.preview = result;
+        // An upload is read by the built-in local-file source, whatever type was
+        // picked — that is what makes upload work for every plugin.
+        draft.plugin_type = 'file_upload';
+        draft.preset = '';
+        if (!$('source-name').value.trim()) $('source-name').value = file.name;
+        $('sheet-save').disabled = false;
+      }
+    } catch (e) {
+      $('connect-result').innerHTML = `<div class="notice bad">${esc(e.message)}</div>`;
+    } finally {
+      event.target.disabled = false;
+    }
+  });
+
+  $('sheet-save').addEventListener('click', async () => {
+    const name = $('source-name').value.trim();
+    if (!name) {
+      $('connect-result').innerHTML = '<div class="notice bad">Give the source a name.</div>';
+      return;
+    }
+    const payload = {
+      name,
+      plugin_type: draft.plugin_type,
+      preset: draft.preset || undefined,
+      config: draft.config || {},
+    };
+    try {
+      if (draft.id) {
+        await api(`/api/pipeline/sources/${draft.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        notify(`Saved “${name}”`, 'success');
+      } else {
+        await api('/api/pipeline/sources', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        // Steps 2 and 3 are Tasks C and D. Saying so beats a "Next" button that
+        // leads nowhere.
+        notify(`Added “${name}”. Define its schema and column mapping when those `
+              + `steps land.`, 'success');
+      }
+      sheet.close();
+      loadSources();
+    } catch (e) {
+      $('connect-result').innerHTML = `<div class="notice bad">${esc(e.message)}</div>`;
+    }
+  });
+
+  function resetSheet() {
+    draft = {};
+    $('source-name').value = '';
+    $('source-path').value = '';
+    $('source-sheet-name').value = '';
+    $('upload-file').value = '';
+    $('connect-result').innerHTML = '';
+    $('preset-field').hidden = true;
+    document.querySelectorAll('.type-option')
+      .forEach((o) => o.setAttribute('aria-pressed', 'false'));
+    selectTab('remote');
+  }
+
+  $('add-source-btn').addEventListener('click', () => {
+    resetSheet();
+    showStep('type');
+    if (!types.length) loadTypes();
+    sheet.showModal();
+  });
+
+  async function openEdit(sourceId) {
+    resetSheet();
+    try {
+      const data = await api(`/api/pipeline/sources/${sourceId}`);
+      const source = data.source || {};
+      const config = source.source_path || {};
+      draft = {
+        id: source.id,
+        plugin_type: source.plugin_type,
+        config: typeof config === 'object' ? config : { source_path: config },
+        // An already-saved source has a working connection; re-testing is
+        // optional rather than a precondition for saving a rename.
+        preview: { ok: true, columns: [], sample: [] },
+      };
+      $('source-name').value = source.name || '';
+      $('source-path').value = draft.config.source_path || '';
+      if (draft.config.sheet) $('source-sheet-name').value = draft.config.sheet;
+      if (!types.length) await loadTypes();
+      showStep('connect');
+      updateSheetFields();
+      $('sheet-save').disabled = false;
+      sheet.showModal();
+    } catch (e) {
+      notify(`Could not open source: ${e.message}`, 'error');
+    }
+  }
+
+  $('sheet-back').addEventListener('click', () => showStep('type'));
+  $('sheet-cancel').addEventListener('click', () => sheet.close());
+
+  // ------------------------------------------------------------ schedule
+
+  const scheduleSheet = $('schedule-sheet');
+
+  function scheduleFields() {
+    const mode = $('schedule-mode').value;
+    $('schedule-time-field').hidden = !['daily', 'weekly'].includes(mode);
+    $('schedule-day-field').hidden = mode !== 'weekly';
+    $('schedule-cron-field').hidden = mode !== 'cron';
+  }
+  $('schedule-mode').addEventListener('change', scheduleFields);
+
+  function cronFromForm() {
+    const mode = $('schedule-mode').value;
+    if (mode === 'manual') return null;
+    if (mode === 'cron') return $('schedule-cron').value.trim();
+    const [hour, minute] = ($('schedule-time').value || '02:00').split(':');
+    if (mode === 'hourly') return `${Number(minute) || 0} * * * *`;
+    if (mode === 'daily') return `${Number(minute)} ${Number(hour)} * * *`;
+    return `${Number(minute)} ${Number(hour)} * * ${$('schedule-day').value}`;
+  }
+
+  async function openSchedule(sourceId, name) {
+    scheduleTarget = sourceId;
+    $('schedule-for').textContent =
+      `“${name}”. A source-level schedule is stored as a single-source pipeline.`;
+    $('schedule-result').innerHTML = '';
+    try {
+      const data = await api(`/api/pipeline/sources/${sourceId}/schedule`);
+      const schedule = data.schedule || {};
+      $('schedule-mode').value = schedule.cron ? 'cron' : 'manual';
+      $('schedule-cron').value = schedule.cron || '';
+      $('schedule-paused').checked = Boolean(schedule.paused);
+      if (schedule.next_run_time) {
+        $('schedule-result').innerHTML =
+          `<div class="notice info">Next run: ${esc(schedule.next_run_time)}</div>`;
+      }
+    } catch (e) { /* no schedule yet is the normal case */ }
+    scheduleFields();
+    scheduleSheet.showModal();
+  }
+
+  $('schedule-save').addEventListener('click', async () => {
+    try {
+      const data = await api(`/api/pipeline/sources/${scheduleTarget}/schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cron: cronFromForm(),
+          paused: $('schedule-paused').checked,
+        }),
+      });
+      const schedule = data.schedule || {};
+      let note = schedule.cron
+        ? `Schedule saved: ${schedule.cron}${schedule.paused ? ' (paused)' : ''}.`
+        : 'Set to manual only.';
+      if (schedule.next_run_time) note += ` Next run ${schedule.next_run_time}.`;
+      if (schedule.warning) note += ` ${schedule.warning}`;
+      notify(note, 'success');
+      scheduleSheet.close();
+      loadSources();
+    } catch (e) {
+      $('schedule-result').innerHTML = `<div class="notice bad">${esc(e.message)}</div>`;
+    }
+  });
+
+  $('schedule-cancel').addEventListener('click', () => scheduleSheet.close());
+
+  loadTypes().then(loadSources);
+})();
+</script>
+{% endblock %}

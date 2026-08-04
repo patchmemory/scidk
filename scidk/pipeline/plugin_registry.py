@@ -48,12 +48,25 @@ class PluginNotAvailable(RuntimeError):
 
 #: Pipeline-owned sources. Values are factories, so nothing is constructed at
 #: import time.
+#:
+#: ``table_loader`` is here rather than under :data:`PLUGIN_PACKAGES` on purpose.
+#: The ``+ Add source`` picker offers it with CSV / Excel / TSV presets, and those
+#: presets describe exactly what :class:`TabularFilePlugin` reads: a delimited or
+#: spreadsheet file with a header row. The plugin package itself registers a UI
+#: template and implements no ``DataSourcePlugin``, so routing the type here is
+#: what makes the documented "Table Loader -> CSV" choice actually run, instead of
+#: offering it and failing at save time. If ``plugins/table_loader`` later grows a
+#: ``get_plugin()``, delete this entry and it takes over.
+#:
+#: Note the format is decided by the file's extension, not by the preset's
+#: ``file_type`` — an Excel workbook saved as ``.dat`` is read as delimited text.
 BUILTIN_SOURCES: Dict[str, Callable[..., DataSourcePlugin]] = {
     "tabular_file": TabularFilePlugin,
     "file_upload": TabularFilePlugin,
     "csv": TabularFilePlugin,
     "tsv": TabularFilePlugin,
     "excel": TabularFilePlugin,
+    "table_loader": TabularFilePlugin,
 }
 
 #: ``plugin_type`` → package under ``plugins/``. Aliases exist because the UI

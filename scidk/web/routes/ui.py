@@ -175,6 +175,18 @@ def plugins():
     )
 
 
+@bp.get('/pipeline/sources')
+def pipeline_sources():
+    """Pipeline source management (Cycle 3B Task A).
+
+    A Pipeline page, not a plugin page: it lists every configured data source
+    whatever plugin serves it. The page renders empty and fetches
+    /api/pipeline/sources, so a slow or unreachable source cannot block the page
+    itself from loading.
+    """
+    return render_template('pipeline_sources.html')
+
+
 @bp.get('/interpreters')
 def interpreters():
     """Redirect to landing page interpreters section (backward compatibility)."""

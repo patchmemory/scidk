@@ -162,9 +162,21 @@ def test_a_source_with_no_mapping_config_cannot_be_built(store):
 
 
 def test_a_plugin_type_nothing_implements_is_named_plainly(store):
-    source = store.create_source("S", "table_loader", mapping_json=MAPPING)
+    """ilab_importer registers a UI template but has no DataSourcePlugin."""
+    source = store.create_source("S", "ilab_table_loader", mapping_json=MAPPING)
     with pytest.raises(PluginNotAvailable, match="does not implement"):
         build_runner(source)
+
+
+def test_table_loader_is_served_by_the_builtin_reader(tmp_path, store):
+    """The picker's "Table Loader -> CSV" has to actually run, not fail at save."""
+    path = tmp_path / "x.csv"
+    path.write_text("Asset ID,Name\nA-1,X\n", encoding="utf-8")
+    source = store.create_source(
+        "S", "table_loader", source_path={"source_path": str(path)}, mapping_json=MAPPING
+    )
+    report = build_runner(source, writer=FakeWriter()).preflight()
+    assert report.fair_ok is True
 
 
 def test_an_unknown_plugin_type_lists_what_is_known(store):
