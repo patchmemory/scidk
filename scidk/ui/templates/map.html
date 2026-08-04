@@ -2159,13 +2159,18 @@
     // Provisional labels / types currently on the canvas.
     const provLabels = new Set();
     const provTypes = new Set();
+    // Schema-space elements are excluded (Task C): the sidebar styles instance
+    // labels, and offering a label *type* there would let a colour change repaint
+    // the muted fill that marks it as schema rather than data.
     cy.nodes().forEach(n => {
       if (!n.data('provisional') || n.data('ellipsis')) return;
+      if (n.data('_space') === SciDKGraph.SPACE_SCHEMA) return;
       const lbl = n.data('baseLabel') || n.data('label');
       if (lbl) provLabels.add(lbl);
     });
     cy.edges().forEach(e => {
       if (!e.data('provisional')) return;
+      if (e.data('_space') === SciDKGraph.SPACE_SCHEMA) return;
       const t = e.data('baseType') || e.data('relationship') || e.data('label');
       if (t) provTypes.add(t);
     });
