@@ -337,6 +337,44 @@
     margin-bottom: 0.125rem;
   }
 
+  /* Draft DMS plan panel (Cycle 7 Task C) — full width, opens under the header.
+     The plan describes the whole graph rather than a selection, so it is not part
+     of the selection toolbar. */
+  .dms-panel {
+    padding: 0.75rem;
+    background: #f8f9fa;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+  }
+  .dms-panel .dms-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+  .dms-panel textarea {
+    width: 100%;
+    min-height: 22rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    /* pre-wrap, not pre: a markdown paragraph is one long line, and horizontal
+       scrolling makes the draft unreadable. Soft wrapping is visual only — the
+       textarea's value, and so the copied and downloaded text, is unchanged. */
+    white-space: pre-wrap;
+    background: #fff;
+  }
+  .dms-phi-flag {
+    background: #fff3cd;
+    border: 1px solid #ffe69c;
+    color: #664d03;
+    border-radius: 4px;
+    padding: 0.375rem 0.5rem;
+    font-size: 0.8rem;
+  }
+
   /* Snapshot config diff visualization */
   .row-config-unchanged {
     background: #d4edda !important;
@@ -476,9 +514,40 @@
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
   <h1 data-testid="files-title">Files</h1>
-  <div class="neo4j-status">
-    <div id="neo4j-light" class="neo4j-light" title="Disconnected"></div>
-    <span id="neo4j-status-text">Neo4j: Not connected</span>
+  <div style="display: flex; align-items: center; gap: 0.75rem;">
+    <!-- Generate DMS Plan Draft (Cycle 7 Task C). In the page header, not the
+         selection toolbar: the plan describes the whole graph and needs no
+         selection. -->
+    <button id="dms-plan-btn" class="btn btn-sm btn-outline-primary" data-testid="dms-plan-btn"
+            title="Generate draft NIH Data Management &amp; Sharing plan prose from the graph">
+      📋 Generate DMS Plan Draft
+    </button>
+    <div class="neo4j-status">
+      <div id="neo4j-light" class="neo4j-light" title="Disconnected"></div>
+      <span id="neo4j-status-text">Neo4j: Not connected</span>
+    </div>
+  </div>
+</div>
+
+<!-- Draft NIH DMS plan (Cycle 7 Task C). Markdown in a textarea so the researcher
+     can copy it straight into DMPTool or a grant application. -->
+<div id="dms-panel" class="dms-panel" style="display: none;">
+  <div class="dms-actions">
+    <strong style="font-size: 0.9rem;">Draft NIH DMS Plan</strong>
+    <span id="dms-summary" class="small text-muted"></span>
+    <span style="flex: 1 1 auto;"></span>
+    <button id="dms-copy" class="btn btn-sm btn-outline-secondary" data-testid="dms-copy">Copy</button>
+    <a id="dms-download" class="btn btn-sm btn-outline-secondary"
+       href="#" download="nih-dms-plan-draft.md" data-testid="dms-download">Download .md</a>
+    <button id="dms-close" class="btn btn-sm btn-outline-secondary">Close</button>
+  </div>
+  <div id="dms-phi" class="dms-phi-flag mb-2" style="display: none;"></div>
+  <div id="dms-status" class="small text-muted mb-2"></div>
+  <textarea id="dms-markdown" data-testid="dms-markdown" readonly
+            spellcheck="false" aria-label="Draft NIH DMS plan markdown"></textarea>
+  <div class="small text-muted mt-1">
+    This is a draft generated from your graph. Search it for <code>[</code> to find every
+    placeholder that still needs a decision before submission.
   </div>
 </div>
 
@@ -2778,6 +2847,140 @@ window.addEventListener('DOMContentLoaded', () => {
       } finally {
         rocrateSubmit.disabled = false;
         rocrateSubmit.textContent = prev;
+      }
+    });
+  }
+
+  // ===== Generate DMS Plan Draft (Cycle 7 Task C) =====
+  // Asks the plugin for markdown generated from the whole graph — no selection
+  // involved — and shows it in a textarea to copy into DMPTool. Requesting JSON
+  // rather than raw markdown gets the summary alongside it, which is what makes
+  // the "N entity types, N files" line and the PHI flag possible without
+  // re-parsing the document in the browser.
+  const dmsBtn = document.getElementById('dms-plan-btn');
+  const dmsPanel = document.getElementById('dms-panel');
+  const dmsMarkdown = document.getElementById('dms-markdown');
+  const dmsSummary = document.getElementById('dms-summary');
+  const dmsStatus = document.getElementById('dms-status');
+  const dmsPhi = document.getElementById('dms-phi');
+  const dmsCopy = document.getElementById('dms-copy');
+  const dmsDownload = document.getElementById('dms-download');
+  const dmsClose = document.getElementById('dms-close');
+  let dmsObjectUrl = null;
+
+  function dmsHumanBytes(bytes) {
+    const units = ['bytes', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
+    let size = Number(bytes) || 0;
+    for (let i = 0; i < units.length; i++) {
+      if (size < 1024 || i === units.length - 1) {
+        return i === 0 ? `${Math.round(size)} bytes` : `${size.toFixed(2)} ${units[i]}`;
+      }
+      size /= 1024;
+    }
+    return `${size} bytes`;
+  }
+
+  function dmsRevokeUrl() {
+    if (dmsObjectUrl) {
+      URL.revokeObjectURL(dmsObjectUrl);
+      dmsObjectUrl = null;
+    }
+  }
+
+  if (dmsClose) {
+    dmsClose.addEventListener('click', () => {
+      dmsPanel.style.display = 'none';
+      // The blob backs the download link; holding it after close would leak.
+      dmsRevokeUrl();
+      if (dmsDownload) dmsDownload.removeAttribute('href');
+    });
+  }
+
+  if (dmsCopy) {
+    dmsCopy.addEventListener('click', async () => {
+      if (!dmsMarkdown || !dmsMarkdown.value) return;
+      const prev = dmsCopy.textContent;
+      try {
+        await navigator.clipboard.writeText(dmsMarkdown.value);
+        dmsCopy.textContent = 'Copied';
+      } catch (err) {
+        // Clipboard access needs a secure context; selecting the text is a
+        // workable fallback and tells the user what to do next.
+        dmsMarkdown.focus();
+        dmsMarkdown.select();
+        dmsCopy.textContent = 'Press Ctrl+C';
+      }
+      setTimeout(() => { dmsCopy.textContent = prev; }, 2000);
+    });
+  }
+
+  if (dmsBtn) {
+    dmsBtn.addEventListener('click', async () => {
+      if (!dmsPanel) return;
+      dmsPanel.style.display = 'block';
+      dmsPhi.style.display = 'none';
+      dmsSummary.textContent = '';
+      dmsStatus.innerHTML = '<span class="text-muted">Reading the graph… '
+        + 'on a large index this takes a few seconds.</span>';
+      dmsMarkdown.value = '';
+      dmsBtn.disabled = true;
+      const prevLabel = dmsBtn.textContent;
+      dmsBtn.textContent = 'Generating…';
+
+      try {
+        const r = await fetch(
+          window.SCIDK_BASE + '/api/plugins/nih_dms/draft_plan?format=json');
+        const j = await r.json().catch(() => ({}));
+
+        if (r.ok && j.status === 'ok') {
+          dmsMarkdown.value = j.markdown || '';
+
+          const s = j.summary || {};
+          const parts = [
+            `${(s.entity_types || 0).toLocaleString()} entity types`,
+            `${(s.records || 0).toLocaleString()} records`,
+          ];
+          if (s.files) {
+            parts.push(`${s.files.toLocaleString()} files`);
+            parts.push(dmsHumanBytes(s.bytes));
+          }
+          if (s.formats) parts.push(`${s.formats} formats`);
+          if (s.modalities && s.modalities.length) {
+            parts.push(`${s.modalities.length} modality source(s)`);
+          }
+          dmsSummary.textContent = `— from ${parts.join(', ')}`;
+
+          if (s.phi_detected) {
+            const props = (s.phi_properties || []).map(p => `<code>${p}</code>`).join(', ');
+            dmsPhi.innerHTML = '⚠ <strong>Potentially identifiable data detected.</strong> '
+              + `Property names matched: ${props}. See the Identifiability note in Element 1 `
+              + 'and the privacy subsection in Element 5 — neither can be left as a placeholder.';
+            dmsPhi.style.display = 'block';
+          }
+
+          const notes = (s.warnings || []).length
+            ? ` ${s.warnings.length} note(s) are recorded at the top of the draft.`
+            : '';
+          dmsStatus.innerHTML = '<span class="text-success">Draft generated from the live '
+            + `graph.</span>${notes}`;
+
+          dmsRevokeUrl();
+          dmsObjectUrl = URL.createObjectURL(
+            new Blob([dmsMarkdown.value], { type: 'text/markdown' }));
+          dmsDownload.href = dmsObjectUrl;
+          dmsDownload.download = j.filename || 'nih-dms-plan-draft.md';
+        } else {
+          // A missing or unreachable graph is reported, never papered over with a
+          // placeholder plan — that is the whole point of the route's 503.
+          dmsStatus.innerHTML = `<span class="text-danger">${
+            j.error || ('Could not generate a draft (' + r.status + ')')}</span>`;
+        }
+      } catch (err) {
+        dmsStatus.innerHTML =
+          `<span class="text-danger">Could not generate a draft: ${err.message}</span>`;
+      } finally {
+        dmsBtn.disabled = false;
+        dmsBtn.textContent = prevLabel;
       }
     });
   }
