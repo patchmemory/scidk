@@ -30,6 +30,7 @@ def register_blueprints(app):
     from . import api_tasks
     from . import api_chat
     from . import api_neo4j
+    from . import api_connections
     from . import api_admin
     from . import api_interpreters
     from . import api_providers
@@ -67,6 +68,7 @@ def register_blueprints(app):
     app.register_blueprint(api_chat.bp)
     app.register_blueprint(api_queries.bp)
     app.register_blueprint(api_neo4j.bp)
+    app.register_blueprint(api_connections.bp)  # Settings → Connections card grid
     app.register_blueprint(api_admin.bp)
     app.register_blueprint(api_interpreters.bp)
     app.register_blueprint(api_providers.bp)

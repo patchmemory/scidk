@@ -1,46 +1,14 @@
 <!-- Connections > Chat History Section -->
+<!--
+  Connection status, URI, node/edge counts and Test Connection for this backend
+  live on the Connections → Overview card (Cycle 4, Task A). This page is the
+  chat-specific management view only.
+-->
 <section id="connections-chat-history-section" class="settings-section">
   <h1>Chat History</h1>
   <p class="small">Neo4j database for chat sessions, messages, and query audit trails.</p>
 
-  <!-- Connection Card -->
   <div class="row g-2" style="max-width:900px">
-    <div class="col-12">
-      <div style="background: #fff; border: 1px solid #dee2e6; border-radius: 0.25rem; padding: 1rem; margin-bottom: 1rem;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-          <div style="flex: 1;">
-            <div style="font-weight: 600; font-size: 1rem; margin-bottom: 0.25rem;">
-              <span id="chat-neo4j-status-icon">⚪</span> Chat History Database
-            </div>
-            <div class="small text-muted"><code>bolt://localhost:7688</code></div>
-          </div>
-          <div style="display: flex; gap: 0.5rem; align-items: center;">
-            <button id="btn-test-chat-connection" class="btn btn-sm btn-outline-primary">Test Connection</button>
-          </div>
-        </div>
-
-        <!-- Stats row -->
-        <div class="row g-2 small">
-          <div class="col-6 col-md-3">
-            <div style="color: #666;">Sessions</div>
-            <div id="chat-sessions-count" style="font-weight: 600;">—</div>
-          </div>
-          <div class="col-6 col-md-3">
-            <div style="color: #666;">Messages</div>
-            <div id="chat-messages-count" style="font-weight: 600;">—</div>
-          </div>
-          <div class="col-6 col-md-3">
-            <div style="color: #666;">Queries</div>
-            <div id="chat-queries-count" style="font-weight: 600;">—</div>
-          </div>
-          <div class="col-6 col-md-3">
-            <div style="color: #666;">Status</div>
-            <div id="chat-connection-status" style="font-weight: 600;">—</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- Management Panel -->
     <div class="col-12">
       <div style="padding:1rem; background:#f9f9f9; border-radius:4px; border:1px solid #e0e0e0;">
@@ -58,6 +26,15 @@
         </p>
       </div>
     </div>
+
+    <!-- Saved sessions -->
+    <div class="col-12">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:1rem;">
+        <div class="small fw-bold">Saved sessions</div>
+        <button id="btn-refresh-chat-sessions" class="btn btn-sm btn-outline-secondary">Refresh</button>
+      </div>
+      <div id="chat-sessions-summary" class="small text-muted" style="margin-top:.5rem;">—</div>
+    </div>
   </div>
 
   <details style="margin-top:1.5rem; max-width:900px">
@@ -65,80 +42,44 @@
     <div class="small" style="margin-top:.5rem">
       <p><strong>Environment variables:</strong></p>
       <ul>
-        <li><code>SCIDK_CHAT_NEO4J_URI</code> - Chat graph Neo4j URI (default: bolt://localhost:7688)</li>
-        <li><code>SCIDK_CHAT_NEO4J_AUTH</code> - Auth in format user/password (default: neo4j/chat-password)</li>
+        <li><code>CHAT_NEO4J_URI</code> - Chat graph Neo4j URI (no default; unset disables chat context features)</li>
+        <li><code>CHAT_NEO4J_AUTH</code> - Auth in format user/password</li>
+        <li><code>CHAT_NEO4J_USER</code> / <code>CHAT_NEO4J_PASSWORD</code> - alternative to <code>CHAT_NEO4J_AUTH</code></li>
       </ul>
       <p><strong>Storage architecture:</strong></p>
       <ul>
         <li><strong>SQLite:</strong> Fast session storage for conversation context (messages, metadata)</li>
         <li><strong>Neo4j Chat Graph:</strong> Audit trail with query provenance, ReAct steps, and finding graphs</li>
       </ul>
+      <p>Connection status and node/edge counts are on <em>Connections → Overview</em>.</p>
     </div>
   </details>
 </section>
 
 <script>
   function initChatHistoryConnection() {
-    loadChatHistoryStatus();
+    const summary = document.getElementById('chat-sessions-summary');
+    const refreshBtn = document.getElementById('btn-refresh-chat-sessions');
+    if (!summary) return;
 
-    // Test connection button
-    const testBtn = document.getElementById('btn-test-chat-connection');
-    if (testBtn) {
-      testBtn.addEventListener('click', async () => {
-        testBtn.disabled = true;
-        testBtn.textContent = 'Testing...';
-        await loadChatHistoryStatus();
-        testBtn.disabled = false;
-        testBtn.textContent = 'Test Connection';
-      });
-    }
-  }
-
-  async function loadChatHistoryStatus() {
-    const statusIcon = document.getElementById('chat-neo4j-status-icon');
-    const statusText = document.getElementById('chat-connection-status');
-    const sessionsCount = document.getElementById('chat-sessions-count');
-    const messagesCount = document.getElementById('chat-messages-count');
-    const queriesCount = document.getElementById('chat-queries-count');
-
-    try {
-      // Use the schema status endpoint as a proxy for connection health
-      const resp = await fetch(window.SCIDK_BASE + '/api/chat/schema/cache/stats');
-
-      if (resp.ok) {
-        const data = await resp.json();
-        statusIcon.textContent = '🟢';
-        statusText.innerHTML = '<span style="color: #28a745;">Connected</span>';
-
-        // Try to get session/message counts from chat endpoint
-        try {
-          const sessionsResp = await fetch(window.SCIDK_BASE + '/api/chat/sessions');
-          if (sessionsResp.ok) {
-            const sessionsData = await sessionsResp.json();
-            sessionsCount.textContent = (sessionsData.sessions || []).length;
-          }
-        } catch (e) {
-          sessionsCount.textContent = 'N/A';
+    async function loadSessions() {
+      summary.textContent = 'Loading...';
+      try {
+        const resp = await fetch(window.SCIDK_BASE + '/api/chat/sessions');
+        if (!resp.ok) {
+          summary.textContent = 'Could not load sessions (HTTP ' + resp.status + ').';
+          return;
         }
-
-        // Placeholder counts (would need backend endpoints)
-        messagesCount.textContent = 'N/A';
-        queriesCount.textContent = 'N/A';
-      } else {
-        statusIcon.textContent = '🔴';
-        statusText.innerHTML = '<span style="color: #dc3545;">Disconnected</span>';
-        sessionsCount.textContent = '—';
-        messagesCount.textContent = '—';
-        queriesCount.textContent = '—';
+        const data = await resp.json();
+        const count = (data.sessions || []).length;
+        summary.textContent = count === 1 ? '1 saved session' : `${count} saved sessions`;
+      } catch (err) {
+        summary.textContent = 'Could not load sessions: ' + (err && err.message ? err.message : err);
       }
-    } catch (err) {
-      statusIcon.textContent = '🔴';
-      statusText.innerHTML = '<span style="color: #dc3545;">Error</span>';
-      sessionsCount.textContent = '—';
-      messagesCount.textContent = '—';
-      queriesCount.textContent = '—';
-      console.error('Failed to check chat Neo4j status:', err);
     }
+
+    if (refreshBtn) refreshBtn.addEventListener('click', loadSessions);
+    loadSessions();
   }
 
   // Initialize on page load

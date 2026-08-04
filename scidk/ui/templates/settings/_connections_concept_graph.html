@@ -1,21 +1,26 @@
 <!-- Connections > Concept Graph Section -->
+<!--
+  Connection status, URI, node/edge counts and Test Connection for this backend
+  live on the Connections → Overview card (Cycle 4, Task A). What remains here is
+  concept-graph-specific: what the graph contains, and how to edit it.
+-->
 <section id="connections-concept-graph-section" class="settings-section">
   <h1>Concept Graph</h1>
   <p class="small">Intent-based query planning with embeddings, tools, and feedback-driven weights.</p>
 
-  <!-- Connection Card -->
+  <!-- Graph Contents -->
   <div class="row g-2" style="max-width:960px">
     <div class="col-12">
       <div style="background: #fff; border: 1px solid #dee2e6; border-radius: 0.25rem; padding: 1rem; margin-bottom: 1rem;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
           <div style="flex: 1;">
-            <div style="font-weight: 600; font-size: 1rem; margin-bottom: 0.25rem;">
-              <span id="concept-graph-status-icon">⚪</span> Concept Graph Database
+            <div style="font-weight: 600; font-size: 1rem; margin-bottom: 0.25rem;">Graph contents</div>
+            <div class="small text-muted">
+              Connection status and totals are on
+              <a href="#connections/overview" data-goto-section="connections-overview">Connections → Overview</a>.
             </div>
-            <div class="small text-muted"><code>bolt://localhost:7689</code></div>
           </div>
           <div style="display: flex; gap: 0.5rem; align-items: center;">
-            <button id="btn-test-concept-connection" class="btn btn-sm btn-outline-primary">Test Connection</button>
             <button id="btn-reseed-concept-graph" class="btn btn-sm btn-primary">↺ Re-seed</button>
           </div>
         </div>
@@ -136,7 +141,6 @@
 
   function initConceptGraphConnection() {
     const reseedBtn = document.getElementById('btn-reseed-concept-graph');
-    const testBtn = document.getElementById('btn-test-concept-connection');
     const modal = document.getElementById('intent-edit-modal');
     const cancelBtn = document.getElementById('btn-cancel-intent-edit');
     const saveBtn = document.getElementById('btn-save-intent-edit');
@@ -148,16 +152,15 @@
     loadIntents();
     loadTools();
 
-    // Test connection button
-    if (testBtn) {
-      testBtn.addEventListener('click', async () => {
-        testBtn.disabled = true;
-        testBtn.textContent = 'Testing...';
-        await loadConceptGraphStatus();
-        testBtn.disabled = false;
-        testBtn.textContent = 'Test Connection';
+    // Cross-link to the Connections overview: go through the sidebar item so
+    // section switching and the URL hash behave like normal navigation.
+    document.querySelectorAll('[data-goto-section]').forEach(link => {
+      link.addEventListener('click', (e) => {
+        const navItem = document.querySelector(
+          `.settings-sidebar-item[data-section="${link.dataset.gotoSection}"]`);
+        if (navItem) { e.preventDefault(); navItem.click(); }
       });
-    }
+    });
 
     // Re-seed full graph
     reseedBtn.addEventListener('click', async () => {
@@ -246,27 +249,22 @@
   }
 
   async function loadConceptGraphStatus() {
-    const statusIcon = document.getElementById('concept-graph-status-icon');
+    const setCounts = (intents, tools, edges) => {
+      document.getElementById('concept-graph-intents-count').textContent = intents;
+      document.getElementById('concept-graph-tools-count').textContent = tools;
+      document.getElementById('concept-graph-edges-count').textContent = edges;
+    };
     try {
       const resp = await fetch(window.SCIDK_BASE + '/api/chat/concept-graph/status');
       const data = await resp.json();
 
       if (resp.ok && data.connected) {
-        statusIcon.textContent = '🟢';
-        document.getElementById('concept-graph-intents-count').textContent = data.intents || 0;
-        document.getElementById('concept-graph-tools-count').textContent = data.tools || 0;
-        document.getElementById('concept-graph-edges-count').textContent = data.satisfies_edges || 0;
+        setCounts(data.intents || 0, data.tools || 0, data.satisfies_edges || 0);
       } else {
-        statusIcon.textContent = '🔴';
-        document.getElementById('concept-graph-intents-count').textContent = '—';
-        document.getElementById('concept-graph-tools-count').textContent = '—';
-        document.getElementById('concept-graph-edges-count').textContent = '—';
+        setCounts('—', '—', '—');
       }
     } catch (err) {
-      statusIcon.textContent = '🔴';
-      document.getElementById('concept-graph-intents-count').textContent = '—';
-      document.getElementById('concept-graph-tools-count').textContent = '—';
-      document.getElementById('concept-graph-edges-count').textContent = '—';
+      setCounts('—', '—', '—');
       console.error('Failed to load concept graph status:', err);
     }
   }

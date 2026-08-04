@@ -144,6 +144,7 @@
       <span class="chevron">▸</span>
     </div>
     <div class="settings-subsection-list">
+      <a href="#connections/overview" class="settings-sidebar-item" data-section="connections-overview">Overview</a>
       <a href="#connections/neo4j" class="settings-sidebar-item" data-section="connections-neo4j">Research Graph</a>
       <a href="#connections/chat-history" class="settings-sidebar-item" data-section="connections-chat-history">Chat History</a>
       <a href="#connections/concept-graph" class="settings-sidebar-item" data-section="connections-concept-graph">Concept Graph</a>
@@ -205,6 +206,7 @@
     {% include 'settings/_system_configuration.html' %}
 
     <!-- Connections sections -->
+    {% include 'settings/_connections_overview.html' %}
     {% include 'settings/_neo4j.html' %}
     {% include 'settings/_connections_chat_history.html' %}
     {% include 'settings/_connections_concept_graph.html' %}
