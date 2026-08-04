@@ -104,6 +104,12 @@ def register_plugin(app):
                     'default': 3,
                     'description': 'Rows returned as a preview sample by discovery',
                 },
+                'max_scan_rows': {
+                    'type': 'number',
+                    'default': 100000,
+                    'description': 'Rows discovery counts before reporting an unknown row '
+                                   'count. Lower it for a list too large to count quickly.',
+                },
                 'timeout_sec': {
                     'type': 'number',
                     'default': 120,

@@ -77,6 +77,18 @@ class SharePointPlugin(DataSourcePlugin):
         except (TypeError, ValueError):
             return source.DEFAULT_TIMEOUT_SEC
 
+    @staticmethod
+    def _positive_int(config: Dict[str, Any], key: str, default: int) -> int:
+        """Read a non-negative integer knob, falling back on junk input.
+
+        A malformed instance config should not turn discovery into an error —
+        the default is always a workable answer.
+        """
+        try:
+            return max(0, int((config or {}).get(key, default)))
+        except (TypeError, ValueError):
+            return default
+
     # ------------------------------------------------------- FAIR: Findable
 
     def find(self, config: Dict[str, Any]) -> FindResult:
@@ -84,13 +96,15 @@ class SharePointPlugin(DataSourcePlugin):
 
         One lazy pass over the source, retaining only the sample rows, so this
         stays inside its 10s budget and flat in memory. An exact ``row_count``
-        needs the whole source; past ``ingest.MAX_SCAN_ROWS`` it gives up and
-        reports None with ``metadata["row_count_truncated"]`` set.
+        needs the whole source; past ``max_scan_rows`` it gives up and reports
+        None with ``metadata["row_count_truncated"]`` set.
 
         Args:
             config: Instance configuration. Keys: a source key (see
                 :data:`SOURCE_KEYS`), optional ``sheet`` (Excel worksheet name),
-                ``sample_rows`` (default 3), ``timeout_sec``.
+                ``sample_rows`` (default 3), ``max_scan_rows`` (default
+                ``ingest.MAX_SCAN_ROWS`` — lower it for a list too large to count
+                inside the budget), ``timeout_sec``.
 
         Returns:
             FindResult: never raises — an unreachable source is ``ok: False``
@@ -102,10 +116,8 @@ class SharePointPlugin(DataSourcePlugin):
         if not target:
             return {**empty, "error": _NO_SOURCE}
 
-        try:
-            sample_rows = max(0, int((config or {}).get("sample_rows", 3)))
-        except (TypeError, ValueError):
-            sample_rows = 3
+        sample_rows = self._positive_int(config, "sample_rows", 3)
+        max_scan_rows = self._positive_int(config, "max_scan_rows", ingest.MAX_SCAN_ROWS)
 
         metadata = source.describe(target, provider=self._provider)
         metadata["source_path"] = target
@@ -115,6 +127,7 @@ class SharePointPlugin(DataSourcePlugin):
                 provider=self._provider,
                 timeout_sec=self._timeout(config),
                 sample_rows=sample_rows,
+                max_scan_rows=max_scan_rows,
                 sheet=(config or {}).get("sheet"),
             )
         except Exception as e:  # noqa: BLE001 - discovery failure is a result

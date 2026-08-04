@@ -1,0 +1,5 @@
+CACProtocol,ShortDescription,RecordSource,StudyType_sp,StudyType_orig,ImagingModalities,ServiceType,User_sp,UserName_orig,UserEmail_orig,PI Archived,PI_display,Collaborators Archived,AttachmentPath,AttachmentFilename,AttachmentStatus,HasLargeAttachment
+CAC-001,Tumor imaging study,SharePoint,Longitudinal,,MRI;PET,Imaging,Jane Doe,,,Dr Pat Kim <pat@mit.edu>,,Alice One <alice@mit.edu>; Bob Two <bob@mit.edu>,sp:att/scan.zip,scan.zip,available,false
+,Legacy toxicity run,Drupal,,Terminal,XRAY,Analysis,,John Legacy,John@Old.edu,,Prof Fallback,,,,,
+CAC-003,Quick pilot,SharePoint,Pilot,,MRI,Imaging,Sue Solo,,,,,,sp:att/big.tif,big.tif,not_copied,true
+,,SharePoint,,,,Consultation,,,,,,,,,,
