@@ -8,10 +8,10 @@
   picker is populated from /api/plugins/templates?category=data_import, and each
   card renders from whatever plugin_type its source declares.
 
-  Steps 2 and 3 of the add flow (schema definition on the Maps canvas, and column
-  mapping) are Tasks C and D and are not built yet. The flow deliberately stops
-  after Step 1 with the source saved, so a user can connect a source now and map
-  it when that UI lands — rather than being walked into a dead end.
+  Step 2 (schema definition) is Task C: its three entry points live here, and each
+  opens the schema canvas at /pipeline/sources/<id>/schema. Step 3 (column mapping)
+  is Task D and is not built yet, so the flow stops after the schema is defined and
+  says so — rather than a "Next" button that leads nowhere.
 #}
 
 {% block head %}
@@ -98,6 +98,29 @@
   @keyframes spin { to { transform:rotate(360deg); } }
   .run-log { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.78rem;
              white-space:pre-wrap; margin:.4rem 0 0; }
+
+  /* Stepped flow indicator. A step is 'done' when its artefact exists — a saved
+     connection, a saved schema — not merely when it has been visited. */
+  .steps { display:flex; gap:.4rem; align-items:center; margin-left:auto;
+           font-size:.78rem; color:var(--muted); }
+  .steps .step { display:inline-flex; align-items:center; gap:.3rem;
+                 border:1px solid #e2e2e2; border-radius:12px; padding:.1rem .55rem; }
+  .steps .step[aria-current=step] { border-color:var(--accent); color:#046c4a;
+                                    font-weight:600; background:#eaf8f1; }
+  .steps .step[data-done=true] { border-color:#9ddcc0; color:#046c4a; }
+  .steps .step[data-done=true] .num::before { content:'✓ '; }
+  .steps .step.future { opacity:.55; }
+
+  .entry-option { display:block; width:100%; text-align:left; padding:.6rem .7rem;
+                  border:1px solid #e2e2e2; border-radius:7px; background:#fff;
+                  cursor:pointer; margin-bottom:.5rem; }
+  .entry-option:hover { background:#f7f7f7; }
+  .entry-option .t-name { font-weight:600; font-size:.92rem; }
+  .entry-option .t-desc { font-size:.82rem; color:var(--muted); }
+  .entry-body { margin:.1rem 0 .6rem .2rem; }
+  .entry-body textarea { width:100%; min-height:130px; padding:.4rem .5rem;
+    border:1px solid #ccc; border-radius:5px; font-size:.82rem;
+    font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
 </style>
 {% endblock %}
 
@@ -117,7 +140,18 @@
 
   <!-- ------------------------------------------------ Add / edit source -->
   <dialog class="sheet" id="source-sheet" data-testid="source-sheet">
-    <div class="sheet-head"><h3 id="sheet-title">Add source</h3></div>
+    <div class="sheet-head">
+      <h3 id="sheet-title">Add source</h3>
+      <div class="steps" id="step-indicator" data-testid="step-indicator">
+        <span class="step" id="step-dot-connect" data-testid="step-dot-connect">
+          <span class="num">1</span> Connection</span>
+        <span class="step" id="step-dot-schema" data-testid="step-dot-schema">
+          <span class="num">2</span> Schema</span>
+        <span class="step future" id="step-dot-mapping" data-testid="step-dot-mapping"
+              title="Column mapping is Cycle 3B Task D">
+          <span class="num">3</span> Mapping</span>
+      </div>
+    </div>
     <div class="sheet-body">
 
       <!-- Step 0: which kind of source. Plugin types come from the template
@@ -185,6 +219,55 @@
 
         <div id="connect-result" data-testid="connect-result"></div>
       </section>
+
+      <!-- Step 2 (Task C): the target graph schema, edited on the Maps canvas in
+           Schema mode. The three entry points differ only in what the canvas opens
+           with. Option A validates here, before navigating, so a broken export
+           never reaches the canvas. -->
+      <section id="step-schema" data-testid="step-schema" hidden>
+        <div id="schema-status" data-testid="schema-status"></div>
+
+        <p class="small" style="margin:.8rem 0 .5rem">
+          How would you like to start?
+        </p>
+
+        <button type="button" class="entry-option" id="entry-arrows"
+                data-testid="entry-arrows" aria-expanded="false">
+          <span class="t-name">A · Import from Arrows.app</span><br>
+          <span class="t-desc">Paste or upload an arrows.app export. It opens on the
+            canvas, positions and all, ready to edit.</span>
+        </button>
+        <div class="entry-body" id="entry-arrows-body" hidden>
+          <div class="field">
+            <label for="arrows-file-input">Export file</label>
+            <input type="file" id="arrows-file-input" data-testid="arrows-file-input"
+                   accept=".json">
+          </div>
+          <div class="field">
+            <label for="arrows-json">…or paste the JSON</label>
+            <textarea id="arrows-json" data-testid="arrows-json"
+                      placeholder='{"nodes": [...], "relationships": [...]}'></textarea>
+          </div>
+          <button class="btn primary" id="arrows-open" data-testid="arrows-open">
+            Validate and open canvas
+          </button>
+          <div id="arrows-result"></div>
+        </div>
+
+        <button type="button" class="entry-option" id="entry-derive"
+                data-testid="entry-derive">
+          <span class="t-name">B · Derive from the active schema layer</span><br>
+          <span class="t-desc">Load the labels and relationship types already in
+            Neo4j, then pick the parts this source populates.</span>
+        </button>
+
+        <button type="button" class="entry-option" id="entry-blank"
+                data-testid="entry-blank">
+          <span class="t-name">C · Build from scratch</span><br>
+          <span class="t-desc">Open a blank canvas and add label nodes and
+            relationships by hand.</span>
+        </button>
+      </section>
     </div>
 
     <div class="sheet-foot">
@@ -194,6 +277,10 @@
       <button class="btn primary" id="sheet-save" data-testid="sheet-save" disabled>
         Save source
       </button>
+      <button class="btn primary" id="sheet-next" data-testid="sheet-next" hidden>
+        Next: Schema →
+      </button>
+      <button class="btn" id="sheet-done" data-testid="sheet-done" hidden>Done</button>
     </div>
   </dialog>
 
@@ -261,6 +348,7 @@
   let draft = {};
   let types = [];
   let scheduleTarget = null;
+  let currentStep = 'type';
 
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g,
     (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -304,6 +392,18 @@
            `<span class="badge ${kind}">${esc(status)}</span> ${esc(detail)}`;
   }
 
+  function schemaBadge(source) {
+    const summary = source.schema_summary || {};
+    if (!summary.defined) {
+      return '<span class="badge neutral" title="Step 2 — no target schema yet">'
+           + 'no schema</span>';
+    }
+    const labels = (summary.labels || []).join(', ');
+    return `<span class="badge ok" data-testid="schema-defined-badge"
+                  title="${esc(labels)}">Schema defined`
+         + ` (${summary.node_count})</span>`;
+  }
+
   function card(source) {
     const type = types.find((t) => t.id === source.plugin_type
                                || t.plugin === source.plugin_type) || {};
@@ -320,12 +420,15 @@
           <span class="card-icon">${esc(icon)}</span>
           <span class="card-name" data-testid="source-card-name">${esc(source.name)}</span>
           <span class="badge neutral">${esc(source.plugin_type)}</span>
+          ${schemaBadge(source)}
           ${fairBadge(source)}
           ${unavailable
             ? '<span class="badge err" title="This plugin does not implement the '
               + 'DataSourcePlugin contract">no plugin</span>'
             : ''}
           <span class="card-actions">
+            <button class="btn" data-act="schema" data-testid="schema-source-btn"
+                    title="Open the schema canvas for this source">Schema</button>
             <button class="btn" data-act="run" data-testid="run-source-btn"
                     ${unavailable ? 'disabled' : ''}>Run</button>
             <button class="btn" data-act="schedule" data-testid="schedule-source-btn"
@@ -392,6 +495,10 @@
     const sourceId = cardEl.dataset.sourceId;
     const name = cardEl.querySelector('[data-testid=source-card-name]').textContent;
 
+    if (button.dataset.act === 'schema') {
+      window.location.href = `${BASE}/pipeline/sources/${sourceId}/schema`;
+      return;
+    }
     if (button.dataset.act === 'delete') return deleteSource(sourceId, name);
     if (button.dataset.act === 'run') return runSource(sourceId, cardEl, button);
     if (button.dataset.act === 'schedule') return openSchedule(sourceId, name);
@@ -458,11 +565,35 @@
   const sheet = $('source-sheet');
 
   function showStep(step) {
+    currentStep = step;
     $('step-type').hidden = step !== 'type';
     $('step-connect').hidden = step !== 'connect';
-    $('sheet-back').hidden = step === 'type' || draft.id;
+    $('step-schema').hidden = step !== 'schema';
+    $('sheet-back').hidden = step === 'type' || (step === 'connect' && draft.id);
+    $('sheet-save').hidden = step === 'schema';
     $('sheet-save').disabled = step !== 'connect' || !draft.preview;
+    // "Next" only exists once there is a source id to scope a schema to — the
+    // schema canvas is stored per source, so Step 2 needs Step 1 committed first.
+    $('sheet-next').hidden = step !== 'connect' || !draft.id;
+    $('sheet-done').hidden = step !== 'schema';
     $('sheet-title').textContent = draft.id ? 'Edit source' : 'Add source';
+    updateStepIndicator();
+  }
+
+  /** A step is marked done by its artefact existing, not by having been visited. */
+  function updateStepIndicator() {
+    const dots = { connect: 'step-dot-connect', schema: 'step-dot-schema',
+                   mapping: 'step-dot-mapping' };
+    Object.keys(dots).forEach((name) => {
+      const el = $(dots[name]);
+      el.removeAttribute('aria-current');
+      el.dataset.done = 'false';
+    });
+    if (draft.id) $('step-dot-connect').dataset.done = 'true';
+    if (draft.schemaDefined) $('step-dot-schema').dataset.done = 'true';
+    const here = currentStep === 'schema' ? 'schema'
+               : currentStep === 'connect' ? 'connect' : null;
+    if (here) $(dots[here]).setAttribute('aria-current', 'step');
   }
 
   async function loadTypes() {
@@ -671,26 +802,136 @@
           body: JSON.stringify(payload),
         });
         notify(`Saved “${name}”`, 'success');
+        sheet.close();
+        loadSources();
       } else {
-        await api('/api/pipeline/sources', {
+        const data = await api('/api/pipeline/sources', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
-        // Steps 2 and 3 are Tasks C and D. Saying so beats a "Next" button that
-        // leads nowhere.
-        notify(`Added “${name}”. Define its schema and column mapping when those `
-              + `steps land.`, 'success');
+        // The connection is committed, so the flow can go on to Step 2: a schema
+        // is stored per source, and there was no source id until now.
+        draft.id = (data.source || {}).id;
+        draft.name = name;
+        notify(`Added “${name}”. Next: define the target schema.`, 'success');
+        loadSources();
+        openSchemaStep();
       }
-      sheet.close();
-      loadSources();
     } catch (e) {
       $('connect-result').innerHTML = `<div class="notice bad">${esc(e.message)}</div>`;
     }
   });
 
+  // --------------------------------------------------- step 2: schema (Task C)
+
+  const schemaPath = (sourceId) => `${BASE}/pipeline/sources/${sourceId}/schema`;
+
+  async function openSchemaStep() {
+    showStep('schema');
+    $('arrows-result').innerHTML = '';
+    $('arrows-json').value = '';
+    $('arrows-file-input').value = '';
+    $('entry-arrows-body').hidden = true;
+    $('entry-arrows').setAttribute('aria-expanded', 'false');
+    await renderSchemaStatus();
+  }
+
+  async function renderSchemaStatus() {
+    const box = $('schema-status');
+    box.innerHTML = '<p class="small"><span class="spin"></span> Checking…</p>';
+    try {
+      const data = await api(`/api/pipeline/sources/${draft.id}/schema`);
+      const summary = data.summary || {};
+      draft.schemaDefined = !!summary.defined;
+      updateStepIndicator();
+      if (!summary.defined) {
+        box.innerHTML = `<div class="notice info">
+          No schema defined yet. The schema is the target graph this source is
+          mapped onto — the labels, their properties and the relationships between
+          them.</div>`;
+        return;
+      }
+      box.innerHTML = `<div class="notice ok" data-testid="schema-defined-notice">
+          <strong>Schema defined.</strong>
+          ${summary.node_count} label(s), ${summary.relationship_count}
+          relationship(s): ${esc(summary.labels.join(', '))}.
+          <br><a href="${schemaPath(draft.id)}" data-testid="open-schema-canvas">Open
+          the schema canvas</a> ·
+          <a href="${BASE}/api/pipeline/sources/${draft.id}/schema/export/arrows"
+             data-testid="export-schema-link">Export to Arrows.app</a>
+        </div>`;
+    } catch (e) {
+      box.innerHTML = `<div class="notice bad">${esc(e.message)}</div>`;
+    }
+  }
+
+  $('entry-arrows').addEventListener('click', () => {
+    const body = $('entry-arrows-body');
+    body.hidden = !body.hidden;
+    $('entry-arrows').setAttribute('aria-expanded', String(!body.hidden));
+  });
+
+  $('arrows-file-input').addEventListener('change', async () => {
+    const file = ($('arrows-file-input').files || [])[0];
+    if (file) $('arrows-json').value = await file.text();
+  });
+
+  // Option A. Validated server-side *before* navigating: the canvas must never
+  // open on a schema that could not be saved, so the parse error belongs here.
+  $('arrows-open').addEventListener('click', async (event) => {
+    const text = $('arrows-json').value.trim();
+    if (!text) {
+      $('arrows-result').innerHTML =
+        '<div class="notice bad">Paste an export, or choose a file.</div>';
+      return;
+    }
+    event.target.disabled = true;
+    $('arrows-result').innerHTML =
+      '<div class="notice info"><span class="spin"></span> Validating…</div>';
+    try {
+      const data = await api(
+        `/api/pipeline/sources/${draft.id}/schema/import/arrows`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: text });
+      // Hand the validated document to the canvas. sessionStorage rather than the
+      // URL: a schema does not fit in a query string, and it has been checked.
+      sessionStorage.setItem('scidk.schemaImport.' + draft.id,
+                             JSON.stringify(data.schema));
+      window.location.href = schemaPath(draft.id) + '?start=arrows';
+    } catch (e) {
+      const problems = e.problems || [];
+      $('arrows-result').innerHTML = `<div class="notice bad" data-testid="arrows-error">
+          ${esc(e.message)}
+          ${problems.length > 1
+            ? '<ul>' + problems.map((p) => `<li>${esc(p)}</li>`).join('') + '</ul>'
+            : ''}
+        </div>`;
+    } finally {
+      event.target.disabled = false;
+    }
+  });
+
+  $('entry-derive').addEventListener('click', () => {
+    window.location.href = schemaPath(draft.id) + '?start=neo4j';
+  });
+
+  $('entry-blank').addEventListener('click', () => {
+    window.location.href = schemaPath(draft.id) + '?start=blank';
+  });
+
+  $('sheet-next').addEventListener('click', openSchemaStep);
+
+  $('sheet-done').addEventListener('click', () => {
+    sheet.close();
+    loadSources();
+  });
+
   function resetSheet() {
     draft = {};
+    $('arrows-json').value = '';
+    $('arrows-file-input').value = '';
+    $('arrows-result').innerHTML = '';
+    $('entry-arrows-body').hidden = true;
     $('source-name').value = '';
     $('source-path').value = '';
     $('source-sheet-name').value = '';
@@ -717,8 +958,10 @@
       const config = source.source_path || {};
       draft = {
         id: source.id,
+        name: source.name,
         plugin_type: source.plugin_type,
         config: typeof config === 'object' ? config : { source_path: config },
+        schemaDefined: !!(source.schema_summary || {}).defined,
         // An already-saved source has a working connection; re-testing is
         // optional rather than a precondition for saving a rename.
         preview: { ok: true, columns: [], sample: [] },
@@ -807,7 +1050,16 @@
 
   $('schedule-cancel').addEventListener('click', () => scheduleSheet.close());
 
-  loadTypes().then(loadSources);
+  // The schema canvas breadcrumb links back here as ?source=<id>. Reopening that
+  // source's flow at Step 2 is what makes the middle crumb go somewhere.
+  async function openFromQuery() {
+    const sourceId = new URLSearchParams(window.location.search).get('source');
+    if (!sourceId) return;
+    await openEdit(sourceId);
+    if (draft.id === sourceId) await openSchemaStep();
+  }
+
+  loadTypes().then(loadSources).then(openFromQuery);
 })();
 </script>
 {% endblock %}

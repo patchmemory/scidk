@@ -283,7 +283,33 @@ def test_the_schema_canvas_page_404s_for_an_unknown_source(client):
     assert client.get("/pipeline/sources/nope/schema").status_code == 404
 
 
-def test_the_rendered_page_javascript_parses(client, csv_path, tmp_path):
+def test_the_sources_page_offers_all_three_entry_points(client):
+    body = client.get("/pipeline/sources").get_data(as_text=True)
+
+    assert 'data-testid="step-schema"' in body
+    for entry in ("entry-arrows", "entry-derive", "entry-blank"):
+        assert f'data-testid="{entry}"' in body
+    # And a step indicator that can show Step 2 as complete.
+    assert 'data-testid="step-dot-schema"' in body
+
+
+def test_a_source_reports_whether_its_schema_is_defined(client, csv_path):
+    """What the card badge and the Step 2 indicator both read."""
+    source = make_source(client, csv_path)
+    listed = client.get("/api/pipeline/sources").get_json()["sources"][0]
+    assert listed["schema_summary"]["defined"] is False
+
+    put(client, f"/api/pipeline/sources/{source['id']}/schema", {"schema": ARROWS})
+    listed = client.get("/api/pipeline/sources").get_json()["sources"][0]
+    assert listed["schema_summary"]["defined"] is True
+    assert listed["schema_summary"]["labels"] == ["Person", "Project"]
+
+    single = client.get(f"/api/pipeline/sources/{source['id']}").get_json()["source"]
+    assert single["schema_summary"]["node_count"] == 2
+
+
+@pytest.mark.parametrize("page", ["/pipeline/sources", "SCHEMA_CANVAS"])
+def test_the_rendered_page_javascript_parses(client, csv_path, tmp_path, page):
     """A syntax error in an inline template script is silent until someone opens it.
 
     Checked against the *rendered* page, so a Jinja expression that produces
@@ -299,10 +325,12 @@ def test_the_rendered_page_javascript_parses(client, csv_path, tmp_path):
 
     source = make_source(client, csv_path)
     put(client, f"/api/pipeline/sources/{source['id']}/schema", {"schema": ARROWS})
-    html = client.get(f"/pipeline/sources/{source['id']}/schema").get_data(as_text=True)
+    if page == "SCHEMA_CANVAS":
+        page = f"/pipeline/sources/{source['id']}/schema"
+    html = client.get(page).get_data(as_text=True)
 
     blocks = re.findall(r"<script>(.*?)</script>", html, re.S)
-    assert blocks, "no inline script found in the schema canvas page"
+    assert blocks, f"no inline script found in {page}"
     for index, block in enumerate(blocks):
         path = tmp_path / f"block{index}.js"
         path.write_text(block, encoding="utf-8")

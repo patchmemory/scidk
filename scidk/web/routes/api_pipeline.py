@@ -115,9 +115,11 @@ def list_sources():
 
     ``plugin_available`` is included so the UI can show a source whose plugin
     does not implement the contract without offering a Run button that would
-    only fail.
+    only fail. ``schema_summary`` is computed here rather than on the page so the
+    card and the schema canvas agree about what "schema defined" means.
     """
     from ...pipeline.plugin_registry import is_available
+    from ...pipeline.schema_arrows import schema_summary
 
     sources = _store().list_sources()
     availability: Dict[str, bool] = {}
@@ -127,6 +129,7 @@ def list_sources():
             availability[plugin_type] = is_available(plugin_type)
         source['plugin_available'] = availability[plugin_type]
         source['display_path'] = _display_path(source)
+        source['schema_summary'] = schema_summary(source.get('schema_json'))
     return jsonify({'status': 'ok', 'sources': sources}), 200
 
 
@@ -146,10 +149,13 @@ def _display_path(source: Dict[str, Any]) -> str:
 @bp.get('/sources/<source_id>')
 @require_role(*_READ_ROLES)
 def get_source(source_id: str):
+    from ...pipeline.schema_arrows import schema_summary
+
     source = _store().get_source(source_id)
     if source is None:
         return _error('source not found', 404)
     source['display_path'] = _display_path(source)
+    source['schema_summary'] = schema_summary(source.get('schema_json'))
     return jsonify({'status': 'ok', 'source': source}), 200
 
 
