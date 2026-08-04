@@ -315,6 +315,28 @@
     color: #1976d2;
   }
 
+  /* Build RO-Crate panel (opens under the selection toolbar) */
+  .rocrate-panel {
+    padding: 0.75rem;
+    background: #f8f9fa;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+  }
+  .rocrate-panel .rocrate-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: flex-end;
+  }
+  .rocrate-panel label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 0.125rem;
+  }
+
   /* Snapshot config diff visualization */
   .row-config-unchanged {
     background: #d4edda !important;
@@ -528,7 +550,50 @@
       <span class="selection-count" id="selection-count">0 items selected</span>
       <button id="clear-selection-btn" class="btn btn-sm btn-outline-secondary">Clear</button>
       <button id="scan-selected-btn" class="btn btn-sm btn-primary">Scan Selected</button>
+      <button id="build-rocrate-btn" class="btn btn-sm btn-outline-success" data-testid="build-rocrate-btn"
+              title="Package the selection as an RO-Crate metadata document">🗃 Build RO-Crate</button>
       <button id="exit-selection-btn" class="btn btn-sm btn-outline-secondary">Exit Selection Mode</button>
+    </div>
+
+    <!-- Build RO-Crate panel: opens from the selection toolbar (Cycle 7 Task B) -->
+    <div id="rocrate-panel" class="rocrate-panel" style="display: none;">
+      <div class="rocrate-fields">
+        <div style="flex: 2 1 220px;">
+          <label for="rocrate-name">Name</label>
+          <input id="rocrate-name" type="text" class="form-control form-control-sm"
+                 placeholder="Crate name" />
+        </div>
+        <div style="flex: 1 1 160px;">
+          <label for="rocrate-license">License</label>
+          <select id="rocrate-license" class="form-select form-select-sm">
+            <option value="CC BY 4.0">CC BY 4.0</option>
+            <option value="CC BY-NC 4.0">CC BY-NC 4.0</option>
+            <option value="MIT">MIT</option>
+            <option value="__other__">Other…</option>
+          </select>
+        </div>
+        <div style="flex: 1 1 160px; display: none;" id="rocrate-license-other-wrap">
+          <label for="rocrate-license-other">License name</label>
+          <input id="rocrate-license-other" type="text" class="form-control form-control-sm"
+                 placeholder="e.g. CC0 1.0" />
+        </div>
+        <div style="flex: 0 0 auto;">
+          <div class="form-check">
+            <input id="rocrate-include-files" class="form-check-input" type="checkbox" checked />
+            <label class="form-check-label small" for="rocrate-include-files"
+                   style="font-weight: 400; text-transform: none;">Include files</label>
+          </div>
+        </div>
+        <div style="flex: 0 0 auto;">
+          <button id="rocrate-build-submit" class="btn btn-sm btn-success" data-testid="rocrate-build-submit">Build</button>
+          <button id="rocrate-cancel" class="btn btn-sm btn-outline-secondary">Cancel</button>
+        </div>
+      </div>
+      <div class="small text-muted mt-2" id="rocrate-hint">
+        Unchecking <em>Include files</em> builds a metadata-only crate: it describes the files
+        without pointing at where they live.
+      </div>
+      <div class="small mt-2" id="rocrate-result"></div>
     </div>
 
     <!-- Advanced Options (Collapsed by default) -->
@@ -1270,6 +1335,9 @@ window.addEventListener('DOMContentLoaded', () => {
       scanFolderBtn.style.display = 'inline-block';
       selectedItems.clear();
       lastClickedIndex = -1;
+      // The RO-Crate panel belongs to the selection; leaving selection mode
+      // closes it rather than leaving it open over an empty selection.
+      if (typeof window.closeRocratePanel === 'function') window.closeRocratePanel();
     }
   }
 
@@ -2593,6 +2661,123 @@ window.addEventListener('DOMContentLoaded', () => {
       } finally {
         scanSelectedBtn.disabled = false;
         scanSelectedBtn.textContent = 'Scan Selected';
+      }
+    });
+  }
+
+  // ===== Build RO-Crate (Cycle 7 Task B) =====
+  // The panel collects a name, a license and the include-files toggle, then posts
+  // the selected paths to /api/rocrate/build. The selection is already a list of
+  // paths (see the scan handler above, which uses the same ids as rule paths), and
+  // the bridge resolves paths against Neo4j, so nothing needs translating here.
+  const buildRocrateBtn = document.getElementById('build-rocrate-btn');
+  const rocratePanel = document.getElementById('rocrate-panel');
+  const rocrateName = document.getElementById('rocrate-name');
+  const rocrateLicense = document.getElementById('rocrate-license');
+  const rocrateLicenseOther = document.getElementById('rocrate-license-other');
+  const rocrateLicenseOtherWrap = document.getElementById('rocrate-license-other-wrap');
+  const rocrateIncludeFiles = document.getElementById('rocrate-include-files');
+  const rocrateSubmit = document.getElementById('rocrate-build-submit');
+  const rocrateCancel = document.getElementById('rocrate-cancel');
+  const rocrateResult = document.getElementById('rocrate-result');
+
+  function defaultCrateName() {
+    // One selected item names itself; several are named after the folder holding
+    // them, which is what the user was looking at when they selected.
+    const items = Array.from(selectedItems);
+    const base = (items.length === 1 ? items[0] : (currentPath || currentRoot || ''));
+    const trimmed = String(base).replace(/\/+$/, '');
+    const leaf = trimmed.split('/').pop();
+    return leaf || trimmed || 'SciDK selection';
+  }
+
+  function chosenLicense() {
+    if (!rocrateLicense) return '';
+    return rocrateLicense.value === '__other__'
+      ? (rocrateLicenseOther?.value || '').trim()
+      : rocrateLicense.value;
+  }
+
+  window.closeRocratePanel = function closeRocratePanel() {
+    if (rocratePanel) rocratePanel.style.display = 'none';
+    if (rocrateResult) rocrateResult.innerHTML = '';
+  };
+
+  if (rocrateLicense) {
+    rocrateLicense.addEventListener('change', () => {
+      if (rocrateLicenseOtherWrap) {
+        rocrateLicenseOtherWrap.style.display =
+          rocrateLicense.value === '__other__' ? 'block' : 'none';
+      }
+    });
+  }
+
+  if (rocrateCancel) rocrateCancel.addEventListener('click', window.closeRocratePanel);
+
+  if (buildRocrateBtn) {
+    buildRocrateBtn.addEventListener('click', () => {
+      if (selectedItems.size === 0) {
+        showMessage('Select at least one file or folder to build a crate', 'error');
+        return;
+      }
+      if (!rocratePanel) return;
+      const opening = (rocratePanel.style.display === 'none');
+      rocratePanel.style.display = opening ? 'block' : 'none';
+      if (opening) {
+        if (rocrateResult) rocrateResult.innerHTML = '';
+        if (rocrateName) {
+          rocrateName.value = defaultCrateName();
+          rocrateName.focus();
+        }
+      }
+    });
+  }
+
+  if (rocrateSubmit) {
+    rocrateSubmit.addEventListener('click', async () => {
+      if (selectedItems.size === 0) {
+        rocrateResult.innerHTML =
+          '<span class="text-danger">Select at least one file or folder first.</span>';
+        return;
+      }
+
+      const payload = {
+        paths: Array.from(selectedItems),
+        name: (rocrateName?.value || '').trim() || defaultCrateName(),
+        license: chosenLicense(),
+        include_files: !!(rocrateIncludeFiles && rocrateIncludeFiles.checked),
+      };
+
+      rocrateSubmit.disabled = true;
+      const prev = rocrateSubmit.textContent;
+      rocrateSubmit.textContent = 'Building…';
+      rocrateResult.innerHTML = '<span class="text-muted">Building crate…</span>';
+
+      try {
+        const r = await fetch(window.SCIDK_BASE + '/api/rocrate/build', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.ok && j.status === 'ok') {
+          const kind = j.include_files ? 'crate' : 'metadata-only crate';
+          rocrateResult.innerHTML =
+            `<span class="text-success">Built a ${kind} describing ${j.entities} `
+            + `entit${j.entities === 1 ? 'y' : 'ies'}.</span> `
+            + `<a href="${window.SCIDK_BASE}${j.download_url}" download="${j.filename}" `
+            + `data-testid="rocrate-download">Download ${j.filename}</a>`;
+        } else {
+          // The route distinguishes "you selected nothing" from "none of it is in
+          // the graph yet"; both are the user's to act on, so show what it said.
+          rocrateResult.innerHTML =
+            `<span class="text-danger">${j.error || ('Build failed (' + r.status + ')')}</span>`;
+        }
+      } catch (err) {
+        rocrateResult.innerHTML = `<span class="text-danger">Build failed: ${err.message}</span>`;
+      } finally {
+        rocrateSubmit.disabled = false;
+        rocrateSubmit.textContent = prev;
       }
     });
   }
