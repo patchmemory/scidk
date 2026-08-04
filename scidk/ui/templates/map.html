@@ -2069,23 +2069,39 @@
   function serializeCanvas(tabId) {
     const cy = getCy(tabId);
     if (!cy) return { nodes: [], edges: [] };
-    const nodes = cy.nodes().map(n => ({
-      id: n.id(),
-      // Prefer the stable baseLabel: applyGraphFormatting may rewrite data('label')
-      // to a display name, but the TYPE (used for commit) must be preserved (Push 6).
-      label: n.data('baseLabel') || n.data('label'),
-      name: n.data('displayLabel') || (n.data('properties') || {}).name || n.id(),
-      properties: n.data('properties') || {},
-      position: { ...n.position() },
-      provisional: !!n.data('provisional'),
-      element_id: n.data('element_id') || null,
-    }));
-    const edges = cy.edges().map(e => ({
-      source: e.data('source'),
-      target: e.data('target'),
-      relationship: e.data('relationship') || e.data('label') || '',
-      provisional: !!e.data('provisional'),
-    }));
+    const nodes = cy.nodes().map(n => {
+      const node = {
+        id: n.id(),
+        // Prefer the stable baseLabel: applyGraphFormatting may rewrite data('label')
+        // to a display name, but the TYPE (used for commit) must be preserved (Push 6).
+        label: n.data('baseLabel') || n.data('label'),
+        name: n.data('displayLabel') || (n.data('properties') || {}).name || n.id(),
+        properties: n.data('properties') || {},
+        position: { ...n.position() },
+        provisional: !!n.data('provisional'),
+        element_id: n.data('element_id') || null,
+      };
+      // Schema-space elements (Task C) carry their space and their schema fields
+      // through the session, so a saved canvas restores as schema rather than as
+      // an instance node whose properties happen to be a list of names.
+      if (n.data('_space')) {
+        node._space = n.data('_space');
+        node.key_property = n.data('key_property') || null;
+        node.description = n.data('description') || '';
+        node.propertyTypes = n.data('propertyTypes') || {};
+      }
+      return node;
+    });
+    const edges = cy.edges().map(e => {
+      const edge = {
+        source: e.data('source'),
+        target: e.data('target'),
+        relationship: e.data('relationship') || e.data('label') || '',
+        provisional: !!e.data('provisional'),
+      };
+      if (e.data('_space')) edge._space = e.data('_space');
+      return edge;
+    });
     return { nodes, edges };
   }
 
@@ -2096,26 +2112,33 @@
     cy.elements().remove();
     const els = [];
     (snapshot.nodes || []).forEach(n => {
-      els.push({
-        group: 'nodes',
-        // Restore baseLabel = the stored TYPE so styling stays stable (Push 6).
-        data: { id: String(n.id), label: n.label, baseLabel: n.label, displayLabel: n.name,
-                properties: n.properties || {}, provisional: !!n.provisional,
-                element_id: n.element_id || null },
-        position: n.position || undefined,
-        grabbable: true,
-      });
+      // Restore baseLabel = the stored TYPE so styling stays stable (Push 6).
+      const data = { id: String(n.id), label: n.label, baseLabel: n.label,
+                     displayLabel: n.name, properties: n.properties || {},
+                     provisional: !!n.provisional, element_id: n.element_id || null };
+      if (n._space) {
+        data._space = n._space;
+        data.key_property = n.key_property || null;
+        data.description = n.description || '';
+        data.propertyTypes = n.propertyTypes || {};
+        // The chip label is derived, not stored, so a rename anywhere regenerates it.
+        data.schemaLabel = SciDKGraph.schemaLabelFor(data);
+      }
+      els.push({ group: 'nodes', data, position: n.position || undefined,
+                 grabbable: true });
     });
     const nodeIds = new Set((snapshot.nodes || []).map(n => String(n.id)));
     (snapshot.edges || []).forEach((e, i) => {
       if (!nodeIds.has(String(e.source)) || !nodeIds.has(String(e.target))) return;
-      els.push({
-        group: 'edges',
-        data: { id: 'e' + i + '-' + Math.random().toString(36).slice(2, 6),
-                source: String(e.source), target: String(e.target),
-                relationship: e.relationship || '', baseType: e.relationship || '',
-                label: e.relationship || '', provisional: !!e.provisional },
-      });
+      const data = { id: 'e' + i + '-' + Math.random().toString(36).slice(2, 6),
+                     source: String(e.source), target: String(e.target),
+                     relationship: e.relationship || '', baseType: e.relationship || '',
+                     label: e.relationship || '', provisional: !!e.provisional };
+      if (e._space) {
+        data._space = e._space;
+        data.type = e.relationship || '';
+      }
+      els.push({ group: 'edges', data });
     });
     cy.add(els);
     ensureProvisionalInSidebar(tabId);  // Push 6: surface restored provisional labels/types
@@ -2543,7 +2566,12 @@
             'padding': '6px',
             'font-size': '10px'
           }
-        }
+        },
+        // Schema-space elements (Cycle 3B Task C). A canvas session can hold both
+        // spaces, so a label type must never look like an instance: these are
+        // dashed, muted and chip-labelled. Defined once in graph_utils.js and
+        // shared with the Pipeline schema canvas, which is where they are edited.
+        ...(SciDKGraph.schemaStyles || [])
       ];
 
       const cy = SciDKGraph.init(container, [], {

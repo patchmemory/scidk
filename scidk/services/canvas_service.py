@@ -42,6 +42,11 @@ DEFAULT_CONTEXT_ID = ""
 #: ``context_id`` prefix for a canvas scoped to one Pipeline source.
 PIPELINE_SOURCE_CONTEXT_PREFIX = "pipeline_source:"
 
+#: ``_space`` of a canvas element that represents a *type* rather than an entity —
+#: a label node or a relationship-type edge. Mirrors ``SciDKGraph.SPACE_SCHEMA`` in
+#: ``graph_utils.js``; see the element conventions in ``dev/cycles.md``.
+SCHEMA_SPACE = "schema"
+
 
 def pipeline_source_context(source_id: str) -> str:
     """``context_id`` for a Pipeline source's schema canvas."""
@@ -306,10 +311,31 @@ from ..pipeline.identifiers import REL_RE as _REL_RE  # noqa: E402
 # interpolate into Cypher unquoted, which is what both writers do.
 
 
+def instance_elements(elements: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    """The instance-space elements of a canvas snapshot.
+
+    Everything downstream of a canvas — the commit plan, the Cypher script, the
+    filesystem script, the RO-Crate — describes *entities*. A schema element
+    describes a label type, and its ``properties`` is a list of property *names*
+    rather than a name-to-value map, so those consumers would not merely emit
+    something wrong: several of them would raise on the first ``.items()``.
+
+    One filter, applied at the top of each of them, rather than a space check
+    scattered through four bodies.
+    """
+    return [e for e in (elements or []) if e.get('_space') != SCHEMA_SPACE]
+
+
 def build_commit_plan(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     """Translate a canvas snapshot into a Neo4j write plan.
 
-    Only *provisional* elements are committed (per the canvas storage model).
+    Only *provisional* elements are committed (per the canvas storage model), and
+    only *instance*-space ones. A schema element describes a label type, not an
+    entity: writing one through here would create a node literally named after a
+    label, with the label's property *names* as values. Schema elements commit to
+    ``pipeline_source.schema_json`` (Cycle 3B Task C) or, in Design mode, to the
+    schema intelligence layer — never to instance data. They are listed in
+    ``skipped`` rather than dropped in silence, so a mixed canvas explains itself.
 
     One MERGE path for everything. Nodes MERGE on their business property
     (name); edges MATCH endpoints by (label, name) then MERGE the relationship.
@@ -324,6 +350,9 @@ def build_commit_plan(snapshot: Dict[str, Any]) -> Dict[str, Any]:
           'skipped': [...],      # human-readable reasons for anything dropped
         }
     """
+    # Not filtered through instance_elements() here, unlike the exports: this is
+    # the path a user presses a button for, so a skipped schema element should say
+    # so in the response rather than vanish.
     nodes = (snapshot or {}).get('nodes') or []
     edges = (snapshot or {}).get('edges') or []
     by_id = {str(n.get('id')): n for n in nodes}
@@ -335,6 +364,12 @@ def build_commit_plan(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     # Provisional nodes -> MERGE on name.
     for n in nodes:
         if not n.get('provisional'):
+            continue
+        if n.get('_space') == SCHEMA_SPACE:
+            skipped.append(
+                f"node {n.get('label') or n.get('id')!r}: schema element — a label "
+                "type is not instance data, so it is not committed to the graph"
+            )
             continue
         label = n.get('label')
         name = n.get('name') or (n.get('properties') or {}).get('name')
@@ -352,6 +387,12 @@ def build_commit_plan(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     # MERGE either finds the pre-existing node or the one we just wrote above.
     for e in edges:
         if not e.get('provisional'):
+            continue
+        if e.get('_space') == SCHEMA_SPACE:
+            skipped.append(
+                f"edge {e.get('source')}->{e.get('target')}: schema element — a "
+                "relationship type is not instance data"
+            )
             continue
         rel = (e.get('relationship') or '').strip()
         if not rel or not _REL_RE.match(rel):
@@ -397,8 +438,8 @@ def generate_cypher(snapshot: Dict[str, Any], layer_name: str = 'canvas') -> str
     Nodes MERGE on name; edges MATCH endpoints by (label, name) then MERGE the
     relationship — portable across databases (no internal ids baked in).
     """
-    nodes = (snapshot or {}).get('nodes') or []
-    edges = (snapshot or {}).get('edges') or []
+    nodes = instance_elements((snapshot or {}).get('nodes'))
+    edges = instance_elements((snapshot or {}).get('edges'))
     by_id = {str(n.get('id')): n for n in nodes}
     prov_nodes = [n for n in nodes if n.get('provisional')]
     prov_edges = [e for e in edges if e.get('provisional')]
@@ -460,8 +501,8 @@ def generate_python_fs(snapshot: Dict[str, Any], layer_name: str = 'canvas') -> 
     structure faithfully. So does this export — a node with two parents is
     emitted at both paths (one per parent). No "picking one" / last-edge-wins.
     """
-    nodes = (snapshot or {}).get('nodes') or []
-    edges = (snapshot or {}).get('edges') or []
+    nodes = instance_elements((snapshot or {}).get('nodes'))
+    edges = instance_elements((snapshot or {}).get('edges'))
     by_id = {str(n.get('id')): n for n in nodes}
 
     # Parent map from CONTAINS edges (source CONTAINS target => parent=source).
@@ -555,8 +596,8 @@ def generate_rocrate_export(snapshot: Dict[str, Any], layer_name: str = 'canvas'
 
     Returns the JSON text of ``ro-crate-metadata.json``.
     """
-    nodes = (snapshot or {}).get('nodes') or []
-    edges = (snapshot or {}).get('edges') or []
+    nodes = instance_elements((snapshot or {}).get('nodes'))
+    edges = instance_elements((snapshot or {}).get('edges'))
     by_id = {str(n.get('id')): n for n in nodes}
 
     def entity_id(node_id: str, node: Dict[str, Any]) -> str:
