@@ -4,11 +4,24 @@ Owns two SQLite tables in the settings DB (scidk_settings.db), colocated with
 saved_maps — NOT the path-index DB that scidk/core/migrations.py targets:
 
 - canvas_query_library: reusable Cypher snippets for building canvas layers.
-- canvas_session: per-user in-progress canvas state, so a canvas survives a
-  browser refresh without touching Neo4j or a named saved map.
+- canvas_session: per-user, per-context in-progress canvas state, so a canvas
+  survives a browser refresh without touching Neo4j or a named saved map.
 
 Named saved layers (with display_mode/layers/snapshot_json) live in saved_maps
 and are handled by SavedMapsService, not here.
+
+Canvas contexts
+---------------
+A session is keyed by ``(user_id, context_id)``. ``context_id`` is a namespaced
+string naming *which* canvas: ``''`` is the user's main Maps canvas, and
+``pipeline_source:<uuid>`` is the schema canvas scoped to one Pipeline source
+(Cycle 3B Task C). Namespaced rather than a bare UUID so a future scope cannot
+collide with, or be mistaken for, an existing one.
+
+Deleting whatever a context belongs to must delete its sessions — see
+:meth:`CanvasService.clear_context`. Without that, deleting a Pipeline source
+would leave its schema canvas behind forever, and a recreated source reusing the
+id would inherit it.
 """
 from __future__ import annotations
 
@@ -20,6 +33,19 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+#: ``context_id`` of the user's main Maps canvas — the scope that existed before
+#: contexts did. Empty rather than a name like 'default' so the column's default
+#: preserves the pre-context behaviour exactly.
+DEFAULT_CONTEXT_ID = ""
+
+#: ``context_id`` prefix for a canvas scoped to one Pipeline source.
+PIPELINE_SOURCE_CONTEXT_PREFIX = "pipeline_source:"
+
+
+def pipeline_source_context(source_id: str) -> str:
+    """``context_id`` for a Pipeline source's schema canvas."""
+    return f"{PIPELINE_SOURCE_CONTEXT_PREFIX}{source_id}"
 
 
 class CanvasService:
@@ -50,16 +76,61 @@ class CanvasService:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS canvas_session (
-                    user_id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    context_id TEXT NOT NULL DEFAULT '',
                     canvas_json TEXT,
-                    updated_at REAL
+                    updated_at REAL,
+                    PRIMARY KEY (user_id, context_id)
                 )
                 """
             )
+            self._upgrade_canvas_session_key(conn)
             conn.commit()
             logger.debug("Ensured canvas_query_library and canvas_session tables exist")
         finally:
             conn.close()
+
+    @staticmethod
+    def _upgrade_canvas_session_key(conn: sqlite3.Connection) -> None:
+        """Move a pre-context canvas_session to the composite primary key.
+
+        The table shipped as ``PRIMARY KEY (user_id)``. SQLite cannot alter a
+        primary key in place, so the only route is rebuild-and-copy. Guarded on
+        the absence of the ``context_id`` column, which makes this a no-op on
+        every construction after the first — and construction happens on every
+        request that touches the canvas.
+
+        Existing rows become ``context_id = ''``, the main Maps canvas, so a user
+        with a canvas open across this upgrade still finds it there.
+
+        The rename-then-insert order matters: if the process dies between the two
+        statements the transaction is uncommitted and SQLite rolls back to the
+        original table. There is no window in which the data exists in neither.
+        """
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(canvas_session)")}
+        if "context_id" in columns:
+            return
+
+        logger.info("Upgrading canvas_session to a (user_id, context_id) primary key")
+        conn.execute("ALTER TABLE canvas_session RENAME TO canvas_session_pre_context")
+        conn.execute(
+            """
+            CREATE TABLE canvas_session (
+                user_id TEXT NOT NULL,
+                context_id TEXT NOT NULL DEFAULT '',
+                canvas_json TEXT,
+                updated_at REAL,
+                PRIMARY KEY (user_id, context_id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO canvas_session (user_id, context_id, canvas_json, updated_at)
+            SELECT user_id, '', canvas_json, updated_at FROM canvas_session_pre_context
+            """
+        )
+        conn.execute("DROP TABLE canvas_session_pre_context")
 
     # --- canvas_query_library ---
     def list_queries(self, limit: int = 100) -> List[Dict[str, Any]]:
@@ -116,34 +187,46 @@ class CanvasService:
         finally:
             conn.close()
 
-    # --- canvas_session (per-user in-progress canvas) ---
-    def save_session(self, user_id: str, canvas: Dict[str, Any]) -> float:
-        """Upsert the user's current canvas JSON. Returns the save timestamp."""
+    # --- canvas_session (per-user, per-context in-progress canvas) ---
+    def save_session(
+        self, user_id: str, canvas: Dict[str, Any], context_id: str = DEFAULT_CONTEXT_ID
+    ) -> float:
+        """Upsert one canvas. Returns the save timestamp.
+
+        Args:
+            user_id: From ``scidk.web.user_context.current_user_key``.
+            canvas: The canvas snapshot to persist.
+            context_id: Which canvas. Defaults to the main Maps canvas, so
+                existing callers keep their behaviour.
+        """
         now = time.time()
         conn = self._connect()
         try:
             conn.execute(
                 """
-                INSERT INTO canvas_session (user_id, canvas_json, updated_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET
+                INSERT INTO canvas_session (user_id, context_id, canvas_json, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, context_id) DO UPDATE SET
                     canvas_json = excluded.canvas_json,
                     updated_at = excluded.updated_at
                 """,
-                (user_id, json.dumps(canvas or {}), now),
+                (user_id, context_id or DEFAULT_CONTEXT_ID, json.dumps(canvas or {}), now),
             )
             conn.commit()
         finally:
             conn.close()
         return now
 
-    def load_session(self, user_id: str) -> Optional[Dict[str, Any]]:
-        """Return {canvas, updated_at} for the user, or None if no session saved."""
+    def load_session(
+        self, user_id: str, context_id: str = DEFAULT_CONTEXT_ID
+    ) -> Optional[Dict[str, Any]]:
+        """Return {canvas, updated_at}, or None if this context has no session."""
         conn = self._connect()
         try:
             row = conn.execute(
-                "SELECT canvas_json, updated_at FROM canvas_session WHERE user_id = ?",
-                (user_id,),
+                "SELECT canvas_json, updated_at FROM canvas_session "
+                "WHERE user_id = ? AND context_id = ?",
+                (user_id, context_id or DEFAULT_CONTEXT_ID),
             ).fetchone()
             if not row:
                 return None
@@ -155,20 +238,72 @@ class CanvasService:
         finally:
             conn.close()
 
-    def clear_session(self, user_id: str) -> bool:
+    def clear_session(self, user_id: str, context_id: str = DEFAULT_CONTEXT_ID) -> bool:
+        """Delete one user's session in one context."""
         conn = self._connect()
         try:
-            cur = conn.execute("DELETE FROM canvas_session WHERE user_id = ?", (user_id,))
+            cur = conn.execute(
+                "DELETE FROM canvas_session WHERE user_id = ? AND context_id = ?",
+                (user_id, context_id or DEFAULT_CONTEXT_ID),
+            )
             conn.commit()
             return cur.rowcount > 0
         finally:
             conn.close()
 
+    def clear_context(self, context_id: str) -> int:
+        """Delete every user's session in one context. Returns rows removed.
 
-import re
+        The cleanup path for deleting whatever the context belongs to. Deleting a
+        Pipeline source calls this with ``pipeline_source:<id>``; the source's
+        schema canvas is scoped to it, so leaving the rows behind would orphan
+        them permanently and hand a stale canvas to any later source that reused
+        the id.
 
-_REL_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
-_LABEL_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+        Refuses to be called with an empty ``context_id``: that is the main Maps
+        canvas, and wiping every user's working canvas is not something a cleanup
+        path should be able to do by passing a blank string.
+        """
+        if not (context_id or "").strip():
+            raise ValueError(
+                "clear_context requires a context_id; refusing to delete every "
+                "user's main canvas session"
+            )
+        conn = self._connect()
+        try:
+            cur = conn.execute(
+                "DELETE FROM canvas_session WHERE context_id = ?", (context_id,)
+            )
+            conn.commit()
+            if cur.rowcount:
+                logger.info(
+                    "Cleared %d canvas session(s) for context %r", cur.rowcount, context_id
+                )
+            return cur.rowcount
+        finally:
+            conn.close()
+
+    def list_contexts(self, user_id: str) -> List[Dict[str, Any]]:
+        """Contexts this user has a saved canvas in, most recent first."""
+        conn = self._connect()
+        try:
+            rows = conn.execute(
+                "SELECT context_id, updated_at FROM canvas_session "
+                "WHERE user_id = ? ORDER BY updated_at DESC",
+                (user_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+
+from ..pipeline.identifiers import LABEL_RE as _LABEL_RE  # noqa: E402
+from ..pipeline.identifiers import REL_RE as _REL_RE  # noqa: E402
+
+# These guards were defined here first and the Pipeline needed the same ones, so
+# scidk/pipeline/identifiers.py is now the single definition and this module
+# imports it. Same pattern, same behaviour — a label or relationship type safe to
+# interpolate into Cypher unquoted, which is what both writers do.
 
 
 def build_commit_plan(snapshot: Dict[str, Any]) -> Dict[str, Any]:

@@ -15,6 +15,8 @@ from typing import Any, Dict, List
 from flask import Blueprint, jsonify, request, current_app, g
 
 from ..decorators import require_role
+from ..user_context import current_user_key
+from ...services.canvas_service import DEFAULT_CONTEXT_ID
 
 bp = Blueprint('api_canvas', __name__, url_prefix='/api/canvas')
 
@@ -41,14 +43,24 @@ def _settings_db():
 def _current_user_id() -> str:
     """Identify the user for per-user canvas session storage.
 
-    Uses the id/username set on ``g`` by the auth middleware; falls back to
-    'anonymous' when auth is disabled (dev/test) so the feature still works.
+    Delegates to the one definition in ``scidk.web.user_context``. This used to
+    read three attributes off ``g`` with ``or``, which meant the key's meaning
+    depended on which of them a given auth path had set, and a user whose row id
+    was 0 was keyed as 'anonymous' alongside everyone else. See that module.
     """
-    return (
-        getattr(g, 'scidk_user_id', None)
-        or getattr(g, 'scidk_user', None)
-        or 'anonymous'
-    )
+    return current_user_key()
+
+
+def _context_id() -> str:
+    """Which canvas this request is for.
+
+    ``''`` (the default) is the user's main Maps canvas. A Pipeline source's
+    schema canvas passes ``pipeline_source:<uuid>``. Accepted from the query
+    string on GET/DELETE and from the body on POST.
+    """
+    body = request.get_json(silent=True) if request.method == 'POST' else None
+    raw = (body or {}).get('context_id') if isinstance(body, dict) else None
+    return str(raw or request.args.get('context_id') or DEFAULT_CONTEXT_ID)
 
 
 def _json_safe(value: Any) -> Any:
@@ -190,10 +202,16 @@ def load_session():
     from ...services.canvas_service import get_canvas_service
 
     svc = get_canvas_service(db_path=_settings_db())
-    data = svc.load_session(_current_user_id())
+    context_id = _context_id()
+    data = svc.load_session(_current_user_id(), context_id)
     if not data:
-        return jsonify({'status': 'ok', 'canvas': None}), 200
-    return jsonify({'status': 'ok', 'canvas': data['canvas'], 'updated_at': data['updated_at']}), 200
+        return jsonify({'status': 'ok', 'canvas': None, 'context_id': context_id}), 200
+    return jsonify({
+        'status': 'ok',
+        'canvas': data['canvas'],
+        'updated_at': data['updated_at'],
+        'context_id': context_id,
+    }), 200
 
 
 @bp.post('/session')
@@ -201,10 +219,15 @@ def save_session():
     from ...services.canvas_service import get_canvas_service
 
     body = request.get_json(silent=True) or {}
-    canvas = body.get('canvas', body)  # accept {canvas:{...}} or a bare canvas object
+    # Accept {canvas:{...}} or a bare canvas object. context_id is ours, so strip
+    # it from the bare form rather than persisting it as canvas content.
+    canvas = body.get('canvas')
+    if canvas is None:
+        canvas = {k: v for k, v in body.items() if k != 'context_id'}
     svc = get_canvas_service(db_path=_settings_db())
-    saved_at = svc.save_session(_current_user_id(), canvas)
-    return jsonify({'status': 'ok', 'saved_at': saved_at}), 200
+    context_id = _context_id()
+    saved_at = svc.save_session(_current_user_id(), canvas, context_id)
+    return jsonify({'status': 'ok', 'saved_at': saved_at, 'context_id': context_id}), 200
 
 
 @bp.delete('/session')
@@ -212,7 +235,7 @@ def clear_session():
     from ...services.canvas_service import get_canvas_service
 
     svc = get_canvas_service(db_path=_settings_db())
-    svc.clear_session(_current_user_id())
+    svc.clear_session(_current_user_id(), _context_id())
     return jsonify({'status': 'ok'}), 200
 
 
