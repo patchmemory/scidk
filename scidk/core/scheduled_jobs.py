@@ -102,8 +102,21 @@ def register_all(app, app_scheduler):
     # Backup and concept-graph weight decay are registered by BackupScheduler
     # into this same scheduler; see create_app().
 
-    # Schema Intelligence: recompute property rankings (J7).
     settings_db = app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+
+    # Pipeline schedules (Cycle 3B Task F). Unlike every other job here, these are
+    # created by API requests in worker processes, so they live in a persistent
+    # jobstore this process shares with the workers rather than being registered
+    # from code. attach() also adds the heartbeat that makes this process notice a
+    # schedule a worker wrote, without a restart.
+    try:
+        from ..pipeline.scheduler import attach as attach_pipeline_scheduler
+
+        attach_pipeline_scheduler(app_scheduler, settings_db)
+    except Exception as e:
+        logger.error(f"Could not attach the pipeline scheduler: {e}", exc_info=True)
+
+    # Schema Intelligence: recompute property rankings (J7).
     interval = _ranking_flush_interval_hours()
 
     app_scheduler.add_job(

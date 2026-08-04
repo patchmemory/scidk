@@ -122,6 +122,38 @@ class AppScheduler:
     def is_running(self) -> bool:
         return bool(self._scheduler.running)
 
+    def add_jobstore(self, jobstore, alias: str) -> bool:
+        """Register an additional jobstore under ``alias``. Idempotent.
+
+        The default store is in-memory, which is right for jobs registered at
+        ``create_app()`` time: every process builds the same ones, and only the
+        master's timer thread survives the fork to fire them.
+
+        A *persistent* store is for the other case — a job created by an API
+        request. That request is served by a worker, and mutating the worker's
+        inherited scheduler changes nothing that will ever fire (see
+        :meth:`is_owner`). A jobstore both processes open lets the worker write
+        the job and the master read it. The master only notices on its next
+        wakeup, so something has to make it wake regularly; see
+        ``scidk.pipeline.scheduler.attach``.
+
+        Args:
+            jobstore: An APScheduler jobstore instance.
+            alias: Name jobs reference via ``add_job(..., jobstore=alias)``.
+
+        Returns:
+            True if this call added it, False if the alias was already present.
+        """
+        if alias in self._scheduler._jobstores:
+            return False
+        self._scheduler.add_jobstore(jobstore, alias)
+        logger.info(f"AppScheduler: added jobstore '{alias}' ({type(jobstore).__name__})")
+        return True
+
+    def has_jobstore(self, alias: str) -> bool:
+        """Whether a jobstore is registered under ``alias``."""
+        return alias in self._scheduler._jobstores
+
     def add_job(self, func, trigger, id: str, name: Optional[str] = None,
                 replace_existing: bool = True, **kwargs):
         """Register a job. Jobs may be added before or after start().
