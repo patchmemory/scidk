@@ -31,10 +31,19 @@ logger = logging.getLogger(__name__)
 #: Override with SCIDK_RANKING_FLUSH_INTERVAL_HOURS.
 DEFAULT_RANKING_FLUSH_INTERVAL_HOURS = 6
 
-#: Timezone the ranking flush cron is stated in. The existing backup and
-#: weight-decay jobs use an unstated system-local timezone while their comments
-#: say UTC; new jobs say what they mean.
+#: Timezone the ranking flush cron is stated in. The remaining backup job uses an
+#: unstated system-local timezone while its comment says UTC; jobs registered here
+#: say what they mean.
 RANKING_FLUSH_TIMEZONE = 'UTC'
+
+#: Half-life, in days, for SATISFIES edge weights to drift halfway back to the
+#: neutral 0.5. Override with SCIDK_CONCEPT_WEIGHT_HALFLIFE_DAYS.
+DEFAULT_CONCEPT_WEIGHT_HALFLIFE_DAYS = 90
+
+#: When the nightly concept-graph decay runs. 03:00 is the hour this job has
+#: fired at since 5d8da6e; the timezone is now stated rather than inherited.
+CONCEPT_DECAY_HOUR = 3
+CONCEPT_DECAY_TIMEZONE = 'UTC'
 
 
 def _ranking_flush_interval_hours() -> int:
@@ -59,6 +68,84 @@ def _ranking_flush_interval_hours() -> int:
         return DEFAULT_RANKING_FLUSH_INTERVAL_HOURS
 
     return hours
+
+
+def _concept_weight_halflife_days() -> int:
+    """Read the decay half-life, rejecting values the formula cannot use.
+
+    ``apply_weight_decay`` divides by this, so zero and negatives are not merely
+    odd configuration — they raise or invert the decay. The old call site did a
+    bare ``int(...)`` and let the surrounding try/except turn a typo into a
+    silently skipped night.
+    """
+    raw = os.environ.get('SCIDK_CONCEPT_WEIGHT_HALFLIFE_DAYS')
+    if not raw:
+        return DEFAULT_CONCEPT_WEIGHT_HALFLIFE_DAYS
+    try:
+        days = int(str(raw).strip())
+    except (TypeError, ValueError):
+        logger.warning(
+            f"SCIDK_CONCEPT_WEIGHT_HALFLIFE_DAYS={raw!r} is not an integer; "
+            f"using {DEFAULT_CONCEPT_WEIGHT_HALFLIFE_DAYS} days"
+        )
+        return DEFAULT_CONCEPT_WEIGHT_HALFLIFE_DAYS
+
+    if days < 1:
+        logger.warning(
+            f"SCIDK_CONCEPT_WEIGHT_HALFLIFE_DAYS={days} is not a positive "
+            f"number of days; using {DEFAULT_CONCEPT_WEIGHT_HALFLIFE_DAYS}"
+        )
+        return DEFAULT_CONCEPT_WEIGHT_HALFLIFE_DAYS
+
+    return days
+
+
+def concept_graph_weight_decay() -> None:
+    """Decay Concept Graph SATISFIES weights toward neutral.
+
+    Keeps stale feedback from permanently biasing tool routing; the maths and the
+    7-day fresh-edge exemption live in
+    :func:`~scidk.services.concept_graph_service.apply_weight_decay`.
+
+    Opens and closes its own concept-graph driver. Until Cycle 8 this job was
+    registered by ``BackupScheduler.start(concept_driver=...)`` and ran against the
+    driver ``create_app()`` had built — which under ``gunicorn --preload`` means a
+    driver that crossed a ``fork()`` into the master's scheduler thread and is
+    shared with all 16 workers. It also meant a concept graph that was unreachable
+    at boot got no decay job at all until the next restart; now the job is always
+    registered and no-ops with a warning when the graph is down.
+    """
+    if os.environ.get('SCIDK_CONCEPT_GRAPH_ENABLED', '1') != '1':
+        logger.info("Concept graph disabled; skipping weight decay")
+        return
+
+    try:
+        from ..services.concept_graph_service import (
+            apply_weight_decay,
+            get_concept_driver,
+        )
+
+        driver = get_concept_driver()
+        if driver is None:
+            logger.warning(
+                "Scheduled weight decay skipped: concept graph unreachable"
+            )
+            return
+
+        try:
+            half_life = _concept_weight_halflife_days()
+            result = apply_weight_decay(driver, half_life)
+            logger.info(
+                f"Scheduled weight decay: {result.get('edges_updated', 0)} edges "
+                f"decayed, {result.get('edges_skipped', 0)} skipped "
+                f"(half-life {half_life}d)"
+            )
+            for error in result.get('errors', []):
+                logger.error(f"Weight decay: {error}")
+        finally:
+            driver.close()
+    except Exception as e:
+        logger.error(f"Scheduled weight decay failed: {e}", exc_info=True)
 
 
 def flush_property_rankings(settings_db_path: str) -> None:
@@ -99,8 +186,9 @@ def register_all(app, app_scheduler):
             connections out of ``app.extensions`` into a job closure.
         app_scheduler: The process's :class:`~scidk.core.app_scheduler.AppScheduler`.
     """
-    # Backup and concept-graph weight decay are registered by BackupScheduler
-    # into this same scheduler; see create_app().
+    # The daily backup is still registered by BackupScheduler into this same
+    # scheduler, because its trigger comes from mutable settings the scheduler
+    # object owns and reschedules; see create_app().
 
     settings_db = app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
 
@@ -129,4 +217,19 @@ def register_all(app, app_scheduler):
     logger.info(
         f"Registered ranking flush every {interval}h at :17 "
         f"{RANKING_FLUSH_TIMEZONE} (db={settings_db})"
+    )
+
+    # Concept Graph: nightly SATISFIES weight decay (Cycle 8 Task A). Moved here
+    # from BackupScheduler, which registered it only when create_app() had already
+    # built a working concept driver and then handed that same driver to the job.
+    app_scheduler.add_job(
+        concept_graph_weight_decay,
+        CronTrigger(hour=CONCEPT_DECAY_HOUR, minute=0,
+                    timezone=CONCEPT_DECAY_TIMEZONE),
+        id='concept_graph_weight_decay',
+        name='Concept Graph Weight Decay',
+    )
+    logger.info(
+        f"Registered concept graph weight decay at "
+        f"{CONCEPT_DECAY_HOUR:02d}:00 {CONCEPT_DECAY_TIMEZONE}"
     )

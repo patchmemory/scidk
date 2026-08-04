@@ -113,18 +113,17 @@ class BackupScheduler:
             for key, default_value in defaults.items():
                 setattr(self, key, default_value)
 
-    def start(self, concept_driver=None):
-        """
-        Start the backup scheduler.
+    def start(self):
+        """Start the backup scheduler.
 
-        Args:
-            concept_driver: Optional Neo4j driver for Concept Graph (for weight decay)
+        Concept Graph weight decay used to be registered here too, taking a
+        ``concept_driver`` argument. It now lives in
+        ``scidk.core.scheduled_jobs.register_all`` (Cycle 8 Task A), which is where
+        jobs that are not the backup belong — and where the job can open its own
+        driver instead of running against one that crossed a fork.
         """
         if self._running:
             return
-
-        # Store concept_driver for weight decay job
-        self.concept_driver = concept_driver
 
         # Schedule daily backup
         self.scheduler.add_job(
@@ -134,21 +133,6 @@ class BackupScheduler:
             replace_existing=True,
             name='Daily Backup'
         )
-
-        # Schedule nightly weight decay at 03:00 (if concept graph is available).
-        # NOTE: no timezone is stated here, so this fires at 03:00 in whatever
-        # timezone the scheduler was built with — system-local for a private
-        # BackgroundScheduler. Left as-is to keep existing deployments firing at
-        # the same wall-clock time they do today; new jobs registered through
-        # AppScheduler.add_job() state their timezone explicitly.
-        if concept_driver is not None:
-            self.scheduler.add_job(
-                self._run_weight_decay,
-                CronTrigger(hour=3, minute=0),
-                id='concept_graph_weight_decay',
-                replace_existing=True,
-                name='Concept Graph Weight Decay'
-            )
 
         # Start through the AppScheduler when sharing one, so ownership is
         # recorded in a single place. Starting the underlying BackgroundScheduler
@@ -173,8 +157,7 @@ class BackupScheduler:
             return
 
         if self.app_scheduler is not None:
-            for job_id in ('daily_backup', 'concept_graph_weight_decay'):
-                self.app_scheduler.remove_job(job_id)
+            self.app_scheduler.remove_job('daily_backup')
         else:
             self.scheduler.shutdown(wait=False)
 
@@ -259,28 +242,6 @@ class BackupScheduler:
                     })
                 except Exception:
                     pass
-
-    def _run_weight_decay(self):
-        """Execute the Concept Graph weight decay workflow."""
-        try:
-            if self.concept_driver is None:
-                return
-
-            from ..services.concept_graph_service import apply_weight_decay
-            import os
-
-            half_life = int(os.environ.get('SCIDK_CONCEPT_WEIGHT_HALFLIFE_DAYS', '90'))
-            result = apply_weight_decay(self.concept_driver, half_life)
-
-            # Log results
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(f"Concept graph weight decay completed: {result}")
-
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Concept graph weight decay failed: {e}")
 
     def verify_backup(self, backup_file: str) -> Dict[str, Any]:
         """

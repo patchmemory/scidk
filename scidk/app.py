@@ -352,11 +352,11 @@ def create_app():
         app.extensions['scidk']['backup_manager'] = backup_manager
 
         if _scheduler_should_start():
-            # Register the backup jobs (they only fire if enabled in settings)
-            # and pass concept_driver for the weight decay job.
-            concept_driver = app.extensions.get('scidk', {}).get('concept_driver')
-            backup_scheduler.start(concept_driver=concept_driver)
+            # Register the backup job (it only fires if enabled in settings).
+            backup_scheduler.start()
 
+            # Everything else — ranking flush, pipeline schedules, concept-graph
+            # weight decay — registers itself here and opens its own connections.
             register_scheduled_jobs(app, app_scheduler)
 
             app_scheduler.start()
