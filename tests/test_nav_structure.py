@@ -3,10 +3,10 @@ Tests for the top-level navigation structure and the Entities page.
 
 Covers the nav restructure: Labels and Links folded into a single Entities item
 with two tabs, Scripts and Plugins moved out of the top nav into Settings →
-Advanced, and Pipeline relabelled Pipelines.
+Advanced, and Pipeline relabelled Resources.
 """
 
-EXPECTED_NAV = ['Results', 'Chats', 'Maps', 'Entities', 'Files', 'Pipelines']
+EXPECTED_NAV = ['Results', 'Chats', 'Maps', 'Entities', 'Files', 'Resources']
 
 
 def _header_nav(html):
@@ -32,10 +32,10 @@ def test_scripts_and_plugins_are_not_in_top_nav(client):
     assert 'Plugins' not in nav
 
 
-def test_pipelines_label_keeps_its_url(client):
-    """The Pipeline → Pipelines change is display-only."""
+def test_resources_label_keeps_its_url(client):
+    """The Pipeline → Resources relabel is display-only."""
     html = client.get('/results').data.decode('utf-8')
-    assert '/pipeline/sources" data-testid="nav-pipeline">Pipelines<' in html
+    assert '/pipeline/sources" data-testid="nav-pipeline">Resources<' in html
     assert client.get('/pipeline/sources').status_code == 200
 
 

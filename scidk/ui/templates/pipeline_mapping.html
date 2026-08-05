@@ -177,7 +177,7 @@
      data-saved-at="{{ saved_at or '' }}">
 
   <div class="crumbs" data-testid="mapping-breadcrumb">
-    <a href="{{ request.script_root }}/pipeline/sources">Data Sources</a>
+    <a href="{{ request.script_root }}/pipeline/sources">Resources</a>
     <span class="sep">→</span>
     <a href="{{ request.script_root }}/pipeline/sources?source={{ source.id }}&amp;step=mapping"
        data-testid="crumb-source">{{ source.name }}</a>
@@ -190,7 +190,7 @@
     <button class="btn primary" id="save-mapping" data-testid="save-mapping">
       💾 Save mapping</button>
     <button class="btn" id="reload-columns" data-testid="reload-columns"
-            title="Read the source again — its columns may have changed">
+            title="Read the resource again — its columns may have changed">
       ↻ Reload columns</button>
     <a class="btn" href="{{ request.script_root }}/pipeline/sources/{{ source.id }}/schema"
        data-testid="open-schema-canvas"

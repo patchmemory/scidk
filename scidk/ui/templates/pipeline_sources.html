@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}-SciDK-> Pipeline Sources{% endblock %}
+{% block title %}-SciDK-> Resources{% endblock %}
 
 {#
   Pipeline source management — Cycle 3B Tasks A, B, E and F.
@@ -153,20 +153,20 @@
 <div class="pipeline-page" data-testid="pipeline-sources-page">
 
   <div class="page-head">
-    <h2>Pipeline sources</h2>
-    <span class="small">Data sources the Pipeline maps into the knowledge graph.</span>
+    <h2>Resources</h2>
+    <span class="small">Data resources the Pipeline maps into the knowledge graph.</span>
     <button class="btn primary" id="add-source-btn" data-testid="add-source-btn"
-            style="margin-left:auto">+ Add source</button>
+            style="margin-left:auto">+ Add resource</button>
   </div>
 
   <div id="sources-list" data-testid="sources-list" aria-busy="true">
-    <p class="small"><span class="spin"></span> Loading sources…</p>
+    <p class="small"><span class="spin"></span> Loading resources…</p>
   </div>
 
   <!-- ------------------------------------------------ Add / edit source -->
   <dialog class="sheet" id="source-sheet" data-testid="source-sheet">
     <div class="sheet-head">
-      <h3 id="sheet-title">Add source</h3>
+      <h3 id="sheet-title">Add resource</h3>
       <div class="steps" id="step-indicator" data-testid="step-indicator">
         <span class="step" id="step-dot-connect" data-testid="step-dot-connect">
           <span class="num">1</span> Connection</span>
@@ -183,9 +183,9 @@
            registry. -->
       <section id="step-type" data-testid="step-type">
         <div class="field">
-          <label>Source type</label>
+          <label>Resource type</label>
           <div id="type-options" data-testid="type-options">
-            <p class="small"><span class="spin"></span> Loading source types…</p>
+            <p class="small"><span class="spin"></span> Loading resource types…</p>
           </div>
         </div>
       </section>
@@ -203,7 +203,7 @@
           <div class="hint" id="preset-hint"></div>
         </div>
         <div class="field">
-          <label for="source-name">Name</label>
+          <label for="source-name">Resource name</label>
           <input type="text" id="source-name" data-testid="source-name"
                  placeholder="e.g. AIPT Intake Form" autocomplete="off">
         </div>
@@ -308,7 +308,7 @@
       <span class="spacer"></span>
       <button class="btn" id="sheet-cancel" data-testid="sheet-cancel">Cancel</button>
       <button class="btn primary" id="sheet-save" data-testid="sheet-save" disabled>
-        Save source
+        Save resource
       </button>
       <button class="btn primary" id="sheet-next" data-testid="sheet-next" hidden>
         Next: Schema →
@@ -595,9 +595,9 @@
             : ''}
           <span class="card-actions">
             <button class="btn" data-act="schema" data-testid="schema-source-btn"
-                    title="Open the schema canvas for this source">Schema</button>
+                    title="Open the schema canvas for this resource">Schema</button>
             <button class="btn" data-act="mapping" data-testid="mapping-source-btn"
-                    title="Map this source's columns onto the schema">Mapping</button>
+                    title="Map this resource's columns onto the schema">Mapping</button>
             <button class="btn" data-act="fair" data-testid="fair-check-btn"
                     title="Preview what a run would write. Nothing is written."
                     ${unavailable ? 'disabled' : ''}>FAIR check</button>
@@ -616,7 +616,7 @@
           <div>${schedule}</div>
           ${source.mapping_json ? '' :
             '<div><span class="badge warn">no column mapping yet</span> ' +
-            'A source with no mapping has nothing to write; Mapping is Step 3.</div>'}
+            'A resource with no mapping has nothing to write; Mapping is Step 3.</div>'}
         </div>
         <div class="run-log" data-testid="source-run-log"></div>
         <div class="fair-panel" data-testid="fair-panel" hidden></div>
@@ -649,11 +649,12 @@
       list.innerHTML = sources.length
         ? sources.map(card).join('')
         : `<div class="empty" data-testid="sources-empty">
-             No data sources configured yet.<br>
-             <span class="small">Use “+ Add source” to connect one.</span>
+             No data resources configured yet.<br>
+             <span class="small">Use “+ Add resource” to connect one.</span>
            </div>`;
     } catch (e) {
-      list.innerHTML = `<div class="notice bad">Could not load sources: ${esc(e.message)}</div>`;
+      list.innerHTML =
+        `<div class="notice bad">Could not load resources: ${esc(e.message)}</div>`;
     } finally {
       list.removeAttribute('aria-busy');
     }
@@ -685,7 +686,7 @@
 
   async function deleteSource(sourceId, name) {
     if (!window.confirm(
-      `Delete “${name}”?\n\nThis removes the source, its schema canvas, its ` +
+      `Delete “${name}”?\n\nThis removes the resource, its schema canvas, its ` +
       `schedule and its run history. Any uploaded file is left on disk.`)) return;
     try {
       const data = await api(`/api/pipeline/sources/${sourceId}`, { method: 'DELETE' });
@@ -787,7 +788,7 @@
     // reached.
     $('sheet-next-mapping').hidden = step !== 'schema' || !draft.schemaDefined;
     $('sheet-done').hidden = step !== 'schema' && step !== 'mapping';
-    $('sheet-title').textContent = draft.id ? 'Edit source' : 'Add source';
+    $('sheet-title').textContent = draft.id ? 'Edit resource' : 'Add resource';
     updateStepIndicator();
   }
 
@@ -815,7 +816,7 @@
       const data = await api('/api/plugins/templates?category=data_import');
       types = data.templates || [];
       if (!types.length) {
-        box.innerHTML = '<div class="notice info">No data source plugins are '
+        box.innerHTML = '<div class="notice info">No data resource plugins are '
                       + 'registered.</div>';
         return;
       }
@@ -909,7 +910,7 @@
     const box = $('connect-result');
     if (!result.ok) {
       box.innerHTML = `<div class="notice bad" data-testid="connect-error">
-        ${esc(result.error || 'Could not read the source.')}</div>`;
+        ${esc(result.error || 'Could not read the resource.')}</div>`;
       return false;
     }
     const columns = result.columns || [];
@@ -997,7 +998,8 @@
   $('sheet-save').addEventListener('click', async () => {
     const name = $('source-name').value.trim();
     if (!name) {
-      $('connect-result').innerHTML = '<div class="notice bad">Give the source a name.</div>';
+      $('connect-result').innerHTML =
+        '<div class="notice bad">Give the resource a name.</div>';
       return;
     }
     const payload = {
@@ -1059,7 +1061,7 @@
       updateStepIndicator();
       if (!summary.defined) {
         box.innerHTML = `<div class="notice info">
-          No schema defined yet. The schema is the target graph this source is
+          No schema defined yet. The schema is the target graph this resource is
           mapped onto — the labels, their properties and the relationships between
           them.</div>`;
         return;
@@ -1177,7 +1179,7 @@
              ${open}</div>`
         : `<div class="notice ok" data-testid="mapping-defined-notice">
              <strong>Mapping defined.</strong> ${esc(counted)}. The engine accepts it,
-             so this source can run.
+             so this resource can run.
              <br>${open}</div>`;
     } catch (e) {
       box.innerHTML = `<div class="notice bad">${esc(e.message)}</div>`;
@@ -1241,7 +1243,7 @@
       $('sheet-save').disabled = false;
       sheet.showModal();
     } catch (e) {
-      notify(`Could not open source: ${e.message}`, 'error');
+      notify(`Could not open resource: ${e.message}`, 'error');
     }
   }
 
@@ -1277,7 +1279,7 @@
   async function openSchedule(sourceId, name) {
     scheduleTarget = sourceId;
     $('schedule-for').textContent =
-      `“${name}”. A source-level schedule is stored as a single-source pipeline.`;
+      `“${name}”. A resource-level schedule is stored as a single-resource pipeline.`;
     $('schedule-result').innerHTML = '';
     try {
       const data = await api(`/api/pipeline/sources/${sourceId}/schedule`);
