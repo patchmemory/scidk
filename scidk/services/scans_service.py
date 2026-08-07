@@ -4,6 +4,8 @@ from pathlib import Path
 import os
 import json
 
+from ..core.interpreter_persistence import persist_interpretation
+
 # This service encapsulates the scan orchestration that used to live inside app.api_scan
 # It is intentionally kept very close to the original logic to preserve behavior and payload.
 
@@ -400,6 +402,14 @@ class ScansService:
 
             # Legacy: create in-memory datasets and run interpreters
             count = 0
+            # One connection for the whole loop; the in-memory graph and the
+            # index have to agree, and this path used to update only the former.
+            conn_i = None
+            try:
+                conn_i = pix.connect()
+                pix.init_db(conn_i)
+            except Exception:
+                conn_i = None
             for fpath in items_files:
                 try:
                     ds = fs.create_dataset_node(fpath)
@@ -408,20 +418,50 @@ class ScansService:
                     for interp in interps:
                         try:
                             result = interp.interpret(fpath)
-                            app.extensions['scidk']['graph'].add_interpretation(ds['checksum'], interp.id, {
+                            payload = {
                                 'status': result.get('status', 'success'),
-                                'data': result.get('data', result),
+                                'data': result.get('data', {}),
+                                'nodes': result.get('nodes', []),
+                                'relationships': result.get('relationships', []),
                                 'interpreter_version': getattr(interp, 'version', '0.0.1'),
-                            })
+                            }
                         except Exception as e:
-                            app.extensions['scidk']['graph'].add_interpretation(ds['checksum'], interp.id, {
+                            payload = {
                                 'status': 'error',
                                 'data': {'error': str(e)},
+                                'nodes': [],
+                                'relationships': [],
                                 'interpreter_version': getattr(interp, 'version', '0.0.1'),
-                            })
+                            }
+                        app.extensions['scidk']['graph'].add_interpretation(ds['checksum'], interp.id, payload)
+                        if conn_i is not None:
+                            try:
+                                # _row_from_local keys the index on the resolved
+                                # path; ds['path'] is unresolved, hence the order.
+                                persist_interpretation(
+                                    conn_i,
+                                    str(fpath.resolve()),
+                                    scan_id,
+                                    interp.id,
+                                    payload,
+                                    interpreter_version=getattr(interp, 'version', '0.0.1'),
+                                    fallback_paths=(ds.get('path') or '',),
+                                )
+                            except Exception:
+                                pass
                     count += 1
                 except Exception:
                     continue
+            if conn_i is not None:
+                try:
+                    conn_i.commit()
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        conn_i.close()
+                    except Exception:
+                        pass
             # Build folders metadata
             for d in items_dirs:
                 try:

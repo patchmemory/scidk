@@ -369,24 +369,20 @@ def api_scan():
                                 # Persist interpretation metadata into SQLite files table for this path
                                 try:
                                     from ...core import path_index_sqlite as pix
+                                    from ...core.interpreter_persistence import persist_interpretation
                                     conn_i = pix.connect(); pix.init_db(conn_i)
                                     try:
-                                        cur_i = conn_i.cursor()
-                                        import json as _json
-                                        # Determine the canonical key used in the index for this file path
-                                        key_path = None
-                                        try:
-                                            # For rclone/remote scans, the index stores canonical remote paths like "remote:rel/path"
-                                            # Prefer dataset-provided original path if present
-                                            key_path = ds.get('path') or None
-                                        except Exception:
-                                            key_path = None
-                                        if not key_path:
-                                            # Fallback to absolute local path for local filesystem scans
-                                            key_path = str(fpath.resolve())
-                                        cur_i.execute(
-                                            "UPDATE files SET interpreted_as = ?, interpretation_json = ? WHERE path = ? AND type = 'file' AND scan_id = ?",
-                                            (interp.id, _json.dumps(payload), key_path, scan_id)
+                                        # For rclone/remote scans the index stores canonical remote
+                                        # paths like "remote:rel/path"; prefer the dataset's own key
+                                        # and fall back to the resolved local path.
+                                        persist_interpretation(
+                                            conn_i,
+                                            ds.get('path') or str(fpath.resolve()),
+                                            scan_id,
+                                            interp.id,
+                                            result,
+                                            interpreter_version=getattr(interp, 'version', '0.0.1'),
+                                            fallback_paths=(str(fpath.resolve()),),
                                         )
                                         conn_i.commit()
                                     finally:
@@ -404,21 +400,17 @@ def api_scan():
                                 _get_ext()['graph'].add_interpretation(ds['checksum'], interp.id, err_payload)
                                 try:
                                     from ...core import path_index_sqlite as pix
+                                    from ...core.interpreter_persistence import persist_interpretation
                                     conn_i = pix.connect(); pix.init_db(conn_i)
                                     try:
-                                        cur_i = conn_i.cursor()
-                                        import json as _json
-                                        # Determine canonical key as above
-                                        key_path = None
-                                        try:
-                                            key_path = ds.get('path') or None
-                                        except Exception:
-                                            key_path = None
-                                        if not key_path:
-                                            key_path = str(fpath.resolve())
-                                        cur_i.execute(
-                                            "UPDATE files SET interpreted_as = ?, interpretation_json = ? WHERE path = ? AND type = 'file' AND scan_id = ?",
-                                            (interp.id, _json.dumps(err_payload), key_path, scan_id)
+                                        persist_interpretation(
+                                            conn_i,
+                                            ds.get('path') or str(fpath.resolve()),
+                                            scan_id,
+                                            interp.id,
+                                            err_payload,
+                                            interpreter_version=getattr(interp, 'version', '0.0.1'),
+                                            fallback_paths=(str(fpath.resolve()),),
                                         )
                                         conn_i.commit()
                                     finally:
