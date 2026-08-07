@@ -903,6 +903,68 @@ class TestEnrichmentDispatcher:
         assert recorded['host'] == 'mounted:/mnt/server'
 
 
+class TestFilesIndexes:
+    """The indexes that make enrichment usable, and where they are allowed to live."""
+
+    _WANTED = {'idx_files_ext_lower', 'idx_files_interpreted_as', 'idx_files_path'}
+
+    @staticmethod
+    def _file_indexes(conn):
+        return {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='files' "
+            "AND name NOT LIKE 'sqlite_%'")}
+
+    def test_init_db_creates_them(self, tmp_path):
+        import sqlite3
+
+        from scidk.core import path_index_sqlite as pix
+
+        conn = sqlite3.connect(str(tmp_path / 'files.db'))
+        pix.init_db(conn)
+        assert self._WANTED <= self._file_indexes(conn)
+
+    def test_migrate_does_not_require_a_files_table(self, tmp_path):
+        """migrate() also runs against scidk_settings.db and every per-test
+        database, neither of which has a files table. Creating an index on it
+        there raised out of migrate() and took 86 unrelated tests with it."""
+        import sqlite3
+
+        from scidk.core import migrations
+
+        conn = sqlite3.connect(str(tmp_path / 'settings.db'))
+        assert migrations.migrate(conn) >= 26           # must not raise
+        assert self._file_indexes(conn) == set()
+
+    def test_indexes_survive_migrate_before_init_db(self, tmp_path):
+        """scans_service calls migrate() on a bare pix.connect() before
+        init_db(). A migration guarded on "does files exist yet" would skip,
+        record the version, and leave the indexes permanently uncreated."""
+        import sqlite3
+
+        from scidk.core import migrations, path_index_sqlite as pix
+
+        conn = sqlite3.connect(str(tmp_path / 'files.db'))
+        migrations.migrate(conn)
+        pix.init_db(conn)
+        assert self._WANTED <= self._file_indexes(conn)
+
+    def test_find_work_plans_an_indexed_search(self, tmp_path):
+        """Both arms of the OR must be indexed or SQLite falls back to a scan."""
+        import sqlite3
+
+        from scidk.core import path_index_sqlite as pix
+
+        conn = sqlite3.connect(str(tmp_path / 'files.db'))
+        pix.init_db(conn)
+        plan = ' '.join(row[-1] for row in conn.execute(
+            "EXPLAIN QUERY PLAN SELECT path FROM files f WHERE f.type='file' "
+            "AND (f.interpreted_as = 'fcs_interpreter' "
+            "     OR lower(f.file_extension) IN ('.fcs')) LIMIT 20"))
+        assert 'idx_files_ext_lower' in plan
+        assert 'idx_files_interpreted_as' in plan
+        assert 'SCAN' not in plan
+
+
 class TestEnrichmentRoute:
     def test_run_is_admin_only_and_not_gated_on_a_nonexistent_staff_role(self):
         """@require_role('staff') would 403 everyone; auth_users allows only
