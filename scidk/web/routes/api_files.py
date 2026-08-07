@@ -353,9 +353,16 @@ def api_scan():
                         for interp in interps:
                             try:
                                 result = interp.interpret(fpath)
+                                # Interpreters declare 'nodes' and 'relationships' as
+                                # siblings of 'data', not inside it. Persisting only
+                                # 'data' dropped them before commit_service could read
+                                # them back, so every interpreter-declared domain node
+                                # was silently lost. Keep the whole envelope.
                                 payload = {
                                     'status': result.get('status', 'success'),
-                                    'data': result.get('data', result),
+                                    'data': result.get('data', {}),
+                                    'nodes': result.get('nodes', []),
+                                    'relationships': result.get('relationships', []),
                                     'interpreter_version': getattr(interp, 'version', '0.0.1'),
                                 }
                                 _get_ext()['graph'].add_interpretation(ds['checksum'], interp.id, payload)
@@ -379,7 +386,7 @@ def api_scan():
                                             key_path = str(fpath.resolve())
                                         cur_i.execute(
                                             "UPDATE files SET interpreted_as = ?, interpretation_json = ? WHERE path = ? AND type = 'file' AND scan_id = ?",
-                                            (interp.id, _json.dumps(payload.get('data')), key_path, scan_id)
+                                            (interp.id, _json.dumps(payload), key_path, scan_id)
                                         )
                                         conn_i.commit()
                                     finally:
@@ -390,6 +397,8 @@ def api_scan():
                                 err_payload = {
                                     'status': 'error',
                                     'data': {'error': str(e)},
+                                    'nodes': [],
+                                    'relationships': [],
                                     'interpreter_version': getattr(interp, 'version', '0.0.1'),
                                 }
                                 _get_ext()['graph'].add_interpretation(ds['checksum'], interp.id, err_payload)
@@ -409,7 +418,7 @@ def api_scan():
                                             key_path = str(fpath.resolve())
                                         cur_i.execute(
                                             "UPDATE files SET interpreted_as = ?, interpretation_json = ? WHERE path = ? AND type = 'file' AND scan_id = ?",
-                                            (interp.id, _json.dumps(err_payload.get('data')), key_path, scan_id)
+                                            (interp.id, _json.dumps(err_payload), key_path, scan_id)
                                         )
                                         conn_i.commit()
                                     finally:
