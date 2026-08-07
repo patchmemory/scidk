@@ -48,6 +48,15 @@ class Neo4jGraph:
         still recorded when the File has not been committed yet. Matching on
         path alone when ``host`` is unknown links every host holding that path,
         which is the useful reading of an unqualified path.
+
+        **Pass ``host`` whenever it is known.** The only index on ``:File`` is
+        the composite ``file_identity`` on ``(path, host)``, and a Neo4j
+        composite index requires *every* property in the pattern — a lookup on
+        ``path`` alone cannot use it and degrades to a full label scan. Measured
+        on the AIPT graph at 5.5M File nodes: 3.72s by path alone, 0.01s by
+        ``(path, host)``. The host therefore has to be in the MATCH pattern, not
+        in a WHERE clause filtering the scan's output, which is why there are
+        two query forms below rather than one with a nullable parameter.
         """
         import json as _json
         try:
@@ -55,21 +64,30 @@ class Neo4jGraph:
         except Exception:
             data_json = '{}'
         identity = file_path or checksum
+
+        merge_interpretation = (
+            "MERGE (i:Interpretation {id:$iid}) "
+            "  SET i.status = $status, "
+            "      i.data_json = $data_json, "
+            "      i.interpreter_id = $interpreter_id, "
+            "      i.source_path = $path, "
+            "      i.checksum = $checksum, "
+            "      i.updated_at = timestamp() "
+            "WITH i "
+        )
+        link_file = (
+            "FOREACH (_ IN CASE WHEN f IS NULL THEN [] ELSE [1] END | "
+            "  MERGE (f)-[:INTERPRETED_AS]->(i) )"
+        )
+        if host:
+            match_file = "OPTIONAL MATCH (f:File {path: $path, host: $host}) "
+        else:
+            match_file = "OPTIONAL MATCH (f:File {path: $path}) "
+
         try:
             with self._session() as s:
                 s.run(
-                    "MERGE (i:Interpretation {id:$iid}) "
-                    "  SET i.status = $status, "
-                    "      i.data_json = $data_json, "
-                    "      i.interpreter_id = $interpreter_id, "
-                    "      i.source_path = $path, "
-                    "      i.checksum = $checksum, "
-                    "      i.updated_at = timestamp() "
-                    "WITH i "
-                    "OPTIONAL MATCH (f:File {path: $path}) "
-                    "  WHERE $host IS NULL OR f.host = $host "
-                    "FOREACH (_ IN CASE WHEN f IS NULL THEN [] ELSE [1] END | "
-                    "  MERGE (f)-[:INTERPRETED_AS]->(i) )",
+                    merge_interpretation + match_file + link_file,
                     iid=f"{interpreter_id}:{identity}",
                     status=payload.get('status') or 'unknown',
                     data_json=data_json,

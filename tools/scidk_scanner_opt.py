@@ -73,7 +73,8 @@ try:
     _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
     from scidk.core.scanner_formats import (  # type: ignore
         KNOWN_INTERPRETERS, MAGIC_SIGNATURES, DIRECTORY_PATTERNS,
-        DIRECTORY_PATTERN_INTERPRETERS, interpreter_for_dir_pattern,
+        DIRECTORY_PATTERN_INTERPRETERS, EXTENSION_DIRECTORY_PATTERNS,
+        interpreter_for_dir_pattern, detect_directory_pattern,
     )
 except Exception:  # pragma: no cover - standalone fallback
 
@@ -113,6 +114,11 @@ except Exception:  # pragma: no cover - standalone fallback
         ".ttl":   None,               # rdf_interpreter: specced, not yet implemented
         ".owl":   None,               # owl_interpreter: specced, not yet implemented
         ".py":    "python_code",
+        ".fcs":   "fcs_interpreter",  # FCS2.0/3.0/3.1 flow cytometry
+        ".svs":   "svs_interpreter",  # Aperio whole-slide image
+        ".ndpi":  "svs_interpreter",  # Hamamatsu — same TIFF-derived container
+        ".scn":   "svs_interpreter",  # Leica whole-slide
+        ".pzfx":  None,               # GraphPad Prism — no interpreter yet
     }
 
     MAGIC_SIGNATURES: List[Tuple[bytes, str, Optional[str]]] = [
@@ -136,8 +142,8 @@ except Exception:  # pragma: no cover - standalone fallback
         (b"##fileformat=VCF", "vcf",          None),
         (b"BZh",              "bz2",          None),
         (b"\x1f\x8b",         "gzip",         None),
-        (b"FCS3.",            "fcs",          None),
-        (b"FCS2.",            "fcs",          None),
+        (b"FCS3.",            "fcs",          "fcs_interpreter"),
+        (b"FCS2.",            "fcs",          "fcs_interpreter"),
         (b"SIMPLE  =",        "fits",         None),
         (b"#\n# ",            "r_data",       None),
     ]
@@ -170,12 +176,40 @@ except Exception:  # pragma: no cover - standalone fallback
         "bids_root":             "bids_interpreter",       # not yet implemented
         "tcga_manifest":         "tcga_interpreter",       # not yet implemented
         "tcga_export":           "tcga_interpreter",       # not yet implemented
+        "flow_cytometry_session": "flow_session_interpreter",       # registered
+        "histology_session":      "histology_session_interpreter",  # registered
     }
+
+    # Directories recognised by which extensions they hold rather than by exact
+    # filenames — a flow run is a folder of .fcs named after the samples.
+    # ([extensions_any_of], pattern_name, min_count)
+    EXTENSION_DIRECTORY_PATTERNS: List[Tuple[List[str], str, int]] = [
+        ([".fcs"],                   "flow_cytometry_session", 1),
+        ([".svs", ".ndpi", ".scn"],  "histology_session",      1),
+    ]
 
     def interpreter_for_dir_pattern(pattern):
         if not pattern:
             return None
         return DIRECTORY_PATTERN_INTERPRETERS.get(pattern, pattern)
+
+    def detect_directory_pattern(child_names):
+        lower = {str(c).lower() for c in child_names}
+        for required, pattern in DIRECTORY_PATTERNS:
+            if all(r.lower() in lower for r in required):
+                return pattern
+            if any(r.endswith("-") for r in required):
+                if all(
+                    r.lower() in lower or any(c.startswith(r.lower()) for c in lower)
+                    for r in required
+                ):
+                    return pattern
+        suffixes = [Path(n).suffix.lower() for n in child_names]
+        for extensions, pattern, min_count in EXTENSION_DIRECTORY_PATTERNS:
+            wanted = {e.lower() for e in extensions}
+            if sum(1 for s in suffixes if s in wanted) >= min_count:
+                return pattern
+        return None
 
 
 # Writer queue sentinel
@@ -343,17 +377,10 @@ def _detect_interpreter(ext: str, magic_label: Optional[str],
 
 
 def _detect_dir_pattern(children: List[str]) -> Optional[str]:
-    lower = {c.lower() for c in children}
-    for required, label in DIRECTORY_PATTERNS:
-        if all(r.lower() in lower for r in required):
-            return label
-        if any(r.endswith("-") for r in required):
-            if all(
-                r.lower() in lower or any(c.startswith(r.lower()) for c in lower)
-                for r in required
-            ):
-                return label
-    return None
+    """Delegates to the shared table in ``scanner_formats``; see the twin in
+    ``scidk_scanner.py``. This copy also silently lacked the ``bids_dataset``
+    row its fallback table never carried."""
+    return detect_directory_pattern(children)
 
 
 def _make_file_rows(

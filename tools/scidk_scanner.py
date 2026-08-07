@@ -57,7 +57,8 @@ try:
     _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
     from scidk.core.scanner_formats import (  # type: ignore
         KNOWN_INTERPRETERS, MAGIC_SIGNATURES, DIRECTORY_PATTERNS,
-        DIRECTORY_PATTERN_INTERPRETERS, interpreter_for_dir_pattern,
+        DIRECTORY_PATTERN_INTERPRETERS, EXTENSION_DIRECTORY_PATTERNS,
+        interpreter_for_dir_pattern, detect_directory_pattern,
     )
 except Exception:  # pragma: no cover - standalone fallback
 
@@ -98,6 +99,11 @@ except Exception:  # pragma: no cover - standalone fallback
         ".ttl":      None,               # rdf_interpreter: specced, not yet implemented
         ".owl":      None,               # owl_interpreter: specced, not yet implemented
         ".py":       "python_code",
+        ".fcs":      "fcs_interpreter",  # FCS2.0/3.0/3.1 flow cytometry
+        ".svs":      "svs_interpreter",  # Aperio whole-slide image
+        ".ndpi":     "svs_interpreter",  # Hamamatsu — same TIFF-derived container
+        ".scn":      "svs_interpreter",  # Leica whole-slide
+        ".pzfx":     None,               # GraphPad Prism — no interpreter yet
         # Add entries here as new interpreters land in scidk/interpreters/
         # Registered but unlisted here: txt (.txt), bruker_skyscan_log (.log).
     }
@@ -130,8 +136,8 @@ except Exception:  # pragma: no cover - standalone fallback
         (b"@SQUAWK",           "fastq_likely",None),
         (b"BZh",               "bz2",         None),
         (b"\x1f\x8b",          "gzip",        None),
-        (b"FCS3.",             "fcs",         None),                       # flow cytometry
-        (b"FCS2.",             "fcs",         None),
+        (b"FCS3.",             "fcs",         "fcs_interpreter"),          # flow cytometry
+        (b"FCS2.",             "fcs",         "fcs_interpreter"),
         (b"\x89\x48\x44\x46",  "hdf5",        None),  # hdf5_interpreter not implemented
         (b"SIMPLE  =",         "fits",        None),                       # FITS astronomy/bio
         (b"#\n# ",             "r_data",      None),
@@ -168,12 +174,40 @@ except Exception:  # pragma: no cover - standalone fallback
         "bids_root":             "bids_interpreter",       # not yet implemented
         "tcga_manifest":         "tcga_interpreter",       # not yet implemented
         "tcga_export":           "tcga_interpreter",       # not yet implemented
+        "flow_cytometry_session": "flow_session_interpreter",       # registered
+        "histology_session":      "histology_session_interpreter",  # registered
     }
+
+    # Directories recognised by which extensions they hold rather than by exact
+    # filenames — a flow run is a folder of .fcs named after the samples.
+    # ([extensions_any_of], pattern_name, min_count)
+    EXTENSION_DIRECTORY_PATTERNS: List[Tuple[List[str], str, int]] = [
+        ([".fcs"],                   "flow_cytometry_session", 1),
+        ([".svs", ".ndpi", ".scn"],  "histology_session",      1),
+    ]
 
     def interpreter_for_dir_pattern(pattern):
         if not pattern:
             return None
         return DIRECTORY_PATTERN_INTERPRETERS.get(pattern, pattern)
+
+    def detect_directory_pattern(child_names):
+        lower = {str(c).lower() for c in child_names}
+        for required, pattern in DIRECTORY_PATTERNS:
+            if all(r.lower() in lower for r in required):
+                return pattern
+            if any(r.endswith("-") for r in required):
+                if all(
+                    r.lower() in lower or any(c.startswith(r.lower()) for c in lower)
+                    for r in required
+                ):
+                    return pattern
+        suffixes = [Path(n).suffix.lower() for n in child_names]
+        for extensions, pattern, min_count in EXTENSION_DIRECTORY_PATTERNS:
+            wanted = {e.lower() for e in extensions}
+            if sum(1 for s in suffixes if s in wanted) >= min_count:
+                return pattern
+        return None
 
 
 
@@ -356,23 +390,13 @@ def _detect_interpreter(ext: str, magic_label: Optional[str],
 
 
 def _detect_dir_pattern(children: List[str]) -> Optional[str]:
-    """Check if a directory's child names match any known instrument pattern."""
-    child_set = set(children)
-    for required, label in DIRECTORY_PATTERNS:
-        # All required names must be present (case-insensitive)
-        lower_children = {c.lower() for c in child_set}
-        if all(r.lower() in lower_children for r in required):
-            return label
-        # Partial BIDS: check for prefix matches
-        if any(r.endswith("-") for r in required):
-            matches = all(
-                r.lower() in lower_children or
-                any(c.startswith(r.lower()) for c in lower_children)
-                for r in required
-            )
-            if matches:
-                return label
-    return None
+    """Check if a directory's child names match any known instrument pattern.
+
+    The matching itself lives in ``scanner_formats.detect_directory_pattern``,
+    which both scanners and the enrichment dispatcher share — this stayed as a
+    named wrapper only because the two call sites below read better with it.
+    """
+    return detect_directory_pattern(children)
 
 
 def _update_progress(conn: sqlite3.Connection, scan_id: str,

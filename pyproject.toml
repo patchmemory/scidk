@@ -50,6 +50,14 @@ llm = [
   "ollama>=0.3",
 ]
 
+# Whole-slide image metadata (svs_interpreter). Only the first page's
+# ImageDescription tag is read, never pixel data. Absent, SVSInterpreter
+# returns a stub with a warning rather than failing the enrichment run — so
+# this is genuinely optional, but no HistologySlide nodes appear without it.
+imaging = [
+  "tifffile>=2024.1",
+]
+
 [project.scripts]
 scidk-serve = "scidk.app:main"
 # Concept Graph seeding and clean re-initialisation (Cycle 8 Task C). Also

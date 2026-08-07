@@ -56,6 +56,7 @@ def register_blueprints(app):
     from . import api_pipeline
     from . import api_platform
     from . import api_rocrate
+    from . import api_enrichment
 
     # Register UI blueprint
     app.register_blueprint(ui.bp)
@@ -92,3 +93,4 @@ def register_blueprints(app):
     app.register_blueprint(api_pipeline.bp)  # Pipeline sources, runs, schedules
     app.register_blueprint(api_platform.bp)  # Platform capabilities (tool registry)
     app.register_blueprint(api_rocrate.bp)  # Files page → RO-Crate build/download
+    app.register_blueprint(api_enrichment.bp)  # Post-scan interpreter dispatcher

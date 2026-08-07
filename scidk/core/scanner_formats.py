@@ -10,6 +10,7 @@ The scanners are the only consumers today, but these belong in the package
 rather than in ``tools/``: they describe what SciDK can interpret, which is a
 property of the interpreters, not of the walker.
 """
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 # ─────────────────────────────────────────────
@@ -49,6 +50,11 @@ KNOWN_INTERPRETERS: Dict[str, Optional[str]] = {
     ".ttl":      None,               # rdf_interpreter: specced, not yet implemented
     ".owl":      None,               # owl_interpreter: specced, not yet implemented
     ".py":       "python_code",
+    ".fcs":      "fcs_interpreter",  # FCS2.0/3.0/3.1 flow cytometry
+    ".svs":      "svs_interpreter",  # Aperio whole-slide image
+    ".ndpi":     "svs_interpreter",  # Hamamatsu — same TIFF-derived container
+    ".scn":      "svs_interpreter",  # Leica whole-slide
+    ".pzfx":     None,               # GraphPad Prism — no interpreter yet
     # Add entries here as new interpreters land in scidk/interpreters/
     # Registered but unlisted here: txt (.txt), bruker_skyscan_log (.log).
 }
@@ -81,8 +87,8 @@ MAGIC_SIGNATURES: List[Tuple[bytes, str, Optional[str]]] = [
     (b"@SQUAWK",           "fastq_likely",None),
     (b"BZh",               "bz2",         None),
     (b"\x1f\x8b",          "gzip",        None),
-    (b"FCS3.",             "fcs",         None),                       # flow cytometry
-    (b"FCS2.",             "fcs",         None),
+    (b"FCS3.",             "fcs",         "fcs_interpreter"),          # flow cytometry
+    (b"FCS2.",             "fcs",         "fcs_interpreter"),
     (b"\x89\x48\x44\x46",  "hdf5",        None),  # hdf5_interpreter not implemented
     (b"SIMPLE  =",         "fits",        None),                       # FITS astronomy/bio
     (b"#\n# ",             "r_data",      None),
@@ -134,7 +140,29 @@ DIRECTORY_PATTERN_INTERPRETERS: Dict[str, Optional[str]] = {
     "bids_root":             "bids_interpreter",       # not yet implemented
     "tcga_manifest":         "tcga_interpreter",       # not yet implemented
     "tcga_export":           "tcga_interpreter",       # not yet implemented
+    "flow_cytometry_session": "flow_session_interpreter",   # registered
+    "histology_session":      "histology_session_interpreter",  # registered
 }
+
+# ─────────────────────────────────────────────
+# Extension-presence directory patterns
+# ─────────────────────────────────────────────
+# DIRECTORY_PATTERNS above asks "are these exact filenames present?", which is
+# the right question for a pipeline output whose layout is fixed
+# (barcodes/features/matrix, acqp/method/fid). It is the wrong question for an
+# instrument that names its files after the sample: a flow cytometry run is a
+# folder of .fcs, a slide-scanner session is a folder of .svs, and neither has
+# any filename you can predict.
+#
+# Checked only after DIRECTORY_PATTERNS produces no match, so a folder that is
+# both a recognised pipeline output and happens to contain a slide keeps its
+# more specific classification.
+#
+# Format: ([extensions_any_of], pattern_name, min_count)
+EXTENSION_DIRECTORY_PATTERNS: List[Tuple[List[str], str, int]] = [
+    ([".fcs"],                   "flow_cytometry_session", 1),
+    ([".svs", ".ndpi", ".scn"],  "histology_session",      1),
+]
 
 
 def interpreter_for_dir_pattern(pattern: Optional[str]) -> Optional[str]:
@@ -146,3 +174,36 @@ def interpreter_for_dir_pattern(pattern: Optional[str]) -> Optional[str]:
     if not pattern:
         return None
     return DIRECTORY_PATTERN_INTERPRETERS.get(pattern, pattern)
+
+
+def detect_directory_pattern(child_names: List[str]) -> Optional[str]:
+    """Pattern name for a directory given its child names, or None.
+
+    ``child_names`` is everything directly inside the directory — subdirectory
+    names as well as filenames, since some patterns key on a subdirectory
+    (``OME``, ``anat``).
+
+    Matching is case-insensitive, and a required name ending in ``-`` matches
+    any child that starts with it — that is how the partial BIDS entry
+    (``["subject", "ses-", "anat"]``) is meant to work. Both scanners grew this
+    logic independently; this is the one copy.
+    """
+    lower = {str(c).lower() for c in child_names}
+
+    for required, pattern in DIRECTORY_PATTERNS:
+        if all(r.lower() in lower for r in required):
+            return pattern
+        if any(r.endswith("-") for r in required):
+            if all(
+                r.lower() in lower or any(c.startswith(r.lower()) for c in lower)
+                for r in required
+            ):
+                return pattern
+
+    suffixes = [Path(n).suffix.lower() for n in child_names]
+    for extensions, pattern, min_count in EXTENSION_DIRECTORY_PATTERNS:
+        wanted = {e.lower() for e in extensions}
+        if sum(1 for s in suffixes if s in wanted) >= min_count:
+            return pattern
+
+    return None
