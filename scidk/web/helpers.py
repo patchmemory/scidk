@@ -471,6 +471,11 @@ def commit_to_neo4j_batched(
                     "  SET f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, "
                     "      f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type, "
                     "      f.provider_id = scan_provider, f.host_type = scan_host_type, f.host_id = scan_host_id "
+                    # Parity with neo4j_client.write_scan — without this clause the
+                    # streaming commit path can never write INTERPRETED_AS.
+                    "FOREACH (iid IN coalesce(r.interps, []) | "
+                    "  MERGE (interp:Interpreter {id: iid}) "
+                    "  MERGE (f)-[:INTERPRETED_AS]->(interp) ) "
                     "WITH r, f, scan_id, node_host, CASE WHEN r.folder IS NOT NULL AND r.folder <> '' THEN r.folder ELSE substring(r.path, 0, size(r.path) - size(last(split(r.path, '/'))) - 1) END AS folder_path "
                     "OPTIONAL MATCH (s:Scan {id: scan_id}) "
                     "MERGE (f)-[:SCANNED_IN]->(s) "
@@ -486,6 +491,11 @@ def commit_to_neo4j_batched(
                     "  SET f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, "
                     "      f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type, "
                     "      f.provider_id = scan_provider, f.host_type = scan_host_type, f.host_id = scan_host_id "
+                    # Parity with neo4j_client.write_scan — without this clause the
+                    # streaming commit path can never write INTERPRETED_AS.
+                    "FOREACH (iid IN coalesce(r.interps, []) | "
+                    "  MERGE (interp:Interpreter {id: iid}) "
+                    "  MERGE (f)-[:INTERPRETED_AS]->(interp) ) "
                     "WITH r, f, scan_id, node_host "
                     "OPTIONAL MATCH (s:Scan {id: scan_id}) "
                     "MERGE (f)-[:SCANNED_IN]->(s) "

@@ -47,7 +47,8 @@ def build_rows_for_scan_from_index(scan_id: str, scan: Dict, include_hierarchy: 
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT path, parent_path, name, depth, type, size, modified_time, file_extension, mime_type FROM files WHERE scan_id = ?",
+            "SELECT path, parent_path, name, depth, type, size, modified_time, file_extension, mime_type, "
+            "interpreted_as FROM files WHERE scan_id = ?",
             (scan_id,)
         )
         items = cur.fetchall()
@@ -61,7 +62,7 @@ def build_rows_for_scan_from_index(scan_id: str, scan: Dict, include_hierarchy: 
     folder_rows: List[Dict] = []
     folders_seen = set()
 
-    for (p, parent, name, depth, typ, size, mtime, ext, mime) in items:
+    for (p, parent, name, depth, typ, size, mtime, ext, mime, interpreted_as) in items:
         if typ == 'folder':
             if p in folders_seen:
                 continue
@@ -87,7 +88,10 @@ def build_rows_for_scan_from_index(scan_id: str, scan: Dict, include_hierarchy: 
                 'folder': par,
                 'parent': par,
                 'parent_in_scan': True,
-                'interps': [],
+                # Feeds the FOREACH in write_scan that creates
+                # (:File)-[:INTERPRETED_AS]->(:Interpreter). Hardcoded to [] since
+                # it was written, so that clause has never fired on this path.
+                'interps': [interpreted_as] if interpreted_as else [],
             })
 
     if include_hierarchy:
