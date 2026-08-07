@@ -73,6 +73,7 @@ try:
     _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
     from scidk.core.scanner_formats import (  # type: ignore
         KNOWN_INTERPRETERS, MAGIC_SIGNATURES, DIRECTORY_PATTERNS,
+        DIRECTORY_PATTERN_INTERPRETERS, interpreter_for_dir_pattern,
     )
 except Exception:  # pragma: no cover - standalone fallback
 
@@ -155,6 +156,27 @@ except Exception:  # pragma: no cover - standalone fallback
         (["Manifest.xml"],                                         "tcga_manifest"),
         (["clinical_data.txt", "mutations.txt"],                   "tcga_export"),
     ]
+
+    DIRECTORY_PATTERN_INTERPRETERS: Dict[str, Optional[str]] = {
+        "10x_genomics_mtx":      "mtx_interpreter",        # not yet implemented
+        "10x_genomics_mtx_gz":   "mtx_interpreter",        # not yet implemented
+        "maxquant_output":       "maxquant_interpreter",   # not yet implemented
+        "maxquant_run":          "maxquant_interpreter",   # not yet implemented
+        "bruker_mri":            "bruker_mri_interpreter", # not yet implemented
+        "bruker_processed":      "bruker_mri_interpreter", # not yet implemented
+        "ome_tiff_dir":          "ome_tiff",               # registered
+        "dicom_dir":             "dicom_bioformats",       # registered
+        "bids_dataset":          "bids_interpreter",       # not yet implemented
+        "bids_root":             "bids_interpreter",       # not yet implemented
+        "tcga_manifest":         "tcga_interpreter",       # not yet implemented
+        "tcga_export":           "tcga_interpreter",       # not yet implemented
+    }
+
+    def interpreter_for_dir_pattern(pattern):
+        if not pattern:
+            return None
+        return DIRECTORY_PATTERN_INTERPRETERS.get(pattern, pattern)
+
 
 # Writer queue sentinel
 _STOP = object()
@@ -518,6 +540,8 @@ def _walk_subtree(
         ddepth  = _depth(dp)
         pattern = _detect_dir_pattern(dirnames + filenames)
         dextra  = json.dumps({"pattern": pattern}) if pattern else None
+        # Route the pattern to interpreted_as as well; extra_json is a dead end.
+        dinterp = interpreter_for_dir_pattern(pattern)
         try:
             dmtime = os.stat(dirpath).st_mtime
         except OSError:
@@ -525,7 +549,7 @@ def _walk_subtree(
 
         write_q.put((
             (dp, dparent, dname, ddepth, "folder", 0, dmtime,
-             None, None, None, None, None, scan_id, dextra, None, None),
+             None, None, None, None, None, scan_id, dextra, dinterp, None),
             (scan_id, dp, "folder", 0, dmtime, None, None, None, None, dextra),
         ))
         with stats_lock:
@@ -606,10 +630,11 @@ def walk_path(
         rmtime = None
     root_pattern = _detect_dir_pattern([e.name for e in top_entries])
     root_extra   = json.dumps({"pattern": root_pattern}) if root_pattern else None
+    root_interp  = interpreter_for_dir_pattern(root_pattern)
     write_q.put((
         (root_str, str(root_path.parent), root_path.name or root_str,
          root_depth, "folder", 0, rmtime,
-         None, None, None, None, None, scan_id, root_extra, None, None),
+         None, None, None, None, None, scan_id, root_extra, root_interp, None),
         (scan_id, root_str, "folder", 0, rmtime,
          None, None, None, None, root_extra),
     ))

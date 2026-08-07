@@ -105,3 +105,44 @@ DIRECTORY_PATTERNS: List[Tuple[List[str], str]] = [
     (["Manifest.xml"],                                 "tcga_manifest"),
     (["clinical_data.txt", "mutations.txt"],           "tcga_export"),
 ]
+
+# Directory pattern → the interpreter id written to the folder row's
+# interpreted_as. A matched pattern used to go only into the folder's
+# extra_json, where nothing downstream looks, so a directory-level interpreter
+# had no trigger path at all.
+#
+# Most values below name interpreters that do not exist yet, which is
+# deliberate: the pattern is what the scanner can actually detect, and the id
+# records what would read it. Unlike KNOWN_INTERPRETERS, an unresolvable value
+# here costs nothing today because no directory dispatch consumes it — but the
+# same rule applies once one does, so keep these in step with the registry as
+# the interpreters land. A pattern with no entry falls back to its own name.
+#
+# bruker_microct_dataset is the one registered directory-capable interpreter
+# (extensions = [], triggered by structure), and no pattern currently detects
+# the Bruker SkyScan layout it wants; adding one is a separate change.
+DIRECTORY_PATTERN_INTERPRETERS: Dict[str, Optional[str]] = {
+    "10x_genomics_mtx":      "mtx_interpreter",        # not yet implemented
+    "10x_genomics_mtx_gz":   "mtx_interpreter",        # not yet implemented
+    "maxquant_output":       "maxquant_interpreter",   # not yet implemented
+    "maxquant_run":          "maxquant_interpreter",   # not yet implemented
+    "bruker_mri":            "bruker_mri_interpreter", # not yet implemented
+    "bruker_processed":      "bruker_mri_interpreter", # not yet implemented
+    "ome_tiff_dir":          "ome_tiff",               # registered
+    "dicom_dir":             "dicom_bioformats",       # registered
+    "bids_dataset":          "bids_interpreter",       # not yet implemented
+    "bids_root":             "bids_interpreter",       # not yet implemented
+    "tcga_manifest":         "tcga_interpreter",       # not yet implemented
+    "tcga_export":           "tcga_interpreter",       # not yet implemented
+}
+
+
+def interpreter_for_dir_pattern(pattern: Optional[str]) -> Optional[str]:
+    """Interpreter id for a matched directory pattern, or the pattern itself.
+
+    Falling back to the pattern name keeps a newly added DIRECTORY_PATTERNS
+    entry visible in interpreted_as without also requiring a mapping entry.
+    """
+    if not pattern:
+        return None
+    return DIRECTORY_PATTERN_INTERPRETERS.get(pattern, pattern)

@@ -57,6 +57,7 @@ try:
     _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
     from scidk.core.scanner_formats import (  # type: ignore
         KNOWN_INTERPRETERS, MAGIC_SIGNATURES, DIRECTORY_PATTERNS,
+        DIRECTORY_PATTERN_INTERPRETERS, interpreter_for_dir_pattern,
     )
 except Exception:  # pragma: no cover - standalone fallback
 
@@ -153,6 +154,27 @@ except Exception:  # pragma: no cover - standalone fallback
         (["Manifest.xml"],                                 "tcga_manifest"),
         (["clinical_data.txt", "mutations.txt"],           "tcga_export"),
     ]
+
+    DIRECTORY_PATTERN_INTERPRETERS: Dict[str, Optional[str]] = {
+        "10x_genomics_mtx":      "mtx_interpreter",        # not yet implemented
+        "10x_genomics_mtx_gz":   "mtx_interpreter",        # not yet implemented
+        "maxquant_output":       "maxquant_interpreter",   # not yet implemented
+        "maxquant_run":          "maxquant_interpreter",   # not yet implemented
+        "bruker_mri":            "bruker_mri_interpreter", # not yet implemented
+        "bruker_processed":      "bruker_mri_interpreter", # not yet implemented
+        "ome_tiff_dir":          "ome_tiff",               # registered
+        "dicom_dir":             "dicom_bioformats",       # registered
+        "bids_dataset":          "bids_interpreter",       # not yet implemented
+        "bids_root":             "bids_interpreter",       # not yet implemented
+        "tcga_manifest":         "tcga_interpreter",       # not yet implemented
+        "tcga_export":           "tcga_interpreter",       # not yet implemented
+    }
+
+    def interpreter_for_dir_pattern(pattern):
+        if not pattern:
+            return None
+        return DIRECTORY_PATTERN_INTERPRETERS.get(pattern, pattern)
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -460,6 +482,10 @@ def walk_path(
         all_children  = dirnames + filenames
         dir_pattern   = _detect_dir_pattern(all_children)
         dir_extra     = json.dumps({"pattern": dir_pattern}) if dir_pattern else None
+        # Also route the pattern to interpreted_as. extra_json alone is a dead
+        # end — nothing downstream reads it, so a matched directory pattern
+        # gave a directory-level interpreter no trigger.
+        dir_interp    = interpreter_for_dir_pattern(dir_pattern)
 
         try:
             st = os.stat(dirpath)
@@ -473,7 +499,7 @@ def walk_path(
             dir_path_str, dir_parent, dir_name, dir_depth,
             "folder", dir_size, dir_mtime,
             None, None, None, None, None, scan_id, dir_extra,
-            None, None,
+            dir_interp, None,
         ))
         item_buf.append((
             scan_id, dir_path_str, "folder", dir_size,
