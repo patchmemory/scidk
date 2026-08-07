@@ -162,7 +162,12 @@ class Neo4jClient:
                 "WITH s "
                 "UNWIND $rows AS r "
                 "MERGE (f:File {path: r.path, host: $node_host}) "
-                "  SET f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type, f.provider_id = $scan_provider, f.host_type = $scan_host_type, f.host_id = $scan_host_id "
+                "  SET f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type, f.provider_id = $scan_provider, f.host_type = $scan_host_type, f.host_id = $scan_host_id, "
+                # coalesce, not plain assignment: SET f.x = null deletes the property,
+                # so a commit from a path that does not supply these would silently
+                # erase what an earlier commit recorded.
+                "      f.interpreted_as = coalesce(r.interpreted_as, f.interpreted_as), "
+                "      f.interpretation_confidence = coalesce(r.interpretation_confidence, f.interpretation_confidence) "
                 "MERGE (f)-[:SCANNED_IN]->(s) "
                 "WITH r, f, s "
                 "FOREACH (iid IN coalesce(r.interps, []) | "

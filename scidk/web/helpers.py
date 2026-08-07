@@ -481,7 +481,10 @@ def commit_to_neo4j_batched(
                     "MERGE (f:File {path: r.path, host: node_host}) "
                     "  SET f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, "
                     "      f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type, "
-                    "      f.provider_id = scan_provider, f.host_type = scan_host_type, f.host_id = scan_host_id "
+                    "      f.provider_id = scan_provider, f.host_type = scan_host_type, f.host_id = scan_host_id, "
+                    # coalesce so a commit that omits these cannot erase them.
+                    "      f.interpreted_as = coalesce(r.interpreted_as, f.interpreted_as), "
+                    "      f.interpretation_confidence = coalesce(r.interpretation_confidence, f.interpretation_confidence) "
                     # Parity with neo4j_client.write_scan — without this clause the
                     # streaming commit path can never write INTERPRETED_AS.
                     "FOREACH (iid IN coalesce(r.interps, []) | "
@@ -501,7 +504,10 @@ def commit_to_neo4j_batched(
                     "MERGE (f:File {path: r.path, host: node_host}) "
                     "  SET f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, "
                     "      f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type, "
-                    "      f.provider_id = scan_provider, f.host_type = scan_host_type, f.host_id = scan_host_id "
+                    "      f.provider_id = scan_provider, f.host_type = scan_host_type, f.host_id = scan_host_id, "
+                    # coalesce so a commit that omits these cannot erase them.
+                    "      f.interpreted_as = coalesce(r.interpreted_as, f.interpreted_as), "
+                    "      f.interpretation_confidence = coalesce(r.interpretation_confidence, f.interpretation_confidence) "
                     # Parity with neo4j_client.write_scan — without this clause the
                     # streaming commit path can never write INTERPRETED_AS.
                     "FOREACH (iid IN coalesce(r.interps, []) | "
