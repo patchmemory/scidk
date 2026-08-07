@@ -433,7 +433,7 @@ class ScansService:
                                 'relationships': [],
                                 'interpreter_version': getattr(interp, 'version', '0.0.1'),
                             }
-                        app.extensions['scidk']['graph'].add_interpretation(ds['checksum'], interp.id, payload)
+                        app.extensions['scidk']['graph'].add_interpretation(ds['checksum'], interp.id, payload, file_path=ds.get('path'))
                         if conn_i is not None:
                             try:
                                 # _row_from_local keys the index on the resolved

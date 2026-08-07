@@ -365,7 +365,7 @@ def api_scan():
                                     'relationships': result.get('relationships', []),
                                     'interpreter_version': getattr(interp, 'version', '0.0.1'),
                                 }
-                                _get_ext()['graph'].add_interpretation(ds['checksum'], interp.id, payload)
+                                _get_ext()['graph'].add_interpretation(ds['checksum'], interp.id, payload, file_path=ds.get('path'))
                                 # Persist interpretation metadata into SQLite files table for this path
                                 try:
                                     from ...core import path_index_sqlite as pix
@@ -397,7 +397,7 @@ def api_scan():
                                     'relationships': [],
                                     'interpreter_version': getattr(interp, 'version', '0.0.1'),
                                 }
-                                _get_ext()['graph'].add_interpretation(ds['checksum'], interp.id, err_payload)
+                                _get_ext()['graph'].add_interpretation(ds['checksum'], interp.id, err_payload, file_path=ds.get('path'))
                                 try:
                                     from ...core import path_index_sqlite as pix
                                     from ...core.interpreter_persistence import persist_interpretation
@@ -834,7 +834,7 @@ def api_interpret():
                     'status': result.get('status', 'success'),
                     'data': result.get('data', result),
                     'interpreter_version': getattr(interp, 'version', '0.0.1'),
-                })
+                }, file_path=ds.get('path'))
                 # Record success
                 try:
                     _get_ext()['registry'].record_usage(interp.id, success=True, execution_time_ms=int((_t1 - _t0)*1000))
@@ -850,7 +850,7 @@ def api_interpret():
                     'status': 'error',
                     'data': {'error': str(e)},
                     'interpreter_version': getattr(interp, 'version', '0.0.1'),
-                })
+                }, file_path=ds.get('path'))
                 results.append({'interpreter_id': interp.id, 'status': 'error', 'error': str(e)})
         return jsonify({"status": "ok", "results": results}), 200
 

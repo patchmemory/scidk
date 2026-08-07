@@ -139,6 +139,17 @@ def commit_to_neo4j(rows: List[Dict[str, Any]], folder_rows: List[Dict[str, Any]
                     if domain_result.get('errors'):
                         result['domain_node_errors'] = domain_result['errors']
 
+                # Provenance nodes, after the domain nodes so the File exists.
+                from ..core.neo4j_graph import Neo4jGraph
+                _auth = None if auth_mode == 'none' else (user, pwd)
+                _graph = Neo4jGraph(uri=uri, auth=_auth, database=database, auth_mode=auth_mode)
+                try:
+                    result['interpretation_nodes'] = commit_svc.write_interpretation_nodes(
+                        scan.get('id'), _graph, host=scan.get('host_id')
+                    )
+                finally:
+                    _graph.close()
+
             except Exception as domain_err:
                 # Non-fatal: domain node writes are optional
                 result['domain_node_error'] = str(domain_err)
@@ -638,6 +649,18 @@ def commit_to_neo4j_batched(
                         })
                     finally:
                         client.close()
+
+                # Provenance nodes, after the domain nodes so the File exists.
+                from ..core.neo4j_graph import Neo4jGraph
+                _auth = None if auth_mode == 'none' else (user, pwd)
+                _graph = Neo4jGraph(uri=uri, auth=_auth, database=database, auth_mode=auth_mode)
+                try:
+                    result["interpretation_nodes"] = commit_svc.write_interpretation_nodes(
+                        scan.get("id"), _graph, host=scan.get("host_id")
+                    )
+                    on_progress("interpretation_nodes_done", result["interpretation_nodes"])
+                finally:
+                    _graph.close()
 
             except Exception as domain_err:
                 # Non-fatal: domain node writes are optional, don't fail the entire commit

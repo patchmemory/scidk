@@ -166,13 +166,13 @@ class FilesystemManager:
                         'status': result.get('status', 'success'),
                         'data': result.get('data', result),
                         'interpreter_version': getattr(interp, 'version', '0.0.1'),
-                    })
+                    }, file_path=ds.get('path'))
                 except Exception as e:
                     self.graph.add_interpretation(ds['checksum'], interp.id, {
                         'status': 'error',
                         'data': {'error': str(e)},
                         'interpreter_version': getattr(interp, 'version', '0.0.1'),
-                    })
+                    }, file_path=ds.get('path'))
             count += 1
         return count
 

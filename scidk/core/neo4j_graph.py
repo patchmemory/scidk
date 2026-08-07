@@ -32,16 +32,54 @@ class Neo4jGraph:
         # No-op: we don't mirror datasets in memory when using Neo4j backend
         return
 
-    def add_interpretation(self, checksum: str, interpreter_id: str, payload: Dict):
-        # Optional: record a small interpretation marker
+    def add_interpretation(self, checksum: str, interpreter_id: str, payload: Dict,
+                           file_path: Optional[str] = None, host: Optional[str] = None):
+        """Record an Interpretation node and link it to the File it came from.
+
+        The node used to carry a status and nothing else, with no edge to
+        anything — unreachable from the graph and holding no payload.
+
+        ``checksum`` stays first and positional because seven call sites and the
+        in-memory twin in ``core/graph.py`` share this signature. Pass
+        ``file_path`` to get the edge; a checksum cannot be matched against
+        ``:File``, which is keyed on ``(path, host)``.
+
+        The node is MERGEd before the File is looked up, so an interpretation is
+        still recorded when the File has not been committed yet. Matching on
+        path alone when ``host`` is unknown links every host holding that path,
+        which is the useful reading of an unqualified path.
+        """
+        import json as _json
+        try:
+            data_json = _json.dumps(payload.get('data') or {}, default=str)
+        except Exception:
+            data_json = '{}'
+        identity = file_path or checksum
         try:
             with self._session() as s:
                 s.run(
-                    "MERGE (i:Interpretation {id:$id}) SET i.status=$st, i.updated_at=timestamp()",
-                    id=f"{interpreter_id}:{checksum}", st=payload.get('status') or 'unknown'
+                    "MERGE (i:Interpretation {id:$iid}) "
+                    "  SET i.status = $status, "
+                    "      i.data_json = $data_json, "
+                    "      i.interpreter_id = $interpreter_id, "
+                    "      i.source_path = $path, "
+                    "      i.checksum = $checksum, "
+                    "      i.updated_at = timestamp() "
+                    "WITH i "
+                    "OPTIONAL MATCH (f:File {path: $path}) "
+                    "  WHERE $host IS NULL OR f.host = $host "
+                    "FOREACH (_ IN CASE WHEN f IS NULL THEN [] ELSE [1] END | "
+                    "  MERGE (f)-[:INTERPRETED_AS]->(i) )",
+                    iid=f"{interpreter_id}:{identity}",
+                    status=payload.get('status') or 'unknown',
+                    data_json=data_json,
+                    interpreter_id=interpreter_id,
+                    path=file_path,
+                    checksum=checksum,
+                    host=host,
                 ).consume()
         except Exception:
-            pass
+            logger.debug("add_interpretation failed for %s on %s", interpreter_id, identity, exc_info=True)
 
     def list_datasets(self) -> List[Dict]:
         return []
