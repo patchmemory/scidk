@@ -758,6 +758,65 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 25)
             version = 25
 
+        # v26: make extension-only lookups on files an indexed search.
+        #
+        # The only existing index is idx_files_scan_ext (scan_id,
+        # file_extension), which serves "this extension within one scan" and
+        # nothing else — a composite index needs its leading column. Anything
+        # asking "where are the .fcs files" across scans therefore scanned the
+        # whole table: 27M rows and ~105s on the AIPT index to return 20, which
+        # is what `enrichment_service --interpreter fcs_interpreter` without
+        # `--scan-id` was paying.
+        #
+        # Three indexes. Two for the query that motivated it
+        # (enrichment_service._find_work):
+        #
+        #     WHERE type = 'file'
+        #       AND (interpreted_as = ? OR lower(file_extension) IN (...))
+        #
+        # 1. On lower(file_extension), not the bare column: the query filters
+        #    under a function and SQLite will not use a plain column index
+        #    there. All 27M rows are already lowercase and every writer seen
+        #    lowercases, but batch_insert_files takes pre-built tuples from its
+        #    callers, so nothing enforces it — indexing the expression keeps
+        #    the query correct without depending on that staying true.
+        #
+        # 2. On interpreted_as. Indexing only the extension changes nothing:
+        #    SQLite needs a usable index on *both* arms of an OR before it will
+        #    plan a MULTI-INDEX OR, so one unindexed arm returns the whole
+        #    query to a full scan. Partial, because the arm only ever looks for
+        #    non-NULL values and `= ?` implies IS NOT NULL — that makes the
+        #    index free today (no row has interpreted_as set) and keeps it
+        #    proportional to the enriched subset rather than to all 27M rows.
+        #
+        # 3. On path. Finding the work was only half the cost: writing it back
+        #    goes through interpreter_persistence.persist_interpretation, whose
+        #    UPDATE keys on `path = ? AND scan_id = ?`, and no index on files
+        #    leads with path — every one of the three existing indexes leads
+        #    with scan_id. That UPDATE was 4.37s per file against 27M rows and
+        #    was the entire remaining cost once the Neo4j lookups were fixed.
+        #    Any code path keyed on a single known path benefits, which is most
+        #    of them (commit_rows_from_index, the Files page, annotations).
+        #
+        # These live here rather than beside their siblings in
+        # path_index_sqlite.init_db() because building over 27M rows takes real
+        # time and disk (~20s and ~1GB for the expression index). init_db()
+        # runs on almost every connect; a versioned step runs once, on a caller
+        # that expects to do schema work.
+        if version < 26:
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_files_ext_lower "
+                "ON files(lower(file_extension));"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_files_interpreted_as "
+                "ON files(interpreted_as) WHERE interpreted_as IS NOT NULL;"
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);")
+            conn.commit()
+            _set_version(conn, 26)
+            version = 26
+
         return version
     finally:
         if own:
