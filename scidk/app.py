@@ -60,6 +60,9 @@ def create_app():
 
     app = Flask(__name__, template_folder="ui/templates", static_folder="ui/static")
 
+    from datetime import datetime, timezone
+    app.jinja_env.globals['now'] = lambda: datetime.now(timezone.utc)
+
     # Enable ProxyFix for reverse proxy support (nginx, Apache, etc.)
     # This ensures Flask correctly handles X-Forwarded-* headers
     app.wsgi_app = ProxyFix(
