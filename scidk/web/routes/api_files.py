@@ -1,13 +1,14 @@
 """
 Blueprint for File/scan/dataset API routes.
 """
-from flask import Blueprint, jsonify, request, current_app
+from flask import Blueprint, jsonify, request, current_app, g
 from pathlib import Path
 import hashlib
 import json
 import os
 import time as _time
 
+from ..decorators import require_role
 from ..helpers import get_neo4j_params, build_commit_rows, commit_to_neo4j, get_or_build_scan_index
 bp = Blueprint('files', __name__, url_prefix='/api')
 
@@ -2043,3 +2044,165 @@ def api_interpret_file_commit():
             'status': 'error',
             'error': str(e)
         }), 500
+
+
+# ---------------------------------------------------------------------------
+# Folder attribution — surface folders that likely belong to a person, and
+# write the confirmed ones back as (:Person)-[:OWNS_FOLDER]->(:Folder).
+
+from contextlib import contextmanager  # noqa: E402
+
+from ...services.folder_attribution import (  # noqa: E402
+    DEFAULT_ANCHOR_LABEL,
+    FolderAttributionService,
+)
+
+_ATTR_NEO4J_UNCONFIGURED = {
+    'error': 'neo4j not configured (set in Settings or env: NEO4J_URI, and '
+             'NEO4J_USER/NEO4J_PASSWORD or NEO4J_AUTH=none)'
+}
+
+
+@contextmanager
+def _attribution_service():
+    """Yield a :class:`FolderAttributionService`, or ``None`` if Neo4j is unconfigured.
+
+    The driver is opened per request and closed on the way out, matching the
+    ``/api/schema/*`` routes. Constructing the service also applies the shared
+    ``:Person`` label, but only on the first construction in this process.
+    """
+    try:
+        from neo4j import GraphDatabase  # type: ignore
+    except Exception:
+        yield None
+        return
+    uri, user, pwd, database, auth_mode = get_neo4j_params()
+    if not uri:
+        yield None
+        return
+    driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
+    try:
+        yield FolderAttributionService(driver, database=database)
+    finally:
+        driver.close()
+
+
+@bp.get('/files/attribution/persons')
+@require_role('admin', 'user')
+def attribution_persons():
+    """List every named node under the anchor label, available for attribution.
+
+    Query params:
+        anchor_label (str): node label carrying people. Defaults to
+            ``Investigator``. Read from the query string rather than a body
+            because this route is a GET.
+
+    Returns:
+        200: {"anchor_label": ..., "persons": [{"name": ..., "labels": [...]}]}
+        400: anchor_label is not a legal Cypher identifier
+        501: Neo4j not configured
+        502: query failed
+    """
+    anchor_label = (request.args.get('anchor_label') or DEFAULT_ANCHOR_LABEL).strip()
+    try:
+        with _attribution_service() as svc:
+            if svc is None:
+                return jsonify(_ATTR_NEO4J_UNCONFIGURED), 501
+            persons = svc.list_persons(anchor_label=anchor_label)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("attribution: listing persons failed")
+        return jsonify({'error': f'neo4j query failed: {e}'}), 502
+
+    return jsonify({'anchor_label': anchor_label, 'persons': persons}), 200
+
+
+@bp.post('/files/attribution/candidates')
+@require_role('admin', 'user')
+def attribution_candidates():
+    """Rank folder candidates for a person.
+
+    Body:
+        person_name (str, required), modality_keywords (list[str]),
+        include_labmates (bool, default true), sources (list[str] of host_id),
+        anchor_label (str, default "Investigator").
+
+    Returns:
+        200: {"person_name": ..., "anchor_label": ..., "total": n, "candidates": [...]}
+        400: person_name missing, or anchor_label not a legal identifier
+        501: Neo4j not configured
+        502: query failed
+    """
+    body = request.get_json(silent=True) or {}
+    person_name = (body.get('person_name') or '').strip()
+    anchor_label = (body.get('anchor_label') or DEFAULT_ANCHOR_LABEL).strip()
+    if not person_name:
+        return jsonify({'error': 'person_name is required'}), 400
+
+    try:
+        with _attribution_service() as svc:
+            if svc is None:
+                return jsonify(_ATTR_NEO4J_UNCONFIGURED), 501
+            candidates = svc.get_candidates(
+                person_name       = person_name,
+                modality_keywords = body.get('modality_keywords'),
+                include_labmates  = bool(body.get('include_labmates', True)),
+                sources           = body.get('sources'),
+                anchor_label      = anchor_label,
+            )
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("attribution: candidate search failed")
+        return jsonify({'error': f'neo4j query failed: {e}'}), 502
+
+    return jsonify({
+        'person_name':  person_name,
+        'anchor_label': anchor_label,
+        'total':        len(candidates),
+        'candidates':   [vars(c) for c in candidates],
+    }), 200
+
+
+@bp.post('/files/attribution/confirm')
+@require_role('admin', 'user')
+def attribution_confirm():
+    """Write OWNS_FOLDER edges for the confirmed folder paths.
+
+    Body:
+        person_name (str, required), folder_paths (list[str], required non-empty),
+        anchor_label (str, default "Investigator").
+
+    Returns:
+        200: {"written": n, "skipped": n, "errors": [...]}
+        400: person_name or folder_paths missing, or anchor_label not a legal identifier
+        501: Neo4j not configured
+        502: write failed
+    """
+    body = request.get_json(silent=True) or {}
+    person_name = (body.get('person_name') or '').strip()
+    folder_paths = body.get('folder_paths') or []
+    anchor_label = (body.get('anchor_label') or DEFAULT_ANCHOR_LABEL).strip()
+    if not person_name:
+        return jsonify({'error': 'person_name is required'}), 400
+    if not isinstance(folder_paths, list) or not folder_paths:
+        return jsonify({'error': 'folder_paths must be non-empty'}), 400
+
+    try:
+        with _attribution_service() as svc:
+            if svc is None:
+                return jsonify(_ATTR_NEO4J_UNCONFIGURED), 501
+            result = svc.confirm(
+                person_name  = person_name,
+                folder_paths = folder_paths,
+                confirmed_by = getattr(g, 'scidk_user', None) or 'system',
+                anchor_label = anchor_label,
+            )
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("attribution: confirm failed")
+        return jsonify({'error': f'neo4j write failed: {e}'}), 502
+
+    return jsonify(vars(result)), 200

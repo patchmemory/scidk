@@ -522,6 +522,12 @@
             title="Generate draft NIH Data Management &amp; Sharing plan prose from the graph">
       📋 Generate DMS Plan Draft
     </button>
+    <!-- Folder attribution: match folders to a person by name patterns in the
+         path, then write the confirmed ones back as OWNS_FOLDER edges. -->
+    <button id="attribution-btn" class="btn btn-sm btn-outline-primary" data-testid="attribution-btn"
+            onclick="openAttributionPanel()" title="Attribute folders to people">
+      🔗 Attribution
+    </button>
     <div class="neo4j-status">
       <div id="neo4j-light" class="neo4j-light" title="Disconnected"></div>
       <span id="neo4j-status-text">Neo4j: Not connected</span>
@@ -548,6 +554,116 @@
   <div class="small text-muted mt-1">
     This is a draft generated from your graph. Search it for <code>[</code> to find every
     placeholder that still needs a decision before submission.
+  </div>
+</div>
+
+<!-- Folder attribution panel. Opens from the page header, not the selection
+     toolbar: it searches every scanned source, not the current selection. -->
+<div id="attribution-panel" data-testid="attribution-panel"
+     style="display:none; border:1px solid var(--border,#ddd);
+            border-radius:8px; padding:16px; margin:12px 0;">
+
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <strong>🔗 Person Attribution</strong>
+    <button type="button" onclick="closeAttributionPanel()" aria-label="Close attribution panel"
+            style="background:none;border:none;cursor:pointer;font-size:1.2em;">×</button>
+  </div>
+
+  <p style="font-size:.85em; color:var(--text-muted,#666); margin:6px 0 12px;">
+    Find folders that likely belong to a person based on name patterns in paths.
+    Confirm candidates to write <code>OWNS_FOLDER</code> edges to the graph.
+  </p>
+
+  <!-- Anchor label: which node label carries people in this graph. Populated
+       from /api/schema/labels so it follows the graph, not a hardcoded list. -->
+  <div style="margin-bottom:10px;">
+    <label for="attr-anchor-label"><strong>Person label</strong></label><br>
+    <select id="attr-anchor-label" data-testid="attr-anchor-label"
+            onchange="onAttrAnchorLabelChange()"
+            style="padding:4px 8px; border:1px solid #ccc; border-radius:4px; width:250px;">
+      <option value="Investigator">Investigator</option>
+    </select>
+  </div>
+
+  <!-- Person picker -->
+  <div style="margin-bottom:10px;">
+    <label for="attr-search"><strong>Person</strong></label><br>
+    <input id="attr-search" type="text" placeholder="Type to filter…"
+           oninput="filterAttrPersons(this.value)"
+           style="padding:4px 8px; border:1px solid #ccc; border-radius:4px; width:250px;">
+    <select id="attr-person-sel" size="4" data-testid="attr-person-sel"
+            onchange="selectAttrPerson(this.value)"
+            style="display:block; margin-top:4px; width:300px; border:1px solid #ccc; border-radius:4px;">
+    </select>
+    <span id="attr-person-label"
+          style="display:block; margin-top:4px; font-weight:bold; min-height:1.2em;"></span>
+  </div>
+
+  <!-- Modality keywords: a hit promotes a candidate's confidence. -->
+  <div style="margin-bottom:10px;">
+    <span><strong>Modality keywords</strong></span><br>
+    <label style="margin-right:10px;">
+      <input type="checkbox" class="attr-mod" value="ultrasound"> Ultrasound
+    </label>
+    <label style="margin-right:10px;">
+      <input type="checkbox" class="attr-mod" value="microct"> microCT
+    </label>
+    <label style="margin-right:10px;">
+      <input type="checkbox" class="attr-mod" value="ivis"> IVIS
+    </label>
+    <label style="margin-right:10px;">
+      <input type="checkbox" class="attr-mod" value="histology"> Histology
+    </label>
+    <label>
+      <input type="checkbox" class="attr-mod" value="flow"> Flow
+    </label>
+  </div>
+
+  <div style="margin-bottom:12px;">
+    <label>
+      <input type="checkbox" id="attr-labmates" checked> Include labmates
+    </label>
+  </div>
+
+  <button type="button" onclick="runAttribution()" id="attr-find-btn"
+          class="btn btn-sm btn-primary" data-testid="attr-find-btn">
+    Find Candidates
+  </button>
+  <span id="attr-status" style="margin-left:10px; font-size:.85em;
+        color:var(--text-muted,#666);"></span>
+
+  <!-- Results -->
+  <div id="attr-results" style="display:none; margin-top:14px;">
+    <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+      <button type="button" class="btn btn-sm btn-outline-secondary"
+              onclick="attrSelectByConf('HIGH')">✓ All HIGH</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary"
+              onclick="attrSelectByConf('MED')">✓ All MED</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary"
+              onclick="attrClearSel()">Clear</button>
+      <span style="flex:1"></span>
+      <button type="button" onclick="runConfirm()" id="attr-confirm-btn"
+              class="btn btn-sm btn-primary" data-testid="attr-confirm-btn">
+        Confirm selected → Write to graph
+      </button>
+    </div>
+
+    <table style="width:100%; border-collapse:collapse; font-size:.85em;">
+      <thead>
+        <tr style="border-bottom:2px solid #ddd; text-align:left;">
+          <th style="width:24px;"></th>
+          <th style="width:60px;">Conf.</th>
+          <th>Path</th>
+          <th style="width:130px;">Source</th>
+          <th style="width:50px;">Depth</th>
+          <th>Reason</th>
+        </tr>
+      </thead>
+      <tbody id="attr-tbody"></tbody>
+    </table>
+
+    <div id="attr-confirm-msg" data-testid="attr-confirm-msg"
+         style="margin-top:8px; font-size:.85em; font-weight:bold;"></div>
   </div>
 </div>
 
@@ -3494,5 +3610,206 @@ window.addEventListener('DOMContentLoaded', () => {
   fetchTasks();
   fetchNeo4jStatus();
 });
+
+// ── Folder attribution panel ───────────────────────────────────────────
+// Pick a person, score folders whose paths carry some spelling of their name,
+// confirm the good ones as OWNS_FOLDER edges.
+
+const ATTR_DEFAULT_ANCHOR_LABEL = 'Investigator';
+
+let _attrPersons    = [];
+let _attrSelected   = null;
+let _attrCandidates = [];
+let _attrLabelsLoaded = false;
+
+function _attrAnchorLabel() {
+  const sel = document.getElementById('attr-anchor-label');
+  return (sel && sel.value) || ATTR_DEFAULT_ANCHOR_LABEL;
+}
+
+function _attrEsc(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function _attrSetStatus(msg) {
+  const el = document.getElementById('attr-status');
+  if (el) el.textContent = msg;
+}
+
+function openAttributionPanel() {
+  const panel = document.getElementById('attribution-panel');
+  panel.style.display = 'block';
+  if (!_attrLabelsLoaded) _loadAttrLabels();
+  if (_attrPersons.length === 0) _loadAttrPersons();
+}
+
+function closeAttributionPanel() {
+  document.getElementById('attribution-panel').style.display = 'none';
+}
+
+// Offer every label the graph actually has, keeping the current selection
+// (Investigator by default) even if the graph has no such label yet.
+async function _loadAttrLabels() {
+  const sel = document.getElementById('attr-anchor-label');
+  const current = _attrAnchorLabel();
+  try {
+    const r = await fetch(window.SCIDK_BASE + '/api/schema/labels');
+    const d = await r.json();
+    if (!r.ok) return;
+    const labels = d.labels || [];
+    if (!labels.includes(current)) labels.unshift(current);
+    sel.innerHTML = labels.map(l =>
+      `<option value="${_attrEsc(l)}"${l === current ? ' selected' : ''}>${_attrEsc(l)}</option>`
+    ).join('');
+    _attrLabelsLoaded = true;
+  } catch (e) {
+    // Leave the default option in place — the panel still works without the list.
+    console.warn('Could not load labels:', e);
+  }
+}
+
+// Switching label invalidates both the person list and any results below it.
+function onAttrAnchorLabelChange() {
+  _attrPersons = [];
+  _attrSelected = null;
+  _attrCandidates = [];
+  document.getElementById('attr-person-label').textContent = '';
+  document.getElementById('attr-results').style.display = 'none';
+  document.getElementById('attr-tbody').innerHTML = '';
+  _loadAttrPersons();
+}
+
+async function _loadAttrPersons() {
+  _attrSetStatus('Loading people…');
+  try {
+    const r = await fetch(window.SCIDK_BASE + '/api/files/attribution/persons?anchor_label='
+                          + encodeURIComponent(_attrAnchorLabel()));
+    const d = await r.json();
+    if (!r.ok) { _attrSetStatus(d.error || `Error ${r.status}`); return; }
+    _attrPersons = d.persons || [];
+    _renderAttrPersons(_attrPersons);
+    _attrSetStatus(_attrPersons.length
+      ? ''
+      : `No named :${_attrAnchorLabel()} nodes found in the graph.`);
+  } catch (e) {
+    _attrSetStatus('Could not load people: ' + e);
+  }
+}
+
+function _renderAttrPersons(list) {
+  document.getElementById('attr-person-sel').innerHTML = list.map(p =>
+    `<option value="${_attrEsc(p.name)}">${_attrEsc(p.name)}</option>`
+  ).join('');
+}
+
+function filterAttrPersons(q) {
+  const needle = (q || '').toLowerCase();
+  _renderAttrPersons(
+    _attrPersons.filter(p => (p.name || '').toLowerCase().includes(needle))
+  );
+}
+
+function selectAttrPerson(name) {
+  _attrSelected = name;
+  document.getElementById('attr-person-label').textContent = '→ ' + name;
+}
+
+async function runAttribution() {
+  if (!_attrSelected) { alert('Select a person first.'); return; }
+  const keywords = [...document.querySelectorAll('.attr-mod:checked')].map(cb => cb.value);
+  const labmates = document.getElementById('attr-labmates').checked;
+  const btn = document.getElementById('attr-find-btn');
+
+  btn.disabled = true;
+  _attrSetStatus('Searching…');
+  try {
+    const r = await fetch(window.SCIDK_BASE + '/api/files/attribution/candidates', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        person_name: _attrSelected,
+        anchor_label: _attrAnchorLabel(),
+        modality_keywords: keywords,
+        include_labmates: labmates,
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) { _attrSetStatus(d.error || `Error ${r.status}`); return; }
+    _attrCandidates = d.candidates || [];
+    _renderAttrCandidates();
+    _attrSetStatus(`${d.total} candidate${d.total !== 1 ? 's' : ''} found`);
+    document.getElementById('attr-confirm-msg').textContent = '';
+    document.getElementById('attr-results').style.display = 'block';
+  } catch (e) {
+    _attrSetStatus('Search failed: ' + e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function _renderAttrCandidates() {
+  const BADGE = {
+    HIGH: '<span style="background:#2a9d5c;color:#fff;padding:1px 6px;border-radius:3px;font-size:.8em;">HIGH</span>',
+    MED:  '<span style="background:#e6a817;color:#fff;padding:1px 6px;border-radius:3px;font-size:.8em;">MED</span>',
+    LOW:  '<span style="background:#888;color:#fff;padding:1px 6px;border-radius:3px;font-size:.8em;">LOW</span>',
+  };
+  document.getElementById('attr-tbody').innerHTML =
+    _attrCandidates.map((c, i) => `
+      <tr style="border-bottom:1px solid #eee;">
+        <td><input type="checkbox" class="attr-cb" data-i="${i}"></td>
+        <td>${BADGE[c.confidence] || _attrEsc(c.confidence)}</td>
+        <td style="font-family:monospace; word-break:break-all;">${_attrEsc(c.path)}</td>
+        <td>${_attrEsc(c.host_id)}</td>
+        <td style="text-align:center;">${_attrEsc(c.relative_depth)}</td>
+        <td style="color:#555;">${_attrEsc(c.reason)}</td>
+      </tr>
+    `).join('');
+}
+
+function attrSelectByConf(level) {
+  document.querySelectorAll('.attr-cb').forEach(cb => {
+    const c = _attrCandidates[parseInt(cb.dataset.i, 10)];
+    if (c && c.confidence === level) cb.checked = true;
+  });
+}
+
+function attrClearSel() {
+  document.querySelectorAll('.attr-cb').forEach(cb => { cb.checked = false; });
+}
+
+async function runConfirm() {
+  const paths = [...document.querySelectorAll('.attr-cb:checked')]
+    .map(cb => (_attrCandidates[parseInt(cb.dataset.i, 10)] || {}).path)
+    .filter(Boolean);
+  if (!paths.length) { alert('Nothing selected.'); return; }
+
+  const btn = document.getElementById('attr-confirm-btn');
+  const msg = document.getElementById('attr-confirm-msg');
+  btn.disabled = true;
+  msg.textContent = 'Writing…';
+  try {
+    const r = await fetch(window.SCIDK_BASE + '/api/files/attribution/confirm', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        person_name: _attrSelected,
+        anchor_label: _attrAnchorLabel(),
+        folder_paths: paths,
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) { msg.textContent = d.error || `Error ${r.status}`; return; }
+    msg.textContent =
+      `✓ ${d.written} written · ${d.skipped} already existed` +
+      (d.errors && d.errors.length ? ` · ${d.errors.length} errors` : '');
+    if (d.errors && d.errors.length) console.warn('Attribution errors:', d.errors);
+  } catch (e) {
+    msg.textContent = 'Write failed: ' + e;
+  } finally {
+    btn.disabled = false;
+  }
+}
 </script>
 {% endblock %}
