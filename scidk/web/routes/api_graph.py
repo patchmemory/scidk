@@ -7,6 +7,7 @@ from typing import Optional
 import json
 import os
 
+from ..decorators import require_role
 from ..helpers import get_neo4j_params, build_commit_rows, commit_to_neo4j, get_or_build_scan_index
 bp = Blueprint('graph', __name__, url_prefix='/api')
 
@@ -1192,4 +1193,172 @@ def api_schema_map():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Filter Builder support (see services/filter_builder.py and
+# ui/static/js/filter_builder.js)
+# ---------------------------------------------------------------------------
+
+def _get_schema_driver():
+    """Open a Neo4j driver for the schema routes.
+
+    Returns:
+        (driver, database), or (None, None) when Neo4j is not configured or the
+        driver package is missing. Callers must close the driver.
+    """
+    try:
+        from neo4j import GraphDatabase  # type: ignore
+    except Exception:
+        return None, None
+    uri, user, pwd, database, auth_mode = get_neo4j_params()
+    if not uri:
+        return None, None
+    driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
+    return driver, database
+
+
+_NEO4J_UNCONFIGURED = {
+    'error': 'neo4j not configured (set in Settings or env: NEO4J_URI, and '
+             'NEO4J_USER/NEO4J_PASSWORD or NEO4J_AUTH=none)'
+}
+
+
+@bp.get('/schema/labels')
+@require_role('admin', 'user')
+def api_schema_labels():
+    """Return all node labels currently in the graph.
+
+    Returns:
+        200: {"labels": ["Folder", "Investigator", ...]}
+        501: Neo4j not configured
+        502: query failed
+    """
+    driver, database = _get_schema_driver()
+    if driver is None:
+        return jsonify(_NEO4J_UNCONFIGURED), 501
+    try:
+        with driver.session(database=database) as sess:
+            result = sess.run("CALL db.labels() YIELD label RETURN label ORDER BY label")
+            labels = [r['label'] for r in result]
+        return jsonify({'labels': labels}), 200
+    except Exception as e:
+        return jsonify({'error': f'neo4j query failed: {e}'}), 502
+    finally:
+        driver.close()
+
+
+@bp.get('/schema/relationship-types')
+@require_role('admin', 'user')
+def api_schema_relationship_types():
+    """Return all relationship types currently in the graph.
+
+    Returns:
+        200: {"relationship_types": ["MEMBER_OF", "SCANNED_IN", ...]}
+        501: Neo4j not configured
+        502: query failed
+    """
+    driver, database = _get_schema_driver()
+    if driver is None:
+        return jsonify(_NEO4J_UNCONFIGURED), 501
+    try:
+        with driver.session(database=database) as sess:
+            result = sess.run(
+                "CALL db.relationshipTypes() YIELD relationshipType "
+                "RETURN relationshipType ORDER BY relationshipType"
+            )
+            types = [r['relationshipType'] for r in result]
+        return jsonify({'relationship_types': types}), 200
+    except Exception as e:
+        return jsonify({'error': f'neo4j query failed: {e}'}), 502
+    finally:
+        driver.close()
+
+
+@bp.get('/schema/property-types')
+@require_role('admin', 'user')
+def api_schema_property_types():
+    """Return property names and inferred types for a node label.
+
+    Query params:
+        label (required) — e.g. "Folder", "Investigator"
+        sample (optional) — nodes to sample, default 100
+
+    Returns:
+        200: {"label": "Folder", "properties": [
+                  {"name": "path", "type": "string", "nullable": false,
+                   "sample": "aipt-nas:/Laura Maiorino/"}, ...]}
+             Types are "string" | "number" | "date" | "boolean" | "null".
+             "null" means no non-null value was sampled — only is_null /
+             is_not_null are meaningful for that property.
+        400: missing or unsafe label
+        501: Neo4j not configured
+        502: query failed
+    """
+    from ...services.filter_builder import infer_property_types
+
+    label = (request.args.get('label') or '').strip()
+    if not label:
+        return jsonify({'error': 'label is required'}), 400
+    try:
+        sample = int(request.args.get('sample') or 100)
+    except Exception:
+        sample = 100
+
+    driver, database = _get_schema_driver()
+    if driver is None:
+        return jsonify(_NEO4J_UNCONFIGURED), 501
+    try:
+        props = infer_property_types(driver, label, database=database, sample_size=sample)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': f'neo4j query failed: {e}'}), 502
+    finally:
+        driver.close()
+
+    return jsonify({
+        'label': label,
+        'properties': [
+            {'name': p.name, 'type': p.type, 'nullable': p.nullable, 'sample': p.sample}
+            for p in props
+        ],
+    }), 200
+
+
+@bp.post('/schema/filter-preview')
+@require_role('admin', 'user')
+def api_schema_filter_preview():
+    """Generate Cypher from a filter definition and return a match count.
+
+    Body (JSON): a filter definition — see services/filter_builder.py.
+
+    Returns:
+        200: {"total": 42, "cypher": "MATCH (n0:Investigator)...",
+              "params": {"v0": "Zhang"}}  — cypher is for display/debug only
+        400: the filter definition is invalid
+        501: Neo4j not configured
+        502: query failed
+    """
+    from ...services.filter_builder import generate_count_cypher, generate_cypher
+
+    filter_def = request.get_json(force=True, silent=True) or {}
+    try:
+        count_cypher, params = generate_count_cypher(filter_def)
+        full_cypher, _ = generate_cypher(filter_def)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    driver, database = _get_schema_driver()
+    if driver is None:
+        return jsonify(_NEO4J_UNCONFIGURED), 501
+    try:
+        with driver.session(database=database) as sess:
+            total = sess.run(count_cypher, params).single()['total']
+    except Exception as e:
+        return jsonify({'error': f'neo4j query failed: {e}'}), 502
+    finally:
+        driver.close()
+
+    return jsonify({'total': total, 'cypher': full_cypher, 'params': params}), 200
 
