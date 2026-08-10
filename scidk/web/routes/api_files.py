@@ -2047,13 +2047,18 @@ def api_interpret_file_commit():
 
 
 # ---------------------------------------------------------------------------
-# Folder attribution — surface folders that likely belong to a person, and
-# write the confirmed ones back as (:Person)-[:OWNS_FOLDER]->(:Folder).
+# Attribution — surface target nodes that likely belong to an anchor node, and
+# write the confirmed ones back as (:Anchor)-[:REL]->(:Target). Anchor label,
+# target label and relationship type are all caller-supplied; Investigator,
+# Folder and OWNS are only the defaults.
 
 from contextlib import contextmanager  # noqa: E402
 
+from ...services.filter_builder import _validate_rel_type  # noqa: E402
 from ...services.folder_attribution import (  # noqa: E402
     DEFAULT_ANCHOR_LABEL,
+    DEFAULT_RELATIONSHIP,
+    DEFAULT_TARGET_LABEL,
     FolderAttributionService,
 )
 
@@ -2087,18 +2092,18 @@ def _attribution_service():
         driver.close()
 
 
-@bp.get('/files/attribution/persons')
+@bp.get('/files/attribution/anchors')
 @require_role('admin', 'user')
-def attribution_persons():
+def attribution_anchors():
     """List every named node under the anchor label, available for attribution.
 
     Query params:
-        anchor_label (str): node label carrying people. Defaults to
+        anchor_label (str): node label to draw anchors from. Defaults to
             ``Investigator``. Read from the query string rather than a body
             because this route is a GET.
 
     Returns:
-        200: {"anchor_label": ..., "persons": [{"name": ..., "labels": [...]}]}
+        200: {"anchor_label": ..., "anchors": [{"name": ..., "labels": [...]}]}
         400: anchor_label is not a legal Cypher identifier
         501: Neo4j not configured
         502: query failed
@@ -2108,48 +2113,115 @@ def attribution_persons():
         with _attribution_service() as svc:
             if svc is None:
                 return jsonify(_ATTR_NEO4J_UNCONFIGURED), 501
-            persons = svc.list_persons(anchor_label=anchor_label)
+            anchors = svc.list_anchors(anchor_label=anchor_label)
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
     except Exception as e:
-        current_app.logger.exception("attribution: listing persons failed")
+        current_app.logger.exception("attribution: listing anchors failed")
         return jsonify({'error': f'neo4j query failed: {e}'}), 502
 
-    return jsonify({'anchor_label': anchor_label, 'persons': persons}), 200
+    return jsonify({'anchor_label': anchor_label, 'anchors': anchors}), 200
+
+
+@bp.get('/files/attribution/persons')
+@require_role('admin', 'user')
+def attribution_persons():
+    """Deprecated alias for :func:`attribution_anchors`.
+
+    Kept so anything still calling the person-shaped URL keeps working. The
+    response carries the anchor list under *both* keys — ``anchors`` for new
+    callers and ``persons`` for old ones — because moving the URL without
+    moving the payload would only half-preserve compatibility.
+    """
+    result = attribution_anchors()
+    if not (isinstance(result, tuple) and len(result) == 2 and result[1] == 200):
+        return result   # an error response, already shaped — pass it straight through
+    payload = result[0].get_json()
+    payload['persons'] = payload.get('anchors', [])
+    return jsonify(payload), 200
+
+
+@bp.get('/files/attribution/relationship-suggestions')
+@require_role('admin', 'user')
+def attribution_relationship_suggestions():
+    """Relationship types worth offering for an anchor -> target label pair.
+
+    Merges the hardcoded seeds for the pair with the types that already connect
+    those two labels in the live graph, most-used first, so the list gets better
+    as real attributions accumulate. See
+    :meth:`~scidk.services.folder_attribution.FolderAttributionService.get_relationship_suggestions`.
+
+    Query params:
+        anchor_label (str, required), target_label (str, required).
+
+    Returns:
+        200: {"anchor_label": ..., "target_label": ..., "suggestions": [...]}
+        400: either param missing, or not a legal Cypher identifier
+        501: Neo4j not configured
+        502: query failed
+    """
+    anchor_label = (request.args.get('anchor_label') or '').strip()
+    target_label = (request.args.get('target_label') or '').strip()
+    if not anchor_label or not target_label:
+        return jsonify({
+            'error': 'anchor_label and target_label are both required'
+        }), 400
+
+    try:
+        with _attribution_service() as svc:
+            if svc is None:
+                return jsonify(_ATTR_NEO4J_UNCONFIGURED), 501
+            suggestions = svc.get_relationship_suggestions(anchor_label, target_label)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("attribution: relationship suggestions failed")
+        return jsonify({'error': f'neo4j query failed: {e}'}), 502
+
+    return jsonify({
+        'anchor_label': anchor_label,
+        'target_label': target_label,
+        'suggestions':  suggestions,
+    }), 200
 
 
 @bp.post('/files/attribution/candidates')
 @require_role('admin', 'user')
 def attribution_candidates():
-    """Rank folder candidates for a person.
+    """Rank target candidates for an anchor node.
 
     Body:
-        person_name (str, required), modality_keywords (list[str]),
+        anchor_name (str, required), modality_keywords (list[str]),
         include_labmates (bool, default true), sources (list[str] of host_id),
-        anchor_label (str, default "Investigator").
+        anchor_label (str, default "Investigator"),
+        target_label (str, default "Folder").
+        ``person_name`` is accepted as a deprecated spelling of ``anchor_name``.
 
     Returns:
-        200: {"person_name": ..., "anchor_label": ..., "total": n, "candidates": [...]}
-        400: person_name missing, or anchor_label not a legal identifier
+        200: {"anchor_name": ..., "anchor_label": ..., "target_label": ...,
+              "total": n, "candidates": [...]}
+        400: anchor_name missing, or either label not a legal identifier
         501: Neo4j not configured
         502: query failed
     """
     body = request.get_json(silent=True) or {}
-    person_name = (body.get('person_name') or '').strip()
+    anchor_name = (body.get('anchor_name') or body.get('person_name') or '').strip()
     anchor_label = (body.get('anchor_label') or DEFAULT_ANCHOR_LABEL).strip()
-    if not person_name:
-        return jsonify({'error': 'person_name is required'}), 400
+    target_label = (body.get('target_label') or DEFAULT_TARGET_LABEL).strip()
+    if not anchor_name:
+        return jsonify({'error': 'anchor_name is required'}), 400
 
     try:
         with _attribution_service() as svc:
             if svc is None:
                 return jsonify(_ATTR_NEO4J_UNCONFIGURED), 501
             candidates = svc.get_candidates(
-                person_name       = person_name,
+                anchor_name       = anchor_name,
                 modality_keywords = body.get('modality_keywords'),
                 include_labmates  = bool(body.get('include_labmates', True)),
                 sources           = body.get('sources'),
                 anchor_label      = anchor_label,
+                target_label      = target_label,
             )
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
@@ -2158,8 +2230,9 @@ def attribution_candidates():
         return jsonify({'error': f'neo4j query failed: {e}'}), 502
 
     return jsonify({
-        'person_name':  person_name,
+        'anchor_name':  anchor_name,
         'anchor_label': anchor_label,
+        'target_label': target_label,
         'total':        len(candidates),
         'candidates':   [vars(c) for c in candidates],
     }), 200
@@ -2168,36 +2241,52 @@ def attribution_candidates():
 @bp.post('/files/attribution/confirm')
 @require_role('admin', 'user')
 def attribution_confirm():
-    """Write OWNS_FOLDER edges for the confirmed folder paths.
+    """Write the confirmed anchor -> target edges.
 
     Body:
-        person_name (str, required), folder_paths (list[str], required non-empty),
-        anchor_label (str, default "Investigator").
+        anchor_name (str, required), target_paths (list[str], required non-empty),
+        anchor_label (str, default "Investigator"),
+        target_label (str, default "Folder"),
+        relationship (str, default "OWNS") — must be an uppercase Cypher
+        relationship type. ``person_name``/``folder_paths`` are accepted as
+        deprecated spellings.
 
     Returns:
         200: {"written": n, "skipped": n, "errors": [...]}
-        400: person_name or folder_paths missing, or anchor_label not a legal identifier
+        400: anchor_name or target_paths missing, a label that is not a legal
+             identifier, or a relationship type that is not uppercase
         501: Neo4j not configured
         502: write failed
     """
     body = request.get_json(silent=True) or {}
-    person_name = (body.get('person_name') or '').strip()
-    folder_paths = body.get('folder_paths') or []
+    anchor_name = (body.get('anchor_name') or body.get('person_name') or '').strip()
+    target_paths = body.get('target_paths') or body.get('folder_paths') or []
     anchor_label = (body.get('anchor_label') or DEFAULT_ANCHOR_LABEL).strip()
-    if not person_name:
-        return jsonify({'error': 'person_name is required'}), 400
-    if not isinstance(folder_paths, list) or not folder_paths:
-        return jsonify({'error': 'folder_paths must be non-empty'}), 400
+    target_label = (body.get('target_label') or DEFAULT_TARGET_LABEL).strip()
+    relationship = (body.get('relationship') or DEFAULT_RELATIONSHIP).strip()
+    if not anchor_name:
+        return jsonify({'error': 'anchor_name is required'}), 400
+    if not isinstance(target_paths, list) or not target_paths:
+        return jsonify({'error': 'target_paths must be non-empty'}), 400
+
+    # Reject a bad relationship type before opening a driver — the service checks
+    # it too, but a 400 should not cost a Neo4j connection.
+    try:
+        _validate_rel_type(relationship)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
 
     try:
         with _attribution_service() as svc:
             if svc is None:
                 return jsonify(_ATTR_NEO4J_UNCONFIGURED), 501
             result = svc.confirm(
-                person_name  = person_name,
-                folder_paths = folder_paths,
+                anchor_name  = anchor_name,
+                target_paths = target_paths,
                 confirmed_by = getattr(g, 'scidk_user', None) or 'system',
                 anchor_label = anchor_label,
+                target_label = target_label,
+                relationship = relationship,
             )
     except ValueError as e:
         return jsonify({'error': str(e)}), 400

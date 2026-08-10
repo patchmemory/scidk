@@ -41,6 +41,11 @@ ISO_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?)?')
 #: How many nodes to sample when inferring property types for a label.
 DEFAULT_SAMPLE_SIZE = 100
 
+#: A relationship type safe to interpolate unquoted *and* conformant to the
+#: uppercase Cypher convention. Deliberately narrower than
+#: :data:`scidk.pipeline.identifiers.REL_RE`, which allows any identifier.
+_SAFE_REL_TYPE = re.compile(r'^[A-Z][A-Z0-9_]*$')
+
 
 def _validate_identifier(name: Any) -> str:
     """Whitelist a label or property key for raw interpolation into Cypher.
@@ -53,8 +58,33 @@ def _validate_identifier(name: Any) -> str:
 
 
 def _validate_rel_type(rel_type: Any) -> str:
-    """Whitelist a relationship type for raw interpolation into Cypher."""
-    return require_identifier(rel_type, "relationship type")
+    """Whitelist a relationship type for raw interpolation into Cypher.
+
+    Stricter than :func:`_validate_identifier`: relationship types are uppercase
+    by Cypher convention and that convention is enforced, not merely suggested.
+    Accepting ``Owns_Folder`` alongside ``OWNS_FOLDER`` would let two spellings
+    of the same edge coexist in one graph, and Neo4j treats them as unrelated
+    types.
+
+    Valid:   ``OWNS``, ``CONTRIBUTED_TO``, ``FUNDED_BY``, ``RELATED_TO``
+    Invalid: ``owns``, ``Owns_Folder``, ``123TYPE``, ``TYPE NAME``
+
+    Raises:
+        ValueError: ``rel_type`` is missing, not a string, or not uppercase.
+    """
+    if rel_type is None or (isinstance(rel_type, str) and not rel_type.strip()):
+        raise ValueError("relationship type is missing")
+    if not isinstance(rel_type, str):
+        raise ValueError(
+            f"relationship type must be a string, got {type(rel_type).__name__}"
+        )
+    if not _SAFE_REL_TYPE.match(rel_type):
+        raise ValueError(
+            f"Invalid relationship type {rel_type!r}. Relationship types must be "
+            "uppercase letters, digits, and underscores only, starting with a "
+            "letter (e.g. OWNS, CONTRIBUTED_TO, FUNDED_BY)."
+        )
+    return rel_type
 
 
 # ---------------------------------------------------------------------------

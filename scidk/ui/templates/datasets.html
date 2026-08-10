@@ -522,10 +522,10 @@
             title="Generate draft NIH Data Management &amp; Sharing plan prose from the graph">
       📋 Generate DMS Plan Draft
     </button>
-    <!-- Folder attribution: match folders to a person by name patterns in the
-         path, then write the confirmed ones back as OWNS_FOLDER edges. -->
+    <!-- Attribution: match target nodes to an anchor node by name patterns in
+         the path, then write the confirmed ones back as edges of a chosen type. -->
     <button id="attribution-btn" class="btn btn-sm btn-outline-primary" data-testid="attribution-btn"
-            onclick="openAttributionPanel()" title="Attribute folders to people">
+            onclick="openAttributionPanel()" title="Attribute nodes to an anchor node">
       🔗 Attribution
     </button>
     <div class="neo4j-status">
@@ -564,39 +564,66 @@
             border-radius:8px; padding:16px; margin:12px 0;">
 
   <div style="display:flex; justify-content:space-between; align-items:center;">
-    <strong>🔗 Person Attribution</strong>
+    <strong>🔗 Attribution</strong>
     <button type="button" onclick="closeAttributionPanel()" aria-label="Close attribution panel"
             style="background:none;border:none;cursor:pointer;font-size:1.2em;">×</button>
   </div>
 
   <p style="font-size:.85em; color:var(--text-muted,#666); margin:6px 0 12px;">
-    Find folders that likely belong to a person based on name patterns in paths.
-    Confirm candidates to write <code>OWNS_FOLDER</code> edges to the graph.
+    Find nodes that likely belong to an anchor node, based on name patterns in
+    their paths. Confirm candidates to write the chosen relationship to the graph.
   </p>
 
-  <!-- Anchor label: which node label carries people in this graph. Populated
-       from /api/schema/labels so it follows the graph, not a hardcoded list. -->
+  <!-- Anchor label: which node label the attribution runs from. Populated from
+       /api/schema/labels so it follows the graph, not a hardcoded list. -->
   <div style="margin-bottom:10px;">
-    <label for="attr-anchor-label"><strong>Person label</strong></label><br>
-    <select id="attr-anchor-label" data-testid="attr-anchor-label"
-            onchange="onAttrAnchorLabelChange()"
+    <label for="attr-anchor-label-sel"><strong>Anchor label</strong></label><br>
+    <select id="attr-anchor-label-sel" data-testid="attr-anchor-label-sel"
+            onchange="onAnchorLabelChange()"
             style="padding:4px 8px; border:1px solid #ccc; border-radius:4px; width:250px;">
       <option value="Investigator">Investigator</option>
     </select>
   </div>
 
-  <!-- Person picker -->
+  <!-- Anchor picker -->
   <div style="margin-bottom:10px;">
-    <label for="attr-search"><strong>Person</strong></label><br>
+    <label for="attr-search"><strong>Anchor</strong></label><br>
     <input id="attr-search" type="text" placeholder="Type to filter…"
-           oninput="filterAttrPersons(this.value)"
+           oninput="filterAttrAnchors(this.value)"
            style="padding:4px 8px; border:1px solid #ccc; border-radius:4px; width:250px;">
-    <select id="attr-person-sel" size="4" data-testid="attr-person-sel"
-            onchange="selectAttrPerson(this.value)"
+    <select id="attr-anchor-sel" size="4" data-testid="attr-anchor-sel"
+            onchange="selectAttrAnchor(this.value)"
             style="display:block; margin-top:4px; width:300px; border:1px solid #ccc; border-radius:4px;">
     </select>
-    <span id="attr-person-label"
+    <span id="attr-anchor-label"
           style="display:block; margin-top:4px; font-weight:bold; min-height:1.2em;"></span>
+  </div>
+
+  <!-- Target label: which node label candidates are drawn from. -->
+  <div style="margin-bottom:10px;">
+    <label for="attr-target-label-sel"><strong>Target label</strong></label><br>
+    <select id="attr-target-label-sel" data-testid="attr-target-label-sel"
+            onchange="onTargetLabelChange()"
+            style="padding:4px 8px; border:1px solid #ccc; border-radius:4px; width:250px;">
+      <option value="Folder">Folder</option>
+    </select>
+  </div>
+
+  <!-- Relationship: seeds for the label pair, plus whatever the graph already
+       uses between them, most-used first. The custom field is for a type the
+       graph has not seen yet; it must be uppercase, and the server says so. -->
+  <div style="margin-bottom:10px;">
+    <label for="attr-rel-select"><strong>Relationship</strong></label><br>
+    <select id="attr-rel-select" data-testid="attr-rel-select"
+            style="padding:4px 8px; border:1px solid #ccc; border-radius:4px; width:250px;">
+      <option value="OWNS">OWNS</option>
+    </select>
+    <a href="#" id="attr-rel-toggle" onclick="toggleCustomRel(); return false;"
+       style="margin-left:8px; font-size:.85em;">or type custom</a>
+    <input id="attr-rel-custom" type="text" placeholder="E.G. FUNDED_BY"
+           data-testid="attr-rel-custom" spellcheck="false"
+           style="display:none; margin-left:8px; padding:4px 8px; border:1px solid #ccc;
+                  border-radius:4px; width:200px; font-family:monospace;">
   </div>
 
   <!-- Modality keywords: a hit promotes a candidate's confidence. -->
@@ -3611,20 +3638,28 @@ window.addEventListener('DOMContentLoaded', () => {
   fetchNeo4jStatus();
 });
 
-// ── Folder attribution panel ───────────────────────────────────────────
-// Pick a person, score folders whose paths carry some spelling of their name,
-// confirm the good ones as OWNS_FOLDER edges.
+// ── Attribution panel ──────────────────────────────────────────────────
+// Pick an anchor node, score target nodes whose paths carry some spelling of
+// its name, confirm the good ones as edges of the chosen relationship type.
+// No label or relationship type is hardcoded here beyond the initial defaults:
+// labels come from /api/schema/labels, relationship types from the graph.
 
 const ATTR_DEFAULT_ANCHOR_LABEL = 'Investigator';
+const ATTR_DEFAULT_TARGET_LABEL = 'Folder';
 
-let _attrPersons    = [];
-let _attrSelected   = null;
-let _attrCandidates = [];
-let _attrLabelsLoaded = false;
+let _attrAnchors        = [];
+let _attrSelectedAnchor = null;
+let _attrCandidates     = [];
+let _attrLabelsLoaded   = false;
 
 function _attrAnchorLabel() {
-  const sel = document.getElementById('attr-anchor-label');
+  const sel = document.getElementById('attr-anchor-label-sel');
   return (sel && sel.value) || ATTR_DEFAULT_ANCHOR_LABEL;
+}
+
+function _attrTargetLabel() {
+  const sel = document.getElementById('attr-target-label-sel');
+  return (sel && sel.value) || ATTR_DEFAULT_TARGET_LABEL;
 }
 
 function _attrEsc(s) {
@@ -3638,86 +3673,142 @@ function _attrSetStatus(msg) {
   if (el) el.textContent = msg;
 }
 
-function openAttributionPanel() {
+async function openAttributionPanel() {
   const panel = document.getElementById('attribution-panel');
   panel.style.display = 'block';
-  if (!_attrLabelsLoaded) _loadAttrLabels();
-  if (_attrPersons.length === 0) _loadAttrPersons();
+  if (!_attrLabelsLoaded) await _loadSchemaLabels();
+  if (_attrAnchors.length === 0) await _loadAnchors(_attrAnchorLabel());
+  await _loadRelSuggestions();
 }
 
 function closeAttributionPanel() {
   document.getElementById('attribution-panel').style.display = 'none';
 }
 
-// Offer every label the graph actually has, keeping the current selection
-// (Investigator by default) even if the graph has no such label yet.
-async function _loadAttrLabels() {
-  const sel = document.getElementById('attr-anchor-label');
-  const current = _attrAnchorLabel();
+// Offer every label the graph actually has, in both pickers, keeping the
+// defaults selectable even if the graph has no such label yet.
+async function _loadSchemaLabels() {
+  const anchorSel = document.getElementById('attr-anchor-label-sel');
+  const targetSel = document.getElementById('attr-target-label-sel');
   try {
     const r = await fetch(window.SCIDK_BASE + '/api/schema/labels');
     const d = await r.json();
     if (!r.ok) return;
     const labels = d.labels || [];
-    if (!labels.includes(current)) labels.unshift(current);
-    sel.innerHTML = labels.map(l =>
-      `<option value="${_attrEsc(l)}"${l === current ? ' selected' : ''}>${_attrEsc(l)}</option>`
-    ).join('');
+    [[anchorSel, _attrAnchorLabel()], [targetSel, _attrTargetLabel()]].forEach(([sel, current]) => {
+      const opts = labels.includes(current) ? labels : [current].concat(labels);
+      sel.innerHTML = opts.map(l =>
+        `<option value="${_attrEsc(l)}"${l === current ? ' selected' : ''}>${_attrEsc(l)}</option>`
+      ).join('');
+    });
     _attrLabelsLoaded = true;
   } catch (e) {
-    // Leave the default option in place — the panel still works without the list.
+    // Leave the default options in place — the panel still works without the list.
     console.warn('Could not load labels:', e);
   }
 }
 
-// Switching label invalidates both the person list and any results below it.
-function onAttrAnchorLabelChange() {
-  _attrPersons = [];
-  _attrSelected = null;
+// Switching the anchor label invalidates the anchor list, any results below it,
+// and the relationship suggestions (which depend on both labels).
+async function onAnchorLabelChange() {
+  _attrAnchors = [];
+  _attrSelectedAnchor = null;
   _attrCandidates = [];
-  document.getElementById('attr-person-label').textContent = '';
+  document.getElementById('attr-anchor-label').textContent = '';
   document.getElementById('attr-results').style.display = 'none';
   document.getElementById('attr-tbody').innerHTML = '';
-  _loadAttrPersons();
+  await _loadAnchors(_attrAnchorLabel());
+  await _loadRelSuggestions();
 }
 
-async function _loadAttrPersons() {
-  _attrSetStatus('Loading people…');
+// The target label does not affect the anchor list, only the suggestions and
+// any results already on screen.
+async function onTargetLabelChange() {
+  _attrCandidates = [];
+  document.getElementById('attr-results').style.display = 'none';
+  document.getElementById('attr-tbody').innerHTML = '';
+  await _loadRelSuggestions();
+}
+
+async function _loadAnchors(anchorLabel) {
+  _attrSetStatus('Loading anchors…');
   try {
-    const r = await fetch(window.SCIDK_BASE + '/api/files/attribution/persons?anchor_label='
-                          + encodeURIComponent(_attrAnchorLabel()));
+    const r = await fetch(window.SCIDK_BASE + '/api/files/attribution/anchors?anchor_label='
+                          + encodeURIComponent(anchorLabel));
     const d = await r.json();
     if (!r.ok) { _attrSetStatus(d.error || `Error ${r.status}`); return; }
-    _attrPersons = d.persons || [];
-    _renderAttrPersons(_attrPersons);
-    _attrSetStatus(_attrPersons.length
+    _attrAnchors = d.anchors || [];
+    _renderAnchors(_attrAnchors);
+    _attrSetStatus(_attrAnchors.length
       ? ''
-      : `No named :${_attrAnchorLabel()} nodes found in the graph.`);
+      : `No named :${anchorLabel} nodes found in the graph.`);
   } catch (e) {
-    _attrSetStatus('Could not load people: ' + e);
+    _attrSetStatus('Could not load anchors: ' + e);
   }
 }
 
-function _renderAttrPersons(list) {
-  document.getElementById('attr-person-sel').innerHTML = list.map(p =>
+// Suggestions are seeds for the label pair merged with what the graph already
+// uses between them. A custom value the user has typed stays put.
+async function _loadRelSuggestions() {
+  const anchorLabel = _attrAnchorLabel();
+  const targetLabel = _attrTargetLabel();
+  if (!anchorLabel || !targetLabel) return;
+
+  const sel = document.getElementById('attr-rel-select');
+  try {
+    const r = await fetch(
+      window.SCIDK_BASE + '/api/files/attribution/relationship-suggestions'
+      + '?anchor_label=' + encodeURIComponent(anchorLabel)
+      + '&target_label=' + encodeURIComponent(targetLabel));
+    const d = await r.json();
+    if (!r.ok) return;
+    const suggestions = (d.suggestions && d.suggestions.length)
+      ? d.suggestions : ['OWNS', 'RELATED_TO'];
+    sel.innerHTML = suggestions.map(s =>
+      `<option value="${_attrEsc(s)}">${_attrEsc(s)}</option>`
+    ).join('');
+  } catch (e) {
+    console.warn('Could not load relationship suggestions:', e);
+  }
+}
+
+// A non-empty custom field wins over the dropdown. Sent as typed, not
+// uppercased, so the server's validation is what the user sees.
+function _getRelationship() {
+  const custom = document.getElementById('attr-rel-custom').value.trim();
+  if (custom) return custom;
+  return document.getElementById('attr-rel-select').value;
+}
+
+function toggleCustomRel() {
+  const inp = document.getElementById('attr-rel-custom');
+  const hidden = inp.style.display === 'none' || !inp.style.display;
+  inp.style.display = hidden ? 'inline' : 'none';
+  if (hidden) { inp.focus(); } else { inp.value = ''; }
+  document.getElementById('attr-rel-toggle').textContent =
+    hidden ? 'use suggestion' : 'or type custom';
+}
+
+function _renderAnchors(list) {
+  document.getElementById('attr-anchor-sel').innerHTML = list.map(p =>
     `<option value="${_attrEsc(p.name)}">${_attrEsc(p.name)}</option>`
   ).join('');
 }
 
-function filterAttrPersons(q) {
+function filterAttrAnchors(q) {
   const needle = (q || '').toLowerCase();
-  _renderAttrPersons(
-    _attrPersons.filter(p => (p.name || '').toLowerCase().includes(needle))
+  _renderAnchors(
+    _attrAnchors.filter(p => (p.name || '').toLowerCase().includes(needle))
   );
 }
 
-function selectAttrPerson(name) {
-  _attrSelected = name;
-  document.getElementById('attr-person-label').textContent = '→ ' + name;
+function selectAttrAnchor(name) {
+  _attrSelectedAnchor = name;
+  document.getElementById('attr-anchor-label').textContent = '→ ' + name;
 }
 
 async function runAttribution() {
-  if (!_attrSelected) { alert('Select a person first.'); return; }
+  if (!_attrSelectedAnchor) { alert('Select an anchor first.'); return; }
   const keywords = [...document.querySelectorAll('.attr-mod:checked')].map(cb => cb.value);
   const labmates = document.getElementById('attr-labmates').checked;
   const btn = document.getElementById('attr-find-btn');
@@ -3729,8 +3820,9 @@ async function runAttribution() {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
-        person_name: _attrSelected,
+        anchor_name: _attrSelectedAnchor,
         anchor_label: _attrAnchorLabel(),
+        target_label: _attrTargetLabel(),
         modality_keywords: keywords,
         include_labmates: labmates,
       }),
@@ -3794,9 +3886,11 @@ async function runConfirm() {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
-        person_name: _attrSelected,
+        anchor_name: _attrSelectedAnchor,
         anchor_label: _attrAnchorLabel(),
-        folder_paths: paths,
+        target_label: _attrTargetLabel(),
+        target_paths: paths,
+        relationship: _getRelationship(),
       }),
     });
     const d = await r.json();

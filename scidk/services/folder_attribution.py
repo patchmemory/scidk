@@ -1,19 +1,28 @@
-"""Folder attribution — rank folder candidates for a person, write back OWNS_FOLDER.
+"""Attribution — rank target candidates for an anchor node, write back an edge.
 
-Given a person in the graph, find folders across every scanned source whose path
-carries some spelling of that person's name, score each by how likely it is to
-actually be theirs, and let a staff member confirm the good ones as
-``(:Person)-[:OWNS_FOLDER]->(:Folder)`` edges.
+Given an *anchor* node in the graph (an ``Investigator``, a ``Lab``, a ``Study``
+-- any label), find *target* nodes across every scanned source whose path carries
+some spelling of the anchor's name, score each by how likely the attribution is,
+and let a staff member confirm the good ones as ``(:Anchor)-[:REL]->(:Target)``
+edges.
+
+Nothing here is specific to people or to folders: the anchor label, the target
+label and the relationship type are all caller-supplied. ``Investigator``,
+``Folder`` and ``OWNS`` are only the defaults.
 
 Scoring is a heuristic over the path string, not evidence:
 
-* how deep the folder sits below its scan root — a name at depth 1 is a home
+* how deep the target sits below its scan root — a name at depth 1 is a home
   directory, the same name at depth 8 is probably a mention
 * whether the path also names an imaging modality
-* whether the name that matched was the person's or a labmate's
+* whether the name that matched was the anchor's or a labmate's
 
-Every query here is a single round trip. Name variants and folder paths go over
-as bound parameters -- nothing user-supplied is interpolated into Cypher.
+Every query here is a single round trip. Name variants and target paths go over
+as bound parameters; the identifiers that *must* be interpolated -- the two
+labels and the relationship type -- are whitelisted through ``filter_builder``
+first: :func:`~scidk.services.filter_builder._validate_identifier` for labels,
+:func:`~scidk.services.filter_builder._validate_rel_type` for the edge, which
+additionally enforces the uppercase Cypher convention.
 
 Consumers: the ``/api/files/attribution/*`` routes in ``web/routes/api_files.py``
 and the attribution panel in ``ui/templates/datasets.html``.
@@ -22,24 +31,34 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
-from .filter_builder import _validate_identifier
+from .filter_builder import _validate_identifier, _validate_rel_type
 
 __all__ = [
     "DEFAULT_ANCHOR_LABEL",
+    "DEFAULT_RELATIONSHIP",
+    "DEFAULT_TARGET_LABEL",
     "MODALITY_KEYWORDS",
+    "RELATIONSHIP_FALLBACKS",
+    "RELATIONSHIP_SUGGESTIONS",
     "AttributionCandidate",
     "ConfirmResult",
     "FolderAttributionService",
 ]
 
-#: Node label folders are attributed *from* when the caller names none.
+#: Node label targets are attributed *from* when the caller names none.
 #: Not baked into the queries -- every entry point takes an ``anchor_label``,
 #: because which label carries people differs per deployment. ``Person`` is the
 #: shared label :meth:`FolderAttributionService.ensure_person_label` applies
 #: across ``Investigator`` and ``User``, and works as an anchor spanning both.
 DEFAULT_ANCHOR_LABEL = 'Investigator'
+
+#: Node label attributed *to* when the caller names none.
+DEFAULT_TARGET_LABEL = 'Folder'
+
+#: Edge written on confirm when the caller names none.
+DEFAULT_RELATIONSHIP = 'OWNS'
 
 
 @dataclass
@@ -72,13 +91,42 @@ MODALITY_KEYWORDS: Dict[str, List[str]] = {
     'flow':       ['flow', 'facs', 'cytometry'],
 }
 
+#: Seed relationship types per (anchor label, target label) pair. These are
+#: *suggestions only* -- :meth:`FolderAttributionService.get_relationship_suggestions`
+#: merges them with whatever the live graph already uses between the same two
+#: labels, so a deployment's own vocabulary surfaces without editing this dict.
+#: Order matters: the first entry of a pair is what the UI preselects.
+RELATIONSHIP_SUGGESTIONS: Dict[Tuple[str, str], List[str]] = {
+    ("Investigator", "Folder"):  ["OWNS", "CONTRIBUTED_TO", "GENERATED"],
+    ("Investigator", "File"):    ["OWNS", "CONTRIBUTED_TO", "GENERATED"],
+    ("Investigator", "Dataset"): ["OWNS", "CONTRIBUTED_TO", "GENERATED"],
+    ("User",         "Folder"):  ["OWNS", "CONTRIBUTED_TO"],
+    ("User",         "File"):    ["OWNS", "CONTRIBUTED_TO"],
+    ("User",         "Dataset"): ["OWNS", "CONTRIBUTED_TO"],
+    ("Lab",          "Folder"):  ["OWNS", "MANAGES", "CONTAINS"],
+    ("Lab",          "File"):    ["OWNS", "MANAGES"],
+    ("Lab",          "Dataset"): ["OWNS", "MANAGES", "CONTAINS"],
+    ("Study",        "Folder"):  ["CONTAINS", "GENERATED"],
+    ("Study",        "File"):    ["CONTAINS", "GENERATED"],
+    ("Study",        "Dataset"): ["CONTAINS", "GENERATED"],
+    ("CACProtocol",  "Folder"):  ["CONTAINS", "GENERATED"],
+    ("CACProtocol",  "File"):    ["CONTAINS", "GENERATED"],
+    ("CACProtocol",  "Dataset"): ["CONTAINS", "GENERATED"],
+    ("Request",      "Folder"):  ["CONTAINS", "GENERATED"],
+    ("Request",      "Dataset"): ["CONTAINS", "GENERATED"],
+}
+
+#: Appended to every suggestion list, so a pair with no seeds and an empty graph
+#: still offers something usable.
+RELATIONSHIP_FALLBACKS: List[str] = ["OWNS", "CONTAINS", "RELATED_TO"]
+
 #: Shortest name variant worth matching. Three characters or fewer produce
 #: substring hits in unrelated paths far more often than real attributions.
 MIN_VARIANT_LEN = 4
 
 
 class FolderAttributionService:
-    """Folder attribution against a live Neo4j graph.
+    """Attribution against a live Neo4j graph.
 
     The caller owns the driver's lifetime; this class never closes it.
     """
@@ -116,7 +164,7 @@ class FolderAttributionService:
     # ------------------------------------------------------------------
     # Public
 
-    def list_persons(self, anchor_label: str = DEFAULT_ANCHOR_LABEL) -> List[dict]:
+    def list_anchors(self, anchor_label: str = DEFAULT_ANCHOR_LABEL) -> List[dict]:
         """Every named node carrying ``anchor_label``, name-ordered, with its labels.
 
         Raises:
@@ -131,39 +179,99 @@ class FolderAttributionService:
             )
             return [dict(r) for r in result]
 
+    def get_relationship_suggestions(
+        self,
+        anchor_label: str = DEFAULT_ANCHOR_LABEL,
+        target_label: str = DEFAULT_TARGET_LABEL,
+    ) -> List[str]:
+        """Ordered relationship types to offer for an anchor -> target pair.
+
+        Three sources, concatenated in this order and then deduplicated:
+
+        1. the pair's seeds in :data:`RELATIONSHIP_SUGGESTIONS`
+        2. types that already connect these two labels in the live graph, most
+           used first
+        3. :data:`RELATIONSHIP_FALLBACKS`
+
+        Seeds lead so a known-good type is preselected, but the graph-discovered
+        set is what makes this useful over time: as real attributions accumulate,
+        a deployment's own vocabulary rises into the list without anyone editing
+        the dict. A discovered type that is not uppercase is dropped -- it cannot
+        be written back through :meth:`confirm`, so offering it would be a
+        dead end.
+
+        Raises:
+            ValueError: either label is not a legal Cypher identifier.
+        """
+        safe_anchor = _validate_identifier(anchor_label)
+        safe_target = _validate_identifier(target_label)
+
+        defaults = RELATIONSHIP_SUGGESTIONS.get((safe_anchor, safe_target), [])
+
+        # A missing label, or no edges between the two, is an empty list rather
+        # than an error: the picker still has seeds and fallbacks to offer.
+        try:
+            with self._session() as session:
+                result = session.run(
+                    f"MATCH (a:{safe_anchor})-[r]->(t:{safe_target}) "
+                    "RETURN type(r) AS rel_type, count(*) AS cnt "
+                    "ORDER BY cnt DESC"
+                )
+                graph_rels = [row['rel_type'] for row in result if row['rel_type']]
+        except Exception:
+            graph_rels = []
+
+        suggestions: List[str] = []
+        seen = set()
+        for rel in list(defaults) + graph_rels + RELATIONSHIP_FALLBACKS:
+            if rel in seen:
+                continue
+            try:
+                _validate_rel_type(rel)
+            except ValueError:
+                continue
+            seen.add(rel)
+            suggestions.append(rel)
+        return suggestions
+
     def get_candidates(
         self,
-        person_name:       str,
+        anchor_name:       str,
         modality_keywords: Optional[List[str]] = None,
         include_labmates:  bool = True,
         sources:           Optional[List[str]] = None,
         anchor_label:      str = DEFAULT_ANCHOR_LABEL,
+        target_label:      str = DEFAULT_TARGET_LABEL,
     ) -> List[AttributionCandidate]:
-        """Rank folders that may belong to ``person_name``.
+        """Rank ``target_label`` nodes that may belong to ``anchor_name``.
 
         Args:
-            person_name: exact ``name`` of the anchor node to attribute folders to.
+            anchor_name: exact ``name`` of the anchor node to attribute targets to.
             modality_keywords: modality shorthands (see :data:`MODALITY_KEYWORDS`)
                 or raw substrings. A hit promotes the confidence of a match.
-            include_labmates: also match folders named for someone sharing a
-                ``:Lab`` with this person -- those score MED at best.
+            include_labmates: also match targets named for someone sharing a
+                ``:Lab`` with this anchor -- those score MED at best.
             sources: restrict to these ``Scan.host_id`` values; all sources
                 when omitted.
-            anchor_label: node label people are matched under. Whitelisted
+            anchor_label: node label anchors are matched under. Whitelisted
                 before it reaches Cypher.
+            target_label: node label candidates are drawn from. Whitelisted
+                before it reaches Cypher. Must carry ``path`` and be reachable
+                from a ``:Scan`` by ``SCANNED_IN``.
 
         Returns:
             Candidates sorted HIGH -> MED -> LOW, shallowest first within a tier.
 
         Raises:
-            ValueError: ``anchor_label`` is not a legal Cypher identifier.
+            ValueError: either label is not a legal Cypher identifier.
         """
         label = _validate_identifier(anchor_label)
-        variants = self._name_variants(person_name)
+        target = _validate_identifier(target_label)
+        variants = self._name_variants(anchor_name)
 
         labmate_variants: List[str] = []
         if include_labmates:
-            for labmate in self._get_labmates(person_name, label):
+            for labmate in self._get_labmates(anchor_name, label):
                 labmate_variants.extend(self._name_variants(labmate))
 
         # Own variants win ties, so they must not also appear in the labmate
@@ -175,7 +283,7 @@ class FolderAttributionService:
             return []
 
         keywords = self._resolve_keywords(modality_keywords)
-        folders = self._fetch_folders(sources, variants + labmate_variants)
+        folders = self._fetch_folders(sources, variants + labmate_variants, target)
 
         candidates: List[AttributionCandidate] = []
         seen = set()
@@ -228,22 +336,27 @@ class FolderAttributionService:
 
     def confirm(
         self,
-        person_name:  str,
-        folder_paths: List[str],
+        anchor_name:  str,
+        target_paths: Optional[List[str]] = None,
         confirmed_by: str = 'system',
         anchor_label: str = DEFAULT_ANCHOR_LABEL,
+        target_label: str = DEFAULT_TARGET_LABEL,
+        relationship: str = DEFAULT_RELATIONSHIP,
     ) -> ConfirmResult:
-        """Write ``OWNS_FOLDER`` edges from ``person_name`` to each folder path.
+        """Write ``relationship`` edges from ``anchor_name`` to each target path.
 
-        One round trip for the whole batch. Paths that match no ``Folder`` -- or
-        every path, if the person does not exist -- come back as errors rather
-        than silently counting as skipped.
+        One round trip for the whole batch. Paths that match no ``target_label``
+        node -- or every path, if the anchor does not exist -- come back as errors
+        rather than silently counting as skipped.
 
         Raises:
-            ValueError: ``anchor_label`` is not a legal Cypher identifier.
+            ValueError: either label is not a legal Cypher identifier, or
+                ``relationship`` is not an uppercase Cypher relationship type.
         """
         label = _validate_identifier(anchor_label)
-        paths = [p for p in (folder_paths or []) if p]
+        target = _validate_identifier(target_label)
+        rel = _validate_rel_type(relationship)
+        paths = [p for p in (target_paths or []) if p]
         if not paths:
             return ConfirmResult(written=0, skipped=0, errors=[])
 
@@ -252,14 +365,14 @@ class FolderAttributionService:
                 result = session.run(f"""
                     MATCH (p:{label} {{name: $name}})
                     UNWIND $paths AS target
-                    MATCH (f:Folder {{path: target}})
-                    MERGE (p)-[rel:OWNS_FOLDER]->(f)
+                    MATCH (f:{target} {{path: target}})
+                    MERGE (p)-[rel:{rel}]->(f)
                     ON CREATE SET
                         rel.confirmed_by = $by,
                         rel.confirmed_at = $ts,
                         rel.method       = 'attribution_panel'
                     RETURN DISTINCT target AS path
-                """, name=person_name, paths=paths,
+                """, name=anchor_name, paths=paths,
                      by=confirmed_by,
                      ts=datetime.now(timezone.utc).isoformat())
                 matched = {r['path'] for r in result}
@@ -268,7 +381,7 @@ class FolderAttributionService:
             return ConfirmResult(written=0, skipped=0,
                                  errors=[f"attribution write failed: {e}"])
 
-        errors = [f"{p}: no :{label} {person_name!r} or no :Folder with that path"
+        errors = [f"{p}: no :{label} {anchor_name!r} or no :{target} with that path"
                   for p in paths if p not in matched]
         return ConfirmResult(
             written = written,
@@ -342,8 +455,8 @@ class FolderAttributionService:
             out.extend(MODALITY_KEYWORDS.get(str(kw).lower(), [str(kw).lower()]))
         return out
 
-    def _get_labmates(self, person_name: str, label: str) -> List[str]:
-        """Names of everyone sharing a ``:Lab`` with this person.
+    def _get_labmates(self, anchor_name: str, label: str) -> List[str]:
+        """Names of everyone sharing a ``:Lab`` with this anchor.
 
         ``label`` must already be whitelisted -- callers validate it once and
         pass it down rather than re-checking per query.
@@ -354,22 +467,28 @@ class FolderAttributionService:
                       <-[:MEMBER_OF]-(lm:{label})
                 WHERE lm.name <> $name
                 RETURN DISTINCT lm.name AS name
-            """, name=person_name)
+            """, name=anchor_name)
             return [row['name'] for row in r if row['name']]
 
-    def _fetch_folders(self, sources, variants) -> List[dict]:
-        """Folders whose path contains any name variant, optionally scoped by source.
+    def _fetch_folders(
+        self,
+        sources,
+        variants,
+        target_label: str = DEFAULT_TARGET_LABEL,
+    ) -> List[dict]:
+        """Targets whose path contains any name variant, optionally scoped by source.
 
         The name filter runs in the database rather than in Python: pulling every
         ``:Folder`` back over the wire is not viable at this graph's size. Variants
-        arrive lowercased as a bound list -- never interpolated.
+        arrive lowercased as a bound list -- never interpolated. ``target_label``
+        must already be whitelisted by the caller.
         """
         needles = sorted({v.lower() for v in variants if len(v) >= MIN_VARIANT_LEN})
         if not needles:
             return []
         with self._session() as session:
-            result = session.run("""
-                MATCH (f:Folder)-[:SCANNED_IN]->(s:Scan)
+            result = session.run(f"""
+                MATCH (f:{target_label})-[:SCANNED_IN]->(s:Scan)
                 WHERE ($sources IS NULL OR s.host_id IN $sources)
                   AND any(v IN $needles WHERE toLower(f.path) CONTAINS v)
                 RETURN f.path AS path, f.name AS name,
