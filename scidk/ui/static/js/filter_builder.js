@@ -7,12 +7,21 @@
  * (scidk/services/filter_builder.py). No build step, no framework — loaded
  * with a plain <script> tag from base.html.
  *
- * Usage:
+ * Usage — the argument is a container *id*, not an element:
  *   const fb = new FilterBuilder('my-container', {
- *     onPreview: (count, cypher) => console.log(count + ' nodes'),
+ *     onPreview: (count, cypher, error) => console.log(error || count + ' nodes'),
  *     onUse:     (filterDef) => doSomethingWith(filterDef),
  *     defaultLabel: 'Investigator',
+ *     // Optional. Offer a value picker instead of a text box where the host
+ *     // knows what values exist; return null to keep the text box.
+ *     valueOptionsFor: async (label, property) => fetchValues(label, property),
+ *     // Optional. Attach/tear down a select-enhancement library around the
+ *     // renders that rebuild rows by assigning innerHTML.
+ *     onRender:   (el) => enhanceSelectsIn(el),
+ *     beforeWipe: (el) => destroySelectsIn(el),
  *   });
+ *
+ * getFilterDef() returns raw state; call validate() before submitting it.
  */
 
 (function injectStyles() {
@@ -95,12 +104,26 @@ class FilterBuilder {
     this.container = document.getElementById(containerId);
     if (!this.container) throw new Error(`FilterBuilder: #${containerId} not found`);
 
+    // Every option below defaults to a value that reproduces the component's
+    // original behavior, so adding one never changes an existing consumer.
     this.options = {
-      onPreview:    null,   // fn(count, cypher)
+      onPreview:    null,   // fn(count, cypher, error)
       onUse:        null,   // fn(filterDef)
       onSave:       null,   // fn(filterDef) — for "Save as dataset"
       defaultLabel: null,
       showSave:     false,
+      // fn(label, property) → Promise<string[] | null>. A non-null array turns
+      // the value control into a <select> over those values; null (or an
+      // omitted callback) keeps the free-text <input>. Lets a host that knows
+      // which values exist — an /…/property-values endpoint, say — offer them
+      // instead of asking the user to guess a substring.
+      valueOptionsFor: null,
+      // fn(container) after a render settles, fn(container) before one is
+      // wiped. The pair a select-enhancement library needs: this component
+      // rebuilds its rows by assigning innerHTML, which silently orphans any
+      // wrapper attached to the selects inside them.
+      onRender:     null,
+      beforeWipe:   null,
       ...options,
     };
 
@@ -117,9 +140,40 @@ class FilterBuilder {
   // -----------------------------------------------------------------------
   // Public
 
-  /** Return the current filter definition as a plain JS object. */
+  /** Return the current filter definition as a plain JS object.
+   *
+   * Deliberately raw: what the controls hold, valid or not. Callers that are
+   * about to submit should run {@link validate} first — filtering here would
+   * mean the object a caller gets back does not round-trip through
+   * loadFilterDef, and would drop a half-built block without saying so.
+   */
   getFilterDef() {
     return { blocks: JSON.parse(JSON.stringify(this.blocks)) };
+  }
+
+  /** Check the current state against what the backend generator will accept.
+   *
+   * The two ways to reach a definition the backend rejects with 400 are a
+   * block with no label (the default state of "+ Add block") and a condition
+   * with no property (what "+ Add condition" produces on a label whose schema
+   * fetch returned nothing). Both interpolate into Cypher, so both are
+   * whitelisted server-side and fail there rather than matching nothing.
+   *
+   * @returns {{valid: boolean, errors: string[]}}
+   */
+  validate() {
+    const errors = [];
+    if (!this.blocks.length) errors.push('Add at least one block.');
+    this.blocks.forEach((block, i) => {
+      const where = this.blocks.length > 1 ? ` in block ${i + 1}` : '';
+      if (!block.label) errors.push(`Select a label${where}.`);
+      (block.conditions || []).forEach((cond, ci) => {
+        if (!cond.property) {
+          errors.push(`Condition ${ci + 1}${where} has no property.`);
+        }
+      });
+    });
+    return { valid: errors.length === 0, errors };
   }
 
   /** Pre-populate the builder from a saved filter definition. */
@@ -205,10 +259,28 @@ class FilterBuilder {
   }
 
   async _renderAll() {
+    this._fireWipe(this._blocksEl);
     this._blocksEl.innerHTML = '';
     // Sequential, so blocks land in index order.
     for (let i = 0; i < this.blocks.length; i++) {
       await this._renderBlock(i);
+    }
+    this._fireRender(this._blocksEl);
+  }
+
+  /** Tell the host a subtree is about to be replaced, so it can tear down. */
+  _fireWipe(el) {
+    if (this.options.beforeWipe && el) {
+      try { this.options.beforeWipe(el); }
+      catch (e) { console.warn('FilterBuilder: beforeWipe threw', e); }
+    }
+  }
+
+  /** Tell the host a subtree has settled, so it can enhance it. */
+  _fireRender(el) {
+    if (this.options.onRender && el) {
+      try { this.options.onRender(el); }
+      catch (e) { console.warn('FilterBuilder: onRender threw', e); }
     }
   }
 
@@ -238,6 +310,7 @@ class FilterBuilder {
       await this._fetchProps(block.label);
       block.conditions.forEach((_, ci) => this._renderCondition(i, ci));
     }
+    this._fireRender(el);
   }
 
   _makeViaRow(blockIndex) {
@@ -296,13 +369,24 @@ class FilterBuilder {
     const placeholder = document.createElement('option');
     placeholder.value = ''; placeholder.textContent = 'Select label…';
     labelSel.appendChild(placeholder);
+    // A label the graph does not (yet) carry is offered rather than discarded.
+    // Dropping it left the select reading "Select label…" while the block kept
+    // the invisible value, so getFilterDef() returned a label the user could
+    // not see and the backend generated MATCH (n0:ThatLabel) — 200, zero rows,
+    // no way to tell why. Offering it keeps the control and the state agreeing;
+    // an empty result is then legible as "no such nodes", which is the truth.
+    if (block.label && !this.labelList.includes(block.label)) {
+      const opt = document.createElement('option');
+      opt.value = block.label; opt.textContent = block.label;
+      labelSel.appendChild(opt);
+    }
     this.labelList.forEach(l => {
       const opt = document.createElement('option');
       opt.value = l; opt.textContent = l;
       if (block.label === l) opt.selected = true;
       labelSel.appendChild(opt);
     });
-    labelSel.value = this.labelList.includes(block.label) ? block.label : '';
+    labelSel.value = block.label || '';
     labelSel.onchange = async () => {
       this.blocks[i].label = labelSel.value;
       this.blocks[i].conditions = [];
@@ -368,6 +452,10 @@ class FilterBuilder {
     const rmBtn = this._button('fb-btn-icon', '×',
                                () => this._removeCondition(blockIndex, condIndex));
 
+    // Bumped on every refreshValue, so an in-flight valueOptionsFor resolving
+    // after the operator or property changed knows its container is stale.
+    let valueToken = 0;
+
     const refreshValue = () => {
       const op = opSel.value;
       const noVal = FilterBuilder.NO_VALUE_OPS.has(op);
@@ -388,7 +476,9 @@ class FilterBuilder {
         return Number.isFinite(n) ? n : raw;
       };
 
+      this._fireWipe(valueContainer);
       valueContainer.innerHTML = '';
+      const token = ++valueToken;
       if (!noVal) {
         if (isBetween) {
           const lo = document.createElement('input');
@@ -410,6 +500,12 @@ class FilterBuilder {
           inp.value = Array.isArray(cond.value) ? '' : (cond.value == null ? '' : cond.value);
           inp.onchange = () => { cond.value = typed(inp.value); };
           valueContainer.appendChild(inp);
+          // If the host can enumerate this property's values, swap the free
+          // text box for a picker over them once they arrive. The input goes
+          // in first so the row stays usable while the callback is in flight,
+          // and so a host that resolves null costs nothing but the call.
+          this._offerValueOptions(block.label, propSel.value, cond, typed,
+                                  valueContainer, () => token === valueToken);
         }
       } else {
         // The operator carries the whole condition; drop any stale value so it
@@ -417,6 +513,7 @@ class FilterBuilder {
         cond.value = null;
       }
       cond.operator = op;
+      this._fireRender(valueContainer);
     };
 
     const refreshOps = (propInfo) => {
@@ -457,6 +554,65 @@ class FilterBuilder {
       propSel.value = initProp.name;
       refreshOps(initProp);
     }
+  }
+
+  /** Replace a condition's free-text value input with a picker, if the host
+   *  can say which values exist for this (label, property).
+   *
+   *  No-op unless ``options.valueOptionsFor`` is set and resolves to a
+   *  non-empty array. An empty array falls back to the input rather than
+   *  rendering an empty <select>: "this property has no values" and "you may
+   *  not type one" together leave the condition unfillable.
+   *
+   *  Single-value operators only. ``between`` keeps its two inputs — a range
+   *  is a pair of bounds, not a choice from a list, and the bounds a user
+   *  wants are routinely values no node carries.
+   *
+   *  @param {function(): boolean} isCurrent — false once a later render has
+   *    taken the container over, in which case this resolution is discarded.
+   */
+  async _offerValueOptions(label, property, cond, typed, container, isCurrent) {
+    if (!this.options.valueOptionsFor || !property) return;
+
+    let values;
+    try {
+      values = await this.options.valueOptionsFor(label, property);
+    } catch (e) {
+      console.warn('FilterBuilder: valueOptionsFor threw', e);
+      return;
+    }
+    if (!Array.isArray(values) || !values.length || !isCurrent()) return;
+
+    const sel = document.createElement('select');
+    sel.className = 'fb-select-sm';
+    const blank = document.createElement('option');
+    blank.value = ''; blank.textContent = 'Select a value…';
+    sel.appendChild(blank);
+
+    // A value already on the condition that the list does not carry is offered
+    // rather than dropped — same rule as an off-schema label in
+    // _makeBlockHeader: the control must not disagree with the state behind it.
+    const current = (cond.value == null || Array.isArray(cond.value))
+      ? '' : String(cond.value);
+    if (current && !values.some(v => String(v) === current)) {
+      const opt = document.createElement('option');
+      opt.value = current; opt.textContent = current;
+      sel.appendChild(opt);
+    }
+    values.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = String(v); opt.textContent = String(v);
+      sel.appendChild(opt);
+    });
+    sel.value = current;
+    // Through `typed` for the same reason the input is: Cypher never matches
+    // the string "5" against the number 5.
+    sel.onchange = () => { cond.value = typed(sel.value); };
+
+    this._fireWipe(container);
+    container.innerHTML = '';
+    container.appendChild(sel);
+    this._fireRender(container);
   }
 
   // -----------------------------------------------------------------------
@@ -510,10 +666,14 @@ class FilterBuilder {
     const container = document.getElementById(
       `fb-conds-${this._id()}-${blockIndex}`
     );
-    if (container) container.innerHTML = '';
+    if (container) {
+      this._fireWipe(container);
+      container.innerHTML = '';
+    }
     this.blocks[blockIndex].conditions.forEach((_, ci) => {
       this._renderCondition(blockIndex, ci);
     });
+    this._fireRender(container);
   }
 
   // -----------------------------------------------------------------------
@@ -549,7 +709,13 @@ class FilterBuilder {
           ? `Error: ${d.error}`
           : `Preview: ${d.total} node${d.total !== 1 ? 's' : ''}`;
       }
-      if (this.options.onPreview) this.options.onPreview(d.total, d.cypher);
+      // On an error there is no count and no query, and the only surfacing was
+      // a string in a span sized for "Preview: 3 nodes". Hand the host the
+      // error text so it can put it somewhere a user will read.
+      if (this.options.onPreview) {
+        if (d.error) this.options.onPreview(undefined, undefined, d.error);
+        else this.options.onPreview(d.total, d.cypher);
+      }
       return d;
     } catch (e) {
       if (this._previewEl) this._previewEl.textContent = 'Preview failed';

@@ -509,6 +509,27 @@
   .snapshot-item .task-progress-bar {
     margin-top: 0.25rem;
   }
+
+  /* FilterBuilder inside the attribution panel.
+     The component renders its own shell — "+ Add block", "Preview", the
+     preview count — none of which belongs here. A second block would draw a
+     "relates via" row, whose meaning ("these two are already connected by this
+     edge") is the opposite of what this panel does: the relationship is the
+     thing being written, not a filter. And Preview counts every node matching
+     the conditions alone, while the real search additionally requires a name
+     match and returns a scored list — two numbers with the same label, orders
+     of magnitude apart. Both live in .fb-actions, so hiding it removes both.
+     "+ Add condition" sits inside the block and survives, which is exactly the
+     surface wanted: conditions, no block plumbing.
+     Flattening .fb-block drops its own border/padding/background, which would
+     otherwise double-frame inside the panel's own bordered section. */
+  .attr-fb-scope .fb-actions { display: none; }
+  .attr-fb-scope .fb-block {
+    border: none;
+    padding: 0;
+    background: none;
+    box-shadow: none;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -633,6 +654,22 @@
     </select>
   </div>
 
+  <!-- Target conditions: property predicates on the candidate node itself,
+       appended to the candidate query's WHERE. A FilterBuilder instance fills
+       this, following the target label's real schema — which is what replaced
+       the fixed modality checkboxes that used to sit lower down: "path
+       contains vevo" is the same filter, expressed against the graph rather
+       than against a hardcoded keyword table. -->
+  <div style="margin-bottom:10px;">
+    <label><strong>Target conditions</strong>
+      <span style="font-size:.8em; color:#888; font-weight:normal;">
+        — filter candidates by their properties
+      </span>
+    </label>
+    <div id="attr-target-fb-container" data-testid="attr-target-fb-container"
+         class="attr-fb-scope"></div>
+  </div>
+
   <!-- Relationship: seeds for the label pair, plus whatever the graph already
        uses between them, most-used first. The custom field is for a type the
        graph has not seen yet; it must be uppercase, and the server says so. -->
@@ -648,26 +685,6 @@
            data-testid="attr-rel-custom" spellcheck="false"
            style="display:none; margin-left:8px; padding:4px 8px; border:1px solid #ccc;
                   border-radius:4px; width:200px; font-family:monospace;">
-  </div>
-
-  <!-- Modality keywords: a hit promotes a candidate's confidence. -->
-  <div style="margin-bottom:10px;">
-    <span><strong>Modality keywords</strong></span><br>
-    <label style="margin-right:10px;">
-      <input type="checkbox" class="attr-mod" value="ultrasound"> Ultrasound
-    </label>
-    <label style="margin-right:10px;">
-      <input type="checkbox" class="attr-mod" value="microct"> microCT
-    </label>
-    <label style="margin-right:10px;">
-      <input type="checkbox" class="attr-mod" value="ivis"> IVIS
-    </label>
-    <label style="margin-right:10px;">
-      <input type="checkbox" class="attr-mod" value="histology"> Histology
-    </label>
-    <label>
-      <input type="checkbox" class="attr-mod" value="flow"> Flow
-    </label>
   </div>
 
   <div style="margin-bottom:12px;">
@@ -3670,6 +3687,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
 const ATTR_DEFAULT_ANCHOR_LABEL = 'Investigator';
 const ATTR_DEFAULT_TARGET_LABEL = 'Folder';
+//: Above this many distinct values, a target condition keeps its text input
+//: instead of becoming a dropdown.
+const ATTR_VALUE_PICKER_MAX = 500;
 
 let _attrAnchors        = [];
 let _attrCandidates     = [];
@@ -3678,6 +3698,10 @@ let _attrLabelsLoaded   = false;
 // is active. Kept beside the full list rather than replacing it, so Clear can
 // restore every anchor without another round trip.
 let _attrAnchorFilter   = null;
+// The FilterBuilder driving the Target conditions section, or null before the
+// panel has been opened once. Torn down and rebuilt when the target label
+// changes — its conditions are keyed to that label's schema.
+let _attrTargetFB       = null;
 
 function _attrAnchorLabel() {
   const sel = document.getElementById('attr-anchor-label-sel');
@@ -3718,6 +3742,59 @@ async function openAttributionPanel() {
   if (_attrAnchors.length === 0) await _loadAnchors(_attrAnchorLabel());
   await _loadAnchorProperties();
   await _loadRelSuggestions();
+  // After the labels, so the builder opens on the target label actually
+  // selected rather than the hardcoded default.
+  _initTargetFB();
+}
+
+// Build the Target conditions section. Idempotent — opening the panel a second
+// time keeps whatever the user had built.
+//
+// base.html loads filter_builder.js at the end of <body>, so FilterBuilder does
+// not exist at parse time for this template's inline script. That is fine here
+// because every path in is user-triggered, but the guard stays: a panel that
+// silently loses one section beats a panel that throws.
+function _initTargetFB() {
+  if (_attrTargetFB) return;
+  const container = document.getElementById('attr-target-fb-container');
+  if (!container || typeof FilterBuilder === 'undefined') return;
+  // The constructor takes a container *id*, not an element.
+  _attrTargetFB = new FilterBuilder('attr-target-fb-container', {
+    defaultLabel: _attrTargetLabel(),
+    showSave: false,
+    onPreview: (count, cypher, err) => {
+      if (err) _attrSetStatus('Filter error: ' + err);
+    },
+    // Restores the value picker the panel already gives the Anchor section: a
+    // choice among values the graph holds, not a substring to guess at.
+    // Falling back to null leaves FilterBuilder's own text input in place.
+    valueOptionsFor: async (label, property) => {
+      try {
+        const qs = new URLSearchParams({
+          // A misnomer in this position — the endpoint reads distinct values of
+          // a property on nodes of a label, and here that label is the target.
+          // The behaviour is exactly what is wanted; only the name is anchored.
+          anchor_label: label,
+          property_key: property,
+        });
+        const r = await fetch(window.SCIDK_BASE
+          + '/api/files/attribution/anchor-property-values?' + qs);
+        const d = await r.json();
+        if (!r.ok || !d.values || !d.values.length) return null;
+        // A picker over thousands of options is not a picker. Past the cap,
+        // fall back to the text box, which is the better control for a
+        // high-cardinality property anyway.
+        //
+        // This caps the *rendering*, not the query: the endpoint has no LIMIT,
+        // so it still scans the label and returns every distinct value first.
+        // On a small anchor label that is what it was built for; on a target
+        // label the size of :File it is expensive. Bounding it server-side is
+        // the real fix and belongs with that endpoint.
+        if (d.values.length > ATTR_VALUE_PICKER_MAX) return null;
+        return d.values;
+      } catch (e) { return null; }
+    },
+  });
 }
 
 function closeAttributionPanel() {
@@ -3770,13 +3847,49 @@ async function onAnchorLabelChange() {
   await _loadRelSuggestions();
 }
 
-// The target label does not affect the anchor list, only the suggestions and
-// any results already on screen.
+// The target label does not affect the anchor list, only the suggestions, any
+// results already on screen, and the target conditions — which are built
+// against the old label's properties and would generate predicates on keys the
+// new label may not carry. Rebuilt rather than relabelled, for the same reason
+// the anchor property filter is dropped in onAnchorLabelChange.
 async function onTargetLabelChange() {
   _attrCandidates = [];
   document.getElementById('attr-results').style.display = 'none';
   document.getElementById('attr-tbody').innerHTML = '';
+  if (_attrTargetFB) {
+    _attrTargetFB = null;
+    document.getElementById('attr-target-fb-container').innerHTML = '';
+  }
   await _loadRelSuggestions();
+  _initTargetFB();
+}
+
+// Target property predicates, read from the control at submit time rather than
+// cached — the same discipline as _attrCurrentAnchor, and for the same reason.
+//
+// An invalid definition (no label, or a condition with no property) sends
+// nothing: the backend would reject the whole request with a 400 that names an
+// identifier the user never typed. runAttribution says so rather than letting
+// an unfiltered result set pass for a filtered one.
+function _attrTargetConditions() {
+  if (!_attrTargetFB) return [];
+  const fb = _attrTargetFB;
+  if (typeof fb.validate === 'function') {
+    const v = fb.validate();
+    if (!v.valid) return [];
+  }
+  const def = fb.getFilterDef();
+  return (def.blocks && def.blocks[0] && def.blocks[0].conditions) || [];
+}
+
+// Whether the builder is holding something it refused to send, so the caller
+// can say so instead of quietly returning candidates that were never filtered.
+function _attrTargetConditionsDropped() {
+  if (!_attrTargetFB || typeof _attrTargetFB.validate !== 'function') return false;
+  if (_attrTargetFB.validate().valid) return false;
+  const def = _attrTargetFB.getFilterDef();
+  return !!(def.blocks && def.blocks[0]
+            && (def.blocks[0].conditions || []).length);
 }
 
 async function _loadAnchors(anchorLabel) {
@@ -3989,8 +4102,9 @@ function selectAttrAnchor(name) {
 async function runAttribution() {
   const anchor = _attrCurrentAnchor();
   if (!anchor) { alert('Select an anchor first.'); return; }
-  const keywords = [...document.querySelectorAll('.attr-mod:checked')].map(cb => cb.value);
   const labmates = document.getElementById('attr-labmates').checked;
+  const targetConditions = _attrTargetConditions();
+  const droppedConditions = _attrTargetConditionsDropped();
   const btn = document.getElementById('attr-find-btn');
 
   btn.disabled = true;
@@ -4003,15 +4117,18 @@ async function runAttribution() {
         anchor_name: anchor,
         anchor_label: _attrAnchorLabel(),
         target_label: _attrTargetLabel(),
-        modality_keywords: keywords,
         include_labmates: labmates,
+        target_conditions: targetConditions,
       }),
     });
     const d = await r.json();
     if (!r.ok) { _attrSetStatus(d.error || `Error ${r.status}`); return; }
     _attrCandidates = d.candidates || [];
     _renderAttrCandidates();
-    _attrSetStatus(`${d.total} candidate${d.total !== 1 ? 's' : ''} found`);
+    _attrSetStatus(`${d.total} candidate${d.total !== 1 ? 's' : ''} found`
+      + (droppedConditions
+         ? ' — target conditions were incomplete and not applied'
+         : ''));
     document.getElementById('attr-confirm-msg').textContent = '';
     document.getElementById('attr-results').style.display = 'block';
   } catch (e) {

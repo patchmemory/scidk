@@ -310,6 +310,202 @@ def test_list_anchors_filtered_is_one_round_trip():
 
 
 # ---------------------------------------------------------------------------
+# _fetch_folders — target property conditions
+# ---------------------------------------------------------------------------
+#
+# These conditions become raw Cypher, so what is tested here is the same
+# boundary as everywhere else in this file: which parts are whitelisted and
+# interpolated, and which travel as bound parameters. Whether the generated
+# clause selects the right rows is the database's business and needs a live
+# graph — a fake driver returns its canned rows whatever the WHERE says.
+
+def _fetch_query(driver):
+    """The query text and params from the one call _fetch_folders made."""
+    assert len(driver.queries) == 1, "should be a single round trip"
+    return driver.queries[0]
+
+
+def test_fetch_folders_without_conditions_is_unchanged():
+    # The whole point of the parameter being optional: every existing caller
+    # must produce byte-identical Cypher and the same two bound params.
+    svc, driver = _svc([])
+    svc._fetch_folders(None, ['Zhang Wei'], 'Folder')
+    query, params = _fetch_query(driver)
+
+    assert params == {'sources': None, 'needles': ['zhang wei']}
+    assert 'AND f.' not in query
+    assert '$v0' not in query
+
+
+def test_fetch_folders_with_an_empty_condition_list_is_unchanged():
+    # An empty list is what the panel sends when the user built no conditions,
+    # and it must be indistinguishable from omitting the argument.
+    svc, driver = _svc([])
+    svc._fetch_folders(None, ['Zhang Wei'], 'Folder', target_conditions=[])
+    empty_query, empty_params = _fetch_query(driver)
+
+    svc2, driver2 = _svc([])
+    svc2._fetch_folders(None, ['Zhang Wei'], 'Folder')
+    base_query, base_params = _fetch_query(driver2)
+
+    assert empty_query == base_query
+    assert empty_params == base_params
+
+
+def test_fetch_folders_appends_a_contains_condition_as_an_and_clause():
+    svc, driver = _svc([])
+    svc._fetch_folders(None, ['Zhang Wei'], 'Folder', target_conditions=[
+        {'property': 'path', 'operator': 'contains', 'value': 'vevo'},
+    ])
+    query, params = _fetch_query(driver)
+
+    # A further predicate on f, which the MATCH already binds — the query's
+    # shape does not change, only its WHERE.
+    assert 'AND f.path CONTAINS $v0' in query
+    assert query.count('MATCH') == 1
+    assert params['v0'] == 'vevo'
+    # The name and source filters are untouched.
+    assert params['needles'] == ['zhang wei']
+    assert params['sources'] is None
+    assert 'any(v IN $needles WHERE toLower(f.path) CONTAINS v)' in query
+
+
+def test_fetch_folders_appends_a_value_less_condition():
+    # 'is present' binds nothing, so it must not consume a parameter slot.
+    svc, driver = _svc([])
+    svc._fetch_folders(None, ['Zhang Wei'], 'Folder', target_conditions=[
+        {'property': 'host_id', 'operator': 'is_not_null'},
+    ])
+    query, params = _fetch_query(driver)
+
+    assert 'AND f.host_id IS NOT NULL' in query
+    assert '$v0' not in query
+    assert set(params) == {'sources', 'needles'}
+
+
+def test_fetch_folders_appends_a_between_condition_binding_both_bounds():
+    svc, driver = _svc([])
+    svc._fetch_folders(None, ['Zhang Wei'], 'Folder', target_conditions=[
+        {'property': 'size_bytes', 'operator': 'between', 'value': [1000, 50000]},
+    ])
+    query, params = _fetch_query(driver)
+
+    assert 'AND f.size_bytes >= $v0 AND f.size_bytes <= $v1' in query
+    # Numbers stay numbers: Cypher never matches the string "1000" against 1000.
+    assert params['v0'] == 1000.0
+    assert params['v1'] == 50000.0
+
+
+def test_fetch_folders_numbers_parameters_across_several_conditions():
+    # Each condition takes the next free slot, and 'between' takes two — an
+    # off-by-one here would silently compare against the wrong value.
+    svc, driver = _svc([])
+    svc._fetch_folders(None, ['Zhang Wei'], 'Folder', target_conditions=[
+        {'property': 'path',    'operator': 'contains',    'value': 'vevo'},
+        {'property': 'host_id', 'operator': 'is_not_null'},
+        {'property': 'size',    'operator': 'between',     'value': [10, 20]},
+        {'property': 'name',    'operator': 'starts_with', 'value': 'scan'},
+    ])
+    query, params = _fetch_query(driver)
+
+    assert 'AND f.path CONTAINS $v0' in query
+    assert 'AND f.host_id IS NOT NULL' in query
+    assert 'AND f.size >= $v1 AND f.size <= $v2' in query
+    assert 'AND f.name STARTS WITH $v3' in query
+    assert params['v0'] == 'vevo'
+    assert params['v1'] == 10.0
+    assert params['v2'] == 20.0
+    assert params['v3'] == 'scan'
+
+
+def test_fetch_folders_condition_params_do_not_collide_with_sources_or_needles():
+    svc, driver = _svc([])
+    svc._fetch_folders(['host-a'], ['Zhang Wei'], 'Folder', target_conditions=[
+        {'property': 'path', 'operator': 'contains', 'value': 'vevo'},
+    ])
+    _query, params = _fetch_query(driver)
+
+    assert params == {
+        'sources': ['host-a'],
+        'needles': ['zhang wei'],
+        'v0': 'vevo',
+    }
+
+
+@pytest.mark.parametrize('bad_property', [
+    'path) DELETE (n',
+    'path OR 1=1',
+    'f.path',
+    '',
+    None,
+    123,
+])
+def test_fetch_folders_validates_the_condition_property(bad_property):
+    # The key is interpolated, so this is the injection boundary.
+    svc, driver = _svc([])
+    with pytest.raises(ValueError):
+        svc._fetch_folders(None, ['Zhang Wei'], 'Folder', target_conditions=[
+            {'property': bad_property, 'operator': 'contains', 'value': 'x'},
+        ])
+    assert driver.queries == [], "must not reach the database"
+
+
+def test_fetch_folders_rejects_an_unknown_operator():
+    svc, driver = _svc([])
+    with pytest.raises(ValueError):
+        svc._fetch_folders(None, ['Zhang Wei'], 'Folder', target_conditions=[
+            {'property': 'path', 'operator': 'sounds_like', 'value': 'x'},
+        ])
+    assert driver.queries == []
+
+
+def test_fetch_folders_with_no_usable_variants_never_queries():
+    # The early return precedes condition building, so a caller with conditions
+    # and no needles still costs nothing.
+    svc, driver = _svc([])
+    assert svc._fetch_folders(None, ['ab'], 'Folder', target_conditions=[
+        {'property': 'path', 'operator': 'contains', 'value': 'vevo'},
+    ]) == []
+    assert driver.queries == []
+
+
+# ---------------------------------------------------------------------------
+# get_candidates — target conditions pass-through
+# ---------------------------------------------------------------------------
+
+def test_get_candidates_passes_target_conditions_to_fetch_folders():
+    svc, _driver = _svc([])
+    seen = {}
+
+    def _spy(sources, variants, target_label=None, target_conditions=None):
+        seen['conditions'] = target_conditions
+        return []
+
+    svc._fetch_folders = _spy
+    svc._get_labmates = lambda *a, **k: []
+    conditions = [{'property': 'path', 'operator': 'contains', 'value': 'vevo'}]
+    svc.get_candidates('Zhang Wei', include_labmates=False,
+                       target_conditions=conditions)
+
+    assert seen['conditions'] == conditions
+
+
+def test_get_candidates_defaults_target_conditions_to_none():
+    svc, _driver = _svc([])
+    seen = {}
+
+    def _spy(sources, variants, target_label=None, target_conditions=None):
+        seen['conditions'] = target_conditions
+        return []
+
+    svc._fetch_folders = _spy
+    svc._get_labmates = lambda *a, **k: []
+    svc.get_candidates('Zhang Wei', include_labmates=False)
+
+    assert seen['conditions'] is None
+
+
+# ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
@@ -339,6 +535,10 @@ class _StubService:
                      filter_property=None, filter_value=None):
         self.calls.append(('anchors', anchor_label, filter_property, filter_value))
         return self._anchors
+
+    def get_candidates(self, **kwargs):
+        self.calls.append(('candidates', kwargs))
+        return []
 
 
 @pytest.fixture()
@@ -513,6 +713,80 @@ def test_anchors_route_treats_blank_filter_params_as_absent(client, stub_service
 
     assert resp.status_code == 200
     assert svc.calls == [('anchors', DEFAULT_ANCHOR_LABEL, None, None)]
+
+
+def test_candidates_route_passes_target_conditions_through(client, stub_service):
+    svc = stub_service(_StubService())
+    conditions = [{'property': 'path', 'operator': 'contains', 'value': 'vevo'}]
+    resp = client.post('/api/files/attribution/candidates', json={
+        'anchor_name': 'Zhang Wei',
+        'target_conditions': conditions,
+    })
+
+    assert resp.status_code == 200
+    kind, kwargs = svc.calls[0]
+    assert kind == 'candidates'
+    assert kwargs['target_conditions'] == conditions
+
+
+@pytest.mark.parametrize('body_extra', [
+    {},                            # omitted entirely — the existing contract
+    {'target_conditions': None},
+    {'target_conditions': []},     # what the panel sends with nothing built
+])
+def test_candidates_route_without_conditions_sends_none(client, stub_service,
+                                                        body_extra):
+    # An empty list means "no conditions", which the service spells None.
+    svc = stub_service(_StubService())
+    body = {'anchor_name': 'Zhang Wei'}
+    body.update(body_extra)
+    resp = client.post('/api/files/attribution/candidates', json=body)
+
+    assert resp.status_code == 200
+    _kind, kwargs = svc.calls[0]
+    assert kwargs['target_conditions'] is None
+
+
+@pytest.mark.parametrize('bad', [
+    'path contains vevo',
+    {'property': 'path'},
+    42,
+    True,
+])
+def test_candidates_route_rejects_target_conditions_that_are_not_a_list(
+        client, stub_service, bad):
+    # A string or dict would otherwise iterate into per-character or per-key
+    # conditions and fail with an identifier error naming something the caller
+    # never sent.
+    svc = stub_service(_StubService())
+    resp = client.post('/api/files/attribution/candidates', json={
+        'anchor_name': 'Zhang Wei',
+        'target_conditions': bad,
+    })
+
+    assert resp.status_code == 400
+    assert 'target_conditions' in resp.get_json()['error']
+    assert svc.calls == [], "must not reach the service"
+
+
+def test_candidates_route_reports_an_illegal_condition_property_as_400(
+        client, stub_service):
+    class _Raising(_StubService):
+        def get_candidates(self, **kwargs):
+            self.calls.append(('candidates', kwargs))
+            raise ValueError("identifier 'path) DELETE (n' is not valid")
+
+    svc = stub_service(_Raising())
+    resp = client.post('/api/files/attribution/candidates', json={
+        'anchor_name': 'Zhang Wei',
+        'target_conditions': [
+            {'property': 'path) DELETE (n', 'operator': 'contains', 'value': 'x'},
+        ],
+    })
+
+    assert resp.status_code == 400
+    assert 'error' in resp.get_json()
+    assert svc.calls, "the service is where the property is whitelisted"
 
 
 def test_attribution_routes_are_registered(client):

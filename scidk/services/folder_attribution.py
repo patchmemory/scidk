@@ -33,7 +33,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
-from .filter_builder import _validate_identifier, _validate_rel_type
+from .filter_builder import (
+    _operator_to_clause,
+    _validate_identifier,
+    _validate_rel_type,
+)
 
 __all__ = [
     "DEFAULT_ANCHOR_LABEL",
@@ -353,6 +357,7 @@ class FolderAttributionService:
         sources:           Optional[List[str]] = None,
         anchor_label:      str = DEFAULT_ANCHOR_LABEL,
         target_label:      str = DEFAULT_TARGET_LABEL,
+        target_conditions: Optional[List[dict]] = None,
     ) -> List[AttributionCandidate]:
         """Rank ``target_label`` nodes that may belong to ``anchor_name``.
 
@@ -369,12 +374,17 @@ class FolderAttributionService:
             target_label: node label candidates are drawn from. Whitelisted
                 before it reaches Cypher. Must carry ``path`` and be reachable
                 from a ``:Scan`` by ``SCANNED_IN``.
+            target_conditions: further property predicates the target node must
+                satisfy, as ``{"property", "operator", "value"}`` dicts. See
+                :meth:`_fetch_folders`. They narrow *which* candidates come
+                back; they do not affect how the ones that do are scored.
 
         Returns:
             Candidates sorted HIGH -> MED -> LOW, shallowest first within a tier.
 
         Raises:
-            ValueError: either label is not a legal Cypher identifier.
+            ValueError: either label is not a legal Cypher identifier, or a
+                target condition names an illegal property or unknown operator.
         """
         label = _validate_identifier(anchor_label)
         target = _validate_identifier(target_label)
@@ -394,7 +404,8 @@ class FolderAttributionService:
             return []
 
         keywords = self._resolve_keywords(modality_keywords)
-        folders = self._fetch_folders(sources, variants + labmate_variants, target)
+        folders = self._fetch_folders(sources, variants + labmate_variants, target,
+                                      target_conditions=target_conditions)
 
         candidates: List[AttributionCandidate] = []
         seen = set()
@@ -542,7 +553,22 @@ class FolderAttributionService:
         return len(relative.split('/')) if relative else 0
 
     def _score(self, depth, variant, is_labmate, has_modality):
-        """Confidence tier plus the human-readable reason behind it."""
+        """Confidence tier plus the human-readable reason behind it.
+
+        ``has_modality`` is now ``False`` for every call the attribution panel
+        makes: the modality checkboxes are gone, replaced by target property
+        filters (``target_conditions``), which express the same thing --
+        ``path contains "vevo"`` -- and a great deal more besides. The
+        parameter, ``modality_keywords``, and the branch below all stay: they
+        are the API's, not the panel's, and a caller that supplies
+        ``modality_keywords`` directly still gets the promotion.
+
+        The consequence to keep in view is that with nothing setting the flag,
+        a labmate match can no longer reach MED -- it is always LOW. That is the
+        honest reading of the evidence (a labmate's name in a path, and nothing
+        else), but it does flatten the labmate tier to a single value, so if a
+        second signal is ever wanted for related matches this is where it goes.
+        """
         if is_labmate:
             if has_modality:
                 return 'MED', f"labmate folder · '{variant}' + modality keyword"
@@ -585,7 +611,8 @@ class FolderAttributionService:
         self,
         sources,
         variants,
-        target_label: str = DEFAULT_TARGET_LABEL,
+        target_label:      str = DEFAULT_TARGET_LABEL,
+        target_conditions: Optional[List[dict]] = None,
     ) -> List[dict]:
         """Targets whose path contains any name variant, optionally scoped by source.
 
@@ -593,16 +620,49 @@ class FolderAttributionService:
         ``:Folder`` back over the wire is not viable at this graph's size. Variants
         arrive lowercased as a bound list -- never interpolated. ``target_label``
         must already be whitelisted by the caller.
+
+        Args:
+            target_conditions: extra predicates on the target node, as
+                ``{"property", "operator", "value"}`` dicts -- the shape
+                :func:`~scidk.services.filter_builder._operator_to_clause`
+                consumes and the ``FilterBuilder`` component emits. They append
+                as further ``AND`` terms on the same ``MATCH``: every one is a
+                predicate on ``f``, which is already in scope, so nothing about
+                the query's shape changes. Conditions prune in the database, so
+                a selective one is a pure win -- fewer rows on the wire and
+                fewer to score.
+
+                Property keys cannot travel as bound parameters, so each is
+                whitelisted and interpolated; values are bound as ``$v0``,
+                ``$v1``, ... which cannot collide with ``$sources`` or
+                ``$needles``.
+
+        Raises:
+            ValueError: a condition names a property that is not a legal Cypher
+                identifier, or an operator the generator does not know.
         """
         needles = sorted({v.lower() for v in variants if len(v) >= MIN_VARIANT_LEN})
         if not needles:
             return []
+
+        cond_params: Dict[str, object] = {}
+        cond_clauses: List[str] = []
+        param_idx = [0]
+        for cond in (target_conditions or []):
+            cond = cond or {}
+            prop = _validate_identifier(cond.get('property'))
+            cond_clauses.append(_operator_to_clause(
+                f"f.{prop}", cond.get('operator'), cond.get('value'),
+                cond_params, param_idx,
+            ))
+        extra_where = "".join(f"\n                  AND {c}" for c in cond_clauses)
+
         with self._session() as session:
             result = session.run(f"""
                 MATCH (f:{target_label})-[:SCANNED_IN]->(s:Scan)
                 WHERE ($sources IS NULL OR s.host_id IN $sources)
-                  AND any(v IN $needles WHERE toLower(f.path) CONTAINS v)
+                  AND any(v IN $needles WHERE toLower(f.path) CONTAINS v){extra_where}
                 RETURN f.path AS path, f.name AS name,
                        s.host_id AS host_id, s.path AS scan_root
-            """, sources=(sources or None), needles=needles)
+            """, sources=(sources or None), needles=needles, **cond_params)
             return [dict(r) for r in result]

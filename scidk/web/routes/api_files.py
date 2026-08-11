@@ -2300,13 +2300,19 @@ def attribution_candidates():
         anchor_name (str, required), modality_keywords (list[str]),
         include_labmates (bool, default true), sources (list[str] of host_id),
         anchor_label (str, default "Investigator"),
-        target_label (str, default "Folder").
+        target_label (str, default "Folder"),
+        target_conditions (list[dict]) -- property predicates the target node
+        must satisfy, each ``{"property", "operator", "value"}``. This is the
+        shape the ``FilterBuilder`` component emits and the Cypher generator
+        consumes; the property key is whitelisted before it is interpolated and
+        the value is bound, so an illegal key or unknown operator is a 400.
         ``person_name`` is accepted as a deprecated spelling of ``anchor_name``.
 
     Returns:
         200: {"anchor_name": ..., "anchor_label": ..., "target_label": ...,
               "total": n, "candidates": [...]}
-        400: anchor_name missing, or either label not a legal identifier
+        400: anchor_name missing, either label not a legal identifier, or
+             target_conditions not a list / naming an illegal property
         501: Neo4j not configured
         502: query failed
     """
@@ -2316,6 +2322,13 @@ def attribution_candidates():
     target_label = (body.get('target_label') or DEFAULT_TARGET_LABEL).strip()
     if not anchor_name:
         return jsonify({'error': 'anchor_name is required'}), 400
+
+    # Checked here rather than left to the service: a bare string or dict would
+    # otherwise iterate into per-character or per-key conditions and come back
+    # as a confusing identifier error about something the caller never sent.
+    target_conditions = body.get('target_conditions') or None
+    if target_conditions is not None and not isinstance(target_conditions, list):
+        return jsonify({'error': 'target_conditions must be a list'}), 400
 
     try:
         with _attribution_service() as svc:
@@ -2328,6 +2341,7 @@ def attribution_candidates():
                 sources           = body.get('sources'),
                 anchor_label      = anchor_label,
                 target_label      = target_label,
+                target_conditions = target_conditions,
             )
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
