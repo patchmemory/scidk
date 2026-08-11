@@ -585,10 +585,34 @@
     </select>
   </div>
 
-  <!-- Anchor picker -->
+  <!-- Anchor picker. Two ways to narrow the list, which compose: a server-side
+       filter on any property those nodes carry, then a client-side name search
+       over whatever came back. -->
   <div style="margin-bottom:10px;">
-    <label for="attr-search"><strong>Anchor</strong></label><br>
-    <input id="attr-search" type="text" placeholder="Type to filter…"
+    <label><strong>Anchor</strong></label><br>
+
+    <!-- Both pickers follow the data rather than a hardcoded list: keys from
+         /api/files/attribution/anchor-properties, then that key's values from
+         /api/files/attribution/anchor-property-values. The value picker stays
+         disabled until a property is chosen — there is nothing to offer before
+         then — and picking a value filters immediately, so there is no Apply. -->
+    <div style="display:flex; gap:6px; align-items:center; margin-bottom:4px; max-width:400px;">
+      <select id="attr-filter-prop-sel" data-testid="attr-filter-prop-sel"
+              onchange="_loadAnchorPropertyValues()"
+              style="padding:4px 8px; border:1px solid #ccc; border-radius:4px; flex:1;">
+        <option value="">Filter by property…</option>
+      </select>
+      <select id="attr-filter-val-sel" data-testid="attr-filter-val-sel"
+              onchange="applyAnchorFilter()"
+              style="padding:4px 8px; border:1px solid #ccc; border-radius:4px; flex:2;"
+              disabled>
+        <option value="">Select a value…</option>
+      </select>
+      <button type="button" onclick="clearAnchorFilter()"
+              class="btn btn-sm btn-outline-secondary">Clear</button>
+    </div>
+
+    <input id="attr-search" type="text" placeholder="Search by name…"
            oninput="filterAttrAnchors(this.value)"
            style="padding:4px 8px; border:1px solid #ccc; border-radius:4px; width:250px;">
     <select id="attr-anchor-sel" size="4" data-testid="attr-anchor-sel"
@@ -3648,13 +3672,27 @@ const ATTR_DEFAULT_ANCHOR_LABEL = 'Investigator';
 const ATTR_DEFAULT_TARGET_LABEL = 'Folder';
 
 let _attrAnchors        = [];
-let _attrSelectedAnchor = null;
 let _attrCandidates     = [];
 let _attrLabelsLoaded   = false;
+// The property-filtered subset of _attrAnchors, or null when no property filter
+// is active. Kept beside the full list rather than replacing it, so Clear can
+// restore every anchor without another round trip.
+let _attrAnchorFilter   = null;
 
 function _attrAnchorLabel() {
   const sel = document.getElementById('attr-anchor-label-sel');
   return (sel && sel.value) || ATTR_DEFAULT_ANCHOR_LABEL;
+}
+
+// The selected anchor is read from the control, never cached. Every path that
+// re-renders the listbox (property filter, name search, label change) assigns
+// .innerHTML, which fires no change event — a cached copy would survive the
+// re-render and confirm would then write edges from an anchor no longer on
+// screen. Reading .value makes that state unrepresentable: it is '' whenever
+// nothing is selected, including right after a re-render.
+function _attrCurrentAnchor() {
+  const sel = document.getElementById('attr-anchor-sel');
+  return sel ? sel.value : '';
 }
 
 function _attrTargetLabel() {
@@ -3678,6 +3716,7 @@ async function openAttributionPanel() {
   panel.style.display = 'block';
   if (!_attrLabelsLoaded) await _loadSchemaLabels();
   if (_attrAnchors.length === 0) await _loadAnchors(_attrAnchorLabel());
+  await _loadAnchorProperties();
   await _loadRelSuggestions();
 }
 
@@ -3709,15 +3748,25 @@ async function _loadSchemaLabels() {
 }
 
 // Switching the anchor label invalidates the anchor list, any results below it,
-// and the relationship suggestions (which depend on both labels).
+// the relationship suggestions (which depend on both labels), and the property
+// filter — the new label carries its own properties, so both the picker's
+// options and any filter built from the old ones are gone.
 async function onAnchorLabelChange() {
   _attrAnchors = [];
-  _attrSelectedAnchor = null;
   _attrCandidates = [];
+  _attrAnchorFilter = null;
+  document.getElementById('attr-search').value = '';
+  const anchorSel = document.getElementById('attr-anchor-sel');
+  if (anchorSel) anchorSel.innerHTML = '';
   document.getElementById('attr-anchor-label').textContent = '';
   document.getElementById('attr-results').style.display = 'none';
   document.getElementById('attr-tbody').innerHTML = '';
   await _loadAnchors(_attrAnchorLabel());
+  await _loadAnchorProperties();
+  // After, not before: _loadAnchorProperties may keep the old property selected
+  // if the new label shares it, and its values then have to come from the new
+  // label's nodes. With no property kept this just empties the value picker.
+  await _loadAnchorPropertyValues();
   await _loadRelSuggestions();
 }
 
@@ -3738,6 +3787,7 @@ async function _loadAnchors(anchorLabel) {
     const d = await r.json();
     if (!r.ok) { _attrSetStatus(d.error || `Error ${r.status}`); return; }
     _attrAnchors = d.anchors || [];
+    _attrAnchorFilter = null;   // a fresh full list supersedes any property filter
     _renderAnchors(_attrAnchors);
     _attrSetStatus(_attrAnchors.length
       ? ''
@@ -3745,6 +3795,111 @@ async function _loadAnchors(anchorLabel) {
   } catch (e) {
     _attrSetStatus('Could not load anchors: ' + e);
   }
+}
+
+// Which properties this label's nodes carry, commonest first. A failure here
+// leaves the picker with its placeholder — the panel still works without it.
+async function _loadAnchorProperties() {
+  const sel = document.getElementById('attr-filter-prop-sel');
+  if (!sel) return;
+  const previous = sel.value;
+  try {
+    const r = await fetch(window.SCIDK_BASE
+      + '/api/files/attribution/anchor-properties?anchor_label='
+      + encodeURIComponent(_attrAnchorLabel()));
+    const d = await r.json();
+    if (!r.ok) return;
+    const props = d.properties || [];
+    sel.innerHTML = '<option value="">Filter by property…</option>'
+      + props.map(p => `<option value="${_attrEsc(p)}">${_attrEsc(p)}</option>`).join('');
+    // Keep the user's choice selected if the new label happens to share it.
+    if (previous && props.includes(previous)) sel.value = previous;
+  } catch (e) {
+    console.warn('Could not load anchor properties:', e);
+  }
+}
+
+// Empty the value picker and lock it. Its options only mean anything for one
+// (label, property) pair, so anything that invalidates that pair comes through
+// here rather than leaving stale values selectable.
+function _attrResetValuePicker() {
+  const sel = document.getElementById('attr-filter-val-sel');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Select a value…</option>';
+  sel.disabled = true;
+}
+
+// Which values the chosen property actually takes on this label's nodes. Run
+// whenever the property changes, so the user picks from the graph instead of
+// guessing a substring. A failure leaves the picker disabled — the anchor list
+// is still there, unfiltered, which is the state the user came from.
+async function _loadAnchorPropertyValues() {
+  const propSel = document.getElementById('attr-filter-prop-sel');
+  const valSel  = document.getElementById('attr-filter-val-sel');
+  if (!valSel) return;
+  const prop = propSel ? propSel.value : '';
+
+  _attrResetValuePicker();
+  if (!prop) return;
+
+  try {
+    const qs = new URLSearchParams({
+      anchor_label: _attrAnchorLabel(),
+      property_key: prop,
+    });
+    const r = await fetch(window.SCIDK_BASE
+      + '/api/files/attribution/anchor-property-values?' + qs.toString());
+    const d = await r.json();
+    if (!r.ok) { console.warn('Could not load property values:', d.error); return; }
+    const values = d.values || [];
+    valSel.innerHTML = '<option value="">Select a value…</option>'
+      + values.map(v => `<option value="${_attrEsc(v)}">${_attrEsc(v)}</option>`).join('');
+    // Nothing to choose from stays locked, and says so rather than looking broken.
+    valSel.disabled = (values.length === 0);
+    if (values.length === 0) _attrSetStatus(`No values for ${prop} on :${_attrAnchorLabel()}.`);
+  } catch (e) {
+    console.warn('Could not load property values:', e);
+  }
+}
+
+// Narrow the anchor list in the database, on any property those nodes carry.
+// Fired by the value picker's change event, so selecting is applying — the
+// value came from the graph, so there is nothing to confirm before running it.
+async function applyAnchorFilter() {
+  const prop = document.getElementById('attr-filter-prop-sel').value;
+  const val  = document.getElementById('attr-filter-val-sel').value;
+  if (!prop || !val) return;   // back on the placeholder — nothing to filter by
+  _attrSetStatus('Filtering anchors…');
+  try {
+    const qs = new URLSearchParams({
+      anchor_label:    _attrAnchorLabel(),
+      filter_property: prop,
+      filter_value:    val,
+    });
+    const r = await fetch(window.SCIDK_BASE
+      + '/api/files/attribution/anchors?' + qs.toString());
+    const d = await r.json();
+    if (!r.ok) { _attrSetStatus(d.error || `Error ${r.status}`); return; }
+    _attrAnchorFilter = d.anchors || [];
+    // Not _renderAnchors: the name search composes with the property filter,
+    // so re-render through the search box rather than over it.
+    filterAttrAnchors();
+    _attrSetStatus(_attrAnchorFilter.length
+      ? `${_attrAnchorFilter.length} anchor(s) matched ${prop} = "${val}"`
+      : `No :${_attrAnchorLabel()} nodes with ${prop} = "${val}"`);
+  } catch (e) {
+    _attrSetStatus('Filter failed: ' + e);
+  }
+}
+
+// Drop the property filter and the name search, back to every loaded anchor.
+function clearAnchorFilter() {
+  _attrAnchorFilter = null;
+  document.getElementById('attr-filter-prop-sel').value = '';
+  _attrResetValuePicker();
+  document.getElementById('attr-search').value = '';
+  _renderAnchors(_attrAnchors);
+  _attrSetStatus('');
 }
 
 // Suggestions are seeds for the label pair merged with what the graph already
@@ -3789,26 +3944,51 @@ function toggleCustomRel() {
     hidden ? 'use suggestion' : 'or type custom';
 }
 
+// The option value stays the bare name — that is what selectAttrAnchor, the
+// candidate search and confirm all key on. A filtered list also carries the
+// value that matched, shown in the label so filtering by email or lab says
+// *which* node is about to be picked.
 function _renderAnchors(list) {
-  document.getElementById('attr-anchor-sel').innerHTML = list.map(p =>
-    `<option value="${_attrEsc(p.name)}">${_attrEsc(p.name)}</option>`
-  ).join('');
+  document.getElementById('attr-anchor-sel').innerHTML = list.map(p => {
+    const matched = p.matched_value;
+    const shown = (matched === null || matched === undefined
+                   || String(matched) === String(p.name))
+      ? p.name
+      : `${p.name} — ${matched}`;
+    return `<option value="${_attrEsc(p.name)}">${_attrEsc(shown)}</option>`;
+  }).join('');
+  // Assigning .innerHTML leaves the listbox with nothing selected, so pick the
+  // first option and render the span from it. The selection is then always
+  // either a name that is on screen or nothing at all.
+  selectAttrAnchor(list.length ? list[0].name : '');
 }
 
+// Name search runs over whatever the property filter left behind, so the two
+// narrow the list together. Called with no argument to re-render after the
+// property filter changes, reading the search box as it stands.
 function filterAttrAnchors(q) {
-  const needle = (q || '').toLowerCase();
-  _renderAnchors(
-    _attrAnchors.filter(p => (p.name || '').toLowerCase().includes(needle))
-  );
+  const raw = (q === undefined || q === null)
+    ? document.getElementById('attr-search').value
+    : q;
+  const needle = (raw || '').toLowerCase();
+  const base = _attrAnchorFilter || _attrAnchors;
+  _renderAnchors(needle
+    ? base.filter(p => (p.name || '').toLowerCase().includes(needle))
+    : base);
 }
 
+// Selection lives on the control; this only moves it and re-renders the span,
+// which is a pure view of the control's value.
 function selectAttrAnchor(name) {
-  _attrSelectedAnchor = name;
-  document.getElementById('attr-anchor-label').textContent = '→ ' + name;
+  const sel = document.getElementById('attr-anchor-sel');
+  if (sel) sel.value = name || '';
+  const lbl = document.getElementById('attr-anchor-label');
+  if (lbl) lbl.textContent = name ? '→ ' + name : '';
 }
 
 async function runAttribution() {
-  if (!_attrSelectedAnchor) { alert('Select an anchor first.'); return; }
+  const anchor = _attrCurrentAnchor();
+  if (!anchor) { alert('Select an anchor first.'); return; }
   const keywords = [...document.querySelectorAll('.attr-mod:checked')].map(cb => cb.value);
   const labmates = document.getElementById('attr-labmates').checked;
   const btn = document.getElementById('attr-find-btn');
@@ -3820,7 +4000,7 @@ async function runAttribution() {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
-        anchor_name: _attrSelectedAnchor,
+        anchor_name: anchor,
         anchor_label: _attrAnchorLabel(),
         target_label: _attrTargetLabel(),
         modality_keywords: keywords,
@@ -3877,8 +4057,16 @@ async function runConfirm() {
     .filter(Boolean);
   if (!paths.length) { alert('Nothing selected.'); return; }
 
-  const btn = document.getElementById('attr-confirm-btn');
   const msg = document.getElementById('attr-confirm-msg');
+  // Validated here rather than trusting that the search ran against this anchor:
+  // this is the call that writes provenance edges, so it checks its own input.
+  const anchor = _attrCurrentAnchor();
+  if (!anchor) {
+    msg.textContent = 'No anchor selected — cannot write edges.';
+    return;
+  }
+
+  const btn = document.getElementById('attr-confirm-btn');
   btn.disabled = true;
   msg.textContent = 'Writing…';
   try {
@@ -3886,7 +4074,7 @@ async function runConfirm() {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
-        anchor_name: _attrSelectedAnchor,
+        anchor_name: anchor,
         anchor_label: _attrAnchorLabel(),
         target_label: _attrTargetLabel(),
         target_paths: paths,

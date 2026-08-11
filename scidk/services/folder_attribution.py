@@ -129,6 +129,8 @@ class FolderAttributionService:
     """Attribution against a live Neo4j graph.
 
     The caller owns the driver's lifetime; this class never closes it.
+    Construction is free of side effects -- it runs no queries, so the routes can
+    build one per request against a shared driver.
     """
 
     #: ``:Person`` backfill is process-wide state, not per-instance -- the
@@ -138,7 +140,6 @@ class FolderAttributionService:
     def __init__(self, neo4j_driver, database: Optional[str] = None):
         self.driver = neo4j_driver
         self.database = database
-        self.ensure_person_label()
 
     def _session(self):
         if self.database:
@@ -153,6 +154,10 @@ class FolderAttributionService:
 
         Idempotent -- the ``WHERE NOT n:Person`` guard means a second run writes
         nothing. Runs once per process unless ``force`` is set.
+
+        Called from ``create_app()`` at startup, deliberately not from
+        ``__init__``: the flag below is per-process, so a constructor call put
+        these two writes on the first attribution request of every worker.
         """
         if FolderAttributionService._person_label_applied and not force:
             return
@@ -164,13 +169,57 @@ class FolderAttributionService:
     # ------------------------------------------------------------------
     # Public
 
-    def list_anchors(self, anchor_label: str = DEFAULT_ANCHOR_LABEL) -> List[dict]:
+    def list_anchors(
+        self,
+        anchor_label:    str = DEFAULT_ANCHOR_LABEL,
+        filter_property: Optional[str] = None,
+        filter_value:    Optional[str] = None,
+    ) -> List[dict]:
         """Every named node carrying ``anchor_label``, name-ordered, with its labels.
 
+        Args:
+            anchor_label: node label anchors are drawn from. Whitelisted before
+                it reaches Cypher.
+            filter_property: keep only nodes whose value for this property
+                contains ``filter_value``. Whitelisted before it reaches Cypher
+                -- a property key cannot travel as a bound parameter, so it has
+                to be interpolated, so it has to be checked. Without it,
+                ``filter_value`` is ignored: there is nothing to match against.
+            filter_value: case-insensitive substring the property must contain,
+                the same matching rule :meth:`_fetch_folders` uses. Empty or
+                omitted matches every node that carries ``filter_property`` at
+                all -- the useful reading of "filter by email" before an email
+                has been typed.
+
+        Returns:
+            ``{"name", "labels"}`` per anchor, plus ``"matched_value"`` -- the
+            property value that matched -- when a property filter is in play.
+
         Raises:
-            ValueError: ``anchor_label`` is not a legal Cypher identifier.
+            ValueError: ``anchor_label`` or ``filter_property`` is not a legal
+                Cypher identifier.
         """
         label = _validate_identifier(anchor_label)
+
+        if filter_property:
+            prop = _validate_identifier(filter_property)
+            # ``p.name IS NOT NULL`` holds on this branch too, not just the
+            # unfiltered one: an anchor is picked, searched and written back by
+            # name (see :meth:`confirm`), so a nameless match cannot be used for
+            # anything and would only show up as a blank row in the picker.
+            with self._session() as session:
+                result = session.run(
+                    f"MATCH (p:{label}) "
+                    "WHERE p.name IS NOT NULL "
+                    f"  AND p.{prop} IS NOT NULL "
+                    f"  AND toLower(toString(p.{prop})) CONTAINS toLower($val) "
+                    "RETURN p.name AS name, labels(p) AS labels, "
+                    f"       p.{prop} AS matched_value "
+                    "ORDER BY p.name",
+                    val=(filter_value or '')
+                )
+                return [dict(r) for r in result]
+
         with self._session() as session:
             result = session.run(
                 f"MATCH (p:{label}) WHERE p.name IS NOT NULL "
@@ -178,6 +227,68 @@ class FolderAttributionService:
                 "ORDER BY p.name"
             )
             return [dict(r) for r in result]
+
+    def list_anchor_properties(self, anchor_label: str) -> List[str]:
+        """Property keys present on at least one ``anchor_label`` node, commonest first.
+
+        Populates the property picker in the attribution panel, so the user can
+        narrow anchors by whatever those nodes actually carry -- ``email``,
+        ``lab``, ``orcid`` -- instead of only by ``name``. Derived from the data
+        rather than declared anywhere: a deployment that adds a property to its
+        people gets it in the picker with no code change.
+
+        Counting and ordering happen in the database, in one round trip; a label
+        with no nodes is an empty list, not an error.
+
+        Raises:
+            ValueError: ``anchor_label`` is not a legal Cypher identifier.
+        """
+        label = _validate_identifier(anchor_label)
+        with self._session() as session:
+            result = session.run(f"""
+                MATCH (n:{label})
+                UNWIND keys(n) AS key
+                RETURN key, count(*) AS cnt
+                ORDER BY cnt DESC
+            """)
+            return [row['key'] for row in result if row['key']]
+
+    def list_anchor_property_values(
+        self,
+        anchor_label: str,
+        property_key: str,
+    ) -> List[str]:
+        """Distinct non-null values of ``property_key`` on ``anchor_label`` nodes, sorted.
+
+        Fills the value picker that sits beside the property picker, so narrowing
+        anchors by ``lab`` or ``email`` is a choice among what the graph holds
+        rather than a substring the user has to already know. Like
+        :meth:`list_anchor_properties`, the list is derived from the data, so a
+        deployment gets its own vocabulary with no code change.
+
+        Values come back as strings -- ``toString`` in the query rather than
+        ``str()`` here, so the distinctness and the ordering are the database's
+        and stay consistent for numeric or temporal properties. Distinctness is
+        over the *rendered* value: two nodes whose property differs only by type
+        collapse to one option, which is what a picker wants.
+
+        ``property_key`` cannot travel as a bound parameter, so it is
+        interpolated, so it is whitelisted first -- the same rule as the
+        ``filter_property`` branch of :meth:`list_anchors`.
+
+        Raises:
+            ValueError: either argument is not a legal Cypher identifier.
+        """
+        label = _validate_identifier(anchor_label)
+        prop = _validate_identifier(property_key)
+        with self._session() as session:
+            result = session.run(f"""
+                MATCH (n:{label})
+                WHERE n.{prop} IS NOT NULL
+                RETURN DISTINCT toString(n.{prop}) AS val
+                ORDER BY val
+            """)
+            return [row['val'] for row in result if row['val']]
 
     def get_relationship_suggestions(
         self,

@@ -2072,9 +2072,11 @@ _ATTR_NEO4J_UNCONFIGURED = {
 def _attribution_service():
     """Yield a :class:`FolderAttributionService`, or ``None`` if Neo4j is unconfigured.
 
-    The driver is opened per request and closed on the way out, matching the
-    ``/api/schema/*`` routes. Constructing the service also applies the shared
-    ``:Person`` label, but only on the first construction in this process.
+    The driver lives on ``app.extensions['scidk']`` and is reused across
+    requests -- opening one per request cost a TCP connect plus a Bolt handshake
+    on every attribution call. It is keyed by the connection parameters so that
+    reconfiguring Neo4j through Settings replaces the driver rather than pinning
+    attribution to the old server. Never closed here; the app owns its lifetime.
     """
     try:
         from neo4j import GraphDatabase  # type: ignore
@@ -2085,11 +2087,23 @@ def _attribution_service():
     if not uri:
         yield None
         return
-    driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
-    try:
-        yield FolderAttributionService(driver, database=database)
-    finally:
-        driver.close()
+    ext = _get_ext()
+    if ext is None:
+        yield None
+        return
+    key = (uri, user, pwd, auth_mode)
+    if ext.get('neo4j_driver') is None or ext.get('neo4j_driver_key') != key:
+        stale = ext.get('neo4j_driver')
+        if stale is not None:
+            try:
+                stale.close()
+            except Exception:
+                pass
+        ext['neo4j_driver'] = GraphDatabase.driver(
+            uri, auth=None if auth_mode == 'none' else (user, pwd)
+        )
+        ext['neo4j_driver_key'] = key
+    yield FolderAttributionService(ext['neo4j_driver'], database=database)
 
 
 @bp.get('/files/attribution/anchors')
@@ -2101,19 +2115,31 @@ def attribution_anchors():
         anchor_label (str): node label to draw anchors from. Defaults to
             ``Investigator``. Read from the query string rather than a body
             because this route is a GET.
+        filter_property (str): keep only anchors carrying this property, whose
+            value contains ``filter_value``. Omitted means no property filter.
+        filter_value (str): case-insensitive substring for ``filter_property``.
+            Ignored without it; empty with it matches every anchor that has the
+            property at all.
 
     Returns:
-        200: {"anchor_label": ..., "anchors": [{"name": ..., "labels": [...]}]}
-        400: anchor_label is not a legal Cypher identifier
+        200: {"anchor_label": ..., "anchors": [{"name": ..., "labels": [...]}]},
+             each anchor also carrying "matched_value" when filtered
+        400: anchor_label or filter_property is not a legal Cypher identifier
         501: Neo4j not configured
         502: query failed
     """
     anchor_label = (request.args.get('anchor_label') or DEFAULT_ANCHOR_LABEL).strip()
+    filter_property = (request.args.get('filter_property') or '').strip() or None
+    filter_value = (request.args.get('filter_value') or '').strip() or None
     try:
         with _attribution_service() as svc:
             if svc is None:
                 return jsonify(_ATTR_NEO4J_UNCONFIGURED), 501
-            anchors = svc.list_anchors(anchor_label=anchor_label)
+            anchors = svc.list_anchors(
+                anchor_label    = anchor_label,
+                filter_property = filter_property,
+                filter_value    = filter_value,
+            )
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
     except Exception as e:
@@ -2139,6 +2165,86 @@ def attribution_persons():
     payload = result[0].get_json()
     payload['persons'] = payload.get('anchors', [])
     return jsonify(payload), 200
+
+
+@bp.get('/files/attribution/anchor-properties')
+@require_role('admin', 'user')
+def attribution_anchor_properties():
+    """Property keys the anchor label's nodes actually carry, commonest first.
+
+    Feeds the property picker in the attribution panel, which pairs a key from
+    here with a substring to narrow the anchor list -- so an anchor can be found
+    by ``email`` or ``lab``, not only by ``name``.
+
+    Query params:
+        anchor_label (str): label to inspect. Defaults to ``Investigator``.
+
+    Returns:
+        200: {"anchor_label": ..., "properties": [...]}
+        400: anchor_label is not a legal Cypher identifier
+        501: Neo4j not configured
+        502: query failed
+    """
+    anchor_label = (request.args.get('anchor_label') or DEFAULT_ANCHOR_LABEL).strip()
+    try:
+        with _attribution_service() as svc:
+            if svc is None:
+                return jsonify(_ATTR_NEO4J_UNCONFIGURED), 501
+            props = svc.list_anchor_properties(anchor_label=anchor_label)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("attribution: listing anchor properties failed")
+        return jsonify({'error': f'neo4j query failed: {e}'}), 502
+
+    return jsonify({'anchor_label': anchor_label, 'properties': props}), 200
+
+
+@bp.get('/files/attribution/anchor-property-values')
+@require_role('admin', 'user')
+def attribution_anchor_property_values():
+    """Distinct values of one property across the anchor label's nodes.
+
+    The other half of the property filter: ``anchor-properties`` says which keys
+    exist, this says which values a chosen key takes, so the panel can offer a
+    dropdown instead of asking the user to guess a substring.
+
+    Unlike ``anchor-properties`` there is no default label -- a value list only
+    means anything against the label whose property it came from, so an omitted
+    ``anchor_label`` is a caller bug rather than something to guess at.
+
+    Query params:
+        anchor_label (str, required), property_key (str, required).
+
+    Returns:
+        200: {"anchor_label": ..., "property_key": ..., "values": [...]}
+        400: either param missing, or not a legal Cypher identifier
+        501: Neo4j not configured
+        502: query failed
+    """
+    anchor_label = (request.args.get('anchor_label') or '').strip()
+    property_key = (request.args.get('property_key') or '').strip()
+    if not anchor_label or not property_key:
+        return jsonify({
+            'error': 'anchor_label and property_key are both required'
+        }), 400
+
+    try:
+        with _attribution_service() as svc:
+            if svc is None:
+                return jsonify(_ATTR_NEO4J_UNCONFIGURED), 501
+            values = svc.list_anchor_property_values(anchor_label, property_key)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("attribution: listing anchor property values failed")
+        return jsonify({'error': f'neo4j query failed: {e}'}), 502
+
+    return jsonify({
+        'anchor_label': anchor_label,
+        'property_key': property_key,
+        'values':       values,
+    }), 200
 
 
 @bp.get('/files/attribution/relationship-suggestions')

@@ -267,6 +267,11 @@ def create_app():
     except Exception as e:
         app.logger.warning(f"Failed to load Neo4j settings from environment: {e}")
 
+    # Backfill the shared :Person label once here rather than on the first
+    # attribution request of every worker. Must follow the two hydration blocks
+    # above -- it reads whatever connection they resolved.
+    _ensure_person_label(app)
+
     # Feature flags for file indexing
     _ff_index = (os.environ.get('SCIDK_FEATURE_FILE_INDEX') or '').strip().lower() in (
         '1', 'true', 'yes', 'y', 'on'
@@ -383,6 +388,42 @@ def create_app():
     _release_startup_connections(app)
 
     return app
+
+
+def _ensure_person_label(app):
+    """Give every ``:Investigator`` and ``:User`` node the shared ``:Person`` label.
+
+    ``FolderAttributionService`` used to do this from ``__init__``, which meant
+    two ``MATCH/SET`` queries on the first attribution request of every worker,
+    because the guard flag is process-wide and does not survive a restart.
+
+    Opens its own driver and closes it before returning: under gunicorn
+    ``--preload`` this runs in the master process, so no connection may cross the
+    fork (see :func:`_release_startup_connections`). Every failure -- Neo4j
+    unconfigured, unreachable, driver not installed -- is logged and swallowed;
+    attribution is not on the boot path and must not be able to break it.
+    """
+    driver = None
+    try:
+        from neo4j import GraphDatabase  # type: ignore
+
+        from .services.folder_attribution import FolderAttributionService
+        from .web.helpers import get_neo4j_params
+
+        with app.app_context():
+            uri, user, pwd, database, auth_mode = get_neo4j_params()
+        if not uri:
+            return
+        driver = GraphDatabase.driver(uri, auth=None if auth_mode == 'none' else (user, pwd))
+        FolderAttributionService(driver, database=database).ensure_person_label()
+    except Exception as e:
+        app.logger.warning(f"Could not apply the :Person label at startup: {e}")
+    finally:
+        if driver is not None:
+            try:
+                driver.close()
+            except Exception:
+                pass
 
 
 def _release_startup_connections(app):

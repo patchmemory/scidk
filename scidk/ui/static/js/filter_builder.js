@@ -142,7 +142,7 @@ class FilterBuilder {
 
   async _loadLabels() {
     try {
-      const r = await fetch('/api/schema/labels');
+      const r = await fetch((window.SCIDK_BASE || '') + '/api/schema/labels');
       const d = await r.json();
       this.labelList = d.labels || [];
     } catch (e) { console.warn('FilterBuilder: could not load labels', e); }
@@ -150,7 +150,7 @@ class FilterBuilder {
 
   async _loadRelTypes() {
     try {
-      const r = await fetch('/api/schema/relationship-types');
+      const r = await fetch((window.SCIDK_BASE || '') + '/api/schema/relationship-types');
       const d = await r.json();
       this.relTypeList = d.relationship_types || [];
     } catch (e) { console.warn('FilterBuilder: could not load rel types', e); }
@@ -522,8 +522,8 @@ class FilterBuilder {
   async _fetchProps(label) {
     if (this.schemaCache[label]) return;
     try {
-      const r = await fetch(
-        `/api/schema/property-types?label=${encodeURIComponent(label)}`);
+      const r = await fetch((window.SCIDK_BASE || '')
+        + `/api/schema/property-types?label=${encodeURIComponent(label)}`);
       const d = await r.json();
       this.schemaCache[label] = d.properties || [];
     } catch (e) {
@@ -538,7 +538,7 @@ class FilterBuilder {
   async preview() {
     const filterDef = this.getFilterDef();
     try {
-      const r = await fetch('/api/schema/filter-preview', {
+      const r = await fetch((window.SCIDK_BASE || '') + '/api/schema/filter-preview', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(filterDef),
