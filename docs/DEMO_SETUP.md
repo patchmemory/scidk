@@ -119,8 +119,8 @@ Use this when setting up a new demo instance:
 # Clean everything and start fresh
 python scripts/seed_demo_data.py --reset --neo4j
 
-# Start SciDK (canonical launch command — see README "Run the server")
-scidk-serve
+# Start SciDK
+python start.sh
 
 # Login as admin / demo123
 ```
@@ -326,10 +326,10 @@ Demo files follow a consistent structure:
 
 ## See Also
 
-- [Security & Authentication](SECURITY.md)
-- [Plugin System](plugins.md)
+- [Authentication Documentation](AUTHENTICATION.md)
+- [Plugin System](plugins/README.md)
 - [iLab Importer Plugin](plugins/ILAB_IMPORTER.md)
-- [Architecture (graph & Neo4j integration)](ARCHITECTURE.md)
+- [Neo4j Integration](GRAPH_INTEGRATION.md)
 
 ## Support
 

@@ -3,86 +3,18 @@
   <h1>Chat History</h1>
   <p class="small">Manage chat sessions with persistent database storage.</p>
 
-  <div class="row g-2" style="max-width:720px">
-    <!-- Chat History Database (Neo4j) -->
-    <div class="col-12">
-      <div style="background: #f9f9f9; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
-        <div class="small" style="margin-bottom: 0.5rem;">
-          <strong>Storage Backend:</strong> Neo4j Chat Graph
-        </div>
-        <div class="small" style="margin-bottom: 0.5rem;">
-          <strong>Container:</strong> <code>bolt://localhost:7688</code>
-        </div>
-        <div class="small" style="margin-bottom: 0.5rem;">
-          <strong>Purpose:</strong> Stores chat sessions, messages, and query audit trails
-        </div>
-        <div class="small">
-          <strong>Status:</strong> <span id="chat-neo4j-status">Checking...</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Chat Session Management -->
-    <div class="col-12">
-      <div style="padding:1rem; background:#fff; border-radius:4px; border:1px solid #e0e0e0;">
-        <p class="small">
-          Chat sessions are stored in both SQLite (messages) and Neo4j (audit graph) and can be:
-        </p>
-        <ul class="small">
-          <li>Saved from the Chat interface using the "Save Session" button</li>
-          <li>Loaded from the session selector dropdown</li>
-          <li>Managed (rename, export, delete) using the "📂" button</li>
-          <li>Exported as JSON files and imported from backups</li>
-        </ul>
-        <p class="small" style="margin-bottom:0">
-          <a href="#/chat" class="btn btn-sm btn-outline-primary">Open Chat Interface →</a>
-        </p>
-      </div>
-    </div>
+  <div style="padding:1rem; background:#f9f9f9; border-radius:4px; border:1px solid #e0e0e0; max-width:720px">
+    <p class="small">
+      Chat sessions are now stored in the database and can be:
+    </p>
+    <ul class="small">
+      <li>Saved from the Chat interface using the "Save Session" button</li>
+      <li>Loaded from the session selector dropdown</li>
+      <li>Managed (rename, export, delete) using the "📂" button</li>
+      <li>Exported as JSON files and imported from backups</li>
+    </ul>
+    <p class="small" style="margin-bottom:0">
+      <a href="/chat" class="btn btn-sm btn-outline-primary">Open Chat Interface →</a>
+    </p>
   </div>
-
-  <details style="margin-top:1.5rem; max-width:720px">
-    <summary class="small">About Chat History Storage</summary>
-    <div class="small" style="margin-top:.5rem">
-      <p>SciDK uses a dual-storage architecture for chat history:</p>
-      <ul>
-        <li><strong>SQLite:</strong> Fast session storage for conversation context (messages, metadata)</li>
-        <li><strong>Neo4j Chat Graph:</strong> Audit trail with query provenance, ReAct steps, and finding graphs</li>
-      </ul>
-      <p><strong>Environment variables:</strong></p>
-      <ul>
-        <li><code>SCIDK_CHAT_NEO4J_URI</code> - Chat graph Neo4j URI (default: bolt://localhost:7688)</li>
-        <li><code>SCIDK_CHAT_NEO4J_AUTH</code> - Auth in format user/password (default: neo4j/chat-password)</li>
-      </ul>
-    </div>
-  </details>
 </section>
-
-<script>
-  function initChatHistory() {
-    checkChatNeo4jStatus();
-  }
-
-  async function checkChatNeo4jStatus() {
-    const statusEl = document.getElementById('chat-neo4j-status');
-    try {
-      // Use the schema status endpoint as a proxy for connection health
-      const resp = await fetch(window.SCIDK_BASE + '/api/chat/schema/cache/stats');
-      if (resp.ok) {
-        statusEl.innerHTML = '● <span style="color: #28a745;">Connected</span>';
-      } else {
-        statusEl.innerHTML = '● <span style="color: #ffc107;">Unknown</span>';
-      }
-    } catch (err) {
-      statusEl.innerHTML = '● <span style="color: #dc3545;">Error</span>';
-      console.error('Failed to check chat Neo4j status:', err);
-    }
-  }
-
-  // Initialize on page load
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initChatHistory);
-  } else {
-    initChatHistory();
-  }
-</script>

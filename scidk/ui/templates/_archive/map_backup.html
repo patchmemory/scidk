@@ -371,7 +371,7 @@
   if (rlt) rlt.onchange = onFilter;
   if (layoutSel) layoutSel.onchange = () => runLayout(layoutSel.value);
   const btn = document.getElementById('download-csv');
-  if (btn) btn.onclick = () => { window.location = window.SCIDK_BASE + '/api/graph/schema.csv'; };
+  if (btn) btn.onclick = () => { window.location = '/api/graph/schema.csv'; };
   const btnSave = document.getElementById('save-positions');
   const btnLoad = document.getElementById('load-positions');
   if (btnSave) btnSave.onclick = savePositions;
@@ -392,7 +392,7 @@
   const instDiv = document.getElementById('instances-table');
   async function previewInstances(){
     const label = instSel ? instSel.value : 'File';
-    const res = await fetch(window.SCIDK_BASE + '/api/graph/instances?label=' + encodeURIComponent(label) + '&limit=50');
+    const res = await fetch('/api/graph/instances?label=' + encodeURIComponent(label) + '&limit=50');
     const data = await res.json();
     const rows = data.rows || [];
     if (!rows.length){ instDiv.innerHTML = '<p class="small" style="margin:.5rem">No rows</p>'; return; }
@@ -454,7 +454,7 @@
       runQueryBtn.disabled = true;
 
       try {
-        const resp = await fetch(window.SCIDK_BASE + '/api/graph/query', {
+        const resp = await fetch('/api/graph/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query })
@@ -520,7 +520,7 @@
       const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
 
       try {
-        const resp = await fetch(window.SCIDK_BASE + '/api/queries', {
+        const resp = await fetch('/api/queries', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -554,7 +554,7 @@
   if (loadLibraryBtn) {
     loadLibraryBtn.onclick = async () => {
       try {
-        const resp = await fetch(window.SCIDK_BASE + '/api/queries?sort_by=last_used_at');
+        const resp = await fetch('/api/queries?sort_by=last_used_at');
         const data = await resp.json();
 
         if (!resp.ok || !data.queries || data.queries.length === 0) {
@@ -608,7 +608,7 @@
   // Global functions for query library
   window.loadQueryById = async (queryId, queryName) => {
     try {
-      const resp = await fetch(window.SCIDK_BASE + `/api/queries/${queryId}`);
+      const resp = await fetch(`/api/queries/${queryId}`);
       const data = await resp.json();
 
       if (resp.ok && data.query) {
@@ -618,7 +618,7 @@
         document.querySelector('[style*="fixed"]')?.remove();
 
         // Record usage
-        fetch(window.SCIDK_BASE + `/api/queries/${queryId}/use`, { method: 'POST' }).catch(() => {});
+        fetch(`/api/queries/${queryId}/use`, { method: 'POST' }).catch(() => {});
 
         setTimeout(() => {
           queryStatus.textContent = '';
@@ -633,7 +633,7 @@
     if (!confirm('Delete this query from the library?')) return;
 
     try {
-      const resp = await fetch(window.SCIDK_BASE + `/api/queries/${queryId}`, { method: 'DELETE' });
+      const resp = await fetch(`/api/queries/${queryId}`, { method: 'DELETE' });
 
       if (resp.ok) {
         document.querySelector('[style*="fixed"]')?.remove();

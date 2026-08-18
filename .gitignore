@@ -75,13 +75,3 @@ backups/
 dev/test-runs/tmp/
 dev/code-imports/
 docs/archive/
-gunicorn.log
-
-# Scanner and debug outputs
-/ambig_paths.txt
-/ambiguous_paths.txt
-/big_dir_tree.txt
-/magic_results.txt
-/out.txt
-/out*.txt
-/out_*.txt

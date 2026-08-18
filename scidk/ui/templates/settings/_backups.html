@@ -310,7 +310,7 @@
     let originalSettings = null;
 
     function loadSettings() {
-      fetch(window.SCIDK_BASE + '/api/backups/settings')
+      fetch('/api/backups/settings')
         .then(res => res.json())
         .then(data => {
           // Store original settings
@@ -341,7 +341,7 @@
         verify_backups: document.getElementById('setting-verify-backups').checked
       };
 
-      fetch(window.SCIDK_BASE + '/api/backups/settings', {
+      fetch('/api/backups/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settings)
@@ -380,7 +380,7 @@
       document.getElementById('backups-table').style.display = 'none';
       document.getElementById('backups-empty').style.display = 'none';
 
-      fetch(window.SCIDK_BASE + '/api/backups')
+      fetch('/api/backups')
         .then(res => {
           if (!res.ok) {
             throw new Error(`HTTP ${res.status}`);
@@ -517,7 +517,7 @@
       btn.disabled = true;
       btn.textContent = 'Creating...';
 
-      fetch(window.SCIDK_BASE + '/api/backups', {
+      fetch('/api/backups', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: 'manual', verify: true })
@@ -541,7 +541,7 @@
     }
 
     function verifyBackup(backupId) {
-      fetch(window.SCIDK_BASE + `/api/backups/verify/${backupId}`, { method: 'POST' })
+      fetch(`/api/backups/verify/${backupId}`, { method: 'POST' })
         .then(res => res.json())
         .then(data => {
           if (data.verified) {
@@ -569,7 +569,7 @@
       btn.disabled = true;
       btn.textContent = 'Restoring...';
 
-      fetch(window.SCIDK_BASE + `/api/backups/${selectedBackupId}/restore`, {
+      fetch(`/api/backups/${selectedBackupId}/restore`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ create_backup_first: true })
@@ -599,7 +599,7 @@
         return;
       }
 
-      fetch(window.SCIDK_BASE + `/api/backups/${backupId}`, { method: 'DELETE' })
+      fetch(`/api/backups/${backupId}`, { method: 'DELETE' })
         .then(res => res.json())
         .then(data => {
           if (data.success) {
@@ -619,7 +619,7 @@
       btn.disabled = true;
       btn.textContent = 'Cleaning up...';
 
-      fetch(window.SCIDK_BASE + '/api/backups/cleanup', { method: 'POST' })
+      fetch('/api/backups/cleanup', { method: 'POST' })
         .then(res => res.json())
         .then(data => {
           if (data.success) {

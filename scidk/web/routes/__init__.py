@@ -41,7 +41,6 @@ def register_blueprints(app):
     from . import api_settings
     from . import api_auth
     from . import api_users
-    from . import api_tokens
     from . import api_audit
     from . import api_queries
     from . import api_alerts
@@ -75,7 +74,6 @@ def register_blueprints(app):
     app.register_blueprint(api_settings.bp)
     app.register_blueprint(api_auth.bp)
     app.register_blueprint(api_users.bp)
-    app.register_blueprint(api_tokens.bp)
     app.register_blueprint(api_audit.bp)
     app.register_blueprint(api_alerts.bp)
     app.register_blueprint(api_logs.bp)

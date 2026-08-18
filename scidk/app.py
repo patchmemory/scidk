@@ -6,14 +6,11 @@ with all necessary extensions, services, and route blueprints.
 Most initialization logic has been extracted to separate modules in scidk/core/
 and scidk/services/ to keep this file lean and maintainable.
 """
-from dotenv import load_dotenv
-load_dotenv()
 
 from flask import Flask
 from pathlib import Path
 import os
 from flasgger import Swagger
-from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Core components
 from .core.filesystem import FilesystemManager
@@ -45,16 +42,6 @@ def create_app():
     apply_channel_defaults()
 
     app = Flask(__name__, template_folder="ui/templates", static_folder="ui/static")
-
-    # Enable ProxyFix for reverse proxy support (nginx, Apache, etc.)
-    # This ensures Flask correctly handles X-Forwarded-* headers
-    app.wsgi_app = ProxyFix(
-        app.wsgi_app,
-        x_for=1,      # Trust 1 proxy for X-Forwarded-For
-        x_proto=1,    # Trust 1 proxy for X-Forwarded-Proto
-        x_host=1,     # Trust 1 proxy for X-Forwarded-Host
-        x_prefix=1    # Trust 1 proxy for X-Forwarded-Prefix
-    )
 
     # Initialize Swagger for API documentation
     swagger_template = {
@@ -126,26 +113,9 @@ def create_app():
     # Core singletons: graph backend (Neo4j or InMemory)
     graph = create_graph_backend(app)
 
-    # Concept Graph driver (optional — graceful degradation if unavailable)
-    concept_enabled = os.environ.get('SCIDK_CONCEPT_GRAPH_ENABLED', '1') == '1'
-    if concept_enabled:
-        from .services.concept_graph_service import get_concept_driver
-        concept_driver = get_concept_driver(app)
-        if concept_driver:
-            app.logger.info("Concept graph connected")
-        else:
-            app.logger.warning("Concept graph unavailable — falling back to hard-coded classifier")
-    else:
-        concept_driver = None
-
     # Interpreter registry
     registry = InterpreterRegistry()
     register_interpreters(registry)
-
-    # Dataset profile registry (loaded from bundled profile YAMLs)
-    from .core.profile_registry import ProfileRegistry
-    profile_registry = ProfileRegistry()
-    profile_registry.load(Path(__file__).resolve().parent / 'interpreters' / 'profiles')
 
     # Compute effective interpreter enablement (CLI > settings > defaults)
     app.extensions = getattr(app, 'extensions', {})
@@ -161,9 +131,7 @@ def create_app():
     # Store refs on app for easy access in routes
     app.extensions['scidk'] = {
         'graph': graph,
-        'concept_driver': concept_driver,  # Concept Graph driver (may be None)
         'registry': registry,
-        'profile_registry': profile_registry,
         'fs': fs,
         'providers': fs_providers,
         'interpreters': {'effective_enabled': enabled_set, 'source': source},
@@ -215,15 +183,6 @@ def create_app():
             app.extensions['scidk']['neo4j_config']['password'] = neo4j_password
     except Exception as e:
         app.logger.warning(f"Failed to load persisted Neo4j settings: {e}")
-
-    # Fall back to env vars (NEO4J_URI/USER/PASSWORD) when SQLite has no config,
-    # so a fresh instance connects on first boot without a Settings UI step.
-    try:
-        from .core.neo4j_config import hydrate_neo4j_config_from_env
-        if hydrate_neo4j_config_from_env(app):
-            app.logger.info("Neo4j config loaded from environment variables (no SQLite config found)")
-    except Exception as e:
-        app.logger.warning(f"Failed to load Neo4j settings from environment: {e}")
 
     # Feature flags for file indexing
     _ff_index = (os.environ.get('SCIDK_FEATURE_FILE_INDEX') or '').strip().lower() in (
@@ -300,9 +259,7 @@ def create_app():
         )
 
         # Start scheduler (will only run if schedule_enabled is True in settings)
-        # Pass concept_driver for weight decay job
-        concept_driver = app.extensions.get('scidk', {}).get('concept_driver')
-        backup_scheduler.start(concept_driver=concept_driver)
+        backup_scheduler.start()
 
         # Store in app extensions for access in routes
         app.extensions['scidk']['backup_scheduler'] = backup_scheduler
@@ -319,7 +276,7 @@ def main():
     """Run the Flask development server."""
     app = create_app()
     # Read host/port from env for convenience
-    host = os.environ.get('SCIDK_HOST', '0.0.0.0')
+    host = os.environ.get('SCIDK_HOST', '127.0.0.1')
     port = int(os.environ.get('SCIDK_PORT', '5000'))
     debug = os.environ.get('SCIDK_DEBUG', '1') == '1'
     app.run(host=host, port=port, debug=debug)

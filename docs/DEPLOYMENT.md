@@ -7,14 +7,14 @@ This guide covers production deployment of SciDK, including installation, config
 ### System Requirements
 
 - **OS**: Linux (Ubuntu 20.04+, RHEL 8+, or compatible), macOS 11+, or Windows 10+ with WSL2
-- **Python**: 3.12 or higher (required; see `pyproject.toml` `requires-python = ">=3.12"`)
+- **Python**: 3.10 or higher
 - **Memory**: Minimum 2GB RAM, 4GB+ recommended for large datasets
 - **Disk**: 10GB+ free space for application and data storage
 - **Neo4j** (optional): 5.x or higher for graph database functionality
 
 ### Required Software
 
-1. **Python 3.12+** with pip and venv
+1. **Python 3.10+** with pip and venv
 2. **Neo4j** (optional but recommended): For persistent graph storage
 3. **rclone** (optional): For cloud storage provider integration
 4. **ncdu or gdu** (optional): For faster filesystem scanning

@@ -70,13 +70,10 @@ curl -H "Authorization: Bearer abc123..." \
 
 ### No Authentication (Development)
 
-Authentication is **off by default**. It is toggled at runtime via the settings API (there is no `SCIDK_AUTH_DISABLED` environment variable). To disable auth (e.g. for development or E2E tests):
+For development or testing, authentication can be disabled (not recommended for production):
 ```bash
-curl -X POST http://localhost:5000/api/settings/security/auth \
-  -H "Content-Type: application/json" \
-  -d '{"enabled": false}'
+export SCIDK_AUTH_DISABLED=true
 ```
-Set `{"enabled": true}` to require login. Current status: `GET /api/settings/security/auth`.
 
 ## Common API Operations
 
@@ -122,8 +119,7 @@ curl http://localhost:5000/api/health/graph
   },
   "relationships": {
     "CONTAINS": 1334,
-    "SCANNED_IN": 1245,
-    "DERIVED_FROM": 27
+    "SCANNED_IN": 1245
   }
 }
 ```

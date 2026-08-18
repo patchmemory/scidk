@@ -144,10 +144,7 @@
       <span class="chevron">▸</span>
     </div>
     <div class="settings-subsection-list">
-      <a href="#connections/neo4j" class="settings-sidebar-item" data-section="connections-neo4j">Research Graph</a>
-      <a href="#connections/chat-history" class="settings-sidebar-item" data-section="connections-chat-history">Chat History</a>
-      <a href="#connections/concept-graph" class="settings-sidebar-item" data-section="connections-concept-graph">Concept Graph</a>
-      <a href="#connections/schema-map" class="settings-sidebar-item" data-section="connections-schema-map">Schema Map</a>
+      <a href="#connections/neo4j" class="settings-sidebar-item" data-section="connections-neo4j">Neo4j</a>
       <a href="#connections/local-storage" class="settings-sidebar-item" data-section="connections-local-storage">Local Storage</a>
       <a href="#connections/rclone" class="settings-sidebar-item" data-section="connections-rclone">Rclone</a>
     </div>
@@ -160,7 +157,7 @@
     <div class="settings-subsection-list">
       <a href="#ai-chat/llm-provider" class="settings-sidebar-item" data-section="ai-chat-llm-provider">LLM Provider</a>
       <a href="#ai-chat/behavior" class="settings-sidebar-item" data-section="ai-chat-behavior">Behavior</a>
-      <a href="#ai-chat/schema" class="settings-sidebar-item" data-section="ai-chat-schema">Schema Intelligence</a>
+      <a href="#ai-chat/history" class="settings-sidebar-item" data-section="ai-chat-history">Chat History</a>
     </div>
 
     <!-- Security Section -->
@@ -171,7 +168,6 @@
     <div class="settings-subsection-list" id="security-subsection-list">
       <a href="#security/overview" class="settings-sidebar-item" data-section="security-overview">Overview</a>
       <a href="#security/users" class="settings-sidebar-item admin-only" data-section="security-users">Users</a>
-      <a href="#security/tokens" class="settings-sidebar-item admin-only" data-section="security-tokens">API Tokens</a>
       <a href="#security/audit-log" class="settings-sidebar-item admin-only" data-section="security-audit-log">Audit Log</a>
       <div class="settings-sidebar-item non-admin-message" style="display: none; color: #999; cursor: default; font-style: italic;">
         Admin access required
@@ -206,21 +202,17 @@
 
     <!-- Connections sections -->
     {% include 'settings/_neo4j.html' %}
-    {% include 'settings/_connections_chat_history.html' %}
-    {% include 'settings/_connections_concept_graph.html' %}
-    {% include 'settings/_connections_schema_map.html' %}
     {% include 'settings/_connections_local_storage.html' %}
     {% include 'settings/_rclone.html' %}
 
     <!-- AI & Chat sections -->
     {% include 'settings/_ai_llm_provider.html' %}
     {% include 'settings/_ai_behavior.html' %}
-    {% include 'settings/_ai_schema.html' %}
+    {% include 'settings/_ai_history.html' %}
 
     <!-- Security sections -->
     {% include 'settings/_security_overview.html' %}
     {% include 'settings/_security_users.html' %}
-    {% include 'settings/_security_tokens.html' %}
     {% include 'settings/_security_audit_log.html' %}
 
     <!-- Modules sections -->
@@ -244,25 +236,15 @@
 
     // Check auth status and apply admin-only restrictions
     try {
-      const response = await fetch(window.SCIDK_BASE + '/api/auth/status');
+      const response = await fetch('/api/auth/status');
       const authData = await response.json();
       const isAdmin = authData.role === 'admin';
-      const hasNoUsers = authData.user_count === 0;
 
       // Handle admin-only elements
       const adminOnlyItems = document.querySelectorAll('.admin-only');
       const nonAdminMessage = document.querySelector('.non-admin-message');
 
-      // Special case: If there are no users, show Users tab for first-time setup
-      if (hasNoUsers) {
-        // Show all admin items to allow initial admin creation
-        adminOnlyItems.forEach(item => {
-          item.style.display = 'block';
-        });
-        if (nonAdminMessage) {
-          nonAdminMessage.style.display = 'none';
-        }
-      } else if (!isAdmin) {
+      if (!isAdmin) {
         // Hide admin-only items and show message
         adminOnlyItems.forEach(item => {
           item.style.display = 'none';

@@ -134,7 +134,7 @@ async function loadUIDPropertyOptions(link) {
 
   try {
     // Fetch source properties
-    const sourceResponse = await fetch(window.SCIDK_BASE + '/api/neo4j/label-properties', {
+    const sourceResponse = await fetch('/api/neo4j/label-properties', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ database: 'PRIMARY', label: sourceLabel })
@@ -152,7 +152,7 @@ async function loadUIDPropertyOptions(link) {
     }
 
     // Fetch target properties
-    const targetResponse = await fetch(window.SCIDK_BASE + '/api/neo4j/label-properties', {
+    const targetResponse = await fetch('/api/neo4j/label-properties', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ database: 'PRIMARY', label: targetLabel })
@@ -191,7 +191,7 @@ async function updateActiveLinkUIDProperty(side, value) {
 
   // Save link definition with updated match_config
   try {
-    const response = await fetch(window.SCIDK_BASE + '/api/links', {
+    const response = await fetch('/api/links', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -214,9 +214,6 @@ async function updateActiveLinkUIDProperty(side, value) {
     if (result.status === 'success') {
       showToast(`${side === 'source' ? 'Source' : 'Target'} UID property updated to ${value}`, 'success');
       currentLink.match_config = matchConfig;
-
-      // Refresh the relationship index table to show values for the new UID
-      await loadRelationshipIndexPage('active-link-index-container');
     } else {
       showToast(`Failed to update UID property: ${result.error}`, 'error');
     }
@@ -239,39 +236,10 @@ function updateActiveLinkButtons(link) {
     btnExecute.style.display = 'inline-block';
     btnExecute.textContent = 'Refresh';
     btnExecute.disabled = false;
-    // Override the global executeLink() handler with refreshActiveLink()
-    btnExecute.onclick = () => refreshActiveLink();
   }
   if (btnDeleteDef) btnDeleteDef.style.display = 'inline-block';
   if (btnExportCsv) btnExportCsv.style.display = 'none';
   if (btnImportCsv) btnImportCsv.style.display = 'none';
-}
-
-// Refresh active link panel without requiring save
-async function refreshActiveLink() {
-  if (!currentLink) {
-    showToast('No active link to refresh', 'error');
-    return;
-  }
-
-  showToast('Refreshing...', 'info');
-
-  try {
-    // Reload the link from the backend to get latest state
-    const response = await fetch(window.SCIDK_BASE + `/api/links/${currentLink.id}`);
-    const data = await response.json();
-
-    if (data.status === 'success') {
-      currentLink = data.link;
-      await renderActiveLinkPanel(currentLink);
-      showToast('Refreshed successfully', 'success');
-    } else {
-      showToast(`Failed to refresh: ${data.error}`, 'error');
-    }
-  } catch (err) {
-    console.error('Failed to refresh active link:', err);
-    showToast('Failed to refresh link', 'error');
-  }
 }
 
 // ===== Active Link Sync Status Functions =====
@@ -288,7 +256,7 @@ async function showSyncStatusForActiveImportLink(linkId, link) {
   `;
 
   try {
-    const response = await fetch(window.SCIDK_BASE + `/api/links/${linkId}/sync-status`);
+    const response = await fetch(`/api/links/${linkId}/sync-status`);
     const data = await response.json();
 
     console.log(`[showSyncStatusForActiveImportLink] Link ${linkId} sync status:`, data);
@@ -387,13 +355,13 @@ async function showSyncStatusForActiveImportLink(linkId, link) {
     // Load and render property selection UI
     await renderEnrichPropertiesUI(linkId, data.source_database, link);
 
-    // Show relationship index below sync status - always query PRIMARY for Active links
+    // Show relationship index below sync status
     await showRelationshipIndex(linkId, {
       containerId: 'active-link-index-container',
       source_label: data.source_label || link.source_label,
       rel_type: data.rel_type || link.relationship_type,
       target_label: data.target_label || link.target_label,
-      source_database: null  // Force PRIMARY - Active links show what's in primary graph
+      source_database: data.source_database || null
     });
   } catch (err) {
     console.error('Failed to fetch sync status:', err);
@@ -453,7 +421,7 @@ async function executeDiscoveredImport() {
   showToast('Starting import...', 'info');
 
   try {
-    const response = await fetch(window.SCIDK_BASE + '/api/links/discovered/import', {
+    const response = await fetch('/api/links/discovered/import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -513,7 +481,7 @@ async function executeDiscoveredImport() {
 // Check if there's a running job for this link and resume progress tracking
 async function checkAndResumeRunningJob(linkId) {
   try {
-    const response = await fetch(window.SCIDK_BASE + `/api/links/${linkId}/job-status`);
+    const response = await fetch(`/api/links/${linkId}/job-status`);
     const data = await response.json();
 
     if (data.running && data.task_id) {
@@ -571,7 +539,7 @@ async function fetchRelationshipProperties(sourceDatabase, sourceLabel, relType,
   console.log('[fetchRelationshipProperties] Fetching properties for:', {sourceDatabase, sourceLabel, relType, targetLabel});
 
   try {
-    const response = await fetch(window.SCIDK_BASE + '/api/neo4j/relationship-properties', {
+    const response = await fetch('/api/neo4j/relationship-properties', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -718,7 +686,7 @@ async function enrichSelectedRelationships(linkId) {
     const allSelected = selectedProps.length === enrichPropertiesSelection.properties.length;
     const propertiesToSend = allSelected ? [] : selectedProps;
 
-    const response = await fetch(window.SCIDK_BASE + `/api/links/${linkId}/enrich`, {
+    const response = await fetch(`/api/links/${linkId}/enrich`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -773,7 +741,7 @@ function pollEnrichmentStatus(taskId, linkId) {
 
   activePollingInterval = setInterval(async () => {
     try {
-      const response = await fetch(window.SCIDK_BASE + `/api/tasks/${taskId}`);
+      const response = await fetch(`/api/tasks/${taskId}`);
       const task = await response.json();
 
       console.log('[pollEnrichmentStatus] Task status:', task);
@@ -835,7 +803,7 @@ async function cancelEnrichment(taskId) {
   }
 
   try {
-    const response = await fetch(window.SCIDK_BASE + `/api/tasks/${taskId}/cancel`, {
+    const response = await fetch(`/api/tasks/${taskId}/cancel`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     });

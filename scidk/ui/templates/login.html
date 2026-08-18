@@ -163,9 +163,7 @@
       </form>
     </div>
   </div>
-  <script>
-      window.SCIDK_BASE = "{{ request.script_root }}";
-  </script>
+
   <script>
     (function() {
       const form = document.getElementById('login-form');
@@ -200,7 +198,7 @@
         submitBtn.textContent = 'Signing in...';
 
         try {
-          const response = await fetch(window.SCIDK_BASE + '/api/auth/login', {
+          const response = await fetch('/api/auth/login', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -212,7 +210,7 @@
 
           if (response.ok && data.success) {
             // Login successful - redirect to home/landing page
-            const redirectUrl = new URLSearchParams(window.location.search).get('redirect') || (window.SCIDK_BASE + '/');
+            const redirectUrl = new URLSearchParams(window.location.search).get('redirect') || '/';
             window.location.href = redirectUrl;
           } else {
             // Login failed

@@ -375,7 +375,7 @@
       params.source = source;
 
       const q = qs(params);
-      const url = window.SCIDK_BASE + '/api/graph/schema/combined' + (q ? '?' + q : '');
+      const url = '/api/graph/schema/combined' + (q ? '?' + q : '');
       const res = await fetch(url);
       return await res.json();
     } catch (e) {
@@ -559,7 +559,7 @@
   if (rlt) rlt.onchange = onFilter;
   if (layoutSel) layoutSel.onchange = () => runLayout(layoutSel.value);
   const btn = document.getElementById('download-csv');
-  if (btn) btn.onclick = () => { window.location = window.SCIDK_BASE + '/api/graph/schema.csv'; };
+  if (btn) btn.onclick = () => { window.location = '/api/graph/schema.csv'; };
   const btnSave = document.getElementById('save-positions');
   const btnLoad = document.getElementById('load-positions');
   if (btnSave) btnSave.onclick = savePositions;
@@ -580,7 +580,7 @@
   const instDiv = document.getElementById('instances-table');
   async function previewInstances(){
     const label = instSel ? instSel.value : 'File';
-    const res = await fetch(window.SCIDK_BASE + '/api/graph/instances?label=' + encodeURIComponent(label) + '&limit=50');
+    const res = await fetch('/api/graph/instances?label=' + encodeURIComponent(label) + '&limit=50');
     const data = await res.json();
     const rows = data.rows || [];
     if (!rows.length){ instDiv.innerHTML = '<p class="small" style="margin:.5rem">No rows</p>'; return; }
@@ -642,7 +642,7 @@
       runQueryBtn.disabled = true;
 
       try {
-        const resp = await fetch(window.SCIDK_BASE + '/api/graph/query', {
+        const resp = await fetch('/api/graph/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query })
@@ -708,7 +708,7 @@
       const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
 
       try {
-        const resp = await fetch(window.SCIDK_BASE + '/api/queries', {
+        const resp = await fetch('/api/queries', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -742,7 +742,7 @@
   if (loadLibraryBtn) {
     loadLibraryBtn.onclick = async () => {
       try {
-        const resp = await fetch(window.SCIDK_BASE + '/api/queries?sort_by=last_used_at');
+        const resp = await fetch('/api/queries?sort_by=last_used_at');
         const data = await resp.json();
 
         if (!resp.ok || !data.queries || data.queries.length === 0) {
@@ -796,7 +796,7 @@
   // Global functions for query library
   window.loadQueryById = async (queryId, queryName) => {
     try {
-      const resp = await fetch(window.SCIDK_BASE + `/api/queries/${queryId}`);
+      const resp = await fetch(`/api/queries/${queryId}`);
       const data = await resp.json();
 
       if (resp.ok && data.query) {
@@ -806,7 +806,7 @@
         document.querySelector('[style*="fixed"]')?.remove();
 
         // Record usage
-        fetch(window.SCIDK_BASE + `/api/queries/${queryId}/use`, { method: 'POST' }).catch(() => {});
+        fetch(`/api/queries/${queryId}/use`, { method: 'POST' }).catch(() => {});
 
         setTimeout(() => {
           queryStatus.textContent = '';
@@ -821,7 +821,7 @@
     if (!confirm('Delete this query from the library?')) return;
 
     try {
-      const resp = await fetch(window.SCIDK_BASE + `/api/queries/${queryId}`, { method: 'DELETE' });
+      const resp = await fetch(`/api/queries/${queryId}`, { method: 'DELETE' });
 
       if (resp.ok) {
         document.querySelector('[style*="fixed"]')?.remove();
@@ -1170,16 +1170,9 @@
       return;
     }
 
-    // Wait for Cytoscape library and SciDKGraph utils to be loaded
+    // Wait for Cytoscape library to be loaded
     const tryInit = () => {
-      if (typeof cytoscape === 'undefined' || typeof SciDKGraph === 'undefined') {
-        setTimeout(tryInit, 100);
-        return;
-      }
-
-      // Re-check container is still attached and visible before initializing
-      if (!container || !container.offsetParent) {
-        console.warn(`Container for tab ${tabId} not visible, deferring Cytoscape init`);
+      if (typeof cytoscape === 'undefined') {
         setTimeout(tryInit, 100);
         return;
       }
@@ -1200,22 +1193,46 @@
         console.log(`Tab ${tabId} already has mode: ${window.tabVisualizationModes[tabId]}`);
       }
 
-      // Create Cytoscape instance with SciDKGraph utils
-      const mapStyles = [
-        {
-          selector: 'node',
-          style: {
-            'color': '#fff',
-            'text-outline-color': '#000',
-            'text-wrap': 'wrap',
-            'text-max-width': '250px'
+      // Create Cytoscape instance
+      const cy = cytoscape({
+        container: container,
+        elements: [],
+        style: [
+          {
+            selector: 'node',
+            style: {
+              'background-color': '#4e79a7',
+              'label': 'data(label)',
+              'color': '#fff',
+              'text-outline-color': '#000',
+              'text-outline-width': 2,
+              'font-size': '10px',
+              'width': 30,
+              'height': 30,
+              'text-valign': 'center',
+              'text-halign': 'center',
+              'text-wrap': 'wrap',
+              'text-max-width': '250px'
+            }
+          },
+          {
+            selector: 'edge',
+            style: {
+              'width': 2,
+              'line-color': '#999999',
+              'target-arrow-color': '#999999',
+              'target-arrow-shape': 'triangle',
+              'curve-style': 'bezier',
+              'label': 'data(label)',
+              'font-size': '8px',
+              'text-rotation': 'autorotate',
+              'text-margin-y': -10
+            }
           }
+        ],
+        layout: {
+          name: 'preset' // Use preset layout for empty graph (no positioning)
         }
-      ];
-
-      const cy = SciDKGraph.init(container, [], {
-        additionalStyles: mapStyles,
-        layout: SciDKGraph.layouts.preset
       });
 
       // Store instance
@@ -1240,7 +1257,7 @@
     try {
       // Fetch schema from API
       const source = document.getElementById('schema-source')?.value || 'all';
-      const url = window.SCIDK_BASE + `/api/graph/schema/combined?source=${source}`;
+      const url = `/api/graph/schema/combined?source=${source}`;
       const response = await fetch(url);
       const data = await response.json();
 
@@ -1779,7 +1796,7 @@
             requestBody.profile_name = selectedConnection;
           }
 
-          const resp = await fetch(window.SCIDK_BASE + '/api/graph/query', {
+          const resp = await fetch('/api/graph/query', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestBody),
@@ -1927,14 +1944,14 @@
           let resp;
           if (mapIdToUpdate) {
             // Update existing map
-            resp = await fetch(window.SCIDK_BASE + `/api/maps/saved/${mapIdToUpdate}`, {
+            resp = await fetch(`/api/maps/saved/${mapIdToUpdate}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload)
             });
           } else {
             // Create new map
-            resp = await fetch(window.SCIDK_BASE + '/api/maps/saved', {
+            resp = await fetch('/api/maps/saved', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload)
@@ -1973,7 +1990,7 @@
         const description = prompt('Enter a description (optional):') || '';
 
         try {
-          const resp = await fetch(window.SCIDK_BASE + '/api/queries', {
+          const resp = await fetch('/api/queries', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name, query, description })
@@ -1997,7 +2014,7 @@
     if (loadBtn) {
       loadBtn.onclick = async () => {
         try {
-          const resp = await fetch(window.SCIDK_BASE + '/api/queries');
+          const resp = await fetch('/api/queries');
           const data = await resp.json();
 
           if (!resp.ok || !data.queries) {
@@ -2040,7 +2057,7 @@
           // Global functions for this tab's query library
           window[`loadQueryById_${tabId}`] = async (queryId, queryName) => {
             try {
-              const resp = await fetch(window.SCIDK_BASE + `/api/queries/${queryId}`);
+              const resp = await fetch(`/api/queries/${queryId}`);
               const data = await resp.json();
 
               if (resp.ok && data.query) {
@@ -2050,7 +2067,7 @@
                 overlay.remove();
 
                 // Record usage
-                fetch(window.SCIDK_BASE + `/api/queries/${queryId}/use`, { method: 'POST' }).catch(() => {});
+                fetch(`/api/queries/${queryId}/use`, { method: 'POST' }).catch(() => {});
 
                 setTimeout(() => { statusEl.textContent = 'Ready'; statusEl.style.color = '#666'; }, 3000);
               }
@@ -2063,7 +2080,7 @@
             if (!confirm('Delete this query from the library?')) return;
 
             try {
-              const resp = await fetch(window.SCIDK_BASE + `/api/queries/${queryId}`, { method: 'DELETE' });
+              const resp = await fetch(`/api/queries/${queryId}`, { method: 'DELETE' });
 
               if (resp.ok) {
                 overlay.remove();
@@ -2351,7 +2368,7 @@
     mapListEl.innerHTML = '';
 
     try {
-      const response = await fetch(window.SCIDK_BASE + '/api/maps/saved?sort_by=updated_at&order=DESC');
+      const response = await fetch('/api/maps/saved?sort_by=updated_at&order=DESC');
       const data = await response.json();
 
       if (data.status === 'ok') {
@@ -2430,7 +2447,7 @@
   // Load a map
   async function loadMap(mapId) {
     try {
-      const response = await fetch(window.SCIDK_BASE + `/api/maps/saved/${mapId}`);
+      const response = await fetch(`/api/maps/saved/${mapId}`);
       const data = await response.json();
 
       if (data.status === 'ok' && data.map) {
@@ -2441,7 +2458,7 @@
         console.log('📦 Visualization config:', map.visualization);
 
         // Track usage
-        fetch(window.SCIDK_BASE + `/api/maps/saved/${mapId}/use`, { method: 'POST' });
+        fetch(`/api/maps/saved/${mapId}/use`, { method: 'POST' });
 
         // Apply filters if present
         if (map.filters) {
@@ -2624,7 +2641,7 @@
     if (!confirm(`Delete map "${map.name}"?`)) return;
 
     try {
-      const response = await fetch(window.SCIDK_BASE + `/api/maps/saved/${mapId}`, { method: 'DELETE' });
+      const response = await fetch(`/api/maps/saved/${mapId}`, { method: 'DELETE' });
       const data = await response.json();
 
       if (data.status === 'ok') {
@@ -2694,7 +2711,7 @@
     }
 
     try {
-      const response = await fetch(window.SCIDK_BASE + '/api/maps/saved', {
+      const response = await fetch('/api/maps/saved', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3224,7 +3241,7 @@
 
           const selectedConnection = window.getSelectedNeo4jConnection ? window.getSelectedNeo4jConnection() : null;
           const connParam = selectedConnection ? `&connection=${encodeURIComponent(selectedConnection)}` : '';
-          const url = window.SCIDK_BASE + `/api/graph/instances.${format}?label=${encodeURIComponent(label)}${connParam}`;
+          const url = `/api/graph/instances.${format}?label=${encodeURIComponent(label)}${connParam}`;
 
           // Download the file
           window.location.href = url;
@@ -3343,7 +3360,7 @@ window.populateInstancesTable = async function(results, tabId) {
     const firstLabel = Array.from(labels)[0];
     const selectedConnection = window.getSelectedNeo4jConnection ? window.getSelectedNeo4jConnection() : null;
     const connParam = selectedConnection ? `&connection=${encodeURIComponent(selectedConnection)}` : '';
-    const response = await fetch(window.SCIDK_BASE + `/api/graph/instances?label=${encodeURIComponent(firstLabel)}&limit=100${connParam}`);
+    const response = await fetch(`/api/graph/instances?label=${encodeURIComponent(firstLabel)}&limit=100${connParam}`);
     const data = await response.json();
 
     if (!response.ok || data.error) {
@@ -3417,7 +3434,7 @@ window.populateInstancesTable = async function(results, tabId) {
 
     async function loadConnections() {
       try {
-        const response = await fetch(window.SCIDK_BASE + '/api/settings/neo4j/profiles');
+        const response = await fetch('/api/settings/neo4j/profiles');
         const data = await response.json();
         const profiles = data.profiles || [];
 

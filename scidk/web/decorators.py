@@ -5,39 +5,7 @@ in route handlers.
 """
 
 from functools import wraps
-from flask import g, jsonify, request
-
-
-def _authenticate_bearer_token():
-    """Authenticate a request via an ``Authorization: Bearer`` API token.
-
-    This is the Bearer-first half of the auth check shared by the decorators
-    below. When a Bearer header carries a valid per-user API token, it
-    populates ``g`` with the token's user and role so the role check downstream
-    succeeds. It runs as a fallback to the auth middleware (which handles the
-    same tokens app-wide); it only ever authenticates on success and never
-    short-circuits, so a Bearer header carrying a session token — or an invalid
-    token already handled upstream — still falls through to the normal session
-    cookie check, leaving existing behavior unchanged.
-    """
-    # Already authenticated upstream (middleware resolved a session or token).
-    if hasattr(g, 'scidk_user_role'):
-        return
-
-    auth_header = request.headers.get('Authorization', '')
-    if not auth_header.startswith('Bearer '):
-        return
-
-    token = auth_header[7:]
-    from flask import current_app
-    from ..core.auth import get_auth_manager
-    db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
-    auth = get_auth_manager(db_path=db_path)
-    user = auth.verify_api_token(token)
-    if user:
-        g.scidk_user = user['username']
-        g.scidk_user_role = user['role']
-        g.scidk_user_id = user['id']
+from flask import g, jsonify
 
 
 def require_role(*allowed_roles):
@@ -82,9 +50,6 @@ def require_role(*allowed_roles):
                     # Auth disabled in tests - allow the request
                     return f(*args, **kwargs)
 
-            # Bearer API token first, then fall through to session cookie auth.
-            _authenticate_bearer_token()
-
             # Check if user is authenticated
             if not hasattr(g, 'scidk_user_role'):
                 return jsonify({'error': 'Authentication required'}), 401
@@ -106,8 +71,7 @@ def require_role(*allowed_roles):
 def require_admin(f):
     """Decorator to require admin role for a route.
 
-    Shortcut for @require_role('admin'), with special handling for first-time setup.
-    When there are zero users, allows unauthenticated access for initial admin creation.
+    Shortcut for @require_role('admin').
 
     Usage:
         @app.route('/admin/users')
@@ -121,55 +85,4 @@ def require_admin(f):
     Returns:
         Decorated function
     """
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        # In test mode with auth disabled, allow all requests
-        import os
-        import sys
-        from flask import current_app
-        is_testing = (
-            current_app.config.get('TESTING', False) or
-            'pytest' in sys.modules or
-            os.environ.get('SCIDK_E2E_TEST')
-        )
-        if is_testing and not os.environ.get('PYTEST_TEST_AUTH'):
-            from ..core.auth import get_auth_manager
-            db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
-            auth = get_auth_manager(db_path=db_path)
-            if not auth.is_enabled():
-                return f(*args, **kwargs)
-
-        # Bearer API token first, then fall through to session cookie auth.
-        _authenticate_bearer_token()
-
-        # Check for first-time setup (zero users) - allow unauthenticated access
-        # ONLY for creating the first admin (a POST). Read/update/delete on a
-        # zero-user state must still require authentication (return 401), since
-        # the bootstrap path only needs to create the initial admin user.
-        if request.method == 'POST':
-            from ..core.auth import get_auth_manager
-            from flask import current_app
-            db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
-            auth = get_auth_manager(db_path=db_path)
-            try:
-                user_count = len(auth.list_users(include_disabled=True))
-                if user_count == 0:
-                    # First-time setup - allow access without authentication
-                    return f(*args, **kwargs)
-            except Exception:
-                pass
-
-        # Normal admin role check
-        if not hasattr(g, 'scidk_user_role'):
-            return jsonify({'error': 'Authentication required'}), 401
-
-        user_role = g.scidk_user_role
-        if user_role != 'admin':
-            return jsonify({
-                'error': 'Insufficient permissions',
-                'required_roles': ['admin'],
-                'your_role': user_role
-            }), 403
-
-        return f(*args, **kwargs)
-    return decorated_function
+    return require_role('admin')(f)

@@ -2,12 +2,6 @@
 
 This guide covers the security architecture, best practices, compliance considerations, and incident response procedures for SciDK deployments.
 
-> **⚠️ Status: implemented vs. recommended.** This guide documents both controls that are **implemented today** and controls that are **recommended / not yet implemented**. Treat unmarked best-practice snippets (nginx, OS, compliance, monitoring) as deployment *recommendations*, not descriptions of current behavior. For the current security posture of the running app — including what is safe for single-user development vs. multi-user production — see [SECURITY_HARDENING.md](SECURITY_HARDENING.md).
->
-> **Implemented today:** session-based login with bcrypt password hashing (`scidk/core/auth.py`), role-based access control with `@require_role`/`@require_admin` (`scidk/web/decorators.py`), the `auth_users` / `auth_audit_log` tables, audit logging, and Fernet-encrypted credentials in AlertManager/ConfigManager/API-endpoint registry and plugin settings (`scidk/core/plugin_settings.py`).
->
-> **Recommended / not yet implemented:** `SESSION_COOKIE_SECURE` / `SESSION_COOKIE_HTTPONLY` / `SESSION_COOKIE_SAMESITE` config, and CSRF protection (see inline notes below).
-
 ## Security Architecture Overview
 
 SciDK implements defense-in-depth security with multiple layers of protection:
@@ -32,11 +26,11 @@ SciDK supports session-based authentication with the following features:
 - Secure password reset mechanisms
 
 **Session Management**:
-- Session-based authentication
+- Session-based authentication using secure cookies
 - Configurable session timeout (default: 30 minutes)
 - Auto-lock after inactivity
 - Session invalidation on logout
-- CSRF protection and secure-cookie flags (`SESSION_COOKIE_SECURE`/`HTTPONLY`/`SAMESITE`) ⚠️ *recommended / not yet implemented*
+- CSRF protection enabled
 
 **Example: Enabling Authentication**:
 ```python
@@ -293,7 +287,7 @@ chmod 600 .env
 ```
 
 **Credential Storage**:
-- SciDK stores encrypted credentials in SQLite. Fernet (symmetric) encryption is used for SMTP/alert credentials, config-manager secrets, API-endpoint auth tokens, and plugin settings (`scidk/core/plugin_settings.py`).
+- SciDK stores encrypted credentials in SQLite
 - Encryption key should be stored separately
 - Consider using external secret managers (HashiCorp Vault, AWS Secrets Manager)
 
@@ -323,9 +317,9 @@ SciDK implements input validation to prevent:
 
 ### Session Security
 
-**Configuration** ⚠️ *Recommended / not yet implemented* — the app does not currently set these cookie flags or enable CSRF protection; the snippet below is the recommended hardening to apply before multi-user production use:
+**Configuration**:
 ```python
-# Flask session configuration (RECOMMENDED — not currently set in code)
+# Flask session configuration
 app.config.update(
     SESSION_COOKIE_SECURE=True,      # HTTPS only
     SESSION_COOKIE_HTTPONLY=True,    # No JavaScript access

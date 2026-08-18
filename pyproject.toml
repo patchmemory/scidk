@@ -24,9 +24,6 @@ dependencies = [
   "bcrypt>=4.0",
   "APScheduler>=3.10",
   "flasgger>=0.9.7",
-  "watchdog>=3.0",
-  "mcp>=1.0.0",
-  "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]

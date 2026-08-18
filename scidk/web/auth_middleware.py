@@ -88,12 +88,10 @@ def check_auth():
 
     # Get session token from cookie or header
     token = request.cookies.get('scidk_session')
-    bearer_token = None
-    auth_header = request.headers.get('Authorization', '')
-    if auth_header.startswith('Bearer '):
-        bearer_token = auth_header[7:]
     if not token:
-        token = bearer_token
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            token = auth_header[7:]
 
     # Verify session (try multi-user first, fall back to legacy)
     user = auth.get_session_user(token) if token else None
@@ -104,12 +102,6 @@ def check_auth():
         if username:
             # Legacy session - create minimal user dict
             user = {'username': username, 'role': 'admin'}
-
-    if not user and bearer_token:
-        # Not a session token — try it as a per-user API token. This lets
-        # non-browser clients (scripts, MATLAB, etc.) authenticate with a
-        # Bearer token and carry their existing role.
-        user = auth.verify_api_token(bearer_token)
 
     if user:
         # Check if session is locked (only for non-lock-related routes)
@@ -144,9 +136,7 @@ def check_auth():
             return jsonify({'error': 'Authentication required'}), 401
         else:
             # UI requests redirect to login
-            # Use request.script_root + request.path to get full path for subpath deployments
-            redirect_target = request.script_root + request.path
-            return redirect(url_for('ui.login', redirect=redirect_target))
+            return redirect(url_for('ui.login', redirect=request.path))
 
 
 def init_auth_middleware(app):

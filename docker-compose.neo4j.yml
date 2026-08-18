@@ -28,26 +28,3 @@ services:
       retries: 10
       start_period: 20s
 
-  neo4j-chat:
-    image: neo4j:2025.10.1
-    container_name: scidk-neo4j-chat
-    restart: unless-stopped
-    environment:
-      - NEO4J_AUTH=${CHAT_NEO4J_AUTH:-neo4j/changeme}
-      - NEO4J_server_memory_heap_initial__size=512m
-      - NEO4J_server_memory_heap_max__size=512m
-      - NEO4J_server_memory_pagecache_size=256m
-      - NEO4J_dbms_security_auth__enabled=true
-    ports:
-      - "7688:7687"   # Bolt (chat Neo4j on different port)
-      - "7475:7474"   # HTTP (chat Neo4j Browser)
-    volumes:
-      - ${CHAT_NEO4J_HOST_DATA_DIR:-./data/neo4j-chat/data}:/data
-      - ${CHAT_NEO4J_HOST_LOGS_DIR:-./data/neo4j-chat/logs}:/logs
-    healthcheck:
-      test: ["CMD-SHELL", "PASS=$${NEO4J_AUTH#neo4j/}; cypher-shell -u neo4j -p \"$${PASS}\" -a bolt://localhost:7687 \"RETURN 1;\""]
-      interval: 15s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
-
