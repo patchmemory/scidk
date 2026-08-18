@@ -11,6 +11,11 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
   "Flask>=3.0",
+  # scidk/app.py imports this at module scope, before anything else — every
+  # test module that imports create_app fails collection without it. CI
+  # installs `-e .[dev]`, which reads this list and not requirements.txt, so
+  # declaring it in the latter alone left CI unable to import the app at all.
+  "python-dotenv>=1.0",
   "ijson>=3.2",
   "openpyxl>=3.1",
   "PyYAML>=6.0",
