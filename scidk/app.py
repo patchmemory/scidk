@@ -156,6 +156,75 @@ def create_app():
             "Usage logging and property ranking will be inert."
         )
 
+    # Stale scan cleanup — mark tasks whose writer process is gone as error.
+    # Thread handles are not retained in this codebase (api_tasks.py:611,780),
+    # so a scan whose daemon thread died leaves a row stuck in 'running'
+    # forever. PID-based detection is unambiguous; time-based is a backstop
+    # only, for rows written before writer_pid was stamped.
+    # See scidk/core/scanner_subprocess.py for the subprocess model that
+    # replaces daemon threads for scan tasks going forward.
+    _stale_ids = []
+    try:
+        import json as _json, time as _time
+        from .core.path_index_sqlite import connect as _pix_connect
+        _cleanup_conn = _pix_connect()
+        try:
+            # Another worker (or the outgoing process) can still hold the write
+            # lock at boot. Without a busy_timeout the UPDATE below raises
+            # "database is locked" immediately and, being best-effort, would be
+            # swallowed — leaving the orphans in place forever. 5s, not the 30s
+            # the merge path uses: startup must not stall on a busy index.
+            _cleanup_conn.execute("PRAGMA busy_timeout=5000")
+            # connect() sets no row_factory, so rows are plain tuples — read
+            # positionally. created/updated are selected because the age
+            # backstop below needs them.
+            _rows = _cleanup_conn.execute(
+                "SELECT id, payload, updated, created FROM background_tasks "
+                "WHERE status IN ('running','queued')"
+            ).fetchall()
+            _current_pid = os.getpid()
+            _now = _time.time()
+            for (_tid, _payload, _updated, _created) in _rows:
+                try:
+                    _p = _json.loads(_payload or '{}')
+                except Exception:
+                    _p = {}
+                _writer_pid = _p.get('writer_pid')
+                _age_hours = (_now - (_updated or _created or 0)) / 3600
+                # Stale if: written by a different (dead) process,
+                # OR no PID stamp and older than 24 hours (backstop).
+                if (_writer_pid and _writer_pid != _current_pid) or \
+                   (not _writer_pid and _age_hours > 24):
+                    _stale_ids.append(_tid)
+            if _stale_ids:
+                import logging as _logging
+                try:
+                    _cleanup_conn.executemany(
+                        "UPDATE background_tasks SET status='error', "
+                        "payload=json_set(coalesce(payload,'{}'),'$.error',"
+                        "'Orphaned: writer process not running') "
+                        "WHERE id=?",
+                        [(_id,) for _id in _stale_ids]
+                    )
+                    _cleanup_conn.commit()
+                    _logging.warning(
+                        "Marked %d orphaned background task(s) as error: %s",
+                        len(_stale_ids), ', '.join(_stale_ids),
+                    )
+                except Exception as _ce:
+                    # Reported rather than swallowed: if this keeps failing the
+                    # tasks stay stuck and the operator needs to know why.
+                    _stale_ids = []
+                    _logging.warning(
+                        "Could not clear %d orphaned background task(s) (%s); "
+                        "they will be retried on the next start.",
+                        len(_rows), _ce,
+                    )
+        finally:
+            _cleanup_conn.close()
+    except Exception:
+        pass  # Never let cleanup kill startup
+
     # State backend toggle (sqlite|memory) for app registries (reads)
     try:
         state_backend = (os.environ.get('SCIDK_STATE_BACKEND') or 'sqlite').strip().lower()
@@ -229,6 +298,18 @@ def create_app():
         'rclone_mounts': {},  # id/name -> { id, remote, subpath, path, read_only, started_at, pid, log_file }
         'settings': settings,
     }
+
+    # Purge the just-orphaned ids from the in-memory task registry so the
+    # MAX_BG_TASKS guard (api_tasks.py:126) stops counting them. Nothing
+    # hydrates 'tasks' from background_tasks today, so on a cold start this
+    # is a no-op; it matters if a future change ever does rehydrate it, and
+    # it costs nothing here.
+    try:
+        _live_tasks = app.extensions.get('scidk', {}).get('tasks', {})
+        for _id in _stale_ids:
+            _live_tasks.pop(_id, None)
+    except Exception:
+        pass
 
     # Hydrate telemetry.last_scan from SQLite settings on startup
     last_scan = load_last_scan_from_sqlite()

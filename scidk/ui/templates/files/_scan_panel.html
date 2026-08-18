@@ -41,6 +41,16 @@
     </div>
 
     <div class="drawer-field">
+      <label>Workers</label>
+      <input type="number" id="scan-workers" class="form-control form-control-sm"
+             min="1" max="256" value="16">
+      <div class="drawer-hint">
+        16–32 recommended for network mounts. Workers are split across top-level
+        subdirectories, so a path with 5 subdirs uses at most 5.
+      </div>
+    </div>
+
+    <div class="drawer-field">
       <label>Options</label>
       <div class="drawer-check-group">
         <label class="drawer-check-label">

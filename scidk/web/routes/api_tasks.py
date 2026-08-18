@@ -57,6 +57,23 @@ def _estimate_file_count_from_history(path: str):
     return None
 
 
+def _scanner_caps():
+    """(max_total_workers, max_concurrent_scans) for scan admission.
+
+    Env wins, then the scanner_settings table in scidk_settings.db, then the
+    defaults. Never raises: a settings DB that cannot be read must not stop a
+    scan from starting.
+    """
+    from ...services.scanner_settings_service import (
+        get_caps, DEFAULT_MAX_TOTAL_WORKERS, DEFAULT_MAX_CONCURRENT_SCANS,
+    )
+    try:
+        db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+        return get_caps(db_path)
+    except Exception:
+        return DEFAULT_MAX_TOTAL_WORKERS, DEFAULT_MAX_CONCURRENT_SCANS
+
+
 def _persist_task(task: dict):
     """Write current task state to background_tasks so a long scan survives a restart.
 
@@ -81,6 +98,17 @@ def _persist_task(task: dict):
                 'status_message': task.get('status_message'),
                 'eta_seconds': task.get('eta_seconds'),
                 'error': task.get('error'),
+                # Queue/subprocess fields. They live in the payload because
+                # background_tasks has exactly six columns and gains no more.
+                # They are written here rather than left to json_set alone:
+                # this function replaces the whole payload column, so anything
+                # only ever set by json_set would be erased on the next call.
+                'workers': task.get('workers'),
+                'queue_position': task.get('queue_position'),
+                'worker_pid': task.get('worker_pid'),
+                # Stamped at creation; create_app() compares it to its own PID
+                # to find tasks orphaned by a restart.
+                'writer_pid': task.get('writer_pid'),
             })
             conn.execute(
                 """
@@ -127,6 +155,13 @@ def api_tasks_create():
     if running >= max_tasks:
         return jsonify({'error': 'too many tasks running', 'code': 'max_tasks', 'max': max_tasks}), 429
 
+    # Scan worker budget. Env wins; otherwise the scanner_settings table in
+    # scidk_settings.db; otherwise the defaults. Note that SCIDK_MAX_BG_TASKS
+    # above still caps how many scans can be *running* at once, so it has to be
+    # raised alongside SCIDK_MAX_CONCURRENT_SCANS for the larger value to mean
+    # anything.
+    MAX_TOTAL_WORKERS, MAX_CONCURRENT_SCANS = _scanner_caps()
+
     if ttype == 'scan':
         provider_id = (data.get('provider_id') or 'local_fs').strip() or 'local_fs'
         root_id = (data.get('root_id') or ('/' if provider_id != 'rclone' else 'remote:')).strip()
@@ -143,10 +178,35 @@ def api_tasks_create():
                 pass
         tid_src = f"scan|{provider_id}|{path}|{started}"
         task_id = hashlib.sha1(tid_src.encode()).hexdigest()[:12]
+
+        # Requested I/O workers, clamped to the total budget.
+        try:
+            workers = min(max(1, int(data.get('workers', 8))), MAX_TOTAL_WORKERS)
+        except Exception:
+            workers = min(8, MAX_TOTAL_WORKERS)
+
+        # Which engine runs this scan. tools/scidk_scanner_opt.py walks a local
+        # directory tree with a thread pool and nothing else: it cannot reach an
+        # rclone remote (it rejects a root that is not os.path.isdir), it is
+        # always recursive, and it has no notion of this app's selection rules.
+        # So the subprocess path takes only the scans it can serve faithfully
+        # and everything else keeps the in-process walk in _worker() below,
+        # unchanged. patterns/selected_paths are in the guard for safety even
+        # though neither engine acts on them today.
+        _sel_rules = (data.get('selection') or {}).get('rules') or []
+        use_subprocess = bool(
+            provider_id in ('local_fs', 'mounted_fs')
+            and recursive
+            and not _sel_rules
+            and not (data.get('patterns') or [])
+            and not (data.get('selected_paths') or [])
+            and os.path.isdir(str(path))
+        )
+
         task = {
             'id': task_id,
             'type': 'scan',
-            'status': 'running',
+            'status': 'queued' if use_subprocess else 'running',
             'path': str(path),
             'recursive': bool(recursive),
             'started': started,
@@ -161,6 +221,15 @@ def api_tasks_create():
             'selection': data.get('selection') or {},
             'eta_seconds': None,
             'status_message': 'Initializing scan...',
+            'workers': workers,
+            # Carried so the subprocess path can tag the scan it registers the
+            # same way _worker() does (host_id, extra_json.provider_id).
+            'provider_id': provider_id,
+            'root_id': root_id,
+            # Discriminator for startup stale-task detection (scidk/app.py):
+            # a row whose writer_pid is not the running server's PID was
+            # written by a process that no longer exists.
+            'writer_pid': os.getpid(),
         }
         # Seed a provisional total from the last scan of this path (or a parent)
         # so the UI has something to show while the count pass runs.
@@ -172,8 +241,57 @@ def api_tasks_create():
                 task['status_message'] = f'Estimated {prior_count:,} files (from prior scan)'
         except Exception:
             pass  # never block task start on estimation failure
-        current_app.extensions['scidk'].setdefault('tasks', {})[task_id] = task
+        tasks_reg = current_app.extensions['scidk'].setdefault('tasks', {})
+        tasks_reg[task_id] = task
         app = current_app._get_current_object()
+
+        # Persist here, in the request, rather than as the first statement of a
+        # worker: until this row exists the task is invisible to a restart, and
+        # the old code only wrote it from inside the thread (api_tasks.py:180),
+        # so a walk that died early left nothing behind at all.
+        _persist_task(task)
+
+        if use_subprocess:
+            from ...core import path_index_sqlite as pix
+            from ...core.scan_queue import ScanQueue
+            from ...core.scanner_subprocess import launch_scanner
+            conn = pix.connect()
+            try:
+                queue_pos = ScanQueue.enqueue(conn, task_id, workers, str(path))
+                task['queue_position'] = queue_pos
+                task['status_message'] = (
+                    f'Queued at position {queue_pos} — waiting for {workers} workers'
+                )
+                # Admission is decided over the whole queue, not just this
+                # request: an earlier queued scan goes first, and this one may
+                # stay queued.
+                started_id = ScanQueue.try_start_next(
+                    conn, MAX_TOTAL_WORKERS, MAX_CONCURRENT_SCANS,
+                    live_tasks=tasks_reg,
+                )
+                if started_id:
+                    started_task = (tasks_reg.get(started_id)
+                                    or ScanQueue.task_dict_from_db(conn, started_id))
+                    if started_task is not None:
+                        launch_scanner(
+                            started_id, started_task,
+                            files_db_path=str(pix._db_path()),
+                            max_total_workers=MAX_TOTAL_WORKERS,
+                            max_concurrent=MAX_CONCURRENT_SCANS,
+                            live_tasks=tasks_reg,
+                            scans_registry=current_app.extensions['scidk'].setdefault('scans', {}),
+                        )
+                else:
+                    _persist_task(task)
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            # 'id' is the documented key going forward; 'task_id' stays because
+            # every existing caller reads that.
+            return jsonify({'task_id': task_id, 'id': task_id,
+                            'status': task.get('status')}), 202
 
         def _worker():
             with app.app_context():
@@ -609,7 +727,7 @@ def api_tasks_create():
                     task['status_message'] = f'Failed: {e}'
                     _persist_task(task)
         threading.Thread(target=_worker, daemon=True).start()
-        return jsonify({'task_id': task_id, 'status': 'running'}), 202
+        return jsonify({'task_id': task_id, 'id': task_id, 'status': 'running'}), 202
 
     elif ttype == 'commit':
         scan_id = (data.get('scan_id') or '').strip()
@@ -689,7 +807,15 @@ def api_tasks_create():
                         pass
                     # Build rows once using shared builder when index mode is enabled
                     task['status_message'] = 'Building commit rows...'
-                    use_index = (os.environ.get('SCIDK_COMMIT_FROM_INDEX') or '').strip().lower() in ('1','true','yes','y','on')
+                    # A scan walked out of process has no in-memory Dataset
+                    # objects, so it has no checksums to build rows from — but
+                    # its rows are in files.db, which is what the index builder
+                    # reads. Without this fallback such a scan commits nothing.
+                    use_index = (
+                        (os.environ.get('SCIDK_COMMIT_FROM_INDEX') or '').strip().lower()
+                        in ('1', 'true', 'yes', 'y', 'on')
+                        or not (s.get('checksums') or [])
+                    )
                     if use_index:
                         from ...core.commit_rows_from_index import build_rows_for_scan_from_index
                         rows, folder_rows = build_rows_for_scan_from_index(scan_id, s, include_hierarchy=True)
@@ -844,6 +970,48 @@ def api_tasks_list():
         return jsonify(items), 200
 
 
+@bp.get('/tasks/queue')
+def api_tasks_queue():
+        """Scan queue state: what is running, what is waiting, and the caps.
+
+        A sibling route rather than a key added to GET /api/tasks, because that
+        endpoint returns a bare JSON array and both the Files page and
+        test_state_backend_toggle depend on it staying one.
+
+        Werkzeug ranks this static rule above /tasks/<task_id>, so 'queue' is
+        never read as a task id.
+        """
+        from ...core import path_index_sqlite as pix
+        from ...core.scan_queue import ScanQueue
+        max_total_workers, max_concurrent = _scanner_caps()
+        try:
+            conn = pix.connect()
+            try:
+                state = ScanQueue.current_state(conn, max_total_workers, max_concurrent)
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        except Exception as e:
+            # An unreadable index must not break the page that polls this.
+            return jsonify({
+                'queue': {
+                    'running': [], 'queued': [],
+                    'caps': {
+                        'max_total_workers': max_total_workers,
+                        'max_concurrent': max_concurrent,
+                        'used_workers': 0,
+                        'available_workers': max_total_workers,
+                        'running_count': 0,
+                        'queued_count': 0,
+                    },
+                },
+                'error': str(e),
+            }), 200
+        return jsonify({'queue': state}), 200
+
+
 @bp.get('/tasks/<task_id>')
 def api_tasks_detail(task_id):
         task = _get_ext().get('tasks', {}).get(task_id)
@@ -858,10 +1026,42 @@ def api_tasks_cancel(task_id):
         task = tasks.get(task_id)
         if not task:
             return jsonify({'error': 'not found'}), 404
+        import time as _t
+
+        # A queued scan has no worker yet, so it can be dropped outright
+        # instead of waiting for something to notice a flag.
+        if task.get('status') == 'queued':
+            task['cancel_requested'] = True
+            task['status'] = 'canceled'
+            task['status_message'] = 'Cancelled before start'
+            task['ended'] = _t.time()
+            task.pop('queue_position', None)
+            _persist_task(task)
+            return jsonify({'status': 'canceled'}), 202
+
         # only running tasks can be canceled
         if task.get('status') != 'running':
             return jsonify({'status': task.get('status'), 'message': 'task not running'}), 400
         task['cancel_requested'] = True
-        return jsonify({'status': 'canceling'}), 202
+
+        # A subprocess scan is killable — that is the point of running it out of
+        # process. The in-memory flag above is what the in-process walk honours,
+        # and it stays the only mechanism for tasks that have no worker_pid.
+        worker_pid = task.get('worker_pid')
+        signalled = False
+        if worker_pid:
+            import signal as _signal
+            try:
+                os.kill(int(worker_pid), _signal.SIGTERM)
+                signalled = True
+            except ProcessLookupError:
+                pass  # already gone; the monitor thread will settle the task
+            except Exception as e:
+                current_app.logger.warning(
+                    "Could not signal scan worker pid %s for task %s: %s",
+                    worker_pid, task_id, e,
+                )
+        _persist_task(task)
+        return jsonify({'status': 'canceling', 'signalled': signalled}), 202
 
 

@@ -9,6 +9,8 @@ Provides REST endpoints for:
 from flask import Blueprint, jsonify, request, current_app, g, send_file
 import requests
 import os
+
+from ..decorators import require_role
 from jsonpath_ng import parse as jsonpath_parse
 
 bp = Blueprint('settings', __name__, url_prefix='/api')
@@ -1658,3 +1660,47 @@ def get_security_overview():
             'status': 'error',
             'error': str(e)
         }), 500
+
+
+# ── Scanner worker budget ───────────────────────────────────────────────────
+# Two knobs, read on every POST /api/tasks: the total I/O workers allowed
+# across all running scans, and how many scans may run concurrently. Stored in
+# scidk_settings.db's scanner_settings table (see
+# services/scanner_settings_service.py) — never migrations.py, which owns
+# files.db only.
+
+@bp.get('/scanner/settings')
+def api_scanner_settings_get():
+    """Effective scanner settings and where each value came from."""
+    from ...services.scanner_settings_service import get_effective_settings
+    try:
+        db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+        return jsonify(get_effective_settings(db_path)), 200
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@bp.post('/scanner/settings')
+@require_role('admin')
+def api_scanner_settings_post():
+    """Persist either knob. An env var still wins after the write — the saved
+    value simply becomes live if that variable is ever removed, and the
+    response says which keys are currently overridden."""
+    from ...services.scanner_settings_service import save_settings
+    data = request.get_json(force=True, silent=True) or {}
+    if not any(k in data for k in ('max_total_workers', 'max_concurrent_scans')):
+        return jsonify({'status': 'error',
+                        'error': 'provide max_total_workers and/or max_concurrent_scans'}), 400
+    try:
+        db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+        result = save_settings(
+            db_path,
+            max_total_workers=data.get('max_total_workers'),
+            max_concurrent_scans=data.get('max_concurrent_scans'),
+        )
+    except ValueError as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+    result['status'] = 'ok'
+    return jsonify(result), 200

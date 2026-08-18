@@ -67,6 +67,7 @@
         root_id: typeof currentRoot !== 'undefined' ? currentRoot : currentServer,
         path: typeof currentPath !== 'undefined' ? currentPath : '',
         recursive: depth === '0',
+        workers: parseInt(document.getElementById('scan-workers')?.value, 10) || 16,
         run_interpreters: interp,
         fast_list: fast,
         commit_after: commit,

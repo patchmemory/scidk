@@ -1,0 +1,131 @@
+<!-- Scanner Section -->
+<section id="system-scanner-section" class="settings-section">
+  <h1>Scanner</h1>
+  <p class="small">How much parallelism scans may use, and how many may run at once.</p>
+
+  <div style="max-width: 720px;">
+    <div style="margin: .75rem 0;">
+      <label for="scanner-max-total-workers" class="form-label small fw-semibold" style="display:block;">Max total workers</label>
+      <input type="number" id="scanner-max-total-workers" class="form-control form-control-sm"
+             min="1" max="256" style="max-width: 160px;"
+             data-testid="scanner-max-total-workers">
+      <div class="small text-muted" style="margin-top:.25rem;">
+        Total I/O workers across all running scans. Workers are split across top-level
+        subdirectories, so requesting 32 workers on a path with 5 subdirs uses at most 5.
+        16–32 is recommended for CIFS/NFS network mounts.
+      </div>
+      <div class="small" id="scanner-max-total-workers-note"
+           style="margin-top:.25rem; color:#997404; display:none;"></div>
+    </div>
+
+    <div style="margin: 1rem 0;">
+      <label for="scanner-max-concurrent-scans" class="form-label small fw-semibold" style="display:block;">Max concurrent scans</label>
+      <input type="number" id="scanner-max-concurrent-scans" class="form-control form-control-sm"
+             min="1" max="16" style="max-width: 160px;"
+             data-testid="scanner-max-concurrent-scans">
+      <div class="small text-muted" style="margin-top:.25rem;">
+        Scans beyond this limit queue and start as workers free up. Note that
+        <code>SCIDK_MAX_BG_TASKS</code> also caps how many tasks may run at once, so it
+        has to be at least this large for the value to take effect.
+      </div>
+      <div class="small" id="scanner-max-concurrent-scans-note"
+           style="margin-top:.25rem; color:#997404; display:none;"></div>
+    </div>
+
+    <div style="display:flex; gap:.75rem; align-items:center; margin-top:1rem;">
+      <button id="scanner-settings-save" class="btn btn-sm btn-primary"
+              data-testid="scanner-settings-save">Save</button>
+      <span id="scanner-settings-status" class="small"></span>
+    </div>
+  </div>
+</section>
+
+<script>
+  function initScannerSettings() {
+    const totalEl = document.getElementById('scanner-max-total-workers');
+    const concEl = document.getElementById('scanner-max-concurrent-scans');
+    const saveBtn = document.getElementById('scanner-settings-save');
+    const statusEl = document.getElementById('scanner-settings-status');
+    if (!totalEl || !concEl || !saveBtn) return;
+
+    const ENV_NAMES = {
+      max_total_workers: 'SCIDK_MAX_TOTAL_WORKERS',
+      max_concurrent_scans: 'SCIDK_MAX_CONCURRENT_SCANS',
+    };
+
+    function setStatus(msg, cls) {
+      statusEl.textContent = msg || '';
+      statusEl.className = 'small' + (cls ? ' text-' + cls : '');
+    }
+
+    // An env var wins over anything saved here, so the field is shown read-only
+    // rather than letting someone save a value that silently has no effect.
+    function applyOverride(key, el, overridden) {
+      const note = document.getElementById(
+        key === 'max_total_workers'
+          ? 'scanner-max-total-workers-note'
+          : 'scanner-max-concurrent-scans-note');
+      el.readOnly = !!overridden;
+      el.disabled = !!overridden;
+      if (note) {
+        note.style.display = overridden ? '' : 'none';
+        note.textContent = overridden
+          ? `Overridden by environment variable ${ENV_NAMES[key]}.`
+          : '';
+      }
+    }
+
+    async function load() {
+      try {
+        const r = await fetch(window.SCIDK_BASE + '/api/scanner/settings');
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        totalEl.value = d.max_total_workers;
+        concEl.value = d.max_concurrent_scans;
+        const ov = d.env_override || {};
+        applyOverride('max_total_workers', totalEl, ov.max_total_workers);
+        applyOverride('max_concurrent_scans', concEl, ov.max_concurrent_scans);
+        saveBtn.disabled = !!(ov.max_total_workers && ov.max_concurrent_scans);
+      } catch (e) {
+        setStatus('Could not load scanner settings: ' + e.message, 'danger');
+      }
+    }
+
+    saveBtn.addEventListener('click', async () => {
+      const body = {};
+      if (!totalEl.disabled) body.max_total_workers = parseInt(totalEl.value, 10);
+      if (!concEl.disabled) body.max_concurrent_scans = parseInt(concEl.value, 10);
+      if (!Object.keys(body).length) { setStatus('Both values are set by environment variables.', 'muted'); return; }
+      saveBtn.disabled = true;
+      setStatus('Saving…');
+      try {
+        const r = await fetch(window.SCIDK_BASE + '/api/scanner/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+        const ov = d.env_override || {};
+        setStatus(
+          (ov.max_total_workers || ov.max_concurrent_scans)
+            ? 'Saved. An environment variable still overrides one of these values.'
+            : 'Saved.',
+          'success');
+        await load();
+      } catch (e) {
+        setStatus('Save failed: ' + e.message, 'danger');
+      } finally {
+        saveBtn.disabled = false;
+      }
+    });
+
+    load();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initScannerSettings);
+  } else {
+    initScannerSettings();
+  }
+</script>
