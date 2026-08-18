@@ -77,7 +77,11 @@ class Neo4jGraph:
         )
         link_file = (
             "FOREACH (_ IN CASE WHEN f IS NULL THEN [] ELSE [1] END | "
-            "  MERGE (f)-[:INTERPRETED_AS]->(i) )"
+            # H1 — the edge is dated so "when was this interpreted" has an
+            # answer on every write path, not just the scan commit.
+            "  MERGE (f)-[rel:INTERPRETED_AS]->(i) "
+            "    ON CREATE SET rel.first_interpreted_at = datetime() "
+            "  SET rel.interpreted_at = datetime(), rel.interpreter = $interpreter_id )"
         )
         if host:
             match_file = "OPTIONAL MATCH (f:File {path: $path, host: $host}) "

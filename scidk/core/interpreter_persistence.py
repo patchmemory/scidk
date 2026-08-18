@@ -14,6 +14,7 @@ lands with the rest of the work for that file.
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Dict, Iterable, Optional
 
 __all__ = ["build_payload", "persist_interpretation"]
@@ -72,15 +73,24 @@ def persist_interpretation(
     # default=str so one unserialisable value in `data` cannot cost the whole
     # row; a plain dumps() here would raise into a caller that swallows it.
     payload_json = json.dumps(payload, default=str)
+    # H1 — stamped here because this is the only place interpreter output
+    # reaches the index. Recorded as wall-clock epoch seconds, the same unit as
+    # files.modified_time and scans.completed, so the scan timeline can order
+    # all three against each other without converting.
+    now = time.time()
 
-    sql = "UPDATE files SET interpreted_as = ?, interpretation_json = ? WHERE path = ? AND scan_id = ?"
+    sql = (
+        "UPDATE files SET interpreted_as = ?, interpretation_json = ?,"
+        " interpreted_at = ?, interpreter_version = ?"
+        " WHERE path = ? AND scan_id = ?"
+    )
     if row_type:
         sql += " AND type = ?"
 
     for candidate in (path, *fallback_paths):
         if not candidate:
             continue
-        params = [interpreter_id, payload_json, candidate, scan_id]
+        params = [interpreter_id, payload_json, now, interpreter_version, candidate, scan_id]
         if row_type:
             params.append(row_type)
         cur = conn.execute(sql, params)

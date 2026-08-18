@@ -65,7 +65,7 @@ def build_rows_for_scan_from_index(scan_id: str, scan: Dict, include_hierarchy: 
         cur = conn.cursor()
         cur.execute(
             "SELECT path, parent_path, name, depth, type, size, modified_time, file_extension, mime_type, "
-            "interpreted_as, interpretation_json FROM files WHERE scan_id = ?",
+            "interpreted_as, interpretation_json, interpreted_at FROM files WHERE scan_id = ?",
             (scan_id,)
         )
         items = cur.fetchall()
@@ -79,7 +79,7 @@ def build_rows_for_scan_from_index(scan_id: str, scan: Dict, include_hierarchy: 
     folder_rows: List[Dict] = []
     folders_seen = set()
 
-    for (p, parent, name, depth, typ, size, mtime, ext, mime, interpreted_as, interp_json) in items:
+    for (p, parent, name, depth, typ, size, mtime, ext, mime, interpreted_as, interp_json, interpreted_at) in items:
         if typ == 'folder':
             if p in folders_seen:
                 continue
@@ -110,6 +110,11 @@ def build_rows_for_scan_from_index(scan_id: str, scan: Dict, include_hierarchy: 
                 # it was written, so that clause has never fired on this path.
                 'interps': [interpreted_as] if interpreted_as else [],
                 'interpreted_as': interpreted_as,
+                # H1 — carried through so the INTERPRETED_AS edge is dated with
+                # when the interpreter actually ran, not when the commit did.
+                # Null on rows indexed before the column existed; write_scan
+                # coalesces those to the commit time.
+                'interpreted_at': float(interpreted_at) if interpreted_at else None,
                 'interpretation_confidence': _confidence_of(interp_json),
             })
 

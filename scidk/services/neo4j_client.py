@@ -172,7 +172,19 @@ class Neo4jClient:
                 "WITH r, f, s "
                 "FOREACH (iid IN coalesce(r.interps, []) | "
                 "  MERGE (i:Interpreter {id: iid}) "
-                "  MERGE (f)-[:INTERPRETED_AS]->(i) "
+                # H1 — the edge carries when the interpretation was written and
+                # which interpreter wrote it. ON CREATE for first_interpreted_at
+                # so a re-commit does not rewrite the file's history; plain SET
+                # for interpreted_at, which means "most recent run".
+                "  MERGE (f)-[rel:INTERPRETED_AS]->(i) "
+                "    ON CREATE SET rel.first_interpreted_at = datetime() "
+                # Always a datetime, never a raw epoch float: r.interpreted_at
+                # is epoch seconds from files.interpreted_at, and a property
+                # that is sometimes a number and sometimes a temporal cannot be
+                # compared or ordered.
+                "  SET rel.interpreted_at = CASE WHEN r.interpreted_at IS NULL THEN datetime() "
+                "        ELSE datetime({epochSeconds: toInteger(r.interpreted_at)}) END, "
+                "      rel.interpreter = iid "
                 ") "
                 "WITH r, f, s "
                 "WHERE r.folder IS NOT NULL AND r.folder <> '' "

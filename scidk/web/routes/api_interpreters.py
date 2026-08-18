@@ -6,6 +6,8 @@ from pathlib import Path
 import json
 import os
 
+from ..decorators import require_role
+
 bp = Blueprint('interpreters', __name__, url_prefix='/api')
 
 def _get_ext():
@@ -192,3 +194,222 @@ def api_settings_rclone_interpret():
 
     # Settings APIs for Neo4j configuration
 
+
+# ── Interpret tab (H3, H4) ────────────────────────────────────────────────
+#
+# Both routes work on caller-supplied index paths. `files.path` is the key:
+# remote scans store `remote:rel/path`, local scans a resolved absolute path,
+# and the browser gets those strings from /api/browse or /api/scans/<id>/browse,
+# so it can hand them straight back.
+
+#: Bounds a request the drawer builds from a selection. A user can tick a whole
+#: directory; they cannot usefully read the status of ten thousand files.
+_MAX_STATUS_PATHS = 500
+
+
+def _requested_paths():
+    """Paths from ``paths[]=`` (the drawer's spelling) or ``paths=``."""
+    values = request.args.getlist('paths[]') or request.args.getlist('paths')
+    seen, out = set(), []
+    for v in values:
+        v = (v or '').strip()
+        if v and v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out
+
+
+def _interpreter_meta(interpreter_id):
+    """(name, version) for a registry id, falling back to the id itself."""
+    reg = _get_ext().get('registry')
+    interp = getattr(reg, 'by_id', {}).get(interpreter_id) if reg else None
+    return (
+        getattr(interp, 'name', interpreter_id) or interpreter_id,
+        getattr(interp, 'version', None),
+    )
+
+
+def _expected_interpreter(extension):
+    """Which interpreter *should* handle this extension, per the scanner's table."""
+    from ...core.scanner_formats import KNOWN_INTERPRETERS
+    return KNOWN_INTERPRETERS.get((extension or '').lower())
+
+
+@bp.get('/interpreters/status')
+def api_interpreters_status():
+    """Which interpreters have run over each of these paths, and which have not.
+
+    One batched query over ``files`` — ``idx_files_path`` covers it — joined
+    against the extension table so a file that *should* have been interpreted
+    but never was is reported as missing rather than omitted.
+
+    A path the index has never seen is reported under ``unknown_paths`` rather
+    than silently dropped: "no interpreter ran" and "this file was never
+    scanned" are different problems.
+    """
+    paths = _requested_paths()
+    if not paths:
+        return jsonify({'error': 'paths[] is required', 'interpreters': []}), 400
+    if len(paths) > _MAX_STATUS_PATHS:
+        return jsonify({
+            'error': f'too many paths ({len(paths)}); the maximum is {_MAX_STATUS_PATHS}',
+            'interpreters': [],
+        }), 400
+
+    from ...core import path_index_sqlite as pix
+
+    conn = None
+    try:
+        conn = pix.connect()
+        pix.init_db(conn)
+        placeholders = ','.join('?' for _ in paths)
+        rows = conn.execute(
+            "SELECT path, name, file_extension, interpreted_as, interpreted_at, interpreter_version "
+            f"FROM files WHERE path IN ({placeholders})",
+            paths,
+        ).fetchall()
+    except Exception as e:
+        return jsonify({'error': str(e), 'interpreters': []}), 500
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    # A path can appear once per scan. The most recent interpretation is the
+    # answer, so collapse to the row with the latest interpreted_at, preferring
+    # any interpreted row over an uninterpreted one.
+    best = {}
+    for path, name, extension, interpreted_as, interpreted_at, version in rows:
+        current = best.get(path)
+        if current is None or (interpreted_at or 0) > (current.get('interpreted_at') or 0):
+            best[path] = {
+                'name': name or path.rsplit('/', 1)[-1],
+                'extension': extension,
+                'interpreted_as': interpreted_as,
+                'interpreted_at': interpreted_at,
+                'version': version,
+            }
+
+    # Group by interpreter: the one that ran, or the one that should have.
+    by_interpreter = {}
+    for path in paths:
+        row = best.get(path)
+        if row is None:
+            continue
+        ran = row['interpreted_as']
+        expected = _expected_interpreter(row['extension'])
+        for interpreter_id in {i for i in (ran, expected) if i}:
+            entry = by_interpreter.setdefault(interpreter_id, {})
+            ok = (interpreter_id == ran) and bool(row['interpreted_at'])
+            entry[row['name']] = {
+                'path': path,
+                'status': 'ok' if ok else 'missing',
+                'interpreted_at': row['interpreted_at'] if ok else None,
+            }
+
+    out = []
+    for interpreter_id in sorted(by_interpreter):
+        name, version = _interpreter_meta(interpreter_id)
+        files = by_interpreter[interpreter_id]
+        # The version actually recorded on a run beats the registry's current
+        # one — it is what produced the output on screen.
+        recorded = next((best[f['path']]['version'] for f in files.values()
+                         if f['status'] == 'ok' and best.get(f['path'], {}).get('version')), None)
+        out.append({
+            'id': interpreter_id,
+            'name': name,
+            'version': recorded or version,
+            'files': files,
+        })
+
+    unknown = [p for p in paths if p not in best]
+    body = {'interpreters': out}
+    if unknown:
+        body['unknown_paths'] = unknown
+    return jsonify(body), 200
+
+
+@bp.post('/interpreters/run')
+@require_role('admin')
+def api_interpreters_run():
+    """Run interpreters over an explicit list of paths, in the background.
+
+    Body: ``{"paths": [...], "interpreter": "fcs_interpreter", "mode": "missing_only"|"all"}``
+
+    ``mode`` maps onto the dispatcher's ``force``: ``missing_only`` leaves
+    already-enriched files alone (its default), ``all`` re-runs them.
+
+    Returns a task id in the same registry ``/api/tasks`` uses, so the page
+    polls it exactly like a scan.
+    """
+    import hashlib
+    import threading
+    import time
+
+    body = request.get_json(silent=True) or {}
+    paths = [str(p).strip() for p in (body.get('paths') or []) if str(p).strip()]
+    if not paths:
+        return jsonify({'error': 'paths is required'}), 400
+    if len(paths) > _MAX_STATUS_PATHS:
+        return jsonify({'error': f'too many paths ({len(paths)}); the maximum is {_MAX_STATUS_PATHS}'}), 400
+
+    mode = (body.get('mode') or 'missing_only').strip().lower()
+    if mode not in ('missing_only', 'all'):
+        return jsonify({'error': "mode must be 'missing_only' or 'all'"}), 400
+
+    interpreter = (body.get('interpreter') or '').strip() or None
+    if interpreter:
+        from ...interpreters.registry import get_interpreter_by_id, list_interpreter_ids
+        if get_interpreter_by_id(interpreter) is None:
+            # An unknown id matches no row and would report a clean zero, which
+            # reads exactly like "nothing left to interpret".
+            return jsonify({
+                'error': f'unknown interpreter: {interpreter}',
+                'known_interpreters': list_interpreter_ids(),
+            }), 400
+
+    started = time.time()
+    task_id = hashlib.sha1(f'interpret|{interpreter}|{len(paths)}|{started}'.encode()).hexdigest()[:12]
+    task = {
+        'id': task_id,
+        'type': 'interpret',
+        'status': 'running',
+        'path': paths[0] if len(paths) == 1 else f'{len(paths)} files',
+        'started': started,
+        'ended': None,
+        'total': len(paths),
+        'processed': 0,
+        'progress': 0.0,
+        'error': None,
+        'cancel_requested': False,
+        'status_message': 'Running interpreters...',
+    }
+    _get_ext().setdefault('tasks', {})[task_id] = task
+    app = current_app._get_current_object()
+
+    def _worker():
+        with app.app_context():
+            try:
+                from ...services.enrichment_service import run_enrichment
+                result = run_enrichment(
+                    interpreter_id=interpreter,
+                    limit=len(paths),
+                    paths=paths,
+                    force=(mode == 'all'),
+                )
+                task['result'] = result
+                task['processed'] = result.get('files_enriched', len(paths))
+                task['progress'] = 1.0
+                task['status'] = 'completed'
+                if result.get('errors'):
+                    task['error'] = '; '.join(result['errors'][:5])
+            except Exception as e:
+                task['status'] = 'error'
+                task['error'] = f'{type(e).__name__}: {e}'
+            finally:
+                task['ended'] = time.time()
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return jsonify({'status': 'accepted', 'task_id': task_id}), 202

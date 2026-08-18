@@ -69,6 +69,16 @@ def init_db(conn: Optional[sqlite3.Connection] = None):
                 cur.execute("ALTER TABLE files ADD COLUMN interpreted_as TEXT;")
             if 'interpretation_json' not in cols:
                 cur.execute("ALTER TABLE files ADD COLUMN interpretation_json TEXT;")
+            # H1 — when the interpretation was written, and by which build of
+            # which interpreter. Beside interpreted_as rather than in
+            # file_history: file_history is a change log for the *file*, one row
+            # per observed size change, and only the rclone scan path writes it.
+            # "What is the current interpretation state of this row" is per
+            # (path, scan_id), which is exactly what `files` is keyed on.
+            if 'interpreted_at' not in cols:
+                cur.execute("ALTER TABLE files ADD COLUMN interpreted_at REAL;")
+            if 'interpreter_version' not in cols:
+                cur.execute("ALTER TABLE files ADD COLUMN interpreter_version TEXT;")
         except Exception:
             # best-effort; ignore if failed (old SQLite variants)
             pass
@@ -126,6 +136,29 @@ def init_db(conn: Optional[sqlite3.Connection] = None):
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_hist_path ON file_history(path);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_hist_scan ON file_history(scan_id);")
+
+        # Drives the operator has added through the Files page (G1). Providers
+        # are discovered at startup; this is the persistent, editable half —
+        # a local root or an rclone remote that survives a restart without
+        # anyone editing rclone.conf or SCIDK_LOCAL_FILES_BASE by hand.
+        #
+        # Here rather than in migrations.py: that module runs against every
+        # database in the test suite and none of them has a `files` table, so
+        # anything it does to files.db raises out of migrate(). Every files.db
+        # schema change belongs beside the table it touches.
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS drives (
+                id TEXT PRIMARY KEY,
+                type TEXT NOT NULL,
+                label TEXT,
+                path TEXT,
+                name TEXT,
+                remote_type TEXT,
+                created_at REAL
+            );
+            """
+        )
         conn.commit()
     finally:
         if own:

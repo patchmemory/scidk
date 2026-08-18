@@ -489,7 +489,13 @@ def commit_to_neo4j_batched(
                     # streaming commit path can never write INTERPRETED_AS.
                     "FOREACH (iid IN coalesce(r.interps, []) | "
                     "  MERGE (interp:Interpreter {id: iid}) "
-                    "  MERGE (f)-[:INTERPRETED_AS]->(interp) ) "
+                    # H1 — same provenance the batch path writes; see
+                    # neo4j_client.write_scan.
+                    "  MERGE (f)-[rel:INTERPRETED_AS]->(interp) "
+                    "    ON CREATE SET rel.first_interpreted_at = datetime() "
+                    "  SET rel.interpreted_at = CASE WHEN r.interpreted_at IS NULL THEN datetime() "
+                    "        ELSE datetime({epochSeconds: toInteger(r.interpreted_at)}) END, "
+                    "      rel.interpreter = iid ) "
                     "WITH r, f, scan_id, node_host, CASE WHEN r.folder IS NOT NULL AND r.folder <> '' THEN r.folder ELSE substring(r.path, 0, size(r.path) - size(last(split(r.path, '/'))) - 1) END AS folder_path "
                     "OPTIONAL MATCH (s:Scan {id: scan_id}) "
                     "MERGE (f)-[:SCANNED_IN]->(s) "
@@ -512,7 +518,13 @@ def commit_to_neo4j_batched(
                     # streaming commit path can never write INTERPRETED_AS.
                     "FOREACH (iid IN coalesce(r.interps, []) | "
                     "  MERGE (interp:Interpreter {id: iid}) "
-                    "  MERGE (f)-[:INTERPRETED_AS]->(interp) ) "
+                    # H1 — same provenance the batch path writes; see
+                    # neo4j_client.write_scan.
+                    "  MERGE (f)-[rel:INTERPRETED_AS]->(interp) "
+                    "    ON CREATE SET rel.first_interpreted_at = datetime() "
+                    "  SET rel.interpreted_at = CASE WHEN r.interpreted_at IS NULL THEN datetime() "
+                    "        ELSE datetime({epochSeconds: toInteger(r.interpreted_at)}) END, "
+                    "      rel.interpreter = iid ) "
                     "WITH r, f, scan_id, node_host "
                     "OPTIONAL MATCH (s:Scan {id: scan_id}) "
                     "MERGE (f)-[:SCANNED_IN]->(s) "

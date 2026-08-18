@@ -11,7 +11,9 @@ This package organizes routes into logical blueprints:
 - api_admin: Health, metrics, logs
 - api_interpreters: Interpreter configuration
 - api_providers: Filesystem provider management
+- api_drives: Configured drives (local roots + rclone remotes)
 - api_annotations: Annotations and relationships management
+- api_annotation: Collection -> Dataset nodes and completeness sweep
 
 All blueprints are registered in create_app() in scidk/web/__init__.py
 """
@@ -34,7 +36,9 @@ def register_blueprints(app):
     from . import api_admin
     from . import api_interpreters
     from . import api_providers
+    from . import api_drives
     from . import api_annotations
+    from . import api_annotation
     from . import api_labels
     from . import api_links
     from . import api_links_v2
@@ -75,7 +79,9 @@ def register_blueprints(app):
     app.register_blueprint(api_admin.bp)
     app.register_blueprint(api_interpreters.bp)
     app.register_blueprint(api_providers.bp)
+    app.register_blueprint(api_drives.bp)  # Add Drive drawer (Task group G)
     app.register_blueprint(api_annotations.bp)
+    app.register_blueprint(api_annotation.bp)  # Collection -> Dataset (Task group I)
     app.register_blueprint(api_labels.bp)
     app.register_blueprint(api_integrations.bp)
     app.register_blueprint(api_links.bp)  # Keep for backward compatibility

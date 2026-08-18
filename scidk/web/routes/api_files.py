@@ -856,6 +856,81 @@ def api_interpret():
         return jsonify({"status": "ok", "results": results}), 200
 
 
+def _server_connected(prov_id, root_id, root_path):
+    """Whether this provider root is reachable right now (J1).
+
+    Delegates to the drives module so ``/api/servers`` and ``/api/drives``
+    cannot disagree, and so both share its 30-second cache — the sidebar asks
+    for every root on every render, and an rclone probe is a subprocess.
+    """
+    from .api_drives import check_connected
+
+    if prov_id == 'rclone':
+        return check_connected({
+            'id': f'rclone:{root_id}',
+            'type': 'rclone',
+            # list_roots hands back "name:"; the probe wants the bare name.
+            'name': str(root_id or '').rstrip(':'),
+        })
+    # local_fs and mounted_fs are both directories on this host.
+    return check_connected({
+        'id': f'{prov_id}:{root_id}',
+        'type': 'local_fs',
+        'path': root_path or root_id,
+    })
+
+
+def _servers_from_drives_table(existing, scan_history):
+    """Drives added through ``POST /api/drives`` that no provider reported (J2).
+
+    Providers enumerate what the host offers at startup; a drive added after
+    that would not appear in the sidebar until a restart. Reading the table here
+    closes that gap. Providers still come first and are not overridden — a root
+    both sources know about is listed once, from the provider.
+
+    Each drive is mapped onto the provider that can actually browse it, because
+    the sidebar sends ``id`` back as ``provider_id``: local directories to
+    ``local_fs`` (whose ``list`` resolves any absolute path), rclone remotes to
+    ``rclone``.
+    """
+    from .api_drives import check_connected, _load_drives
+
+    seen = {(s.get('id'), s.get('root_id')) for s in existing}
+    out = []
+    try:
+        drives = _load_drives()
+    except Exception:
+        # The sidebar still works from providers alone; a broken drives table
+        # is not a reason to fail the whole listing.
+        return out
+
+    for d in drives:
+        if d.get('type') == 'rclone':
+            prov_id = 'rclone'
+            root_id = f"{d.get('name') or ''}:"
+            root_path = root_id
+        else:
+            prov_id = 'local_fs'
+            root_id = d.get('path') or ''
+            root_path = root_id
+        if not root_id or (prov_id, root_id) in seen:
+            continue
+        seen.add((prov_id, root_id))
+        scan_info = scan_history.get(f'{prov_id}:{root_id}', {})
+        out.append({
+            'id': prov_id,
+            'display_name': d.get('label') or prov_id,
+            'root_id': root_id,
+            'root_path': root_path,
+            'connected': check_connected(d),
+            'scanned': scan_info.get('scanned', False),
+            'last_scanned': scan_info.get('last_scanned', None),
+            'file_count': scan_info.get('file_count', 0),
+            'drive_id': d.get('id'),
+        })
+    return out
+
+
 @bp.get('/servers')
 def api_servers():
     """Get list of all accessible servers/providers with scan metadata.
@@ -938,8 +1013,9 @@ def api_servers():
                 # Get provider display name
                 display_name = getattr(prov, 'display_name', prov_id)
 
-                # Check connection status (simple check - provider is accessible if it's loaded)
-                connected = True  # If provider is in the dict, it's accessible
+                # J1 — reachability is probed per root below, not assumed here.
+                # `connected: True` for any loaded provider meant the sidebar
+                # could not tell a live remote from a dead one.
 
                 # Get roots for this provider
                 try:
@@ -974,7 +1050,7 @@ def api_servers():
                         'display_name': display_name,
                         'root_id': root_id,
                         'root_path': root_path,
-                        'connected': connected,
+                        'connected': _server_connected(prov_id, root_id, root_path),
                         'scanned': scan_info.get('scanned', False),
                         'last_scanned': scan_info.get('last_scanned', None),
                         'file_count': scan_info.get('file_count', 0)
@@ -996,6 +1072,8 @@ def api_servers():
                     'file_count': 0,
                     'error': str(e)
                 })
+
+        servers.extend(_servers_from_drives_table(servers, scan_history))
 
         logger.info(f"api_servers: Returning {len(servers)} servers")
         return jsonify(servers), 200
@@ -1041,6 +1119,24 @@ def api_browse():
             except Exception:
                 pass
             return jsonify(listing), 200
+        except PermissionError:
+            # Raised by the local providers at the `for` over base.iterdir(),
+            # which sits outside their per-child try. Reported as 403 with an
+            # empty entries list so a caller can render "no access" instead of
+            # treating an unreadable directory as a server fault.
+            try:
+                from ...services.metrics import record_latency
+                record_latency(current_app, 'browse', _time.time() - _t0)
+            except Exception:
+                pass
+            return jsonify({'error': 'Permission denied', 'code': 'browse_forbidden', 'entries': []}), 403
+        except FileNotFoundError:
+            try:
+                from ...services.metrics import record_latency
+                record_latency(current_app, 'browse', _time.time() - _t0)
+            except Exception:
+                pass
+            return jsonify({'error': 'Path not found', 'code': 'browse_not_found', 'entries': []}), 404
         except Exception as e:
             try:
                 from ...services.metrics import record_latency
@@ -1775,6 +1871,47 @@ def api_scan_fs(scan_id):
     files = children_files.get(req_path, [])
     return jsonify({'scan_id': scan_id, 'path': req_path, 'breadcrumb': breadcrumb, 'folders': sub_folders, 'files': files, 'roots': roots, 'folder_info': folder_info, 'children_folders': children_folders, 'children_files': children_files}), 200
 
+@bp.get('/scans/history')
+def api_scans_history():
+    """Timeline of index events for one path, newest first (H2).
+
+    Path-scoped rather than scan-scoped: the question the Scan drawer asks is
+    "what has happened to this file", and the answer spans every scan that ever
+    saw it. Registered before ``/scans/<scan_id>`` on purpose — Werkzeug ranks
+    static rules above dynamic ones, so ``history`` is not read as a scan id,
+    but keeping them adjacent makes that visible to the next reader.
+
+    Query params:
+      - path (required): a file path, or a folder whose direct children are
+        summarised
+      - limit (optional, default 200)
+    """
+    from ...services.scan_history_service import build_history, MAX_EVENTS
+    from ...core import path_index_sqlite as pix
+
+    req_path = (request.args.get('path') or '').strip()
+    if not req_path:
+        return jsonify({'error': 'path is required', 'path': '', 'events': []}), 400
+    try:
+        limit = int(request.args.get('limit') or MAX_EVENTS)
+    except Exception:
+        limit = MAX_EVENTS
+    limit = max(1, min(limit, 1000))
+
+    conn = None
+    try:
+        conn = pix.connect(); pix.init_db(conn)
+        return jsonify(build_history(conn, req_path, limit)), 200
+    except Exception as e:
+        return jsonify({'error': str(e), 'path': req_path, 'events': []}), 500
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
 @bp.get('/scans/<scan_id>/browse')
 def api_scan_browse(scan_id):
     """Browse direct children from the SQLite index for a scan.
@@ -1800,6 +1937,33 @@ def api_scan_browse(scan_id):
         'type': (request.args.get('type') or '').strip().lower(),
     }
     return svc.browse_children(scan_id, req_path, page_size, token, filters)
+
+@bp.get('/scans/<scan_id>/entries')
+def api_scan_entries(scan_id):
+    """Every record in a scan as one flat list.
+
+    The flat counterpart to ``/scans/<id>/browse``: same envelope, same entry
+    shape, no ``path`` filter and no hierarchy. Delegates to
+    FSIndexService.list_all.
+
+    Query params:
+      - page_size (optional, default 100, clamped 1-1000)
+      - next_page_token (optional)
+      - extension / ext (optional)
+      - type (optional)
+    """
+    from ...services.fs_index_service import FSIndexService
+    svc = FSIndexService(current_app)
+    try:
+        page_size = int(request.args.get('page_size') or 100)
+    except Exception:
+        page_size = 100
+    token = (request.args.get('next_page_token') or '').strip()
+    filters = {
+        'extension': (request.args.get('extension') or request.args.get('ext') or '').strip().lower(),
+        'type': (request.args.get('type') or '').strip().lower(),
+    }
+    return svc.list_all(scan_id, page_size, token, filters)
 
 @bp.delete('/scans/<scan_id>')
 def api_scan_delete(scan_id):

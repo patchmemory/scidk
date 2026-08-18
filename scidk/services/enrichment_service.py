@@ -105,25 +105,39 @@ def _find_work(
     interpreter_id: Optional[str],
     limit: int,
     scan_id: Optional[str],
+    paths: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Candidate file rows, newest scans first is not required — order is
-    whatever the index gives; ``limit`` bounds the run, not the selection."""
+    whatever the index gives; ``limit`` bounds the run, not the selection.
+
+    ``paths`` restricts the run to an explicit list, which is what a
+    user-triggered "interpret these files" needs. It *replaces* the
+    interpreted_as/extension predicate rather than narrowing it: the caller
+    named the files, so one the extension table does not recognise is still a
+    file they asked about, and the per-row resolution below decides whether
+    anything can handle it.
+    """
     extensions = _extensions_for(interpreter_id)
 
     where = ["f.type = 'file'"]
     params: List[Any] = []
 
-    interpreted_clause = "f.interpreted_as IS NOT NULL"
-    if interpreter_id:
-        interpreted_clause = "f.interpreted_as = ?"
-        params.append(interpreter_id)
-
-    if extensions:
-        placeholders = ','.join('?' for _ in extensions)
-        where.append(f"({interpreted_clause} OR lower(f.file_extension) IN ({placeholders}))")
-        params.extend(extensions)
+    if paths:
+        placeholders = ','.join('?' for _ in paths)
+        where.append(f"f.path IN ({placeholders})")
+        params.extend(paths)
     else:
-        where.append(f"({interpreted_clause})")
+        interpreted_clause = "f.interpreted_as IS NOT NULL"
+        if interpreter_id:
+            interpreted_clause = "f.interpreted_as = ?"
+            params.append(interpreter_id)
+
+        if extensions:
+            ext_placeholders = ','.join('?' for _ in extensions)
+            where.append(f"({interpreted_clause} OR lower(f.file_extension) IN ({ext_placeholders}))")
+            params.extend(extensions)
+        else:
+            where.append(f"({interpreted_clause})")
 
     if scan_id:
         where.append("f.scan_id = ?")
@@ -148,6 +162,13 @@ def _find_work(
             'scan_id': row_scan_id,
             'host': _row_host(remote),
         })
+
+    if paths and interpreter_id:
+        # Applied after selection rather than in SQL: which interpreter a row
+        # belongs to is _resolve_interpreter_id's answer (interpreted_as first,
+        # extension table second), and reproducing that as a WHERE clause would
+        # be a second copy of the rule, free to drift from the first.
+        rows = [r for r in rows if _resolve_interpreter_id(r) == interpreter_id]
     return rows
 
 
@@ -421,6 +442,7 @@ def run_enrichment(
     scan_id: Optional[str] = None,
     db_conn=None,
     force: bool = False,
+    paths: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Run both passes and report what happened.
 
@@ -433,6 +455,8 @@ def run_enrichment(
             committed here when not supplied.
         force: Re-enrich files that already have a populated Interpretation
             node. Without it a second run over the same scan is a no-op.
+        paths: Restrict to an explicit list of index paths. Set by the Interpret
+            tab, which knows exactly which files the user selected.
 
     Returns:
         Counts, the interpreters that ran, and every warning and error raised.
@@ -461,7 +485,7 @@ def run_enrichment(
     directories: Dict[Path, Dict[str, Any]] = {}
 
     try:
-        rows = _find_work(conn, interpreter_id, limit, scan_id)
+        rows = _find_work(conn, interpreter_id, limit, scan_id, paths)
 
         enriched = set() if force else _already_enriched(graph, [r['path'] for r in rows])
         rows = [r for r in rows if r['path'] not in enriched]
