@@ -1,0 +1,516 @@
+{% extends 'base.html' %}
+{% block title %}-SciDK-> Files{% endblock %}
+
+{% block head %}
+<link rel="stylesheet"
+  href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+  crossorigin="anonymous">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/drawers.css') }}">
+<style>
+/* ── Page layout ─────────────────────────────────────────────────────── */
+main { max-width:100% !important; padding:0 !important; }
+.files-page { display:flex; height:calc(100vh - 56px); overflow:hidden; font-size:13px; }
+
+/* ── Sidebar ─────────────────────────────────────────────────────────── */
+.sidebar { width:240px; min-width:180px; flex-shrink:0; display:flex; flex-direction:column; border-right:1px solid #dee2e6; background:#f8f9fa; overflow:hidden; transition:width 0.2s ease; }
+.sidebar.collapsed { width:0; min-width:0; }
+.sidebar-inner { flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:180px; }
+.sidebar-search { padding:8px; border-bottom:1px solid #dee2e6; flex-shrink:0; }
+.sidebar-search input { width:100%; height:28px; padding:0 8px; font-size:12px; border:1px solid #ced4da; border-radius:4px; background:#fff; outline:none; }
+.sidebar-search input:focus { border-color:#0d6efd; }
+.sidebar-mode { padding:6px 8px; border-bottom:1px solid #dee2e6; flex-shrink:0; }
+.sidebar-scroll { flex:1; overflow-y:auto; }
+.sidebar-section { padding:6px 8px 4px; }
+.sidebar-section-header { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:#6c757d; padding:4px 0; display:flex; align-items:center; justify-content:space-between; }
+.sidebar-section-header button { background:none; border:none; padding:0 2px; cursor:pointer; color:#6c757d; font-size:13px; line-height:1; border-radius:3px; }
+.sidebar-section-header button:hover { background:#e9ecef; color:#212529; }
+.tree-node { display:flex; align-items:center; gap:5px; padding:5px 4px; border-radius:4px; cursor:pointer; user-select:none; font-size:12px; color:#212529; white-space:nowrap; overflow:hidden; }
+.tree-node:hover { background:#e9ecef; }
+.tree-node.selected { background:#cfe2ff; color:#0a58ca; }
+.tree-node .tn-icon { flex-shrink:0; font-size:13px; }
+.tree-node .tn-label { flex:1; overflow:hidden; text-overflow:ellipsis; }
+.tree-node .tn-meta { font-size:10px; color:#6c757d; flex-shrink:0; }
+.tree-loading { font-size:11px; color:#6c757d; padding:4px 8px; }
+.resizer { width:4px; background:transparent; cursor:col-resize; flex-shrink:0; transition:background .15s; }
+.resizer:hover, .resizer.dragging { background:#0d6efd; }
+
+/* ── Browser ─────────────────────────────────────────────────────────── */
+.browser { flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:0; }
+.browser-toolbar { display:flex; align-items:center; gap:6px; padding:6px 10px; border-bottom:1px solid #dee2e6; flex-shrink:0; background:#fff; flex-wrap:wrap; }
+.breadcrumb-wrap { flex:1; min-width:0; font-size:12px; display:flex; align-items:center; gap:4px; overflow:hidden; }
+.breadcrumb-wrap a { color:#0d6efd; text-decoration:none; white-space:nowrap; }
+.breadcrumb-wrap a:hover { text-decoration:underline; }
+.breadcrumb-wrap .bc-sep { color:#6c757d; }
+.breadcrumb-wrap .bc-current { font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.opts-trigger { position:relative; }
+.opts-popover { position:absolute; top:calc(100% + 4px); right:0; background:#fff; border:1px solid #dee2e6; border-radius:6px; padding:10px 14px; box-shadow:0 4px 16px rgba(0,0,0,.1); z-index:500; display:none; min-width:200px; font-size:12px; }
+.opts-popover.open { display:block; }
+.neo4j-dot { width:7px; height:7px; border-radius:50%; background:#6c757d; border:1px solid #495057; flex-shrink:0; display:inline-block; cursor:default; }
+.neo4j-dot.ok { background:#198754; border-color:#146c43; }
+.selection-bar { display:none; align-items:center; gap:6px; padding:5px 10px; background:#e7f1ff; border-bottom:1px solid #b6d4fe; flex-shrink:0; flex-wrap:wrap; }
+.selection-bar.visible { display:flex; }
+.sel-badge { display:inline-flex; align-items:center; gap:4px; background:#0d6efd; color:#fff; border:none; border-radius:14px; padding:2px 10px 2px 12px; font-size:12px; font-weight:500; cursor:pointer; }
+.sel-badge:hover { background:#0b5ed7; }
+.sel-badge .badge-x { opacity:.7; font-size:14px; line-height:1; }
+.file-table-wrap { flex:1; overflow:auto; position:relative; }
+.file-table { width:100%; border-collapse:collapse; font-size:12px; }
+.file-table th { position:sticky; top:0; background:#f8f9fa; padding:6px 10px; text-align:left; font-weight:600; font-size:11px; border-bottom:1.5px solid #dee2e6; white-space:nowrap; z-index:1; }
+.file-table td { padding:5px 10px; border-bottom:1px solid #f0f0f0; vertical-align:middle; white-space:nowrap; max-width:320px; overflow:hidden; text-overflow:ellipsis; }
+.file-table tbody tr { cursor:pointer; }
+.file-table tbody tr:hover { background:#f8f9fa; }
+.file-table tbody tr.selected { background:#e7f1ff; }
+.file-table tbody tr.in-coll td { background:rgba(25,135,84,.06); }
+.file-table tbody tr.in-coll:hover td { background:rgba(25,135,84,.11); }
+.file-table .col-cb { width:36px; display:none; }
+.file-table .col-name { min-width:180px; }
+.file-table .col-type { width:72px; color:#6c757d; }
+.file-table .col-size { width:80px; text-align:right; color:#6c757d; }
+.file-table .col-modified { width:130px; color:#6c757d; }
+.file-table .col-scanned { width:80px; text-align:center; }
+.file-table .col-act { width:36px; }
+.file-table.sel-mode .col-cb { display:table-cell; }
+.name-cell { display:flex; align-items:center; gap:6px; }
+.name-icon { font-size:14px; flex-shrink:0; }
+.empty-row td { padding:28px 12px; color:#6c757d; text-align:center; }
+.shimmer { height:12px; background:linear-gradient(90deg,#f0f0f0 25%,#e0e0e0 50%,#f0f0f0 75%); background-size:200% 100%; animation:shimmer 1.2s infinite; border-radius:3px; }
+@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+.shimmer-row td { padding:10px; }
+.sort-header:hover { background:#e9ecef !important; cursor:pointer; user-select:none; }
+.sort-ind { font-size:10px; color:#adb5bd; margin-left:2px; }
+.sort-header.asc .sort-ind::before { content:'↑'; color:#0d6efd; }
+.sort-header.desc .sort-ind::before { content:'↓'; color:#0d6efd; }
+.browser-footer { display:flex; align-items:center; gap:6px; padding:5px 10px; border-top:1px solid #dee2e6; flex-shrink:0; background:#fff; }
+.browser-status { font-size:11px; color:#6c757d; margin-left:auto; }
+.task-item { padding:5px 7px; background:#fff; border:1px solid #dee2e6; border-radius:4px; margin-bottom:3px; font-size:11px; }
+.task-bar { height:3px; background:#e9ecef; border-radius:2px; margin:3px 0; overflow:hidden; }
+.task-fill { height:100%; border-radius:2px; transition:width .3s; }
+.task-fill.running { background:#0d6efd; }
+.task-fill.completed { background:#198754; }
+.task-fill.error { background:#dc3545; }
+/* Sort indicators */
+.sort-header.asc .sort-ind, .sort-header.desc .sort-ind { font-size:11px; }
+/* Modal config diff */
+.row-config-unchanged { background:#d1e7dd !important; }
+.row-config-removed   { background:#e9ecef !important; }
+/* .attr-fb-scope lives with the Annotate drawer that uses it — see
+   files/_annotate_panel.html. Do not duplicate drawer chrome here. */
+</style>
+{% endblock %}
+
+{% block content %}
+{# The page chrome is the toolbar and the table; the heading only exists so the
+   nav target has an accessible name. Kept as the h1 the e2e suite looks for.
+   Off-screen rather than display:none — Playwright's toBeVisible() wants a
+   non-empty bounding box, which a 1px clipped element still has. #}
+<h1 data-testid="files-title" class="visually-hidden"
+    style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;">Files</h1>
+
+{# files-root is the e2e suite's handle on "the files UI rendered": the whole
+   sidebar-plus-browser region, so its text covers both the drive list and the
+   table. #}
+<div class="files-page" data-testid="files-root">
+
+  <!-- ══ SIDEBAR ══════════════════════════════════════════════════════ -->
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-inner">
+      <div class="sidebar-search">
+        <input type="text" id="tree-search-input" placeholder="Search… (/)" autocomplete="off">
+      </div>
+      <div class="sidebar-mode">
+        <div class="btn-group btn-group-sm w-100" role="group">
+          <input type="radio" class="btn-check" name="browse-mode" id="mode-live" value="live" checked>
+          <label class="btn btn-outline-primary" for="mode-live">Server</label>
+          <input type="radio" class="btn-check" name="browse-mode" id="mode-snapshot" value="snapshot">
+          <label class="btn btn-outline-primary" for="mode-snapshot">Index</label>
+        </div>
+      </div>
+      <div class="sidebar-scroll">
+        <div class="sidebar-section">
+          <div class="sidebar-section-header">
+            <span id="servers-header">DRIVES</span>
+            <div style="display:flex;gap:2px;">
+              <button id="new-snapshot-btn" title="New snapshot" style="display:none;">+</button>
+              <button id="history-btn" title="Scan history">
+                <i class="ti ti-clock" aria-hidden="true" style="font-size:12px;"></i>
+              </button>
+            </div>
+          </div>
+          <div id="servers-tree"><div class="tree-loading">Loading…</div></div>
+          <button id="add-drive-btn"
+                  style="width:100%;margin-top:4px;padding:4px 8px;font-size:11px;color:#6c757d;background:none;border:1px dashed #ced4da;border-radius:5px;cursor:pointer;text-align:left;display:flex;align-items:center;gap:5px;"
+                  title="Add a new drive or rclone remote">
+            <i class="ti ti-plus" aria-hidden="true" style="font-size:11px;"></i> Add Drive
+          </button>
+        </div>
+        <div class="sidebar-section" id="activity-section" style="display:none;">
+          <div class="sidebar-section-header"><span>ACTIVITY</span></div>
+          <div id="tasks-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="resizer" id="resizer-left"></div>
+
+  <!-- ══ BROWSER ═══════════════════════════════════════════════════════ -->
+  <div class="browser" id="browser">
+
+    <div class="browser-toolbar">
+      <button class="btn btn-sm btn-outline-secondary" id="sidebar-toggle-btn"
+              style="padding:2px 7px;" title="Toggle sidebar">☰</button>
+      <div class="breadcrumb-wrap" id="breadcrumb-nav">
+        <span class="text-muted" style="font-size:12px;">Select a drive</span>
+      </div>
+      <span class="neo4j-dot" id="neo4j-dot" title="Neo4j: checking…"></span>
+
+      <!-- Collection pill — managed by collection.js -->
+      <button class="coll-pill" id="coll-pill" title="Open Collection (Shift+Alt+C)">
+        <i class="ti ti-stack-2" aria-hidden="true" style="font-size:13px;"></i>
+        <span id="coll-count">0 files</span>
+        <span class="coll-kbd">⇧⌥C</span>
+        <button class="coll-pill-x" id="coll-pill-discard"
+                title="Discard collection" aria-label="Discard collection">×</button>
+      </button>
+
+      <button class="btn btn-sm btn-outline-secondary" id="annotate-btn"
+              title="Annotate — Attribute, Collect, Interpret"
+              onclick="Annotate.open()">🏷 Annotate</button>
+      <button class="btn btn-sm btn-outline-secondary" id="scan-drawer-btn"
+              title="Scan controls and history"
+              onclick="ScanPanel.open()">🔍 Scan</button>
+      <button class="btn btn-sm btn-outline-secondary" id="sharing-btn"
+              title="Share — RO-Crate and DMS Plan">📤 Share</button>
+
+      <div class="opts-trigger">
+        <button class="btn btn-sm btn-outline-secondary" id="opts-btn" title="View options">⚙</button>
+        <div class="opts-popover" id="opts-popover">
+          <div class="fw-semibold mb-2" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6c757d;">View options</div>
+          <div style="font-size:10px;font-weight:600;color:#6c757d;margin-bottom:4px;">Columns</div>
+          <div class="form-check mb-1"><input class="form-check-input" type="checkbox" id="col-type" checked><label class="form-check-label" for="col-type" style="font-size:12px;">Type</label></div>
+          <div class="form-check mb-1"><input class="form-check-input" type="checkbox" id="col-size" checked><label class="form-check-label" for="col-size" style="font-size:12px;">Size</label></div>
+          <div class="form-check mb-1"><input class="form-check-input" type="checkbox" id="col-modified" checked><label class="form-check-label" for="col-modified" style="font-size:12px;">Modified</label></div>
+          <div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="col-scanned" checked><label class="form-check-label" for="col-scanned" style="font-size:12px;">Scanned</label></div>
+          <div style="font-size:10px;font-weight:600;color:#6c757d;margin-bottom:4px;">Density</div>
+          <div class="btn-group btn-group-sm w-100" role="group">
+            <input type="radio" class="btn-check" name="density" id="density-comfortable">
+            <label class="btn btn-outline-secondary" for="density-comfortable" style="font-size:11px;">Comfortable</label>
+            <input type="radio" class="btn-check" name="density" id="density-compact" checked>
+            <label class="btn btn-outline-secondary" for="density-compact" style="font-size:11px;">Compact</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="selection-bar" id="selection-bar">
+      <button class="sel-badge" id="sel-badge-btn">
+        <span id="sel-badge-count">0 selected</span>
+        <span class="badge-x">×</span>
+      </button>
+      <button class="btn btn-sm btn-outline-secondary" id="clear-sel-btn">Clear</button>
+      <button class="btn btn-sm btn-primary" id="scan-selected-btn">🔍 Scan selected</button>
+      <button class="btn btn-sm btn-outline-success" id="add-to-coll-btn">+ Collection</button>
+    </div>
+
+    <div class="file-table-wrap" id="file-table-wrap">
+      <table class="file-table" id="file-table">
+        <thead>
+          <tr>
+            <th class="col-cb"><input type="checkbox" id="select-all-cb" title="Select all"></th>
+            <th class="col-name sort-header" data-sort="name">Name <span class="sort-ind" id="sort-ind-name">↕</span></th>
+            <th class="col-type sort-header" data-sort="type">Type <span class="sort-ind" id="sort-ind-type">↕</span></th>
+            <th class="col-size sort-header" data-sort="size" style="text-align:right;">Size <span class="sort-ind" id="sort-ind-size">↕</span></th>
+            <th class="col-modified sort-header" data-sort="modified">Modified <span class="sort-ind" id="sort-ind-modified">↕</span></th>
+            <th class="col-scanned sort-header" data-sort="scanned" style="text-align:center;">Scanned <span class="sort-ind" id="sort-ind-scanned">↕</span></th>
+            <th class="col-act"></th>
+          </tr>
+        </thead>
+        <tbody id="file-list">
+          <tr class="empty-row"><td colspan="7">Select a drive to browse</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="browser-footer">
+      <button class="btn btn-sm btn-outline-secondary" id="toggle-sel-btn">☑ Select files</button>
+      <button class="btn btn-sm btn-primary" id="scan-folder-btn" disabled>🔍 Scan folder</button>
+      <button class="btn btn-sm btn-success" id="commit-scan-btn" style="display:none;">✓ Commit to graph</button>
+      <span class="browser-status" id="browser-status"></span>
+      <span style="margin-left:auto;font-size:10px;color:#6c757d;display:flex;align-items:center;gap:8px;">
+        <span style="display:inline-flex;align-items:center;gap:3px;"><span class="neo4j-dot ok" style="flex-shrink:0;"></span> interpreted</span>
+        <span style="display:inline-flex;align-items:center;gap:3px;"><span class="neo4j-dot" style="flex-shrink:0;"></span> scanned</span>
+      </span>
+    </div>
+  </div>
+</div>
+
+<!-- ══ DRAWERS — all outside .files-page so they overlay freely ══════ -->
+
+<div class="drawer-backdrop" id="drawer-backdrop"></div>
+
+{% include 'files/_annotate_panel.html' %}
+{% include 'files/_scan_panel.html' %}
+{% include 'files/_share_panel.html' %}
+{% include 'files/_add_drive_panel.html' %}
+{% include 'files/_collection_panel.html' %}
+{# No separate _attribution_panel.html: the Annotate drawer's Attribute tab is
+   that panel, and including both would duplicate every attr-* element id. #}
+{% include 'files/_dms_panel.html' %}
+{% include 'files/_interpreter_modal.html' %}
+
+<!-- Snapshot config modal -->
+<div class="modal fade" id="snapshot-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="snapshot-modal-title">New Snapshot</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="snapshot-diff-legend" class="alert alert-info py-2 small" style="display:none;">
+          <strong>Changes:</strong>
+          <span class="badge bg-success ms-1">Green</span> unchanged ·
+          <span class="badge bg-secondary ms-1">Grey</span> removed · no badge = new
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold" for="snapshot-name-input">Snapshot name</label>
+          <input type="text" class="form-control form-control-sm" id="snapshot-name-input"
+                 placeholder="e.g. Lab Data – Core Files">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold" for="snapshot-server-select">Server</label>
+          <select class="form-select form-select-sm" id="snapshot-server-select">
+            <option value="">Select a server…</option>
+          </select>
+        </div>
+        <div style="border:1px solid #dee2e6;border-radius:4px;max-height:360px;overflow-y:auto;">
+          <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom">
+            <span class="small fw-semibold">Select files and folders</span>
+            <button class="btn btn-sm btn-outline-secondary" id="modal-select-all-btn">Select all</button>
+          </div>
+          <div class="small text-muted px-3 py-1" id="modal-breadcrumb"></div>
+          <table class="file-table sel-mode">
+            <thead>
+              <tr>
+                <th class="col-cb"><input type="checkbox" id="modal-select-all-cb"></th>
+                <th class="col-name">Name</th>
+                <th class="col-type">Type</th>
+                <th class="col-size">Size</th>
+              </tr>
+            </thead>
+            <tbody id="modal-file-list">
+              <tr class="empty-row"><td colspan="4">Select a server to browse</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="small text-muted mt-2" id="modal-selection-count">0 items selected</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-outline-primary" id="snapshot-save-config-btn">Save config only</button>
+        <button type="button" class="btn btn-primary" id="snapshot-save-scan-btn">Create and scan now</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+        crossorigin="anonymous"></script>
+
+<!-- Shared drawer manager — must load first -->
+<script src="{{ url_for('static', filename='js/drawers.js') }}"></script>
+
+<!-- Collection object — loads second, wires pill and keyboard shortcuts -->
+<script src="{{ url_for('static', filename='js/collection.js') }}"></script>
+
+<!-- Panel modules — order independent after drawers.js + collection.js -->
+<script src="{{ url_for('static', filename='js/scan_panel.js') }}"></script>
+<script src="{{ url_for('static', filename='js/share_panel.js') }}"></script>
+<script src="{{ url_for('static', filename='js/add_drive.js') }}"></script>
+
+<!-- Annotate drawer — Attribute / Collect / Interpret (MOD-1) -->
+<script src="{{ url_for('static', filename='js/annotate.js') }}"></script>
+
+<!-- DMS Plan builder -->
+<script src="{{ url_for('static', filename='js/dms.js') }}"></script>
+
+<!-- Page logic — file browsing, sidebar, task polling, sort, settings -->
+<script>
+'use strict';
+window.SCIDK_BASE = "{{ request.script_root | default('') }}";
+
+/* ─── Page-level logic ────────────────────────────────────────────────────
+ * File browsing, sidebar tree, task polling, column sort, view settings,
+ * snapshot modal, and search.
+ *
+ * All drawer logic is in the JS modules above. This script only handles
+ * the file table and sidebar — it reads window.Annotate, window.Collection,
+ * window.Drawers, window.ScanPanel, window.SharePanel, window.AddDrive,
+ * window.DMS as globals.
+ *
+ * The reverse direction is published through window too: the drawer modules
+ * read the browsing cursor (currentServer / currentRoot / currentPath /
+ * activeScanId / selItems) and call back into startTaskPoll, updateSelUI and
+ * loadServers. Each of those is assigned to window at the point it changes —
+ * a module that read a stale copy would scan the wrong folder.
+ * ───────────────────────────────────────────────────────────────────── */
+
+window.addEventListener('DOMContentLoaded', () => {
+
+// Utilities
+function fmtBytes(n){if(!n)return'';const u=['B','KB','MB','GB','TB'];let v=+n,i=0;while(v>=1024&&i<u.length-1){v/=1024;i++;}return(Math.round(v*10)/10)+' '+u[i];}
+function fmtTime(ts){if(!ts)return'';try{return new Date(ts*1000).toLocaleString();}catch{return String(ts);}}
+function fmtAgo(ts){if(!ts)return null;const d=Math.floor((Date.now()/1000-ts)/86400),h=Math.floor((Date.now()/1000-ts)/3600),m=Math.floor((Date.now()/1000-ts)/60);if(d>0)return d+'d ago';if(h>0)return h+'h ago';if(m>0)return m+'m ago';return'just now';}
+function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function setStatus(msg,cls=''){const el=document.getElementById('browser-status');if(!el)return;el.textContent=msg;el.className='browser-status'+(cls?' text-'+cls:'');if(msg&&cls!=='danger')setTimeout(()=>{if(el.textContent===msg)el.textContent='';},5000);}
+
+// State
+let mode='live',currentServer=null,currentRoot=null,currentPath='';
+let activeScanId=null,selMode=false,selItems=new Set(),lastSelIndex=-1;
+let itemTypes=new Map(),scanRunning=false,taskPollInterval=null;
+let _sortField='name',_sortAsc=true;
+
+// The drawer modules read the browsing cursor off window. These are `let`
+// bindings, so a one-time assignment would leave them frozen at their initial
+// null — publishCursor() runs at every site that moves the cursor instead.
+// selItems is a Set, mutated in place, so it only needs publishing once, but it
+// goes through the same call for one place to look.
+function publishCursor(){window.mode=mode;window.currentServer=currentServer;window.currentRoot=currentRoot;window.currentPath=currentPath;window.activeScanId=activeScanId;window.selItems=selItems;}
+publishCursor();
+
+// Sidebar toggle
+const sidebar=document.getElementById('sidebar');
+document.getElementById('sidebar-toggle-btn').addEventListener('click',()=>sidebar.classList.toggle('collapsed'));
+const resizer=document.getElementById('resizer-left');
+let dragging=false,startX=0,startW=0;
+resizer.addEventListener('mousedown',e=>{dragging=true;startX=e.clientX;startW=sidebar.offsetWidth;resizer.classList.add('dragging');e.preventDefault();});
+document.addEventListener('mousemove',e=>{if(!dragging)return;const w=Math.max(160,Math.min(420,startW+e.clientX-startX));sidebar.style.width=w+'px';});
+document.addEventListener('mouseup',()=>{dragging=false;resizer.classList.remove('dragging');});
+
+// Settings popover
+const optsBtn=document.getElementById('opts-btn'),optsPopover=document.getElementById('opts-popover');
+optsBtn.addEventListener('click',e=>{e.stopPropagation();optsPopover.classList.toggle('open');});
+document.addEventListener('click',e=>{if(!optsBtn.contains(e.target)&&!optsPopover.contains(e.target))optsPopover.classList.remove('open');});
+
+// Column toggles
+const COL_MAP={'col-type':'.col-type','col-size':'.col-size','col-modified':'.col-modified','col-scanned':'.col-scanned'};
+Object.entries(COL_MAP).forEach(([cbId,colClass])=>{const cb=document.getElementById(cbId);if(!cb)return;cb.addEventListener('change',()=>{document.querySelectorAll(`#file-table ${colClass}`).forEach(el=>el.style.display=cb.checked?'':'none');});});
+
+// Density
+document.getElementById('density-comfortable')?.addEventListener('change',()=>{document.querySelectorAll('#file-table td,#file-table th').forEach(el=>el.style.padding='8px 10px');});
+document.getElementById('density-compact')?.addEventListener('change',()=>{document.querySelectorAll('#file-table td,#file-table th').forEach(el=>el.style.padding='4px 10px');});
+
+// Column sort
+function applySortHeaders(){document.querySelectorAll('.sort-header').forEach(th=>{th.classList.remove('asc','desc');const ind=th.querySelector('.sort-ind');if(ind)ind.textContent='↕';});const active=document.querySelector(`.sort-header[data-sort="${_sortField}"]`);if(active){active.classList.add(_sortAsc?'asc':'desc');const ind=active.querySelector('.sort-ind');if(ind)ind.textContent='';}}
+function parseSize(s){if(!s)return 0;const m=s.match(/([\d.]+)\s*(B|KB|MB|GB|TB)/i);if(!m)return 0;const units={b:1,kb:1024,mb:1024**2,gb:1024**3,tb:1024**4};return parseFloat(m[1])*(units[m[2].toLowerCase()]||1);}
+function sortTableRows(){const tbody=document.getElementById('file-list');if(!tbody)return;const rows=[...tbody.querySelectorAll('tr[data-id]')];const empty=[...tbody.querySelectorAll('tr:not([data-id])')];rows.sort((a,b)=>{if(_sortField==='name'){const af=a.dataset.type==='folder',bf=b.dataset.type==='folder';if(af!==bf)return af?-1:1;const av=(a.dataset.name||'').toLowerCase(),bv=(b.dataset.name||'').toLowerCase();return _sortAsc?av.localeCompare(bv):bv.localeCompare(av);}if(_sortField==='type'){const av=a.dataset.type||'',bv=b.dataset.type||'';return _sortAsc?av.localeCompare(bv):bv.localeCompare(av);}if(_sortField==='size'){const av=parseSize(a.cells[3]?.textContent.trim()||''),bv=parseSize(b.cells[3]?.textContent.trim()||'');return _sortAsc?av-bv:bv-av;}const col=_sortField==='modified'?4:5;const av=a.cells[col]?.textContent.trim()||'',bv=b.cells[col]?.textContent.trim()||'';return _sortAsc?av.localeCompare(bv):bv.localeCompare(av);});empty.forEach(r=>tbody.removeChild(r));rows.forEach(r=>tbody.appendChild(r));empty.forEach(r=>tbody.appendChild(r));applySortHeaders();}
+document.addEventListener('click',e=>{const th=e.target.closest('.sort-header');if(!th)return;const field=th.dataset.sort;if(_sortField===field)_sortAsc=!_sortAsc;else{_sortField=field;_sortAsc=true;}sortTableRows();});
+
+// Mode toggle
+document.getElementById('mode-live').addEventListener('change',()=>{mode='live';publishCursor();document.getElementById('servers-header').textContent='DRIVES';document.getElementById('scan-folder-btn').style.display='';document.getElementById('commit-scan-btn').style.display='none';document.getElementById('new-snapshot-btn').style.display='none';clearBrowser();loadServers();});
+document.getElementById('mode-snapshot').addEventListener('change',()=>{mode='snapshot';publishCursor();document.getElementById('servers-header').textContent='DRIVES';document.getElementById('scan-folder-btn').style.display='none';document.getElementById('new-snapshot-btn').style.display='';clearBrowser();loadSnapshotsAsTree();});
+function clearBrowser(){document.getElementById('file-list').innerHTML='<tr class="empty-row"><td colspan="7">Select a drive to browse</td></tr>';document.getElementById('breadcrumb-nav').innerHTML='<span class="text-muted" style="font-size:12px;">Select a drive</span>';}
+
+// Drive helpers
+function _driveIcon(id){const s=(id||'').toLowerCase();if(s.includes('rclone'))return'<i class="ti ti-cloud" aria-hidden="true" style="font-size:13px;color:#6c757d;"></i>';if(s.includes('mnt')||s.includes('mount'))return'<i class="ti ti-plug" aria-hidden="true" style="font-size:13px;color:#6c757d;"></i>';return'<i class="ti ti-device-desktop" aria-hidden="true" style="font-size:13px;color:#6c757d;"></i>';}
+function _driveLabel(id,name,rootPath){if((id||'').toLowerCase().startsWith('rclone'))return name||id;if((rootPath||'').startsWith('/mnt'))return'Mountpoints'+(rootPath!=='/mnt'?' ('+rootPath+')':'');if((rootPath||'').startsWith('/home'))return'Local ('+rootPath+')';return name||id;}
+
+// Servers tree
+async function loadServers(){const tree=document.getElementById('servers-tree');tree.innerHTML='<div class="tree-loading">Loading…</div>';try{const r=await fetch(SCIDK_BASE+'/api/servers');const servers=await r.json();if(!Array.isArray(servers))throw new Error('Invalid response');const grouped={};for(const s of servers){if(!grouped[s.id])grouped[s.id]={id:s.id,name:s.display_name||s.id,roots:[],connected:s.connected};grouped[s.id].roots.push({id:s.root_id,path:s.root_path,last_scanned:s.last_scanned,file_count:s.file_count});}const provs=Object.values(grouped);tree.innerHTML=provs.map(s=>{const ago=s.roots.map(r=>r.last_scanned).filter(Boolean).reduce((a,b)=>Math.max(a,b),0);const meta=ago?fmtAgo(ago):'not scanned';const rootPath=s.roots[0]?.path||'';const label=_driveLabel(s.id,s.name,rootPath);const icon=_driveIcon(s.id);return`<div class="tree-node" style="cursor:default;">${icon}<span class="tn-label fw-semibold">${esc(label)}</span><span class="tn-meta">${meta}</span></div>`+s.roots.map(ro=>`<div class="tree-node ps-4" data-server="${esc(s.id)}" data-root="${esc(ro.id)}" data-path="${esc(ro.id)}"><i class="ti ti-folder" aria-hidden="true" style="font-size:12px;color:#6c757d;"></i><span class="tn-label">${esc(ro.path||ro.id)}</span><span class="tn-meta">${ro.file_count?ro.file_count.toLocaleString()+' files':''}</span></div>`).join('');}).join('')||`<div class="tree-loading text-muted">No drives — <a href="#" onclick="AddDrive.open();return false;" style="color:#0d6efd;">Add Drive</a></div>`;tree.querySelectorAll('.tree-node[data-root]').forEach(el=>{el.addEventListener('click',()=>{tree.querySelectorAll('.tree-node').forEach(n=>n.classList.remove('selected'));el.classList.add('selected');currentServer=el.dataset.server;currentRoot=el.dataset.root;currentPath=el.dataset.path;publishCursor();browseLive(currentServer,currentRoot,currentPath);document.getElementById('scan-folder-btn').disabled=false;});});const first=tree.querySelector('.tree-node[data-root]');if(first)first.click();}catch(e){tree.innerHTML=`<div class="tree-loading text-danger">Failed: ${esc(e.message)}</div>`;}}
+
+async function loadSnapshotsAsTree(){const tree=document.getElementById('servers-tree');tree.innerHTML='<div class="tree-loading">Loading…</div>';try{const r=await fetch(SCIDK_BASE+'/api/scans');const scans=await r.json();if(!Array.isArray(scans)||!scans.length){tree.innerHTML='<div class="tree-loading text-muted">No scans yet</div>';return;}const grouped={};for(const s of scans){const pid=s.provider_id||'local';if(!grouped[pid])grouped[pid]=[];grouped[pid].push(s);}tree.innerHTML=Object.entries(grouped).map(([pid,ss])=>`<div class="tree-node" style="cursor:default;"><i class="ti ti-camera" aria-hidden="true" style="font-size:13px;color:#6c757d;"></i><span class="tn-label fw-semibold">${esc(pid)}</span></div>`+ss.slice(0,5).map(s=>`<div class="tree-node ps-4" data-scan="${esc(s.id)}"><i class="ti ti-archive" aria-hidden="true" style="font-size:12px;color:#6c757d;"></i><span class="tn-label">${fmtAgo(s.ended||s.started)||'Unknown'}</span><span class="tn-meta">${(s.file_count||0).toLocaleString()} files</span></div>`).join('')).join('');tree.querySelectorAll('.tree-node[data-scan]').forEach(el=>{el.addEventListener('click',()=>{tree.querySelectorAll('.tree-node').forEach(n=>n.classList.remove('selected'));el.classList.add('selected');selectSnapshot(el.dataset.scan);});});}catch(e){tree.innerHTML=`<div class="tree-loading text-danger">Failed: ${esc(e.message)}</div>`;}}
+
+function selectSnapshot(scanId){activeScanId=scanId;currentPath='';publishCursor();document.getElementById('commit-scan-btn').style.display='';browseSnapshot(scanId,'');}
+
+// History drawer
+document.getElementById('history-btn')?.addEventListener('click',()=>{if(typeof ScanPanel!=='undefined')ScanPanel.openHistory(currentPath);});
+document.getElementById('new-snapshot-btn')?.addEventListener('click',()=>openSnapshotModal('new'));
+
+// History drawer load
+async function loadHistoryDrawer(){const list=document.getElementById('history-list');if(!list)return;list.innerHTML='<div class="tree-loading">Loading…</div>';try{const r=await fetch(SCIDK_BASE+'/api/scans');const scans=await r.json();if(!Array.isArray(scans)||!scans.length){list.innerHTML='<div class="tree-loading text-muted">No scan history yet.</div>';return;}list.innerHTML=scans.map(s=>{const ts=s.ended||s.started,pid=s.provider_id||'local';return`<div class="snap-item" style="border:1px solid #dee2e6;border-radius:4px;margin-bottom:4px;background:#fff;padding:6px 8px;font-size:11px;cursor:pointer;" data-scan-id="${esc(s.id)}"><div style="display:flex;align-items:center;justify-content:space-between;"><span class="fw-semibold">${esc(pid)}</span><div style="display:flex;gap:4px;"><button class="btn btn-sm" style="padding:1px 5px;font-size:10px;" data-snap-browse="${esc(s.id)}">📂</button><button class="btn btn-sm" style="padding:1px 5px;font-size:10px;" data-snap-rescan="${esc(s.id)}">⟳</button></div></div><div class="text-muted" style="font-size:10px;">${ts?fmtAgo(ts):''}${s.file_count?' · '+s.file_count.toLocaleString()+' files':''}</div></div>`;}).join('');list.querySelectorAll('[data-snap-browse]').forEach(btn=>{btn.addEventListener('click',e=>{e.stopPropagation();Drawers.close();document.getElementById('mode-snapshot').checked=true;mode='snapshot';publishCursor();document.getElementById('servers-header').textContent='DRIVES';document.getElementById('scan-folder-btn').style.display='none';document.getElementById('new-snapshot-btn').style.display='';selectSnapshot(btn.dataset.snapBrowse);loadSnapshotsAsTree();});});list.querySelectorAll('[data-snap-rescan]').forEach(btn=>{btn.addEventListener('click',async e=>{e.stopPropagation();if(!confirm('Rescan with same config?'))return;btn.disabled=true;try{const r=await fetch(SCIDK_BASE+`/api/scans/${btn.dataset.snapRescan}/rescan`,{method:'POST',headers:{'Content-Type':'application/json'}});if(r.ok){setStatus('Rescan started','success');startTaskPoll();}else setStatus('Rescan failed','danger');}catch{setStatus('Rescan failed','danger');}finally{btn.disabled=false;}});});}catch(e){list.innerHTML=`<div class="tree-loading text-danger">Failed: ${esc(e.message)}</div>`;}}
+
+// Browse
+function composePath(prov,rootId,path){if(prov==='rclone'){const remote=(rootId||'').endsWith(':')?(rootId||''):(rootId||'')+':';let rel=(path||'').replace(/^\/+/,'');if(rel.startsWith(remote))rel=rel.slice(remote.length);const ci=rel.indexOf(':');if(ci>0)rel=rel.slice(ci+1).replace(/^\/+/,'');return rel?remote+rel:remote;}return path||rootId||'/';}
+async function browseLive(prov,rootId,path){setTableLoading();const fullPath=composePath(prov,rootId,path);const qs=new URLSearchParams({provider_id:prov,root_id:rootId,path:fullPath});try{const r=await fetch(SCIDK_BASE+'/api/browse?'+qs);if(!r.ok)throw new Error(`HTTP ${r.status}`);const j=await r.json();if(j.error)throw new Error(j.error);currentPath=path;publishCursor();renderBreadcrumb(fullPath,prov);renderFileList(j.entries||[],{mode:'live',providerId:prov});}catch(e){document.getElementById('file-list').innerHTML=`<tr class="empty-row"><td colspan="7" class="text-danger">Browse failed: ${esc(e.message)}</td></tr>`;}}
+async function browseSnapshot(scanId,path=''){setTableLoading();const qs=new URLSearchParams({page_size:'200'});if(path)qs.set('path',path);try{const r=await fetch(SCIDK_BASE+`/api/scans/${encodeURIComponent(scanId)}/browse?`+qs);if(!r.ok)throw new Error(`HTTP ${r.status}`);const j=await r.json();currentPath=path;publishCursor();renderBreadcrumb(path||'/',null);renderFileList(j.entries||[],{mode:'snapshot',scanId});}catch(e){document.getElementById('file-list').innerHTML=`<tr class="empty-row"><td colspan="7" class="text-danger">Browse failed: ${esc(e.message)}</td></tr>`;}}
+function setTableLoading(){const s=()=>`<tr class="shimmer-row">${Array(7).fill(0).map(()=>`<td><div class="shimmer" style="width:${60+Math.random()*30}%"></div></td>`).join('')}</tr>`;document.getElementById('file-list').innerHTML=Array(5).fill(0).map(()=>s()).join('');}
+
+// Breadcrumb
+function renderBreadcrumb(fullPath,prov){const nav=document.getElementById('breadcrumb-nav');let parts=[];if(prov==='rclone'){const ci=fullPath.indexOf(':'),remote=ci>=0?fullPath.slice(0,ci+1):fullPath,rest=ci>=0?fullPath.slice(ci+1).replace(/^\/+/,''):'';parts.push({name:remote,path:remote});if(rest){let acc=remote;rest.split('/').filter(Boolean).forEach(seg=>{acc=acc+(acc.endsWith(':')?'':'/')+seg;parts.push({name:seg,path:acc});});}}else{parts.push({name:'/',path:''});if(fullPath&&fullPath!=='/'){let acc='';fullPath.replace(/^\/+/,'').split('/').filter(Boolean).forEach(seg=>{acc+='/'+seg;parts.push({name:seg,path:acc});});}}nav.innerHTML=parts.map((p,i)=>{if(i===parts.length-1)return`<span class="bc-current">${esc(p.name)}</span>`;return`<a href="#" data-bc-path="${esc(p.path)}">${esc(p.name)}</a><span class="bc-sep">/</span>`;}).join('');nav.querySelectorAll('a[data-bc-path]').forEach(a=>{a.addEventListener('click',e=>{e.preventDefault();const p=a.dataset.bcPath;if(mode==='live')browseLive(currentServer,currentRoot,p);else if(mode==='snapshot'&&activeScanId)browseSnapshot(activeScanId,p);});});}
+
+// File list
+function renderFileList(entries,ctx){const tbody=document.getElementById('file-list');const table=document.getElementById('file-table');itemTypes.clear();if(!entries.length){tbody.innerHTML='<tr class="empty-row"><td colspan="7">Empty folder</td></tr>';return;}entries.forEach(e=>itemTypes.set(e.id||e.path,e.type));tbody.innerHTML=entries.map((e,idx)=>{const id=e.id||e.path||e.name,icon=e.type==='folder'?'📁':'📄';const size=e.type==='folder'?'':fmtBytes(e.size||e.size_bytes||0);const mod=fmtTime(e.mtime||e.modified||e.last_modified);const scanned=e.scanned_at?`<span style="color:#198754;" title="${fmtTime(e.scanned_at)}">●</span>`:'<span style="color:#adb5bd;">●</span>';return`<tr data-id="${esc(id)}" data-type="${esc(e.type)}" data-name="${esc(e.name)}" data-idx="${idx}" data-path="${esc(currentPath||'')}"><td class="col-cb"><input type="checkbox" class="row-cb" data-id="${esc(id)}" data-idx="${idx}" ${selItems.has(id)?'checked':''}></td><td class="col-name"><div class="name-cell"><span class="name-icon">${icon}</span><span>${esc(e.name)}</span></div></td><td class="col-type">${esc(e.type)}</td><td class="col-size">${size}</td><td class="col-modified">${mod}</td><td class="col-scanned" style="text-align:center;">${scanned}</td><td class="col-act"></td></tr>`;}).join('');if(selMode)table.classList.add('sel-mode');if(typeof Collection!=='undefined')Collection._updateHighlights&&Collection._updateHighlights();else document.querySelectorAll('#file-list tr[data-name]').forEach(tr=>{});
+tbody.querySelectorAll('tr[data-id]').forEach(tr=>{const id=tr.dataset.id,type=tr.dataset.type,name=tr.dataset.name,idx=+tr.dataset.idx;tr.addEventListener('dblclick',()=>{if(type!=='folder')return;if(ctx.mode==='live')browseLive(ctx.providerId,currentRoot,id);else if(ctx.mode==='snapshot')browseSnapshot(ctx.scanId,id);});});
+tbody.addEventListener('change',e=>{const cb=e.target.closest('.row-cb');if(!cb)return;const id=cb.dataset.id,idx=+cb.dataset.idx;if(e.shiftKey&&lastSelIndex>=0){const all=[...tbody.querySelectorAll('.row-cb')];const lo=Math.min(lastSelIndex,idx),hi=Math.max(lastSelIndex,idx);for(let i=lo;i<=hi;i++){const c=all[i];if(!c)continue;if(cb.checked)selItems.add(c.dataset.id);else selItems.delete(c.dataset.id);c.checked=cb.checked;}}else{if(cb.checked)selItems.add(id);else selItems.delete(id);}lastSelIndex=idx;updateSelUI();},true);}
+
+// Selection
+function updateSelUI(){const n=selItems.size;document.getElementById('sel-badge-count').textContent=n+' selected';const bar=document.getElementById('selection-bar');if(bar)bar.classList.toggle('visible',selMode&&n>0);const cbs=[...document.getElementById('file-list').querySelectorAll('.row-cb')];const allSel=cbs.length&&cbs.every(c=>c.checked),someSel=cbs.some(c=>c.checked);const scb=document.getElementById('select-all-cb');if(scb){scb.checked=allSel;scb.indeterminate=someSel&&!allSel;}}
+function enterSelMode(){selMode=true;document.getElementById('file-table').classList.add('sel-mode');document.getElementById('toggle-sel-btn').textContent='Exit selection';}
+function exitSelMode(){selMode=false;selItems.clear();lastSelIndex=-1;document.getElementById('file-table').classList.remove('sel-mode');document.getElementById('selection-bar').classList.remove('visible');document.getElementById('toggle-sel-btn').textContent='☑ Select files';if(mode==='live')document.getElementById('scan-folder-btn').style.display='';updateSelUI();}
+document.getElementById('toggle-sel-btn').addEventListener('click',()=>selMode?exitSelMode():enterSelMode());
+document.getElementById('sel-badge-btn').addEventListener('click',exitSelMode);
+document.getElementById('clear-sel-btn').addEventListener('click',()=>{selItems.clear();lastSelIndex=-1;document.getElementById('file-list').querySelectorAll('.row-cb').forEach(c=>c.checked=false);updateSelUI();});
+document.getElementById('select-all-cb').addEventListener('change',e=>{document.getElementById('file-list').querySelectorAll('.row-cb').forEach(cb=>{cb.checked=e.target.checked;if(e.target.checked)selItems.add(cb.dataset.id);else selItems.delete(cb.dataset.id);});updateSelUI();});
+
+// Footer actions
+document.getElementById('scan-folder-btn').addEventListener('click',async()=>{if(typeof ScanPanel!=='undefined'){ScanPanel.open();return;}if(!currentServer){alert('Select a drive first.');return;}const fullPath=composePath(currentServer,currentRoot,currentPath);const btn=document.getElementById('scan-folder-btn');btn.disabled=true;try{const r=await fetch(SCIDK_BASE+'/api/tasks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'scan',path:fullPath,recursive:true,provider_id:currentServer,root_id:currentRoot})});if(r.status===202){setStatus('Scan started','success');startTaskPoll();}else{const j=await r.json();setStatus(j.error||'Scan failed','danger');}}catch(e){setStatus('Scan failed: '+e.message,'danger');}finally{btn.disabled=false;}});
+document.getElementById('commit-scan-btn').addEventListener('click',async()=>{if(!activeScanId){alert('Select a snapshot first.');return;}const btn=document.getElementById('commit-scan-btn');btn.disabled=true;try{const r=await fetch(SCIDK_BASE+'/api/tasks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'commit',scan_id:activeScanId})});if(r.status===202){setStatus('Commit started','success');startTaskPoll();}else{const j=await r.json();setStatus(j.error||'Commit failed','danger');}}catch(e){setStatus('Commit failed: '+e.message,'danger');}finally{btn.disabled=false;}});
+document.getElementById('scan-selected-btn').addEventListener('click',async()=>{if(!selItems.size){alert('Select files or folders first.');return;}const rules=[...selItems].map(id=>({action:'include',path:id,recursive:itemTypes.get(id)==='folder',node_type:itemTypes.get(id)||'file'}));const btn=document.getElementById('scan-selected-btn');btn.disabled=true;try{const r=await fetch(SCIDK_BASE+'/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'scan',path:currentPath||currentRoot,recursive:true,provider_id:currentServer,root_id:currentRoot,selection:{rules,use_ignore:true,allow_override_ignores:true}})});if(r.ok){setStatus('Scan started','success');startTaskPoll();exitSelMode();}else{const j=await r.json();setStatus(j.error||'Scan failed','danger');}}catch(e){setStatus('Scan failed: '+e.message,'danger');}finally{btn.disabled=false;}});
+
+// Tasks
+function startTaskPoll(){if(taskPollInterval)return;scanRunning=true;taskPollInterval=setInterval(async()=>{await fetchTasks();if(!scanRunning){clearInterval(taskPollInterval);taskPollInterval=null;}},3000);}
+async function fetchTasks(){try{const r=await fetch(SCIDK_BASE+'/api/tasks');const tasks=await r.json();const active=Array.isArray(tasks)?tasks.filter(t=>t.status==='running'):[];renderTasks(active);if(!active.length){scanRunning=false;}}catch{}}
+function formatElapsed(seconds){const s=Math.max(0,Math.floor(seconds||0));const m=Math.floor(s/60);return m>0?`${m}m ${s%60}s`:`${s}s`;}
+function formatEta(seconds){if(!seconds)return '';if(seconds>3600)return `~${Math.round(seconds/3600)}h remaining`;if(seconds>60)return `~${Math.round(seconds/60)}m remaining`;return `~${seconds}s remaining`;}
+function renderTaskProgress(t){const n=v=>Number(v||0).toLocaleString();
+  // No total yet — the count pass is still walking the tree. Show what the
+  // worker is doing plus elapsed time instead of a meaningless 0/? (0%).
+  if(!t.total&&t.status_message){const el=t.started?formatElapsed((Date.now()/1000)-t.started):'';return esc(t.status_message)+(el?` (${el})`:'');}
+  if(t.total>0&&t.total_is_estimate)return `${n(t.processed)} / ~${n(t.total)} files (estimated)`;
+  const pct=t.total>0?Math.round((t.processed||0)/t.total*100):0;
+  return `${n(t.processed)} / ${t.total?n(t.total):'?'} files (${pct}%)`;}
+function renderTasks(tasks){const el=document.getElementById('tasks-list');const section=document.getElementById('activity-section');if(!tasks.length){el.innerHTML='';if(section)section.style.display='none';return;}if(section)section.style.display='';el.innerHTML=tasks.map(t=>{const pct=Math.round((t.progress||0)*100);const eta=formatEta(t.eta_seconds);return`<div class="task-item"><div class="fw-semibold" style="font-size:11px;">${esc(t.type)}</div><div class="text-muted" style="font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(t.path||'')}</div><div class="task-bar"><div class="task-fill running" style="width:${pct}%"></div></div><div style="font-size:10px;color:#6c757d;">${renderTaskProgress(t)}</div>${eta?`<div style="font-size:10px;color:#6c757d;">${esc(eta)}</div>`:''}<button class="btn btn-sm btn-outline-danger mt-1" style="padding:1px 6px;font-size:10px;" data-cancel="${esc(t.id)}">Cancel</button></div>`;}).join('');el.querySelectorAll('[data-cancel]').forEach(btn=>{btn.addEventListener('click',async()=>{await fetch(SCIDK_BASE+`/api/tasks/${encodeURIComponent(btn.dataset.cancel)}/cancel`,{method:'POST'});fetchTasks();});});}
+
+// Neo4j
+async function fetchNeo4jStatus(){try{const r=await fetch(SCIDK_BASE+'/api/health/comprehensive');const j=await r.json();const ok=j?.components?.neo4j?.status==='connected';const dot=document.getElementById('neo4j-dot');if(dot){dot.classList.toggle('ok',ok);dot.title='Neo4j: '+(ok?'connected':j?.components?.neo4j?.status||'disconnected');}}catch{}}
+
+// Search
+const searchInput=document.getElementById('tree-search-input');let searchTimer;
+document.addEventListener('keydown',e=>{if(e.key==='/'&&document.activeElement!==searchInput){e.preventDefault();searchInput.focus();}});
+searchInput.addEventListener('input',e=>{const q=e.target.value.toLowerCase().trim();document.querySelectorAll('#servers-tree .tree-node').forEach(el=>{el.style.display=(!q||el.textContent.toLowerCase().includes(q))?'':'none';});clearTimeout(searchTimer);if(q.length>1)searchTimer=setTimeout(()=>performGlobalSearch(q),600);if(!q)clearBrowser();});
+async function performGlobalSearch(q){setTableLoading();document.getElementById('breadcrumb-nav').innerHTML=`<span class="text-muted">Results for "<strong>${esc(q)}</strong>"</span>`;try{const r=await fetch(SCIDK_BASE+'/api/scans');const scans=await r.json();if(!Array.isArray(scans)||!scans.length){document.getElementById('file-list').innerHTML='<tr class="empty-row"><td colspan="7">No scans to search.</td></tr>';return;}const results=await Promise.all(scans.map(s=>fetch(SCIDK_BASE+`/api/scans/${s.id}/browse?page_size=500`).then(r=>r.json()).then(d=>(d.entries||[]).filter(e=>e.name.toLowerCase().includes(q)).map(e=>({...e,_scanId:s.id}))).catch(()=>[])));const all=results.flat().slice(0,200);if(!all.length){document.getElementById('file-list').innerHTML=`<tr class="empty-row"><td colspan="7">No results for "${esc(q)}"</td></tr>`;return;}renderFileList(all,{mode:'search'});}catch(e){document.getElementById('file-list').innerHTML=`<tr class="empty-row"><td colspan="7" class="text-danger">Search failed: ${esc(e.message)}</td></tr>`;}}
+
+// Snapshot modal
+let modalMode='new',modalScanId=null,modalSel=new Set(),modalSavedCfg=new Set();
+let modalServer=null,modalRoot=null,modalPath='';
+function openSnapshotModal(modeArg,scanId=null){modalMode=modeArg;modalScanId=scanId;modalSel.clear();modalSavedCfg.clear();const m=new bootstrap.Modal(document.getElementById('snapshot-modal'));document.getElementById('snapshot-modal-title').textContent=modeArg==='new'?'New Snapshot':'Reconfigure Snapshot';document.getElementById('snapshot-diff-legend').style.display=modeArg==='reconfigure'?'':'none';document.getElementById('snapshot-name-input').value='';if(modeArg==='new')populateModalServers();else loadModalReconfigure(scanId);m.show();}
+async function populateModalServers(){const sel=document.getElementById('snapshot-server-select');sel.disabled=false;try{const r=await fetch(SCIDK_BASE+'/api/servers');const servers=await r.json();sel.innerHTML='<option value="">Select a server…</option>'+[...new Map(servers.map(s=>[s.id,s])).values()].map(s=>`<option value="${esc(s.id)}">${esc(s.display_name||s.id)}</option>`).join('');if(currentServer){sel.value=currentServer;modalServer=currentServer;modalRoot=currentRoot;modalPath=currentPath;await loadModalFiles();}}catch{}}
+async function loadModalReconfigure(scanId){try{const[scanR,cfgR]=await Promise.all([fetch(SCIDK_BASE+`/api/scans/${scanId}`),fetch(SCIDK_BASE+`/api/scans/${scanId}/config`)]);const scan=await scanR.json(),cfg=await cfgR.json();modalServer=scan.provider_id||currentServer;modalRoot=scan.root_id||currentRoot;modalPath=scan.path||'';document.getElementById('snapshot-name-input').value=scan.provider_id||'Reconfigured';await populateModalServers();const sel=document.getElementById('snapshot-server-select');sel.value=modalServer;sel.disabled=true;(cfg.rules||[]).forEach(r=>{modalSavedCfg.add(r.path);modalSel.add(r.path);});await loadModalFiles();}catch{}}
+document.getElementById('snapshot-server-select').addEventListener('change',async e=>{modalServer=e.target.value;modalRoot='/';modalPath='/';if(modalServer)await loadModalFiles();});
+async function loadModalFiles(){const tbody=document.getElementById('modal-file-list');tbody.innerHTML='<tr class="empty-row"><td colspan="4">Loading…</td></tr>';try{const qs=new URLSearchParams({provider_id:modalServer||'local_fs',root_id:modalRoot||'/',path:modalPath||'/'});const r=await fetch(SCIDK_BASE+'/api/browse?'+qs);const d=await r.json();document.getElementById('modal-breadcrumb').textContent=modalPath||'/';if(!d.entries?.length){tbody.innerHTML='<tr class="empty-row"><td colspan="4">Empty folder</td></tr>';return;}tbody.innerHTML=d.entries.map((e,i)=>{const id=e.id||e.path||e.name,icon=e.type==='folder'?'📁':'📄',size=e.type==='folder'?'':fmtBytes(e.size||0);const isSel=modalSel.has(id),wasSaved=modalSavedCfg.has(id);const cls=modalMode==='reconfigure'?(isSel&&wasSaved?'row-config-unchanged':(!isSel&&wasSaved?'row-config-removed':'')):'' ;return`<tr class="${cls}" data-id="${esc(id)}" data-type="${esc(e.type)}"><td class="col-cb"><input type="checkbox" class="modal-cb" data-id="${esc(id)}" ${isSel?'checked':''}></td><td class="col-name"><div class="name-cell"><span class="name-icon">${icon}</span><span>${esc(e.name)}</span></div></td><td class="col-type">${esc(e.type)}</td><td class="col-size">${size}</td></tr>`;}).join('');tbody.querySelectorAll('.modal-cb').forEach(cb=>{cb.addEventListener('change',()=>{if(cb.checked)modalSel.add(cb.dataset.id);else modalSel.delete(cb.dataset.id);updateModalCount();});});tbody.querySelectorAll('tr[data-type="folder"]').forEach(tr=>{tr.addEventListener('dblclick',async()=>{modalPath=tr.dataset.id;await loadModalFiles();});});updateModalCount();}catch(e){tbody.innerHTML=`<tr class="empty-row"><td colspan="4" class="text-danger">Failed: ${esc(e.message)}</td></tr>`;}}
+function updateModalCount(){document.getElementById('modal-selection-count').textContent=modalSel.size+' items selected';}
+document.getElementById('modal-select-all-btn').addEventListener('click',()=>{document.getElementById('modal-file-list').querySelectorAll('tr[data-id]').forEach(tr=>{modalSel.add(tr.dataset.id);const cb=tr.querySelector('.modal-cb');if(cb)cb.checked=true;});updateModalCount();});
+async function saveModalConfig(startScan){const name=document.getElementById('snapshot-name-input').value.trim();if(!name){alert('Enter a snapshot name.');return;}if(!modalSel.size){alert('Select at least one item.');return;}const rules=[...modalSel].map(id=>({action:'include',path:id,recursive:true}));const selection={rules,use_ignore:true,allow_override_ignores:true};try{if(modalMode==='reconfigure'){await fetch(SCIDK_BASE+`/api/scans/${modalScanId}/config`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(selection)});if(startScan){const r=await fetch(SCIDK_BASE+`/api/scans/${modalScanId}/rescan`,{method:'POST',headers:{'Content-Type':'application/json'}});if(r.ok){setStatus('Rescan started','success');startTaskPoll();}}else setStatus('Config saved','success');}else{if(startScan){const r=await fetch(SCIDK_BASE+'/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'scan',path:modalPath||modalRoot,recursive:true,provider_id:modalServer,root_id:modalRoot,selection})});if(r.ok){setStatus('Scan started','success');startTaskPoll();}}}bootstrap.Modal.getInstance(document.getElementById('snapshot-modal'))?.hide();}catch(e){setStatus('Save failed: '+e.message,'danger');}}
+document.getElementById('snapshot-save-config-btn').addEventListener('click',()=>saveModalConfig(false));
+document.getElementById('snapshot-save-scan-btn').addEventListener('click',()=>saveModalConfig(true));
+
+// Keyboard
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='a'&&selMode){e.preventDefault();document.getElementById('select-all-cb').checked=true;document.getElementById('select-all-cb').dispatchEvent(new Event('change'));}});
+
+// Visibility
+document.addEventListener('visibilitychange',()=>{if(document.hidden){if(taskPollInterval){clearInterval(taskPollInterval);taskPollInterval=null;}}else if(scanRunning)startTaskPoll();});
+
+// The drawer modules call back into these; they are function declarations
+// inside this closure, so they need publishing the same way the cursor does.
+window.startTaskPoll=startTaskPoll;window.updateSelUI=updateSelUI;
+window.loadServers=loadServers;window.exitSelMode=exitSelMode;
+window.setStatus=setStatus;
+
+// Init
+loadServers(); fetchTasks(); fetchNeo4jStatus();
+
+}); // DOMContentLoaded
+</script>
+
+<!-- Attribution JS (inline for now — extract to annotate.js per JUNIE_MODULARIZATION_TASKS.md) -->
+<script src="{{ url_for('static', filename='js/dms.js') }}"></script>
+{% endblock %}

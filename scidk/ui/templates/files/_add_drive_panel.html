@@ -1,0 +1,140 @@
+{# Add Drive drawer — Local / Mounted and Rclone Remote tabs
+   Requires: drawers.css, drawers.js, add_drive.js
+   Open with: window.Drawers.open('add-drive-drawer')
+              window.AddDrive.open()
+#}
+
+<div class="side-drawer" id="add-drive-drawer" style="width:420px;"
+     role="dialog" aria-modal="true" aria-label="Add Drive">
+
+  <div class="drawer-header">
+    <span style="font-size:15px;">💾</span>
+    <span class="drawer-title">Add Drive</span>
+    <button class="drawer-close" data-close-drawer aria-label="Close">×</button>
+  </div>
+
+  <div class="sharing-tabs" role="tablist">
+    <button class="sharing-tab active" data-drive-tab="local"  role="tab">Local / Mounted</button>
+    <button class="sharing-tab"        data-drive-tab="rclone" role="tab">Rclone Remote</button>
+  </div>
+
+  <!-- ── Local / Mounted tab ── -->
+  <div class="sharing-tab-panel active" id="drive-tab-local">
+    <p class="drawer-hint" style="margin-bottom:12px;">
+      Add a local filesystem path or a path already mounted on this machine
+      (network shares, external drives, bind mounts).
+    </p>
+
+    <div class="drawer-field">
+      <label>Path</label>
+      <div class="d-flex gap-2">
+        <input type="text" id="local-path" class="form-control form-control-sm"
+               placeholder="/home/user, /mnt/labserver, /data/…"
+               style="font-family:ui-monospace,monospace;font-size:12px;">
+        <button class="btn btn-sm btn-outline-secondary" id="local-browse-btn">Browse</button>
+      </div>
+      <div class="drawer-hint">Enter a path accessible from the machine running SciDK.</div>
+    </div>
+
+    <!-- Quick picks — populated from GET /api/drives/browse-local -->
+    <div class="drawer-field">
+      <label>Quick picks</label>
+      <div class="d-flex flex-wrap gap-2">
+        <button class="btn btn-sm btn-outline-secondary"
+                onclick="AddDrive.pickLocalPath('/home')">🏠 /home</button>
+        <button class="btn btn-sm btn-outline-secondary"
+                onclick="AddDrive.pickLocalPath('/mnt')">🔌 /mnt</button>
+        <button class="btn btn-sm btn-outline-secondary"
+                onclick="AddDrive.pickLocalPath('/data')">💾 /data</button>
+      </div>
+    </div>
+
+    <!-- Directory browser (shown when Browse clicked) -->
+    <div id="local-path-browser"
+         style="display:none;border:1px solid #dee2e6;border-radius:6px;
+                max-height:180px;overflow-y:auto;margin-bottom:12px;padding:4px;">
+      <div class="small text-muted p-2">Loading filesystem…</div>
+    </div>
+
+    <div class="drawer-field">
+      <label>Display name</label>
+      <input type="text" id="local-label" class="form-control form-control-sm"
+             placeholder="e.g. Lab Server, Scratch Drive">
+    </div>
+
+    <div class="d-flex gap-2">
+      <button class="btn btn-sm btn-primary" id="local-add-btn"
+              onclick="AddDrive.addLocal()">Add Drive</button>
+      <button class="btn btn-sm btn-outline-secondary" data-close-drawer>Cancel</button>
+    </div>
+    <div id="local-status" class="small mt-2"></div>
+  </div>
+
+  <!-- ── Rclone Remote tab ── -->
+  <div class="sharing-tab-panel" id="drive-tab-rclone">
+    <p class="drawer-hint" style="margin-bottom:12px;">
+      Add a cloud storage remote via rclone. SciDK will configure the rclone
+      backend and make it available as a Drive.
+    </p>
+
+    <div class="drawer-field">
+      <label>Remote type</label>
+      <select id="rclone-type" class="form-select form-select-sm"
+              onchange="AddDrive.onTypeChange()">
+        <option value="">Choose a remote type…</option>
+        <option value="dropbox">Dropbox</option>
+        <option value="drive">Google Drive</option>
+        <option value="s3">Amazon S3 / S3-compatible</option>
+        <option value="sftp">SFTP</option>
+        <option value="onedrive">OneDrive</option>
+        <option value="box">Box</option>
+        <option value="other">Other (advanced)</option>
+      </select>
+    </div>
+
+    <div class="drawer-field">
+      <label>Remote name</label>
+      <input type="text" id="rclone-name" class="form-control form-control-sm"
+             placeholder="e.g. dropbox, lab-s3, scratch-sftp"
+             style="font-family:ui-monospace,monospace;font-size:12px;">
+      <div class="drawer-hint">Used as the rclone identifier. No spaces.</div>
+    </div>
+
+    <!-- Type-specific fields — populated by AddDrive.onTypeChange() -->
+    <div id="rclone-fields"></div>
+
+    <!-- OAuth block — shown for Dropbox, Drive, OneDrive, Box -->
+    <div id="rclone-oauth-block" style="display:none;margin-bottom:12px;">
+      <div style="padding:8px 10px;background:#e7f1ff;border:1px solid #b6d4fe;
+                  border-radius:6px;font-size:11px;margin-bottom:8px;">
+        <strong>OAuth authorization runs on the SciDK host.</strong>
+        rclone listens for the provider's callback on <code>localhost:53682</code> of
+        whichever machine starts the handshake, so a browser here cannot complete one
+        started by the server. Run
+        <code>rclone config create &lt;name&gt; &lt;type&gt;</code> in a terminal on the
+        host, then click <em>Add Remote</em> with the credential fields left blank —
+        SciDK will import the remote you just created.
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <button class="btn btn-sm btn-outline-primary" id="rclone-auth-btn"
+                onclick="AddDrive.authorize()">🔐 Show the command</button>
+        <span id="rclone-auth-status" class="small text-muted"></span>
+      </div>
+    </div>
+
+    <div class="d-flex gap-2 flex-wrap">
+      <button class="btn btn-sm btn-primary" onclick="AddDrive.addRclone()">Add Remote</button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="AddDrive.testConnection()">Test connection</button>
+      <button class="btn btn-sm btn-outline-secondary" data-close-drawer>Cancel</button>
+    </div>
+    <div id="rclone-status" class="small mt-2"></div>
+
+    <!-- Existing remotes -->
+    <div style="margin-top:16px;border-top:1px solid #dee2e6;padding-top:12px;">
+      <div class="small fw-semibold text-muted text-uppercase mb-2"
+           style="letter-spacing:.06em;">Existing rclone remotes</div>
+      <div id="rclone-existing" class="small text-muted">Loading…</div>
+    </div>
+  </div>
+
+</div>

@@ -1,0 +1,136 @@
+{# Collection panel — floats from toolbar pill, not a side drawer
+   Requires: drawers.css, collection.js
+   JS: window.Collection.open() / .close() / .toggle()
+   Keyboard: Shift+Alt+C (global), Ctrl+D (save as Dataset when open)
+#}
+
+<!-- Collection pill — always in toolbar, visible when collection is non-empty -->
+<!-- Place this inside .browser-toolbar in datasets.html -->
+<!--
+<button class="coll-pill" id="coll-pill" title="Open Collection (Shift+Alt+C)">
+  <i class="ti ti-stack-2" aria-hidden="true" style="font-size:13px;"></i>
+  <span id="coll-count">0 files</span>
+  <span class="coll-kbd">⇧⌥C</span>
+  <button class="coll-pill-x" id="coll-pill-discard"
+          title="Discard collection" aria-label="Discard collection">×</button>
+</button>
+-->
+
+<!-- Collection panel — floats centered below toolbar -->
+<div class="coll-panel" id="coll-panel" role="dialog" aria-label="Collection">
+
+  <div class="cp-head">
+    <i class="ti ti-stack-2" aria-hidden="true" style="font-size:15px;color:#6c757d;"></i>
+    <span class="cp-title">Collection</span>
+    <span class="cp-meta" id="cp-meta"></span>
+    <span class="cp-kbd" title="Shift+Alt+C — toggle">⇧⌥C</span>
+    <span class="cp-kbd" title="Ctrl+D — save as Dataset" style="margin-left:2px;">^D</span>
+    <button class="cp-close" id="cp-close" aria-label="Close collection panel">×</button>
+  </div>
+
+  <div class="cp-body">
+
+    <!-- Sweep alert: shown when a Dataset is partially represented -->
+    <div class="coll-sweep" id="coll-sweep" style="display:none;">
+      <div style="font-size:14px;flex-shrink:0;margin-top:1px;">⚠</div>
+      <div style="flex:1;">
+        <div class="cs-label" id="sweep-label"></div>
+        <div class="cs-detail" id="sweep-detail"></div>
+        <div class="cs-actions">
+          <button class="cs-inc" id="sweep-inc-btn">Include missing files</button>
+          <button class="cs-ign" id="sweep-ign-btn">Ignore</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- File list grouped by path -->
+    <div id="coll-group" style="display:none;">
+      <div class="coll-group-head">
+        <span id="coll-group-path">—</span>
+        <span id="coll-group-count"></span>
+      </div>
+      <div id="coll-item-list"></div>
+    </div>
+
+    <div class="coll-empty" id="coll-empty">
+      No files in collection yet.<br>
+      Select files and click <strong>+ Collection</strong>,<br>
+      or browse multiple folders to accumulate files.
+    </div>
+
+  </div>
+
+  <!-- Footer: Save as… · Share · Discard -->
+  <div class="cp-foot">
+
+    <div class="saveas-wrap" id="saveas-wrap">
+      <button class="cp-action primary" id="saveas-btn">
+        <i class="ti ti-device-floppy" aria-hidden="true" style="font-size:12px;"></i>
+        Save as…
+        <i class="ti ti-chevron-down" aria-hidden="true" style="font-size:11px;"></i>
+      </button>
+      <div class="saveas-menu" id="saveas-menu">
+
+        <button class="saveas-item" id="save-dataset-btn">
+          <span class="si-icon">
+            <i class="ti ti-database" aria-hidden="true" style="color:#0d6efd;"></i>
+          </span>
+          <span>
+            <span class="si-label">Dataset in graph</span>
+            <span class="si-desc">
+              Creates a Dataset node + CONTAINS edges.
+              <kbd style="font-size:9px;padding:1px 4px;border:1px solid #dee2e6;
+                          border-radius:3px;font-family:monospace;">^D</kbd>
+            </span>
+          </span>
+        </button>
+
+        <div class="saveas-div"></div>
+
+        <button class="saveas-item" id="save-rocrate-btn">
+          <span class="si-icon">
+            <i class="ti ti-package" aria-hidden="true" style="color:#6c757d;"></i>
+          </span>
+          <span>
+            <span class="si-label">RO-Crate</span>
+            <span class="si-desc">Package as an RO-Crate metadata archive.</span>
+          </span>
+        </button>
+
+        <button class="saveas-item" id="save-filelist-btn">
+          <span class="si-icon">
+            <i class="ti ti-list" aria-hidden="true" style="color:#6c757d;"></i>
+          </span>
+          <span>
+            <span class="si-label">Export file list</span>
+            <span class="si-desc">Download a .txt of file paths — no graph required.</span>
+          </span>
+        </button>
+
+        <button class="saveas-item" id="save-copy-btn">
+          <span class="si-icon">
+            <i class="ti ti-copy" aria-hidden="true" style="color:#6c757d;"></i>
+          </span>
+          <span>
+            <span class="si-label">Copy files to folder</span>
+            <span class="si-desc">Export a copy to a destination path on a server.</span>
+          </span>
+        </button>
+
+      </div>
+    </div>
+
+    <button class="cp-action" id="coll-share-btn">
+      <i class="ti ti-share" aria-hidden="true" style="font-size:12px;"></i>
+      Share
+    </button>
+
+    <div style="flex:1;"></div>
+
+    <button class="cp-action danger" id="coll-discard-btn">Discard</button>
+
+  </div>
+</div>
+
+<!-- Toast feedback -->
+<div id="coll-toast"></div>

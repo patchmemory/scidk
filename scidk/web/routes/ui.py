@@ -112,7 +112,10 @@ def datasets():
     recent_scans = recent_scans[:N]
     # files viewer mode: allow query param override, else env, else classic
     files_viewer = (request.args.get('files_viewer') or os.environ.get('SCIDK_FILES_VIEWER') or 'classic').strip()
-    return render_template('datasets.html', datasets=datasets, directories=directories, recent_scans=recent_scans, selected_scan=selected_scan, files_viewer=files_viewer)
+    # files/datasets.html is the modular Files page: a lean shell plus one
+    # {% include %} per drawer. The 4,200-line monolith it replaced is kept at
+    # _archive/datasets_monolith.html for reference only — nothing renders it.
+    return render_template('files/datasets.html', datasets=datasets, directories=directories, recent_scans=recent_scans, selected_scan=selected_scan, files_viewer=files_viewer)
 
 
 @bp.get('/datasets/<dataset_id>')

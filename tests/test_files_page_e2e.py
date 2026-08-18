@@ -27,7 +27,78 @@ def test_files_page_loads_successfully():
         resp = client.get('/datasets')
         assert resp.status_code == 200
         assert b'Files' in resp.data
-        assert b'Provider' in resp.data
+        # The redesigned page calls the sidebar section DRIVES; "Provider" was
+        # the pre-redesign wording and no longer appears anywhere on the page.
+        assert b'DRIVES' in resp.data
+
+
+def test_files_page_is_modular():
+    """The Files page is a shell: every drawer arrives via include + module.
+
+    Guards the MOD-3 rule. A drawer added as inline HTML or an inline <script>
+    would still render, so the only thing that catches the regression is
+    asserting that each panel's markup and its module are both present.
+    """
+    from scidk.app import create_app
+    app = create_app()
+    app.config['TESTING'] = True
+
+    with authenticate_test_client(app.test_client(), app) as client:
+        html = client.get('/datasets').data.decode('utf-8')
+
+    for module in ('drawers.js', 'collection.js', 'scan_panel.js',
+                   'share_panel.js', 'add_drive.js', 'annotate.js', 'dms.js'):
+        assert f'js/{module}' in html, f'{module} not loaded'
+    assert 'css/drawers.css' in html
+
+    # One id from each included panel fragment.
+    for drawer_id in ('annotate-drawer', 'scan-drawer', 'sharing-drawer',
+                      'add-drive-drawer', 'coll-panel', 'dms-panel'):
+        assert f'id="{drawer_id}"' in html, f'{drawer_id} missing'
+
+    # The Attribute tab replaced the standalone attribution panel; including
+    # both would duplicate every attr-* id.
+    assert html.count('id="attr-anchor-label-sel"') == 1
+    assert 'id="attribution-panel"' not in html
+
+
+def test_e2e_selectors_are_present():
+    """The stable data-testids the Playwright suite navigates by.
+
+    These are contract, not decoration: `files-title` and `files-root` are
+    asserted by browse, negative and core-flows before anything else runs, so a
+    redesign that drops them fails every one of those specs at line 1.
+    """
+    from scidk.app import create_app
+    app = create_app()
+    app.config['TESTING'] = True
+
+    with authenticate_test_client(app.test_client(), app) as client:
+        html = client.get('/datasets').data.decode('utf-8')
+
+    for testid in ('files-title', 'files-root'):
+        assert f'data-testid="{testid}"' in html, f'{testid} missing'
+
+
+def test_annotate_panel_has_no_inline_handlers():
+    """The Annotate drawer declares intent; annotate.js maps it to behaviour.
+
+    An inline on* attribute resolves against the global scope only, so adding
+    one here means publishing a private function onto window for the markup to
+    find. The delegated listeners in annotate.js exist so that is never needed.
+    """
+    from pathlib import Path
+
+    panel = Path('scidk/ui/templates/files/_annotate_panel.html').read_text()
+    for attribute in ('onclick=', 'onchange=', 'oninput=', 'onsubmit='):
+        assert attribute not in panel, f'{attribute} in _annotate_panel.html'
+    assert 'data-annotate-action=' in panel
+
+    # And every action the panel names is one the module knows how to run.
+    import re
+    module = Path('scidk/ui/static/js/annotate.js').read_text()
+    for action in set(re.findall(r'data-annotate-(?:action|change|input)="([^"]+)"', panel)):
+        assert f"'{action}'" in module, f'{action} has no handler in annotate.js'
 
 
 @pytest.mark.skip(reason="UI redesigned - test needs updating for new tree explorer")
