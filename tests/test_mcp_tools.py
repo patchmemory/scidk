@@ -11,12 +11,27 @@ import os
 
 @pytest.fixture
 def neo4j_driver():
-    """Create a Neo4j driver for testing."""
+    """A live Neo4j driver, or skip the test that asked for it.
+
+    Skipped rather than marked ``integration`` at module scope: half of this
+    file needs no database at all (the registry tests below assert on
+    TOOL_DEFINITIONS, which is pure data), and deselecting those along with
+    these would quietly drop the guard on the canonical tool list.
+
+    verify_connectivity() before yielding, so "no graph here" reports as a
+    skip naming the URI instead of six assert 'error' == 'success' failures
+    that read like the tools are broken.
+    """
     uri = os.getenv('NEO4J_URI', 'bolt://localhost:7687')
     user = os.getenv('NEO4J_USER', 'neo4j')
     password = os.getenv('NEO4J_PASSWORD', 'password')
 
     driver = GraphDatabase.driver(uri, auth=(user, password))
+    try:
+        driver.verify_connectivity()
+    except Exception as e:
+        driver.close()
+        pytest.skip(f"live Neo4j required at {uri}: {type(e).__name__}: {e}")
     yield driver
     driver.close()
 

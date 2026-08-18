@@ -20,6 +20,7 @@ from scidk.ai.chat_graph import (
 )
 
 
+@pytest.mark.integration
 def test_chat_neo4j_connection():
     """Test: Can connect to chat Neo4j."""
     client = get_chat_neo4j_client()
@@ -31,6 +32,7 @@ def test_chat_neo4j_connection():
     client.close()
 
 
+@pytest.mark.integration
 def test_chat_neo4j_ensure_schema():
     """Test: Can create indexes in chat Neo4j."""
     client = get_chat_neo4j_client()
@@ -59,6 +61,7 @@ def test_chat_neo4j_ensure_schema():
     client.close()
 
 
+@pytest.mark.integration
 def test_write_and_retrieve_chat_message():
     """Test: Can write ChatMessage to chat Neo4j and retrieve it."""
     chat_client = get_chat_neo4j_client()

@@ -5,12 +5,19 @@ Test the new streaming ReAct endpoint.
 Sends a multi-step query that will trigger ReAct reasoning and displays
 live step updates as they stream from the server.
 """
+import pytest
 import requests
 import json
 import time
 
 BASE_URL = "http://localhost:5000"
 
+
+# Hand-run script (see the __main__ block) that POSTs to a server already
+# listening on BASE_URL. Nothing starts one for it, so under pytest it is an
+# integration test by definition — unmarked, it was a ConnectionError on any
+# machine without a dev server up, CI included.
+@pytest.mark.integration
 def test_streaming_react():
     """Test streaming endpoint with a ReAct query."""
     print("\n" + "="*70)
