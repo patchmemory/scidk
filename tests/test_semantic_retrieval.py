@@ -3,8 +3,11 @@
 Test semantic schema retrieval for Schema Intelligence Layer.
 Verifies that relevant labels are retrieved for different query types.
 """
+import pytest
 import os
 import sys
+
+pytestmark = pytest.mark.integration
 
 sys.path.insert(0, os.path.dirname(__file__))
 

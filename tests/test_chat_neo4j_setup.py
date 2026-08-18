@@ -10,6 +10,9 @@ Gate 2 verification tests:
 import pytest
 import time
 import json
+
+pytestmark = pytest.mark.integration
+
 from scidk.services.chat_neo4j_client import ChatNeo4jClient, get_chat_neo4j_client
 from scidk.ai.chat_graph import (
     get_label_snapshot,

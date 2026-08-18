@@ -8,6 +8,8 @@ import pytest
 from neo4j import GraphDatabase
 import os
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture
 def neo4j_driver():

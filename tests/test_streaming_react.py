@@ -5,9 +5,12 @@ Test the new streaming ReAct endpoint.
 Sends a multi-step query that will trigger ReAct reasoning and displays
 live step updates as they stream from the server.
 """
+import pytest
 import requests
 import json
 import time
+
+pytestmark = pytest.mark.integration
 
 BASE_URL = "http://localhost:5000"
 
