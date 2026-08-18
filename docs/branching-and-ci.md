@@ -28,8 +28,8 @@ Goal: Keep the development flow simple and reliable by working on one active bra
 - [ ] Justification added if working on multiple branches concurrently.
 
 ## CI Expectations
-- Unit tests and smoke checks run on every PR.
-- E2E smoke (where applicable) runs within a few minutes (<5s/spec target).
+- Unit/integration tests run on every PR via `.github/workflows/ci.yml` (`pytest -m "not e2e"`).
+- **E2E is disabled in CI as of Feb 2026** (the E2E job is commented out). Run E2E locally with `npm run e2e` or `pytest -m e2e`; do not let E2E block PRs.
 - Required checks must be green before merge.
 - Dev submodule freshness: PRs to main must keep dev/ submodule at the latest commit of its configured branch (see .gitmodules). A CI check enforces this, and main auto-syncs dev/ after merge.
 

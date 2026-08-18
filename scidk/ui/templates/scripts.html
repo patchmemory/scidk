@@ -1383,7 +1383,7 @@ function initializeEditor() {
 // Load scripts from API
 async function loadScripts() {
   try {
-    const response = await fetch('/api/scripts/scripts');
+    const response = await fetch(window.SCIDK_BASE + '/api/scripts/scripts');
     const data = await response.json();
 
     if (data.status === 'ok') {
@@ -1481,7 +1481,7 @@ function renderScriptList(scripts) {
 // Load and display a script
 async function loadScript(scriptId) {
   try {
-    const response = await fetch(`/api/scripts/scripts/${scriptId}`);
+    const response = await fetch(window.SCIDK_BASE + `/api/scripts/scripts/${scriptId}`);
     const data = await response.json();
 
     if (data.status === 'ok') {
@@ -1627,7 +1627,7 @@ async function populateLabelSelectors() {
   if (labelSelectors.length === 0) return;
 
   try {
-    const response = await fetch('/api/graph/schema/combined?source=neo4j');
+    const response = await fetch(window.SCIDK_BASE + '/api/graph/schema/combined?source=neo4j');
     const data = await response.json();
 
     // Extract unique labels from schema
@@ -1672,7 +1672,7 @@ async function loadNodesForLabel(paramName) {
     nodeInfo.style.display = 'block';
     nodeInfo.innerHTML = '<span style="color: #666;">Loading nodes...</span>';
 
-    const response = await fetch(`/api/graph/instances?label=${encodeURIComponent(selectedLabel)}&limit=100`);
+    const response = await fetch(window.SCIDK_BASE + `/api/graph/instances?label=${encodeURIComponent(selectedLabel)}&limit=100`);
     const data = await response.json();
 
     if (data.error) {
@@ -1871,7 +1871,7 @@ async function saveParameterLabels() {
   if (!hasChanges) return;
 
   try {
-    const response = await fetch(`/api/scripts/scripts/${currentScript.id}`, {
+    const response = await fetch(window.SCIDK_BASE + `/api/scripts/scripts/${currentScript.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2038,7 +2038,7 @@ async function runScript() {
   }
 
   try {
-    const response = await fetch(`/api/scripts/scripts/${currentScript.id}/run`, {
+    const response = await fetch(window.SCIDK_BASE + `/api/scripts/scripts/${currentScript.id}/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ parameters })
@@ -2086,7 +2086,7 @@ async function validateScript() {
   statusEl.className = 'editor-status running';
 
   try {
-    const response = await fetch(`/api/scripts/scripts/${currentScript.id}/validate`, {
+    const response = await fetch(window.SCIDK_BASE + `/api/scripts/scripts/${currentScript.id}/validate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     });
@@ -2140,7 +2140,7 @@ async function activateScript() {
   statusEl.className = 'editor-status running';
 
   try {
-    const response = await fetch(`/api/scripts/scripts/${currentScript.id}/activate`, {
+    const response = await fetch(window.SCIDK_BASE + `/api/scripts/scripts/${currentScript.id}/activate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     });
@@ -2175,7 +2175,7 @@ async function deactivateScript() {
   statusEl.className = 'editor-status running';
 
   try {
-    const response = await fetch(`/api/scripts/scripts/${currentScript.id}/deactivate`, {
+    const response = await fetch(window.SCIDK_BASE + `/api/scripts/scripts/${currentScript.id}/deactivate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     });
@@ -2208,7 +2208,7 @@ async function cloneScript() {
   if (!newName) return;
 
   try {
-    const response = await fetch('/api/scripts/scripts', {
+    const response = await fetch(window.SCIDK_BASE + '/api/scripts/scripts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2246,7 +2246,7 @@ async function saveScript() {
   statusEl.className = 'editor-status running';
 
   try {
-    const response = await fetch(`/api/scripts/scripts/${currentScript.id}`, {
+    const response = await fetch(window.SCIDK_BASE + `/api/scripts/scripts/${currentScript.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2294,7 +2294,7 @@ async function deleteScript() {
   statusEl.className = 'editor-status running';
 
   try {
-    const response = await fetch(`/api/scripts/scripts/${currentScript.id}`, {
+    const response = await fetch(window.SCIDK_BASE + `/api/scripts/scripts/${currentScript.id}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' }
     });
@@ -2663,7 +2663,7 @@ async function createScriptFromTemplate() {
   const template = SCRIPT_TEMPLATES[selectedScriptType];
 
   try {
-    const response = await fetch('/api/scripts/scripts', {
+    const response = await fetch(window.SCIDK_BASE + '/api/scripts/scripts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2820,7 +2820,7 @@ function displayValidationResults(validation) {
 // Load available plugins for palette
 async function loadAvailablePlugins() {
   try {
-    const response = await fetch('/api/plugins/available');
+    const response = await fetch(window.SCIDK_BASE + '/api/plugins/available');
     const data = await response.json();
 
     if (data.status === 'ok') {
@@ -3331,7 +3331,7 @@ async function saveParameters() {
 
   // Save to database
   try {
-    const response = await fetch(`/api/scripts/scripts/${currentScript.id}`, {
+    const response = await fetch(window.SCIDK_BASE + `/api/scripts/scripts/${currentScript.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(currentScript)
@@ -3344,7 +3344,7 @@ async function saveParameters() {
       closeParameterEditor();
 
       // Reload script from server to get fresh data
-      const scriptResponse = await fetch(`/api/scripts/scripts/${currentScript.id}`);
+      const scriptResponse = await fetch(window.SCIDK_BASE + `/api/scripts/scripts/${currentScript.id}`);
       const scriptData = await scriptResponse.json();
       if (scriptData.status === 'ok') {
         currentScript = scriptData.script;
@@ -3456,7 +3456,7 @@ async function exportResult(format) {
   if (!currentResult) return;
 
   try {
-    const response = await fetch(`/api/scripts/results/${currentResult.id}/export?format=${format}`);
+    const response = await fetch(window.SCIDK_BASE + `/api/scripts/results/${currentResult.id}/export?format=${format}`);
 
     if (!response.ok) {
       throw new Error('Export failed');
@@ -3486,7 +3486,7 @@ async function importNotebook(file) {
   formData.append('file', file);
 
   try {
-    const response = await fetch('/api/scripts/import-notebook', {
+    const response = await fetch(window.SCIDK_BASE + '/api/scripts/import-notebook', {
       method: 'POST',
       body: formData
     });

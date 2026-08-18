@@ -193,7 +193,7 @@
    */
   async function fetchAndDisplayValidation(scriptId) {
     try {
-      const response = await fetch(`/api/scripts/${scriptId}/validation-result`);
+      const response = await fetch(window.SCIDK_BASE + `/api/scripts/${scriptId}/validation-result`);
       const data = await response.json();
 
       if (data.status === 'ok') {
@@ -411,7 +411,7 @@
     // Poll every 2 seconds
     validationModalPollingInterval = setInterval(async () => {
       try {
-        const response = await fetch(`/api/scripts/${scriptId}/validation-result`);
+        const response = await fetch(window.SCIDK_BASE + `/api/scripts/${scriptId}/validation-result`);
         const data = await response.json();
 
         if (data.status === 'ok') {

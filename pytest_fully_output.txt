@@ -1,0 +1,433 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-7.4.4, pluggy-1.6.0
+rootdir: /home/patch/PycharmProjects/scidk
+configfile: pyproject.toml
+plugins: cov-7.0.0, playwright-0.4.3, base-url-2.1.0
+collected 927 items
+
+tests/test_alert_manager.py ..............                               [  1%]
+tests/test_alerts_api.py ............                                    [  2%]
+tests/test_annotations_and_selections.py ..                              [  3%]
+tests/test_annotations_relationships_syncqueue.py .                      [  3%]
+tests/test_annotations_rest_endpoints.py ...........                     [  4%]
+tests/test_api_endpoint_registry.py ...................                  [  6%]
+tests/test_app_api.py ....                                               [  6%]
+tests/test_arrows_import_export.py ..........                            [  7%]
+tests/test_auth.py ......................                                [ 10%]
+tests/test_auth_multiuser.py ...........................                 [ 13%]
+tests/test_auto_lock.py ............                                     [ 14%]
+tests/test_backup_automation.py .............                            [ 15%]
+tests/test_bioformats_converter.py ...........                           [ 17%]
+tests/test_bioformats_interpreters.py ................                   [ 18%]
+tests/test_bruker_microct_dataset.py ....                                [ 19%]
+tests/test_bruker_skyscan_interpreter.py ..                              [ 19%]
+tests/test_chat_api.py .......................................           [ 23%]
+tests/test_commit_index_chain.py .                                       [ 23%]
+tests/test_commit_neo4j_attempt_flag.py .                                [ 23%]
+tests/test_commit_verbose_and_health.py ..                               [ 24%]
+tests/test_config_export_import.py ...................                   [ 26%]
+tests/test_cross_database_transfer.py ...............                    [ 27%]
+tests/test_csv_interpreter.py ..                                         [ 27%]
+tests/test_directories_api.py .                                          [ 28%]
+tests/test_eda_interpreter.py ...........                                [ 29%]
+tests/test_error_and_timeout.py ...                                      [ 29%]
+tests/test_files_page_e2e.py .s....Fsss.                                 [ 30%]
+tests/test_filesystem.py ...                                             [ 31%]
+tests/test_folder_config_precedence.py .                                 [ 31%]
+tests/test_folder_hierarchy.py ....                                      [ 31%]
+tests/test_fs_list_api.py .                                              [ 31%]
+tests/test_fuzzy_matching.py .................                           [ 33%]
+tests/test_graph.py ..                                                   [ 33%]
+tests/test_graph_combined_schema_api.py .........                        [ 34%]
+tests/test_graph_query_api.py ..s.....                                   [ 35%]
+tests/test_graph_schema_api.py ..                                        [ 35%]
+tests/test_graph_subschema_api.py ..                                     [ 36%]
+tests/test_graphrag_endpoints.py ...                                     [ 36%]
+tests/test_graphrag_entity_extractor.py .....                            [ 36%]
+tests/test_graphrag_errors.py ..                                         [ 37%]
+tests/test_graphrag_feedback.py .............                            [ 38%]
+tests/test_graphrag_observability.py .                                   [ 38%]
+tests/test_graphrag_query_engine.py ......                               [ 39%]
+tests/test_graphrag_utilities.py ..                                      [ 39%]
+tests/test_health_comprehensive.py ...............                       [ 41%]
+tests/test_health_sqlite.py .                                            [ 41%]
+tests/test_helpers_example.py ....                                       [ 41%]
+tests/test_ilab_plugin.py ...........                                    [ 42%]
+tests/test_instances_api.py ..                                           [ 43%]
+tests/test_interpreters_effective_and_scan_config.py ..                  [ 43%]
+tests/test_interpreters_page.py .                                        [ 43%]
+tests/test_interpreters_registry_api.py .....                            [ 43%]
+tests/test_ipynb_interpreter.py ......                                   [ 44%]
+tests/test_ipynb_ui_render.py .                                          [ 44%]
+tests/test_label_endpoint_registry.py ............                       [ 45%]
+tests/test_label_instance_count.py ..F                                   [ 46%]
+tests/test_labels_api.py ...................................             [ 50%]
+tests/test_link_execution_progress.py ...                                [ 50%]
+tests/test_links_api.py .........................FF...                   [ 53%]
+tests/test_links_integration.py .s.....s.                                [ 54%]
+tests/test_links_page.py .....                                           [ 55%]
+tests/test_links_triple_import.py ..............                         [ 56%]
+tests/test_logs_api.py ..........                                        [ 57%]
+tests/test_logs_endpoint.py .....                                        [ 58%]
+tests/test_map_route.py .                                                [ 58%]
+tests/test_maps_features.py ...................                          [ 60%]
+tests/test_metrics_endpoint.py .                                         [ 60%]
+tests/test_neo4j_adapter.py ....                                         [ 60%]
+tests/test_neo4j_commit.py .                                             [ 61%]
+tests/test_neo4j_commit_flow.py .                                        [ 61%]
+tests/test_neo4j_commit_folders.py .                                     [ 61%]
+tests/test_neo4j_password_save.py ..                                     [ 61%]
+tests/test_neo4j_settings_api.py ..                                      [ 61%]
+tests/test_plugin_endpoint_integration.py .........                      [ 62%]
+tests/test_plugin_instance_manager.py ..........                         [ 63%]
+tests/test_plugin_label_publishing.py .........                          [ 64%]
+tests/test_plugin_loader.py ...........                                  [ 65%]
+tests/test_plugin_settings.py ..............                             [ 67%]
+tests/test_plugin_settings_api.py ..........                             [ 68%]
+tests/test_plugin_template_registry.py ............                      [ 69%]
+tests/test_plugins_api.py .....                                          [ 70%]
+tests/test_progress_indicators.py ...                                    [ 70%]
+tests/test_property_removal_and_overwrite.py .........                   [ 71%]
+tests/test_providers_api.py .........                                    [ 72%]
+tests/test_python_interpreter.py ..                                      [ 72%]
+tests/test_rclone_provider.py ...                                        [ 73%]
+tests/test_rclone_recursive_hierarchy.py .                               [ 73%]
+tests/test_rclone_scan.py .                                              [ 73%]
+tests/test_rclone_scan_ingest.py .                                       [ 73%]
+tests/test_registry.py ..                                                [ 73%]
+tests/test_rescan_idempotency.py .                                       [ 73%]
+tests/test_rocrate_export.py ..                                          [ 74%]
+tests/test_rocrate_referenced.py ..                                      [ 74%]
+tests/test_saved_maps_service.py ..................                      [ 76%]
+tests/test_scan_browse_indexed.py .                                      [ 76%]
+tests/test_scan_commit_delete.py ..                                      [ 76%]
+tests/test_scan_dry_run.py .                                             [ 76%]
+tests/test_scan_fs_auto_enter_base.py .                                  [ 76%]
+tests/test_scan_nonrecursive_includes_folders.py .                       [ 76%]
+tests/test_scan_sources.py ...                                           [ 77%]
+tests/test_scans_committed_flag.py .                                     [ 77%]
+tests/test_schema.py .............................                       [ 80%]
+tests/test_schema_file_folder.py .                                       [ 80%]
+tests/test_script_sandbox.py ...............................             [ 83%]
+tests/test_scripts.py ......................                             [ 86%]
+tests/test_search_api.py ...                                             [ 86%]
+tests/test_seed_demo_data.py ..............                              [ 88%]
+tests/test_selective_scan_cache.py .                                     [ 88%]
+tests/test_sqlite_migrations.py .                                        [ 88%]
+tests/test_sqlite_path_index.py ..                                       [ 88%]
+tests/test_state_backend_toggle.py ....                                  [ 88%]
+tests/test_swagger_api_docs.py ...........                               [ 90%]
+tests/test_table_format_registry.py ....................                 [ 92%]
+tests/test_table_loader_plugin.py ...................                    [ 94%]
+tests/test_tasks_limits_cancel.py ..                                     [ 94%]
+tests/test_tasks_scan.py .                                               [ 94%]
+tests/test_transparency_analysis_scripts.py ssssssss                     [ 95%]
+tests/test_transparency_chat_tools.py .....                              [ 96%]
+tests/test_transparency_dependencies.py ..............                   [ 97%]
+tests/test_transparency_file_interpretation.py ......                    [ 98%]
+tests/test_transparency_plugins_page.py .........                        [ 99%]
+tests/contracts/test_api_contracts.py ......                             [ 99%]
+tests/e2e/test_demo_recording.py s                                       [ 99%]
+tests/e2e/test_persistence.py s                                          [100%]
+
+=================================== FAILURES ===================================
+________________________ test_no_synchronous_scan_in_ui ________________________
+
+    def test_no_synchronous_scan_in_ui():
+        """Verify that synchronous /api/scan is NOT used by the Files page UI."""
+        from scidk.app import create_app
+        app = create_app()
+        app.config['TESTING'] = True
+    
+        with authenticate_test_client(app.test_client(), app) as client:
+            resp = client.get('/datasets')
+            html = resp.data.decode('utf-8')
+    
+            # Check that the JavaScript does NOT call /api/scan from provider panel
+            # (it should only use /api/tasks)
+>           assert "'/api/scan'" not in html or html.count("'/api/scan'") <= 1
+E           assert ("'/api/scan'" not in '<!doctype h...dy>\n</html>'
+E             "'/api/scan'" is contained here:
+E               ait fetch('/api/scan', {
+E                         method: 'POST',
+E                         headers: { 'Content-Type': 'application/json' },
+E                         body: JSON.stringify(payload)
+E                       });
+E               ...
+E             
+E             ...Full output truncated (839 lines hidden), use '-vv' to show or 3 <= 1)
+E            +  where 3 = <built-in method count of str object at 0x35bc11c0>("'/api/scan'")
+E            +    where <built-in method count of str object at 0x35bc11c0> = '<!doctype html>\n<html>\n<head>\n  <meta charset="utf-8" />\n  <title>-SciDK-> Files</title>\n  <style>\n    :root { ...\n\n<!-- Browser notifications for alerts -->\n<script src="/static/js/notifications.js"></script>\n\n</body>\n</html>'.count
+
+tests/test_files_page_e2e.py:222: AssertionError
+----------------------------- Captured stderr call -----------------------------
+[2026-03-02 11:18:57] [INFO] [root] Logging configured: level=INFO, dir=logs, max_size=50MB, backups=10
+[2026-03-02 11:18:57] [INFO] [scidk.app] Graph backend: in-memory
+[2026-03-02 11:18:58] [INFO] [scidk.core.label_endpoint_registry] Label endpoint registry initialized
+[2026-03-02 11:18:58] [INFO] [scidk.core.plugin_template_registry] Plugin template registry initialized
+[2026-03-02 11:18:58] [INFO] [scidk.core.plugin_instance_manager] Plugin instance manager initialized (db: scidk_settings.db)
+[2026-03-02 11:18:58] [INFO] [scidk.core.plugin_loader] Discovered 4 plugins: ['example_ilab', 'ilab_table_loader', 'table_loader', 'example_plugin']
+[2026-03-02 11:18:58] [INFO] [scidk.core.plugin_loader] Discovered 4 plugins: ['example_ilab', 'ilab_table_loader', 'table_loader', 'example_plugin']
+[2026-03-02 11:18:58] [INFO] [scidk.core.label_endpoint_registry] Registered label endpoint: /api/integrations/ilab/services (iLab Services) -> iLabService
+[2026-03-02 11:18:58] [INFO] [scidk.core.label_endpoint_registry] Registered label endpoint: /api/integrations/ilab/equipment (iLab Equipment) -> Equipment
+[2026-03-02 11:18:58] [INFO] [scidk.core.plugin_loader] Successfully loaded plugin: example_ilab v1.0.0
+[2026-03-02 11:18:58] [WARNING] [scidk.core.plugin_template_registry] Template ilab_importer with category 'data_import' missing recommended graph_behavior config keys: ['can_create_label', 'label_source']
+[2026-03-02 11:18:58] [INFO] [scidk.core.plugin_template_registry] Registered plugin template: ilab_importer (iLab Data Importer) [category: data_import]
+[2026-03-02 11:18:58] [INFO] [plugins.ilab_table_loader] iLab Data Importer plugin template registered successfully
+[2026-03-02 11:18:58] [INFO] [scidk.core.plugin_loader] Successfully loaded plugin: ilab_table_loader v1.0.0
+[2026-03-02 11:18:58] [INFO] [scidk.core.plugin_template_registry] Registered plugin template: table_loader (Table Loader) [category: data_import]
+[2026-03-02 11:18:58] [INFO] [plugins.table_loader] Table Loader plugin template registered successfully
+[2026-03-02 11:18:58] [INFO] [scidk.core.plugin_loader] Successfully loaded plugin: table_loader v1.0.0
+[2026-03-02 11:18:58] [INFO] [scidk.core.plugin_loader] Successfully loaded plugin: example_plugin v1.0.0
+[2026-03-02 11:18:58] [INFO] [apscheduler.scheduler] Adding job tentatively -- it will be properly scheduled when the scheduler starts
+[2026-03-02 11:18:58] [INFO] [apscheduler.scheduler] Added job "Daily Backup" to job store "default"
+[2026-03-02 11:18:58] [INFO] [apscheduler.scheduler] Scheduler started
+___________________ test_instance_count_neo4j_not_configured ___________________
+
+client = <FlaskClient <Flask 'scidk.app'>>
+
+    def test_instance_count_neo4j_not_configured(client):
+        """Test instance count when Neo4j is not configured."""
+        # Create a test label
+        label_data = {
+            'name': 'TestLabel2',
+            'properties': [
+                {'name': 'name', 'type': 'string'}
+            ]
+        }
+    
+        response = client.post('/api/labels', json=label_data)
+        assert response.status_code == 200
+    
+        # Get instance count
+        response = client.get('/api/labels/TestLabel2/instance-count')
+    
+        # Should handle gracefully (either success with 0 or error about Neo4j)
+        assert response.status_code in [200, 500]
+    
+        data = response.get_json()
+        assert 'status' in data
+    
+        if data['status'] == 'error':
+            # Error message should mention Neo4j, configuration, or driver issues
+            assert 'error' in data
+            error_msg = data['error'].lower()
+>           assert 'neo4j' in error_msg or 'config' in error_msg or 'connect' in error_msg or 'driver' in error_msg
+E           AssertionError: assert ('neo4j' in '{code: neo.clienterror.security.unauthorized} {message: unsupported authentication token, missing key `scheme`}' or 'config' in '{code: neo.clienterror.security.unauthorized} {message: unsupported authentication token, missing key `scheme`}' or 'connect' in '{code: neo.clienterror.security.unauthorized} {message: unsupported authentication token, missing key `scheme`}' or 'driver' in '{code: neo.clienterror.security.unauthorized} {message: unsupported authentication token, missing key `scheme`}')
+
+tests/test_label_instance_count.py:73: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+[2026-03-02 11:19:35] [INFO] [root] Logging configured: level=INFO, dir=logs, max_size=50MB, backups=10
+[2026-03-02 11:19:35] [INFO] [scidk.app] Graph backend: in-memory
+[2026-03-02 11:19:35] [INFO] [scidk.core.label_endpoint_registry] Label endpoint registry initialized
+[2026-03-02 11:19:35] [INFO] [scidk.core.plugin_template_registry] Plugin template registry initialized
+[2026-03-02 11:19:35] [INFO] [scidk.core.plugin_instance_manager] Plugin instance manager initialized (db: scidk_settings.db)
+[2026-03-02 11:19:35] [INFO] [scidk.core.plugin_loader] Discovered 4 plugins: ['example_ilab', 'ilab_table_loader', 'table_loader', 'example_plugin']
+[2026-03-02 11:19:35] [INFO] [scidk.core.plugin_loader] Discovered 4 plugins: ['example_ilab', 'ilab_table_loader', 'table_loader', 'example_plugin']
+[2026-03-02 11:19:35] [INFO] [scidk.core.label_endpoint_registry] Registered label endpoint: /api/integrations/ilab/services (iLab Services) -> iLabService
+[2026-03-02 11:19:35] [INFO] [scidk.core.label_endpoint_registry] Registered label endpoint: /api/integrations/ilab/equipment (iLab Equipment) -> Equipment
+[2026-03-02 11:19:35] [INFO] [scidk.core.plugin_loader] Successfully loaded plugin: example_ilab v1.0.0
+[2026-03-02 11:19:35] [WARNING] [scidk.core.plugin_template_registry] Template ilab_importer with category 'data_import' missing recommended graph_behavior config keys: ['can_create_label', 'label_source']
+[2026-03-02 11:19:35] [INFO] [scidk.core.plugin_template_registry] Registered plugin template: ilab_importer (iLab Data Importer) [category: data_import]
+[2026-03-02 11:19:35] [INFO] [plugins.ilab_table_loader] iLab Data Importer plugin template registered successfully
+[2026-03-02 11:19:35] [INFO] [scidk.core.plugin_loader] Successfully loaded plugin: ilab_table_loader v1.0.0
+[2026-03-02 11:19:35] [INFO] [scidk.core.plugin_template_registry] Registered plugin template: table_loader (Table Loader) [category: data_import]
+[2026-03-02 11:19:35] [INFO] [plugins.table_loader] Table Loader plugin template registered successfully
+[2026-03-02 11:19:35] [INFO] [scidk.core.plugin_loader] Successfully loaded plugin: table_loader v1.0.0
+[2026-03-02 11:19:35] [INFO] [scidk.core.plugin_loader] Successfully loaded plugin: example_plugin v1.0.0
+[2026-03-02 11:19:35] [INFO] [apscheduler.scheduler] Adding job tentatively -- it will be properly scheduled when the scheduler starts
+[2026-03-02 11:19:35] [INFO] [apscheduler.scheduler] Added job "Daily Backup" to job store "default"
+[2026-03-02 11:19:35] [INFO] [apscheduler.scheduler] Scheduler started
+_______________________ test_enrich_link_with_properties _______________________
+
+client = <FlaskClient <Flask 'scidk.app'>>
+
+    def test_enrich_link_with_properties(client):
+        """Test enriching link relationships with specific properties."""
+        # Create labels
+        client.post('/api/labels', json={
+            'name': 'Source',
+            'properties': [{'name': 'uuid', 'type': 'string'}],
+            'relationships': []
+        })
+        client.post('/api/labels', json={
+            'name': 'Target',
+            'properties': [{'name': 'uuid', 'type': 'string'}],
+            'relationships': []
+        })
+    
+        # Create an Active import link with source_database
+        payload = {
+            'name': 'Test Import Link',
+            'source_label': 'Source',
+            'target_label': 'Target',
+            'match_strategy': 'graph_import',
+            'match_config': {
+                'source_database': 'TestDB',
+                'source_uid_property': 'uuid',
+                'target_uid_property': 'uuid'
+            },
+            'relationship_type': 'LINKS_TO',
+            'relationship_props': {},
+            'status': 'active'
+        }
+        create_resp = client.post('/api/links', json=payload)
+>       assert create_resp.status_code in [200, 201]
+E       assert 400 in [200, 201]
+E        +  where 400 = <WrapperTestResponse streamed [400 BAD REQUEST]>.status_code
+
+tests/test_links_api.py:605: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+[2026-03-02 11:20:29] [INFO] [root] Logging configured: level=INFO, dir=logs, max_size=50MB, backups=10
+[2026-03-02 11:20:29] [INFO] [scidk.app] Graph backend: in-memory
+[2026-03-02 11:20:30] [INFO] [scidk.core.label_endpoint_registry] Label endpoint registry initialized
+[2026-03-02 11:20:30] [INFO] [scidk.core.plugin_template_registry] Plugin template registry initialized
+[2026-03-02 11:20:30] [INFO] [scidk.core.plugin_instance_manager] Plugin instance manager initialized (db: scidk_settings.db)
+[2026-03-02 11:20:30] [INFO] [scidk.core.plugin_loader] Discovered 4 plugins: ['example_ilab', 'ilab_table_loader', 'table_loader', 'example_plugin']
+[2026-03-02 11:20:30] [INFO] [scidk.core.plugin_loader] Discovered 4 plugins: ['example_ilab', 'ilab_table_loader', 'table_loader', 'example_plugin']
+[2026-03-02 11:20:30] [INFO] [scidk.core.label_endpoint_registry] Registered label endpoint: /api/integrations/ilab/services (iLab Services) -> iLabService
+[2026-03-02 11:20:30] [INFO] [scidk.core.label_endpoint_registry] Registered label endpoint: /api/integrations/ilab/equipment (iLab Equipment) -> Equipment
+[2026-03-02 11:20:30] [INFO] [scidk.core.plugin_loader] Successfully loaded plugin: example_ilab v1.0.0
+[2026-03-02 11:20:30] [WARNING] [scidk.core.plugin_template_registry] Template ilab_importer with category 'data_import' missing recommended graph_behavior config keys: ['can_create_label', 'label_source']
+[2026-03-02 11:20:30] [INFO] [scidk.core.plugin_template_registry] Registered plugin template: ilab_importer (iLab Data Importer) [category: data_import]
+[2026-03-02 11:20:30] [INFO] [plugins.ilab_table_loader] iLab Data Importer plugin template registered successfully
+[2026-03-02 11:20:30] [INFO] [scidk.core.plugin_loader] Successfully loaded plugin: ilab_table_loader v1.0.0
+[2026-03-02 11:20:30] [INFO] [scidk.core.plugin_template_registry] Registered plugin template: table_loader (Table Loader) [category: data_import]
+[2026-03-02 11:20:30] [INFO] [plugins.table_loader] Table Loader plugin template registered successfully
+[2026-03-02 11:20:30] [INFO] [scidk.core.plugin_loader] Successfully loaded plugin: table_loader v1.0.0
+[2026-03-02 11:20:30] [INFO] [scidk.core.plugin_loader] Successfully loaded plugin: example_plugin v1.0.0
+[2026-03-02 11:20:30] [INFO] [apscheduler.scheduler] Adding job tentatively -- it will be properly scheduled when the scheduler starts
+[2026-03-02 11:20:30] [INFO] [apscheduler.scheduler] Added job "Daily Backup" to job store "default"
+[2026-03-02 11:20:30] [INFO] [apscheduler.scheduler] Scheduler started
+____________________ test_enrich_link_with_empty_properties ____________________
+
+client = <FlaskClient <Flask 'scidk.app'>>
+
+    def test_enrich_link_with_empty_properties(client):
+        """Test enriching link relationships with no specific properties (uses SET r +=)."""
+        # Create labels
+        client.post('/api/labels', json={
+            'name': 'Source',
+            'properties': [{'name': 'uuid', 'type': 'string'}],
+            'relationships': []
+        })
+        client.post('/api/labels', json={
+            'name': 'Target',
+            'properties': [{'name': 'uuid', 'type': 'string'}],
+            'relationships': []
+        })
+    
+        # Create an Active import link
+        payload = {
+            'name': 'Test Import Link 2',
+            'source_label': 'Source',
+            'target_label': 'Target',
+            'match_strategy': 'graph_import',
+            'match_config': {
+                'source_database': 'TestDB',
+                'source_uid_property': 'uuid',
+                'target_uid_property': 'uuid'
+            },
+            'relationship_type': 'LINKS_TO',
+            'relationship_props': {},
+            'status': 'active'
+        }
+        create_resp = client.post('/api/links', json=payload)
+>       link_id = create_resp.get_json()['link']['id']
+E       KeyError: 'link'
+
+tests/test_links_api.py:652: KeyError
+---------------------------- Captured stderr setup -----------------------------
+[2026-03-02 11:20:30] [INFO] [root] Logging configured: level=INFO, dir=logs, max_size=50MB, backups=10
+[2026-03-02 11:20:30] [INFO] [scidk.app] Graph backend: in-memory
+[2026-03-02 11:20:31] [INFO] [scidk.core.label_endpoint_registry] Label endpoint registry initialized
+[2026-03-02 11:20:31] [INFO] [scidk.core.plugin_template_registry] Plugin template registry initialized
+[2026-03-02 11:20:31] [INFO] [scidk.core.plugin_instance_manager] Plugin instance manager initialized (db: scidk_settings.db)
+[2026-03-02 11:20:31] [INFO] [scidk.core.plugin_loader] Discovered 4 plugins: ['example_ilab', 'ilab_table_loader', 'table_loader', 'example_plugin']
+[2026-03-02 11:20:31] [INFO] [scidk.core.plugin_loader] Discovered 4 plugins: ['example_ilab', 'ilab_table_loader', 'table_loader', 'example_plugin']
+[2026-03-02 11:20:31] [INFO] [scidk.core.label_endpoint_registry] Registered label endpoint: /api/integrations/ilab/services (iLab Services) -> iLabService
+[2026-03-02 11:20:31] [INFO] [scidk.core.label_endpoint_registry] Registered label endpoint: /api/integrations/ilab/equipment (iLab Equipment) -> Equipment
+[2026-03-02 11:20:31] [INFO] [scidk.core.plugin_loader] Successfully loaded plugin: example_ilab v1.0.0
+[2026-03-02 11:20:31] [WARNING] [scidk.core.plugin_template_registry] Template ilab_importer with category 'data_import' missing recommended graph_behavior config keys: ['can_create_label', 'label_source']
+[2026-03-02 11:20:31] [INFO] [scidk.core.plugin_template_registry] Registered plugin template: ilab_importer (iLab Data Importer) [category: data_import]
+[2026-03-02 11:20:31] [INFO] [plugins.ilab_table_loader] iLab Data Importer plugin template registered successfully
+[2026-03-02 11:20:31] [INFO] [scidk.core.plugin_loader] Successfully loaded plugin: ilab_table_loader v1.0.0
+[2026-03-02 11:20:31] [INFO] [scidk.core.plugin_template_registry] Registered plugin template: table_loader (Table Loader) [category: data_import]
+[2026-03-02 11:20:31] [INFO] [plugins.table_loader] Table Loader plugin template registered successfully
+[2026-03-02 11:20:31] [INFO] [scidk.core.plugin_loader] Successfully loaded plugin: table_loader v1.0.0
+[2026-03-02 11:20:31] [INFO] [scidk.core.plugin_loader] Successfully loaded plugin: example_plugin v1.0.0
+[2026-03-02 11:20:31] [INFO] [apscheduler.scheduler] Adding job tentatively -- it will be properly scheduled when the scheduler starts
+[2026-03-02 11:20:31] [INFO] [apscheduler.scheduler] Added job "Daily Backup" to job store "default"
+[2026-03-02 11:20:31] [INFO] [apscheduler.scheduler] Scheduler started
+=============================== warnings summary ===============================
+tests/test_label_instance_count.py: 2 warnings
+tests/test_labels_api.py: 13 warnings
+tests/test_link_execution_progress.py: 2 warnings
+  /home/patch/PycharmProjects/scidk/.venv/lib/python3.12/site-packages/neo4j/_sync/driver.py:547: DeprecationWarning: Relying on Driver's destructor to close the session is deprecated. Please make sure to close the session. Use it as a context (`with` statement) or make sure to call `.close()` explicitly. Future versions of the driver will not close drivers automatically.
+    _deprecation_warn(
+
+tests/test_links_api.py: 10 warnings
+tests/test_links_integration.py: 15 warnings
+tests/test_scripts.py: 6 warnings
+tests/test_transparency_chat_tools.py: 12 warnings
+tests/test_transparency_file_interpretation.py: 6 warnings
+tests/test_transparency_plugins_page.py: 27 warnings
+  /home/patch/PycharmProjects/scidk/scidk/core/script_validators.py:40: DeprecationWarning: ast.Str is deprecated and will be removed in Python 3.14; use ast.Constant instead
+    isinstance(tree.body[0].value, (ast.Str, ast.Constant))):
+
+tests/test_links_api.py: 9 warnings
+tests/test_links_integration.py: 15 warnings
+tests/test_transparency_chat_tools.py: 12 warnings
+tests/test_transparency_file_interpretation.py: 6 warnings
+tests/test_transparency_plugins_page.py: 27 warnings
+  /home/patch/PycharmProjects/scidk/scidk/core/script_validators.py:43: DeprecationWarning: ast.Str is deprecated and will be removed in Python 3.14; use ast.Constant instead
+    if isinstance(tree.body[0].value, ast.Str):
+
+tests/test_links_api.py: 9 warnings
+tests/test_links_integration.py: 15 warnings
+tests/test_transparency_chat_tools.py: 12 warnings
+tests/test_transparency_file_interpretation.py: 6 warnings
+tests/test_transparency_plugins_page.py: 27 warnings
+  /home/patch/PycharmProjects/scidk/scidk/core/script_validators.py:44: DeprecationWarning: Attribute s is deprecated and will be removed in Python 3.14; use value instead
+    return tree.body[0].value.s
+
+tests/test_transparency_chat_tools.py: 3 warnings
+tests/test_transparency_dependencies.py: 17 warnings
+tests/test_transparency_file_interpretation.py: 4 warnings
+tests/test_transparency_plugins_page.py: 7 warnings
+  /home/patch/PycharmProjects/scidk/scidk/core/script_validators.py:76: DeprecationWarning: ast.Str is deprecated and will be removed in Python 3.14; use ast.Constant instead
+    if node.args and isinstance(node.args[0], (ast.Str, ast.Constant)):
+
+tests/test_transparency_chat_tools.py: 3 warnings
+tests/test_transparency_dependencies.py: 17 warnings
+tests/test_transparency_file_interpretation.py: 4 warnings
+tests/test_transparency_plugins_page.py: 7 warnings
+  /home/patch/PycharmProjects/scidk/scidk/core/script_validators.py:78: DeprecationWarning: ast.Str is deprecated and will be removed in Python 3.14; use ast.Constant instead
+    if isinstance(node.args[0], ast.Str):
+
+tests/test_transparency_chat_tools.py: 3 warnings
+tests/test_transparency_dependencies.py: 17 warnings
+tests/test_transparency_file_interpretation.py: 4 warnings
+tests/test_transparency_plugins_page.py: 7 warnings
+  /home/patch/PycharmProjects/scidk/scidk/core/script_validators.py:79: DeprecationWarning: Attribute s is deprecated and will be removed in Python 3.14; use value instead
+    value = node.args[0].s
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_files_page_e2e.py:33: UI redesigned - test needs updating for new tree explorer
+SKIPPED [1] tests/test_files_page_e2e.py:229: UI redesigned - test needs updating for new tree explorer
+SKIPPED [1] tests/test_files_page_e2e.py:244: UI redesigned - test needs updating for new tree explorer
+SKIPPED [1] tests/test_files_page_e2e.py:259: UI redesigned - test needs updating for new tree explorer
+SKIPPED [1] tests/test_graph_query_api.py:25: Mocking challenge - test works in real scenario
+SKIPPED [1] tests/test_links_integration.py:32: Requires scripts/links/ directory with multiple demo scripts - currently only 1 exists
+SKIPPED [1] tests/test_links_integration.py:130: Demo scripts semantic-similarity-link and author-collaboration-link no longer exist - only sample_to_imagingdataset
+SKIPPED [3] tests/test_transparency_analysis_scripts.py: Phase 7: AnalysisContext not yet implemented
+SKIPPED [2] tests/test_transparency_analysis_scripts.py: Phase 7: Analysis validation not yet implemented
+SKIPPED [3] tests/test_transparency_analysis_scripts.py: Phase 8: Results page integration not yet implemented
+SKIPPED [1] tests/e2e/test_demo_recording.py:35: BASE_URL is not set; start the server locally and export BASE_URL to run E2E smoke.
+SKIPPED [1] tests/e2e/test_persistence.py:68: BASE_URL is not set; start the server locally and export BASE_URL to run E2E smoke.
+FAILED tests/test_files_page_e2e.py::test_no_synchronous_scan_in_ui - assert ...
+FAILED tests/test_label_instance_count.py::test_instance_count_neo4j_not_configured
+FAILED tests/test_links_api.py::test_enrich_link_with_properties - assert 400...
+FAILED tests/test_links_api.py::test_enrich_link_with_empty_properties - KeyE...
+===== 4 failed, 906 passed, 17 skipped, 324 warnings in 401.31s (0:06:41) ======

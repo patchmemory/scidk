@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}-SciDK-> Workbook Viewer{% endblock %}
 {% block content %}
-<p><a href="/datasets">← Back to Files</a></p>
+<p><a href="{{ request.script_root }}/datasets">← Back to Files</a></p>
 {% if not dataset %}
   <h1>Workbook</h1>
   <p class="error">Dataset not found.</p>

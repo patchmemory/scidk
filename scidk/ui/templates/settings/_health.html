@@ -205,7 +205,7 @@
     let lastHealthData = null;
 
     function updateHealthDashboard() {
-      fetch('/api/health/comprehensive')
+      fetch(window.SCIDK_BASE + '/api/health/comprehensive')
         .then(res => {
           if (!res.ok) {
             throw new Error(`HTTP ${res.status}`);

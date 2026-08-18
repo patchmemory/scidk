@@ -13,6 +13,7 @@ Security features:
 
 import sqlite3
 import secrets
+import uuid
 import bcrypt
 import time
 from typing import Optional, Dict, Any
@@ -108,6 +109,24 @@ class AuthManager:
             )
             """
         )
+
+        # Per-user API tokens for non-browser (Bearer) authentication.
+        # token_hash stores a bcrypt hash of the plaintext token, which is
+        # shown to the caller exactly once at creation time and never stored.
+        self.db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS api_tokens (
+                id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                token_hash TEXT NOT NULL,
+                label TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_used_at DATETIME,
+                FOREIGN KEY (user_id) REFERENCES auth_users(id) ON DELETE CASCADE
+            )
+            """
+        )
+        self.db.execute("CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id)")
 
         self.db.commit()
 
@@ -726,6 +745,147 @@ class AuthManager:
             return cur.fetchone()[0]
         except Exception:
             return 0
+
+    # ========== API Token Management ==========
+
+    def create_api_token(self, user_id: int, label: str) -> Optional[Dict[str, str]]:
+        """Create a new API token for a user.
+
+        Generates a cryptographically random token, stores only its bcrypt
+        hash, and returns the plaintext exactly once. The plaintext is never
+        persisted and cannot be recovered later.
+
+        Args:
+            user_id: ID of the user the token authenticates as
+            label: Human-readable label (e.g. "Anderson MATLAB script")
+
+        Returns:
+            dict or None: {'id': <uuid>, 'token': <plaintext>} on success,
+            None on error (e.g. unknown user).
+        """
+        try:
+            # Validate the user exists before issuing a token for them
+            if self.get_user(user_id) is None:
+                return None
+
+            token = secrets.token_hex(32)
+            token_id = str(uuid.uuid4())
+            token_hash = bcrypt.hashpw(token.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+            self.db.execute(
+                """
+                INSERT INTO api_tokens (id, user_id, token_hash, label, created_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (token_id, user_id, token_hash, label)
+            )
+            self.db.commit()
+
+            return {'id': token_id, 'token': token}
+        except Exception as e:
+            print(f"AuthManager.create_api_token error: {e}")
+            return None
+
+    def list_api_tokens(self) -> list:
+        """List all API tokens (metadata only — never hashes or plaintext).
+
+        Returns:
+            list: List of dicts with keys: id, user_id, label, created_at,
+            last_used_at
+        """
+        try:
+            cur = self.db.execute(
+                """
+                SELECT id, user_id, label, created_at, last_used_at
+                FROM api_tokens
+                ORDER BY created_at DESC
+                """
+            )
+            rows = cur.fetchall()
+            return [
+                {
+                    'id': row[0],
+                    'user_id': row[1],
+                    'label': row[2],
+                    'created_at': row[3],
+                    'last_used_at': row[4],
+                }
+                for row in rows
+            ]
+        except Exception as e:
+            print(f"AuthManager.list_api_tokens error: {e}")
+            return []
+
+    def delete_api_token(self, token_id: str) -> bool:
+        """Delete (revoke) an API token by id.
+
+        Args:
+            token_id: Token UUID
+
+        Returns:
+            bool: True if a token was deleted, False otherwise
+        """
+        try:
+            cur = self.db.execute("DELETE FROM api_tokens WHERE id = ?", (token_id,))
+            self.db.commit()
+            return cur.rowcount > 0
+        except Exception as e:
+            print(f"AuthManager.delete_api_token error: {e}")
+            return False
+
+    def verify_api_token(self, token: str) -> Optional[Dict[str, Any]]:
+        """Verify a plaintext API token and return the associated user.
+
+        Tokens are stored as salted bcrypt hashes, which cannot be looked up
+        directly, so each stored token is checked in turn. This is O(n) bcrypt
+        comparisons per call, which is acceptable at the expected scale (tens
+        of tokens). On a match, last_used_at is updated.
+
+        Args:
+            token: Plaintext Bearer token
+
+        Returns:
+            dict or None: User dict (id, username, role, enabled) if the token
+            is valid and the user is enabled, None otherwise.
+        """
+        if not token:
+            return None
+
+        try:
+            token_bytes = token.encode('utf-8')
+            cur = self.db.execute("SELECT id, user_id, token_hash FROM api_tokens")
+            rows = cur.fetchall()
+
+            for token_id, user_id, token_hash in rows:
+                try:
+                    if not bcrypt.checkpw(token_bytes, token_hash.encode('utf-8')):
+                        continue
+                except Exception:
+                    # Malformed hash — skip rather than abort the whole scan
+                    continue
+
+                user = self.get_user(user_id)
+                if not user or not user.get('enabled'):
+                    return None
+
+                # Record usage timestamp (best effort)
+                self.db.execute(
+                    "UPDATE api_tokens SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (token_id,)
+                )
+                self.db.commit()
+
+                return {
+                    'id': user['id'],
+                    'username': user['username'],
+                    'role': user['role'],
+                    'enabled': user['enabled'],
+                }
+
+            return None
+        except Exception as e:
+            print(f"AuthManager.verify_api_token error: {e}")
+            return None
 
     # ========== Session Management (Updated for Multi-User) ==========
 

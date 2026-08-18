@@ -144,7 +144,7 @@ dbms.ssl.policy.bolt.tls_versions=TLSv1.2,TLSv1.3</pre>
     function loadSecurityOverview() {
       if (securityOverviewLoaded) return;
 
-      fetch('/api/security/overview')
+      fetch(window.SCIDK_BASE + '/api/security/overview')
         .then(res => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           return res.json();

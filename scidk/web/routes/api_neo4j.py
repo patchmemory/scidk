@@ -119,6 +119,7 @@ def api_scan_commit(scan_id):
             neo_attempted = False
             neo_written = 0
             neo_error = None
+            dataset_result = None
             db_verified = None
             db_files = 0
             db_folders = 0
@@ -170,6 +171,31 @@ def api_scan_commit(scan_id):
                     # Update state on success
                     neo_state['connected'] = True
                     neo_state['last_error'] = None
+                    # Post-commit: create :Dataset nodes for matched directories.
+                    # File/Folder nodes now exist (write_scan committed above), so
+                    # (:Dataset)-[:CONTAINS]->(:File) links can resolve. Best-effort:
+                    # a failure here must never break the commit response.
+                    try:
+                        from ...services.dataset_node_service import write_dataset_nodes
+                        from ...services.neo4j_client import Neo4jClient
+                        profile_registry = _get_ext().get('profile_registry')
+                        ds_client = Neo4jClient(uri, user, pwd, database, auth_mode).connect()
+                        try:
+                            current_app.logger.info(
+                                "Dataset node service: starting (scan_id=%s, host=%s)",
+                                scan_id, s.get('host_id'),
+                            )
+                            dataset_result = write_dataset_nodes(
+                                scan_id=scan_id,
+                                host=s.get('host_id'),
+                                neo4j_client=ds_client,
+                                profile_registry=profile_registry,
+                            )
+                            current_app.logger.info(f"Dataset node service result: {dataset_result}")
+                        finally:
+                            ds_client.close()
+                    except Exception as de:
+                        current_app.logger.warning(f"Dataset node creation failed: {de}", exc_info=True)
                 except Exception as ne:
                     neo_error = str(ne)
                     neo_state['connected'] = False
@@ -202,6 +228,11 @@ def api_scan_commit(scan_id):
                     pass
             if neo_error:
                 payload["neo4j_error"] = neo_error
+            if dataset_result is not None:
+                payload["datasets_created"] = int(dataset_result.get('created', 0))
+                payload["datasets_updated"] = int(dataset_result.get('updated', 0))
+                if dataset_result.get('errors'):
+                    payload["dataset_errors"] = dataset_result['errors']
             # Add user-facing warnings
             if total == 0:
                 payload["warning"] = "This scan has 0 files; nothing was linked."

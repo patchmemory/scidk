@@ -81,7 +81,7 @@ function escapeHtml(text) {
 // Fetch properties for a label from external database
 async function fetchLabelProperties(label, database) {
   try {
-    const response = await fetch(`/api/neo4j/label-properties`, {
+    const response = await fetch(window.SCIDK_BASE + `/api/neo4j/label-properties`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ database: database, label: label })
@@ -102,7 +102,7 @@ async function fetchLabelProperties(label, database) {
 async function fetchRelationshipProperties(sourceLabel, relType, targetLabel, database) {
   try {
     const query = `MATCH (a:${sourceLabel})-[r:${relType}]->(b:${targetLabel}) RETURN keys(r) as props LIMIT 1`;
-    const response = await fetch(`/api/neo4j/query`, {
+    const response = await fetch(window.SCIDK_BASE + `/api/neo4j/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ database: database, query: query })
@@ -295,7 +295,7 @@ function loadLinksPage() {
 document.addEventListener('DOMContentLoaded', loadLinksPage);
 
 function loadAvailableLabels() {
-  fetch('/api/links/available-labels')
+  fetch(window.SCIDK_BASE + '/api/links/available-labels')
     .then(r => r.json())
     .then(data => {
       if (data.status === 'success') {
@@ -357,7 +357,7 @@ function initializeEventListeners() {
 
       // Step 1: Verify Active links against primary graph
       try {
-        const verifyResponse = await fetch('/api/links/verify', {
+        const verifyResponse = await fetch(window.SCIDK_BASE + '/api/links/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
@@ -423,7 +423,7 @@ function initializeEventListeners() {
   document.getElementById('menu-script-link').addEventListener('click', (e) => {
     e.preventDefault();
     dropdownMenu.style.display = 'none';
-    window.location.href = '/scripts?new=link';
+    window.location.href = window.SCIDK_BASE + '/scripts?new=link';
   });
 
   // Import link option - switch to Discovered tab
@@ -501,7 +501,7 @@ function initializeEventListeners() {
 }
 
 function loadLinkDefinitions() {
-  fetch('/api/links')
+  fetch(window.SCIDK_BASE + '/api/links')
     .then(r => r.json())
     .then(data => {
       if (data.status === 'success') {
@@ -514,7 +514,7 @@ function loadLinkDefinitions() {
 }
 
 function loadDiscoveredRelationships() {
-  fetch('/api/links/discovered')
+  fetch(window.SCIDK_BASE + '/api/links/discovered')
     .then(r => r.json())
     .then(data => {
       if (data.status === 'success') {
@@ -988,7 +988,7 @@ function loadLinkDefinition(linkId) {
   // Reset wizard panel to clean state (prevents state bleed)
   // Note: resetWizard() is defined below, called by import/discovery modules
 
-  fetch(`/api/links/${linkId}`)
+  fetch(window.SCIDK_BASE + `/api/links/${linkId}`)
     .then(r => r.json())
     .then(data => {
       console.log('[loadLinkDefinition] Response:', JSON.stringify(data, null, 2));
@@ -1164,6 +1164,12 @@ function resetWizard() {
   const linkNameInput = document.getElementById('link-name');
   if (linkNameInput) {
     linkNameInput.value = '';
+  }
+
+  // Ensure main-triple-display is visible (may have been hidden by Active link panel)
+  const mainTripleDisplay = document.getElementById('main-triple-display');
+  if (mainTripleDisplay) {
+    mainTripleDisplay.style.display = 'block';
   }
 
   // Clear preview
@@ -1500,7 +1506,7 @@ function saveLinkDefinition() {
   showToast('Saving link definition...', 'info');
 
   const method = tripleBuilder.link_id ? 'PUT' : 'POST';
-  const url = tripleBuilder.link_id ? `/api/links/${tripleBuilder.link_id}` : '/api/links';
+  const url = tripleBuilder.link_id ? window.SCIDK_BASE + `/api/links/${tripleBuilder.link_id}` : window.SCIDK_BASE + '/api/links';
 
   fetch(url, {
     method: method,
@@ -1539,7 +1545,7 @@ function deleteLinkDefinition() {
   if (!tripleBuilder.link_id) return;
   if (!confirm('Delete this link definition?')) return;
 
-  fetch(`/api/links/${tripleBuilder.link_id}`, { method: 'DELETE' })
+  fetch(window.SCIDK_BASE + `/api/links/${tripleBuilder.link_id}`, { method: 'DELETE' })
     .then(r => r.json())
     .then(result => {
       if (result.status === 'success') {
@@ -1579,7 +1585,7 @@ function executeLink() {
     </div>
   `;
 
-  fetch(`/api/links/${tripleBuilder.link_id}/execute`, { method: 'POST' })
+  fetch(window.SCIDK_BASE + `/api/links/${tripleBuilder.link_id}/execute`, { method: 'POST' })
     .then(r => r.json())
     .then(result => {
       if (result.status === 'success') {
@@ -1604,7 +1610,7 @@ function pollTaskStatus(taskId) {
   }
 
   activeTaskPollingInterval = setInterval(() => {
-    fetch(`/api/tasks/${taskId}`)
+    fetch(window.SCIDK_BASE + `/api/tasks/${taskId}`)
       .then(r => {
         if (r.status === 404) {
           clearInterval(activeTaskPollingInterval);
@@ -1763,6 +1769,7 @@ async function openImportWizardForRelationship(rel) {
   // Show loading state in triple display
   const mainTripleDisplay = document.getElementById('main-triple-display');
   if (mainTripleDisplay) {
+    mainTripleDisplay.style.display = 'block'; // Ensure it's visible
     mainTripleDisplay.innerHTML = '<div style="text-align: center; padding: 2rem; color: #999;">Loading properties...</div>';
   }
 
@@ -1771,7 +1778,7 @@ async function openImportWizardForRelationship(rel) {
     const [sourceProps, targetProps, relProps] = await Promise.all([
       fetchLabelProperties(rel.source_label, database),
       fetchLabelProperties(rel.target_label, database),
-      fetchRelationshipProperties(rel.source_label, rel.rel_type, rel.target_label, database)
+      fetchRelationshipProperties(database, rel.source_label, rel.rel_type, rel.target_label)
     ]);
 
     discoveredImportConfig.source.available_properties = sourceProps;
@@ -1798,15 +1805,19 @@ async function openImportWizardForRelationship(rel) {
 
     // Update the clickable triple display (function defined in links-import.js)
     updateDiscoveredImportDisplay();
+
+    // Auto-load the relationship index/preview after configuration completes
+    // This populates the "View & Download" section immediately
+    await loadDiscoveredInstances();
   } catch (err) {
     console.error('Failed to load properties:', err);
     showToast('Failed to load properties', 'error');
-  }
 
-  // Show empty preview - user must click "Load Preview" explicitly
-  const previewContainer = document.getElementById('preview-container');
-  if (previewContainer) {
-    previewContainer.innerHTML = '<div class="empty-state small">Configure all three components to preview matches</div>';
+    // Show empty preview on error
+    const previewContainer = document.getElementById('preview-container');
+    if (previewContainer) {
+      previewContainer.innerHTML = '<div class="empty-state small">Failed to load relationship preview</div>';
+    }
   }
 }
 

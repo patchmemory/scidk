@@ -601,6 +601,34 @@ def api_tasks_create():
                         task['neo4j_db_folders'] = int(result.get('db_folders') or 0)
                         if task['neo4j_attempted'] and not task['neo4j_db_verified'] and not task.get('neo4j_error'):
                             task['neo4j_error'] = 'Post-commit verification found 0 SCANNED_IN edges for this scan. Check Neo4j credentials/database or permissions.'
+                    # Post-commit: create :Dataset nodes for matched directories. This must
+                    # mirror the synchronous commit path in api_neo4j.api_scan_commit — large
+                    # scans commit through this background worker, so without this step they
+                    # would never get Dataset nodes. Best-effort: never break the commit.
+                    if task.get('neo4j_attempted') and not task.get('neo4j_error'):
+                        try:
+                            from ...services.dataset_node_service import write_dataset_nodes
+                            from ...services.neo4j_client import Neo4jClient
+                            profile_registry = current_app.extensions['scidk'].get('profile_registry')
+                            ds_client = Neo4jClient(uri, user, pwd, database, auth_mode).connect()
+                            try:
+                                current_app.logger.info(
+                                    "Dataset node service: starting (scan_id=%s, host=%s)",
+                                    scan_id, s.get('host_id'),
+                                )
+                                dataset_result = write_dataset_nodes(
+                                    scan_id=scan_id,
+                                    host=s.get('host_id'),
+                                    neo4j_client=ds_client,
+                                    profile_registry=profile_registry,
+                                )
+                                current_app.logger.info(f"Dataset node service result: {dataset_result}")
+                                task['datasets_created'] = int(dataset_result.get('created', 0))
+                                task['datasets_updated'] = int(dataset_result.get('updated', 0))
+                            finally:
+                                ds_client.close()
+                        except Exception as de:
+                            current_app.logger.warning(f"Dataset node creation failed: {de}", exc_info=True)
                     # Done
                     # mark final step (Neo4j write) as processed so progress reaches 100% only at the end
                     task['processed'] = task.get('total') or task.get('processed')

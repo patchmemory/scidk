@@ -1,0 +1,18 @@
+profile_id: file_collection
+name: Generic File Collection
+version: "1.0"
+interpreter: null
+inherits: null
+# Abstract base: matches any directory, so it never emits a Dataset node itself.
+# It exists only to be inherited by concrete profiles.
+abstract: true
+enabled: true
+trigger:
+  extensions: []
+  filename_pattern: ".*"
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: file_collection
+    profile: file_collection

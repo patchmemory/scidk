@@ -1,0 +1,219 @@
+# Core Intent Definitions for the Concept Graph
+# These map to and extend the existing hard-coded intent classifier
+# (REACT, LOOKUP, SUMMARIZE, REASONING)
+
+intents:
+  - name: data_lookup
+    description: >
+      Find specific nodes, values, or entities matching exact criteria.
+      Single-step queries like "find sample X" or "what is the path to file Y".
+      Queries that reference a specific identifier, name, or UUID.
+    examples:
+      - "find sample A.ADCD-TEST"
+      - "show me the properties of folder /data/imaging"
+      - "what are the details of scan uuid 12345-abcd-6789"
+      - "look up file named report.csv"
+      - "get the properties of Sample with uuid Y"
+      - "show me folder at path /mnt/research/CAC"
+      - "find the file called analysis_results.txt"
+    maps_to_legacy: LOOKUP
+    satisfies:
+      - tool: run_safe_cypher
+        weight: 0.95
+    references_labels:
+      - Sample
+      - File
+      - Folder
+      - Scan
+
+  - name: count_simple
+    description: >
+      Count all nodes of a specific label type without any filtering conditions.
+      Simple total count questions with no WHERE clause needed.
+      No time ranges, no property filters, no conditions - just raw totals.
+    examples:
+      - "how many samples are there?"
+      - "total number of files"
+      - "count all scans"
+      - "how many folders exist?"
+      - "what is the total node count for Sample?"
+      - "how many samples are in the database?"
+      - "count the files"
+      - "total scans"
+    maps_to_legacy: LOOKUP
+    satisfies:
+      - tool: run_safe_cypher
+        weight: 0.92
+    references_labels:
+      - Sample
+      - File
+      - Scan
+      - Folder
+
+  - name: count_filtered
+    description: >
+      Count nodes matching specific property conditions, time ranges, or filters.
+      Questions that include WHERE clauses: time ranges, property values, size thresholds.
+      Always contains condition words like: where, with, in the last, after, before, larger than, containing.
+    examples:
+      - "how many samples were created in the last 6 months?"
+      - "count samples where treatment is control"
+      - "how many files are larger than 1GB?"
+      - "how many scans were run after January 2025?"
+      - "count folders containing more than 10 files"
+      - "how many samples with status complete?"
+      - "count files modified this year"
+    maps_to_legacy: REACT
+    satisfies:
+      - tool: run_safe_cypher
+        weight: 0.90
+    references_labels:
+      - Sample
+      - Scan
+      - File
+
+  - name: summarize_dataset
+    description: >
+      Provide a narrative overview of the entire dataset or a large portion of it.
+      High-level questions about what data exists, not specific counts or queries.
+      Requests for overviews, summaries, descriptions of the whole knowledge graph.
+    examples:
+      - "summarize the dataset"
+      - "give me an overview of everything in the graph"
+      - "what does this knowledge graph contain?"
+      - "describe the database contents"
+      - "what types of data do we have and how much?"
+      - "give me a high-level summary"
+      - "what's in our research database?"
+      - "overview of the knowledge graph"
+    maps_to_legacy: SUMMARIZE
+    satisfies:
+      - tool: generate_summary
+        weight: 0.95
+    references_labels: []  # Applies to all labels
+
+  - name: relationship_traversal
+    description: >
+      Explore how specific node types are connected via relationships.
+      Questions about connections, relationships, paths between entity types.
+      Always contains words like: connected, related, link, path, relationship between.
+    examples:
+      - "how are files connected to scans?"
+      - "what is the relationship between files and folders?"
+      - "show me how folders link to scans"
+      - "what connects samples to sample types?"
+      - "how is Sample related to SampleType?"
+      - "what relationships exist between folders and files?"
+      - "show the path from folder to scan"
+      - "how are folders and scans related?"
+    maps_to_legacy: REACT
+    satisfies:
+      - tool: run_safe_cypher
+        weight: 0.88
+    references_labels:
+      - Sample
+      - Scan
+      - File
+      - Folder
+
+  - name: property_exploration
+    description: >
+      Discover what properties a label has or what values exist for a property.
+      Schema exploration questions about fields, attributes, metadata structure.
+      Always contains words like: properties, fields, attributes, metadata, what information.
+    examples:
+      - "what properties do samples have?"
+      - "what fields exist on a Scan node?"
+      - "what information is stored about files?"
+      - "list the attributes of SampleType"
+      - "what metadata is tracked for folders?"
+      - "what properties are on Sample?"
+      - "show me the fields of a File node"
+    maps_to_legacy: REASONING
+    satisfies:
+      - tool: run_safe_cypher
+        weight: 0.85
+    references_labels:
+      - Sample
+      - Scan
+      - File
+      - SampleType
+
+  - name: reasoning_multi_step
+    description: >
+      Complex questions requiring multiple queries, cross-label reasoning, or conditional logic.
+      Questions that cannot be answered with a single Cypher query.
+      Multi-part questions with compound conditions, comparisons, or aggregations across different entities.
+    examples:
+      - "which samples have the most associated scans?"
+      - "find samples derived from treatment A with more than 3 scans"
+      - "what is the distribution of sample types across folders?"
+      - "compare scan counts between different sample types"
+      - "which folders contain both samples and raw scan files?"
+      - "find samples that have been scanned but not analyzed"
+      - "what treatments have the highest success rate based on scan results?"
+    maps_to_legacy: REACT
+    satisfies:
+      - tool: react_loop
+        weight: 0.92
+    references_labels: []  # May involve any labels
+
+# Tool Definitions (for initial seeding before MCP scaffold is ready)
+# These will be replaced/augmented by MCP tool definitions
+
+tools:
+  - name: run_safe_cypher
+    description: Execute a read-only Cypher query against the research graph. Returns up to 200 rows.
+    source: internal
+    endpoint: null
+    input_schema:
+      type: object
+      properties:
+        cypher:
+          type: string
+          description: The Cypher query to execute
+      required:
+        - cypher
+    output_format: rows
+    is_read_only: true
+    active: true
+    retrieves:
+      - label: Sample
+        primary: false
+      - label: Scan
+        primary: false
+      - label: File
+        primary: false
+      - label: Folder
+        primary: false
+      - label: SampleType
+        primary: false
+
+  - name: generate_summary
+    description: Generate a narrative overview of the dataset by running count queries and synthesizing results.
+    source: internal
+    endpoint: null
+    input_schema:
+      type: object
+      properties: {}
+    output_format: narrative
+    is_read_only: true
+    active: true
+    retrieves: []
+
+  - name: react_loop
+    description: Multi-step reasoning loop for complex queries requiring iterative exploration.
+    source: internal
+    endpoint: null
+    input_schema:
+      type: object
+      properties:
+        query:
+          type: string
+          description: The user's complex question
+      required:
+        - query
+    output_format: narrative
+    is_read_only: true
+    active: true
+    retrieves: []

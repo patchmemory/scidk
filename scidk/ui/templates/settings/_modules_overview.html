@@ -24,7 +24,7 @@
           <td style="padding: 0.75rem; vertical-align: top;">Transform raw files into structured graph data</td>
           <td style="padding: 0.75rem; vertical-align: top; font-size: 0.9em;">File path, file type</td>
           <td style="padding: 0.75rem; vertical-align: top; font-size: 0.9em;">File nodes, metadata properties, extracted entities</td>
-          <td style="padding: 0.75rem; vertical-align: top;"><a href="/scripts">Scripts page</a>, <a href="/files">Files page</a></td>
+          <td style="padding: 0.75rem; vertical-align: top;"><a href="{{ request.script_root }}/scripts">Scripts page</a>, <a href="/files">Files page</a></td>
         </tr>
         <tr style="border-bottom: 1px solid #e0e0e0;">
           <td style="padding: 0.75rem; vertical-align: top;"><strong>Plugins</strong></td>
@@ -52,14 +52,14 @@
           <td style="padding: 0.75rem; vertical-align: top;">Run analytical computations over graph data</td>
           <td style="padding: 0.75rem; vertical-align: top; font-size: 0.9em;">Cypher query or Python script, parameters</td>
           <td style="padding: 0.75rem; vertical-align: top; font-size: 0.9em;">Result nodes, computed properties, analysis metadata</td>
-          <td style="padding: 0.75rem; vertical-align: top;"><a href="/scripts">Scripts page</a>, <a href="/results">Results page</a></td>
+          <td style="padding: 0.75rem; vertical-align: top;"><a href="{{ request.script_root }}/scripts">Scripts page</a>, <a href="/results">Results page</a></td>
         </tr>
         <tr style="border-bottom: 1px solid #e0e0e0;">
           <td style="padding: 0.75rem; vertical-align: top;"><strong>Scripts</strong></td>
           <td style="padding: 0.75rem; vertical-align: top;">General-purpose graph operations and automation</td>
           <td style="padding: 0.75rem; vertical-align: top; font-size: 0.9em;">User-defined parameters, graph context</td>
           <td style="padding: 0.75rem; vertical-align: top; font-size: 0.9em;">Any graph modifications (user-defined)</td>
-          <td style="padding: 0.75rem; vertical-align: top;"><a href="/scripts">Scripts page</a></td>
+          <td style="padding: 0.75rem; vertical-align: top;"><a href="{{ request.script_root }}/scripts">Scripts page</a></td>
         </tr>
       </tbody>
     </table>
