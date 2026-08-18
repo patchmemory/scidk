@@ -112,7 +112,10 @@ def datasets():
     recent_scans = recent_scans[:N]
     # files viewer mode: allow query param override, else env, else classic
     files_viewer = (request.args.get('files_viewer') or os.environ.get('SCIDK_FILES_VIEWER') or 'classic').strip()
-    return render_template('datasets.html', datasets=datasets, directories=directories, recent_scans=recent_scans, selected_scan=selected_scan, files_viewer=files_viewer)
+    # files/datasets.html is the modular Files page: a lean shell plus one
+    # {% include %} per drawer. The 4,200-line monolith it replaced is kept at
+    # _archive/datasets_monolith.html for reference only — nothing renders it.
+    return render_template('files/datasets.html', datasets=datasets, directories=directories, recent_scans=recent_scans, selected_scan=selected_scan, files_viewer=files_viewer)
 
 
 @bp.get('/datasets/<dataset_id>')
@@ -175,6 +178,93 @@ def plugins():
     )
 
 
+@bp.get('/pipeline/sources')
+def pipeline_sources():
+    """Pipeline source management (Cycle 3B Task A).
+
+    A Pipeline page, not a plugin page: it lists every configured data source
+    whatever plugin serves it. The page renders empty and fetches
+    /api/pipeline/sources, so a slow or unreachable source cannot block the page
+    itself from loading.
+    """
+    return render_template('pipeline_sources.html')
+
+
+@bp.get('/pipeline/sources/<source_id>/schema')
+def pipeline_source_schema(source_id):
+    """The Maps canvas in Schema mode, scoped to one Pipeline source (Task C).
+
+    Unlike the sources list, this page is rendered with data: the committed schema
+    and the source's name go into the template so the canvas and the breadcrumb are
+    correct on first paint rather than after a round trip. The three entry points
+    differ only in what is loaded — ``?start=arrows|neo4j|blank``, chosen in Step 2
+    of the add flow.
+    """
+    from flask import abort
+
+    from ...pipeline.store import PipelineStore
+    from ...services.canvas_service import pipeline_source_context
+
+    db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+    source = PipelineStore(db_path).get_source(source_id)
+    if source is None:
+        abort(404)
+
+    start = (request.args.get('start') or '').strip().lower()
+    if start not in ('arrows', 'neo4j', 'blank'):
+        start = ''
+    return render_template(
+        'pipeline_schema.html',
+        source={'id': source['id'], 'name': source.get('name') or source['id']},
+        context_id=pipeline_source_context(source_id),
+        schema_json=source.get('schema_json'),
+        saved_at=source.get('schema_saved_at'),
+        start=start,
+    )
+
+
+@bp.get('/pipeline/sources/<source_id>/mapping')
+def pipeline_source_mapping(source_id):
+    """Step 3: column mapping, scoped to one Pipeline source (Task D).
+
+    Rendered with the schema, the mapping and the transform catalogue inline, so the
+    two panels are populated on first paint. The *source columns* are not: reading
+    them means a live ``find()`` against the source, which is bounded at 10s and
+    must not be able to hold up the page. The page fetches
+    ``/api/pipeline/sources/<id>/columns`` for those and says so while it waits.
+
+    The transform catalogue is per-source because it depends on the plugin: which
+    names a mapping config may use is the core library plus this plugin's
+    ``transform_library()``, and offering a name the engine will not resolve would
+    produce a config that fails its own R check.
+    """
+    from flask import abort
+
+    from ...pipeline.mapping_ui import describe_transforms
+    from ...pipeline.plugin_registry import resolve_plugin, transform_library_for
+    from ...pipeline.store import PipelineStore
+
+    db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+    source = PipelineStore(db_path).get_source(source_id)
+    if source is None:
+        abort(404)
+
+    try:
+        plugin = resolve_plugin(source.get('plugin_type') or '')
+    except Exception:  # noqa: BLE001 - an unavailable plugin still has core transforms
+        plugin = None
+
+    return render_template(
+        'pipeline_mapping.html',
+        source={'id': source['id'], 'name': source.get('name') or source['id'],
+                'plugin_type': source.get('plugin_type') or ''},
+        schema_json=source.get('schema_json'),
+        mapping_json=source.get('mapping_json'),
+        saved_at=source.get('mapping_saved_at'),
+        transforms=describe_transforms(transform_library_for(plugin)),
+    )
+
+
 @bp.get('/interpreters')
 def interpreters():
     """Redirect to landing page interpreters section (backward compatibility)."""
@@ -203,22 +293,43 @@ def rocrate_view():
     return render_template('rocrate_view.html', metadata_url=metadata_url, embed_mode=embed_mode, prov_id=prov_id, root_id=root_id, path=sel_path)
 
 
+@bp.get('/entities')
+def entities():
+    """Entities page: the Labels and Links pages as two tabs under one nav item.
+
+    The tab is selected server-side and each tab is a full page load, so only one
+    of the two subpage templates is ever in the document. That is deliberate, not
+    incidental: ``labels.html``'s inline scripts and ``static/js/links/*.js`` each
+    declare top-level ``showToast``, ``escapeHtml``, ``handleGlobalKeydown`` and
+    ``returnFocusToSidePanel``, so rendering both into one DOM would leave the
+    later-parsed definitions bound for both tabs and break the keyboard and focus
+    handling on one of them.
+
+    Neither subpage template is modified; ``entities_tab`` only tells base.html to
+    render the tab strip above the content.
+    """
+    tab = (request.args.get('tab') or '').strip().lower()
+    if tab == 'relationships':
+        return render_template('links.html', entities_tab='relationships')
+    return render_template('labels.html', entities_tab='entities')
+
+
 @bp.get('/labels')
 def labels():
-    """Label definitions page for graph schema management."""
-    return render_template('labels.html')
+    """Backward compatibility redirect: /labels → the Entities tab."""
+    return redirect(url_for('ui.entities', tab='entities'))
 
 
 @bp.get('/links')
 def links():
-    """Links page for relationship creation workflows (wizard + script)."""
-    return render_template('links.html')
+    """Backward compatibility redirect: /links → the Relationships tab."""
+    return redirect(url_for('ui.entities', tab='relationships'))
 
 
 @bp.get('/integrate')
 def integrate_redirect():
-    """Backward compatibility redirect: /integrate → /links"""
-    return redirect(url_for('ui.links'))
+    """Backward compatibility redirect: /integrate → the Relationships tab."""
+    return redirect(url_for('ui.entities', tab='relationships'))
 
 
 @bp.get('/settings')

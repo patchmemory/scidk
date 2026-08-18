@@ -65,6 +65,20 @@ class ScidkMcpServer:
         self.neo4j_password = os.getenv('NEO4J_PASSWORD', 'password')
         self.neo4j_database = os.getenv('NEO4J_DATABASE', 'neo4j')
 
+        # Schema Intelligence (label profiles, property rankings) lives in
+        # scidk_settings.db. This process has no Flask app to read the path from
+        # app.config, so the env var and the cwd default are all there is —
+        # meaning the server must be started from the SciDK working directory,
+        # or SCIDK_SETTINGS_DB must be set in its MCP config env block.
+        self.settings_db_path = os.getenv('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+        if not os.path.exists(self.settings_db_path):
+            print(
+                f"⚠️  Settings DB not found at {self.settings_db_path} — label "
+                "profiles and property rankings will be unavailable. Set "
+                "SCIDK_SETTINGS_DB to the SciDK settings database to enable them.",
+                file=sys.stderr,
+            )
+
         # Initialize Neo4j driver
         try:
             self.driver = GraphDatabase.driver(
@@ -94,7 +108,10 @@ class ScidkMcpServer:
         return mcp_tools.summarize_dataset(self.driver, self.neo4j_database, label, relationship)
 
     async def get_label_profile(self, label: str) -> Dict[str, Any]:
-        return mcp_tools.get_label_profile(self.driver, label, self.neo4j_database)
+        return mcp_tools.get_label_profile(
+            self.driver, label, self.neo4j_database,
+            settings_db_path=self.settings_db_path,
+        )
 
     async def list_labels(self) -> Dict[str, Any]:
         return mcp_tools.list_labels(self.driver, self.neo4j_database)
@@ -115,12 +132,17 @@ async def main():
     # Register tools
     @server.list_tools()
     async def list_tools() -> List[Tool]:
-        """List available tools from centralized definitions."""
+        """List available tools from the canonical registry in mcp_tools.
+
+        `input_schema` is the registry's spelling — snake_case, matching the
+        :Concept_Tool node property — and `inputSchema` is MCP's. This is the
+        one place the two meet.
+        """
         return [
             Tool(
                 name=tool_def["name"],
                 description=tool_def["description"],
-                inputSchema=tool_def["inputSchema"]
+                inputSchema=tool_def["input_schema"]
             )
             for tool_def in mcp_tools.TOOL_DEFINITIONS
         ]

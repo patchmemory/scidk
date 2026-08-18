@@ -1,0 +1,69 @@
+{
+  "layer_name": "provisional_only",
+  "snapshot": {
+    "nodes": [
+      {
+        "id": "prov-project",
+        "label": "Project",
+        "name": "AIPT",
+        "provisional": true,
+        "properties": {
+          "name": "AIPT",
+          "description": "AI Pathology Tumour cohort",
+          "dateCreated": "2026-01-15"
+        }
+      },
+      {
+        "id": "prov-dataset",
+        "label": "Dataset",
+        "name": "slide_001.svs",
+        "provisional": true,
+        "properties": {
+          "name": "slide_001.svs",
+          "path": "/data/aipt/slide_001.svs"
+        }
+      },
+      {
+        "id": "prov-protocol",
+        "label": "Protocol",
+        "name": "H&E staining",
+        "provisional": true,
+        "properties": {
+          "name": "H&E staining"
+        }
+      },
+      {
+        "id": "prov-unnamed",
+        "label": "Sample",
+        "provisional": true,
+        "properties": {}
+      }
+    ],
+    "edges": [
+      {
+        "source": "prov-project",
+        "target": "prov-dataset",
+        "relationship": "CONTAINS",
+        "provisional": true
+      },
+      {
+        "source": "prov-protocol",
+        "target": "prov-dataset",
+        "relationship": "ATTACHED_TO",
+        "provisional": true
+      },
+      {
+        "source": "prov-dataset",
+        "target": "prov-unnamed",
+        "relationship": "DERIVED_FROM",
+        "provisional": true
+      },
+      {
+        "source": "prov-dataset",
+        "target": "not-on-canvas",
+        "relationship": "CONTAINS",
+        "provisional": true
+      }
+    ]
+  }
+}

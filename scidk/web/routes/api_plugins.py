@@ -312,7 +312,11 @@ def get_plugin_settings_schema(plugin_name):
 
 @bp.get('/templates')
 def list_plugin_templates():
-    """List all registered plugin templates.
+    """List registered plugin templates, optionally filtered by category.
+
+    Query params:
+        category: Restrict to one category. The Pipeline's "+ Add source" picker
+            passes ``data_import`` to get just the instantiable data sources.
 
     Returns:
         JSON response with list of templates
@@ -327,7 +331,7 @@ def list_plugin_templates():
                 'templates': []
             })
 
-        templates = registry.list_templates()
+        templates = registry.list_templates(category=request.args.get('category'))
 
         return jsonify({
             'status': 'success',

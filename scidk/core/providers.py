@@ -118,7 +118,11 @@ class LocalFSProvider(FilesystemProvider):
     def list(self, root_id: str, path: str, page_token: Optional[str] = None, page_size: Optional[int] = None, *, recursive: bool = False, max_depth: Optional[int] = 1, fast_list: bool = False) -> Dict:
         base = self._norm(path or root_id or str(self.base_dir))
         if not base.exists():
-            return {"entries": []}
+            # Raised, not returned as an empty listing: "this folder is gone"
+            # and "this folder is empty" are different answers, and the caller
+            # cannot tell them apart from {"entries": []}. api_browse turns
+            # this into a 404.
+            raise FileNotFoundError(str(base))
         items: List[Entry] = []
         for child in base.iterdir():
             try:
@@ -202,7 +206,9 @@ class MountedFSProvider(FilesystemProvider):
         # Treat path under selected mount root; if path is empty, list the root itself
         base = Path(path or root_id).resolve()
         if not base.exists():
-            return {"entries": []}
+            # See LocalFSProvider.list — a missing mount is a 404, not an
+            # empty directory.
+            raise FileNotFoundError(str(base))
         items: List[Entry] = []
         for child in base.iterdir():
             try:

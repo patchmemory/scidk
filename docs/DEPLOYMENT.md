@@ -55,6 +55,25 @@ This guide covers production deployment of SciDK, including installation, config
    pip install -e .[dev]
    ```
 
+   **Whole-slide imaging (`imaging` extra)** — a facility holding histology
+   data should install this:
+
+   ```bash
+   pip install -e .[imaging]
+   ```
+
+   It pulls in `tifffile`, which `svs_interpreter` uses to read the
+   `ImageDescription` tag of Aperio `.svs`, Hamamatsu `.ndpi` and Leica `.scn`
+   slides (metadata only — pixel data is never loaded). Omitting it is not a
+   breaking omission: the interpreter returns a stub with a
+   `tifffile not installed` warning and enrichment continues. But no
+   `HistologySlide` or `HistologySession` nodes will appear in the graph, and
+   the omission is only visible in the `warnings` list of an enrichment run,
+   so it is easy to mistake for "there is no histology data here".
+
+   Flow cytometry (`.fcs`) needs nothing extra — `fcs_interpreter` is stdlib
+   only.
+
 4. **Initialize environment**:
    ```bash
    # bash/zsh:

@@ -11,6 +11,11 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
   "Flask>=3.0",
+  # scidk/app.py imports this at module scope, before anything else — every
+  # test module that imports create_app fails collection without it. CI
+  # installs `-e .[dev]`, which reads this list and not requirements.txt, so
+  # declaring it in the latter alone left CI unable to import the app at all.
+  "python-dotenv>=1.0",
   "ijson>=3.2",
   "openpyxl>=3.1",
   "PyYAML>=6.0",
@@ -23,10 +28,15 @@ dependencies = [
   "rapidfuzz>=3.0",
   "bcrypt>=4.0",
   "APScheduler>=3.10",
+  # APScheduler's SQLAlchemyJobStore: the persistent jobstore that lets a
+  # schedule change made in a worker reach the scheduler in the gunicorn master.
+  "SQLAlchemy>=1.4",
+  # Validates Pipeline mapping configs against scidk/pipeline/mapping_schema.json.
+  "jsonschema>=4.0",
   "flasgger>=0.9.7",
-  "watchdog>=3.0",
-  "mcp>=1.0.0",
-  "python-dotenv>=1.0.0",
+  # Parses incoming RO-Crates in scidk/rocrate_bridge.py:ingest_crate(). Reading
+  # only; the export path there is hand-rolled in-memory JSON.
+  "rocrate>=0.15.0",
 ]
 
 [project.optional-dependencies]
@@ -45,11 +55,29 @@ llm = [
   "ollama>=0.3",
 ]
 
+# Whole-slide image metadata (svs_interpreter). Only the first page's
+# ImageDescription tag is read, never pixel data. Absent, SVSInterpreter
+# returns a stub with a warning rather than failing the enrichment run — so
+# this is genuinely optional, but no HistologySlide nodes appear without it.
+imaging = [
+  "tifffile>=2024.1",
+]
+
 [project.scripts]
 scidk-serve = "scidk.app:main"
+# Concept Graph seeding and clean re-initialisation (Cycle 8 Task C). Also
+# reachable as `python -m scidk.concept_graph`.
+scidk-concept-graph = "scidk.concept_graph.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "."}
+
+[tool.setuptools.package-data]
+# intents.yaml is what `scidk-concept-graph seed` reads, so it has to be in the
+# wheel. Until Cycle 8 scidk/concept_graph/ had no __init__.py and was not
+# collected as a package at all. Note that this declares data for this package
+# only — templates, static JS and interpreter profiles are still undeclared.
+"scidk.concept_graph" = ["*.yaml", "*.cypher"]
 
 [tool.setuptools.packages.find]
 include = ["scidk*"]

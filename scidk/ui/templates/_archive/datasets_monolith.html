@@ -315,6 +315,66 @@
     color: #1976d2;
   }
 
+  /* Build RO-Crate panel (opens under the selection toolbar) */
+  .rocrate-panel {
+    padding: 0.75rem;
+    background: #f8f9fa;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+  }
+  .rocrate-panel .rocrate-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: flex-end;
+  }
+  .rocrate-panel label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 0.125rem;
+  }
+
+  /* Draft DMS plan panel (Cycle 7 Task C) — full width, opens under the header.
+     The plan describes the whole graph rather than a selection, so it is not part
+     of the selection toolbar. */
+  .dms-panel {
+    padding: 0.75rem;
+    background: #f8f9fa;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+  }
+  .dms-panel .dms-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+  .dms-panel textarea {
+    width: 100%;
+    min-height: 22rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    /* pre-wrap, not pre: a markdown paragraph is one long line, and horizontal
+       scrolling makes the draft unreadable. Soft wrapping is visual only — the
+       textarea's value, and so the copied and downloaded text, is unchanged. */
+    white-space: pre-wrap;
+    background: #fff;
+  }
+  .dms-phi-flag {
+    background: #fff3cd;
+    border: 1px solid #ffe69c;
+    color: #664d03;
+    border-radius: 4px;
+    padding: 0.375rem 0.5rem;
+    font-size: 0.8rem;
+  }
+
   /* Snapshot config diff visualization */
   .row-config-unchanged {
     background: #d4edda !important;
@@ -449,14 +509,229 @@
   .snapshot-item .task-progress-bar {
     margin-top: 0.25rem;
   }
+
+  /* FilterBuilder inside the attribution panel.
+     The component renders its own shell — "+ Add block", "Preview", the
+     preview count — none of which belongs here. A second block would draw a
+     "relates via" row, whose meaning ("these two are already connected by this
+     edge") is the opposite of what this panel does: the relationship is the
+     thing being written, not a filter. And Preview counts every node matching
+     the conditions alone, while the real search additionally requires a name
+     match and returns a scored list — two numbers with the same label, orders
+     of magnitude apart. Both live in .fb-actions, so hiding it removes both.
+     "+ Add condition" sits inside the block and survives, which is exactly the
+     surface wanted: conditions, no block plumbing.
+     Flattening .fb-block drops its own border/padding/background, which would
+     otherwise double-frame inside the panel's own bordered section. */
+  .attr-fb-scope .fb-actions { display: none; }
+  .attr-fb-scope .fb-block {
+    border: none;
+    padding: 0;
+    background: none;
+    box-shadow: none;
+  }
 </style>
 {% endblock %}
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
   <h1 data-testid="files-title">Files</h1>
-  <div class="neo4j-status">
-    <div id="neo4j-light" class="neo4j-light" title="Disconnected"></div>
-    <span id="neo4j-status-text">Neo4j: Not connected</span>
+  <div style="display: flex; align-items: center; gap: 0.75rem;">
+    <!-- Generate DMS Plan Draft (Cycle 7 Task C). In the page header, not the
+         selection toolbar: the plan describes the whole graph and needs no
+         selection. -->
+    <button id="dms-plan-btn" class="btn btn-sm btn-outline-primary" data-testid="dms-plan-btn"
+            title="Generate draft NIH Data Management &amp; Sharing plan prose from the graph">
+      📋 Generate DMS Plan Draft
+    </button>
+    <!-- Attribution: match target nodes to an anchor node by name patterns in
+         the path, then write the confirmed ones back as edges of a chosen type. -->
+    <button id="attribution-btn" class="btn btn-sm btn-outline-primary" data-testid="attribution-btn"
+            onclick="openAttributionPanel()" title="Attribute nodes to an anchor node">
+      🔗 Attribution
+    </button>
+    <div class="neo4j-status">
+      <div id="neo4j-light" class="neo4j-light" title="Disconnected"></div>
+      <span id="neo4j-status-text">Neo4j: Not connected</span>
+    </div>
+  </div>
+</div>
+
+<!-- Draft NIH DMS plan (Cycle 7 Task C). Markdown in a textarea so the researcher
+     can copy it straight into DMPTool or a grant application. -->
+<div id="dms-panel" class="dms-panel" style="display: none;">
+  <div class="dms-actions">
+    <strong style="font-size: 0.9rem;">Draft NIH DMS Plan</strong>
+    <span id="dms-summary" class="small text-muted"></span>
+    <span style="flex: 1 1 auto;"></span>
+    <button id="dms-copy" class="btn btn-sm btn-outline-secondary" data-testid="dms-copy">Copy</button>
+    <a id="dms-download" class="btn btn-sm btn-outline-secondary"
+       href="#" download="nih-dms-plan-draft.md" data-testid="dms-download">Download .md</a>
+    <button id="dms-close" class="btn btn-sm btn-outline-secondary">Close</button>
+  </div>
+  <div id="dms-phi" class="dms-phi-flag mb-2" style="display: none;"></div>
+  <div id="dms-status" class="small text-muted mb-2"></div>
+  <textarea id="dms-markdown" data-testid="dms-markdown" readonly
+            spellcheck="false" aria-label="Draft NIH DMS plan markdown"></textarea>
+  <div class="small text-muted mt-1">
+    This is a draft generated from your graph. Search it for <code>[</code> to find every
+    placeholder that still needs a decision before submission.
+  </div>
+</div>
+
+<!-- Folder attribution panel. Opens from the page header, not the selection
+     toolbar: it searches every scanned source, not the current selection. -->
+<div id="attribution-panel" data-testid="attribution-panel"
+     style="display:none; border:1px solid var(--border,#ddd);
+            border-radius:8px; padding:16px; margin:12px 0;">
+
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <strong>🔗 Attribution</strong>
+    <button type="button" onclick="closeAttributionPanel()" aria-label="Close attribution panel"
+            style="background:none;border:none;cursor:pointer;font-size:1.2em;">×</button>
+  </div>
+
+  <p style="font-size:.85em; color:var(--text-muted,#666); margin:6px 0 12px;">
+    Find nodes that likely belong to an anchor node, based on name patterns in
+    their paths. Confirm candidates to write the chosen relationship to the graph.
+  </p>
+
+  <!-- Anchor label: which node label the attribution runs from. Populated from
+       /api/schema/labels so it follows the graph, not a hardcoded list. -->
+  <div style="margin-bottom:10px;">
+    <label for="attr-anchor-label-sel"><strong>Anchor label</strong></label><br>
+    <select id="attr-anchor-label-sel" data-testid="attr-anchor-label-sel"
+            onchange="onAnchorLabelChange()"
+            style="padding:4px 8px; border:1px solid #ccc; border-radius:4px; width:250px;">
+      <option value="Investigator">Investigator</option>
+    </select>
+  </div>
+
+  <!-- Anchor picker. Two ways to narrow the list, which compose: a server-side
+       filter on any property those nodes carry, then a client-side name search
+       over whatever came back. -->
+  <div style="margin-bottom:10px;">
+    <label><strong>Anchor</strong></label><br>
+
+    <!-- Both pickers follow the data rather than a hardcoded list: keys from
+         /api/files/attribution/anchor-properties, then that key's values from
+         /api/files/attribution/anchor-property-values. The value picker stays
+         disabled until a property is chosen — there is nothing to offer before
+         then — and picking a value filters immediately, so there is no Apply. -->
+    <div style="display:flex; gap:6px; align-items:center; margin-bottom:4px; max-width:400px;">
+      <select id="attr-filter-prop-sel" data-testid="attr-filter-prop-sel"
+              onchange="_loadAnchorPropertyValues()"
+              style="padding:4px 8px; border:1px solid #ccc; border-radius:4px; flex:1;">
+        <option value="">Filter by property…</option>
+      </select>
+      <select id="attr-filter-val-sel" data-testid="attr-filter-val-sel"
+              onchange="applyAnchorFilter()"
+              style="padding:4px 8px; border:1px solid #ccc; border-radius:4px; flex:2;"
+              disabled>
+        <option value="">Select a value…</option>
+      </select>
+      <button type="button" onclick="clearAnchorFilter()"
+              class="btn btn-sm btn-outline-secondary">Clear</button>
+    </div>
+
+    <input id="attr-search" type="text" placeholder="Search by name…"
+           oninput="filterAttrAnchors(this.value)"
+           style="padding:4px 8px; border:1px solid #ccc; border-radius:4px; width:250px;">
+    <select id="attr-anchor-sel" size="4" data-testid="attr-anchor-sel"
+            onchange="selectAttrAnchor(this.value)"
+            style="display:block; margin-top:4px; width:300px; border:1px solid #ccc; border-radius:4px;">
+    </select>
+    <span id="attr-anchor-label"
+          style="display:block; margin-top:4px; font-weight:bold; min-height:1.2em;"></span>
+  </div>
+
+  <!-- Target label: which node label candidates are drawn from. -->
+  <div style="margin-bottom:10px;">
+    <label for="attr-target-label-sel"><strong>Target label</strong></label><br>
+    <select id="attr-target-label-sel" data-testid="attr-target-label-sel"
+            onchange="onTargetLabelChange()"
+            style="padding:4px 8px; border:1px solid #ccc; border-radius:4px; width:250px;">
+      <option value="Folder">Folder</option>
+    </select>
+  </div>
+
+  <!-- Target conditions: property predicates on the candidate node itself,
+       appended to the candidate query's WHERE. A FilterBuilder instance fills
+       this, following the target label's real schema — which is what replaced
+       the fixed modality checkboxes that used to sit lower down: "path
+       contains vevo" is the same filter, expressed against the graph rather
+       than against a hardcoded keyword table. -->
+  <div style="margin-bottom:10px;">
+    <label><strong>Target conditions</strong>
+      <span style="font-size:.8em; color:#888; font-weight:normal;">
+        — filter candidates by their properties
+      </span>
+    </label>
+    <div id="attr-target-fb-container" data-testid="attr-target-fb-container"
+         class="attr-fb-scope"></div>
+  </div>
+
+  <!-- Relationship: seeds for the label pair, plus whatever the graph already
+       uses between them, most-used first. The custom field is for a type the
+       graph has not seen yet; it must be uppercase, and the server says so. -->
+  <div style="margin-bottom:10px;">
+    <label for="attr-rel-select"><strong>Relationship</strong></label><br>
+    <select id="attr-rel-select" data-testid="attr-rel-select"
+            style="padding:4px 8px; border:1px solid #ccc; border-radius:4px; width:250px;">
+      <option value="OWNS">OWNS</option>
+    </select>
+    <a href="#" id="attr-rel-toggle" onclick="toggleCustomRel(); return false;"
+       style="margin-left:8px; font-size:.85em;">or type custom</a>
+    <input id="attr-rel-custom" type="text" placeholder="E.G. FUNDED_BY"
+           data-testid="attr-rel-custom" spellcheck="false"
+           style="display:none; margin-left:8px; padding:4px 8px; border:1px solid #ccc;
+                  border-radius:4px; width:200px; font-family:monospace;">
+  </div>
+
+  <div style="margin-bottom:12px;">
+    <label>
+      <input type="checkbox" id="attr-labmates" checked> Include labmates
+    </label>
+  </div>
+
+  <button type="button" onclick="runAttribution()" id="attr-find-btn"
+          class="btn btn-sm btn-primary" data-testid="attr-find-btn">
+    Find Candidates
+  </button>
+  <span id="attr-status" style="margin-left:10px; font-size:.85em;
+        color:var(--text-muted,#666);"></span>
+
+  <!-- Results -->
+  <div id="attr-results" style="display:none; margin-top:14px;">
+    <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+      <button type="button" class="btn btn-sm btn-outline-secondary"
+              onclick="attrSelectByConf('HIGH')">✓ All HIGH</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary"
+              onclick="attrSelectByConf('MED')">✓ All MED</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary"
+              onclick="attrClearSel()">Clear</button>
+      <span style="flex:1"></span>
+      <button type="button" onclick="runConfirm()" id="attr-confirm-btn"
+              class="btn btn-sm btn-primary" data-testid="attr-confirm-btn">
+        Confirm selected → Write to graph
+      </button>
+    </div>
+
+    <table style="width:100%; border-collapse:collapse; font-size:.85em;">
+      <thead>
+        <tr style="border-bottom:2px solid #ddd; text-align:left;">
+          <th style="width:24px;"></th>
+          <th style="width:60px;">Conf.</th>
+          <th>Path</th>
+          <th style="width:130px;">Source</th>
+          <th style="width:50px;">Depth</th>
+          <th>Reason</th>
+        </tr>
+      </thead>
+      <tbody id="attr-tbody"></tbody>
+    </table>
+
+    <div id="attr-confirm-msg" data-testid="attr-confirm-msg"
+         style="margin-top:8px; font-size:.85em; font-weight:bold;"></div>
   </div>
 </div>
 
@@ -528,7 +803,50 @@
       <span class="selection-count" id="selection-count">0 items selected</span>
       <button id="clear-selection-btn" class="btn btn-sm btn-outline-secondary">Clear</button>
       <button id="scan-selected-btn" class="btn btn-sm btn-primary">Scan Selected</button>
+      <button id="build-rocrate-btn" class="btn btn-sm btn-outline-success" data-testid="build-rocrate-btn"
+              title="Package the selection as an RO-Crate metadata document">🗃 Build RO-Crate</button>
       <button id="exit-selection-btn" class="btn btn-sm btn-outline-secondary">Exit Selection Mode</button>
+    </div>
+
+    <!-- Build RO-Crate panel: opens from the selection toolbar (Cycle 7 Task B) -->
+    <div id="rocrate-panel" class="rocrate-panel" style="display: none;">
+      <div class="rocrate-fields">
+        <div style="flex: 2 1 220px;">
+          <label for="rocrate-name">Name</label>
+          <input id="rocrate-name" type="text" class="form-control form-control-sm"
+                 placeholder="Crate name" />
+        </div>
+        <div style="flex: 1 1 160px;">
+          <label for="rocrate-license">License</label>
+          <select id="rocrate-license" class="form-select form-select-sm">
+            <option value="CC BY 4.0">CC BY 4.0</option>
+            <option value="CC BY-NC 4.0">CC BY-NC 4.0</option>
+            <option value="MIT">MIT</option>
+            <option value="__other__">Other…</option>
+          </select>
+        </div>
+        <div style="flex: 1 1 160px; display: none;" id="rocrate-license-other-wrap">
+          <label for="rocrate-license-other">License name</label>
+          <input id="rocrate-license-other" type="text" class="form-control form-control-sm"
+                 placeholder="e.g. CC0 1.0" />
+        </div>
+        <div style="flex: 0 0 auto;">
+          <div class="form-check">
+            <input id="rocrate-include-files" class="form-check-input" type="checkbox" checked />
+            <label class="form-check-label small" for="rocrate-include-files"
+                   style="font-weight: 400; text-transform: none;">Include files</label>
+          </div>
+        </div>
+        <div style="flex: 0 0 auto;">
+          <button id="rocrate-build-submit" class="btn btn-sm btn-success" data-testid="rocrate-build-submit">Build</button>
+          <button id="rocrate-cancel" class="btn btn-sm btn-outline-secondary">Cancel</button>
+        </div>
+      </div>
+      <div class="small text-muted mt-2" id="rocrate-hint">
+        Unchecking <em>Include files</em> builds a metadata-only crate: it describes the files
+        without pointing at where they live.
+      </div>
+      <div class="small mt-2" id="rocrate-result"></div>
     </div>
 
     <!-- Advanced Options (Collapsed by default) -->
@@ -1270,6 +1588,9 @@ window.addEventListener('DOMContentLoaded', () => {
       scanFolderBtn.style.display = 'inline-block';
       selectedItems.clear();
       lastClickedIndex = -1;
+      // The RO-Crate panel belongs to the selection; leaving selection mode
+      // closes it rather than leaving it open over an empty selection.
+      if (typeof window.closeRocratePanel === 'function') window.closeRocratePanel();
     }
   }
 
@@ -2597,6 +2918,257 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ===== Build RO-Crate (Cycle 7 Task B) =====
+  // The panel collects a name, a license and the include-files toggle, then posts
+  // the selected paths to /api/rocrate/build. The selection is already a list of
+  // paths (see the scan handler above, which uses the same ids as rule paths), and
+  // the bridge resolves paths against Neo4j, so nothing needs translating here.
+  const buildRocrateBtn = document.getElementById('build-rocrate-btn');
+  const rocratePanel = document.getElementById('rocrate-panel');
+  const rocrateName = document.getElementById('rocrate-name');
+  const rocrateLicense = document.getElementById('rocrate-license');
+  const rocrateLicenseOther = document.getElementById('rocrate-license-other');
+  const rocrateLicenseOtherWrap = document.getElementById('rocrate-license-other-wrap');
+  const rocrateIncludeFiles = document.getElementById('rocrate-include-files');
+  const rocrateSubmit = document.getElementById('rocrate-build-submit');
+  const rocrateCancel = document.getElementById('rocrate-cancel');
+  const rocrateResult = document.getElementById('rocrate-result');
+
+  function defaultCrateName() {
+    // One selected item names itself; several are named after the folder holding
+    // them, which is what the user was looking at when they selected.
+    const items = Array.from(selectedItems);
+    const base = (items.length === 1 ? items[0] : (currentPath || currentRoot || ''));
+    const trimmed = String(base).replace(/\/+$/, '');
+    const leaf = trimmed.split('/').pop();
+    return leaf || trimmed || 'SciDK selection';
+  }
+
+  function chosenLicense() {
+    if (!rocrateLicense) return '';
+    return rocrateLicense.value === '__other__'
+      ? (rocrateLicenseOther?.value || '').trim()
+      : rocrateLicense.value;
+  }
+
+  window.closeRocratePanel = function closeRocratePanel() {
+    if (rocratePanel) rocratePanel.style.display = 'none';
+    if (rocrateResult) rocrateResult.innerHTML = '';
+  };
+
+  if (rocrateLicense) {
+    rocrateLicense.addEventListener('change', () => {
+      if (rocrateLicenseOtherWrap) {
+        rocrateLicenseOtherWrap.style.display =
+          rocrateLicense.value === '__other__' ? 'block' : 'none';
+      }
+    });
+  }
+
+  if (rocrateCancel) rocrateCancel.addEventListener('click', window.closeRocratePanel);
+
+  if (buildRocrateBtn) {
+    buildRocrateBtn.addEventListener('click', () => {
+      if (selectedItems.size === 0) {
+        showMessage('Select at least one file or folder to build a crate', 'error');
+        return;
+      }
+      if (!rocratePanel) return;
+      const opening = (rocratePanel.style.display === 'none');
+      rocratePanel.style.display = opening ? 'block' : 'none';
+      if (opening) {
+        if (rocrateResult) rocrateResult.innerHTML = '';
+        if (rocrateName) {
+          rocrateName.value = defaultCrateName();
+          rocrateName.focus();
+        }
+      }
+    });
+  }
+
+  if (rocrateSubmit) {
+    rocrateSubmit.addEventListener('click', async () => {
+      if (selectedItems.size === 0) {
+        rocrateResult.innerHTML =
+          '<span class="text-danger">Select at least one file or folder first.</span>';
+        return;
+      }
+
+      const payload = {
+        paths: Array.from(selectedItems),
+        name: (rocrateName?.value || '').trim() || defaultCrateName(),
+        license: chosenLicense(),
+        include_files: !!(rocrateIncludeFiles && rocrateIncludeFiles.checked),
+      };
+
+      rocrateSubmit.disabled = true;
+      const prev = rocrateSubmit.textContent;
+      rocrateSubmit.textContent = 'Building…';
+      rocrateResult.innerHTML = '<span class="text-muted">Building crate…</span>';
+
+      try {
+        const r = await fetch(window.SCIDK_BASE + '/api/rocrate/build', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.ok && j.status === 'ok') {
+          const kind = j.include_files ? 'crate' : 'metadata-only crate';
+          rocrateResult.innerHTML =
+            `<span class="text-success">Built a ${kind} describing ${j.entities} `
+            + `entit${j.entities === 1 ? 'y' : 'ies'}.</span> `
+            + `<a href="${window.SCIDK_BASE}${j.download_url}" download="${j.filename}" `
+            + `data-testid="rocrate-download">Download ${j.filename}</a>`;
+        } else {
+          // The route distinguishes "you selected nothing" from "none of it is in
+          // the graph yet"; both are the user's to act on, so show what it said.
+          rocrateResult.innerHTML =
+            `<span class="text-danger">${j.error || ('Build failed (' + r.status + ')')}</span>`;
+        }
+      } catch (err) {
+        rocrateResult.innerHTML = `<span class="text-danger">Build failed: ${err.message}</span>`;
+      } finally {
+        rocrateSubmit.disabled = false;
+        rocrateSubmit.textContent = prev;
+      }
+    });
+  }
+
+  // ===== Generate DMS Plan Draft (Cycle 7 Task C) =====
+  // Asks the plugin for markdown generated from the whole graph — no selection
+  // involved — and shows it in a textarea to copy into DMPTool. Requesting JSON
+  // rather than raw markdown gets the summary alongside it, which is what makes
+  // the "N entity types, N files" line and the PHI flag possible without
+  // re-parsing the document in the browser.
+  const dmsBtn = document.getElementById('dms-plan-btn');
+  const dmsPanel = document.getElementById('dms-panel');
+  const dmsMarkdown = document.getElementById('dms-markdown');
+  const dmsSummary = document.getElementById('dms-summary');
+  const dmsStatus = document.getElementById('dms-status');
+  const dmsPhi = document.getElementById('dms-phi');
+  const dmsCopy = document.getElementById('dms-copy');
+  const dmsDownload = document.getElementById('dms-download');
+  const dmsClose = document.getElementById('dms-close');
+  let dmsObjectUrl = null;
+
+  function dmsHumanBytes(bytes) {
+    const units = ['bytes', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
+    let size = Number(bytes) || 0;
+    for (let i = 0; i < units.length; i++) {
+      if (size < 1024 || i === units.length - 1) {
+        return i === 0 ? `${Math.round(size)} bytes` : `${size.toFixed(2)} ${units[i]}`;
+      }
+      size /= 1024;
+    }
+    return `${size} bytes`;
+  }
+
+  function dmsRevokeUrl() {
+    if (dmsObjectUrl) {
+      URL.revokeObjectURL(dmsObjectUrl);
+      dmsObjectUrl = null;
+    }
+  }
+
+  if (dmsClose) {
+    dmsClose.addEventListener('click', () => {
+      dmsPanel.style.display = 'none';
+      // The blob backs the download link; holding it after close would leak.
+      dmsRevokeUrl();
+      if (dmsDownload) dmsDownload.removeAttribute('href');
+    });
+  }
+
+  if (dmsCopy) {
+    dmsCopy.addEventListener('click', async () => {
+      if (!dmsMarkdown || !dmsMarkdown.value) return;
+      const prev = dmsCopy.textContent;
+      try {
+        await navigator.clipboard.writeText(dmsMarkdown.value);
+        dmsCopy.textContent = 'Copied';
+      } catch (err) {
+        // Clipboard access needs a secure context; selecting the text is a
+        // workable fallback and tells the user what to do next.
+        dmsMarkdown.focus();
+        dmsMarkdown.select();
+        dmsCopy.textContent = 'Press Ctrl+C';
+      }
+      setTimeout(() => { dmsCopy.textContent = prev; }, 2000);
+    });
+  }
+
+  if (dmsBtn) {
+    dmsBtn.addEventListener('click', async () => {
+      if (!dmsPanel) return;
+      dmsPanel.style.display = 'block';
+      dmsPhi.style.display = 'none';
+      dmsSummary.textContent = '';
+      dmsStatus.innerHTML = '<span class="text-muted">Reading the graph… '
+        + 'on a large index this takes a few seconds.</span>';
+      dmsMarkdown.value = '';
+      dmsBtn.disabled = true;
+      const prevLabel = dmsBtn.textContent;
+      dmsBtn.textContent = 'Generating…';
+
+      try {
+        const r = await fetch(
+          window.SCIDK_BASE + '/api/plugins/nih_dms/draft_plan?format=json');
+        const j = await r.json().catch(() => ({}));
+
+        if (r.ok && j.status === 'ok') {
+          dmsMarkdown.value = j.markdown || '';
+
+          const s = j.summary || {};
+          const parts = [
+            `${(s.entity_types || 0).toLocaleString()} entity types`,
+            `${(s.records || 0).toLocaleString()} records`,
+          ];
+          if (s.files) {
+            parts.push(`${s.files.toLocaleString()} files`);
+            parts.push(dmsHumanBytes(s.bytes));
+          }
+          if (s.formats) parts.push(`${s.formats} formats`);
+          if (s.modalities && s.modalities.length) {
+            parts.push(`${s.modalities.length} modality source(s)`);
+          }
+          dmsSummary.textContent = `— from ${parts.join(', ')}`;
+
+          if (s.phi_detected) {
+            const props = (s.phi_properties || []).map(p => `<code>${p}</code>`).join(', ');
+            dmsPhi.innerHTML = '⚠ <strong>Potentially identifiable data detected.</strong> '
+              + `Property names matched: ${props}. See the Identifiability note in Element 1 `
+              + 'and the privacy subsection in Element 5 — neither can be left as a placeholder.';
+            dmsPhi.style.display = 'block';
+          }
+
+          const notes = (s.warnings || []).length
+            ? ` ${s.warnings.length} note(s) are recorded at the top of the draft.`
+            : '';
+          dmsStatus.innerHTML = '<span class="text-success">Draft generated from the live '
+            + `graph.</span>${notes}`;
+
+          dmsRevokeUrl();
+          dmsObjectUrl = URL.createObjectURL(
+            new Blob([dmsMarkdown.value], { type: 'text/markdown' }));
+          dmsDownload.href = dmsObjectUrl;
+          dmsDownload.download = j.filename || 'nih-dms-plan-draft.md';
+        } else {
+          // A missing or unreachable graph is reported, never papered over with a
+          // placeholder plan — that is the whole point of the route's 503.
+          dmsStatus.innerHTML = `<span class="text-danger">${
+            j.error || ('Could not generate a draft (' + r.status + ')')}</span>`;
+        }
+      } catch (err) {
+        dmsStatus.innerHTML =
+          `<span class="text-danger">Could not generate a draft: ${err.message}</span>`;
+      } finally {
+        dmsBtn.disabled = false;
+        dmsBtn.textContent = prevLabel;
+      }
+    });
+  }
+
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
     // Ctrl/Cmd + A: Select all (when in selection mode)
@@ -3106,5 +3678,537 @@ window.addEventListener('DOMContentLoaded', () => {
   fetchTasks();
   fetchNeo4jStatus();
 });
+
+// ── Attribution panel ──────────────────────────────────────────────────
+// Pick an anchor node, score target nodes whose paths carry some spelling of
+// its name, confirm the good ones as edges of the chosen relationship type.
+// No label or relationship type is hardcoded here beyond the initial defaults:
+// labels come from /api/schema/labels, relationship types from the graph.
+
+const ATTR_DEFAULT_ANCHOR_LABEL = 'Investigator';
+const ATTR_DEFAULT_TARGET_LABEL = 'Folder';
+//: Above this many distinct values, a target condition keeps its text input
+//: instead of becoming a dropdown.
+const ATTR_VALUE_PICKER_MAX = 500;
+
+let _attrAnchors        = [];
+let _attrCandidates     = [];
+let _attrLabelsLoaded   = false;
+// The property-filtered subset of _attrAnchors, or null when no property filter
+// is active. Kept beside the full list rather than replacing it, so Clear can
+// restore every anchor without another round trip.
+let _attrAnchorFilter   = null;
+// The FilterBuilder driving the Target conditions section, or null before the
+// panel has been opened once. Torn down and rebuilt when the target label
+// changes — its conditions are keyed to that label's schema.
+let _attrTargetFB       = null;
+
+function _attrAnchorLabel() {
+  const sel = document.getElementById('attr-anchor-label-sel');
+  return (sel && sel.value) || ATTR_DEFAULT_ANCHOR_LABEL;
+}
+
+// The selected anchor is read from the control, never cached. Every path that
+// re-renders the listbox (property filter, name search, label change) assigns
+// .innerHTML, which fires no change event — a cached copy would survive the
+// re-render and confirm would then write edges from an anchor no longer on
+// screen. Reading .value makes that state unrepresentable: it is '' whenever
+// nothing is selected, including right after a re-render.
+function _attrCurrentAnchor() {
+  const sel = document.getElementById('attr-anchor-sel');
+  return sel ? sel.value : '';
+}
+
+function _attrTargetLabel() {
+  const sel = document.getElementById('attr-target-label-sel');
+  return (sel && sel.value) || ATTR_DEFAULT_TARGET_LABEL;
+}
+
+function _attrEsc(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function _attrSetStatus(msg) {
+  const el = document.getElementById('attr-status');
+  if (el) el.textContent = msg;
+}
+
+async function openAttributionPanel() {
+  const panel = document.getElementById('attribution-panel');
+  panel.style.display = 'block';
+  if (!_attrLabelsLoaded) await _loadSchemaLabels();
+  if (_attrAnchors.length === 0) await _loadAnchors(_attrAnchorLabel());
+  await _loadAnchorProperties();
+  await _loadRelSuggestions();
+  // After the labels, so the builder opens on the target label actually
+  // selected rather than the hardcoded default.
+  _initTargetFB();
+}
+
+// Build the Target conditions section. Idempotent — opening the panel a second
+// time keeps whatever the user had built.
+//
+// base.html loads filter_builder.js at the end of <body>, so FilterBuilder does
+// not exist at parse time for this template's inline script. That is fine here
+// because every path in is user-triggered, but the guard stays: a panel that
+// silently loses one section beats a panel that throws.
+function _initTargetFB() {
+  if (_attrTargetFB) return;
+  const container = document.getElementById('attr-target-fb-container');
+  if (!container || typeof FilterBuilder === 'undefined') return;
+  // The constructor takes a container *id*, not an element.
+  _attrTargetFB = new FilterBuilder('attr-target-fb-container', {
+    defaultLabel: _attrTargetLabel(),
+    showSave: false,
+    onPreview: (count, cypher, err) => {
+      if (err) _attrSetStatus('Filter error: ' + err);
+    },
+    // Restores the value picker the panel already gives the Anchor section: a
+    // choice among values the graph holds, not a substring to guess at.
+    // Falling back to null leaves FilterBuilder's own text input in place.
+    valueOptionsFor: async (label, property) => {
+      try {
+        const qs = new URLSearchParams({
+          // A misnomer in this position — the endpoint reads distinct values of
+          // a property on nodes of a label, and here that label is the target.
+          // The behaviour is exactly what is wanted; only the name is anchored.
+          anchor_label: label,
+          property_key: property,
+        });
+        const r = await fetch(window.SCIDK_BASE
+          + '/api/files/attribution/anchor-property-values?' + qs);
+        const d = await r.json();
+        if (!r.ok || !d.values || !d.values.length) return null;
+        // A picker over thousands of options is not a picker. Past the cap,
+        // fall back to the text box, which is the better control for a
+        // high-cardinality property anyway.
+        //
+        // This caps the *rendering*, not the query: the endpoint has no LIMIT,
+        // so it still scans the label and returns every distinct value first.
+        // On a small anchor label that is what it was built for; on a target
+        // label the size of :File it is expensive. Bounding it server-side is
+        // the real fix and belongs with that endpoint.
+        if (d.values.length > ATTR_VALUE_PICKER_MAX) return null;
+        return d.values;
+      } catch (e) { return null; }
+    },
+  });
+}
+
+function closeAttributionPanel() {
+  document.getElementById('attribution-panel').style.display = 'none';
+}
+
+// Offer every label the graph actually has, in both pickers, keeping the
+// defaults selectable even if the graph has no such label yet.
+async function _loadSchemaLabels() {
+  const anchorSel = document.getElementById('attr-anchor-label-sel');
+  const targetSel = document.getElementById('attr-target-label-sel');
+  try {
+    const r = await fetch(window.SCIDK_BASE + '/api/schema/labels');
+    const d = await r.json();
+    if (!r.ok) return;
+    const labels = d.labels || [];
+    [[anchorSel, _attrAnchorLabel()], [targetSel, _attrTargetLabel()]].forEach(([sel, current]) => {
+      const opts = labels.includes(current) ? labels : [current].concat(labels);
+      sel.innerHTML = opts.map(l =>
+        `<option value="${_attrEsc(l)}"${l === current ? ' selected' : ''}>${_attrEsc(l)}</option>`
+      ).join('');
+    });
+    _attrLabelsLoaded = true;
+  } catch (e) {
+    // Leave the default options in place — the panel still works without the list.
+    console.warn('Could not load labels:', e);
+  }
+}
+
+// Switching the anchor label invalidates the anchor list, any results below it,
+// the relationship suggestions (which depend on both labels), and the property
+// filter — the new label carries its own properties, so both the picker's
+// options and any filter built from the old ones are gone.
+async function onAnchorLabelChange() {
+  _attrAnchors = [];
+  _attrCandidates = [];
+  _attrAnchorFilter = null;
+  document.getElementById('attr-search').value = '';
+  const anchorSel = document.getElementById('attr-anchor-sel');
+  if (anchorSel) anchorSel.innerHTML = '';
+  document.getElementById('attr-anchor-label').textContent = '';
+  document.getElementById('attr-results').style.display = 'none';
+  document.getElementById('attr-tbody').innerHTML = '';
+  await _loadAnchors(_attrAnchorLabel());
+  await _loadAnchorProperties();
+  // After, not before: _loadAnchorProperties may keep the old property selected
+  // if the new label shares it, and its values then have to come from the new
+  // label's nodes. With no property kept this just empties the value picker.
+  await _loadAnchorPropertyValues();
+  await _loadRelSuggestions();
+}
+
+// The target label does not affect the anchor list, only the suggestions, any
+// results already on screen, and the target conditions — which are built
+// against the old label's properties and would generate predicates on keys the
+// new label may not carry. Rebuilt rather than relabelled, for the same reason
+// the anchor property filter is dropped in onAnchorLabelChange.
+async function onTargetLabelChange() {
+  _attrCandidates = [];
+  document.getElementById('attr-results').style.display = 'none';
+  document.getElementById('attr-tbody').innerHTML = '';
+  if (_attrTargetFB) {
+    _attrTargetFB = null;
+    document.getElementById('attr-target-fb-container').innerHTML = '';
+  }
+  await _loadRelSuggestions();
+  _initTargetFB();
+}
+
+// Target property predicates, read from the control at submit time rather than
+// cached — the same discipline as _attrCurrentAnchor, and for the same reason.
+//
+// An invalid definition (no label, or a condition with no property) sends
+// nothing: the backend would reject the whole request with a 400 that names an
+// identifier the user never typed. runAttribution says so rather than letting
+// an unfiltered result set pass for a filtered one.
+function _attrTargetConditions() {
+  if (!_attrTargetFB) return [];
+  const fb = _attrTargetFB;
+  if (typeof fb.validate === 'function') {
+    const v = fb.validate();
+    if (!v.valid) return [];
+  }
+  const def = fb.getFilterDef();
+  return (def.blocks && def.blocks[0] && def.blocks[0].conditions) || [];
+}
+
+// Whether the builder is holding something it refused to send, so the caller
+// can say so instead of quietly returning candidates that were never filtered.
+function _attrTargetConditionsDropped() {
+  if (!_attrTargetFB || typeof _attrTargetFB.validate !== 'function') return false;
+  if (_attrTargetFB.validate().valid) return false;
+  const def = _attrTargetFB.getFilterDef();
+  return !!(def.blocks && def.blocks[0]
+            && (def.blocks[0].conditions || []).length);
+}
+
+async function _loadAnchors(anchorLabel) {
+  _attrSetStatus('Loading anchors…');
+  try {
+    const r = await fetch(window.SCIDK_BASE + '/api/files/attribution/anchors?anchor_label='
+                          + encodeURIComponent(anchorLabel));
+    const d = await r.json();
+    if (!r.ok) { _attrSetStatus(d.error || `Error ${r.status}`); return; }
+    _attrAnchors = d.anchors || [];
+    _attrAnchorFilter = null;   // a fresh full list supersedes any property filter
+    _renderAnchors(_attrAnchors);
+    _attrSetStatus(_attrAnchors.length
+      ? ''
+      : `No named :${anchorLabel} nodes found in the graph.`);
+  } catch (e) {
+    _attrSetStatus('Could not load anchors: ' + e);
+  }
+}
+
+// Which properties this label's nodes carry, commonest first. A failure here
+// leaves the picker with its placeholder — the panel still works without it.
+async function _loadAnchorProperties() {
+  const sel = document.getElementById('attr-filter-prop-sel');
+  if (!sel) return;
+  const previous = sel.value;
+  try {
+    const r = await fetch(window.SCIDK_BASE
+      + '/api/files/attribution/anchor-properties?anchor_label='
+      + encodeURIComponent(_attrAnchorLabel()));
+    const d = await r.json();
+    if (!r.ok) return;
+    const props = d.properties || [];
+    sel.innerHTML = '<option value="">Filter by property…</option>'
+      + props.map(p => `<option value="${_attrEsc(p)}">${_attrEsc(p)}</option>`).join('');
+    // Keep the user's choice selected if the new label happens to share it.
+    if (previous && props.includes(previous)) sel.value = previous;
+  } catch (e) {
+    console.warn('Could not load anchor properties:', e);
+  }
+}
+
+// Empty the value picker and lock it. Its options only mean anything for one
+// (label, property) pair, so anything that invalidates that pair comes through
+// here rather than leaving stale values selectable.
+function _attrResetValuePicker() {
+  const sel = document.getElementById('attr-filter-val-sel');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Select a value…</option>';
+  sel.disabled = true;
+}
+
+// Which values the chosen property actually takes on this label's nodes. Run
+// whenever the property changes, so the user picks from the graph instead of
+// guessing a substring. A failure leaves the picker disabled — the anchor list
+// is still there, unfiltered, which is the state the user came from.
+async function _loadAnchorPropertyValues() {
+  const propSel = document.getElementById('attr-filter-prop-sel');
+  const valSel  = document.getElementById('attr-filter-val-sel');
+  if (!valSel) return;
+  const prop = propSel ? propSel.value : '';
+
+  _attrResetValuePicker();
+  if (!prop) return;
+
+  try {
+    const qs = new URLSearchParams({
+      anchor_label: _attrAnchorLabel(),
+      property_key: prop,
+    });
+    const r = await fetch(window.SCIDK_BASE
+      + '/api/files/attribution/anchor-property-values?' + qs.toString());
+    const d = await r.json();
+    if (!r.ok) { console.warn('Could not load property values:', d.error); return; }
+    const values = d.values || [];
+    valSel.innerHTML = '<option value="">Select a value…</option>'
+      + values.map(v => `<option value="${_attrEsc(v)}">${_attrEsc(v)}</option>`).join('');
+    // Nothing to choose from stays locked, and says so rather than looking broken.
+    valSel.disabled = (values.length === 0);
+    if (values.length === 0) _attrSetStatus(`No values for ${prop} on :${_attrAnchorLabel()}.`);
+  } catch (e) {
+    console.warn('Could not load property values:', e);
+  }
+}
+
+// Narrow the anchor list in the database, on any property those nodes carry.
+// Fired by the value picker's change event, so selecting is applying — the
+// value came from the graph, so there is nothing to confirm before running it.
+async function applyAnchorFilter() {
+  const prop = document.getElementById('attr-filter-prop-sel').value;
+  const val  = document.getElementById('attr-filter-val-sel').value;
+  if (!prop || !val) return;   // back on the placeholder — nothing to filter by
+  _attrSetStatus('Filtering anchors…');
+  try {
+    const qs = new URLSearchParams({
+      anchor_label:    _attrAnchorLabel(),
+      filter_property: prop,
+      filter_value:    val,
+    });
+    const r = await fetch(window.SCIDK_BASE
+      + '/api/files/attribution/anchors?' + qs.toString());
+    const d = await r.json();
+    if (!r.ok) { _attrSetStatus(d.error || `Error ${r.status}`); return; }
+    _attrAnchorFilter = d.anchors || [];
+    // Not _renderAnchors: the name search composes with the property filter,
+    // so re-render through the search box rather than over it.
+    filterAttrAnchors();
+    _attrSetStatus(_attrAnchorFilter.length
+      ? `${_attrAnchorFilter.length} anchor(s) matched ${prop} = "${val}"`
+      : `No :${_attrAnchorLabel()} nodes with ${prop} = "${val}"`);
+  } catch (e) {
+    _attrSetStatus('Filter failed: ' + e);
+  }
+}
+
+// Drop the property filter and the name search, back to every loaded anchor.
+function clearAnchorFilter() {
+  _attrAnchorFilter = null;
+  document.getElementById('attr-filter-prop-sel').value = '';
+  _attrResetValuePicker();
+  document.getElementById('attr-search').value = '';
+  _renderAnchors(_attrAnchors);
+  _attrSetStatus('');
+}
+
+// Suggestions are seeds for the label pair merged with what the graph already
+// uses between them. A custom value the user has typed stays put.
+async function _loadRelSuggestions() {
+  const anchorLabel = _attrAnchorLabel();
+  const targetLabel = _attrTargetLabel();
+  if (!anchorLabel || !targetLabel) return;
+
+  const sel = document.getElementById('attr-rel-select');
+  try {
+    const r = await fetch(
+      window.SCIDK_BASE + '/api/files/attribution/relationship-suggestions'
+      + '?anchor_label=' + encodeURIComponent(anchorLabel)
+      + '&target_label=' + encodeURIComponent(targetLabel));
+    const d = await r.json();
+    if (!r.ok) return;
+    const suggestions = (d.suggestions && d.suggestions.length)
+      ? d.suggestions : ['OWNS', 'RELATED_TO'];
+    sel.innerHTML = suggestions.map(s =>
+      `<option value="${_attrEsc(s)}">${_attrEsc(s)}</option>`
+    ).join('');
+  } catch (e) {
+    console.warn('Could not load relationship suggestions:', e);
+  }
+}
+
+// A non-empty custom field wins over the dropdown. Sent as typed, not
+// uppercased, so the server's validation is what the user sees.
+function _getRelationship() {
+  const custom = document.getElementById('attr-rel-custom').value.trim();
+  if (custom) return custom;
+  return document.getElementById('attr-rel-select').value;
+}
+
+function toggleCustomRel() {
+  const inp = document.getElementById('attr-rel-custom');
+  const hidden = inp.style.display === 'none' || !inp.style.display;
+  inp.style.display = hidden ? 'inline' : 'none';
+  if (hidden) { inp.focus(); } else { inp.value = ''; }
+  document.getElementById('attr-rel-toggle').textContent =
+    hidden ? 'use suggestion' : 'or type custom';
+}
+
+// The option value stays the bare name — that is what selectAttrAnchor, the
+// candidate search and confirm all key on. A filtered list also carries the
+// value that matched, shown in the label so filtering by email or lab says
+// *which* node is about to be picked.
+function _renderAnchors(list) {
+  document.getElementById('attr-anchor-sel').innerHTML = list.map(p => {
+    const matched = p.matched_value;
+    const shown = (matched === null || matched === undefined
+                   || String(matched) === String(p.name))
+      ? p.name
+      : `${p.name} — ${matched}`;
+    return `<option value="${_attrEsc(p.name)}">${_attrEsc(shown)}</option>`;
+  }).join('');
+  // Assigning .innerHTML leaves the listbox with nothing selected, so pick the
+  // first option and render the span from it. The selection is then always
+  // either a name that is on screen or nothing at all.
+  selectAttrAnchor(list.length ? list[0].name : '');
+}
+
+// Name search runs over whatever the property filter left behind, so the two
+// narrow the list together. Called with no argument to re-render after the
+// property filter changes, reading the search box as it stands.
+function filterAttrAnchors(q) {
+  const raw = (q === undefined || q === null)
+    ? document.getElementById('attr-search').value
+    : q;
+  const needle = (raw || '').toLowerCase();
+  const base = _attrAnchorFilter || _attrAnchors;
+  _renderAnchors(needle
+    ? base.filter(p => (p.name || '').toLowerCase().includes(needle))
+    : base);
+}
+
+// Selection lives on the control; this only moves it and re-renders the span,
+// which is a pure view of the control's value.
+function selectAttrAnchor(name) {
+  const sel = document.getElementById('attr-anchor-sel');
+  if (sel) sel.value = name || '';
+  const lbl = document.getElementById('attr-anchor-label');
+  if (lbl) lbl.textContent = name ? '→ ' + name : '';
+}
+
+async function runAttribution() {
+  const anchor = _attrCurrentAnchor();
+  if (!anchor) { alert('Select an anchor first.'); return; }
+  const labmates = document.getElementById('attr-labmates').checked;
+  const targetConditions = _attrTargetConditions();
+  const droppedConditions = _attrTargetConditionsDropped();
+  const btn = document.getElementById('attr-find-btn');
+
+  btn.disabled = true;
+  _attrSetStatus('Searching…');
+  try {
+    const r = await fetch(window.SCIDK_BASE + '/api/files/attribution/candidates', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        anchor_name: anchor,
+        anchor_label: _attrAnchorLabel(),
+        target_label: _attrTargetLabel(),
+        include_labmates: labmates,
+        target_conditions: targetConditions,
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) { _attrSetStatus(d.error || `Error ${r.status}`); return; }
+    _attrCandidates = d.candidates || [];
+    _renderAttrCandidates();
+    _attrSetStatus(`${d.total} candidate${d.total !== 1 ? 's' : ''} found`
+      + (droppedConditions
+         ? ' — target conditions were incomplete and not applied'
+         : ''));
+    document.getElementById('attr-confirm-msg').textContent = '';
+    document.getElementById('attr-results').style.display = 'block';
+  } catch (e) {
+    _attrSetStatus('Search failed: ' + e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function _renderAttrCandidates() {
+  const BADGE = {
+    HIGH: '<span style="background:#2a9d5c;color:#fff;padding:1px 6px;border-radius:3px;font-size:.8em;">HIGH</span>',
+    MED:  '<span style="background:#e6a817;color:#fff;padding:1px 6px;border-radius:3px;font-size:.8em;">MED</span>',
+    LOW:  '<span style="background:#888;color:#fff;padding:1px 6px;border-radius:3px;font-size:.8em;">LOW</span>',
+  };
+  document.getElementById('attr-tbody').innerHTML =
+    _attrCandidates.map((c, i) => `
+      <tr style="border-bottom:1px solid #eee;">
+        <td><input type="checkbox" class="attr-cb" data-i="${i}"></td>
+        <td>${BADGE[c.confidence] || _attrEsc(c.confidence)}</td>
+        <td style="font-family:monospace; word-break:break-all;">${_attrEsc(c.path)}</td>
+        <td>${_attrEsc(c.host_id)}</td>
+        <td style="text-align:center;">${_attrEsc(c.relative_depth)}</td>
+        <td style="color:#555;">${_attrEsc(c.reason)}</td>
+      </tr>
+    `).join('');
+}
+
+function attrSelectByConf(level) {
+  document.querySelectorAll('.attr-cb').forEach(cb => {
+    const c = _attrCandidates[parseInt(cb.dataset.i, 10)];
+    if (c && c.confidence === level) cb.checked = true;
+  });
+}
+
+function attrClearSel() {
+  document.querySelectorAll('.attr-cb').forEach(cb => { cb.checked = false; });
+}
+
+async function runConfirm() {
+  const paths = [...document.querySelectorAll('.attr-cb:checked')]
+    .map(cb => (_attrCandidates[parseInt(cb.dataset.i, 10)] || {}).path)
+    .filter(Boolean);
+  if (!paths.length) { alert('Nothing selected.'); return; }
+
+  const msg = document.getElementById('attr-confirm-msg');
+  // Validated here rather than trusting that the search ran against this anchor:
+  // this is the call that writes provenance edges, so it checks its own input.
+  const anchor = _attrCurrentAnchor();
+  if (!anchor) {
+    msg.textContent = 'No anchor selected — cannot write edges.';
+    return;
+  }
+
+  const btn = document.getElementById('attr-confirm-btn');
+  btn.disabled = true;
+  msg.textContent = 'Writing…';
+  try {
+    const r = await fetch(window.SCIDK_BASE + '/api/files/attribution/confirm', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        anchor_name: anchor,
+        anchor_label: _attrAnchorLabel(),
+        target_label: _attrTargetLabel(),
+        target_paths: paths,
+        relationship: _getRelationship(),
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) { msg.textContent = d.error || `Error ${r.status}`; return; }
+    msg.textContent =
+      `✓ ${d.written} written · ${d.skipped} already existed` +
+      (d.errors && d.errors.length ? ` · ${d.errors.length} errors` : '');
+    if (d.errors && d.errors.length) console.warn('Attribution errors:', d.errors);
+  } catch (e) {
+    msg.textContent = 'Write failed: ' + e;
+  } finally {
+    btn.disabled = false;
+  }
+}
 </script>
 {% endblock %}

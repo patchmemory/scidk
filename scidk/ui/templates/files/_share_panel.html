@@ -1,0 +1,130 @@
+{# Share drawer — RO-Crate / DMS Plan tabs
+   Requires: drawers.css, drawers.js, collection.js, share_panel.js
+   Open with: window.Drawers.open('sharing-drawer')
+              window.SharePanel.open()
+              window.SharePanel.setTab('rocrate' | 'dms')
+#}
+
+<div class="side-drawer" id="sharing-drawer" style="width:460px;"
+     role="dialog" aria-modal="true" aria-label="Share">
+
+  <div class="drawer-header">
+    <span style="font-size:15px;">📤</span>
+    <span class="drawer-title">Share</span>
+    <button class="drawer-close" data-close-drawer aria-label="Close">×</button>
+  </div>
+
+  <div class="sharing-tabs" role="tablist">
+    <button class="sharing-tab active" data-share-tab="rocrate" role="tab">RO-Crate</button>
+    <button class="sharing-tab"        data-share-tab="dms"     role="tab">DMS Plan</button>
+  </div>
+
+  <!-- ── RO-Crate tab ── -->
+  <div class="sharing-tab-panel active" id="share-tab-rocrate">
+
+    <div class="drawer-field">
+      <label>Scope</label>
+      <div class="scope-tab-group" id="roc-scope-tabs">
+        <button class="scope-tab-btn" data-roc-scope="selection">Selection</button>
+        <button class="scope-tab-btn active" data-roc-scope="collection">Collection</button>
+        <button class="scope-tab-btn" data-roc-scope="graph">From graph</button>
+      </div>
+      <div class="scope-note" id="roc-scope-note">
+        <div class="sn-label">Collection</div>
+        <div class="sn-items" id="roc-scope-items">—</div>
+      </div>
+      <div id="roc-graph-search" style="display:none;margin-top:6px;">
+        <input type="text" id="roc-graph-input" class="form-control form-control-sm"
+               placeholder="Search Datasets, Folders, Files in graph…">
+      </div>
+    </div>
+
+    <div class="drawer-field">
+      <label>Crate name</label>
+      <input type="text" id="rocrate-name" class="form-control form-control-sm"
+             placeholder="e.g. AIPT Vevo June 2026">
+    </div>
+
+    <div class="drawer-field">
+      <label>License</label>
+      <select id="rocrate-license" class="form-select form-select-sm">
+        <option value="CC BY 4.0">CC BY 4.0</option>
+        <option value="CC BY-NC 4.0">CC BY-NC 4.0</option>
+        <option value="MIT">MIT</option>
+        <option value="__other__">Other…</option>
+      </select>
+      <input type="text" id="rocrate-license-other" class="form-control form-control-sm mt-1"
+             placeholder="e.g. CC0 1.0" style="display:none;">
+    </div>
+
+    <div class="form-check mb-3">
+      <input class="form-check-input" type="checkbox" id="rocrate-include-files" checked>
+      <label class="form-check-label small" for="rocrate-include-files">Include files</label>
+      <div class="drawer-hint">Uncheck to produce a metadata-only crate.</div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button class="btn btn-sm btn-success flex-fill" id="rocrate-build-btn"
+              onclick="SharePanel.buildRocrate()">Build RO-Crate</button>
+      <button class="btn btn-sm btn-outline-secondary"
+              onclick="SharePanel.buildRocrate(true)">Build &amp; clear collection</button>
+    </div>
+    <div id="rocrate-result" class="mt-2 small"></div>
+  </div>
+
+  <!-- ── DMS Plan tab ── -->
+  <div class="sharing-tab-panel" id="share-tab-dms">
+
+    <div class="drawer-field">
+      <label>Scope</label>
+      <div class="scope-tab-group" id="dms-scope-tabs">
+        <button class="scope-tab-btn" data-dms-scope="selection">Selection</button>
+        <button class="scope-tab-btn active" data-dms-scope="collection">Collection</button>
+        <button class="scope-tab-btn" data-dms-scope="graph">From graph</button>
+        <button class="scope-tab-btn" data-dms-scope="whole">Whole graph</button>
+      </div>
+      <div class="scope-note" id="dms-scope-note">
+        <div class="sn-label">Collection</div>
+        <div class="sn-items" id="dms-scope-items">—</div>
+      </div>
+    </div>
+
+    <p class="drawer-hint" style="margin-bottom:12px;">
+      Generates a draft NIH Data Management &amp; Sharing Plan describing the scoped data.
+    </p>
+
+    <div class="d-flex gap-2">
+      <button class="btn btn-sm btn-primary flex-fill" onclick="SharePanel.openDMSBuilder()">
+        Open DMS Plan builder →
+      </button>
+      <button class="btn btn-sm btn-outline-primary" onclick="SharePanel.quickDraft()">
+        Quick draft
+      </button>
+    </div>
+
+    <div id="dms-quick-status" class="small text-muted mt-2"></div>
+
+    <div id="dms-quick-phi" class="mt-2 small"
+         style="display:none;padding:6px 8px;background:#fff3cd;border:1px solid #ffc107;border-radius:4px;color:#664d03;"></div>
+
+    <div id="dms-quick-result" style="display:none;margin-top:10px;">
+      <div class="d-flex gap-1 mb-1">
+        <button class="btn btn-sm btn-outline-secondary" id="dms-quick-copy">Copy</button>
+        <a class="btn btn-sm btn-outline-secondary" id="dms-quick-download"
+           download="nih-dms-plan-draft.md">Download .md</a>
+      </div>
+      <textarea id="dms-quick-textarea" readonly
+        class="form-control form-control-sm"
+        style="min-height:220px;font-family:ui-monospace,monospace;font-size:10px;
+               line-height:1.5;resize:vertical;white-space:pre-wrap;"></textarea>
+      <div class="drawer-hint mt-1">
+        Search for <code>[</code> to find every placeholder before submission.
+      </div>
+    </div>
+  </div>
+
+  <div class="drawer-footer">
+    <button class="btn btn-sm btn-outline-secondary" data-close-drawer>Close</button>
+  </div>
+
+</div>

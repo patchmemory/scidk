@@ -89,6 +89,69 @@
     color: #333;
   }
 
+  /* Selection Inspector (Push 6) */
+  #selection-inspector .si-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+  #selection-inspector .si-header h4 {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #666;
+    text-transform: uppercase;
+  }
+  .si-section {
+    margin-bottom: 0.5rem;
+  }
+  .si-caret-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+    padding: 0.25rem 0;
+    font-weight: 600;
+    font-size: 0.78rem;
+    color: #444;
+    user-select: none;
+  }
+  .si-caret {
+    display: inline-block;
+    font-size: 0.7rem;
+    color: #999;
+    transition: transform 0.15s ease;
+  }
+  .si-caret.si-collapsed {
+    transform: rotate(-90deg);
+  }
+  .si-group-list {
+    padding-left: 1.1rem;
+  }
+  .si-group-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.15rem 0;
+    font-size: 0.8rem;
+    cursor: pointer;
+    margin: 0;
+  }
+  .si-group-row input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+  }
+  .si-group-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .si-count {
+    color: #999;
+    font-size: 0.72rem;
+  }
+
   /* Empty state */
   .empty-state {
     text-align: center;
@@ -336,6 +399,14 @@
     </div>
 
 <script src="https://unpkg.com/cytoscape@3.27.0/dist/cytoscape.min.js"></script>
+<!-- Canvas mode (Push 2): edge drawing.
+     cytoscape-edgehandles' UMD reads window._.memoize/throttle, so lodash must
+     load first; it then auto-registers cy.edgehandles against the global cytoscape. -->
+<script src="https://unpkg.com/lodash@4.17.21/lodash.min.js"></script>
+<script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
+<!-- Canvas mode (Push 5): undo/redo. Loads after cytoscape (and lodash, kept
+     before it for edgehandles); it auto-registers cy.undoRedo() on the global. -->
+<script src="https://unpkg.com/cytoscape-undo-redo@1.3.3/cytoscape-undo-redo.js"></script>
 
 <!-- CodeMirror 5 with Cypher mode -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.js"></script>
@@ -1078,14 +1149,51 @@
             <button class="result-type-btn" data-result-type="table" style="padding: 0.5rem 1rem; border: none; border-bottom: 2px solid transparent; background: transparent; cursor: pointer; font-size: 0.9rem; color: #666;">Table</button>
             <button class="result-type-btn" data-result-type="json" style="padding: 0.5rem 1rem; border: none; border-bottom: 2px solid transparent; background: transparent; cursor: pointer; font-size: 0.9rem; color: #666;">JSON</button>
           </div>
-          <h2 style="margin: 0; font-size: 1rem; color: #999;">${tab.name}</h2>
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <!-- Explore / Canvas mode toggle -->
+            <div class="canvas-mode-toggle-${tab.id}" role="group" data-testid="canvas-mode-toggle-${tab.id}" style="display: inline-flex; border: 1px solid #2196f3; border-radius: 4px; overflow: hidden;">
+              <button class="canvas-mode-btn active" data-canvas-mode="explore" style="padding: 0.35rem 0.75rem; border: none; background: #2196f3; color: #fff; cursor: pointer; font-size: 0.8rem;">🧭 Explore</button>
+              <button class="canvas-mode-btn" data-canvas-mode="canvas" style="padding: 0.35rem 0.75rem; border: none; background: transparent; color: #2196f3; cursor: pointer; font-size: 0.8rem;">🎨 Canvas</button>
+            </div>
+            <h2 style="margin: 0; font-size: 1rem; color: #999;">${tab.name}</h2>
+          </div>
         </div>
 
         <!-- Content Area (switches based on active tab) -->
         <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
           <!-- Visualization View -->
           <div class="result-view-visualization-${tab.id} result-view active" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
-            <div class="graph-container-${tab.id}" data-testid="graph-container-${tab.id}" style="width: 100%; flex: 1; border: 1px solid #ddd;"></div>
+            <!-- Canvas panel (Canvas mode only): toolbar + node search -->
+            <div class="canvas-panel-${tab.id}" data-testid="canvas-panel-${tab.id}" style="display: none; border: 1px solid #2196f3; border-bottom: none; background: #f5faff; padding: 0.5rem; flex-shrink: 0;">
+              <!-- Toolbar -->
+              <div style="display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.4rem;">
+                <button class="canvas-add-node-${tab.id} btn btn-xs btn-outline-primary" data-testid="canvas-add-node-${tab.id}" title="Add a provisional node">➕ Node</button>
+                <button class="canvas-draw-edge-${tab.id} btn btn-xs btn-outline-primary" data-testid="canvas-draw-edge-${tab.id}" title="Toggle edge-drawing mode">🔗 Draw edge</button>
+                <button class="canvas-remove-${tab.id} btn btn-xs btn-outline-danger" data-testid="canvas-remove-${tab.id}" title="Remove selected">🗑️ Remove</button>
+                <span style="width:1px; height:18px; background:#cbd5e1;"></span>
+                <button class="canvas-save-layer-${tab.id} btn btn-xs btn-primary" data-testid="canvas-save-layer-${tab.id}" title="Save this canvas as a named layer">💾 Save layer</button>
+                <button class="canvas-layers-${tab.id} btn btn-xs btn-outline-secondary" data-testid="canvas-layers-${tab.id}" title="Open saved layers">📚 Layers</button>
+                <span style="width:1px; height:18px; background:#cbd5e1;"></span>
+                <button class="canvas-adopt-${tab.id} btn btn-xs btn-success" data-testid="canvas-adopt-${tab.id}" title="Write provisional nodes/edges to Neo4j (admin)">✅ Adopt to graph</button>
+                <button class="canvas-export-cypher-${tab.id} btn btn-xs btn-outline-secondary" data-testid="canvas-export-cypher-${tab.id}" title="Download provisional changes as Cypher">⬇ Cypher</button>
+                <button class="canvas-export-python-${tab.id} btn btn-xs btn-outline-secondary" data-testid="canvas-export-python-${tab.id}" title="Download filesystem reorg as Python">⬇ Python</button>
+                <button class="canvas-export-rocrate-${tab.id} btn btn-xs btn-outline-secondary" data-testid="canvas-export-rocrate-${tab.id}" title="Download as RO-Crate metadata (DAG-native, provenance-compatible)">⬇ RO-Crate</button>
+                <span class="canvas-session-status-${tab.id} small text-muted" style="margin-left:auto;"></span>
+              </div>
+              <!-- Node search -->
+              <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <input type="search" class="canvas-search-input-${tab.id}" data-testid="canvas-search-input-${tab.id}"
+                  placeholder="Search graph nodes to add to canvas…"
+                  style="flex: 1; padding: 0.4rem 0.6rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85rem;" />
+                <span class="canvas-search-status-${tab.id} small text-muted"></span>
+              </div>
+              <div class="canvas-search-results-${tab.id}" data-testid="canvas-search-results-${tab.id}"
+                style="max-height: 180px; overflow: auto; margin-top: 0.4rem;"></div>
+              <!-- Saved layers list (hidden until opened) -->
+              <div class="canvas-layers-list-${tab.id}" data-testid="canvas-layers-list-${tab.id}"
+                style="display:none; max-height: 160px; overflow: auto; margin-top: 0.4rem; border-top: 1px solid #dbe7f3; padding-top: 0.4rem;"></div>
+            </div>
+            <div class="graph-container-${tab.id}" data-testid="graph-container-${tab.id}" style="width: 100%; flex: 1; border: 1px solid #ddd; position: relative;"></div>
 
             <!-- Instances Table (appears below visualization) -->
             <div class="instances-table-container-${tab.id}" style="max-height: 300px; overflow: auto; border: 1px solid #ddd; border-top: none; background: #fafafa; padding: 0.5rem; display: none;">
@@ -1158,6 +1266,1197 @@
 
     // Initialize button handlers
     initQueryButtons(tab.id);
+
+    // Initialize Canvas mode (toggle + node search/add)
+    initCanvasMode(tab.id);
+  }
+
+  // ===== CANVAS MODE (Push 1: toggle + node search/add) =====
+  // Wires the Explore/Canvas toggle and the node search panel for a tab.
+  function initCanvasMode(tabId) {
+    const contentEl = document.querySelector(`.tab-content[data-tab-id="${tabId}"]`);
+    if (!contentEl) return;
+
+    const toggle = contentEl.querySelector(`.canvas-mode-toggle-${tabId}`);
+    const panel = contentEl.querySelector(`.canvas-panel-${tabId}`);
+    const searchInput = contentEl.querySelector(`.canvas-search-input-${tabId}`);
+    const resultsEl = contentEl.querySelector(`.canvas-search-results-${tabId}`);
+    const statusEl = contentEl.querySelector(`.canvas-search-status-${tabId}`);
+    if (!toggle || !panel) return;
+
+    // Mode toggle: Explore (existing read-only behavior) vs Canvas (whiteboarding)
+    toggle.querySelectorAll('.canvas-mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const mode = btn.dataset.canvasMode;
+        toggle.querySelectorAll('.canvas-mode-btn').forEach(b => {
+          const active = b === btn;
+          b.classList.toggle('active', active);
+          b.style.background = active ? '#2196f3' : 'transparent';
+          b.style.color = active ? '#fff' : '#2196f3';
+        });
+        if (!window.tabCanvasModes) window.tabCanvasModes = {};
+        window.tabCanvasModes[tabId] = mode;
+        panel.style.display = (mode === 'canvas') ? 'block' : 'none';
+        if (mode === 'canvas') {
+          enableCanvasTools(tabId);
+          // Showing the panel reflows the layout, so the Cytoscape renderer's
+          // cached dimensions/offset go stale — hit-testing ends up vertically
+          // displaced from the visual position. resize() recomputes them, but
+          // must run after the reflow settles (rAF fires too early here).
+          resizeCanvas(tabId);
+          loadCanvasSession(tabId);
+          if (searchInput) searchInput.focus();
+        } else {
+          disableCanvasTools(tabId);
+        }
+      });
+    });
+
+    // Debounced node search against Neo4j
+    let searchTimer = null;
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        const q = searchInput.value.trim();
+        if (!q) { resultsEl.innerHTML = ''; if (statusEl) statusEl.textContent = ''; return; }
+        searchTimer = setTimeout(() => runCanvasSearch(tabId, q, resultsEl, statusEl), 300);
+      });
+    }
+
+    // Toolbar buttons
+    const q = sel => contentEl.querySelector(sel);
+    const addNodeBtn = q(`.canvas-add-node-${tabId}`);
+    const drawEdgeBtn = q(`.canvas-draw-edge-${tabId}`);
+    const removeBtn = q(`.canvas-remove-${tabId}`);
+    const saveLayerBtn = q(`.canvas-save-layer-${tabId}`);
+    const layersBtn = q(`.canvas-layers-${tabId}`);
+    if (addNodeBtn) addNodeBtn.addEventListener('click', () => addProvisionalNode(tabId));
+    if (drawEdgeBtn) drawEdgeBtn.addEventListener('click', () => toggleDrawEdge(tabId, drawEdgeBtn));
+    if (removeBtn) removeBtn.addEventListener('click', () => removeSelected(tabId));
+    if (saveLayerBtn) saveLayerBtn.addEventListener('click', () => saveCanvasLayer(tabId));
+    if (layersBtn) layersBtn.addEventListener('click', () => toggleLayersList(tabId));
+    const adoptBtn = q(`.canvas-adopt-${tabId}`);
+    const expCypherBtn = q(`.canvas-export-cypher-${tabId}`);
+    const expPythonBtn = q(`.canvas-export-python-${tabId}`);
+    const expRocrateBtn = q(`.canvas-export-rocrate-${tabId}`);
+    if (adoptBtn) adoptBtn.addEventListener('click', () => adoptToGraph(tabId));
+    if (expCypherBtn) expCypherBtn.addEventListener('click', () => exportCanvas(tabId, 'cypher'));
+    if (expPythonBtn) expPythonBtn.addEventListener('click', () => exportCanvas(tabId, 'python'));
+    if (expRocrateBtn) expRocrateBtn.addEventListener('click', () => exportCanvas(tabId, 'rocrate'));
+
+    // Push 5: canvas keyboard shortcuts (global listener, bound once).
+    initCanvasKeyboard();
+  }
+
+  // Push 5: keyboard shortcuts. Fire only when the active tab is in Canvas mode
+  // and focus is not inside a text-entry control (search box, CodeMirror, etc.).
+  // Bare (unmodified) keys are used for canvas actions to avoid clobbering
+  // browser shortcuts (Ctrl+F find, Ctrl+N new tab, Ctrl+S save page).
+  function initCanvasKeyboard() {
+    if (window.__canvasKeysBound) return;
+    window.__canvasKeysBound = true;
+
+    const isTextTarget = (t) => {
+      if (!t) return false;
+      const tag = t.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      if (t.isContentEditable) return true;
+      if (t.closest && t.closest('.CodeMirror')) return true;
+      return false;
+    };
+
+    document.addEventListener('keydown', (e) => {
+      const activeTab = document.querySelector('.map-tab.active');
+      const tabId = activeTab && activeTab.dataset.tabId;
+      if (!tabId || !isCanvasActive(tabId)) return;
+      if (isTextTarget(e.target)) return;
+
+      const ctrl = e.ctrlKey || e.metaKey;
+      const k = e.key.toLowerCase();
+      const ur = getUr(tabId);
+
+      // Modifier combos: keep the ones that don't collide with the browser.
+      if (ctrl && e.shiftKey && k === 's') { e.preventDefault(); saveCanvasLayer(tabId); return; }
+      if (ctrl && k === 'z') { e.preventDefault(); if (ur) ur.undo(); return; }
+      if (ctrl && k === 'y') { e.preventDefault(); if (ur) ur.redo(); return; }
+      if (ctrl || e.metaKey || e.altKey) return;  // leave other browser combos alone
+
+      // Bare keys (canvas focused, no input active).
+      // TODO(Push 5+): Shift+N quick-add multiple nodes — not built yet.
+      if (k === 'n') { e.preventDefault(); addProvisionalNode(tabId); return; }
+      if (k === '/') {
+        e.preventDefault();
+        const si = document.querySelector(`.canvas-search-input-${tabId}`);
+        if (si) si.focus();
+        return;
+      }
+      if (k === 'e') {
+        e.preventDefault();
+        const btn = document.querySelector(`.canvas-draw-edge-${tabId}`);
+        if (btn) toggleDrawEdge(tabId, btn);
+        return;
+      }
+      if (k === 'delete' || k === 'backspace') { e.preventDefault(); removeSelected(tabId); return; }
+    });
+  }
+
+  // Local HTML-escaper (escapeHtml in the other script block is not in this scope).
+  function canvasEsc(str) {
+    const d = document.createElement('div');
+    d.textContent = str == null ? '' : String(str);
+    return d.innerHTML;
+  }
+
+  async function runCanvasSearch(tabId, q, resultsEl, statusEl) {
+    if (statusEl) statusEl.textContent = 'Searching…';
+    try {
+      const url = window.SCIDK_BASE + `/api/canvas/nodes/search?q=${encodeURIComponent(q)}&limit=20`;
+      const resp = await fetch(url);
+      const data = await resp.json();
+      if (data.status !== 'ok') {
+        if (statusEl) statusEl.textContent = '';
+        resultsEl.innerHTML = `<p class="small" style="color:#c0392b; margin:0.25rem;">${canvasEsc(data.error || 'Search failed')}</p>`;
+        return;
+      }
+      renderCanvasResults(tabId, data.results || [], resultsEl, statusEl);
+    } catch (e) {
+      if (statusEl) statusEl.textContent = '';
+      resultsEl.innerHTML = `<p class="small" style="color:#c0392b; margin:0.25rem;">${canvasEsc(String(e))}</p>`;
+    }
+  }
+
+  function renderCanvasResults(tabId, results, resultsEl, statusEl) {
+    if (statusEl) statusEl.textContent = `${results.length} match${results.length === 1 ? '' : 'es'}`;
+    if (!results.length) {
+      resultsEl.innerHTML = '<p class="small text-muted" style="margin:0.25rem;">No matching nodes</p>';
+      return;
+    }
+    resultsEl.innerHTML = '';
+    results.forEach(node => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:0.5rem; padding:0.3rem 0.4rem; border-bottom:1px solid #e5eef7; cursor:pointer;';
+      row.setAttribute('data-testid', `canvas-result-${node.id}`);
+      row.innerHTML = `
+        <span style="min-width:0;">
+          <span class="badge" style="background:#4e79a7; color:#fff; font-size:0.7rem; padding:0.1rem 0.4rem; border-radius:3px;">${canvasEsc(node.label)}</span>
+          <span style="font-size:0.85rem; margin-left:0.4rem;">${canvasEsc(node.name)}</span>
+        </span>
+        <button class="btn btn-xs btn-outline-primary" style="font-size:0.7rem; flex-shrink:0;">+ Add</button>`;
+      const add = () => addCanvasNode(tabId, node);
+      row.addEventListener('click', add);
+      resultsEl.appendChild(row);
+    });
+  }
+
+  // Add a real graph node onto the tab's Cytoscape canvas (provisional:false).
+  function addCanvasNode(tabId, node) {
+    const cy = window.cytoscapeInstances && window.cytoscapeInstances[tabId];
+    if (!cy) { console.warn('No Cytoscape instance for tab', tabId); return; }
+
+    const id = String(node.id);
+    if (cy.getElementById(id).nonempty()) {
+      // Already present — just flash-select it
+      cy.getElementById(id).select();
+      return;
+    }
+
+    // Drop near the viewport center with a small random offset so stacked adds don't overlap.
+    const ext = cy.extent();
+    const cx = (ext.x1 + ext.x2) / 2 + (Math.random() - 0.5) * 120;
+    const cy_ = (ext.y1 + ext.y2) / 2 + (Math.random() - 0.5) * 120;
+
+    const def = {
+      group: 'nodes',
+      data: {
+        id: id,
+        label: node.label,
+        displayLabel: node.name,
+        properties: node.properties || {},
+        provisional: false,
+        element_id: node.element_id || null,  // Neo4j elementId for id-based edge commit
+      },
+      position: { x: cx, y: cy_ },
+      grabbable: true,   // draggable (Cytoscape default, set explicitly)
+    };
+    const ur = getUr(tabId);
+    if (ur) ur.do('add', def); else cy.add(def);
+    scheduleSessionSave(tabId);
+  }
+
+  // ===== CANVAS MODE (Push 2: edge drawing, provisional elements, persistence) =====
+
+  function getCy(tabId) {
+    return window.cytoscapeInstances && window.cytoscapeInstances[tabId];
+  }
+
+  // Undo/redo manager for a tab's canvas (Push 5), or null if unavailable.
+  function getUr(tabId) {
+    return window.canvasUr && window.canvasUr[tabId];
+  }
+
+  // True when the tab is currently in Canvas (whiteboarding) mode.
+  function isCanvasActive(tabId) {
+    return !!(window.tabCanvasModes && window.tabCanvasModes[tabId] === 'canvas');
+  }
+
+  // Recompute the Cytoscape renderer's cached dimensions after a layout change
+  // (panel shown, tab made visible). Deferred so it runs once the reflow has
+  // settled — otherwise the container has stale/zero size and hit-testing is
+  // vertically displaced from the visual node positions.
+  function resizeCanvas(tabId) {
+    setTimeout(() => {
+      const cy = getCy(tabId);
+      if (cy) cy.resize();
+    }, 150);
+  }
+
+  // Cache relationship types from the schema for the edge picker.
+  let _relTypesCache = null;
+  async function getRelationshipTypes() {
+    if (_relTypesCache) return _relTypesCache;
+    try {
+      const resp = await fetch(window.SCIDK_BASE + '/api/canvas/relationship-types');
+      const data = await resp.json();
+      _relTypesCache = (data.status === 'ok' && data.relationship_types) ? data.relationship_types : [];
+    } catch (e) {
+      _relTypesCache = [];
+    }
+    return _relTypesCache;
+  }
+
+  // Enable edge-drawing + change tracking for a tab's canvas.
+  function enableCanvasTools(tabId) {
+    const cy = getCy(tabId);
+    if (!cy) { setTimeout(() => enableCanvasTools(tabId), 120); return; }
+
+    // Multi-select support (Push 5): box selection + shift+click additive (the
+    // Cytoscape default 'single' selectionType already adds on shift+click).
+    try { cy.boxSelectionEnabled(true); } catch (e) {}
+
+    // Undo/redo manager (Push 5): one per tab, reused across enable/disable.
+    if (!window.canvasUr) window.canvasUr = {};
+    if (!window.canvasUr[tabId] && typeof cy.undoRedo === 'function') {
+      window.canvasUr[tabId] = cy.undoRedo({ undoableDrag: false });
+    }
+
+    // Selection inspector (Push 6). Called before the edgehandles early-return
+    // below so re-entering canvas mode still refreshes the panel; binding is
+    // idempotent per tab.
+    initSelectionInspector(tabId);
+
+    if (!window.canvasEh) window.canvasEh = {};
+    if (window.canvasEh[tabId]) return;  // already enabled
+
+    if (typeof cy.edgehandles !== 'function') {
+      console.warn('cytoscape-edgehandles not loaded');
+    } else {
+      const eh = cy.edgehandles({
+        snap: true,
+        canConnect: (s, t) => !s.same(t),
+        edgeParams: () => ({ data: { provisional: true, label: '', relationship: '' } }),
+      });
+      eh.disableDrawMode();  // start disabled; toolbar toggles it
+      window.canvasEh[tabId] = eh;
+
+      // When an edge is drawn, ask for its relationship type. The drawn edge
+      // fans out to every selected target (Push 5 batch edge drawing).
+      cy.on('ehcomplete', (event, sourceNode, targetNode, addedEdge) => {
+        onEdgeDrawn(tabId, sourceNode, targetNode, addedEdge);
+      });
+    }
+
+    // Persist canvas on any structural/position change (debounced).
+    if (!window.canvasChangeBound) window.canvasChangeBound = {};
+    if (!window.canvasChangeBound[tabId]) {
+      cy.on('add remove position data', () => scheduleSessionSave(tabId));
+      // Item 5: double-tap a real node to expand its children (fan-out → ellipsis);
+      // tap an ellipsis node to lazy-load the collapsed subtree.
+      cy.on('dbltap', 'node', (evt) => {
+        const n = evt.target;
+        if (n.data('ellipsis')) return;
+        if (n.data('element_id')) expandNode(tabId, n);
+      });
+      cy.on('tap', 'node[?ellipsis]', (evt) => lazyLoadEllipsis(tabId, evt.target));
+
+      // Geometry-based edge box-select (Push 6): a marquee should grab any edge
+      // whose segment passes through (or into) the rectangle, even when both
+      // endpoint nodes sit outside the box — Cytoscape's native box-select only
+      // takes elements whose area falls inside. We work in MODEL coordinates
+      // throughout so the test stays correct at any pan/zoom: box corners from
+      // evt.position (model) and edge ends from sourceEndpoint()/targetEndpoint()
+      // (model). Additive only — box-selected nodes stay selected, and we never
+      // clear the existing selection.
+      let boxStartPos = null;
+      cy.on('boxstart', (evt) => { boxStartPos = (evt && evt.position) ? { x: evt.position.x, y: evt.position.y } : null; });
+      cy.on('boxend', (evt) => {
+        const start = boxStartPos; boxStartPos = null;
+        const end = evt && evt.position;
+        if (!start || !end) return;
+        const rect = {
+          x1: Math.min(start.x, end.x), y1: Math.min(start.y, end.y),
+          x2: Math.max(start.x, end.x), y2: Math.max(start.y, end.y),
+        };
+        cy.edges().forEach(e => {
+          if (e.selected()) return;
+          const s = e.sourceEndpoint(), t = e.targetEndpoint();
+          if (segmentIntersectsRect(s, t, rect)) e.select();
+        });
+      });
+
+      window.canvasChangeBound[tabId] = true;
+    }
+  }
+
+  // Canvas tuning constants (mirrors backend; refreshed from /api/canvas/config).
+  window.CANVAS_CFG = window.CANVAS_CFG || { CANVAS_FANOUT_THRESHOLD: 20, CANVAS_LAZY_LOAD_LIMIT: 50, CANVAS_MAX_DEPTH: 3 };
+  (async () => {
+    try {
+      const r = await fetch(window.SCIDK_BASE + '/api/canvas/config');
+      const d = await r.json();
+      if (d.status === 'ok') window.CANVAS_CFG = d;
+    } catch (e) { /* keep defaults */ }
+  })();
+
+  function _addChildNode(cy, child, pos) {
+    if (cy.getElementById(String(child.id)).nonempty()) return cy.getElementById(String(child.id));
+    return cy.add({
+      group: 'nodes',
+      data: { id: String(child.id), label: child.label, displayLabel: child.name,
+              properties: child.properties || {}, provisional: false, element_id: child.element_id || null },
+      position: pos, grabbable: true,
+    });
+  }
+
+  async function expandNode(tabId, node) {
+    const cy = getCy(tabId);
+    const eid = node.data('element_id');
+    if (!eid) return;
+    let data;
+    try {
+      const resp = await fetch(window.SCIDK_BASE + '/api/canvas/nodes/expand', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ element_id: eid }),
+      });
+      data = await resp.json();
+      if (data.status !== 'ok') { alert('Expand failed: ' + (data.error || 'unknown')); return; }
+    } catch (e) { alert('Expand failed: ' + e); return; }
+
+    if (data.total === 0) return;
+    const threshold = (window.CANVAS_CFG || {}).CANVAS_FANOUT_THRESHOLD || 20;
+    const base = node.position();
+    if (data.total > threshold) {
+      // Collapse to a single ellipsis node representing the subtree.
+      const childLabel = (data.children[0] && data.children[0].label) || 'Node';
+      const ellId = 'ellipsis-' + eid;
+      if (cy.getElementById(ellId).nonempty()) return;
+      cy.add({
+        group: 'nodes',
+        data: { id: ellId, label: `${childLabel} (${data.total})`, displayLabel: `${childLabel} (${data.total})`,
+                ellipsis: true, parentElementId: eid, childLabel: childLabel, provisional: false },
+        position: { x: base.x + 120, y: base.y + 60 }, grabbable: true,
+      });
+      cy.add({ group: 'edges', data: { id: 'ee-' + eid, source: node.id(), target: ellId, label: 'expands' } });
+    } else {
+      // Small enough — add children directly.
+      data.children.forEach((c, i) => {
+        const child = _addChildNode(cy, c, { x: base.x + 120 + (i % 5) * 40, y: base.y + 60 + Math.floor(i / 5) * 40 });
+        cy.add({ group: 'edges', data: { id: `ce-${eid}-${c.id}`, source: node.id(), target: String(c.id),
+                 relationship: c.relationship || '', label: c.relationship || '' } });
+      });
+    }
+    scheduleSessionSave(tabId);
+  }
+
+  async function lazyLoadEllipsis(tabId, ellipsisNode) {
+    const cy = getCy(tabId);
+    const parentEid = ellipsisNode.data('parentElementId');
+    const limit = (window.CANVAS_CFG || {}).CANVAS_LAZY_LOAD_LIMIT || 50;
+    let data;
+    try {
+      const resp = await fetch(window.SCIDK_BASE + '/api/canvas/nodes/expand', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ element_id: parentEid, limit }),
+      });
+      data = await resp.json();
+      if (data.status !== 'ok') { alert('Load failed: ' + (data.error || 'unknown')); return; }
+    } catch (e) { alert('Load failed: ' + e); return; }
+    // Find the parent node (source of the ellipsis edge) to anchor children.
+    const inc = ellipsisNode.incomers('node');
+    const parent = inc.nonempty() ? inc.first() : ellipsisNode;
+    const base = parent.position();
+    data.children.forEach((c, i) => {
+      const child = _addChildNode(cy, c, { x: base.x + 120 + (i % 8) * 40, y: base.y + 60 + Math.floor(i / 8) * 40 });
+      cy.add({ group: 'edges', data: { id: `ce-${parentEid}-${c.id}`, source: parent.id(), target: String(c.id),
+               relationship: c.relationship || '', label: c.relationship || '' } });
+    });
+    if (data.total > data.children.length) {
+      alert(`Loaded ${data.children.length} of ${data.total} (lazy-load limit ${limit}).`);
+    }
+    ellipsisNode.remove();
+    scheduleSessionSave(tabId);
+  }
+
+  function disableCanvasTools(tabId) {
+    const eh = window.canvasEh && window.canvasEh[tabId];
+    if (eh) { try { eh.disableDrawMode(); } catch (e) {} }
+    // Reset the Draw-edge button visual if present
+    const btn = document.querySelector(`.canvas-draw-edge-${tabId}`);
+    if (btn) { btn.classList.remove('btn-primary'); btn.classList.add('btn-outline-primary'); }
+    // Push 6: the selection inspector is canvas-only — hide it on the way out.
+    const insp = document.getElementById('selection-inspector');
+    if (insp) insp.style.display = 'none';
+  }
+
+  function toggleDrawEdge(tabId, btn) {
+    const eh = window.canvasEh && window.canvasEh[tabId];
+    if (!eh) return;
+    const on = btn.classList.toggle('btn-primary');
+    btn.classList.toggle('btn-outline-primary', !on);
+    if (on) eh.enableDrawMode(); else eh.disableDrawMode();
+  }
+
+  async function onEdgeDrawn(tabId, sourceNode, targetNode, edge) {
+    const cy = getCy(tabId);
+    const types = await getRelationshipTypes();
+    const picked = await pickRelationshipType(tabId, types);
+    if (!picked) { edge.remove(); return; }  // cancelled → discard provisional edge
+
+    // Determine batch fan-out BEFORE we touch the drawn edge. The extras follow
+    // the drag — each selected node joins whichever END of the drag it sits on:
+    //   • drag source selected → other selected are co-sources → node → target
+    //   • drag target selected → other selected are co-targets → source → node
+    const selected = (cy ? cy.$(':selected') : null);
+    const sourceSelected = !!(selected && selected.not(edge).has(sourceNode));
+
+    // Rebuild every drawn/fan-out edge as element defs so the whole batch goes
+    // through undo/redo as a single action (Ctrl+Z removes them all). We drop the
+    // edge edgehandles created and re-add it via ur.do('add') below.
+    // baseType keeps the relationship TYPE stable for sidebar styling even if
+    // applyGraphFormatting later rewrites data('label') to a display name (Push 6).
+    const defs = [{
+      group: 'edges',
+      data: { id: 'e-' + Math.random().toString(36).slice(2, 10),
+              source: edge.data('source'), target: edge.data('target'),
+              relationship: picked, baseType: picked, label: picked, provisional: true },
+    }];
+    if (cy && sourceNode && targetNode && selected) {
+      selected.filter('node').forEach(n => {
+        if (n.same(sourceNode) || n.same(targetNode)) return;  // drawn edge covers these
+        const src = sourceSelected ? n.id() : sourceNode.id();
+        const tgt = sourceSelected ? targetNode.id() : n.id();
+        defs.push({
+          group: 'edges',
+          data: { id: 'e-' + Math.random().toString(36).slice(2, 10),
+                  source: src, target: tgt,
+                  relationship: picked, baseType: picked, label: picked, provisional: true },
+        });
+      });
+    }
+
+    edge.remove();  // remove the edgehandles-created edge; re-add via undo/redo
+    const ur = getUr(tabId);
+    if (ur) ur.do('add', defs); else if (cy) cy.add(defs);
+    ensureProvisionalInSidebar(tabId);  // Push 6: surface new relationship type for styling
+    scheduleSessionSave(tabId);
+  }
+
+  // Small centered popup to choose a relationship type (dropdown + free text).
+  function pickRelationshipType(tabId, types) {
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.25); z-index:10000; display:flex; align-items:center; justify-content:center;';
+      const options = (types || []).map(t => `<option value="${canvasEsc(t)}">${canvasEsc(t)}</option>`).join('');
+      overlay.innerHTML = `
+        <div style="background:#fff; border-radius:8px; padding:1rem; width:320px; box-shadow:0 6px 24px rgba(0,0,0,0.2);">
+          <h4 style="margin:0 0 0.5rem;">Relationship type</h4>
+          <select class="rel-select" style="width:100%; padding:0.4rem; margin-bottom:0.5rem;">
+            ${options}
+            <option value="__custom__">➕ Custom…</option>
+          </select>
+          <input class="rel-custom" placeholder="CUSTOM_TYPE" style="width:100%; padding:0.4rem; margin-bottom:0.5rem; display:${types && types.length ? 'none' : 'block'};" />
+          <div style="display:flex; justify-content:flex-end; gap:0.5rem;">
+            <button class="rel-cancel btn btn-sm btn-outline-secondary">Cancel</button>
+            <button class="rel-ok btn btn-sm btn-primary">Add</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      const sel = overlay.querySelector('.rel-select');
+      const custom = overlay.querySelector('.rel-custom');
+      if (!types || !types.length) sel.value = '__custom__';
+      sel.addEventListener('change', () => {
+        custom.style.display = (sel.value === '__custom__') ? 'block' : 'none';
+        if (sel.value === '__custom__') custom.focus();
+      });
+      const done = (val) => { overlay.remove(); resolve(val); };
+      overlay.querySelector('.rel-cancel').addEventListener('click', () => done(null));
+      overlay.querySelector('.rel-ok').addEventListener('click', () => {
+        let val = sel.value === '__custom__' ? custom.value.trim() : sel.value;
+        done(val || null);
+      });
+      overlay.addEventListener('click', e => { if (e.target === overlay) done(null); });
+    });
+  }
+
+  // Add a provisional node (does not exist in Neo4j until committed in Push 3).
+  function addProvisionalNode(tabId) {
+    const cy = getCy(tabId);
+    if (!cy) return;
+    const label = (prompt('Node label (e.g. Dataset, Project, Person, Lab):', 'Dataset') || '').trim();
+    if (!label) return;
+    const name = (prompt('Node name:', '') || '').trim();
+    if (!name) return;
+    const ext = cy.extent();
+    const id = 'prov-' + Math.random().toString(36).slice(2, 10);
+    const def = {
+      group: 'nodes',
+      // baseLabel keeps the node's TYPE stable for sidebar styling even if
+      // applyGraphFormatting later rewrites data('label') to a display name (Push 6).
+      data: { id, label, baseLabel: label, displayLabel: name, properties: { name }, provisional: true },
+      position: { x: (ext.x1 + ext.x2) / 2 + (Math.random() - 0.5) * 120,
+                  y: (ext.y1 + ext.y2) / 2 + (Math.random() - 0.5) * 120 },
+      grabbable: true,
+    };
+    const ur = getUr(tabId);
+    if (ur) ur.do('add', def); else cy.add(def);
+    ensureProvisionalInSidebar(tabId);  // Push 6: surface new label for styling
+    scheduleSessionSave(tabId);
+  }
+
+  function removeSelected(tabId) {
+    const cy = getCy(tabId);
+    if (!cy) return;
+    const sel = cy.$(':selected');
+    if (sel.nonempty()) {
+      const ur = getUr(tabId);
+      if (ur) ur.do('remove', sel); else sel.remove();
+      scheduleSessionSave(tabId);
+    }
+  }
+
+  // ===== Geometry helpers (Push 6): segment ⇄ rectangle intersection =====
+  function _pointInRect(p, r) {
+    return p.x >= r.x1 && p.x <= r.x2 && p.y >= r.y1 && p.y <= r.y2;
+  }
+  // Signed area sign of triangle (a,b,c) — orientation test.
+  function _ccw(a, b, c) {
+    return (c.y - a.y) * (b.x - a.x) - (b.y - a.y) * (c.x - a.x);
+  }
+  // True when segment p1p2 crosses segment p3p4 (proper intersection).
+  function _segSeg(p1, p2, p3, p4) {
+    const d1 = _ccw(p3, p4, p1), d2 = _ccw(p3, p4, p2);
+    const d3 = _ccw(p1, p2, p3), d4 = _ccw(p1, p2, p4);
+    return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+  }
+  // True when segment p1p2 passes through, into, or is contained by rect r.
+  function segmentIntersectsRect(p1, p2, r) {
+    if (_pointInRect(p1, r) || _pointInRect(p2, r)) return true;
+    const c = [
+      { x: r.x1, y: r.y1 }, { x: r.x2, y: r.y1 },
+      { x: r.x2, y: r.y2 }, { x: r.x1, y: r.y2 },
+    ];
+    for (let i = 0; i < 4; i++) {
+      if (_segSeg(p1, p2, c[i], c[(i + 1) % 4])) return true;
+    }
+    return false;
+  }
+
+  // ===== SELECTION INSPECTOR (Push 6) =====
+  // A canvas-only panel in the right sidebar that lists the current selection
+  // grouped by node label / edge relationship (à la Neo4j Bloom). The panel DOM
+  // is shared across tabs; it always reflects the ACTIVE canvas tab, while the
+  // selection itself lives per-tab inside each Cytoscape instance.
+
+  // Per-tab UI state: caret open/closed + snapshots of unchecked groups so a
+  // re-check can restore exactly the elements that were deselected.
+  function ensureSiState(tabId) {
+    if (!window.__siState) window.__siState = {};
+    if (!window.__siState[tabId]) {
+      window.__siState[tabId] = { open: { nodes: true, edges: true }, unchecked: {} };
+    }
+    return window.__siState[tabId];
+  }
+
+  // The active tab id, but only if it is currently in canvas mode (else null).
+  function activeCanvasTabId() {
+    const el = document.querySelector('.map-tab.active');
+    const tid = el && el.dataset.tabId;
+    return (tid && isCanvasActive(tid)) ? tid : null;
+  }
+
+  // Group key helpers: nodes group by data('label'), edges by data('relationship').
+  function _siGroupName(type, el) {
+    return type === 'nodes'
+      ? (el.data('label') || '(no label)')
+      : (el.data('relationship') || 'unlabelled');
+  }
+  function _siEsc(s) {
+    return String(s).replace(/[&<>"']/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+  }
+
+  // Currently-selected elements of a single group (used to snapshot on uncheck).
+  function _siGroupSelected(cy, type, name) {
+    const base = type === 'nodes' ? cy.$(':selected').nodes() : cy.$(':selected').edges();
+    return base.filter(el => _siGroupName(type, el) === name);
+  }
+
+  // Bind once-per-tab selection listeners, and once-globally the panel buttons
+  // and delegated checkbox/caret handlers.
+  function initSelectionInspector(tabId) {
+    const cy = getCy(tabId);
+    if (!cy) return;
+
+    if (!window.__siBound) window.__siBound = {};
+    if (!window.__siBound[tabId]) {
+      window.__siBound[tabId] = true;
+      // Rebuild on any selection change, debounced 100ms (covers marquee drags,
+      // which fire a burst of select events).
+      let t = null;
+      cy.on('select unselect', () => {
+        clearTimeout(t);
+        t = setTimeout(() => updateSelectionInspector(tabId), 100);
+      });
+    }
+
+    if (!window.__siGlobalBound) {
+      window.__siGlobalBound = true;
+      const deselectBtn = document.getElementById('si-deselect-all');
+      const deleteBtn = document.getElementById('si-delete');
+      const groupsEl = document.getElementById('si-groups');
+
+      if (deselectBtn) deselectBtn.addEventListener('click', () => {
+        const tid = activeCanvasTabId(); if (!tid) return;
+        const cy2 = getCy(tid); if (!cy2) return;
+        cy2.$(':selected').unselect();
+        ensureSiState(tid).unchecked = {};
+        updateSelectionInspector(tid);
+      });
+
+      if (deleteBtn) deleteBtn.addEventListener('click', () => {
+        const tid = activeCanvasTabId(); if (!tid) return;
+        // Unchecked groups are already deselected, so removeSelected only deletes
+        // the still-checked (still-selected) elements — checkbox state == what dies.
+        removeSelected(tid);
+        updateSelectionInspector(tid);
+      });
+
+      if (groupsEl) {
+        // Checkbox toggles a whole group on/off.
+        groupsEl.addEventListener('change', (e) => {
+          const cb = e.target.closest('input[type="checkbox"]');
+          if (!cb) return;
+          const tid = activeCanvasTabId(); if (!tid) return;
+          toggleSelectionGroup(tid, cb.dataset.siType, cb.dataset.siKey, cb.checked);
+        });
+        // Caret expands/collapses the Nodes / Edges section.
+        groupsEl.addEventListener('click', (e) => {
+          const row = e.target.closest('.si-caret-row');
+          if (!row) return;
+          const tid = activeCanvasTabId(); if (!tid) return;
+          const st = ensureSiState(tid);
+          const sect = row.dataset.siSection;
+          st.open[sect] = !st.open[sect];
+          updateSelectionInspector(tid);
+        });
+      }
+    }
+
+    updateSelectionInspector(tabId);
+  }
+
+  // Rebuild the panel content and toggle its visibility. No-op unless tabId is
+  // the active canvas tab.
+  function updateSelectionInspector(tabId) {
+    const panel = document.getElementById('selection-inspector');
+    if (!panel) return;
+    if (activeCanvasTabId() !== tabId) return;
+
+    const cy = getCy(tabId);
+    if (!cy || !isCanvasActive(tabId)) { panel.style.display = 'none'; return; }
+
+    const state = ensureSiState(tabId);
+    const sel = cy.$(':selected');
+
+    // Selection empty → hide and forget any unchecked snapshots.
+    if (sel.length === 0) {
+      panel.style.display = 'none';
+      state.unchecked = {};
+      return;
+    }
+    panel.style.display = 'block';
+
+    // A group that the user manually re-selected on the canvas is no longer
+    // "unchecked" — drop those stale snapshots so it renders as checked.
+    Object.keys(state.unchecked).forEach(skey => {
+      const sep = skey.indexOf('|');
+      const type = skey.slice(0, sep), name = skey.slice(sep + 1);
+      const pool = type === 'nodes' ? sel.nodes() : sel.edges();
+      if (pool.some(el => _siGroupName(type, el) === name)) delete state.unchecked[skey];
+    });
+
+    // Tally selected elements per group.
+    const nodeGroups = {}, edgeGroups = {};
+    sel.nodes().forEach(n => {
+      const k = _siGroupName('nodes', n);
+      nodeGroups[k] = (nodeGroups[k] || 0) + 1;
+    });
+    sel.edges().forEach(e => {
+      const k = _siGroupName('edges', e);
+      edgeGroups[k] = (edgeGroups[k] || 0) + 1;
+    });
+    // Keep unchecked groups visible (0 selected) so they can be re-checked.
+    Object.keys(state.unchecked).forEach(skey => {
+      const sep = skey.indexOf('|');
+      const type = skey.slice(0, sep), name = skey.slice(sep + 1);
+      const target = type === 'nodes' ? nodeGroups : edgeGroups;
+      if (!(name in target)) target[name] = 0;
+    });
+
+    document.getElementById('si-total-count').textContent = sel.length;
+
+    const buildSection = (type, groups, selCount) => {
+      const names = Object.keys(groups).sort((a, b) => a.localeCompare(b));
+      if (names.length === 0) return '';
+      const open = state.open[type] !== false;
+      const title = type === 'nodes' ? 'Nodes' : 'Edges';
+      const rows = names.map(name => {
+        const skey = type + '|' + name;
+        const checked = !(skey in state.unchecked);
+        const count = checked
+          ? groups[name]
+          : (state.unchecked[skey] ? state.unchecked[skey].length : groups[name]);
+        return `<label class="si-group-row">
+          <input type="checkbox" data-si-type="${type}" data-si-key="${_siEsc(name)}" ${checked ? 'checked' : ''}>
+          <span class="si-group-name" title="${_siEsc(name)}">${_siEsc(name)}</span>
+          <span class="si-count">(${count})</span>
+        </label>`;
+      }).join('');
+      return `<div class="si-section">
+        <div class="si-caret-row" data-si-section="${type}">
+          <span class="si-caret${open ? '' : ' si-collapsed'}">▾</span>
+          <span class="si-section-title">${title} (${selCount})</span>
+        </div>
+        <div class="si-group-list" style="display:${open ? 'block' : 'none'}">${rows}</div>
+      </div>`;
+    };
+
+    document.getElementById('si-groups').innerHTML =
+      buildSection('nodes', nodeGroups, sel.nodes().length) +
+      buildSection('edges', edgeGroups, sel.edges().length);
+  }
+
+  // Check/uncheck a whole group. Uncheck snapshots the group's selected members
+  // then deselects them; check re-selects the snapshot.
+  function toggleSelectionGroup(tabId, type, name, checked) {
+    const cy = getCy(tabId);
+    if (!cy) return;
+    const state = ensureSiState(tabId);
+    const skey = type + '|' + name;
+    if (!checked) {
+      const coll = _siGroupSelected(cy, type, name);
+      state.unchecked[skey] = coll;   // remember exactly what we deselected
+      coll.unselect();
+    } else {
+      const snap = state.unchecked[skey];
+      if (snap) snap.select();
+      delete state.unchecked[skey];
+    }
+    updateSelectionInspector(tabId);
+  }
+
+  // Serialize the canvas to the addendum snapshot_json shape.
+  function serializeCanvas(tabId) {
+    const cy = getCy(tabId);
+    if (!cy) return { nodes: [], edges: [] };
+    const nodes = cy.nodes().map(n => {
+      const node = {
+        id: n.id(),
+        // Prefer the stable baseLabel: applyGraphFormatting may rewrite data('label')
+        // to a display name, but the TYPE (used for commit) must be preserved (Push 6).
+        label: n.data('baseLabel') || n.data('label'),
+        name: n.data('displayLabel') || (n.data('properties') || {}).name || n.id(),
+        properties: n.data('properties') || {},
+        position: { ...n.position() },
+        provisional: !!n.data('provisional'),
+        element_id: n.data('element_id') || null,
+      };
+      // Schema-space elements (Task C) carry their space and their schema fields
+      // through the session, so a saved canvas restores as schema rather than as
+      // an instance node whose properties happen to be a list of names.
+      if (n.data('_space')) {
+        node._space = n.data('_space');
+        node.key_property = n.data('key_property') || null;
+        node.description = n.data('description') || '';
+        node.propertyTypes = n.data('propertyTypes') || {};
+      }
+      return node;
+    });
+    const edges = cy.edges().map(e => {
+      const edge = {
+        source: e.data('source'),
+        target: e.data('target'),
+        relationship: e.data('relationship') || e.data('label') || '',
+        provisional: !!e.data('provisional'),
+      };
+      if (e.data('_space')) edge._space = e.data('_space');
+      return edge;
+    });
+    return { nodes, edges };
+  }
+
+  // Restore a snapshot onto the canvas (replaces current contents).
+  function restoreCanvas(tabId, snapshot) {
+    const cy = getCy(tabId);
+    if (!cy || !snapshot) return;
+    cy.elements().remove();
+    const els = [];
+    (snapshot.nodes || []).forEach(n => {
+      // Restore baseLabel = the stored TYPE so styling stays stable (Push 6).
+      const data = { id: String(n.id), label: n.label, baseLabel: n.label,
+                     displayLabel: n.name, properties: n.properties || {},
+                     provisional: !!n.provisional, element_id: n.element_id || null };
+      if (n._space) {
+        data._space = n._space;
+        data.key_property = n.key_property || null;
+        data.description = n.description || '';
+        data.propertyTypes = n.propertyTypes || {};
+        // The chip label is derived, not stored, so a rename anywhere regenerates it.
+        data.schemaLabel = SciDKGraph.schemaLabelFor(data);
+      }
+      els.push({ group: 'nodes', data, position: n.position || undefined,
+                 grabbable: true });
+    });
+    const nodeIds = new Set((snapshot.nodes || []).map(n => String(n.id)));
+    (snapshot.edges || []).forEach((e, i) => {
+      if (!nodeIds.has(String(e.source)) || !nodeIds.has(String(e.target))) return;
+      const data = { id: 'e' + i + '-' + Math.random().toString(36).slice(2, 6),
+                     source: String(e.source), target: String(e.target),
+                     relationship: e.relationship || '', baseType: e.relationship || '',
+                     label: e.relationship || '', provisional: !!e.provisional };
+      if (e._space) {
+        data._space = e._space;
+        data.type = e.relationship || '';
+      }
+      els.push({ group: 'edges', data });
+    });
+    cy.add(els);
+    ensureProvisionalInSidebar(tabId);  // Push 6: surface restored provisional labels/types
+  }
+
+  // Push 6: when a provisional element introduces a label / relationship type that
+  // isn't yet shown in the sidebar, add a styling entry for it (color / size / font /
+  // display-name controls) so provisional elements can be styled before being pushed
+  // to the graph. If the label/type already has an entry, do nothing.
+  function ensureProvisionalInSidebar(tabId) {
+    const cy = getCy(tabId);
+    if (!cy || !window.populateSchemaConfig) return;
+
+    // Labels / types already represented by a sidebar entry.
+    const haveLabels = new Set([...document.querySelectorAll('#schema-node-list .label-color-picker')].map(e => e.dataset.label));
+    const haveTypes = new Set([...document.querySelectorAll('#schema-rel-list .rel-color-picker')].map(e => e.dataset.type));
+
+    // Provisional labels / types currently on the canvas.
+    const provLabels = new Set();
+    const provTypes = new Set();
+    // Schema-space elements are excluded (Task C): the sidebar styles instance
+    // labels, and offering a label *type* there would let a colour change repaint
+    // the muted fill that marks it as schema rather than data.
+    cy.nodes().forEach(n => {
+      if (!n.data('provisional') || n.data('ellipsis')) return;
+      if (n.data('_space') === SciDKGraph.SPACE_SCHEMA) return;
+      const lbl = n.data('baseLabel') || n.data('label');
+      if (lbl) provLabels.add(lbl);
+    });
+    cy.edges().forEach(e => {
+      if (!e.data('provisional')) return;
+      if (e.data('_space') === SciDKGraph.SPACE_SCHEMA) return;
+      const t = e.data('baseType') || e.data('relationship') || e.data('label');
+      if (t) provTypes.add(t);
+    });
+
+    const newLabels = [...provLabels].filter(l => !haveLabels.has(l));
+    const newTypes = [...provTypes].filter(t => !haveTypes.has(t));
+    if (!newLabels.length && !newTypes.length) return;  // nothing new → do nothing
+
+    // Rebuild the sidebar from any existing query results plus synthetic records for
+    // every provisional label/type. populateSchemaConfig dedupes by label/type and
+    // preserves existing colour/size/font/display-name choices via its window maps.
+    const base = (window.lastQueryResults && window.lastQueryResults.results) || [];
+    const synth = [];
+    provLabels.forEach(lbl => synth.push({ _prov: { id: 'prov:' + lbl, labels: [lbl], properties: {} } }));
+    provTypes.forEach(t => synth.push({ _prov: { type: t, start: 0, end: 1, properties: {} } }));
+
+    window.populateSchemaConfig(base.concat(synth));
+    const mode = (window.tabVisualizationModes && window.tabVisualizationModes[tabId]) || 'schema';
+    if (window.applySchemaSettingsMode) window.applySchemaSettingsMode(mode);
+  }
+
+  // --- Session persistence (SQLite-backed, per user) ---
+  let _sessionTimers = {};
+  function scheduleSessionSave(tabId) {
+    if (window.tabCanvasModes && window.tabCanvasModes[tabId] !== 'canvas') return;
+    if (window.__canvasRestoring) return;  // don't echo restores back to the server
+    clearTimeout(_sessionTimers[tabId]);
+    _sessionTimers[tabId] = setTimeout(() => saveCanvasSession(tabId), 600);
+  }
+
+  async function saveCanvasSession(tabId) {
+    const status = document.querySelector(`.canvas-session-status-${tabId}`);
+    try {
+      const canvas = serializeCanvas(tabId);
+      await fetch(window.SCIDK_BASE + '/api/canvas/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ canvas }),
+      });
+      if (status) { status.textContent = 'Saved'; setTimeout(() => { if (status.textContent === 'Saved') status.textContent = ''; }, 1500); }
+    } catch (e) { if (status) status.textContent = 'Save failed'; }
+  }
+
+  let _sessionLoaded = {};
+  async function loadCanvasSession(tabId) {
+    if (_sessionLoaded[tabId]) return;  // only restore once per tab per page load
+    _sessionLoaded[tabId] = true;
+    try {
+      const resp = await fetch(window.SCIDK_BASE + '/api/canvas/session');
+      const data = await resp.json();
+      if (data.status === 'ok' && data.canvas && (data.canvas.nodes || []).length) {
+        const cy = getCy(tabId);
+        if (!cy) return;
+        // Only restore into an empty canvas so we don't clobber query results.
+        if (cy.nodes().length === 0) {
+          window.__canvasRestoring = true;
+          restoreCanvas(tabId, data.canvas);
+          window.__canvasRestoring = false;
+        }
+      }
+    } catch (e) { /* no session yet */ }
+  }
+
+  // --- Save named layer (stored in saved_maps via /api/canvas/layers) ---
+  async function saveCanvasLayer(tabId) {
+    const name = (prompt('Name this layer:', 'Dataset grouping attempt 1') || '').trim();
+    if (!name) return;
+    const snapshot = serializeCanvas(tabId);
+    const displayMode = (window.tabVisualizationModes && window.tabVisualizationModes[tabId] === 'schema') ? 'schema' : 'instance';
+    try {
+      const resp = await fetch(window.SCIDK_BASE + '/api/canvas/layers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, display_mode: displayMode, snapshot_json: snapshot, layers: [] }),
+      });
+      const data = await resp.json();
+      const status = document.querySelector(`.canvas-session-status-${tabId}`);
+      if (data.status === 'ok') { if (status) { status.textContent = 'Layer saved'; setTimeout(() => status.textContent = '', 2000); } }
+      else alert('Save failed: ' + (data.error || 'unknown'));
+    } catch (e) { alert('Save failed: ' + e); }
+  }
+
+  async function toggleLayersList(tabId) {
+    const list = document.querySelector(`.canvas-layers-list-${tabId}`);
+    if (!list) return;
+    if (list.style.display !== 'none') { list.style.display = 'none'; return; }
+    list.style.display = 'block';
+    list.innerHTML = '<p class="small text-muted" style="margin:0.25rem;">Loading…</p>';
+    try {
+      const resp = await fetch(window.SCIDK_BASE + '/api/canvas/layers');
+      const data = await resp.json();
+      const layers = (data.layers || []);
+      if (!layers.length) { list.innerHTML = '<p class="small text-muted" style="margin:0.25rem;">No saved layers</p>'; return; }
+      list.innerHTML = '';
+      layers.forEach(l => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:0.5rem; padding:0.3rem 0.4rem; border-bottom:1px solid #e5eef7;';
+        row.innerHTML = `<span style="font-size:0.85rem;">${canvasEsc(l.name)} <span class="badge" style="background:#95a5a6;color:#fff;font-size:0.65rem;padding:0.05rem 0.35rem;border-radius:3px;">${canvasEsc(l.display_mode || 'instance')}</span></span>`;
+        const loadBtn = document.createElement('button');
+        loadBtn.className = 'btn btn-xs btn-outline-primary';
+        loadBtn.style.cssText = 'font-size:0.7rem; flex-shrink:0;';
+        loadBtn.textContent = 'Load';
+        loadBtn.addEventListener('click', () => loadCanvasLayer(tabId, l.layer_id));
+        row.appendChild(loadBtn);
+        list.appendChild(row);
+      });
+    } catch (e) {
+      list.innerHTML = `<p class="small" style="color:#c0392b; margin:0.25rem;">${canvasEsc(String(e))}</p>`;
+    }
+  }
+
+  async function loadCanvasLayer(tabId, layerId) {
+    try {
+      const resp = await fetch(window.SCIDK_BASE + `/api/canvas/layers/${encodeURIComponent(layerId)}`);
+      const data = await resp.json();
+      if (data.status !== 'ok') { alert('Load failed: ' + (data.error || 'unknown')); return; }
+      const snap = data.layer && data.layer.snapshot_json;
+      if (!snap) { alert('This layer has no saved canvas snapshot.'); return; }
+      window.__canvasRestoring = true;
+      restoreCanvas(tabId, snap);
+      window.__canvasRestoring = false;
+      if (!window.canvasLayerId) window.canvasLayerId = {};
+      window.canvasLayerId[tabId] = layerId;
+      scheduleSessionSave(tabId);
+      // Item 4: verify loaded nodes still exist, in the background.
+      runSnapshotDiff(tabId);
+    } catch (e) { alert('Load failed: ' + e); }
+  }
+
+  // --- Item 4: snapshot diff on open (grey out missing nodes, Refresh/Keep) ---
+  async function runSnapshotDiff(tabId) {
+    const cy = getCy(tabId);
+    if (!cy) return;
+    // Only real (non-provisional) nodes with a Neo4j elementId can be verified.
+    const realNodes = cy.nodes().filter(n => !n.data('provisional') && n.data('element_id'));
+    const eids = realNodes.map(n => n.data('element_id'));
+    if (!eids.length) return;
+    let missing = [];
+    try {
+      const resp = await fetch(window.SCIDK_BASE + '/api/canvas/nodes/verify', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ element_ids: eids }),
+      });
+      const data = await resp.json();
+      if (data.status !== 'ok') return;
+      missing = data.missing || [];
+    } catch (e) { return; }
+    if (!missing.length) return;
+    const missingSet = new Set(missing);
+    cy.nodes().forEach(n => {
+      if (missingSet.has(n.data('element_id'))) n.data('missing', true);
+    });
+    showDiffBanner(tabId, missing.length);
+  }
+
+  function showDiffBanner(tabId, count) {
+    const container = document.querySelector(`.graph-container-${tabId}`);
+    if (!container) return;
+    const existing = container.querySelector('.canvas-diff-banner');
+    if (existing) existing.remove();
+    const banner = document.createElement('div');
+    banner.className = 'canvas-diff-banner';
+    banner.setAttribute('data-testid', `canvas-diff-banner-${tabId}`);
+    banner.style.cssText = 'position:absolute; top:0; left:0; right:0; z-index:20; background:#fff3cd; border-bottom:1px solid #ffe08a; color:#664d03; padding:0.4rem 0.6rem; display:flex; align-items:center; gap:0.75rem; font-size:0.85rem;';
+    banner.innerHTML = `
+      <span style="flex:1;">⚠️ ${count} node(s) in this saved layer no longer exist in the graph (greyed out).</span>
+      <button class="diff-refresh btn btn-xs btn-warning" title="Overwrite the saved snapshot, dropping missing nodes">Refresh</button>
+      <button class="diff-keep btn btn-xs btn-outline-secondary" title="Keep the snapshot as-is">Keep</button>`;
+    container.appendChild(banner);
+    banner.querySelector('.diff-keep').addEventListener('click', () => banner.remove());
+    banner.querySelector('.diff-refresh').addEventListener('click', () => refreshSnapshot(tabId, banner));
+  }
+
+  async function refreshSnapshot(tabId, banner) {
+    const cy = getCy(tabId);
+    if (!cy) return;
+    // Drop the missing nodes, then overwrite session and (if loaded) the layer snapshot.
+    cy.nodes('[?missing]').remove();
+    const snapshot = serializeCanvas(tabId);
+    const layerId = window.canvasLayerId && window.canvasLayerId[tabId];
+    try {
+      if (layerId) {
+        await fetch(window.SCIDK_BASE + `/api/canvas/layers/${encodeURIComponent(layerId)}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ snapshot_json: snapshot }),
+        });
+      }
+      await saveCanvasSession(tabId);
+    } catch (e) { /* best effort */ }
+    if (banner) banner.remove();
+  }
+
+  // --- Commit provisional elements to Neo4j (admin only) ---
+  async function adoptToGraph(tabId) {
+    const snapshot = serializeCanvas(tabId);
+    const provNodes = snapshot.nodes.filter(n => n.provisional);
+    const provEdges = snapshot.edges.filter(e => e.provisional);
+    if (!provNodes.length && !provEdges.length) {
+      alert('Nothing to adopt — there are no provisional nodes or edges on this canvas.');
+      return;
+    }
+    // Preview via the server (server decides elementId vs name matching + skips).
+    let plan;
+    try {
+      const resp = await fetch(window.SCIDK_BASE + '/api/canvas/commit?preview=1', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ snapshot }),
+      });
+      if (resp.status === 401 || resp.status === 403) { alert('Adopting to the graph requires an admin account.'); return; }
+      plan = (await resp.json()).plan;
+    } catch (e) { alert('Preview failed: ' + e); return; }
+
+    const confirmed = await showCommitPreview(tabId, snapshot, plan);
+    if (!confirmed) return;
+
+    try {
+      const resp = await fetch(window.SCIDK_BASE + '/api/canvas/commit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ snapshot }),
+      });
+      if (resp.status === 401 || resp.status === 403) { alert('Adopting to the graph requires an admin account.'); return; }
+      const data = await resp.json();
+      if (data.status === 'error') { alert('Commit failed: ' + (data.error || 'unknown')); return; }
+      // On success flip provisional elements to live and restyle.
+      const cy = getCy(tabId);
+      if (!(data.errors && data.errors.length)) {
+        cy.elements('[?provisional]').forEach(el => el.data('provisional', false));
+      }
+      scheduleSessionSave(tabId);
+      const msg = `Adopted ${data.written_nodes} node(s), ${data.written_relationships} relationship(s).` +
+        (data.errors && data.errors.length ? `\n\nErrors:\n- ${data.errors.join('\n- ')}` : '') +
+        (data.skipped && data.skipped.length ? `\n\nSkipped:\n- ${data.skipped.join('\n- ')}` : '');
+      alert(msg);
+    } catch (e) { alert('Commit failed: ' + e); }
+  }
+
+  function showCommitPreview(tabId, snapshot, plan) {
+    return new Promise(resolve => {
+      const provNodes = snapshot.nodes.filter(n => n.provisional);
+      const provEdges = snapshot.edges.filter(e => e.provisional);
+      const nodeList = provNodes.map(n => `<li>${canvasEsc(n.label)}: <strong>${canvasEsc(n.name)}</strong></li>`).join('') || '<li class="text-muted">none</li>';
+      const edgeList = provEdges.map(e => `<li>${canvasEsc(e.source)} —[${canvasEsc(e.relationship || '?')}]→ ${canvasEsc(e.target)}</li>`).join('') || '<li class="text-muted">none</li>';
+      const skipped = (plan && plan.skipped && plan.skipped.length)
+        ? `<div style="margin-top:0.5rem; color:#b26a00;"><strong>Will be skipped:</strong><ul style="margin:0.25rem 0;">${plan.skipped.map(s => `<li>${canvasEsc(s)}</li>`).join('')}</ul></div>` : '';
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.3); z-index:10000; display:flex; align-items:center; justify-content:center;';
+      overlay.innerHTML = `
+        <div style="background:#fff; border-radius:8px; padding:1.25rem; width:460px; max-height:80vh; overflow:auto; box-shadow:0 8px 30px rgba(0,0,0,0.25);">
+          <h3 style="margin:0 0 0.5rem;">Adopt to graph</h3>
+          <p class="small text-muted" style="margin:0 0 0.75rem;">Only provisional elements are written. MERGE makes this idempotent.</p>
+          <div><strong>Nodes to create (${provNodes.length}):</strong><ul style="margin:0.25rem 0;">${nodeList}</ul></div>
+          <div><strong>Relationships to create (${provEdges.length}):</strong><ul style="margin:0.25rem 0;">${edgeList}</ul></div>
+          ${skipped}
+          <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1rem;">
+            <button class="cp-cancel btn btn-sm btn-outline-secondary">Cancel</button>
+            <button class="cp-ok btn btn-sm btn-success">Adopt to graph</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      const done = v => { overlay.remove(); resolve(v); };
+      overlay.querySelector('.cp-cancel').addEventListener('click', () => done(false));
+      overlay.querySelector('.cp-ok').addEventListener('click', () => done(true));
+      overlay.addEventListener('click', e => { if (e.target === overlay) done(false); });
+    });
+  }
+
+  // --- Export current canvas as a downloadable script ---
+  async function exportCanvas(tabId, kind) {
+    const snapshot = serializeCanvas(tabId);
+    if (!snapshot.nodes.length) { alert('Canvas is empty — nothing to export.'); return; }
+    try {
+      const resp = await fetch(window.SCIDK_BASE + `/api/canvas/export/${kind}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ snapshot }),
+      });
+      if (!resp.ok) { alert('Export failed (' + resp.status + ')'); return; }
+      const blob = await resp.blob();
+      const dispo = resp.headers.get('Content-Disposition') || '';
+      const m = dispo.match(/filename="?([^"]+)"?/);
+      const fnameDefaults = { cypher: 'canvas.cypher', python: 'canvas_reorg.py', rocrate: 'ro-crate-metadata.json' };
+      const fname = m ? m[1] : (fnameDefaults[kind] || 'canvas-export.txt');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = fname; document.body.appendChild(a); a.click();
+      a.remove(); URL.revokeObjectURL(url);
+    } catch (e) { alert('Export failed: ' + e); }
   }
 
   // Initialize Cytoscape graph for a tab
@@ -1210,7 +2509,74 @@
             'text-wrap': 'wrap',
             'text-max-width': '250px'
           }
-        }
+        },
+        // Edges must respond to events so a marquee/box selection captures them
+        // (and single click-select works). Push 6.
+        {
+          selector: 'edge',
+          style: {
+            'events': 'yes'
+          }
+        },
+        // Canvas mode (Push 2) — provisional elements are visually distinct:
+        // provisional nodes keep their color but get a dashed orange border at
+        // 60% opacity; provisional edges are dashed orange.
+        {
+          selector: 'node[?provisional]',
+          style: {
+            'border-style': 'dashed',
+            'border-width': 3,
+            'border-color': '#e67e22',
+            'opacity': 0.6
+          }
+        },
+        {
+          selector: 'edge[?provisional]',
+          style: {
+            'line-style': 'dashed',
+            'line-color': '#e67e22',
+            'target-arrow-color': '#e67e22'
+          }
+        },
+        // Snapshot diff (addendum): nodes flagged missing on reload are greyed.
+        {
+          selector: 'node[?missing]',
+          style: {
+            'background-color': '#bdc3c7',
+            'opacity': 0.4,
+            'border-style': 'dotted',
+            'border-color': '#7f8c8d'
+          }
+        },
+        // edgehandles preview/ghost styling
+        {
+          selector: '.eh-preview, .eh-ghost-edge',
+          style: {
+            'line-color': '#e67e22',
+            'target-arrow-color': '#e67e22',
+            'line-style': 'dashed'
+          }
+        },
+        // Ellipsis (collapsed subtree) nodes
+        {
+          selector: 'node[?ellipsis]',
+          style: {
+            'shape': 'round-rectangle',
+            'background-color': '#34495e',
+            'border-width': 2,
+            'border-color': '#2c3e50',
+            'border-style': 'dotted',
+            'width': 'label',
+            'height': 28,
+            'padding': '6px',
+            'font-size': '10px'
+          }
+        },
+        // Schema-space elements (Cycle 3B Task C). A canvas session can hold both
+        // spaces, so a label type must never look like an instance: these are
+        // dashed, muted and chip-labelled. Defined once in graph_utils.js and
+        // shared with the Pipeline schema canvas, which is where they are edited.
+        ...(SciDKGraph.schemaStyles || [])
       ];
 
       const cy = SciDKGraph.init(container, [], {
@@ -1575,6 +2941,10 @@
       // Populate schema configuration panel
       if (window.populateSchemaConfig) {
         window.populateSchemaConfig(results);
+        // Re-apply schema-settings enabled/disabled state — the panel re-renders
+        // its controls here, so instance mode needs them re-greyed (Push 5).
+        const vizMode = (window.tabVisualizationModes && window.tabVisualizationModes[tabId]) || 'schema';
+        if (window.applySchemaSettingsMode) window.applySchemaSettingsMode(vizMode);
       }
 
       // Populate instances table
@@ -2249,6 +3619,14 @@
       }
     });
 
+    // The tab's graph container was display:none while hidden, so its Cytoscape
+    // renderer has stale/zero dimensions. Recompute after the reflow settles,
+    // otherwise clicks hit-test at a vertically displaced position (Push 5).
+    setTimeout(() => {
+      const cy = window.cytoscapeInstances && window.cytoscapeInstances[tabId];
+      if (cy) cy.resize();
+    }, 150);
+
     // Sync visualization mode radio buttons with this tab's mode
     if (window.tabVisualizationModes && window.tabVisualizationModes[tabId]) {
       const tabMode = window.tabVisualizationModes[tabId];
@@ -2263,6 +3641,10 @@
         console.log(`Synced radio buttons to tab ${tabId} mode: ${tabMode}`);
       }
     }
+
+    // Push 6: the selection inspector is shared DOM — refresh it for whichever
+    // tab is now active (shows the new tab's selection, or hides if not canvas).
+    if (typeof updateSelectionInspector === 'function') updateSelectionInspector(tabId);
 
     saveTabsState();
   }
@@ -2745,6 +4127,34 @@
   loadSavedMaps();
 })();
 
+// === SCHEMA-SETTINGS SIDEBAR VISIBILITY (Push 5) ===
+// The Schema Configuration panel (per-label/per-type property expansion) is now
+// shown in BOTH schema and instance mode. In instance mode we render every
+// instance, so expansion isn't meaningful — the controls are greyed out and
+// disabled with an explanatory tooltip.
+window.applySchemaSettingsMode = function(mode) {
+  const schemaSettings = document.getElementById('schema-settings');
+  if (!schemaSettings) return;
+  const show = (mode === 'schema' || mode === 'instance');
+  schemaSettings.style.display = show ? 'block' : 'none';
+
+  const instance = (mode === 'instance');
+  const tip = instance ? 'showing all instances — expansion not applicable' : '';
+  // Instance mode renders every instance, so per-label/type property EXPANSION
+  // isn't meaningful. Grey out and disable ONLY the expansion controls (the
+  // node/rel expansion selectors and the Apply button). Color pickers, size,
+  // font and display-name inputs stay fully active in both modes.
+  schemaSettings.querySelectorAll('.schema-node-expand, .schema-rel-expand, #apply-schema-display')
+    .forEach(ctrl => {
+      ctrl.disabled = instance;
+      ctrl.style.opacity = instance ? '0.5' : '';
+      ctrl.style.pointerEvents = instance ? 'none' : '';
+      ctrl.title = tip;
+    });
+  // TODO(Push 5+): per-instance color differentiation in instance mode — let the
+  // user color individual instance nodes distinctly rather than by shared label.
+};
+
 // === VISUALIZATION MODE SWITCHING ===
 (function() {
   // Wait for DOM to be ready
@@ -2766,11 +4176,10 @@
       console.log('=== MODE SWITCH DEBUG ===');
       console.log('Radio button changed to:', newMode);
 
-      // Show/hide mode-specific settings
-      const schemaSettings = document.getElementById('schema-settings');
+      // Show/hide mode-specific settings. schema-settings is shown in both
+      // schema and instance mode (disabled in instance mode) — see Push 5.
       const instanceSettings = document.getElementById('instance-settings');
-
-      if (schemaSettings) schemaSettings.style.display = newMode === 'schema' ? 'block' : 'none';
+      window.applySchemaSettingsMode(newMode);
       if (instanceSettings) instanceSettings.style.display = newMode === 'instance' ? 'block' : 'none';
 
       // Get active tab
@@ -3297,8 +4706,7 @@
   }
 
   // Initialize panel visibility based on default mode (schema)
-  const schemaSettings = document.getElementById('schema-settings');
-  if (schemaSettings) schemaSettings.style.display = 'block'; // Schema is checked by default
+  window.applySchemaSettingsMode('schema'); // Schema is checked by default
   }; // End of initModeSwitch
 
   // Call init when DOM is ready
@@ -4083,6 +5491,19 @@ window.populateInstancesTable = async function(results, tabId) {
   <div class="map-controls-panel">
     <div class="panel-header">
       <h3>⚙️ Visualization</h3>
+    </div>
+
+    <!-- Selection Inspector (Push 6): canvas-mode only; appears when elements
+         are selected on the canvas. Groups the current selection by node label /
+         edge relationship, à la Neo4j Bloom. Content is built at runtime by
+         updateSelectionInspector(). -->
+    <div id="selection-inspector" class="control-group" style="margin-bottom:1.5rem; display:none" data-testid="selection-inspector">
+      <div class="si-header">
+        <h4>Selection (<span id="si-total-count">0</span>)</h4>
+        <button id="si-deselect-all" class="btn btn-sm btn-outline-secondary" style="font-size:0.7rem; padding:0.15rem 0.5rem" data-testid="si-deselect-all">Deselect all</button>
+      </div>
+      <div id="si-groups"></div>
+      <button id="si-delete" class="btn btn-sm btn-outline-danger w-100" style="margin-top:0.75rem" data-testid="si-delete">🗑️ Delete selected</button>
     </div>
 
     <!-- Neo4j Connection Selection -->

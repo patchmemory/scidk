@@ -1,0 +1,68 @@
+{
+  "@context": "https://w3id.org/ro/crate/1.1/context",
+  "@graph": [
+    {
+      "@type": "CreativeWork",
+      "@id": "ro-crate-metadata.json",
+      "conformsTo": {
+        "@id": "https://w3id.org/ro/crate/1.1"
+      },
+      "about": {
+        "@id": "./"
+      }
+    },
+    {
+      "@id": "./",
+      "@type": "Dataset",
+      "name": "provisional_only",
+      "hasPart": [
+        {
+          "@id": "#6d1898b9-f8a9-5fe3-b84d-b2740a4ef6a5"
+        },
+        {
+          "@id": "#10960356-e2ef-5f01-95b6-f2489520768d"
+        },
+        {
+          "@id": "#1d17a6f8-b85b-548f-be8f-24a3a1ca2f0f"
+        }
+      ]
+    },
+    {
+      "@id": "#6d1898b9-f8a9-5fe3-b84d-b2740a4ef6a5",
+      "@type": "Dataset",
+      "name": "AIPT",
+      "description": "AI Pathology Tumour cohort",
+      "dateCreated": "2026-01-15",
+      "hasPart": [
+        {
+          "@id": "#469a1dbc-f921-53a7-b946-48679b4e1bda"
+        }
+      ]
+    },
+    {
+      "@id": "#469a1dbc-f921-53a7-b946-48679b4e1bda",
+      "@type": "File",
+      "name": "slide_001.svs",
+      "relation": [
+        {
+          "@id": "#1d17a6f8-b85b-548f-be8f-24a3a1ca2f0f",
+          "name": "DERIVED_FROM"
+        }
+      ]
+    },
+    {
+      "@id": "#10960356-e2ef-5f01-95b6-f2489520768d",
+      "@type": "Dataset",
+      "name": "H&E staining",
+      "mentions": [
+        {
+          "@id": "#469a1dbc-f921-53a7-b946-48679b4e1bda"
+        }
+      ]
+    },
+    {
+      "@id": "#1d17a6f8-b85b-548f-be8f-24a3a1ca2f0f",
+      "@type": "Dataset"
+    }
+  ]
+}

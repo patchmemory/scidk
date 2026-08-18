@@ -741,18 +741,45 @@ def migrate(conn: Optional[sqlite3.Connection] = None) -> int:
             _set_version(conn, 24)
             version = 24
 
-        # v25: Add traversal_json column to usage_event for Concept Graph logging
+        # v25: (retired) Add traversal_json column to usage_event.
+        #
+        # This step used to run `ALTER TABLE usage_event ADD COLUMN traversal_json
+        # TEXT` inside a swallowed OperationalError. usage_event is a Schema
+        # Intelligence table living in scidk_settings.db, which this module does
+        # not own — on a clean deploy the table did not exist yet, the ALTER
+        # failed, and the error was discarded.
+        #
+        # Ownership now sits with schema_intelligence.ensure_schema_intelligence_tables(),
+        # which creates usage_event *with* traversal_json and back-fills the column
+        # on databases that predate it (SI_ADDED_COLUMNS). The step is retired
+        # rather than deleted so the version sequence stays intact.
         if version < 25:
-            # Add traversal_json to store concept graph traversal metadata
-            try:
-                cur.execute("ALTER TABLE usage_event ADD COLUMN traversal_json TEXT;")
-            except sqlite3.OperationalError:
-                # Column may already exist
-                pass
-
             conn.commit()
             _set_version(conn, 25)
             version = 25
+
+        # v26: (retired) Index files for extension-only and path lookups.
+        #
+        # This step used to CREATE INDEX on the files table. It repeated the v25
+        # mistake one row above, and for the same reason: this module does not
+        # own that table. `files` is created by path_index_sqlite.init_db(), and
+        # migrate() also runs against databases that have no files table at all
+        # — scidk_settings.db and every per-test database. There the CREATE
+        # INDEX raised `no such table: main.files` out of migrate(), which took
+        # 86 tests with it across chat, scripts, plugin settings and graphrag.
+        #
+        # Guarding on the table's existence would not have been enough either.
+        # scans_service calls migrate() on a bare pix.connect() before
+        # init_db() has run, so on a fresh files.db the guard would skip the
+        # step, record version 26, and leave the indexes permanently uncreated.
+        #
+        # The indexes now live in path_index_sqlite.init_db() beside the table
+        # and the three indexes that were always there. The step is retired
+        # rather than deleted so the version sequence stays intact.
+        if version < 26:
+            conn.commit()
+            _set_version(conn, 26)
+            version = 26
 
         return version
     finally:

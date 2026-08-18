@@ -11,6 +11,52 @@ from .graph import InMemoryGraph
 from .registry import InterpreterRegistry
 
 
+def iter_entries_scandir(base: Path, recursive: bool = True) -> Iterable[tuple]:
+    """Walk `base` with os.scandir, yielding (Path, is_dir, is_file) per entry.
+
+    Faster than pathlib.rglob on large trees (especially network mounts):
+    os.scandir returns DirEntry objects whose is_dir()/is_file() are answered
+    from the readdir result's d_type where the filesystem supplies it, avoiding
+    a second stat(2) per entry.
+
+    Semantics match `rglob('*')` + `p.is_dir()` / `p.is_file()`:
+      - the reported is_dir/is_file follow symlinks, so a symlink to a file is
+        reported as a file and a symlink to a directory as a directory;
+      - recursion descends only into real directories, so symlink loops cannot
+        hang the walk.
+    Unreadable directories and entries are skipped rather than raised.
+    """
+    try:
+        with os.scandir(base) as it:
+            # Materialize per directory so the directory fd is released before
+            # descending — a deep tree would otherwise hold one fd per level.
+            entries = list(it)
+    except (PermissionError, OSError):
+        return
+    for entry in entries:
+        try:
+            is_dir = entry.is_dir()
+            is_file = entry.is_file()
+        except OSError:
+            continue
+        p = Path(entry.path)
+        yield p, is_dir, is_file
+        if recursive and is_dir:
+            try:
+                real_dir = entry.is_dir(follow_symlinks=False)
+            except OSError:
+                continue
+            if real_dir:
+                yield from iter_entries_scandir(p, True)
+
+
+def iter_files_scandir(base: Path, recursive: bool = True) -> Iterable[Path]:
+    """Yield only the file paths under `base`. See iter_entries_scandir."""
+    for p, _is_dir, is_file in iter_entries_scandir(base, recursive=recursive):
+        if is_file:
+            yield p
+
+
 class FilesystemManager:
     def __init__(self, graph: InMemoryGraph, registry: InterpreterRegistry):
         self.graph = graph
@@ -130,10 +176,8 @@ class FilesystemManager:
             return []
 
     def _iter_files_python(self, path: Path, recursive: bool = True) -> Iterable[Path]:
-        files = path.rglob('*') if recursive else path.glob('*')
-        for p in files:
-            if p.is_file():
-                yield p
+        # Shim kept for existing call sites; os.scandir replaced rglob here.
+        return iter_files_scandir(path, recursive=recursive)
 
     def scan_directory(self, path: Path, recursive: bool = True) -> int:
         if not path.exists():
@@ -166,13 +210,13 @@ class FilesystemManager:
                         'status': result.get('status', 'success'),
                         'data': result.get('data', result),
                         'interpreter_version': getattr(interp, 'version', '0.0.1'),
-                    })
+                    }, file_path=ds.get('path'))
                 except Exception as e:
                     self.graph.add_interpretation(ds['checksum'], interp.id, {
                         'status': 'error',
                         'data': {'error': str(e)},
                         'interpreter_version': getattr(interp, 'version', '0.0.1'),
-                    })
+                    }, file_path=ds.get('path'))
             count += 1
         return count
 

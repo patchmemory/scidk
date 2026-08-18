@@ -31,6 +31,11 @@ class SavedMap:
     use_count: int = 0
     last_used_at: Optional[float] = None
     tags: str = ""
+    # Canvas (Push 2) fields
+    display_mode: str = "instance"  # 'schema' | 'instance'
+    layers: List[Dict[str, Any]] = field(default_factory=list)
+    snapshot_json: Optional[Dict[str, Any]] = None
+    snapshot_saved_at: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary representation."""
@@ -46,6 +51,10 @@ class SavedMap:
             "use_count": self.use_count,
             "last_used_at": self.last_used_at,
             "tags": self.tags,
+            "display_mode": self.display_mode,
+            "layers": self.layers,
+            "snapshot_json": self.snapshot_json,
+            "snapshot_saved_at": self.snapshot_saved_at,
         }
 
 
@@ -86,10 +95,55 @@ class SavedMapsService:
                 CREATE INDEX IF NOT EXISTS idx_saved_maps_used
                 ON saved_maps(last_used_at DESC)
             """)
+            # Canvas (Push 2) columns — added idempotently so pre-existing tables
+            # upgrade in place. saved_maps lives in scidk_settings.db, NOT the
+            # path-index DB that scidk/core/migrations.py targets, so this is the
+            # correct place to evolve its schema.
+            existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(saved_maps)")}
+            canvas_cols = {
+                "display_mode": "TEXT",       # 'schema' | 'instance' (default 'instance')
+                "layers": "TEXT",             # JSON array of {layer_id,name,cypher,enabled}
+                "snapshot_json": "TEXT",      # JSON {nodes:[...],edges:[...]}
+                "snapshot_saved_at": "REAL",  # epoch seconds; NULL until first snapshot
+            }
+            for col, col_type in canvas_cols.items():
+                if col not in existing_cols:
+                    conn.execute(f"ALTER TABLE saved_maps ADD COLUMN {col} {col_type}")
             conn.commit()
             logger.debug("Ensured saved_maps table exists")
         finally:
             conn.close()
+
+    @staticmethod
+    def _row_to_map(row: sqlite3.Row) -> "SavedMap":
+        """Build a SavedMap from a sqlite Row, tolerating rows missing the
+        canvas columns (older DBs read before _ensure_table_exists upgrade)."""
+        import json
+
+        keys = set(row.keys())
+
+        def _col(name, default=None):
+            return row[name] if name in keys else default
+
+        raw_layers = _col("layers")
+        raw_snapshot = _col("snapshot_json")
+        return SavedMap(
+            id=row["id"],
+            name=row["name"],
+            description=row["description"],
+            query=row["query"],
+            filters=json.loads(row["filters"] or "{}"),
+            visualization=json.loads(row["visualization"] or "{}"),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            use_count=row["use_count"],
+            last_used_at=row["last_used_at"],
+            tags=row["tags"] or "",
+            display_mode=_col("display_mode") or "instance",
+            layers=json.loads(raw_layers) if raw_layers else [],
+            snapshot_json=json.loads(raw_snapshot) if raw_snapshot else None,
+            snapshot_saved_at=_col("snapshot_saved_at"),
+        )
 
     def save_map(
         self,
@@ -99,6 +153,9 @@ class SavedMapsService:
         filters: Optional[Dict[str, Any]] = None,
         visualization: Optional[Dict[str, Any]] = None,
         tags: Optional[str] = None,
+        display_mode: str = "instance",
+        layers: Optional[List[Dict[str, Any]]] = None,
+        snapshot_json: Optional[Dict[str, Any]] = None,
     ) -> SavedMap:
         """Create new saved map.
 
@@ -120,6 +177,9 @@ class SavedMapsService:
 
         filters = filters or {}
         visualization = visualization or {}
+        layers = layers or []
+        display_mode = display_mode if display_mode in ("schema", "instance") else "instance"
+        snapshot_saved_at = now if snapshot_json is not None else None
 
         conn = sqlite3.connect(self.db_path)
         try:
@@ -127,8 +187,9 @@ class SavedMapsService:
                 """
                 INSERT INTO saved_maps
                 (id, name, description, query, filters, visualization,
-                 created_at, updated_at, use_count, last_used_at, tags)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
+                 created_at, updated_at, use_count, last_used_at, tags,
+                 display_mode, layers, snapshot_json, snapshot_saved_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?)
                 """,
                 (
                     map_id,
@@ -140,6 +201,10 @@ class SavedMapsService:
                     now,
                     now,
                     tags or "",
+                    display_mode,
+                    json.dumps(layers),
+                    json.dumps(snapshot_json) if snapshot_json is not None else None,
+                    snapshot_saved_at,
                 ),
             )
             conn.commit()
@@ -159,6 +224,10 @@ class SavedMapsService:
             use_count=0,
             last_used_at=None,
             tags=tags or "",
+            display_mode=display_mode,
+            layers=layers,
+            snapshot_json=snapshot_json,
+            snapshot_saved_at=snapshot_saved_at,
         )
 
     def list_maps(
@@ -206,24 +275,7 @@ class SavedMapsService:
             )
             rows = cursor.fetchall()
 
-            maps = []
-            for row in rows:
-                maps.append(
-                    SavedMap(
-                        id=row["id"],
-                        name=row["name"],
-                        description=row["description"],
-                        query=row["query"],
-                        filters=json.loads(row["filters"] or "{}"),
-                        visualization=json.loads(row["visualization"] or "{}"),
-                        created_at=row["created_at"],
-                        updated_at=row["updated_at"],
-                        use_count=row["use_count"],
-                        last_used_at=row["last_used_at"],
-                        tags=row["tags"] or "",
-                    )
-                )
-            return maps
+            return [self._row_to_map(row) for row in rows]
         finally:
             conn.close()
 
@@ -249,19 +301,7 @@ class SavedMapsService:
             if not row:
                 return None
 
-            return SavedMap(
-                id=row["id"],
-                name=row["name"],
-                description=row["description"],
-                query=row["query"],
-                filters=json.loads(row["filters"] or "{}"),
-                visualization=json.loads(row["visualization"] or "{}"),
-                created_at=row["created_at"],
-                updated_at=row["updated_at"],
-                use_count=row["use_count"],
-                last_used_at=row["last_used_at"],
-                tags=row["tags"] or "",
-            )
+            return self._row_to_map(row)
         finally:
             conn.close()
 
@@ -288,6 +328,9 @@ class SavedMapsService:
             "filters",
             "visualization",
             "tags",
+            "display_mode",
+            "layers",
+            "snapshot_json",
         }
         updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
@@ -299,6 +342,15 @@ class SavedMapsService:
             updates["filters"] = json.dumps(updates["filters"])
         if "visualization" in updates:
             updates["visualization"] = json.dumps(updates["visualization"])
+        if "layers" in updates:
+            updates["layers"] = json.dumps(updates["layers"] or [])
+        if "display_mode" in updates and updates["display_mode"] not in ("schema", "instance"):
+            updates["display_mode"] = "instance"
+        if "snapshot_json" in updates:
+            snap = updates["snapshot_json"]
+            updates["snapshot_json"] = json.dumps(snap) if snap is not None else None
+            # Refreshing the snapshot stamps its save time (addendum: explicit Refresh).
+            updates["snapshot_saved_at"] = time.time()
 
         updates["updated_at"] = time.time()
 

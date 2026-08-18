@@ -1,0 +1,52 @@
+{#
+  Tab strip for the Entities page.
+
+  Included by base.html whenever a view passes `entities_tab`, which is only the
+  /entities route. Each tab is a real page load rather than a hidden div: the two
+  subpages are the existing Labels and Links templates, and their scripts declare
+  overlapping globals (showToast, escapeHtml, handleGlobalKeydown,
+  returnFocusToSidePanel), so only one may be in the document at a time.
+#}
+<style>
+  .entities-tabs {
+    display: flex;
+    gap: 0.25rem;
+    border-bottom: 1px solid #e0e0e0;
+    padding: 0 0.5rem;
+  }
+
+  .entities-tabs a {
+    padding: 0.5rem 1rem;
+    text-decoration: none;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    font-size: 0.95em;
+  }
+
+  .entities-tabs a:hover {
+    color: var(--fg);
+  }
+
+  .entities-tabs a.active {
+    color: var(--fg);
+    font-weight: 600;
+    border-bottom-color: var(--accent);
+  }
+
+  /* The subpage templates size their main container against the viewport
+     (height: calc(100vh - 200px)) and know nothing about this strip. Give back
+     the height it takes so neither tab gains a nested scrollbar. */
+  main:has(> .entities-tabs) .labels-container,
+  main:has(> .entities-tabs) .links-container {
+    height: calc(100vh - 240px);
+  }
+</style>
+<nav class="entities-tabs" data-testid="entities-tabs">
+  <a href="{{ request.script_root }}/entities?tab=entities"
+     data-testid="entities-tab-entities"
+     class="{{ 'active' if entities_tab == 'entities' else '' }}">Entities</a>
+  <a href="{{ request.script_root }}/entities?tab=relationships"
+     data-testid="entities-tab-relationships"
+     class="{{ 'active' if entities_tab == 'relationships' else '' }}">Relationships</a>
+</nav>

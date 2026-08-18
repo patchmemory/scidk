@@ -4,8 +4,10 @@ Automated backup scheduler for SciDK.
 Manages scheduled backups, verification, and retention policies.
 """
 
+import logging
 import os
 import tempfile
+import threading
 import zipfile
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -15,6 +17,8 @@ from apscheduler.triggers.cron import CronTrigger
 
 from .backup_manager import BackupManager
 
+logger = logging.getLogger(__name__)
+
 
 class BackupScheduler:
     """Manages automated backup scheduling, verification, and retention."""
@@ -23,7 +27,8 @@ class BackupScheduler:
         self,
         backup_manager: BackupManager,
         settings_db_path: str = 'scidk_settings.db',
-        alert_manager=None
+        alert_manager=None,
+        app_scheduler=None
     ):
         """
         Initialize BackupScheduler.
@@ -34,12 +39,23 @@ class BackupScheduler:
             backup_manager: BackupManager instance
             settings_db_path: Path to settings database
             alert_manager: Optional AlertManager for notifications
+            app_scheduler: Optional AppScheduler whose BackgroundScheduler this
+                instance should register its jobs into. create_app() injects the
+                process-wide one so backup jobs and other features' jobs share a
+                single scheduler. When omitted, a private BackgroundScheduler is
+                created — this keeps direct construction (tests, scripts) fully
+                self-contained.
         """
         self.backup_manager = backup_manager
         self.settings_db_path = settings_db_path
         self.alert_manager = alert_manager
-        self.scheduler = BackgroundScheduler()
+        self.app_scheduler = app_scheduler
+        self.scheduler = (
+            app_scheduler.scheduler if app_scheduler is not None
+            else BackgroundScheduler()
+        )
         self._running = False
+        self._owner_pid: Optional[int] = None
 
         # Load settings from database (with defaults)
         self.reload_settings()
@@ -97,18 +113,17 @@ class BackupScheduler:
             for key, default_value in defaults.items():
                 setattr(self, key, default_value)
 
-    def start(self, concept_driver=None):
-        """
-        Start the backup scheduler.
+    def start(self):
+        """Start the backup scheduler.
 
-        Args:
-            concept_driver: Optional Neo4j driver for Concept Graph (for weight decay)
+        Concept Graph weight decay used to be registered here too, taking a
+        ``concept_driver`` argument. It now lives in
+        ``scidk.core.scheduled_jobs.register_all`` (Cycle 8 Task A), which is where
+        jobs that are not the backup belong — and where the job can open its own
+        driver instead of running against one that crossed a fork.
         """
         if self._running:
             return
-
-        # Store concept_driver for weight decay job
-        self.concept_driver = concept_driver
 
         # Schedule daily backup
         self.scheduler.add_job(
@@ -119,28 +134,48 @@ class BackupScheduler:
             name='Daily Backup'
         )
 
-        # Schedule nightly weight decay at 03:00 UTC (if concept graph is available)
-        if concept_driver is not None:
-            self.scheduler.add_job(
-                self._run_weight_decay,
-                CronTrigger(hour=3, minute=0),
-                id='concept_graph_weight_decay',
-                replace_existing=True,
-                name='Concept Graph Weight Decay'
-            )
+        # Start through the AppScheduler when sharing one, so ownership is
+        # recorded in a single place. Starting the underlying BackgroundScheduler
+        # directly would leave AppScheduler.is_owner() reporting False in the very
+        # process that owns the timer thread.
+        if self.app_scheduler is not None:
+            self.app_scheduler.start()
+        elif not self.scheduler.running:
+            self.scheduler.start()
 
-        self.scheduler.start()
         self._running = True
+        self._owner_pid = os.getpid()
 
     def stop(self):
-        """Stop the backup scheduler."""
-        if self._running:
+        """Stop the backup scheduler.
+
+        When the underlying scheduler is shared (injected AppScheduler), only
+        this instance's jobs are removed — shutting the shared scheduler down
+        would take other features' jobs with it.
+        """
+        if not self._running:
+            return
+
+        if self.app_scheduler is not None:
+            self.app_scheduler.remove_job('daily_backup')
+        else:
             self.scheduler.shutdown(wait=False)
-            self._running = False
+
+        self._running = False
+        self._owner_pid = None
 
     def is_running(self) -> bool:
         """Check if scheduler is running."""
         return self._running
+
+    def is_owner(self) -> bool:
+        """True if this process is the one whose timer thread is running.
+
+        False in a gunicorn worker that inherited a started scheduler across
+        fork under --preload: the object reports running, but the thread that
+        fires jobs stayed in the master.
+        """
+        return self._owner_pid is not None and self._owner_pid == os.getpid()
 
     def _run_scheduled_backup(self):
         """Execute the scheduled backup workflow."""
@@ -207,28 +242,6 @@ class BackupScheduler:
                     })
                 except Exception:
                     pass
-
-    def _run_weight_decay(self):
-        """Execute the Concept Graph weight decay workflow."""
-        try:
-            if self.concept_driver is None:
-                return
-
-            from ..services.concept_graph_service import apply_weight_decay
-            import os
-
-            half_life = int(os.environ.get('SCIDK_CONCEPT_WEIGHT_HALFLIFE_DAYS', '90'))
-            result = apply_weight_decay(self.concept_driver, half_life)
-
-            # Log results
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(f"Concept graph weight decay completed: {result}")
-
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Concept graph weight decay failed: {e}")
 
     def verify_backup(self, backup_file: str) -> Dict[str, Any]:
         """
@@ -424,18 +437,41 @@ class BackupScheduler:
         return f"{size_bytes:.1f} TB"
 
     def get_next_backup_time(self) -> Optional[str]:
-        """Get the next scheduled backup time as ISO string."""
+        """Get the next scheduled backup time as ISO string.
+
+        In a process that does not own the scheduler — every gunicorn worker
+        under --preload — the answer is computed from the persisted schedule
+        rather than read off the inherited scheduler.
+
+        That is deliberate, not just tidiness. Reading a job acquires
+        APScheduler's ``_jobstores_lock``, and gunicorn forks while the master's
+        scheduler thread is running: a child can inherit that mutex already held,
+        with no thread left to release it. A worker touching it would block
+        forever, and this is called from the admin status endpoint. Recomputing
+        the trigger touches no shared state.
+        """
         if not self._running:
             return None
 
-        try:
-            job = self.scheduler.get_job('daily_backup')
-            if job and job.next_run_time:
-                return job.next_run_time.isoformat()
-        except Exception:
-            pass
+        if self.is_owner():
+            try:
+                job = self.scheduler.get_job('daily_backup')
+                if job and job.next_run_time:
+                    return job.next_run_time.isoformat()
+            except Exception:
+                pass
+            return None
 
-        return None
+        try:
+            trigger = CronTrigger(
+                hour=self.schedule_hour, minute=self.schedule_minute
+            )
+            next_fire = trigger.get_next_fire_time(
+                None, datetime.now(trigger.timezone)
+            )
+            return next_fire.isoformat() if next_fire else None
+        except Exception:
+            return None
 
     def update_settings(self, settings: Dict[str, Any]) -> bool:
         """
@@ -468,6 +504,19 @@ class BackupScheduler:
 
             # Reschedule if scheduler is running
             if self._running:
+                if not self.is_owner():
+                    # Under gunicorn --preload the live scheduler runs in the
+                    # master process; this is an inherited copy in a worker, so
+                    # rescheduling here changes nothing that will fire. The new
+                    # settings are persisted above and take effect on restart.
+                    logger.warning(
+                        "Backup schedule updated in the database, but this "
+                        f"process (pid={os.getpid()}) does not own the running "
+                        f"scheduler (owner pid={self._owner_pid}). The new "
+                        "schedule takes effect on restart."
+                    )
+                    return True
+
                 # Remove existing job
                 try:
                     self.scheduler.remove_job('daily_backup')
@@ -499,24 +548,55 @@ class BackupScheduler:
         }
 
 
+_backup_scheduler: Optional[BackupScheduler] = None
+_backup_scheduler_lock = threading.Lock()
+
+
 def get_backup_scheduler(
     backup_manager: BackupManager,
     settings_db_path: str = 'scidk_settings.db',
-    alert_manager=None
+    alert_manager=None,
+    app_scheduler=None
 ) -> BackupScheduler:
     """
-    Get or create a BackupScheduler instance.
+    Get or create this process's BackupScheduler.
+
+    Module-level singleton, matching ``get_canvas_service()``. This used to
+    construct a new BackupScheduler — and therefore a new BackgroundScheduler
+    with its own jobstore — on every call, so every extra ``create_app()`` in a
+    process added another set of jobs firing in parallel. Arguments after the
+    first call are ignored rather than silently rebuilding a scheduler that is
+    already running; use ``reset_backup_scheduler()`` in tests.
 
     Args:
         backup_manager: BackupManager instance
         settings_db_path: Path to settings database
         alert_manager: Optional AlertManager for notifications
+        app_scheduler: Optional AppScheduler to register jobs into
 
     Returns:
         BackupScheduler instance
     """
-    return BackupScheduler(
-        backup_manager=backup_manager,
-        settings_db_path=settings_db_path,
-        alert_manager=alert_manager
-    )
+    global _backup_scheduler
+    if _backup_scheduler is None:
+        with _backup_scheduler_lock:
+            if _backup_scheduler is None:
+                _backup_scheduler = BackupScheduler(
+                    backup_manager=backup_manager,
+                    settings_db_path=settings_db_path,
+                    alert_manager=alert_manager,
+                    app_scheduler=app_scheduler
+                )
+    return _backup_scheduler
+
+
+def reset_backup_scheduler():
+    """Drop the singleton, stopping it first. For tests only."""
+    global _backup_scheduler
+    with _backup_scheduler_lock:
+        if _backup_scheduler is not None:
+            try:
+                _backup_scheduler.stop()
+            except Exception:
+                pass
+            _backup_scheduler = None

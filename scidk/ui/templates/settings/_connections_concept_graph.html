@@ -1,21 +1,34 @@
 <!-- Connections > Concept Graph Section -->
+<!--
+  Connection status, URI, node/edge counts and Test Connection for this backend
+  live on the Connections → Overview card (Cycle 4, Task A). What remains here is
+  concept-graph-specific: what the graph contains, and how to edit it.
+-->
 <section id="connections-concept-graph-section" class="settings-section">
   <h1>Concept Graph</h1>
   <p class="small">Intent-based query planning with embeddings, tools, and feedback-driven weights.</p>
 
-  <!-- Connection Card -->
+  <!-- Graph Contents -->
   <div class="row g-2" style="max-width:960px">
     <div class="col-12">
       <div style="background: #fff; border: 1px solid #dee2e6; border-radius: 0.25rem; padding: 1rem; margin-bottom: 1rem;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
           <div style="flex: 1;">
-            <div style="font-weight: 600; font-size: 1rem; margin-bottom: 0.25rem;">
-              <span id="concept-graph-status-icon">⚪</span> Concept Graph Database
+            <div style="font-weight: 600; font-size: 1rem; margin-bottom: 0.25rem;">Graph contents</div>
+            <div class="small text-muted">
+              Connection status and totals are on
+              <a href="#connections/overview" data-goto-section="connections-overview">Connections → Overview</a>.
             </div>
-            <div class="small text-muted"><code>bolt://localhost:7689</code></div>
           </div>
-          <div style="display: flex; gap: 0.5rem; align-items: center;">
-            <button id="btn-test-concept-connection" class="btn btn-sm btn-outline-primary">Test Connection</button>
+          <div style="display: flex; gap: 0.75rem; align-items: center;">
+            <!-- Export/import (Cycle 8 Task C). Deliberately plain: the snapshot is
+                 for moving a tuned graph to another instance, not an everyday action. -->
+            <a href="#" id="link-export-concept-graph" class="small">Export</a>
+            <label for="input-import-concept-graph" class="small" style="margin: 0; cursor: pointer;">
+              Import
+              <input type="file" id="input-import-concept-graph" accept=".json,application/json"
+                     style="font-size: 0.75rem; max-width: 11rem;">
+            </label>
             <button id="btn-reseed-concept-graph" class="btn btn-sm btn-primary">↺ Re-seed</button>
           </div>
         </div>
@@ -136,7 +149,6 @@
 
   function initConceptGraphConnection() {
     const reseedBtn = document.getElementById('btn-reseed-concept-graph');
-    const testBtn = document.getElementById('btn-test-concept-connection');
     const modal = document.getElementById('intent-edit-modal');
     const cancelBtn = document.getElementById('btn-cancel-intent-edit');
     const saveBtn = document.getElementById('btn-save-intent-edit');
@@ -148,16 +160,15 @@
     loadIntents();
     loadTools();
 
-    // Test connection button
-    if (testBtn) {
-      testBtn.addEventListener('click', async () => {
-        testBtn.disabled = true;
-        testBtn.textContent = 'Testing...';
-        await loadConceptGraphStatus();
-        testBtn.disabled = false;
-        testBtn.textContent = 'Test Connection';
+    // Cross-link to the Connections overview: go through the sidebar item so
+    // section switching and the URL hash behave like normal navigation.
+    document.querySelectorAll('[data-goto-section]').forEach(link => {
+      link.addEventListener('click', (e) => {
+        const navItem = document.querySelector(
+          `.settings-sidebar-item[data-section="${link.dataset.gotoSection}"]`);
+        if (navItem) { e.preventDefault(); navItem.click(); }
       });
-    }
+    });
 
     // Re-seed full graph
     reseedBtn.addEventListener('click', async () => {
@@ -186,6 +197,87 @@
       } finally {
         reseedBtn.disabled = false;
         reseedBtn.textContent = '↺ Re-seed';
+      }
+    });
+
+    // Export the graph as a JSON snapshot. Fetched rather than linked so a 501
+    // (concept graph unavailable) surfaces as a toast instead of a downloaded
+    // error document named concept_graph.json.
+    const exportLink = document.getElementById('link-export-concept-graph');
+    exportLink.addEventListener('click', async (e) => {
+      e.preventDefault();
+      try {
+        const resp = await fetch(window.SCIDK_BASE + '/api/connections/concept-graph/export');
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          window.toast('Export failed: ' + (data.error || resp.status), 'error');
+          return;
+        }
+
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'concept_graph.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        const tools = (data.tools || []).length;
+        const intents = (data.intents || []).length;
+        window.toast(`Exported ${intents} intents and ${tools} tools`, 'success');
+      } catch (err) {
+        window.toast('Export failed: ' + err.message, 'error');
+      }
+    });
+
+    // Import a snapshot. Upsert, not replace — existing SATISFIES edges keep the
+    // higher of the two weights, so this cannot silently discard learned feedback.
+    const importInput = document.getElementById('input-import-concept-graph');
+    importInput.addEventListener('change', async () => {
+      const file = importInput.files && importInput.files[0];
+      if (!file) return;
+
+      importInput.disabled = true;
+      window.toast(`Importing ${file.name}...`, 'info');
+
+      try {
+        const body = new FormData();
+        body.append('file', file);
+        const resp = await fetch(window.SCIDK_BASE + '/api/connections/concept-graph/import', {
+          method: 'POST',
+          body: body
+        });
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          window.toast('Import failed: ' + (data.error || resp.status), 'error');
+          return;
+        }
+
+        window.toast(
+          `Imported ${data.intents_imported} intents, ${data.tools_imported} tools, ` +
+          `${data.edges_imported} edges (${data.re_embedded} re-embedded)`, 'success');
+
+        // Per-item failures come back in the payload rather than as a non-200, so
+        // they need saying out loud — a partial import otherwise reads as clean.
+        const errors = data.errors || [];
+        if (errors.length) {
+          window.toast(`${errors.length} item(s) failed — see the console`, 'error');
+          errors.forEach(err => console.warn('Concept graph import:', err));
+        }
+
+        loadConceptGraphStatus();
+        loadIntents();
+        loadTools();
+      } catch (err) {
+        window.toast('Import failed: ' + err.message, 'error');
+      } finally {
+        // Cleared so re-selecting the same file fires change again.
+        importInput.value = '';
+        importInput.disabled = false;
       }
     });
 
@@ -246,27 +338,22 @@
   }
 
   async function loadConceptGraphStatus() {
-    const statusIcon = document.getElementById('concept-graph-status-icon');
+    const setCounts = (intents, tools, edges) => {
+      document.getElementById('concept-graph-intents-count').textContent = intents;
+      document.getElementById('concept-graph-tools-count').textContent = tools;
+      document.getElementById('concept-graph-edges-count').textContent = edges;
+    };
     try {
       const resp = await fetch(window.SCIDK_BASE + '/api/chat/concept-graph/status');
       const data = await resp.json();
 
       if (resp.ok && data.connected) {
-        statusIcon.textContent = '🟢';
-        document.getElementById('concept-graph-intents-count').textContent = data.intents || 0;
-        document.getElementById('concept-graph-tools-count').textContent = data.tools || 0;
-        document.getElementById('concept-graph-edges-count').textContent = data.satisfies_edges || 0;
+        setCounts(data.intents || 0, data.tools || 0, data.satisfies_edges || 0);
       } else {
-        statusIcon.textContent = '🔴';
-        document.getElementById('concept-graph-intents-count').textContent = '—';
-        document.getElementById('concept-graph-tools-count').textContent = '—';
-        document.getElementById('concept-graph-edges-count').textContent = '—';
+        setCounts('—', '—', '—');
       }
     } catch (err) {
-      statusIcon.textContent = '🔴';
-      document.getElementById('concept-graph-intents-count').textContent = '—';
-      document.getElementById('concept-graph-tools-count').textContent = '—';
-      document.getElementById('concept-graph-edges-count').textContent = '—';
+      setCounts('—', '—', '—');
       console.error('Failed to load concept graph status:', err);
     }
   }

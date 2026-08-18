@@ -4,9 +4,13 @@ This guide covers the security architecture, best practices, compliance consider
 
 > **⚠️ Status: implemented vs. recommended.** This guide documents both controls that are **implemented today** and controls that are **recommended / not yet implemented**. Treat unmarked best-practice snippets (nginx, OS, compliance, monitoring) as deployment *recommendations*, not descriptions of current behavior. For the current security posture of the running app — including what is safe for single-user development vs. multi-user production — see [SECURITY_HARDENING.md](SECURITY_HARDENING.md).
 >
-> **Implemented today:** session-based login with bcrypt password hashing (`scidk/core/auth.py`), role-based access control with `@require_role`/`@require_admin` (`scidk/web/decorators.py`), the `auth_users` / `auth_audit_log` tables, audit logging, and Fernet-encrypted credentials in AlertManager/ConfigManager/API-endpoint registry and plugin settings (`scidk/core/plugin_settings.py`).
+> **Implemented today:** session-based login with bcrypt password hashing (`scidk/core/auth.py`), role-based access control with `@require_role`/`@require_admin` (`scidk/web/decorators.py`), per-user API tokens (`Authorization: Bearer`), the `auth_users` / `auth_audit_log` / `auth_sessions` tables, audit logging, manual session lock/unlock with auto-lock after inactivity, and Fernet-encrypted credentials in AlertManager/ConfigManager/API-endpoint registry and plugin settings (`scidk/core/plugin_settings.py`).
 >
-> **Recommended / not yet implemented:** `SESSION_COOKIE_SECURE` / `SESSION_COOKIE_HTTPONLY` / `SESSION_COOKIE_SAMESITE` config, and CSRF protection (see inline notes below).
+> **Recommended / not yet implemented:** `SESSION_COOKIE_SECURE` / `SESSION_COOKIE_HTTPONLY` / `SESSION_COOKIE_SAMESITE` config, CSRF protection, password complexity enforcement, brute-force/lockout protection, and password reset or change (see inline notes below).
+>
+> **Only two roles exist: `admin` and `user`** — `auth_users` enforces `CHECK (role IN ('admin', 'user'))` (`scidk/core/auth.py:60`), and `require_role(*allowed_roles)` is a flat membership test (`scidk/web/decorators.py:94`), not a hierarchy. "Any authenticated user" is `@require_role('admin', 'user')`; naming a role that does not exist locks out everyone including admins.
+>
+> *Verified against the code on 2026-08-04 (Cycle 5, Task C). The `plugin_settings.py` encryption is genuine `cryptography.fernet.Fernet`, not a placeholder — confirmed by the Cycle 2 audit and re-checked here; do not reintroduce a note claiming otherwise.*
 
 ## Security Architecture Overview
 
@@ -27,25 +31,25 @@ SciDK supports session-based authentication with the following features:
 
 **Password Security**:
 - Passwords hashed using bcrypt with salt
-- Minimum password complexity requirements (configurable)
-- Protection against brute force attacks
-- Secure password reset mechanisms
+- Minimum password complexity requirements ⚠️ *recommended / not yet implemented* — nothing in `scidk/` enforces a length or complexity rule
+- Protection against brute force attacks ⚠️ *recommended / not yet implemented* — failed attempts are recorded in `auth_audit_log` but there is no rate limit and no account lockout
+- Secure password reset mechanisms ⚠️ *recommended / not yet implemented* — there is no password reset or change path; an admin recreates the user
 
 **Session Management**:
-- Session-based authentication
-- Configurable session timeout (default: 30 minutes)
-- Auto-lock after inactivity
+- Session-based authentication, plus per-user API tokens via `Authorization: Bearer`
+- Session validity is **24 hours** (`AuthManager.create_session(duration_hours=24)`), not a short inactivity timeout. The 30-minute figure below is a recommendation, not current behavior
+- Auto-lock after inactivity — implemented; a locked session answers `423 Locked` until the password is re-entered (`scidk/web/auth_middleware.py`)
 - Session invalidation on logout
-- CSRF protection and secure-cookie flags (`SESSION_COOKIE_SECURE`/`HTTPONLY`/`SAMESITE`) ⚠️ *recommended / not yet implemented*
+- CSRF protection and secure-cookie flags (`SESSION_COOKIE_SECURE`/`HTTPONLY`/`SAMESITE`) ⚠️ *recommended / not yet implemented* — no `SESSION_COOKIE_*` config or CSRF extension appears anywhere in `scidk/`
 
-**Example: Enabling Authentication**:
+**Example: Enabling Authentication** ⚠️ *illustrative only* — the dict below is **not** a shape SciDK reads. Authentication is enabled through the Settings UI / `auth_users` table; `session_timeout`, `password_min_length` and `require_complex_password` are not consulted by any code path:
 ```python
-# In settings database or via UI
+# ILLUSTRATIVE — not a supported config shape (see note above)
 auth_config = {
     "enabled": True,
-    "session_timeout": 1800,  # 30 minutes
-    "password_min_length": 8,
-    "require_complex_password": True
+    "session_timeout": 1800,          # NOT read; sessions last duration_hours=24
+    "password_min_length": 8,         # NOT read; no length enforcement exists
+    "require_complex_password": True  # NOT read; no complexity enforcement exists
 }
 ```
 
@@ -211,10 +215,11 @@ SciDK maintains comprehensive audit logs for:
 sudo journalctl -u scidk | grep AUDIT
 ```
 
-**Via SQLite database**:
+**Via SQLite database** — the table is `auth_audit_log` in `scidk_settings.db`, and `timestamp` is a REAL epoch-seconds value, not a SQLite datetime string:
 ```sql
-SELECT * FROM audit_log
-WHERE timestamp > datetime('now', '-7 days')
+SELECT timestamp, username, action, details, ip_address
+FROM auth_audit_log
+WHERE timestamp > strftime('%s', 'now', '-7 days')
 ORDER BY timestamp DESC;
 ```
 

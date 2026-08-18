@@ -1,13 +1,14 @@
 """
 Blueprint for File/scan/dataset API routes.
 """
-from flask import Blueprint, jsonify, request, current_app
+from flask import Blueprint, jsonify, request, current_app, g
 from pathlib import Path
 import hashlib
 import json
 import os
 import time as _time
 
+from ..decorators import require_role
 from ..helpers import get_neo4j_params, build_commit_rows, commit_to_neo4j, get_or_build_scan_index
 bp = Blueprint('files', __name__, url_prefix='/api')
 
@@ -353,33 +354,36 @@ def api_scan():
                         for interp in interps:
                             try:
                                 result = interp.interpret(fpath)
+                                # Interpreters declare 'nodes' and 'relationships' as
+                                # siblings of 'data', not inside it. Persisting only
+                                # 'data' dropped them before commit_service could read
+                                # them back, so every interpreter-declared domain node
+                                # was silently lost. Keep the whole envelope.
                                 payload = {
                                     'status': result.get('status', 'success'),
-                                    'data': result.get('data', result),
+                                    'data': result.get('data', {}),
+                                    'nodes': result.get('nodes', []),
+                                    'relationships': result.get('relationships', []),
                                     'interpreter_version': getattr(interp, 'version', '0.0.1'),
                                 }
-                                _get_ext()['graph'].add_interpretation(ds['checksum'], interp.id, payload)
+                                _get_ext()['graph'].add_interpretation(ds['checksum'], interp.id, payload, file_path=ds.get('path'))
                                 # Persist interpretation metadata into SQLite files table for this path
                                 try:
                                     from ...core import path_index_sqlite as pix
+                                    from ...core.interpreter_persistence import persist_interpretation
                                     conn_i = pix.connect(); pix.init_db(conn_i)
                                     try:
-                                        cur_i = conn_i.cursor()
-                                        import json as _json
-                                        # Determine the canonical key used in the index for this file path
-                                        key_path = None
-                                        try:
-                                            # For rclone/remote scans, the index stores canonical remote paths like "remote:rel/path"
-                                            # Prefer dataset-provided original path if present
-                                            key_path = ds.get('path') or None
-                                        except Exception:
-                                            key_path = None
-                                        if not key_path:
-                                            # Fallback to absolute local path for local filesystem scans
-                                            key_path = str(fpath.resolve())
-                                        cur_i.execute(
-                                            "UPDATE files SET interpreted_as = ?, interpretation_json = ? WHERE path = ? AND type = 'file' AND scan_id = ?",
-                                            (interp.id, _json.dumps(payload.get('data')), key_path, scan_id)
+                                        # For rclone/remote scans the index stores canonical remote
+                                        # paths like "remote:rel/path"; prefer the dataset's own key
+                                        # and fall back to the resolved local path.
+                                        persist_interpretation(
+                                            conn_i,
+                                            ds.get('path') or str(fpath.resolve()),
+                                            scan_id,
+                                            interp.id,
+                                            result,
+                                            interpreter_version=getattr(interp, 'version', '0.0.1'),
+                                            fallback_paths=(str(fpath.resolve()),),
                                         )
                                         conn_i.commit()
                                     finally:
@@ -390,26 +394,24 @@ def api_scan():
                                 err_payload = {
                                     'status': 'error',
                                     'data': {'error': str(e)},
+                                    'nodes': [],
+                                    'relationships': [],
                                     'interpreter_version': getattr(interp, 'version', '0.0.1'),
                                 }
-                                _get_ext()['graph'].add_interpretation(ds['checksum'], interp.id, err_payload)
+                                _get_ext()['graph'].add_interpretation(ds['checksum'], interp.id, err_payload, file_path=ds.get('path'))
                                 try:
                                     from ...core import path_index_sqlite as pix
+                                    from ...core.interpreter_persistence import persist_interpretation
                                     conn_i = pix.connect(); pix.init_db(conn_i)
                                     try:
-                                        cur_i = conn_i.cursor()
-                                        import json as _json
-                                        # Determine canonical key as above
-                                        key_path = None
-                                        try:
-                                            key_path = ds.get('path') or None
-                                        except Exception:
-                                            key_path = None
-                                        if not key_path:
-                                            key_path = str(fpath.resolve())
-                                        cur_i.execute(
-                                            "UPDATE files SET interpreted_as = ?, interpretation_json = ? WHERE path = ? AND type = 'file' AND scan_id = ?",
-                                            (interp.id, _json.dumps(err_payload.get('data')), key_path, scan_id)
+                                        persist_interpretation(
+                                            conn_i,
+                                            ds.get('path') or str(fpath.resolve()),
+                                            scan_id,
+                                            interp.id,
+                                            err_payload,
+                                            interpreter_version=getattr(interp, 'version', '0.0.1'),
+                                            fallback_paths=(str(fpath.resolve()),),
                                         )
                                         conn_i.commit()
                                     finally:
@@ -833,7 +835,7 @@ def api_interpret():
                     'status': result.get('status', 'success'),
                     'data': result.get('data', result),
                     'interpreter_version': getattr(interp, 'version', '0.0.1'),
-                })
+                }, file_path=ds.get('path'))
                 # Record success
                 try:
                     _get_ext()['registry'].record_usage(interp.id, success=True, execution_time_ms=int((_t1 - _t0)*1000))
@@ -849,9 +851,84 @@ def api_interpret():
                     'status': 'error',
                     'data': {'error': str(e)},
                     'interpreter_version': getattr(interp, 'version', '0.0.1'),
-                })
+                }, file_path=ds.get('path'))
                 results.append({'interpreter_id': interp.id, 'status': 'error', 'error': str(e)})
         return jsonify({"status": "ok", "results": results}), 200
+
+
+def _server_connected(prov_id, root_id, root_path):
+    """Whether this provider root is reachable right now (J1).
+
+    Delegates to the drives module so ``/api/servers`` and ``/api/drives``
+    cannot disagree, and so both share its 30-second cache — the sidebar asks
+    for every root on every render, and an rclone probe is a subprocess.
+    """
+    from .api_drives import check_connected
+
+    if prov_id == 'rclone':
+        return check_connected({
+            'id': f'rclone:{root_id}',
+            'type': 'rclone',
+            # list_roots hands back "name:"; the probe wants the bare name.
+            'name': str(root_id or '').rstrip(':'),
+        })
+    # local_fs and mounted_fs are both directories on this host.
+    return check_connected({
+        'id': f'{prov_id}:{root_id}',
+        'type': 'local_fs',
+        'path': root_path or root_id,
+    })
+
+
+def _servers_from_drives_table(existing, scan_history):
+    """Drives added through ``POST /api/drives`` that no provider reported (J2).
+
+    Providers enumerate what the host offers at startup; a drive added after
+    that would not appear in the sidebar until a restart. Reading the table here
+    closes that gap. Providers still come first and are not overridden — a root
+    both sources know about is listed once, from the provider.
+
+    Each drive is mapped onto the provider that can actually browse it, because
+    the sidebar sends ``id`` back as ``provider_id``: local directories to
+    ``local_fs`` (whose ``list`` resolves any absolute path), rclone remotes to
+    ``rclone``.
+    """
+    from .api_drives import check_connected, _load_drives
+
+    seen = {(s.get('id'), s.get('root_id')) for s in existing}
+    out = []
+    try:
+        drives = _load_drives()
+    except Exception:
+        # The sidebar still works from providers alone; a broken drives table
+        # is not a reason to fail the whole listing.
+        return out
+
+    for d in drives:
+        if d.get('type') == 'rclone':
+            prov_id = 'rclone'
+            root_id = f"{d.get('name') or ''}:"
+            root_path = root_id
+        else:
+            prov_id = 'local_fs'
+            root_id = d.get('path') or ''
+            root_path = root_id
+        if not root_id or (prov_id, root_id) in seen:
+            continue
+        seen.add((prov_id, root_id))
+        scan_info = scan_history.get(f'{prov_id}:{root_id}', {})
+        out.append({
+            'id': prov_id,
+            'display_name': d.get('label') or prov_id,
+            'root_id': root_id,
+            'root_path': root_path,
+            'connected': check_connected(d),
+            'scanned': scan_info.get('scanned', False),
+            'last_scanned': scan_info.get('last_scanned', None),
+            'file_count': scan_info.get('file_count', 0),
+            'drive_id': d.get('id'),
+        })
+    return out
 
 
 @bp.get('/servers')
@@ -936,8 +1013,9 @@ def api_servers():
                 # Get provider display name
                 display_name = getattr(prov, 'display_name', prov_id)
 
-                # Check connection status (simple check - provider is accessible if it's loaded)
-                connected = True  # If provider is in the dict, it's accessible
+                # J1 — reachability is probed per root below, not assumed here.
+                # `connected: True` for any loaded provider meant the sidebar
+                # could not tell a live remote from a dead one.
 
                 # Get roots for this provider
                 try:
@@ -972,7 +1050,7 @@ def api_servers():
                         'display_name': display_name,
                         'root_id': root_id,
                         'root_path': root_path,
-                        'connected': connected,
+                        'connected': _server_connected(prov_id, root_id, root_path),
                         'scanned': scan_info.get('scanned', False),
                         'last_scanned': scan_info.get('last_scanned', None),
                         'file_count': scan_info.get('file_count', 0)
@@ -994,6 +1072,8 @@ def api_servers():
                     'file_count': 0,
                     'error': str(e)
                 })
+
+        servers.extend(_servers_from_drives_table(servers, scan_history))
 
         logger.info(f"api_servers: Returning {len(servers)} servers")
         return jsonify(servers), 200
@@ -1039,6 +1119,24 @@ def api_browse():
             except Exception:
                 pass
             return jsonify(listing), 200
+        except PermissionError:
+            # Raised by the local providers at the `for` over base.iterdir(),
+            # which sits outside their per-child try. Reported as 403 with an
+            # empty entries list so a caller can render "no access" instead of
+            # treating an unreadable directory as a server fault.
+            try:
+                from ...services.metrics import record_latency
+                record_latency(current_app, 'browse', _time.time() - _t0)
+            except Exception:
+                pass
+            return jsonify({'error': 'Permission denied', 'code': 'browse_forbidden', 'entries': []}), 403
+        except FileNotFoundError:
+            try:
+                from ...services.metrics import record_latency
+                record_latency(current_app, 'browse', _time.time() - _t0)
+            except Exception:
+                pass
+            return jsonify({'error': 'Path not found', 'code': 'browse_not_found', 'entries': []}), 404
         except Exception as e:
             try:
                 from ...services.metrics import record_latency
@@ -1773,6 +1871,47 @@ def api_scan_fs(scan_id):
     files = children_files.get(req_path, [])
     return jsonify({'scan_id': scan_id, 'path': req_path, 'breadcrumb': breadcrumb, 'folders': sub_folders, 'files': files, 'roots': roots, 'folder_info': folder_info, 'children_folders': children_folders, 'children_files': children_files}), 200
 
+@bp.get('/scans/history')
+def api_scans_history():
+    """Timeline of index events for one path, newest first (H2).
+
+    Path-scoped rather than scan-scoped: the question the Scan drawer asks is
+    "what has happened to this file", and the answer spans every scan that ever
+    saw it. Registered before ``/scans/<scan_id>`` on purpose — Werkzeug ranks
+    static rules above dynamic ones, so ``history`` is not read as a scan id,
+    but keeping them adjacent makes that visible to the next reader.
+
+    Query params:
+      - path (required): a file path, or a folder whose direct children are
+        summarised
+      - limit (optional, default 200)
+    """
+    from ...services.scan_history_service import build_history, MAX_EVENTS
+    from ...core import path_index_sqlite as pix
+
+    req_path = (request.args.get('path') or '').strip()
+    if not req_path:
+        return jsonify({'error': 'path is required', 'path': '', 'events': []}), 400
+    try:
+        limit = int(request.args.get('limit') or MAX_EVENTS)
+    except Exception:
+        limit = MAX_EVENTS
+    limit = max(1, min(limit, 1000))
+
+    conn = None
+    try:
+        conn = pix.connect(); pix.init_db(conn)
+        return jsonify(build_history(conn, req_path, limit)), 200
+    except Exception as e:
+        return jsonify({'error': str(e), 'path': req_path, 'events': []}), 500
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
 @bp.get('/scans/<scan_id>/browse')
 def api_scan_browse(scan_id):
     """Browse direct children from the SQLite index for a scan.
@@ -1798,6 +1937,33 @@ def api_scan_browse(scan_id):
         'type': (request.args.get('type') or '').strip().lower(),
     }
     return svc.browse_children(scan_id, req_path, page_size, token, filters)
+
+@bp.get('/scans/<scan_id>/entries')
+def api_scan_entries(scan_id):
+    """Every record in a scan as one flat list.
+
+    The flat counterpart to ``/scans/<id>/browse``: same envelope, same entry
+    shape, no ``path`` filter and no hierarchy. Delegates to
+    FSIndexService.list_all.
+
+    Query params:
+      - page_size (optional, default 100, clamped 1-1000)
+      - next_page_token (optional)
+      - extension / ext (optional)
+      - type (optional)
+    """
+    from ...services.fs_index_service import FSIndexService
+    svc = FSIndexService(current_app)
+    try:
+        page_size = int(request.args.get('page_size') or 100)
+    except Exception:
+        page_size = 100
+    token = (request.args.get('next_page_token') or '').strip()
+    filters = {
+        'extension': (request.args.get('extension') or request.args.get('ext') or '').strip().lower(),
+        'type': (request.args.get('type') or '').strip().lower(),
+    }
+    return svc.list_all(scan_id, page_size, token, filters)
 
 @bp.delete('/scans/<scan_id>')
 def api_scan_delete(scan_id):
@@ -2042,3 +2208,374 @@ def api_interpret_file_commit():
             'status': 'error',
             'error': str(e)
         }), 500
+
+
+# ---------------------------------------------------------------------------
+# Attribution — surface target nodes that likely belong to an anchor node, and
+# write the confirmed ones back as (:Anchor)-[:REL]->(:Target). Anchor label,
+# target label and relationship type are all caller-supplied; Investigator,
+# Folder and OWNS are only the defaults.
+
+from contextlib import contextmanager  # noqa: E402
+
+from ...services.filter_builder import _validate_rel_type  # noqa: E402
+from ...services.folder_attribution import (  # noqa: E402
+    DEFAULT_ANCHOR_LABEL,
+    DEFAULT_RELATIONSHIP,
+    DEFAULT_TARGET_LABEL,
+    FolderAttributionService,
+)
+
+_ATTR_NEO4J_UNCONFIGURED = {
+    'error': 'neo4j not configured (set in Settings or env: NEO4J_URI, and '
+             'NEO4J_USER/NEO4J_PASSWORD or NEO4J_AUTH=none)'
+}
+
+
+@contextmanager
+def _attribution_service():
+    """Yield a :class:`FolderAttributionService`, or ``None`` if Neo4j is unconfigured.
+
+    The driver lives on ``app.extensions['scidk']`` and is reused across
+    requests -- opening one per request cost a TCP connect plus a Bolt handshake
+    on every attribution call. It is keyed by the connection parameters so that
+    reconfiguring Neo4j through Settings replaces the driver rather than pinning
+    attribution to the old server. Never closed here; the app owns its lifetime.
+    """
+    try:
+        from neo4j import GraphDatabase  # type: ignore
+    except Exception:
+        yield None
+        return
+    uri, user, pwd, database, auth_mode = get_neo4j_params()
+    if not uri:
+        yield None
+        return
+    ext = _get_ext()
+    if ext is None:
+        yield None
+        return
+    key = (uri, user, pwd, auth_mode)
+    if ext.get('neo4j_driver') is None or ext.get('neo4j_driver_key') != key:
+        stale = ext.get('neo4j_driver')
+        if stale is not None:
+            try:
+                stale.close()
+            except Exception:
+                pass
+        ext['neo4j_driver'] = GraphDatabase.driver(
+            uri, auth=None if auth_mode == 'none' else (user, pwd)
+        )
+        ext['neo4j_driver_key'] = key
+    yield FolderAttributionService(ext['neo4j_driver'], database=database)
+
+
+@bp.get('/files/attribution/anchors')
+@require_role('admin', 'user')
+def attribution_anchors():
+    """List every named node under the anchor label, available for attribution.
+
+    Query params:
+        anchor_label (str): node label to draw anchors from. Defaults to
+            ``Investigator``. Read from the query string rather than a body
+            because this route is a GET.
+        filter_property (str): keep only anchors carrying this property, whose
+            value contains ``filter_value``. Omitted means no property filter.
+        filter_value (str): case-insensitive substring for ``filter_property``.
+            Ignored without it; empty with it matches every anchor that has the
+            property at all.
+
+    Returns:
+        200: {"anchor_label": ..., "anchors": [{"name": ..., "labels": [...]}]},
+             each anchor also carrying "matched_value" when filtered
+        400: anchor_label or filter_property is not a legal Cypher identifier
+        501: Neo4j not configured
+        502: query failed
+    """
+    anchor_label = (request.args.get('anchor_label') or DEFAULT_ANCHOR_LABEL).strip()
+    filter_property = (request.args.get('filter_property') or '').strip() or None
+    filter_value = (request.args.get('filter_value') or '').strip() or None
+    try:
+        with _attribution_service() as svc:
+            if svc is None:
+                return jsonify(_ATTR_NEO4J_UNCONFIGURED), 501
+            anchors = svc.list_anchors(
+                anchor_label    = anchor_label,
+                filter_property = filter_property,
+                filter_value    = filter_value,
+            )
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("attribution: listing anchors failed")
+        return jsonify({'error': f'neo4j query failed: {e}'}), 502
+
+    return jsonify({'anchor_label': anchor_label, 'anchors': anchors}), 200
+
+
+@bp.get('/files/attribution/persons')
+@require_role('admin', 'user')
+def attribution_persons():
+    """Deprecated alias for :func:`attribution_anchors`.
+
+    Kept so anything still calling the person-shaped URL keeps working. The
+    response carries the anchor list under *both* keys — ``anchors`` for new
+    callers and ``persons`` for old ones — because moving the URL without
+    moving the payload would only half-preserve compatibility.
+    """
+    result = attribution_anchors()
+    if not (isinstance(result, tuple) and len(result) == 2 and result[1] == 200):
+        return result   # an error response, already shaped — pass it straight through
+    payload = result[0].get_json()
+    payload['persons'] = payload.get('anchors', [])
+    return jsonify(payload), 200
+
+
+@bp.get('/files/attribution/anchor-properties')
+@require_role('admin', 'user')
+def attribution_anchor_properties():
+    """Property keys the anchor label's nodes actually carry, commonest first.
+
+    Feeds the property picker in the attribution panel, which pairs a key from
+    here with a substring to narrow the anchor list -- so an anchor can be found
+    by ``email`` or ``lab``, not only by ``name``.
+
+    Query params:
+        anchor_label (str): label to inspect. Defaults to ``Investigator``.
+
+    Returns:
+        200: {"anchor_label": ..., "properties": [...]}
+        400: anchor_label is not a legal Cypher identifier
+        501: Neo4j not configured
+        502: query failed
+    """
+    anchor_label = (request.args.get('anchor_label') or DEFAULT_ANCHOR_LABEL).strip()
+    try:
+        with _attribution_service() as svc:
+            if svc is None:
+                return jsonify(_ATTR_NEO4J_UNCONFIGURED), 501
+            props = svc.list_anchor_properties(anchor_label=anchor_label)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("attribution: listing anchor properties failed")
+        return jsonify({'error': f'neo4j query failed: {e}'}), 502
+
+    return jsonify({'anchor_label': anchor_label, 'properties': props}), 200
+
+
+@bp.get('/files/attribution/anchor-property-values')
+@require_role('admin', 'user')
+def attribution_anchor_property_values():
+    """Distinct values of one property across the anchor label's nodes.
+
+    The other half of the property filter: ``anchor-properties`` says which keys
+    exist, this says which values a chosen key takes, so the panel can offer a
+    dropdown instead of asking the user to guess a substring.
+
+    Unlike ``anchor-properties`` there is no default label -- a value list only
+    means anything against the label whose property it came from, so an omitted
+    ``anchor_label`` is a caller bug rather than something to guess at.
+
+    Query params:
+        anchor_label (str, required), property_key (str, required).
+
+    Returns:
+        200: {"anchor_label": ..., "property_key": ..., "values": [...]}
+        400: either param missing, or not a legal Cypher identifier
+        501: Neo4j not configured
+        502: query failed
+    """
+    anchor_label = (request.args.get('anchor_label') or '').strip()
+    property_key = (request.args.get('property_key') or '').strip()
+    if not anchor_label or not property_key:
+        return jsonify({
+            'error': 'anchor_label and property_key are both required'
+        }), 400
+
+    try:
+        with _attribution_service() as svc:
+            if svc is None:
+                return jsonify(_ATTR_NEO4J_UNCONFIGURED), 501
+            values = svc.list_anchor_property_values(anchor_label, property_key)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("attribution: listing anchor property values failed")
+        return jsonify({'error': f'neo4j query failed: {e}'}), 502
+
+    return jsonify({
+        'anchor_label': anchor_label,
+        'property_key': property_key,
+        'values':       values,
+    }), 200
+
+
+@bp.get('/files/attribution/relationship-suggestions')
+@require_role('admin', 'user')
+def attribution_relationship_suggestions():
+    """Relationship types worth offering for an anchor -> target label pair.
+
+    Merges the hardcoded seeds for the pair with the types that already connect
+    those two labels in the live graph, most-used first, so the list gets better
+    as real attributions accumulate. See
+    :meth:`~scidk.services.folder_attribution.FolderAttributionService.get_relationship_suggestions`.
+
+    Query params:
+        anchor_label (str, required), target_label (str, required).
+
+    Returns:
+        200: {"anchor_label": ..., "target_label": ..., "suggestions": [...]}
+        400: either param missing, or not a legal Cypher identifier
+        501: Neo4j not configured
+        502: query failed
+    """
+    anchor_label = (request.args.get('anchor_label') or '').strip()
+    target_label = (request.args.get('target_label') or '').strip()
+    if not anchor_label or not target_label:
+        return jsonify({
+            'error': 'anchor_label and target_label are both required'
+        }), 400
+
+    try:
+        with _attribution_service() as svc:
+            if svc is None:
+                return jsonify(_ATTR_NEO4J_UNCONFIGURED), 501
+            suggestions = svc.get_relationship_suggestions(anchor_label, target_label)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("attribution: relationship suggestions failed")
+        return jsonify({'error': f'neo4j query failed: {e}'}), 502
+
+    return jsonify({
+        'anchor_label': anchor_label,
+        'target_label': target_label,
+        'suggestions':  suggestions,
+    }), 200
+
+
+@bp.post('/files/attribution/candidates')
+@require_role('admin', 'user')
+def attribution_candidates():
+    """Rank target candidates for an anchor node.
+
+    Body:
+        anchor_name (str, required), modality_keywords (list[str]),
+        include_labmates (bool, default true), sources (list[str] of host_id),
+        anchor_label (str, default "Investigator"),
+        target_label (str, default "Folder"),
+        target_conditions (list[dict]) -- property predicates the target node
+        must satisfy, each ``{"property", "operator", "value"}``. This is the
+        shape the ``FilterBuilder`` component emits and the Cypher generator
+        consumes; the property key is whitelisted before it is interpolated and
+        the value is bound, so an illegal key or unknown operator is a 400.
+        ``person_name`` is accepted as a deprecated spelling of ``anchor_name``.
+
+    Returns:
+        200: {"anchor_name": ..., "anchor_label": ..., "target_label": ...,
+              "total": n, "candidates": [...]}
+        400: anchor_name missing, either label not a legal identifier, or
+             target_conditions not a list / naming an illegal property
+        501: Neo4j not configured
+        502: query failed
+    """
+    body = request.get_json(silent=True) or {}
+    anchor_name = (body.get('anchor_name') or body.get('person_name') or '').strip()
+    anchor_label = (body.get('anchor_label') or DEFAULT_ANCHOR_LABEL).strip()
+    target_label = (body.get('target_label') or DEFAULT_TARGET_LABEL).strip()
+    if not anchor_name:
+        return jsonify({'error': 'anchor_name is required'}), 400
+
+    # Checked here rather than left to the service: a bare string or dict would
+    # otherwise iterate into per-character or per-key conditions and come back
+    # as a confusing identifier error about something the caller never sent.
+    target_conditions = body.get('target_conditions') or None
+    if target_conditions is not None and not isinstance(target_conditions, list):
+        return jsonify({'error': 'target_conditions must be a list'}), 400
+
+    try:
+        with _attribution_service() as svc:
+            if svc is None:
+                return jsonify(_ATTR_NEO4J_UNCONFIGURED), 501
+            candidates = svc.get_candidates(
+                anchor_name       = anchor_name,
+                modality_keywords = body.get('modality_keywords'),
+                include_labmates  = bool(body.get('include_labmates', True)),
+                sources           = body.get('sources'),
+                anchor_label      = anchor_label,
+                target_label      = target_label,
+                target_conditions = target_conditions,
+            )
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("attribution: candidate search failed")
+        return jsonify({'error': f'neo4j query failed: {e}'}), 502
+
+    return jsonify({
+        'anchor_name':  anchor_name,
+        'anchor_label': anchor_label,
+        'target_label': target_label,
+        'total':        len(candidates),
+        'candidates':   [vars(c) for c in candidates],
+    }), 200
+
+
+@bp.post('/files/attribution/confirm')
+@require_role('admin', 'user')
+def attribution_confirm():
+    """Write the confirmed anchor -> target edges.
+
+    Body:
+        anchor_name (str, required), target_paths (list[str], required non-empty),
+        anchor_label (str, default "Investigator"),
+        target_label (str, default "Folder"),
+        relationship (str, default "OWNS") — must be an uppercase Cypher
+        relationship type. ``person_name``/``folder_paths`` are accepted as
+        deprecated spellings.
+
+    Returns:
+        200: {"written": n, "skipped": n, "errors": [...]}
+        400: anchor_name or target_paths missing, a label that is not a legal
+             identifier, or a relationship type that is not uppercase
+        501: Neo4j not configured
+        502: write failed
+    """
+    body = request.get_json(silent=True) or {}
+    anchor_name = (body.get('anchor_name') or body.get('person_name') or '').strip()
+    target_paths = body.get('target_paths') or body.get('folder_paths') or []
+    anchor_label = (body.get('anchor_label') or DEFAULT_ANCHOR_LABEL).strip()
+    target_label = (body.get('target_label') or DEFAULT_TARGET_LABEL).strip()
+    relationship = (body.get('relationship') or DEFAULT_RELATIONSHIP).strip()
+    if not anchor_name:
+        return jsonify({'error': 'anchor_name is required'}), 400
+    if not isinstance(target_paths, list) or not target_paths:
+        return jsonify({'error': 'target_paths must be non-empty'}), 400
+
+    # Reject a bad relationship type before opening a driver — the service checks
+    # it too, but a 400 should not cost a Neo4j connection.
+    try:
+        _validate_rel_type(relationship)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    try:
+        with _attribution_service() as svc:
+            if svc is None:
+                return jsonify(_ATTR_NEO4J_UNCONFIGURED), 501
+            result = svc.confirm(
+                anchor_name  = anchor_name,
+                target_paths = target_paths,
+                confirmed_by = getattr(g, 'scidk_user', None) or 'system',
+                anchor_label = anchor_label,
+                target_label = target_label,
+                relationship = relationship,
+            )
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("attribution: confirm failed")
+        return jsonify({'error': f'neo4j write failed: {e}'}), 502
+
+    return jsonify(vars(result)), 200

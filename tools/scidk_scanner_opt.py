@@ -61,76 +61,156 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-
 # ─────────────────────────────────────────────
-# Known interpreter coverage (SciDK built-ins)
-# Update this list as new interpreters are added
+# Format-recognition tables
 # ─────────────────────────────────────────────
-KNOWN_INTERPRETERS: Dict[str, str] = {
-    ".csv":   "csv_interpreter",
-    ".tsv":   "csv_interpreter",
-    ".xlsx":  "xlsx_interpreter",
-    ".xls":   "xlsx_interpreter",
-    ".json":  "json_interpreter",
-    ".jsonl": "json_interpreter",
-    ".yaml":  "yaml_interpreter",
-    ".yml":   "yaml_interpreter",
-    ".ipynb": "ipynb_interpreter",
-    ".dcm":   "dicom_interpreter",
-    ".dicom": "dicom_interpreter",
-    ".tif":   "ome_tiff_interpreter",
-    ".tiff":  "ome_tiff_interpreter",
-    ".h5":    "hdf5_interpreter",
-    ".hdf5":  "hdf5_interpreter",
-    ".nc":    "netcdf_interpreter",
-    ".nc4":   "netcdf_interpreter",
-    ".rdf":   "rdf_interpreter",
-    ".ttl":   "rdf_interpreter",
-    ".owl":   "owl_interpreter",
-    ".py":    "python_interpreter",
-}
+# Single source of truth is scidk/core/scanner_formats.py. The fallback below
+# keeps this script runnable on a host that has the file but not the installed
+# package — running standalone and copying the .db over is the whole point of
+# this scanner. Keep the two in step when editing.
+try:
+    import os as _os, sys as _sys
+    _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    from scidk.core.scanner_formats import (  # type: ignore
+        KNOWN_INTERPRETERS, MAGIC_SIGNATURES, DIRECTORY_PATTERNS,
+        DIRECTORY_PATTERN_INTERPRETERS, EXTENSION_DIRECTORY_PATTERNS,
+        interpreter_for_dir_pattern, detect_directory_pattern,
+    )
+except Exception:  # pragma: no cover - standalone fallback
 
-MAGIC_SIGNATURES: List[Tuple[bytes, str, Optional[str]]] = [
-    (b"\x89HDF",          "hdf5",         "hdf5_interpreter"),
-    (b"CDF\x01",          "netcdf3",      "netcdf_interpreter"),
-    (b"CDF\x02",          "netcdf3_64",   "netcdf_interpreter"),
-    (b"\x89PNG",          "png",          None),
-    (b"\xff\xd8\xff",     "jpeg",         None),
-    (b"GIF8",             "gif",          None),
-    (b"II\x2a\x00",       "tiff_le",      "ome_tiff_interpreter"),
-    (b"MM\x00\x2a",       "tiff_be",      "ome_tiff_interpreter"),
-    (b"DICM",             "dicom",        "dicom_interpreter"),   # at offset 128
-    (b"PK\x03\x04",       "zip_based",    None),
-    (b"%PDF",             "pdf",          None),
-    (b"{\n",              "json_likely",  "json_interpreter"),
-    (b"{\"",              "json_likely",  "json_interpreter"),
-    (b"[\n",              "json_likely",  "json_interpreter"),
-    (b"[{",               "json_likely",  "json_interpreter"),
-    (b"@HD\t",            "sam",          None),
-    (b"BAM\x01",          "bam",          None),
-    (b"##fileformat=VCF", "vcf",          None),
-    (b"BZh",              "bz2",          None),
-    (b"\x1f\x8b",         "gzip",         None),
-    (b"FCS3.",            "fcs",          None),
-    (b"FCS2.",            "fcs",          None),
-    (b"SIMPLE  =",        "fits",         None),
-    (b"#\n# ",            "r_data",       None),
-]
+    # ─────────────────────────────────────────────
+    # Known interpreter coverage (SciDK built-ins)
+    # Update this list as new interpreters are added
+    # ─────────────────────────────────────────────
+    # Values must match the `id` class attribute of an interpreter in
+    # scidk/interpreters/, as listed in scidk/interpreters/__init__.py:INTERPRETERS.
+    # Print the current ids and the extensions they really claim with:
+    #     python -c "from scidk.interpreters import INTERPRETERS; \
+    #                [print(i.id, i.extensions) for i in INTERPRETERS]"
+    # A value that matches no registry id is written into files.interpreted_as and
+    # then resolves to nothing downstream — a silent no-op, not an error.
+    #
+    # None means "no interpreter reads this": the extension is recognised, so magic
+    # sniffing is skipped, but the file is counted as a gap rather than as covered.
+    KNOWN_INTERPRETERS: Dict[str, Optional[str]] = {
+        ".csv":   "csv",
+        ".tsv":   "csv",              # over-claim: CsvInterpreter is ['.csv']
+        ".xlsx":  "xlsx",
+        ".xls":   "xlsx",             # over-claim: XlsxInterpreter is ['.xlsx', '.xlsm']
+        ".json":  "json",
+        ".jsonl": "json",             # over-claim: JsonInterpreter is ['.json']
+        ".yaml":  "yaml",
+        ".yml":   "yaml",
+        ".ipynb": "ipynb",
+        ".dcm":   "dicom_bioformats",
+        ".dicom": "dicom_bioformats",
+        ".tif":   "ome_tiff",         # over-claim: OMETiffInterpreter is ['.ome.tif', '.ome.tiff']
+        ".tiff":  "ome_tiff",         # over-claim: as above
+        ".h5":    None,               # hdf5_interpreter: specced, not yet implemented
+        ".hdf5":  None,               # hdf5_interpreter: specced, not yet implemented
+        ".nc":    None,               # netcdf_interpreter: specced, not yet implemented
+        ".nc4":   None,               # netcdf_interpreter: specced, not yet implemented
+        ".rdf":   None,               # rdf_interpreter: specced, not yet implemented
+        ".ttl":   None,               # rdf_interpreter: specced, not yet implemented
+        ".owl":   None,               # owl_interpreter: specced, not yet implemented
+        ".py":    "python_code",
+        ".fcs":   "fcs_interpreter",  # FCS2.0/3.0/3.1 flow cytometry
+        ".svs":   "svs_interpreter",  # Aperio whole-slide image
+        ".ndpi":  "svs_interpreter",  # Hamamatsu — same TIFF-derived container
+        ".scn":   "svs_interpreter",  # Leica whole-slide
+        ".pzfx":  None,               # GraphPad Prism — no interpreter yet
+    }
 
-DIRECTORY_PATTERNS: List[Tuple[List[str], str]] = [
-    (["barcodes.tsv", "features.tsv", "matrix.mtx"],          "10x_genomics_mtx"),
-    (["barcodes.tsv.gz", "features.tsv.gz", "matrix.mtx.gz"], "10x_genomics_mtx_gz"),
-    (["proteinGroups.txt", "peptides.txt"],                    "maxquant_output"),
-    (["summary.txt", "Parameters.txt"],                        "maxquant_run"),
-    (["acqp", "method", "fid"],                                "bruker_mri"),
-    (["acqp", "method", "ser"],                                "bruker_mri"),
-    (["2dseq"],                                                "bruker_processed"),
-    (["OME", "metadata.xml"],                                  "ome_tiff_dir"),
-    (["DICOMDIR"],                                             "dicom_dir"),
-    (["dataset_description.json", "participants.tsv"],         "bids_root"),
-    (["Manifest.xml"],                                         "tcga_manifest"),
-    (["clinical_data.txt", "mutations.txt"],                   "tcga_export"),
-]
+    MAGIC_SIGNATURES: List[Tuple[bytes, str, Optional[str]]] = [
+        (b"\x89HDF",          "hdf5",         None),  # hdf5_interpreter not implemented
+        (b"CDF\x01",          "netcdf3",      None),  # netcdf_interpreter not implemented
+        (b"CDF\x02",          "netcdf3_64",   None),  # netcdf_interpreter not implemented
+        (b"\x89PNG",          "png",          None),
+        (b"\xff\xd8\xff",     "jpeg",         None),
+        (b"GIF8",             "gif",          None),
+        (b"II\x2a\x00",       "tiff_le",      "ome_tiff"),
+        (b"MM\x00\x2a",       "tiff_be",      "ome_tiff"),
+        (b"DICM",             "dicom",        "dicom_bioformats"),   # at offset 128
+        (b"PK\x03\x04",       "zip_based",    None),
+        (b"%PDF",             "pdf",          None),
+        (b"{\n",              "json_likely",  "json"),
+        (b"{\"",              "json_likely",  "json"),
+        (b"[\n",              "json_likely",  "json"),
+        (b"[{",               "json_likely",  "json"),
+        (b"@HD\t",            "sam",          None),
+        (b"BAM\x01",          "bam",          None),
+        (b"##fileformat=VCF", "vcf",          None),
+        (b"BZh",              "bz2",          None),
+        (b"\x1f\x8b",         "gzip",         None),
+        (b"FCS3.",            "fcs",          "fcs_interpreter"),
+        (b"FCS2.",            "fcs",          "fcs_interpreter"),
+        (b"SIMPLE  =",        "fits",         None),
+        (b"#\n# ",            "r_data",       None),
+    ]
+
+    DIRECTORY_PATTERNS: List[Tuple[List[str], str]] = [
+        (["barcodes.tsv", "features.tsv", "matrix.mtx"],          "10x_genomics_mtx"),
+        (["barcodes.tsv.gz", "features.tsv.gz", "matrix.mtx.gz"], "10x_genomics_mtx_gz"),
+        (["proteinGroups.txt", "peptides.txt"],                    "maxquant_output"),
+        (["summary.txt", "Parameters.txt"],                        "maxquant_run"),
+        (["acqp", "method", "fid"],                                "bruker_mri"),
+        (["acqp", "method", "ser"],                                "bruker_mri"),
+        (["2dseq"],                                                "bruker_processed"),
+        (["OME", "metadata.xml"],                                  "ome_tiff_dir"),
+        (["DICOMDIR"],                                             "dicom_dir"),
+        (["dataset_description.json", "participants.tsv"],         "bids_root"),
+        (["Manifest.xml"],                                         "tcga_manifest"),
+        (["clinical_data.txt", "mutations.txt"],                   "tcga_export"),
+    ]
+
+    DIRECTORY_PATTERN_INTERPRETERS: Dict[str, Optional[str]] = {
+        "10x_genomics_mtx":      "mtx_interpreter",        # not yet implemented
+        "10x_genomics_mtx_gz":   "mtx_interpreter",        # not yet implemented
+        "maxquant_output":       "maxquant_interpreter",   # not yet implemented
+        "maxquant_run":          "maxquant_interpreter",   # not yet implemented
+        "bruker_mri":            "bruker_mri_interpreter", # not yet implemented
+        "bruker_processed":      "bruker_mri_interpreter", # not yet implemented
+        "ome_tiff_dir":          "ome_tiff",               # registered
+        "dicom_dir":             "dicom_bioformats",       # registered
+        "bids_dataset":          "bids_interpreter",       # not yet implemented
+        "bids_root":             "bids_interpreter",       # not yet implemented
+        "tcga_manifest":         "tcga_interpreter",       # not yet implemented
+        "tcga_export":           "tcga_interpreter",       # not yet implemented
+        "flow_cytometry_session": "flow_session_interpreter",       # registered
+        "histology_session":      "histology_session_interpreter",  # registered
+    }
+
+    # Directories recognised by which extensions they hold rather than by exact
+    # filenames — a flow run is a folder of .fcs named after the samples.
+    # ([extensions_any_of], pattern_name, min_count)
+    EXTENSION_DIRECTORY_PATTERNS: List[Tuple[List[str], str, int]] = [
+        ([".fcs"],                   "flow_cytometry_session", 1),
+        ([".svs", ".ndpi", ".scn"],  "histology_session",      1),
+    ]
+
+    def interpreter_for_dir_pattern(pattern):
+        if not pattern:
+            return None
+        return DIRECTORY_PATTERN_INTERPRETERS.get(pattern, pattern)
+
+    def detect_directory_pattern(child_names):
+        lower = {str(c).lower() for c in child_names}
+        for required, pattern in DIRECTORY_PATTERNS:
+            if all(r.lower() in lower for r in required):
+                return pattern
+            if any(r.endswith("-") for r in required):
+                if all(
+                    r.lower() in lower or any(c.startswith(r.lower()) for c in lower)
+                    for r in required
+                ):
+                    return pattern
+        suffixes = [Path(n).suffix.lower() for n in child_names]
+        for extensions, pattern, min_count in EXTENSION_DIRECTORY_PATTERNS:
+            wanted = {e.lower() for e in extensions}
+            if sum(1 for s in suffixes if s in wanted) >= min_count:
+                return pattern
+        return None
+
 
 # Writer queue sentinel
 _STOP = object()
@@ -272,7 +352,7 @@ def _sample_magic(file_path: str, limit_bytes: int
         hex_prefix = header[:16].hex()
         # DICOM preamble lives at offset 128
         if len(header) >= 132 and header[128:132] == b"DICM":
-            return "dicom", "dicom_interpreter", hex_prefix
+            return "dicom", "dicom_bioformats", hex_prefix
         for sig, label, hint in MAGIC_SIGNATURES:
             if header[: len(sig)] == sig:
                 return label, hint, hex_prefix
@@ -283,6 +363,12 @@ def _sample_magic(file_path: str, limit_bytes: int
 
 def _detect_interpreter(ext: str, magic_label: Optional[str],
                          magic_hint: Optional[str]) -> Optional[str]:
+    """Return interpreter id or None (gap).
+
+    A known extension is authoritative even when its value is None: None means
+    the format is recognised and nothing reads it, so falling through to a magic
+    hint would relabel the very files the None was there to report as gaps.
+    """
     if ext and ext in KNOWN_INTERPRETERS:
         return KNOWN_INTERPRETERS[ext]
     if magic_hint:
@@ -291,17 +377,10 @@ def _detect_interpreter(ext: str, magic_label: Optional[str],
 
 
 def _detect_dir_pattern(children: List[str]) -> Optional[str]:
-    lower = {c.lower() for c in children}
-    for required, label in DIRECTORY_PATTERNS:
-        if all(r.lower() in lower for r in required):
-            return label
-        if any(r.endswith("-") for r in required):
-            if all(
-                r.lower() in lower or any(c.startswith(r.lower()) for c in lower)
-                for r in required
-            ):
-                return label
-    return None
+    """Delegates to the shared table in ``scanner_formats``; see the twin in
+    ``scidk_scanner.py``. This copy also silently lacked the ``bids_dataset``
+    row its fallback table never carried."""
+    return detect_directory_pattern(children)
 
 
 def _make_file_rows(
@@ -488,6 +567,8 @@ def _walk_subtree(
         ddepth  = _depth(dp)
         pattern = _detect_dir_pattern(dirnames + filenames)
         dextra  = json.dumps({"pattern": pattern}) if pattern else None
+        # Route the pattern to interpreted_as as well; extra_json is a dead end.
+        dinterp = interpreter_for_dir_pattern(pattern)
         try:
             dmtime = os.stat(dirpath).st_mtime
         except OSError:
@@ -495,7 +576,7 @@ def _walk_subtree(
 
         write_q.put((
             (dp, dparent, dname, ddepth, "folder", 0, dmtime,
-             None, None, None, None, None, scan_id, dextra, None, None),
+             None, None, None, None, None, scan_id, dextra, dinterp, None),
             (scan_id, dp, "folder", 0, dmtime, None, None, None, None, dextra),
         ))
         with stats_lock:
@@ -576,10 +657,11 @@ def walk_path(
         rmtime = None
     root_pattern = _detect_dir_pattern([e.name for e in top_entries])
     root_extra   = json.dumps({"pattern": root_pattern}) if root_pattern else None
+    root_interp  = interpreter_for_dir_pattern(root_pattern)
     write_q.put((
         (root_str, str(root_path.parent), root_path.name or root_str,
          root_depth, "folder", 0, rmtime,
-         None, None, None, None, None, scan_id, root_extra, None, None),
+         None, None, None, None, None, scan_id, root_extra, root_interp, None),
         (scan_id, root_str, "folder", 0, rmtime,
          None, None, None, None, root_extra),
     ))

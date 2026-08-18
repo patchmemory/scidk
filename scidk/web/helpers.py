@@ -139,6 +139,17 @@ def commit_to_neo4j(rows: List[Dict[str, Any]], folder_rows: List[Dict[str, Any]
                     if domain_result.get('errors'):
                         result['domain_node_errors'] = domain_result['errors']
 
+                # Provenance nodes, after the domain nodes so the File exists.
+                from ..core.neo4j_graph import Neo4jGraph
+                _auth = None if auth_mode == 'none' else (user, pwd)
+                _graph = Neo4jGraph(uri=uri, auth=_auth, database=database, auth_mode=auth_mode)
+                try:
+                    result['interpretation_nodes'] = commit_svc.write_interpretation_nodes(
+                        scan.get('id'), _graph, host=scan.get('host_id')
+                    )
+                finally:
+                    _graph.close()
+
             except Exception as domain_err:
                 # Non-fatal: domain node writes are optional
                 result['domain_node_error'] = str(domain_err)
@@ -470,7 +481,21 @@ def commit_to_neo4j_batched(
                     "MERGE (f:File {path: r.path, host: node_host}) "
                     "  SET f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, "
                     "      f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type, "
-                    "      f.provider_id = scan_provider, f.host_type = scan_host_type, f.host_id = scan_host_id "
+                    "      f.provider_id = scan_provider, f.host_type = scan_host_type, f.host_id = scan_host_id, "
+                    # coalesce so a commit that omits these cannot erase them.
+                    "      f.interpreted_as = coalesce(r.interpreted_as, f.interpreted_as), "
+                    "      f.interpretation_confidence = coalesce(r.interpretation_confidence, f.interpretation_confidence) "
+                    # Parity with neo4j_client.write_scan — without this clause the
+                    # streaming commit path can never write INTERPRETED_AS.
+                    "FOREACH (iid IN coalesce(r.interps, []) | "
+                    "  MERGE (interp:Interpreter {id: iid}) "
+                    # H1 — same provenance the batch path writes; see
+                    # neo4j_client.write_scan.
+                    "  MERGE (f)-[rel:INTERPRETED_AS]->(interp) "
+                    "    ON CREATE SET rel.first_interpreted_at = datetime() "
+                    "  SET rel.interpreted_at = CASE WHEN r.interpreted_at IS NULL THEN datetime() "
+                    "        ELSE datetime({epochSeconds: toInteger(r.interpreted_at)}) END, "
+                    "      rel.interpreter = iid ) "
                     "WITH r, f, scan_id, node_host, CASE WHEN r.folder IS NOT NULL AND r.folder <> '' THEN r.folder ELSE substring(r.path, 0, size(r.path) - size(last(split(r.path, '/'))) - 1) END AS folder_path "
                     "OPTIONAL MATCH (s:Scan {id: scan_id}) "
                     "MERGE (f)-[:SCANNED_IN]->(s) "
@@ -485,7 +510,21 @@ def commit_to_neo4j_batched(
                     "MERGE (f:File {path: r.path, host: node_host}) "
                     "  SET f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, "
                     "      f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type, "
-                    "      f.provider_id = scan_provider, f.host_type = scan_host_type, f.host_id = scan_host_id "
+                    "      f.provider_id = scan_provider, f.host_type = scan_host_type, f.host_id = scan_host_id, "
+                    # coalesce so a commit that omits these cannot erase them.
+                    "      f.interpreted_as = coalesce(r.interpreted_as, f.interpreted_as), "
+                    "      f.interpretation_confidence = coalesce(r.interpretation_confidence, f.interpretation_confidence) "
+                    # Parity with neo4j_client.write_scan — without this clause the
+                    # streaming commit path can never write INTERPRETED_AS.
+                    "FOREACH (iid IN coalesce(r.interps, []) | "
+                    "  MERGE (interp:Interpreter {id: iid}) "
+                    # H1 — same provenance the batch path writes; see
+                    # neo4j_client.write_scan.
+                    "  MERGE (f)-[rel:INTERPRETED_AS]->(interp) "
+                    "    ON CREATE SET rel.first_interpreted_at = datetime() "
+                    "  SET rel.interpreted_at = CASE WHEN r.interpreted_at IS NULL THEN datetime() "
+                    "        ELSE datetime({epochSeconds: toInteger(r.interpreted_at)}) END, "
+                    "      rel.interpreter = iid ) "
                     "WITH r, f, scan_id, node_host "
                     "OPTIONAL MATCH (s:Scan {id: scan_id}) "
                     "MERGE (f)-[:SCANNED_IN]->(s) "
@@ -628,6 +667,18 @@ def commit_to_neo4j_batched(
                         })
                     finally:
                         client.close()
+
+                # Provenance nodes, after the domain nodes so the File exists.
+                from ..core.neo4j_graph import Neo4jGraph
+                _auth = None if auth_mode == 'none' else (user, pwd)
+                _graph = Neo4jGraph(uri=uri, auth=_auth, database=database, auth_mode=auth_mode)
+                try:
+                    result["interpretation_nodes"] = commit_svc.write_interpretation_nodes(
+                        scan.get("id"), _graph, host=scan.get("host_id")
+                    )
+                    on_progress("interpretation_nodes_done", result["interpretation_nodes"])
+                finally:
+                    _graph.close()
 
             except Exception as domain_err:
                 # Non-fatal: domain node writes are optional, don't fail the entire commit

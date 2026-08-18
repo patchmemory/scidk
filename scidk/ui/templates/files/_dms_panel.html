@@ -1,0 +1,77 @@
+{# DMS Plan builder drawer — the full draft, generated from the whole graph.
+   Requires: drawers.css, drawers.js, dms.js
+   Open with: window.DMS.open()
+              window.SharePanel.openDMSBuilder()
+
+   The Share drawer's DMS tab holds a *quick* draft with its own controls
+   (dms-quick-*). This is the full builder; the ids here are the ones the
+   original page used, and the data-testid attributes go with them.
+#}
+
+<div class="side-drawer" id="dms-panel" style="width:620px;"
+     role="dialog" aria-modal="true" aria-label="DMS Plan builder"
+     data-testid="dms-panel">
+
+  <div class="drawer-header">
+    <span style="font-size:15px;">📋</span>
+    <span class="drawer-title">Draft NIH DMS Plan</span>
+    <span id="dms-summary" class="small text-muted"></span>
+    <button class="drawer-close" id="dms-close" data-close-drawer aria-label="Close">×</button>
+  </div>
+
+  <div class="sharing-tab-panel active" id="dms-tab-plan">
+    <div class="d-flex gap-2 mb-2">
+      <button class="btn btn-sm btn-primary" id="dms-plan-btn" data-testid="dms-plan-btn"
+              title="Generate draft NIH Data Management &amp; Sharing plan prose from the graph">
+        Generate draft
+      </button>
+      <button class="btn btn-sm btn-outline-secondary" id="dms-copy"
+              data-testid="dms-copy">Copy</button>
+      <a class="btn btn-sm btn-outline-secondary" id="dms-download"
+         href="#" download="nih-dms-plan-draft.md" data-testid="dms-download">Download .md</a>
+    </div>
+
+    <div id="dms-phi" class="dms-phi-flag mb-2" style="display:none;"></div>
+    <div id="dms-status" class="small text-muted mb-2"></div>
+
+    <textarea id="dms-markdown" data-testid="dms-markdown" readonly
+              spellcheck="false" aria-label="Draft NIH DMS plan markdown"></textarea>
+
+    <div class="drawer-hint mt-1">
+      This is a draft generated from your graph. Search it for <code>[</code> to find every
+      placeholder that still needs a decision before submission.
+    </div>
+  </div>
+
+  <div class="drawer-footer">
+    <button class="btn btn-sm btn-outline-secondary" data-close-drawer>Close</button>
+  </div>
+</div>
+
+<style>
+/* DMS-specific */
+#dms-panel textarea {
+  width: 100%;
+  min-height: 22rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  /* pre-wrap, not pre: a markdown paragraph is one long line, and horizontal
+     scrolling makes the draft unreadable. Soft wrapping is visual only — the
+     textarea's value, and so the copied and downloaded text, is unchanged. */
+  white-space: pre-wrap;
+  background: #fff;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  padding: 6px 8px;
+  resize: vertical;
+}
+.dms-phi-flag {
+  background: #fff3cd;
+  border: 1px solid #ffe69c;
+  color: #664d03;
+  border-radius: 4px;
+  padding: 0.375rem 0.5rem;
+  font-size: 0.8rem;
+}
+</style>

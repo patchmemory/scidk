@@ -19,6 +19,10 @@ from .bruker_skyscan_log import BrukerSkyScanLogInterpreter
 from .bruker_microct_dataset import BrukerMicroCtDatasetInterpreter
 from .ome_tiff import OMETiffInterpreter
 from .dicom_bioformats import DicomBioFormatsInterpreter
+from .fcs_interpreter import FCSInterpreter
+from .svs_interpreter import SVSInterpreter
+from .flow_session_interpreter import FlowSessionInterpreter
+from .histology_session_interpreter import HistologySessionInterpreter
 
 # Centralized interpreter registry
 INTERPRETERS = [
@@ -33,6 +37,13 @@ INTERPRETERS = [
     BrukerMicroCtDatasetInterpreter,
     OMETiffInterpreter,
     DicomBioFormatsInterpreter,
+    FCSInterpreter,
+    SVSInterpreter,
+    # dispatch = 'directory': no extensions, so register_all() reaches these
+    # only through the by-id branch below, and select_for_dataset() never
+    # picks them up during an ordinary file scan.
+    FlowSessionInterpreter,
+    HistologySessionInterpreter,
 ]
 
 
@@ -60,6 +71,14 @@ def register_all(registry):
         # Register by each extension
         for ext in extensions:
             registry.register_extension(ext, instance)
+
+        if not extensions and getattr(instance, 'id', None):
+            # Directory-dispatch interpreters declare no extensions, so the loop
+            # above registers them nowhere at all — including in by_id, which
+            # register_extension populates as a side effect. That left
+            # bruker_microct_dataset unreachable by id since it was written.
+            # get_by_id is the only way a directory interpreter is ever selected.
+            registry.by_id[instance.id] = instance
 
         # Auto-create default rules for each extension
         for ext in extensions:

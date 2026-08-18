@@ -162,12 +162,29 @@ class Neo4jClient:
                 "WITH s "
                 "UNWIND $rows AS r "
                 "MERGE (f:File {path: r.path, host: $node_host}) "
-                "  SET f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type, f.provider_id = $scan_provider, f.host_type = $scan_host_type, f.host_id = $scan_host_id "
+                "  SET f.filename = r.filename, f.extension = r.extension, f.size_bytes = r.size_bytes, f.created = r.created, f.modified = r.modified, f.mime_type = r.mime_type, f.provider_id = $scan_provider, f.host_type = $scan_host_type, f.host_id = $scan_host_id, "
+                # coalesce, not plain assignment: SET f.x = null deletes the property,
+                # so a commit from a path that does not supply these would silently
+                # erase what an earlier commit recorded.
+                "      f.interpreted_as = coalesce(r.interpreted_as, f.interpreted_as), "
+                "      f.interpretation_confidence = coalesce(r.interpretation_confidence, f.interpretation_confidence) "
                 "MERGE (f)-[:SCANNED_IN]->(s) "
                 "WITH r, f, s "
                 "FOREACH (iid IN coalesce(r.interps, []) | "
                 "  MERGE (i:Interpreter {id: iid}) "
-                "  MERGE (f)-[:INTERPRETED_AS]->(i) "
+                # H1 — the edge carries when the interpretation was written and
+                # which interpreter wrote it. ON CREATE for first_interpreted_at
+                # so a re-commit does not rewrite the file's history; plain SET
+                # for interpreted_at, which means "most recent run".
+                "  MERGE (f)-[rel:INTERPRETED_AS]->(i) "
+                "    ON CREATE SET rel.first_interpreted_at = datetime() "
+                # Always a datetime, never a raw epoch float: r.interpreted_at
+                # is epoch seconds from files.interpreted_at, and a property
+                # that is sometimes a number and sometimes a temporal cannot be
+                # compared or ordered.
+                "  SET rel.interpreted_at = CASE WHEN r.interpreted_at IS NULL THEN datetime() "
+                "        ELSE datetime({epochSeconds: toInteger(r.interpreted_at)}) END, "
+                "      rel.interpreter = iid "
                 ") "
                 "WITH r, f, s "
                 "WHERE r.folder IS NOT NULL AND r.folder <> '' "

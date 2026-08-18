@@ -11,7 +11,9 @@ This package organizes routes into logical blueprints:
 - api_admin: Health, metrics, logs
 - api_interpreters: Interpreter configuration
 - api_providers: Filesystem provider management
+- api_drives: Configured drives (local roots + rclone remotes)
 - api_annotations: Annotations and relationships management
+- api_annotation: Collection -> Dataset nodes and completeness sweep
 
 All blueprints are registered in create_app() in scidk/web/__init__.py
 """
@@ -30,10 +32,13 @@ def register_blueprints(app):
     from . import api_tasks
     from . import api_chat
     from . import api_neo4j
+    from . import api_connections
     from . import api_admin
     from . import api_interpreters
     from . import api_providers
+    from . import api_drives
     from . import api_annotations
+    from . import api_annotation
     from . import api_labels
     from . import api_links
     from . import api_links_v2
@@ -48,9 +53,14 @@ def register_blueprints(app):
     from . import api_logs
     from . import api_plugins
     from . import api_maps
+    from . import api_canvas
     from . import api_scripts
     from . import api_system
     from . import api_results
+    from . import api_pipeline
+    from . import api_platform
+    from . import api_rocrate
+    from . import api_enrichment
 
     # Register UI blueprint
     app.register_blueprint(ui.bp)
@@ -59,15 +69,19 @@ def register_blueprints(app):
     app.register_blueprint(api_files.bp)
     app.register_blueprint(api_graph.bp)
     app.register_blueprint(api_maps.bp)
+    app.register_blueprint(api_canvas.bp)  # Maps Canvas (whiteboarding) feature
     app.register_blueprint(api_scripts.bp)
     app.register_blueprint(api_tasks.bp)
     app.register_blueprint(api_chat.bp)
     app.register_blueprint(api_queries.bp)
     app.register_blueprint(api_neo4j.bp)
+    app.register_blueprint(api_connections.bp)  # Settings → Connections card grid
     app.register_blueprint(api_admin.bp)
     app.register_blueprint(api_interpreters.bp)
     app.register_blueprint(api_providers.bp)
+    app.register_blueprint(api_drives.bp)  # Add Drive drawer (Task group G)
     app.register_blueprint(api_annotations.bp)
+    app.register_blueprint(api_annotation.bp)  # Collection -> Dataset (Task group I)
     app.register_blueprint(api_labels.bp)
     app.register_blueprint(api_integrations.bp)
     app.register_blueprint(api_links.bp)  # Keep for backward compatibility
@@ -82,3 +96,7 @@ def register_blueprints(app):
     app.register_blueprint(api_plugins.bp)
     app.register_blueprint(api_system.bp)  # Chat self-awareness tools
     app.register_blueprint(api_results.bp)  # Results page API
+    app.register_blueprint(api_pipeline.bp)  # Pipeline sources, runs, schedules
+    app.register_blueprint(api_platform.bp)  # Platform capabilities (tool registry)
+    app.register_blueprint(api_rocrate.bp)  # Files page → RO-Crate build/download
+    app.register_blueprint(api_enrichment.bp)  # Post-scan interpreter dispatcher

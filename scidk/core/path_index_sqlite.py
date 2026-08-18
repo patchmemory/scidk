@@ -69,6 +69,16 @@ def init_db(conn: Optional[sqlite3.Connection] = None):
                 cur.execute("ALTER TABLE files ADD COLUMN interpreted_as TEXT;")
             if 'interpretation_json' not in cols:
                 cur.execute("ALTER TABLE files ADD COLUMN interpretation_json TEXT;")
+            # H1 — when the interpretation was written, and by which build of
+            # which interpreter. Beside interpreted_as rather than in
+            # file_history: file_history is a change log for the *file*, one row
+            # per observed size change, and only the rclone scan path writes it.
+            # "What is the current interpretation state of this row" is per
+            # (path, scan_id), which is exactly what `files` is keyed on.
+            if 'interpreted_at' not in cols:
+                cur.execute("ALTER TABLE files ADD COLUMN interpreted_at REAL;")
+            if 'interpreter_version' not in cols:
+                cur.execute("ALTER TABLE files ADD COLUMN interpreter_version TEXT;")
         except Exception:
             # best-effort; ignore if failed (old SQLite variants)
             pass
@@ -76,6 +86,34 @@ def init_db(conn: Optional[sqlite3.Connection] = None):
         cur.execute("CREATE INDEX IF NOT EXISTS idx_files_scan_parent_name ON files(scan_id, parent_path, name);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_files_scan_ext ON files(scan_id, file_extension);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_files_scan_type ON files(scan_id, type);")
+        # The three above all lead with scan_id, so they serve "within one scan"
+        # and nothing else — a composite index needs its leading column. Every
+        # query that knows an extension or a path but not a scan was a full
+        # table scan: 27M rows, and 105s for `enrichment_service --interpreter
+        # fcs_interpreter --limit 20` before these three landed. It now takes
+        # 0.6s. Building them costs ~66s and ~2GB on an index that size; that is
+        # paid once, on the first connect after deploy.
+        #
+        # On lower(file_extension) rather than the bare column, because
+        # enrichment_service._find_work filters under that function and SQLite
+        # will not use a plain column index there. All 27M rows are lowercase
+        # today and every writer seen lowercases, but batch_insert_files takes
+        # pre-built tuples from its callers so nothing enforces it.
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_files_ext_lower ON files(lower(file_extension));")
+        # Indexing the extension alone changed the plan not at all. _find_work
+        # matches `interpreted_as = ? OR lower(file_extension) IN (...)`, and
+        # SQLite needs a usable index on *both* arms before it will plan a
+        # MULTI-INDEX OR — one unindexed arm returns the whole query to a scan.
+        # Partial because that arm only looks for non-NULL values and `= ?`
+        # implies IS NOT NULL, which keeps it proportional to the enriched
+        # subset rather than to all 27M rows.
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_files_interpreted_as ON files(interpreted_as) WHERE interpreted_as IS NOT NULL;")
+        # Finding the work was only half the cost. interpreter_persistence
+        # .persist_interpretation writes it back with an UPDATE keyed on
+        # `path = ? AND scan_id = ?`: 4.37s per file, and the entire remaining
+        # cost once the Neo4j lookups were fixed. Anything keyed on a known path
+        # benefits, which is most of the read paths.
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);")
         
         # Minimal history table for future change tracking
         cur.execute(
@@ -98,6 +136,29 @@ def init_db(conn: Optional[sqlite3.Connection] = None):
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_hist_path ON file_history(path);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_hist_scan ON file_history(scan_id);")
+
+        # Drives the operator has added through the Files page (G1). Providers
+        # are discovered at startup; this is the persistent, editable half —
+        # a local root or an rclone remote that survives a restart without
+        # anyone editing rclone.conf or SCIDK_LOCAL_FILES_BASE by hand.
+        #
+        # Here rather than in migrations.py: that module runs against every
+        # database in the test suite and none of them has a `files` table, so
+        # anything it does to files.db raises out of migrate(). Every files.db
+        # schema change belongs beside the table it touches.
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS drives (
+                id TEXT PRIMARY KEY,
+                type TEXT NOT NULL,
+                label TEXT,
+                path TEXT,
+                name TEXT,
+                remote_type TEXT,
+                created_at REAL
+            );
+            """
+        )
         conn.commit()
     finally:
         if own:

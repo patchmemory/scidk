@@ -1711,7 +1711,7 @@ def get_session_permissions(session_id):
     chat_service = _get_chat_service()
 
     # Get current user from Flask g (set by auth middleware)
-    username = getattr(g, 'scidk_username', None)
+    username = getattr(g, 'scidk_user', None)
     if not username:
         return jsonify({'error': 'Authentication required'}), 401
 
@@ -1744,7 +1744,7 @@ def grant_session_permission(session_id):
     chat_service = _get_chat_service()
 
     # Get current user
-    current_user = getattr(g, 'scidk_username', None)
+    current_user = getattr(g, 'scidk_user', None)
     if not current_user:
         return jsonify({'error': 'Authentication required'}), 401
 
@@ -1781,7 +1781,7 @@ def revoke_session_permission(session_id, username):
     chat_service = _get_chat_service()
 
     # Get current user
-    current_user = getattr(g, 'scidk_username', None)
+    current_user = getattr(g, 'scidk_user', None)
     if not current_user:
         return jsonify({'error': 'Authentication required'}), 401
 
@@ -1814,7 +1814,7 @@ def set_session_visibility(session_id):
     chat_service = _get_chat_service()
 
     # Get current user
-    username = getattr(g, 'scidk_username', None)
+    username = getattr(g, 'scidk_user', None)
     if not username:
         return jsonify({'error': 'Authentication required'}), 401
 

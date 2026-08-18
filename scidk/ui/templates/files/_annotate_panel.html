@@ -1,0 +1,195 @@
+{# Annotate drawer — Attribute / Collect / Interpret tabs
+   Requires: drawers.css, drawers.js, collection.js, annotate.js
+   Open with: window.Drawers.open('annotate-drawer')
+              window.Annotate.open()          (pre-seeds from window.selItems)
+#}
+
+<div class="side-drawer" id="annotate-drawer" style="width:420px;"
+     role="dialog" aria-modal="true" aria-label="Annotate">
+
+  <div class="drawer-header">
+    <span style="font-size:15px;">🏷</span>
+    <span class="drawer-title">Annotate</span>
+    <span style="font-size:10px;color:#6c757d;" id="annotate-scope-label"></span>
+    <button class="drawer-close" data-close-drawer aria-label="Close">×</button>
+  </div>
+
+  <div class="sharing-tabs" role="tablist">
+    <button class="sharing-tab active" data-annotate-tab="attribute" role="tab">Attribute</button>
+    <button class="sharing-tab"        data-annotate-tab="collect"   role="tab">Collect</button>
+    <button class="sharing-tab"        data-annotate-tab="interpret" role="tab">Interpret</button>
+  </div>
+
+  <!-- ── Attribute tab ── -->
+  <div class="sharing-tab-panel active" id="annotate-tab-attribute">
+    <p class="drawer-hint" style="margin-bottom:12px;">
+      Write ownership or provenance edges from selected files to an anchor node in the graph.
+    </p>
+    <div class="drawer-field">
+      <label>Anchor label</label>
+      <select id="attr-anchor-label-sel" class="form-select form-select-sm"
+              data-annotate-change="anchor-label">
+        <option value="Investigator">Investigator</option>
+      </select>
+    </div>
+    <div class="drawer-field">
+      <label>Filter by property</label>
+      <div class="d-flex gap-1">
+        <select id="attr-filter-prop-sel" class="form-select form-select-sm"
+                data-annotate-change="filter-property">
+          <option value="">Property…</option>
+        </select>
+        <select id="attr-filter-val-sel" class="form-select form-select-sm"
+                data-annotate-change="filter-value" disabled>
+          <option value="">Value…</option>
+        </select>
+        <button class="btn btn-sm btn-outline-secondary" data-annotate-action="clear-filter">Clear</button>
+      </div>
+    </div>
+    <div class="drawer-field">
+      <label>Anchor</label>
+      <input id="attr-search" type="text" class="form-control form-control-sm"
+             placeholder="Search by name…" data-annotate-input="anchor-search">
+      <select id="attr-anchor-sel" size="4" class="form-select form-select-sm mt-1"
+              data-annotate-change="anchor"></select>
+      <span id="attr-anchor-label" class="fw-semibold small d-block mt-1"></span>
+    </div>
+    <div class="drawer-field">
+      <label>Target label</label>
+      <select id="attr-target-label-sel" class="form-select form-select-sm"
+              data-annotate-change="target-label">
+        <option value="Folder">Folder</option>
+      </select>
+    </div>
+    <div class="drawer-field">
+      <label>Target conditions</label>
+      <div id="attr-target-fb-container" class="mt-1 attr-fb-scope"></div>
+    </div>
+    <div class="drawer-field">
+      <label>Relationship</label>
+      <div class="d-flex gap-1 align-items-center">
+        <select id="attr-rel-select" class="form-select form-select-sm">
+          <option value="OWNS">OWNS</option>
+        </select>
+        <a href="#" id="attr-rel-toggle"
+           data-annotate-action="toggle-custom-rel" class="small">or type custom</a>
+        <input id="attr-rel-custom" type="text" placeholder="E.G. FUNDED_BY"
+               class="form-control form-control-sm"
+               style="display:none;font-family:monospace;">
+      </div>
+    </div>
+    <div class="form-check mb-3">
+      <input type="checkbox" class="form-check-input" id="attr-labmates" checked>
+      <label class="form-check-label small" for="attr-labmates">Include labmates</label>
+    </div>
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <button class="btn btn-sm btn-primary" id="attr-find-btn" data-annotate-action="find-candidates">
+        Find Candidates
+      </button>
+      <span id="attr-status" class="small text-muted"></span>
+    </div>
+    <div id="attr-results" style="display:none;">
+      <div class="d-flex gap-1 align-items-center mb-2 flex-wrap">
+        <button class="btn btn-sm btn-outline-secondary" data-annotate-action="select-conf" data-annotate-arg="HIGH">✓ HIGH</button>
+        <button class="btn btn-sm btn-outline-secondary" data-annotate-action="select-conf" data-annotate-arg="MED">✓ MED</button>
+        <button class="btn btn-sm btn-outline-secondary" data-annotate-action="clear-candidates">Clear</button>
+        <button class="btn btn-sm btn-primary ms-auto" id="attr-confirm-btn" data-annotate-action="confirm">
+          Write to graph
+        </button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:.82em;">
+          <thead>
+            <tr style="border-bottom:2px solid #dee2e6;">
+              <th style="width:24px;"></th>
+              <th style="width:56px;">Conf.</th>
+              <th>Path</th>
+              <th style="width:100px;">Source</th>
+              <th style="width:44px;">Depth</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody id="attr-tbody"></tbody>
+        </table>
+      </div>
+      <div id="attr-confirm-msg" class="small fw-semibold mt-2"></div>
+    </div>
+  </div>
+
+  <!-- ── Collect tab ── -->
+  <div class="sharing-tab-panel" id="annotate-tab-collect">
+    <p class="drawer-hint" style="margin-bottom:12px;">
+      Group files as a named Dataset node in the graph.
+      Use the Collection (<kbd style="font-size:10px;">⇧⌥C</kbd>) to accumulate
+      files across folders first.
+    </p>
+    <div class="drawer-field">
+      <label>Dataset name <span style="color:#dc3545;">*</span></label>
+      <input type="text" id="collect-name" class="form-control form-control-sm"
+             placeholder="e.g. AIPT Vevo June 2026 Cohort">
+    </div>
+    <div class="drawer-field">
+      <label>Modality</label>
+      <select id="collect-modality" class="form-select form-select-sm">
+        <option value="">Not specified</option>
+        <option>Flow Cytometry</option>
+        <option>Ultrasound / Vevo</option>
+        <option>MicroCT</option>
+        <option>Histology</option>
+        <option>Genomics</option>
+        <option>Other</option>
+      </select>
+    </div>
+    <div class="drawer-field">
+      <label>Description</label>
+      <textarea id="collect-desc" class="form-control form-control-sm" rows="2"
+                placeholder="Brief description…"></textarea>
+    </div>
+    <div class="drawer-field">
+      <label>Source</label>
+      <div class="d-flex gap-2 mb-2">
+        <button class="btn btn-sm btn-outline-primary active" id="collect-src-sel"
+                data-annotate-action="collect-source" data-annotate-arg="selection">Selection</button>
+        <button class="btn btn-sm btn-outline-primary" id="collect-src-coll"
+                data-annotate-action="collect-source" data-annotate-arg="collection">Collection</button>
+      </div>
+      <div class="scope-note" id="collect-scope-note">
+        <div class="sn-label">From selection</div>
+        <div class="sn-items" id="collect-scope-items">—</div>
+      </div>
+      <div class="drawer-hint">Files will be linked via CONTAINS edges. You can add more later.</div>
+    </div>
+    <button class="btn btn-sm btn-primary" id="collect-create-btn"
+            data-annotate-action="create-dataset">
+      Create Dataset in graph
+    </button>
+    <div id="collect-status" class="small mt-2"></div>
+  </div>
+
+  <!-- ── Interpret tab ── -->
+  <div class="sharing-tab-panel" id="annotate-tab-interpret">
+    <p class="drawer-hint" style="margin-bottom:12px;">
+      Run or re-run interpreters on selected files to extract structured
+      metadata and create typed graph nodes.
+    </p>
+    <div id="interp-status-list">
+      <div class="small text-muted">Select files to see interpreter status.</div>
+    </div>
+    <div class="d-flex gap-2 mt-3" id="interp-actions" style="display:none!important;">
+      <button class="btn btn-sm btn-outline-secondary" data-annotate-action="run-interpreters" data-annotate-arg="all">Re-run all</button>
+      <button class="btn btn-sm btn-primary" data-annotate-action="run-interpreters" data-annotate-arg="missing_only">Run missing only</button>
+    </div>
+    <div id="interp-run-status" class="small mt-2"></div>
+  </div>
+
+  <div class="drawer-footer">
+    <button class="btn btn-sm btn-outline-secondary" data-close-drawer>Cancel</button>
+    <button class="btn btn-sm btn-primary" data-annotate-action="apply">Apply</button>
+  </div>
+
+</div>
+<style>
+/* Annotate-specific */
+.attr-fb-scope .fb-actions { display:none; }
+.attr-fb-scope .fb-block { border:none; padding:0; background:none; box-shadow:none; }
+</style>

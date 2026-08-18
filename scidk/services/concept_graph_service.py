@@ -71,10 +71,23 @@ def get_concept_driver(app=None):
             user, password = parts
             auth = (user, password)
 
-        driver = GraphDatabase.driver(uri, auth=auth)
-        driver.verify_connectivity()
+        # Verify with a throwaway driver, then hand back a fresh unused one.
+        #
+        # verify_connectivity() opens a real socket and leaves it idle in the
+        # driver's connection pool. This function runs inside create_app(), which
+        # gunicorn runs in the master process under --preload — a pooled
+        # connection there is inherited by all 16 workers, which would then
+        # interleave Bolt traffic on one shared file descriptor. A driver that has
+        # never been used holds no socket, so it crosses the fork safely and each
+        # worker opens its own connection on first query.
+        probe = GraphDatabase.driver(uri, auth=auth)
+        try:
+            probe.verify_connectivity()
+        finally:
+            probe.close()
+
         logger.info(f"Concept graph connected at {uri}")
-        return driver
+        return GraphDatabase.driver(uri, auth=auth)
 
     except Exception as e:
         logger.warning(f"Concept graph unavailable: {e}")
@@ -741,7 +754,9 @@ def seed_mcp_tools(driver, ollama_endpoint: str) -> dict:
             'errors': List[str]
         }
     """
-    from ..ai.mcp_tools import MCP_TOOL_DEFINITIONS
+    # The canonical registry, shared with the MCP server and
+    # GET /api/platform/tools. Before Cycle 6 this read a second, drifted list.
+    from ..ai.mcp_tools import TOOL_DEFINITIONS
 
     seeded = 0
     failed = 0
@@ -750,7 +765,7 @@ def seed_mcp_tools(driver, ollama_endpoint: str) -> dict:
 
     try:
         with driver.session() as session:
-            for tool in MCP_TOOL_DEFINITIONS:
+            for tool in TOOL_DEFINITIONS:
                 try:
                     # Embed tool description
                     embedding = embed_text(tool['description'], ollama_endpoint)
@@ -761,7 +776,9 @@ def seed_mcp_tools(driver, ollama_endpoint: str) -> dict:
                         errors.append(f"Embedding failed: {tool['name']}")
                         continue
 
-                    # Upsert tool node
+                    # Upsert tool node. `category` is the registry's own
+                    # classification (TOOL_CATEGORIES) and rides along to the node
+                    # so the graph can group tools the way the platform does.
                     session.run("""
                         MERGE (t:Concept_Tool {name: $name})
                         SET t.description = $description,
@@ -769,12 +786,14 @@ def seed_mcp_tools(driver, ollama_endpoint: str) -> dict:
                             t.active = true,
                             t.embedding = $embedding,
                             t.input_schema = $schema,
+                            t.category = $category,
                             t.updated_at = datetime()
                     """,
                         name=tool['name'],
                         description=tool['description'],
                         embedding=embedding,
-                        schema=json.dumps(tool.get('parameters', {}))
+                        schema=json.dumps(tool.get('input_schema', {})),
+                        category=tool.get('category')
                     )
                     seeded += 1
                     logger.info(f"Seeded MCP tool: {tool['name']}")
@@ -862,14 +881,16 @@ def export_concept_graph(driver) -> dict:
                 ORDER BY i.name
             """).data()
 
-            # Export tools
+            # Export tools. `category` is null for tools seeded from intents.yaml,
+            # which declares none; the MCP registry is the only source that sets it.
             tools_result = session.run("""
                 MATCH (t:Concept_Tool)
                 RETURN t.name AS name,
                        t.description AS description,
                        t.source AS source,
                        t.active AS active,
-                       t.input_schema AS input_schema
+                       t.input_schema AS input_schema,
+                       t.category AS category
                 ORDER BY t.source, t.name
             """).data()
 
@@ -988,19 +1009,28 @@ def import_concept_graph(driver, data: dict, ollama_endpoint: str) -> dict:
         with driver.session() as session:
             for tool in data.get('tools', []):
                 try:
-                    # Upsert tool node (do not overwrite embeddings)
+                    # Upsert tool node (do not overwrite embeddings).
+                    #
+                    # `category` goes through coalesce rather than a plain SET: in
+                    # Cypher `SET t.category = null` *removes* the property, so a
+                    # snapshot taken before Cycle 8 — which carries no category at
+                    # all — would strip it off every tool it touched. Falling back
+                    # to the node's own value keeps the import non-destructive,
+                    # which is what this function promises.
                     session.run("""
                         MERGE (t:Concept_Tool {name: $name})
                         SET t.description = $description,
                             t.source = $source,
                             t.active = $active,
-                            t.input_schema = $input_schema
+                            t.input_schema = $input_schema,
+                            t.category = coalesce($category, t.category)
                     """,
                         name=tool['name'],
                         description=tool.get('description'),
                         source=tool.get('source', 'internal'),
                         active=tool.get('active', True),
-                        input_schema=tool.get('input_schema')
+                        input_schema=tool.get('input_schema'),
+                        category=tool.get('category')
                     )
                     tools_imported += 1
 

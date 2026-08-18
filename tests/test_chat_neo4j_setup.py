@@ -10,9 +10,6 @@ Gate 2 verification tests:
 import pytest
 import time
 import json
-
-pytestmark = pytest.mark.integration
-
 from scidk.services.chat_neo4j_client import ChatNeo4jClient, get_chat_neo4j_client
 from scidk.ai.chat_graph import (
     get_label_snapshot,
@@ -23,6 +20,7 @@ from scidk.ai.chat_graph import (
 )
 
 
+@pytest.mark.integration
 def test_chat_neo4j_connection():
     """Test: Can connect to chat Neo4j."""
     client = get_chat_neo4j_client()
@@ -34,6 +32,7 @@ def test_chat_neo4j_connection():
     client.close()
 
 
+@pytest.mark.integration
 def test_chat_neo4j_ensure_schema():
     """Test: Can create indexes in chat Neo4j."""
     client = get_chat_neo4j_client()
@@ -62,6 +61,7 @@ def test_chat_neo4j_ensure_schema():
     client.close()
 
 
+@pytest.mark.integration
 def test_write_and_retrieve_chat_message():
     """Test: Can write ChatMessage to chat Neo4j and retrieve it."""
     chat_client = get_chat_neo4j_client()

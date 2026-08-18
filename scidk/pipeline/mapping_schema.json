@@ -1,0 +1,317 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scidk.mit.edu/schemas/pipeline-mapping/1.0",
+  "title": "SciDK Pipeline mapping config",
+  "description": "The format scidk/pipeline/mapping_engine.py consumes: how one plugin's row stream becomes nodes and relationships. plugins/sharepoint_intake/configs/aipt_intake_mapping.json is the reference instance. additionalProperties is false almost everywhere on purpose — the point of this schema is that a misspelled key ('node_mapping' for 'node_mappings') fails validation instead of silently mapping nothing.",
+
+  "type": "object",
+  "required": ["version", "node_mappings"],
+  "additionalProperties": false,
+
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Config format version. '1.0' is the only version so far.",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "name": {"type": "string", "minLength": 1},
+    "description": {"type": "string"},
+    "plugin": {
+      "type": "string",
+      "description": "DataSourcePlugin.name of the plugin this config maps, e.g. 'sharepoint'.",
+      "minLength": 1
+    },
+    "source_type": {
+      "type": "string",
+      "description": "One of the plugin's declared source_types.",
+      "minLength": 1
+    },
+    "documentation": {
+      "type": "string",
+      "description": "Repo-relative path to prose explaining the deployment."
+    },
+
+    "conventions": {
+      "type": "object",
+      "description": "Free-form prose keyed by the construct it explains. Documentation only — the engine never reads it. Open on purpose: a new convention should be explainable before it is formalized.",
+      "additionalProperties": {"type": "string"}
+    },
+
+    "source": {
+      "type": "object",
+      "description": "Where the rows come from. The plugin resolves this, not the engine, so the keys are plugin-specific and the object stays open.",
+      "additionalProperties": true,
+      "properties": {
+        "source_path_setting": {"type": "string"},
+        "source_path_env": {"type": "string"},
+        "format": {"type": "string"},
+        "header_normalization": {"type": "string"},
+        "notes": {"type": "string"}
+      }
+    },
+
+    "options": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "write_mode": {
+          "description": "Only MERGE is implemented. write_declared_nodes has no create-only or replace path, so any other value would be a silent lie.",
+          "const": "merge"
+        },
+        "deduplicate_nodes_by": {
+          "type": "array",
+          "description": "Fields forming the identity of a node within one run. ['label','key'] is the only combination the engine implements.",
+          "items": {"enum": ["label", "key"]},
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "on_row_error": {
+          "description": "record_and_continue attributes the failure to the row and keeps going; abort stops the run at the first bad row.",
+          "enum": ["record_and_continue", "abort"]
+        },
+        "omit_empty_properties": {
+          "type": "boolean",
+          "description": "Leave a property off the node when it resolves empty, rather than writing a blank over a good value from an earlier run."
+        }
+      }
+    },
+
+    "row_filter": {
+      "type": "object",
+      "description": "Rows failing this are never mapped. Applied before any node resolution.",
+      "additionalProperties": false,
+      "required": ["require_any_non_empty"],
+      "properties": {
+        "require_any_non_empty": {
+          "type": "array",
+          "description": "Keep the row when at least one of these columns is non-empty.",
+          "items": {"type": "string", "minLength": 1},
+          "minItems": 1
+        },
+        "on_reject": {
+          "description": "record_error surfaces the rejection in the run report; skip_silently does not.",
+          "enum": ["record_error", "skip_silently"]
+        },
+        "error_message": {"type": "string"}
+      }
+    },
+
+    "node_mappings": {
+      "type": "array",
+      "description": "One entry per node role. Two entries may share a label — that is how one row produces both a submitter and a PI Person.",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/nodeMapping"}
+    },
+
+    "relationship_mappings": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/relationshipMapping"}
+    },
+
+    "vocabulary_check": {
+      "type": "object",
+      "description": "Soft consistency check on controlled-vocabulary properties. Never blocks a run at severity 'warning'.",
+      "additionalProperties": false,
+      "required": ["fields"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "severity": {"enum": ["warning", "error"]},
+        "notes": {"type": "string"},
+        "source_setting": {"type": "string"},
+        "source_env": {"type": "string"},
+        "source_format": {"type": "string"},
+        "match": {"enum": ["case_insensitive", "exact"]},
+        "multi_value_transform": {
+          "type": "string",
+          "description": "Transform splitting a multi-value cell before each value is checked."
+        },
+        "fields": {
+          "type": "array",
+          "description": "Node property names to check, not source column names.",
+          "items": {"$ref": "#/$defs/identifier"},
+          "minItems": 1
+        },
+        "default_vocabulary": {
+          "type": "object",
+          "description": "Allowed terms per field, used when no external vocabulary is configured.",
+          "additionalProperties": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      }
+    }
+  },
+
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "description": "A Cypher identifier safe to interpolate unquoted. write_declared_nodes does not backtick-quote labels, relationship types or property names, so this pattern is a write-path safety requirement and not a style rule. Mirrors scidk/pipeline/identifiers.py.",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+
+    "transformArgs": {
+      "type": "object",
+      "description": "Extra keyword arguments for the transform. Open — each transform defines its own. A transform declaring a 'row' parameter additionally receives the whole row.",
+      "additionalProperties": true
+    },
+
+    "propertyFallback": {
+      "type": "object",
+      "description": "Consulted only when the primary column or transform yields nothing. Exactly one of column or template.",
+      "additionalProperties": false,
+      "oneOf": [
+        {"required": ["column"]},
+        {"required": ["template"]}
+      ],
+      "properties": {
+        "column": {"type": "string", "minLength": 1},
+        "transform": {"type": "string", "minLength": 1},
+        "transform_args": {"$ref": "#/$defs/transformArgs"},
+        "template": {
+          "type": "string",
+          "description": "Interpolates {ColumnName} from the row plus {__row_index__}. Missing columns interpolate empty.",
+          "minLength": 1
+        },
+        "notes": {"type": "string"}
+      }
+    },
+
+    "propertyMapping": {
+      "type": "object",
+      "description": "Column-per-property form: one target property, one source column, optional transform.",
+      "additionalProperties": false,
+      "required": ["name"],
+      "anyOf": [
+        {"required": ["column"]},
+        {"required": ["transform"]}
+      ],
+      "properties": {
+        "name": {"$ref": "#/$defs/identifier"},
+        "column": {"type": "string", "minLength": 1},
+        "transform": {"type": "string", "minLength": 1},
+        "transform_args": {"$ref": "#/$defs/transformArgs"},
+        "required": {
+          "type": "boolean",
+          "description": "A row whose required property resolves empty (after any fallback) produces no node and is reported."
+        },
+        "fallback": {"$ref": "#/$defs/propertyFallback"},
+        "notes": {"type": "string"}
+      }
+    },
+
+    "nodeSource": {
+      "type": "object",
+      "description": "Transform-per-node form: one column expands into several properties. The transform returns a dict, or a list of dicts when cardinality is 'many'.",
+      "additionalProperties": false,
+      "required": ["column", "transform"],
+      "properties": {
+        "column": {"type": "string", "minLength": 1},
+        "transform": {"type": "string", "minLength": 1},
+        "transform_args": {"$ref": "#/$defs/transformArgs"},
+        "fallback": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["column"],
+          "properties": {
+            "column": {"type": "string", "minLength": 1},
+            "transform": {"type": "string", "minLength": 1},
+            "transform_args": {"$ref": "#/$defs/transformArgs"},
+            "notes": {"type": "string"}
+          }
+        },
+        "notes": {"type": "string"}
+      }
+    },
+
+    "nodeMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "key_property"],
+      "oneOf": [
+        {
+          "required": ["properties"],
+          "not": {"anyOf": [{"required": ["source"]}, {"required": ["property_map"]}]}
+        },
+        {"required": ["source", "property_map"]}
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique within the config. relationship_mappings reference nodes by this, not by label — two roles can share a label.",
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*$"
+        },
+        "label": {"$ref": "#/$defs/identifier"},
+        "key_property": {
+          "description": "The merge key. A string names it outright; an array is a preference order — the first property with a non-empty value wins, so a Person keys on email when known and falls back to display name.",
+          "oneOf": [
+            {"$ref": "#/$defs/identifier"},
+            {
+              "type": "array",
+              "items": {"$ref": "#/$defs/identifier"},
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          ]
+        },
+        "cardinality": {
+          "description": "'one' emits at most one node per row; 'many' emits one per element the source transform returns.",
+          "enum": ["one", "many"]
+        },
+        "optional": {
+          "type": "boolean",
+          "description": "A row that resolves no key for an optional node is not an error — the node is simply absent, along with its relationships."
+        },
+        "condition": {
+          "type": "object",
+          "description": "Resolve this node only for rows where the column matches.",
+          "additionalProperties": false,
+          "required": ["column", "equals"],
+          "properties": {
+            "column": {"type": "string", "minLength": 1},
+            "equals": {"type": ["string", "number", "boolean", "null"]}
+          }
+        },
+        "skip_when_all_empty": {
+          "type": "array",
+          "description": "Emit no node when every one of these properties is empty. Property names, not column names.",
+          "items": {"$ref": "#/$defs/identifier"},
+          "minItems": 1
+        },
+        "properties": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/propertyMapping"},
+          "minItems": 1
+        },
+        "source": {"$ref": "#/$defs/nodeSource"},
+        "property_map": {
+          "type": "object",
+          "description": "Renames the keys the source transform returned onto node properties: {transform_key: node_property}.",
+          "minProperties": 1,
+          "additionalProperties": {"$ref": "#/$defs/identifier"}
+        },
+        "notes": {"type": "string"}
+      }
+    },
+
+    "relationshipMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "from", "to"],
+      "properties": {
+        "type": {"$ref": "#/$defs/identifier"},
+        "from": {
+          "type": "string",
+          "description": "id of a node_mappings entry.",
+          "minLength": 1
+        },
+        "to": {
+          "type": "string",
+          "description": "id of a node_mappings entry.",
+          "minLength": 1
+        },
+        "notes": {"type": "string"}
+      }
+    }
+  }
+}

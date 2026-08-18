@@ -8,15 +8,48 @@ import os
 class InterpreterSettings:
     """Minimal settings persistence for interpreter toggles using SQLite.
     If DB is unavailable, caller can ignore persistence errors.
+
+    The connection is opened on first use, not in __init__. This instance is
+    stored on app.extensions by create_app(), and gunicorn runs create_app() in
+    the master process under --preload: an open SQLite handle there would be
+    inherited by all forked workers, which would then share one file descriptor
+    and one set of WAL locks. Opening lazily means each worker gets its own
+    connection after the fork.
     """
     def __init__(self, db_path: str):
         self.db_path = db_path
-        self.db = sqlite3.connect(db_path)
-        self.db.execute('PRAGMA journal_mode=WAL;')
-        self.init_tables()
+        self._db = None
+
+    @property
+    def db(self) -> sqlite3.Connection:
+        """Open (and remember) this process's connection on first access."""
+        if self._db is None:
+            self._db = sqlite3.connect(self.db_path)
+            self._db.execute('PRAGMA journal_mode=WAL;')
+            self.init_tables()
+        return self._db
+
+    def close(self):
+        """Close this process's connection, if one is open.
+
+        Called at the end of create_app() so the gunicorn master holds nothing
+        across fork. The next attribute access reopens lazily, so the object
+        stays usable in workers and in-process.
+        """
+        if self._db is not None:
+            try:
+                self._db.close()
+            except Exception:
+                pass
+            self._db = None
 
     def init_tables(self):
-        self.db.execute(
+        # Normally reached from the db property, which has already assigned
+        # _db. Tolerate a direct external call by opening first.
+        if self._db is None:
+            self.db  # noqa: B018 — opens the connection and calls back in
+            return
+        self._db.execute(
             """
             CREATE TABLE IF NOT EXISTS interpreter_settings (
                 key TEXT PRIMARY KEY,
@@ -25,7 +58,7 @@ class InterpreterSettings:
             )
             """
         )
-        self.db.commit()
+        self._db.commit()
 
     def save_enabled_interpreters(self, enabled_set: Set[str]):
         payload = json.dumps(sorted(list(enabled_set)))

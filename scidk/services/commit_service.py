@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 class CommitService:
@@ -184,3 +184,59 @@ class CommitService:
             pass
 
         return all_nodes, all_relationships
+
+    def write_interpretation_nodes(self, scan_id: str, graph, host: Optional[str] = None) -> Dict[str, int]:
+        """Write one :Interpretation node per interpreted file in a scan.
+
+        Complements the FOREACH in ``write_scan``, which creates the lightweight
+        ``(:Interpreter {id})`` node used for schema queries. This writes the
+        node that carries the payload, for provenance queries. Run it after the
+        domain nodes so the File it links to already exists.
+
+        Args:
+            scan_id: Scan whose interpreted rows should be written.
+            graph: Anything exposing ``add_interpretation(checksum,
+                interpreter_id, payload, file_path=..., host=...)`` — the Neo4j
+                backend writes; the in-memory one ignores the extra arguments.
+            host: Host qualifier for the File match. None links every host
+                holding that path.
+
+        Returns:
+            ``{'written': int, 'skipped': int}``. Never raises.
+        """
+        from ..core import path_index_sqlite as pix
+        import json as _json
+
+        counts = {'written': 0, 'skipped': 0}
+        try:
+            conn = pix.connect()
+            pix.init_db(conn)
+            try:
+                rows = conn.execute(
+                    "SELECT path, interpreted_as, interpretation_json FROM files "
+                    "WHERE scan_id = ? AND interpreted_as IS NOT NULL",
+                    (scan_id,)
+                ).fetchall()
+            finally:
+                conn.close()
+
+            for path, interpreter_id, interp_json in rows:
+                try:
+                    payload = _json.loads(interp_json) if interp_json else {}
+                except Exception:
+                    payload = {}
+                try:
+                    graph.add_interpretation(
+                        payload.get('checksum') or '',
+                        interpreter_id,
+                        payload,
+                        file_path=path,
+                        host=host,
+                    )
+                    counts['written'] += 1
+                except Exception:
+                    counts['skipped'] += 1
+        except Exception:
+            pass
+
+        return counts

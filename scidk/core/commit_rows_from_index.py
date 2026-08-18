@@ -36,6 +36,23 @@ def _name(path: str) -> str:
         return path
 
 
+def _confidence_of(interpretation_json: str) -> object:
+    """Pull data.confidence out of a stored interpretation payload.
+
+    No interpreter emits `confidence` yet, so this is None in practice today;
+    it is here so the property is populated the moment one starts to. Anything
+    unparseable is treated as absent rather than raising into the row build.
+    """
+    if not interpretation_json:
+        return None
+    try:
+        import json
+        data = (json.loads(interpretation_json) or {}).get('data')
+        return data.get('confidence') if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
 def build_rows_for_scan_from_index(scan_id: str, scan: Dict, include_hierarchy: bool = True) -> Tuple[List[Dict], List[Dict]]:
     """Shared builder used by endpoints and background tasks.
 
@@ -47,7 +64,8 @@ def build_rows_for_scan_from_index(scan_id: str, scan: Dict, include_hierarchy: 
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT path, parent_path, name, depth, type, size, modified_time, file_extension, mime_type FROM files WHERE scan_id = ?",
+            "SELECT path, parent_path, name, depth, type, size, modified_time, file_extension, mime_type, "
+            "interpreted_as, interpretation_json, interpreted_at FROM files WHERE scan_id = ?",
             (scan_id,)
         )
         items = cur.fetchall()
@@ -61,7 +79,7 @@ def build_rows_for_scan_from_index(scan_id: str, scan: Dict, include_hierarchy: 
     folder_rows: List[Dict] = []
     folders_seen = set()
 
-    for (p, parent, name, depth, typ, size, mtime, ext, mime) in items:
+    for (p, parent, name, depth, typ, size, mtime, ext, mime, interpreted_as, interp_json, interpreted_at) in items:
         if typ == 'folder':
             if p in folders_seen:
                 continue
@@ -87,7 +105,17 @@ def build_rows_for_scan_from_index(scan_id: str, scan: Dict, include_hierarchy: 
                 'folder': par,
                 'parent': par,
                 'parent_in_scan': True,
-                'interps': [],
+                # Feeds the FOREACH in write_scan that creates
+                # (:File)-[:INTERPRETED_AS]->(:Interpreter). Hardcoded to [] since
+                # it was written, so that clause has never fired on this path.
+                'interps': [interpreted_as] if interpreted_as else [],
+                'interpreted_as': interpreted_as,
+                # H1 — carried through so the INTERPRETED_AS edge is dated with
+                # when the interpreter actually ran, not when the commit did.
+                # Null on rows indexed before the column existed; write_scan
+                # coalesces those to the commit time.
+                'interpreted_at': float(interpreted_at) if interpreted_at else None,
+                'interpretation_confidence': _confidence_of(interp_json),
             })
 
     if include_hierarchy:

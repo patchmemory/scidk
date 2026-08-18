@@ -3,11 +3,8 @@
 Test semantic schema retrieval for Schema Intelligence Layer.
 Verifies that relevant labels are retrieved for different query types.
 """
-import pytest
 import os
 import sys
-
-pytestmark = pytest.mark.integration
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -17,8 +14,13 @@ from scidk.services.chat_service import get_chat_service
 from scidk.services.neo4j_client import get_neo4j_params
 from neo4j import GraphDatabase
 
-def test_query(query_text: str, expected_labels: list, driver, sqlite_conn, ollama_url, database):
-    """Test a single query and print results."""
+def run_query(query_text: str, expected_labels: list, driver, sqlite_conn, ollama_url, database):
+    """Run a single query and print results.
+
+    Not named test_* — it takes six arguments and main() supplies them, but
+    pytest saw the old name, tried to collect it as a test, and errored out on
+    fixtures it could not find. Keep the prefix off it.
+    """
     print(f"\n{'='*80}")
     print(f"Query: \"{query_text}\"")
     print(f"Expected to retrieve: {', '.join(expected_labels)}")
@@ -94,7 +96,7 @@ def main():
             results = []
 
             # Test 1: File-related query
-            results.append(test_query(
+            results.append(run_query(
                 query_text="What types of files are in the dataset?",
                 expected_labels=["File"],  # Adjusted expectation - may not have Folder
                 driver=driver,
@@ -104,7 +106,7 @@ def main():
             ))
 
             # Test 2: Sample-related query
-            results.append(test_query(
+            results.append(run_query(
                 query_text="What properties do Samples have?",
                 expected_labels=["Sample"],  # Adjusted - may not have SampleType
                 driver=driver,
@@ -114,7 +116,7 @@ def main():
             ))
 
             # Test 3: Relationship query
-            results.append(test_query(
+            results.append(run_query(
                 query_text="How are scans connected to samples?",
                 expected_labels=["Scan", "Sample"],
                 driver=driver,

@@ -23,15 +23,35 @@ if [[ -f .venv/bin/activate ]]; then
 fi
 
 # Start gunicorn with settings optimized for large models
+#
+# --preload runs create_app() once in the master process, before workers are
+# forked. Without it each of the 16 workers builds its own BackgroundScheduler
+# with its own in-memory jobstore, so every scheduled job fires 16 times
+# (replace_existing=True only deduplicates within one jobstore). With it, the
+# scheduler is started in the master and inherited by the workers — and because
+# fork() does not copy threads, only the master's timer thread actually fires.
+#
+# --preload requires that create_app() leave no connection open: anything live in
+# the master is inherited by all 16 workers as a shared file descriptor. See
+# _release_startup_connections() in scidk/app.py, the lazy `db` properties on
+# InterpreterSettings and AlertManager, and get_concept_driver(), which verifies
+# with a throwaway driver so the one it returns has an empty pool. Re-check that
+# invariant before adding anything to app.extensions that connects in __init__.
+#
+# Trade-off: with the scheduler in the master, a schedule change made through the
+# API lands in a worker and is persisted but not applied until restart.
+# BackupScheduler.update_settings() logs a warning when that happens.
 echo "Starting gunicorn with:"
 echo "  - Workers: 16 (reduce to 4 if needed GPU memory)"
 echo "  - Timeout: 300s (5 minutes for 72b model)"
 echo "  - Bind: 127.0.0.1:5000"
+echo "  - Preload: on (single scheduler in the master process)"
 
 nohup gunicorn \
     -w 16 \
     -b 127.0.0.1:5000 \
     --timeout 300 \
+    --preload \
     --access-logfile - \
     --error-logfile - \
     "scidk.app:create_app()" \

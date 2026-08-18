@@ -97,7 +97,11 @@ class InMemoryGraph:
             self.by_id[ds['id']] = checksum
         return ds
 
-    def add_interpretation(self, checksum: str, interpreter_id: str, payload: Dict):
+    def add_interpretation(self, checksum: str, interpreter_id: str, payload: Dict,
+                           file_path: Optional[str] = None, host: Optional[str] = None):
+        # file_path/host are accepted and ignored: the Neo4j backend needs them to
+        # link the Interpretation to its File, and both backends sit behind the
+        # same app.extensions['scidk']['graph'] handle, so the signatures match.
         ds = self.datasets.get(checksum)
         if not ds:
             return

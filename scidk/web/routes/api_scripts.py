@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict
 
-from flask import Blueprint, current_app, jsonify, request, send_file
+from flask import Blueprint, current_app, g, jsonify, request, send_file
 
 from scidk.core.scripts import (
     ScriptsManager,
@@ -82,9 +82,18 @@ def _get_neo4j_config():
 
 
 def _get_current_user():
-    """Get current username from session/auth."""
-    # TODO: Integrate with auth system
-    return 'system'
+    """Get the current username for audit attribution.
+
+    ``g.scidk_user`` is set by ``auth_middleware.check_auth`` and by the Bearer
+    token path in ``decorators._authenticate_bearer_token``. It is *not* the
+    attribute name ``g.scidk_username``, which is set nowhere in the codebase.
+
+    The ``'system'`` fallback is load-bearing: three paths reach an endpoint with
+    ``require_admin`` satisfied but no user on ``g`` — test mode (``TESTING`` /
+    ``pytest`` imported / ``SCIDK_E2E_TEST``), first-time zero-user setup on a
+    POST, and auth disabled outright. Those cases keep today's attribution.
+    """
+    return getattr(g, 'scidk_user', None) or 'system'
 
 
 # Script CRUD endpoints

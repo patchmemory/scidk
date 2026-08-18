@@ -16,6 +16,100 @@ def _get_ext():
     return current_app.extensions['scidk']
 
 
+def _estimate_file_count_from_history(path: str):
+    """Most recent finished scan whose root is `path` or an ancestor of it.
+
+    Returns that scan's file_count so a new task can show an estimated total
+    while its own count pass is still running, or None when there is no usable
+    prior scan. Best-effort: never raises.
+    """
+    try:
+        from ...core import path_index_sqlite as pix
+        import json as _json
+        conn = pix.connect()
+        try:
+            cur = conn.cursor()
+            # `root = ?` is the same folder; `? LIKE root || '/%'` is an ancestor
+            # scan (the '/' guards against '/data' matching '/data-archive').
+            cur.execute(
+                """
+                SELECT extra_json FROM scans
+                 WHERE status IN ('completed', 'committed')
+                   AND (root = ? OR ? LIKE root || '/%')
+                 ORDER BY completed DESC
+                 LIMIT 1
+                """,
+                (path, path),
+            )
+            row = cur.fetchone()
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        if row and row[0]:
+            data = _json.loads(row[0])
+            count = data.get('file_count')
+            if isinstance(count, int) and count > 0:
+                return count
+    except Exception:
+        pass
+    return None
+
+
+def _persist_task(task: dict):
+    """Write current task state to background_tasks so a long scan survives a restart.
+
+    Column names follow migrations.py (id, type, status, created, updated,
+    payload); everything else rides in the payload JSON, whose keys match what
+    api_tasks_list reads back. Best-effort: never let persistence kill a scan.
+    """
+    try:
+        from ...core import path_index_sqlite as pix
+        from ...core import migrations as _migs
+        import json as _json, time as _t
+        conn = pix.connect()
+        try:
+            _migs.migrate(conn)
+            payload = _json.dumps({
+                'path': task.get('path'),
+                'scan_id': task.get('scan_id'),
+                'progress': task.get('progress'),
+                'processed': task.get('processed'),
+                'total': task.get('total'),
+                'total_is_estimate': bool(task.get('total_is_estimate', False)),
+                'status_message': task.get('status_message'),
+                'eta_seconds': task.get('eta_seconds'),
+                'error': task.get('error'),
+            })
+            conn.execute(
+                """
+                INSERT INTO background_tasks(id, type, status, created, updated, payload)
+                VALUES(?,?,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET
+                    status = excluded.status,
+                    updated = excluded.updated,
+                    payload = excluded.payload
+                """,
+                (
+                    task.get('id'),
+                    task.get('type'),
+                    task.get('status'),
+                    float(task.get('started') or 0.0),
+                    float(task.get('ended') or _t.time()),
+                    payload,
+                ),
+            )
+            conn.commit()
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 @bp.post('/tasks')
 def api_tasks_create():
     """Create a background task. Supports type=scan and type=commit."""
@@ -58,6 +152,7 @@ def api_tasks_create():
             'started': started,
             'ended': None,
             'total': 0,
+            'total_is_estimate': False,
             'processed': 0,
             'progress': 0.0,
             'scan_id': None,
@@ -67,11 +162,22 @@ def api_tasks_create():
             'eta_seconds': None,
             'status_message': 'Initializing scan...',
         }
+        # Seed a provisional total from the last scan of this path (or a parent)
+        # so the UI has something to show while the count pass runs.
+        try:
+            prior_count = _estimate_file_count_from_history(str(path))
+            if prior_count:
+                task['total'] = prior_count
+                task['total_is_estimate'] = True
+                task['status_message'] = f'Estimated {prior_count:,} files (from prior scan)'
+        except Exception:
+            pass  # never block task start on estimation failure
         current_app.extensions['scidk'].setdefault('tasks', {})[task_id] = task
         app = current_app._get_current_object()
 
         def _worker():
             with app.app_context():
+                _persist_task(task)
                 try:
                     import hashlib as _h
                     from ...core import path_index_sqlite as pix
@@ -87,11 +193,36 @@ def api_tasks_create():
 
                     if provider_id in ('local_fs', 'mounted_fs'):
                         base = Path(path)
-                        # Estimate total: Python traversal
+                        # Single traversal: count and collect at once. The tree is
+                        # walked exactly once here and never re-walked below — on a
+                        # multi-million-file network mount a second pass doubles the
+                        # wall time for nothing. Entries are taken one at a time
+                        # rather than in a comprehension so Cancel is honoured
+                        # during the walk, which alone can run for hours.
+                        from ...core.filesystem import iter_entries_scandir as _iter_entries
                         task['status_message'] = 'Counting files...'
-                        files_list = [p for p in _get_ext()['fs']._iter_files_python(base, recursive=recursive)]
-                        task['total'] = len(files_list)
-                        task['status_message'] = f'Processing {task["total"]} files...'
+                        file_entries = []
+                        items_dirs = set()
+                        seen_entries = 0
+                        for p, _is_dir, _is_file in _iter_entries(base, recursive=recursive):
+                            if task.get('cancel_requested'):
+                                task['status'] = 'canceled'
+                                task['status_message'] = 'Cancelled during file count'
+                                task['ended'] = time.time()
+                                _persist_task(task)
+                                return
+                            seen_entries += 1
+                            if _is_dir:
+                                items_dirs.add(p)
+                            elif _is_file:
+                                file_entries.append(p)
+                            if seen_entries % 1000 == 0:
+                                task['status_message'] = f'Counting files... {seen_entries:,} found'
+                        items_dirs.add(base)
+                        task['total'] = len(file_entries)
+                        task['total_is_estimate'] = False
+                        task['status_message'] = f'Found {len(file_entries):,} files, starting scan...'
+                        _persist_task(task)
                         # Build rows like api_scan, apply selection rules when provided
                         sel = (task.get('selection') or {})
                         rules = sel.get('rules') or []
@@ -130,46 +261,31 @@ def api_tasks_create():
                                         if s and not s.startswith('#'): ignore_patterns.append(s)
                             except Exception:
                                 ignore_patterns = []
+                        # Apply selection over the already-collected entries — no
+                        # second traversal. Directories were gathered during the
+                        # walk above; the ancestor climb still runs so a file's
+                        # parents are present even if a directory entry was missed.
                         items_files = []
-                        items_dirs = set()
-                        if recursive:
-                            for p in base.rglob('*'):
-                                if task.get('cancel_requested'):
-                                    task['status'] = 'canceled'; task['ended'] = time.time(); return
-                                try:
-                                    if p.is_dir():
-                                        items_dirs.add(p)
-                                    else:
-                                        # selection filter on files
-                                        try:
-                                            rel = p.resolve().relative_to(base.resolve()).as_posix()
-                                        except Exception:
-                                            rel = str(p)
-                                        ignored = any(_fn(rel, pat) for pat in ignore_patterns)
-                                        ok, _ = _decide(rel, ignored)
-                                        if ok:
-                                            items_files.append(p)
-                                        parent = p.parent
-                                        while parent and parent != parent.parent and str(parent).startswith(str(base)):
-                                            items_dirs.add(parent)
-                                            if parent == base:
-                                                break
-                                            parent = parent.parent
-                                except Exception:
-                                    continue
-                            items_dirs.add(base)
-                        else:
+                        for p in file_entries:
+                            if task.get('cancel_requested'):
+                                task['status'] = 'canceled'; task['ended'] = time.time(); _persist_task(task); return
                             try:
-                                for p in base.iterdir():
-                                    if p.is_dir(): items_dirs.add(p)
-                                    else:
-                                        rel = p.name
-                                        ignored = any(_fn(rel, pat) for pat in ignore_patterns)
-                                        ok, _ = _decide(rel, ignored)
-                                        if ok: items_files.append(p)
+                                try:
+                                    rel = p.resolve().relative_to(base.resolve()).as_posix()
+                                except Exception:
+                                    rel = str(p)
+                                ignored = any(_fn(rel, pat) for pat in ignore_patterns)
+                                ok, _ = _decide(rel, ignored)
+                                if ok:
+                                    items_files.append(p)
+                                parent = p.parent
+                                while parent and parent != parent.parent and str(parent).startswith(str(base)):
+                                    items_dirs.add(parent)
+                                    if parent == base:
+                                        break
+                                    parent = parent.parent
                             except Exception:
-                                pass
-                            items_dirs.add(base)
+                                continue
                         # Map to rows
                         def _row_from_local(pth: Path, typ: str) -> tuple:
                             full = str(pth.resolve())
@@ -206,13 +322,15 @@ def api_tasks_create():
                         eta_window_start = time.time()
                         for fpath in items_files:
                             if task.get('cancel_requested'):
-                                task['status'] = 'canceled'; task['ended'] = time.time(); return
+                                task['status'] = 'canceled'; task['ended'] = time.time(); _persist_task(task); return
                             try:
                                 ds = _get_ext()['fs'].create_dataset_node(fpath)
                                 current_app.extensions['scidk']['graph'].upsert_dataset(ds)
                             except Exception:
                                 pass
                             processed += 1; task['processed'] = processed
+                            if processed % 500 == 0:
+                                _persist_task(task)
                             if task['total']:
                                 task['progress'] = processed / task['total']
                                 # Calculate ETA based on processing rate (update every 10 files to reduce overhead)
@@ -243,7 +361,13 @@ def api_tasks_create():
                         fast_list = True if recursive else False
                         try:
                             items = prov.list_files(path, recursive=recursive, fast_list=fast_list)  # type: ignore[attr-defined]
-                            task['status_message'] = f'Processing {len(items or [])} remote items...'
+                            # list_files returns the whole listing, so the total is
+                            # known here — without this the task shows N/? forever.
+                            items = list(items or [])
+                            task['total'] = len(items)
+                            task['total_is_estimate'] = False
+                            task['status_message'] = f'Found {len(items):,} files, starting scan...'
+                            _persist_task(task)
                         except Exception as ee:
                             raise RuntimeError(str(ee))
                         # Selection for remote: apply only to files using full remote path
@@ -289,6 +413,12 @@ def api_tasks_create():
                             folders_meta.append({'path': full_path, 'name': name, 'parent': parent, 'parent_name': parent_name})
                         from ...core.path_utils import join_remote_path, parent_remote_path
                         for it in (items or []):
+                            if task.get('cancel_requested'):
+                                task['status'] = 'canceled'
+                                task['status_message'] = f'Cancelled after {file_count:,} files'
+                                task['ended'] = time.time()
+                                _persist_task(task)
+                                return
                             name = it.get('Name') or it.get('Path') or ''
                             if it.get('IsDir'):
                                 if name:
@@ -319,8 +449,12 @@ def api_tasks_create():
                                     pass
                                 file_count += 1
                                 task['processed'] = file_count
+                                if task['total']:
+                                    task['progress'] = file_count / task['total']
                                 if file_count % 50 == 0:
-                                    task['status_message'] = f'Processed {file_count} remote files...'
+                                    task['status_message'] = f'Processed {file_count:,} remote files...'
+                                if file_count % 500 == 0:
+                                    _persist_task(task)
                             if recursive and name:
                                 parts = [p for p in (name.split('/') if isinstance(name, str) else []) if p]
                                 cur = ''
@@ -465,11 +599,15 @@ def api_tasks_create():
                     task['status'] = 'completed'
                     task['scan_id'] = scan_id
                     task['progress'] = 1.0
+                    task['status_message'] = f'Completed: {int(file_count):,} files, {int(folder_count):,} folders'
+                    _persist_task(task)
                 except Exception as e:
                     import time as _t
                     task['ended'] = _t.time()
                     task['status'] = 'error'
                     task['error'] = str(e)
+                    task['status_message'] = f'Failed: {e}'
+                    _persist_task(task)
         threading.Thread(target=_worker, daemon=True).start()
         return jsonify({'task_id': task_id, 'status': 'running'}), 202
 
@@ -674,6 +812,11 @@ def api_tasks_list():
                             'processed': payload_obj.get('processed'),
                             'total': payload_obj.get('total'),
                             'error': payload_obj.get('error'),
+                            'path': payload_obj.get('path'),
+                            'scan_id': payload_obj.get('scan_id'),
+                            'status_message': payload_obj.get('status_message'),
+                            'eta_seconds': payload_obj.get('eta_seconds'),
+                            'total_is_estimate': payload_obj.get('total_is_estimate', False),
                         })
                 finally:
                     try:

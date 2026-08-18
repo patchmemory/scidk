@@ -815,8 +815,10 @@ def api_backups_create():
         include_data = data.get('include_data', False)
         verify = data.get('verify', True)
 
-        # Get username from auth context if available
-        created_by = getattr(g, 'scidk_username', 'admin')
+        # Get username from auth context if available. The attribute is
+        # g.scidk_user (auth_middleware/decorators); g.scidk_username is set
+        # nowhere, so this read always fell through to 'admin'.
+        created_by = getattr(g, 'scidk_user', 'admin')
 
         backup_manager = get_backup_manager()
         result = backup_manager.create_backup(
