@@ -1,0 +1,27 @@
+profile_id: conda_environment
+name: Conda Software Environment
+version: "1.0"
+interpreter: null
+inherits: file_collection
+enabled: true
+# Matches conda environments — reproducible software environments
+# linked to the analyses that use them
+trigger:
+  extensions: [".yaml", ".yml"]
+  filename_pattern: '^(environment|conda).*\.(yaml|yml)$'
+siblings:
+  - group: env_spec
+    required: true
+    type: file
+    min_count: 1
+    patterns:
+      - '^environment.*\.yaml$'
+      - '^environment.*\.yml$'
+      - '^conda.*\.yaml$'
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: SoftwareEnvironment
+    software: Conda
+    profile: conda_environment

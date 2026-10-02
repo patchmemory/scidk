@@ -1,0 +1,47 @@
+profile_id: bruker_microct_flat
+name: Bruker Skyscan MicroCT - Flat Numbered Export
+version: "1.0"
+interpreter: null
+inherits: file_collection
+enabled: true
+# CTAn export mode producing flat zero-padded 11-digit TIFF stacks
+# without the tilde separator. Common in assisted service workflows.
+trigger:
+  extensions: [".tif"]
+  filename_pattern: '.*\d{11}\.tif$'
+siblings:
+  - group: scan_log
+    required: true
+    type: file
+    min_count: 1
+    patterns:
+      - '.*\.log$'
+  - group: tiff_stack
+    required: true
+    type: file
+    min_count: 5
+    patterns:
+      - '.*\d{11}\.tif$'
+  - group: parameters
+    required: false
+    type: file
+    min_count: 1
+    patterns:
+      - '.*\.csv$'
+  - group: reconstruction
+    required: false
+    type: dir
+    min_count: 1
+    patterns:
+      - '.*_Rec$'
+      - '.*_rec$'
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: MicroCTScan
+    modality: MicroCT
+    instrument: Bruker Skyscan 1276
+    export_mode: flat_numbered
+    facility: PMIT
+    profile: bruker_microct_flat

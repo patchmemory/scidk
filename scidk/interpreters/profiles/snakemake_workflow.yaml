@@ -1,0 +1,25 @@
+profile_id: snakemake_workflow
+name: Snakemake Pipeline Run
+version: "1.0"
+interpreter: null
+inherits: file_collection
+enabled: true
+trigger:
+  extensions: ["", ".smk"]
+  filename_pattern: '^Snakefile$'
+siblings:
+  - group: config
+    required: false
+    type: file
+    min_count: 1
+    patterns:
+      - '^config\.yaml$'
+      - '^config\.yml$'
+      - '^config\.json$'
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: BioinformaticsPipelineRun
+    software: Snakemake
+    profile: snakemake_workflow

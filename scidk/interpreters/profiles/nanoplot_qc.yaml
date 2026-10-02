@@ -1,0 +1,31 @@
+profile_id: nanoplot_qc
+name: NanoPlot Sequencing QC Report
+version: "1.0"
+interpreter: null
+inherits: file_collection
+enabled: true
+trigger:
+  extensions: [".html"]
+  filename_pattern: '^NanoPlot-report\.html$'
+siblings:
+  - group: stats
+    required: true
+    type: file
+    min_count: 1
+    patterns:
+      - '^NanoStats\.txt$'
+  - group: plots
+    required: false
+    type: file
+    min_count: 1
+    patterns:
+      - '^Yield_By_Length\.html$'
+      - '^LengthvsQualityScatterPlot.*\.html$'
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: SequencingQCReport
+    software: NanoPlot
+    modality: LongReadSequencing
+    profile: nanoplot_qc

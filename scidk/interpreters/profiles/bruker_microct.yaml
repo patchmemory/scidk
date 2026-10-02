@@ -1,0 +1,44 @@
+profile_id: bruker_microct
+name: Bruker Skyscan MicroCT Scan
+version: "1.0"
+interpreter: null
+inherits: file_collection
+enabled: true
+trigger:
+  extensions: [".tif"]
+  filename_pattern: '.*~\d{7,}\.tif$'
+siblings:
+  - group: scan_log
+    required: true
+    type: file
+    min_count: 1
+    patterns:
+      - '.*\.log$'
+  - group: raw_stack
+    required: true
+    type: file
+    min_count: 5
+    patterns:
+      - '.*~\d{7,}\.tif$'
+  - group: reconstruction
+    required: false
+    type: dir
+    min_count: 1
+    patterns:
+      - '.*_Rec$'
+      - '.*_rec$'
+  - group: dicom_export
+    required: false
+    type: dir
+    min_count: 1
+    patterns:
+      - '^Dicom_.*'
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: MicroCTScan
+    modality: MicroCT
+    instrument: Bruker Skyscan 1276
+    facility: PMIT
+    profile: bruker_microct

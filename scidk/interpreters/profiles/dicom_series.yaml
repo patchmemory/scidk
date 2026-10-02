@@ -1,0 +1,24 @@
+profile_id: dicom_series
+name: DICOM Image Series
+version: "1.0"
+interpreter: dicom_bioformats
+inherits: file_collection
+enabled: true
+trigger:
+  extensions: [".dcm", ".dicom"]
+  filename_pattern: '^(?!\._).*\.(dcm|dicom)$'
+siblings:
+  - group: dicom_files
+    required: true
+    type: file
+    min_count: 2
+    patterns:
+      - '^(?!\._).*\.(dcm|dicom)$'
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: DICOMSeries
+    modality: Medical Imaging
+    facility: PMIT
+    profile: dicom_series

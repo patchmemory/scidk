@@ -1,0 +1,24 @@
+profile_id: nikon_nd2
+name: Nikon NIS-Elements Confocal Acquisition
+version: "1.0"
+interpreter: null
+inherits: file_collection
+enabled: true
+trigger:
+  extensions: [".nd2"]
+  filename_pattern: ".*\\.nd2$"
+siblings:
+  - group: metadata
+    required: false
+    type: file
+    min_count: 1
+    patterns:
+      - ".*\\.xml$"
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: ConfocalMicroscopyDataset
+    modality: Fluorescence
+    instrument: Nikon NIS-Elements
+    profile: nikon_nd2

@@ -1,0 +1,31 @@
+profile_id: bcc_project
+name: BCC Bioinformatics Consulting Project
+version: "1.0"
+interpreter: null
+inherits: file_collection
+enabled: true
+trigger:
+  extensions: [".html"]
+  filename_pattern: '^.+_pipeline_report.*\.html$'
+siblings:
+  - group: params
+    required: false
+    type: file
+    min_count: 1
+    patterns:
+      - '^params\.yaml$'
+      - '^params\.json$'
+  - group: data
+    required: false
+    type: dir
+    min_count: 1
+    patterns:
+      - '^data$'
+      - '^results$'
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: BioinformaticsProject
+    facility: BCC
+    profile: bcc_project

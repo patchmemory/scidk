@@ -1,0 +1,34 @@
+profile_id: nfcore_run
+name: nf-core Pipeline Run (SLURM submitted)
+version: "1.0"
+interpreter: null
+inherits: file_collection
+enabled: true
+trigger:
+  extensions: [".out"]
+  filename_pattern: '^slurm-\d+\.out$'
+siblings:
+  - group: pipeline_info
+    required: true
+    type: dir
+    min_count: 1
+    patterns:
+      - '^pipeline_info$'
+  - group: results
+    required: false
+    type: dir
+    min_count: 1
+    patterns:
+      - '^salmon$'
+      - '^star_salmon$'
+      - '^fastqc$'
+      - '^multiqc$'
+      - '^trimgalore$'
+      - '^results$'
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: BioinformaticsPipelineRun
+    software: nf-core
+    profile: nfcore_run

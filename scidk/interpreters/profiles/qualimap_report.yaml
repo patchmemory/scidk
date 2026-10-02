@@ -1,0 +1,24 @@
+profile_id: qualimap_report
+name: QualiMap BAM QC Report
+version: "1.0"
+interpreter: null
+inherits: file_collection
+enabled: true
+trigger:
+  extensions: [".html"]
+  filename_pattern: '^qualimapReport\.html$'
+siblings:
+  - group: stats
+    required: false
+    type: file
+    min_count: 1
+    patterns:
+      - '^genome_results\.txt$'
+      - '^qualimapReport\.pdf$'
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: QCReport
+    software: QualiMap
+    profile: qualimap_report

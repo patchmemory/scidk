@@ -1,0 +1,25 @@
+profile_id: aperio_wsi
+name: Aperio Whole Slide Image Batch
+version: "1.0"
+interpreter: null
+inherits: file_collection
+enabled: true
+trigger:
+  extensions: [".svs"]
+  filename_pattern: '.*\.svs$'
+siblings:
+  - group: markup
+    required: false
+    type: dir
+    min_count: 1
+    patterns:
+      - '^_Markup_$'
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: WholeSlideImaging
+    modality: BrightfieldMicroscopy
+    format: AperioSVS
+    facility: TPSI
+    profile: aperio_wsi

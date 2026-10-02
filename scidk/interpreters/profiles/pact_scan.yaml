@@ -1,0 +1,39 @@
+profile_id: pact_scan
+name: Photoacoustic CT Scan (Parallax reconstruction)
+version: "1.0"
+interpreter: null
+inherits: file_collection
+enabled: true
+trigger:
+  extensions: [".vff"]
+  filename_pattern: '^acq-\d{2}-\d{4}\.vff$'
+siblings:
+  - group: recon_log
+    required: true
+    type: file
+    min_count: 1
+    patterns:
+      - '^parallax.*\.log$'
+  - group: acquisition
+    required: false
+    type: file
+    min_count: 1
+    patterns:
+      - '^full\.rfan$'
+      - '^full\.slice$'
+      - '^full\.center$'
+  - group: volumes
+    required: false
+    type: dir
+    min_count: 1
+    patterns:
+      - '^Volumes$'
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: PhotoacousticCTScan
+    modality: PhotoacousticImaging
+    software: Parallax
+    facility: PMIT
+    profile: pact_scan

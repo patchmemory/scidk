@@ -1,0 +1,23 @@
+profile_id: meryl_database
+name: Meryl K-mer Database
+version: "1.0"
+interpreter: null
+inherits: file_collection
+enabled: true
+trigger:
+  extensions: [".meryldata", ".merylData"]
+  filename_pattern: '.*\.[Mm]eryl[Dd]ata$'
+siblings:
+  - group: kmer_index
+    required: true
+    type: file
+    min_count: 1
+    patterns:
+      - '.*\.[Mm]eryl[Ii]ndex$'
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: KmerDatabase
+    software: Meryl
+    profile: meryl_database

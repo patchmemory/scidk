@@ -1,0 +1,31 @@
+profile_id: vevo_ultrasound
+name: VisualSonics Vevo Ultrasound Study
+version: "1.0"
+interpreter: vevo_xml
+inherits: file_collection
+enabled: true
+trigger:
+  extensions: [".vxml"]
+  filename_pattern: '^Study\.vxml$'
+siblings:
+  - group: measurement_info
+    required: false
+    type: file
+    min_count: 1
+    patterns:
+      - '^MeasurementInfo\.vxml$'
+  - group: backup
+    required: false
+    type: file
+    min_count: 1
+    patterns:
+      - '^Study\.bak$'
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: UltrasoundPhotoacousticStudy
+    modality: Ultrasound
+    instrument: FujiFilm-VisualSonics Vevo 3100 LAZR-X
+    facility: PMIT
+    profile: vevo_ultrasound

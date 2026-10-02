@@ -1,0 +1,23 @@
+profile_id: bids_dataset
+name: Brain Imaging Data Structure (BIDS) Dataset
+version: "1.0"
+interpreter: null
+inherits: file_collection
+enabled: true
+trigger:
+  extensions: [".json"]
+  filename_pattern: "^dataset_description\\.json$"
+siblings:
+  - group: participants
+    required: true
+    type: file
+    min_count: 1
+    patterns:
+      - "^participants\\.tsv$"
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: NeuroimagingDataset
+    standard: BIDS
+    profile: bids_dataset

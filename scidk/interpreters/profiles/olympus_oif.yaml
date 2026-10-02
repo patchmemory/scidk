@@ -1,0 +1,25 @@
+profile_id: olympus_oif
+name: Olympus FluoView Confocal Project
+version: "1.0"
+interpreter: null
+inherits: file_collection
+enabled: true
+trigger:
+  extensions: [".oif"]
+  filename_pattern: ".*\\.oif$"
+siblings:
+  - group: image_data
+    required: false
+    type: file
+    min_count: 1
+    patterns:
+      - ".*\\.oib$"
+      - ".*\\.tif$"
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: ConfocalMicroscopyDataset
+    modality: Fluorescence
+    instrument: Olympus FluoView
+    profile: olympus_oif

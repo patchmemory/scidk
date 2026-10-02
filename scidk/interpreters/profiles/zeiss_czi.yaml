@@ -1,0 +1,21 @@
+profile_id: zeiss_czi
+name: Zeiss CZI Acquisition (Confocal / SEM-FIB / CLEM)
+version: "1.0"
+interpreter: null
+inherits: file_collection
+enabled: true
+# Phase B: same extension used by Zeiss Airyscan confocal AND Zeiss Crossbeam
+# SEM/FIB. Instrument type requires reading CZI header metadata to disambiguate.
+# Until a CZI interpreter is available, all .czi directories are matched as
+# generic ZeissAcquisition and refined later.
+trigger:
+  extensions: [".czi"]
+  filename_pattern: ".*\\.czi$"
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: ZeissAcquisition
+    modality: Microscopy
+    instrument: Zeiss
+    profile: zeiss_czi

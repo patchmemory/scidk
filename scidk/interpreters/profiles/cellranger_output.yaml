@@ -1,0 +1,33 @@
+profile_id: cellranger_output
+name: 10X Genomics Cell Ranger Output
+version: "1.0"
+interpreter: null
+inherits: file_collection
+enabled: true
+trigger:
+  extensions: [".html"]
+  filename_pattern: '^web_summary\.html$'
+siblings:
+  - group: count_matrix
+    required: true
+    type: file
+    min_count: 1
+    patterns:
+      - '^filtered_feature_bc_matrix\.h5$'
+      - '^raw_feature_bc_matrix\.h5$'
+      - '^molecule_info\.h5$'
+  - group: metrics
+    required: false
+    type: file
+    min_count: 1
+    patterns:
+      - '^metrics_summary\.csv$'
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: SingleCellSequencing
+    modality: scRNAseq
+    software: CellRanger
+    instrument: 10X Genomics
+    profile: cellranger_output

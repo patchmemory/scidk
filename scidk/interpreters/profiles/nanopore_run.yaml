@@ -1,0 +1,42 @@
+profile_id: nanopore_run
+name: Oxford Nanopore Sequencing Run
+version: "1.0"
+interpreter: null
+inherits: file_collection
+enabled: true
+trigger:
+  extensions: [".txt", ".gz"]
+  filename_pattern: '^sequencing_summary_P[AB][A-Z]\d{5}_.*\.(txt|txt\.gz)$'
+siblings:
+  - group: run_report
+    required: true
+    type: file
+    min_count: 1
+    patterns:
+      - '^final_summary_.*\.txt$'
+      - '^report_.*\.html$'
+      - '^report_.*\.json$'
+  - group: raw_signal
+    required: false
+    type: dir
+    min_count: 1
+    patterns:
+      - '^pod5$'
+      - '^fast5$'
+      - '^fast5_pass$'
+      - '^fast5_fail$'
+  - group: basecalled
+    required: false
+    type: dir
+    min_count: 1
+    patterns:
+      - '^fastq_pass$'
+      - '^fastq_fail$'
+graph:
+  node_label: Dataset
+  merge_on: [path, host]
+  properties:
+    type: SequencingRun
+    modality: LongReadSequencing
+    instrument: Oxford Nanopore
+    profile: nanopore_run
