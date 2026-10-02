@@ -1,341 +1,533 @@
 """
 Bruker MicroCT Complete Dataset Interpreter
 
-Interprets complete Bruker SkyScan microCT dataset folders including raw acquisition,
-reconstruction, and analysis stages. Creates ImagingDataset, InstrumentRecord, and
-FileSet nodes per the SciDK imaging data model.
+Interprets Bruker SkyScan microCT dataset folders in any of the configurations
+that appear in practice:
 
-This is a composite interpreter that understands the canonical Bruker dataset structure
-and creates appropriate graph nodes for each workflow stage.
+  Config A — Full dataset (raw + reconstruction archived together):
+    ScanName/
+    ├── ScanName_.log               # raw acquisition log
+    ├── ScanName_00000001.tif       # raw projection TIFF stack
+    └── ScanName_Rec/               # reconstruction output
+        ├── AnyName_rec.log         # reconstruction log (may differ from folder name)
+        ├── AnyName_rec00000001.tif # reconstructed TIFF stack
+        └── (optional) AnyName_rectmp.log
+
+  Config B — Rec-only (most common in practice; raw never archived or deleted):
+    ScanName_Rec/                   # this directory IS the dataset root
+    ├── AnyName_rec.log             # reconstruction log (name may differ from folder)
+    ├── AnyName_rectmp.log          # optional in-progress temp log (ignored)
+    └── AnyName_rec00000001.tif
+
+  Config C — Rec + NIfTI sibling:
+    ScanName_Rec/
+    ├── AnyName_rec.log
+    └── ...
+    ScanName_Rec-Nifti/             # or Rec-nii-*, Rec-NIfTI, etc.
+    ├── segmentation.nii.gz
+    └── img/
+        └── predictions/
+
+  Config D — Log-only stub (no TIFFs survived):
+    ScanName/
+    └── ScanName_.log               # produce minimal node from log metadata only
+
+Key design decisions vs. the original:
+  - TIFF stacks are discovered by *.tif glob, not by matching the log stem.
+    Log file names frequently differ from their containing folder (e.g.
+    wk6-10_Rec/ contains MM010_rec.log).
+  - _rectmp.log is explicitly deprioritised; _rec.log is preferred.
+  - can_handle() is implemented so the directory dispatcher can route correctly.
+  - NIfTI sibling directory is found by pattern matching on the parent, not
+    only inside the dataset dir.
+  - dataset_id is derived from the directory name, not the log stem, so the
+    graph key is stable regardless of log naming.
 """
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Dict, List, Any
-import re
+from typing import Any, Dict, List, Optional
+
+# ---------------------------------------------------------------------------
+# Bruker SkyScan log key aliases — different firmware versions use different
+# names for the same field.
+# ---------------------------------------------------------------------------
+_VOXEL_KEYS = [
+    'Image Pixel Size (um)',
+    'Voxel size (um)',
+    'Pixel Size (um)',
+    'Pixel size (um)',
+    'Reconstructed Pixel Size (um)',
+]
+
+_DATE_KEYS = [
+    'Study Date and Time',
+    'Acquisition Date and Time',
+    'Date and Time',
+    'Scan date',
+]
+
+_SCANNER_KEYS = [
+    'Scanner',
+    'System',
+    'Device',
+]
+
+_INSTRUMENT_PARAM_MAP = {
+    'Source Voltage (kV)':   'voltage_kv',
+    'Source Current (uA)':   'current_ua',
+    'Exposure (ms)':         'exposure_ms',
+    'Rotation Step (deg)':   'rotation_step_deg',
+    'Camera Pixel Size (um)': 'camera_pixel_size_um',
+    'Filter':                'filter',
+    'Reconstruction Program': 'reconstruction_software',
+    'Number Of Rows':        '_rows',       # used for dimensions, not stored directly
+    'Number Of Columns':     '_cols',
+    'Depth (bits)':          'bit_depth',
+}
 
 
 class BrukerMicroCtDatasetInterpreter:
-    """Composite interpreter for complete Bruker microCT dataset folders."""
+    """
+    Composite interpreter for Bruker SkyScan microCT dataset folders.
+
+    Triggered at directory level by the enrichment dispatcher when can_handle()
+    returns True. Produces ImagingDataset, InstrumentRecord, and FileSet nodes.
+    """
 
     id = "bruker_microct_dataset"
     name = "Bruker MicroCT Dataset"
-    version = "1.0.0"
-    extensions = []  # Triggered by directory structure, not extension
+    version = "2.0.0"
+    dispatch = "directory"
+    extensions = []          # directory-dispatch; no extension matching
     default_enabled = True
 
-    def interpret(self, file_path: Path) -> Dict[str, Any]:
-        """Interpret complete Bruker microCT dataset directory.
-
-        Expected structure:
-            dataset/
-            ├── dataset.log             # Acquisition metadata (REQUIRED)
-            ├── dataset_????????.tif    # Raw TIFF stack
-            ├── dataset_Rec/            # Reconstruction folder
-            │   ├── dataset_rec.log     # Reconstruction metadata
-            │   └── dataset_rec????????.tif  # Reconstructed TIFF stack
-            └── dataset_Rec-nii-*/      # Optional analysis outputs
-                └── *.nii, *.nii.gz
-
-        Args:
-            file_path: Path to dataset directory OR to .log file
-
-        Returns:
-            Dict with status, data, nodes, and relationships keys
+    # ------------------------------------------------------------------
+    # can_handle  — called by the enrichment dispatcher
+    # ------------------------------------------------------------------
+    def can_handle(self, path: Path, context: Optional[dict] = None) -> bool:
         """
-        # Determine if path is directory or log file
-        if file_path.is_file() and file_path.suffix == '.log':
-            dataset_dir = file_path.parent
-            log_file = file_path
-        elif file_path.is_dir():
-            dataset_dir = file_path
-            # Look for log file in directory
-            log_files = list(dataset_dir.glob("*.log"))
-            # Filter out reconstruction logs
-            log_files = [f for f in log_files if not f.stem.endswith('_rec')]
-            if not log_files:
-                return {
-                    'status': 'error',
-                    'data': {'error': 'No acquisition .log file found in directory'}
-                }
-            log_file = log_files[0]
-        else:
-            return {
-                'status': 'error',
-                'data': {'error': 'Path must be a directory or .log file'}
-            }
+        True for any directory that looks like a Bruker microCT dataset.
 
+        Matches:
+          - Directories whose name ends in _Rec, _rec, Rec (Config B, most common)
+          - Directories containing a *.log file that is NOT itself a _rec.log
+            (Config A full dataset root)
+          - Directories containing a *_rec.log (rec-only root without _Rec suffix)
+        """
         try:
-            # Extract dataset name from log file
-            dataset_name = log_file.stem
+            if not path.is_dir():
+                return False
+            name = path.name
+            # Config B: folder name ends in _Rec / _rec / Rec
+            if name.endswith('_Rec') or name.endswith('_rec') or name == 'Rec':
+                return True
+            # Config A / D: folder contains a raw acquisition log
+            acq_logs = [
+                f for f in path.glob('*.log')
+                if not f.stem.endswith('_rec') and not f.stem.endswith('_rectmp')
+            ]
+            if acq_logs:
+                return True
+            # Also match if the folder contains a _rec.log directly (unusual layout)
+            rec_logs = list(path.glob('*_rec.log'))
+            if rec_logs:
+                return True
+        except Exception:
+            pass
+        return False
+
+    # ------------------------------------------------------------------
+    # interpret
+    # ------------------------------------------------------------------
+    def interpret(self, file_path: Path, context: Optional[dict] = None) -> Dict[str, Any]:
+        """
+        Interpret a Bruker microCT dataset directory.
+
+        file_path may be:
+          - The dataset root (Config A/D): contains raw .log + optional TIFFs
+          - A *_Rec directory (Config B): contains *_rec.log + recon TIFFs
+          - A .log file: parent is treated as dataset root (legacy call path)
+        """
+        try:
+            # --- Resolve directory and log file(s) ---
+            if file_path.is_file() and file_path.suffix == '.log':
+                dataset_dir = file_path.parent
+            elif file_path.is_dir():
+                dataset_dir = file_path
+            else:
+                return self._error(f'Path must be a directory or .log file: {file_path}')
+
+            is_rec_dir = (
+                dataset_dir.name.endswith('_Rec') or
+                dataset_dir.name.endswith('_rec') or
+                dataset_dir.name == 'Rec'
+            )
+
+            # Stable dataset id from directory name (not log stem — they may differ)
+            dataset_id = dataset_dir.name
             dataset_path = str(dataset_dir.resolve())
 
-            # Parse acquisition log
-            acquisition_meta = self._parse_log_file(log_file)
+            nodes: List[Dict[str, Any]] = []
+            relationships: List[Dict[str, Any]] = []
 
-            # Detect raw TIFF stack
-            raw_tiff_pattern = f"{dataset_name}????????.tif"
-            raw_tiff_files = sorted(dataset_dir.glob(raw_tiff_pattern))
+            # ----------------------------------------------------------
+            # 1. Find and parse log files
+            # ----------------------------------------------------------
+            acq_log, rec_log = self._find_logs(dataset_dir, is_rec_dir)
 
-            # Detect reconstruction directory
-            rec_dir = None
-            for variant in [f"{dataset_name}_Rec", f"{dataset_name}_rec", f"{dataset_name}Rec"]:
-                potential_dir = dataset_dir / variant
-                if potential_dir.exists() and potential_dir.is_dir():
-                    rec_dir = potential_dir
-                    break
+            # Primary metadata comes from whichever log we have
+            # rec_log preferred for reconstruction metadata; acq_log for raw params
+            primary_meta = self._parse_log_file(rec_log or acq_log) if (rec_log or acq_log) else {}
 
-            # Detect analysis directory
-            analysis_dirs = list(dataset_dir.glob(f"{dataset_name}_Rec-nii-*"))
-            analysis_dir = analysis_dirs[0] if analysis_dirs else None
-
-            # Build nodes
-            nodes = []
-            relationships = []
-
-            # 1. ImagingDataset node (primary entity)
-            imaging_props = {
-                'id': dataset_name,
+            # ----------------------------------------------------------
+            # 2. ImagingDataset node
+            # ----------------------------------------------------------
+            imaging_props: Dict[str, Any] = {
                 'path': dataset_path,
+                'dataset_id': dataset_id,
                 'modality': 'microCT',
                 'instrument_vendor': 'Bruker',
+                'dataset_config': 'rec_only' if is_rec_dir else 'full',
             }
 
-            # Add critical metadata from acquisition log
-            if acquisition_meta:
-                if 'Image Pixel Size (um)' in acquisition_meta:
-                    imaging_props['voxel_size_um'] = self._parse_float(acquisition_meta['Image Pixel Size (um)'])
-                elif 'Voxel size (um)' in acquisition_meta:
-                    imaging_props['voxel_size_um'] = self._parse_float(acquisition_meta['Voxel size (um)'])
-                elif 'Pixel Size (um)' in acquisition_meta:
-                    imaging_props['voxel_size_um'] = self._parse_float(acquisition_meta['Pixel Size (um)'])
+            voxel = self._first_value(primary_meta, _VOXEL_KEYS)
+            if voxel is not None:
+                imaging_props['voxel_size_um'] = self._to_float(voxel)
 
-                if 'Study Date and Time' in acquisition_meta:
-                    imaging_props['acquisition_date'] = acquisition_meta['Study Date and Time']
-                if 'Scanner' in acquisition_meta:
-                    imaging_props['instrument'] = acquisition_meta['Scanner']
+            acq_date = self._first_value(primary_meta, _DATE_KEYS)
+            if acq_date:
+                imaging_props['acquisition_date'] = acq_date
 
-            imaging_node = {
+            scanner = self._first_value(primary_meta, _SCANNER_KEYS)
+            if scanner:
+                imaging_props['instrument'] = scanner
+
+            nodes.append({
                 'label': 'ImagingDataset',
                 'key_property': 'path',
-                'properties': imaging_props
-            }
-            nodes.append(imaging_node)
+                'properties': imaging_props,
+            })
 
-            # 2. InstrumentRecord node (from acquisition metadata)
-            if acquisition_meta:
-                instrument_props = {
-                    'source_file': str(log_file.resolve()),
+            # ----------------------------------------------------------
+            # 3. InstrumentRecord node (from whichever log has the params)
+            # ----------------------------------------------------------
+            log_for_instrument = acq_log or rec_log
+            if log_for_instrument and primary_meta:
+                instrument_props: Dict[str, Any] = {
+                    'source_file': str(log_for_instrument.resolve()),
                     'instrument_type': 'Bruker SkyScan microCT',
                 }
+                rows = cols = None
+                for log_key, prop_name in _INSTRUMENT_PARAM_MAP.items():
+                    val = primary_meta.get(log_key)
+                    if val is None:
+                        continue
+                    if prop_name == '_rows':
+                        rows = self._to_int(val)
+                    elif prop_name == '_cols':
+                        cols = self._to_int(val)
+                    elif log_key == 'Filter' or log_key == 'Reconstruction Program':
+                        instrument_props[prop_name] = val
+                    else:
+                        instrument_props[prop_name] = self._to_float(val)
 
-                # Add instrument parameters
-                param_map = {
-                    'Source Voltage (kV)': 'voltage_kv',
-                    'Source Current (uA)': 'current_ua',
-                    'Exposure (ms)': 'exposure_ms',
-                    'Rotation Step (deg)': 'rotation_step_deg',
-                    'Camera Pixel Size (um)': 'camera_pixel_size_um',
-                    'Filter': 'filter',
-                }
+                if rows and cols:
+                    instrument_props['sensor_dimensions'] = f'{cols}x{rows}'
 
-                for log_key, prop_name in param_map.items():
-                    if log_key in acquisition_meta:
-                        value = acquisition_meta[log_key]
-                        # Try to convert to float if it looks numeric
-                        if log_key != 'Filter':
-                            value = self._parse_float(value)
-                        instrument_props[prop_name] = value
-
-                if 'Reconstruction Program' in acquisition_meta:
-                    instrument_props['reconstruction_software'] = acquisition_meta['Reconstruction Program']
-
-                instrument_node = {
+                nodes.append({
                     'label': 'InstrumentRecord',
                     'key_property': 'source_file',
-                    'properties': instrument_props
-                }
-                nodes.append(instrument_node)
-
-                # Relationship: ImagingDataset -> InstrumentRecord
+                    'properties': instrument_props,
+                })
                 relationships.append({
                     'type': 'METADATA_SOURCE',
                     'from_label': 'ImagingDataset',
                     'from_match': {'path': dataset_path},
                     'to_label': 'InstrumentRecord',
-                    'to_match': {'source_file': str(log_file.resolve())}
+                    'to_match': {'source_file': str(log_for_instrument.resolve())},
                 })
 
-            # 3. FileSet node for raw TIFF stack
-            if raw_tiff_files:
-                raw_fileset_props = {
-                    'id': f"{dataset_name}_raw",
-                    'stage': 'raw',
-                    'file_count': len(raw_tiff_files),
-                    'format': 'TIFF',
-                    'pattern': raw_tiff_pattern,
-                    'path': dataset_path,
-                    'first_file': raw_tiff_files[0].name,
-                    'last_file': raw_tiff_files[-1].name
-                }
-
-                # Get dimensions from first TIFF if possible
-                if 'Number Of Rows' in acquisition_meta and 'Number Of Columns' in acquisition_meta:
-                    rows = self._parse_int(acquisition_meta['Number Of Rows'])
-                    cols = self._parse_int(acquisition_meta['Number Of Columns'])
-                    if rows and cols:
-                        raw_fileset_props['dimensions'] = f"{cols}x{rows}"
-
-                if 'Depth (bits)' in acquisition_meta:
-                    raw_fileset_props['bit_depth'] = self._parse_int(acquisition_meta['Depth (bits)'])
-
-                raw_fileset_node = {
-                    'label': 'FileSet',
-                    'key_property': 'id',
-                    'properties': raw_fileset_props
-                }
-                nodes.append(raw_fileset_node)
-
-                # Relationship: ImagingDataset -> FileSet (raw)
-                relationships.append({
-                    'type': 'RAW_DATA',
-                    'from_label': 'ImagingDataset',
-                    'from_match': {'path': dataset_path},
-                    'to_label': 'FileSet',
-                    'to_match': {'id': f"{dataset_name}_raw"}
-                })
-
-            # 4. FileSet node for reconstructed TIFF stack
-            if rec_dir:
-                rec_tiff_pattern = f"{dataset_name}_rec????????.tif"
-                rec_tiff_files = sorted(rec_dir.glob(rec_tiff_pattern))
-
-                if rec_tiff_files:
-                    rec_fileset_props = {
-                        'id': f"{dataset_name}_reconstructed",
-                        'stage': 'reconstructed',
-                        'file_count': len(rec_tiff_files),
+            # ----------------------------------------------------------
+            # 4. Raw TIFF stack (Config A only — not present in rec-only)
+            # ----------------------------------------------------------
+            raw_tiff_count = 0
+            if not is_rec_dir:
+                raw_tiffs = sorted(f for f in dataset_dir.glob('*.tif')
+                                   if f.is_file())
+                raw_tiff_count = len(raw_tiffs)
+                if raw_tiffs:
+                    raw_props: Dict[str, Any] = {
+                        'id': f'{dataset_id}_raw',
+                        'stage': 'raw',
+                        'file_count': raw_tiff_count,
                         'format': 'TIFF',
-                        'pattern': rec_tiff_pattern,
-                        'path': str(rec_dir.resolve()),
-                        'first_file': rec_tiff_files[0].name,
-                        'last_file': rec_tiff_files[-1].name
+                        'pattern': '*.tif',
+                        'path': dataset_path,
+                        'first_file': raw_tiffs[0].name,
+                        'last_file': raw_tiffs[-1].name,
                     }
+                    if primary_meta.get('Number Of Rows') and primary_meta.get('Number Of Columns'):
+                        r = self._to_int(primary_meta['Number Of Rows'])
+                        c = self._to_int(primary_meta['Number Of Columns'])
+                        if r and c:
+                            raw_props['dimensions'] = f'{c}x{r}'
+                    if primary_meta.get('Depth (bits)'):
+                        raw_props['bit_depth'] = self._to_int(primary_meta['Depth (bits)'])
 
-                    rec_fileset_node = {
+                    nodes.append({
                         'label': 'FileSet',
                         'key_property': 'id',
-                        'properties': rec_fileset_props
-                    }
-                    nodes.append(rec_fileset_node)
+                        'properties': raw_props,
+                    })
+                    relationships.append({
+                        'type': 'RAW_DATA',
+                        'from_label': 'ImagingDataset',
+                        'from_match': {'path': dataset_path},
+                        'to_label': 'FileSet',
+                        'to_match': {'id': f'{dataset_id}_raw'},
+                    })
 
-                    # Relationship: ImagingDataset -> FileSet (reconstructed)
+            # ----------------------------------------------------------
+            # 5. Reconstructed TIFF stack
+            #    - Config B: TIFFs are in dataset_dir itself
+            #    - Config A: TIFFs are in a *_Rec subdirectory
+            # ----------------------------------------------------------
+            rec_tiff_count = 0
+            if is_rec_dir:
+                rec_tiff_dir = dataset_dir
+            else:
+                rec_tiff_dir = self._find_rec_subdir(dataset_dir)
+
+            if rec_tiff_dir:
+                rec_tiffs = sorted(f for f in rec_tiff_dir.glob('*.tif')
+                                   if f.is_file())
+                rec_tiff_count = len(rec_tiffs)
+                if rec_tiffs:
+                    rec_props: Dict[str, Any] = {
+                        'id': f'{dataset_id}_reconstructed',
+                        'stage': 'reconstructed',
+                        'file_count': rec_tiff_count,
+                        'format': 'TIFF',
+                        'pattern': '*.tif',
+                        'path': str(rec_tiff_dir.resolve()),
+                        'first_file': rec_tiffs[0].name,
+                        'last_file': rec_tiffs[-1].name,
+                    }
+                    nodes.append({
+                        'label': 'FileSet',
+                        'key_property': 'id',
+                        'properties': rec_props,
+                    })
                     relationships.append({
                         'type': 'RECONSTRUCTED',
                         'from_label': 'ImagingDataset',
                         'from_match': {'path': dataset_path},
                         'to_label': 'FileSet',
-                        'to_match': {'id': f"{dataset_name}_reconstructed"}
+                        'to_match': {'id': f'{dataset_id}_reconstructed'},
                     })
 
-            # 5. FileSet node for analysis outputs (NIfTI files)
-            if analysis_dir:
-                nifti_files = list(analysis_dir.glob("*.nii")) + list(analysis_dir.glob("*.nii.gz"))
-
+            # ----------------------------------------------------------
+            # 6. NIfTI / analysis outputs
+            #    Look for sibling directories matching *Rec-Nifti*, *Rec-nii*,
+            #    *Rec-NIfTI*, etc., as well as a nested img/predictions/ tree.
+            # ----------------------------------------------------------
+            nifti_count = 0
+            nifti_dir = self._find_nifti_dir(dataset_dir, is_rec_dir)
+            if nifti_dir:
+                nifti_files = (
+                    list(nifti_dir.rglob('*.nii')) +
+                    list(nifti_dir.rglob('*.nii.gz'))
+                )
+                nifti_count = len(nifti_files)
                 if nifti_files:
-                    analysis_fileset_props = {
-                        'id': f"{dataset_name}_analysis",
+                    analysis_props: Dict[str, Any] = {
+                        'id': f'{dataset_id}_analysis',
                         'stage': 'analysis',
-                        'file_count': len(nifti_files),
+                        'file_count': nifti_count,
                         'format': 'NIfTI',
-                        'path': str(analysis_dir.resolve()),
-                        'files': [f.name for f in sorted(nifti_files)]
+                        'path': str(nifti_dir.resolve()),
+                        'files': [f.name for f in sorted(nifti_files)],
                     }
-
-                    analysis_fileset_node = {
+                    nodes.append({
                         'label': 'FileSet',
                         'key_property': 'id',
-                        'properties': analysis_fileset_props
-                    }
-                    nodes.append(analysis_fileset_node)
-
-                    # Relationship: ImagingDataset -> FileSet (analysis)
+                        'properties': analysis_props,
+                    })
                     relationships.append({
                         'type': 'ANALYSIS',
                         'from_label': 'ImagingDataset',
                         'from_match': {'path': dataset_path},
                         'to_label': 'FileSet',
-                        'to_match': {'id': f"{dataset_name}_analysis"}
+                        'to_match': {'id': f'{dataset_id}_analysis'},
                     })
 
-            # Build summary data
-            data = {
-                'dataset_id': dataset_name,
+            # ----------------------------------------------------------
+            # 7. Summary data
+            # ----------------------------------------------------------
+            data: Dict[str, Any] = {
+                'dataset_id': dataset_id,
                 'dataset_path': dataset_path,
+                'dataset_config': imaging_props['dataset_config'],
                 'voxel_size_um': imaging_props.get('voxel_size_um'),
+                'acquisition_date': imaging_props.get('acquisition_date'),
                 'stages': {
-                    'raw': len(raw_tiff_files) if raw_tiff_files else 0,
-                    'reconstructed': len(rec_tiff_files) if rec_dir and 'rec_tiff_files' in locals() else 0,
-                    'analysis': len(nifti_files) if analysis_dir and 'nifti_files' in locals() else 0
+                    'raw': raw_tiff_count,
+                    'reconstructed': rec_tiff_count,
+                    'analysis': nifti_count,
                 },
-                'total_files': (len(raw_tiff_files) if raw_tiff_files else 0) +
-                               (len(rec_tiff_files) if rec_dir and 'rec_tiff_files' in locals() else 0) +
-                               (len(nifti_files) if analysis_dir and 'nifti_files' in locals() else 0),
+                'total_files': raw_tiff_count + rec_tiff_count + nifti_count,
                 'node_count': len(nodes),
-                'relationship_count': len(relationships)
+                'relationship_count': len(relationships),
+                'logs_found': {
+                    'acquisition': str(acq_log) if acq_log else None,
+                    'reconstruction': str(rec_log) if rec_log else None,
+                },
             }
 
             return {
                 'status': 'success',
                 'data': data,
                 'nodes': nodes,
-                'relationships': relationships
+                'relationships': relationships,
             }
 
-        except Exception as e:
-            return {
-                'status': 'error',
-                'data': {
-                    'error': str(e),
-                    'error_type': type(e).__name__
-                }
-            }
+        except Exception as exc:
+            return self._error(f'{type(exc).__name__}: {exc}')
 
+    # ------------------------------------------------------------------
+    # Log discovery
+    # ------------------------------------------------------------------
+    def _find_logs(
+        self, directory: Path, is_rec_dir: bool
+    ) -> tuple[Optional[Path], Optional[Path]]:
+        """
+        Return (acq_log, rec_log) for a dataset directory.
+
+        Rules:
+          - *_rec.log   → reconstruction log
+          - *_rectmp.log → ignored (in-progress temp file)
+          - anything else → acquisition log
+          - If this IS a _Rec dir, all .log files are reconstruction logs;
+            there is no acquisition log here (it's in the parent, if at all).
+        """
+        all_logs = list(directory.glob('*.log'))
+        rec_logs = [f for f in all_logs if f.stem.endswith('_rec')]
+        tmp_logs = {f for f in all_logs if f.stem.endswith('_rectmp')}
+        acq_logs = [f for f in all_logs
+                    if f not in rec_logs and f not in tmp_logs]
+
+        rec_log = rec_logs[0] if rec_logs else None
+        acq_log = None if is_rec_dir else (acq_logs[0] if acq_logs else None)
+
+        # If we're in a rec dir and found no *_rec.log, fall back to any log
+        # (some exports omit the _rec suffix)
+        if is_rec_dir and rec_log is None:
+            non_tmp = [f for f in all_logs if f not in tmp_logs]
+            rec_log = non_tmp[0] if non_tmp else None
+
+        return acq_log, rec_log
+
+    # ------------------------------------------------------------------
+    # Subdirectory discovery
+    # ------------------------------------------------------------------
+    def _find_rec_subdir(self, dataset_dir: Path) -> Optional[Path]:
+        """Find the *_Rec reconstruction subdirectory inside a full dataset dir."""
+        for child in dataset_dir.iterdir():
+            if not child.is_dir():
+                continue
+            n = child.name
+            if n.endswith('_Rec') or n.endswith('_rec') or n == 'Rec':
+                return child
+        return None
+
+    def _find_nifti_dir(self, dataset_dir: Path, is_rec_dir: bool) -> Optional[Path]:
+        """
+        Find the NIfTI output directory.
+
+        Search order:
+          1. Sibling of dataset_dir matching *Rec-Nifti*, *Rec-nii*, *Rec-NIfTI*
+             (Config B/C: the _Rec-Nifti dir sits next to the _Rec dir)
+          2. Subdirectory of dataset_dir matching same patterns
+          3. Subdirectory named 'img' (some pipelines drop NIfTIs there)
+        """
+        search_root = dataset_dir.parent if is_rec_dir else dataset_dir
+        stem = dataset_dir.name  # e.g. "wk6-10_Rec" → look for "wk6-10_Rec-Nifti"
+
+        # Sibling search (most common for Config B)
+        _nifti_suffixes = ('-Nifti', '-nii', '-NIfTI', '-Nifti', '_Nifti',
+                           '-nifti', '_nifti', '-NII', '_NII')
+        for suffix in _nifti_suffixes:
+            candidate = search_root / (stem + suffix)
+            if candidate.is_dir():
+                return candidate
+            # Also try wildcard: stem without _Rec + suffix
+            base = stem[:-4] if stem.endswith('_Rec') else stem
+            candidate2 = search_root / (base + suffix)
+            if candidate2.is_dir():
+                return candidate2
+
+        # Subdirectory search
+        for child in dataset_dir.iterdir():
+            if not child.is_dir():
+                continue
+            cn = child.name.lower()
+            if 'nifti' in cn or 'nii' in cn:
+                return child
+            if cn == 'img':
+                return child
+
+        return None
+
+    # ------------------------------------------------------------------
+    # Log parsing
+    # ------------------------------------------------------------------
     def _parse_log_file(self, log_path: Path) -> Dict[str, str]:
-        """Parse Bruker SkyScan log file into key-value dictionary."""
-        parsed = {}
+        """Parse Bruker SkyScan log file (INI-style key=value, section headers ignored)."""
+        parsed: Dict[str, str] = {}
         try:
             with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
                 for line in f:
                     line = line.strip()
                     if not line or line.startswith('['):
                         continue
-
-                    # Split on '=' or tab
                     if '=' in line:
-                        parts = line.split('=', 1)
+                        key, _, value = line.partition('=')
                     elif '\t' in line:
-                        parts = line.split('\t', 1)
+                        key, _, value = line.partition('\t')
                     else:
                         continue
-
-                    if len(parts) == 2:
-                        key = parts[0].strip()
-                        value = parts[1].strip()
-                        parsed[key] = value
+                    parsed[key.strip()] = value.strip()
         except Exception:
             pass
-
         return parsed
 
-    def _parse_float(self, value: Any) -> Any:
-        """Try to parse value as float, return as-is if it fails."""
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _first_value(meta: Dict[str, str], keys: List[str]) -> Optional[str]:
+        """Return the first non-empty value found for any of the given keys."""
+        for k in keys:
+            v = meta.get(k)
+            if v:
+                return v
+        return None
+
+    @staticmethod
+    def _to_float(value: Any) -> Any:
         try:
             return float(value)
         except (ValueError, TypeError):
             return value
 
-    def _parse_int(self, value: Any) -> Any:
-        """Try to parse value as int, return None if it fails."""
+    @staticmethod
+    def _to_int(value: Any) -> Optional[int]:
         try:
             return int(value)
         except (ValueError, TypeError):
             return None
+
+    @staticmethod
+    def _error(msg: str) -> Dict[str, Any]:
+        return {'status': 'error', 'data': {'error': msg}}
