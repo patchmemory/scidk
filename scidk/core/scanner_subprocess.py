@@ -16,14 +16,18 @@ half-way leaves the real index untouched.
 """
 from __future__ import annotations
 
+import logging
 import os
+import shutil
+import signal
 import sqlite3
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from typing import Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 # The scanner is a CLI tool at the repo root, not an importable module.
 _SCANNER = os.path.normpath(
@@ -35,6 +39,15 @@ _WAIT_SLICE_SECONDS = 0.25   # how quickly the child's exit is noticed
 _MERGE_ATTEMPTS = 3
 _MERGE_RETRY_SECONDS = 5.0
 _BUSY_TIMEOUT_MS = 30000
+
+# How long files_scanned may sit unchanged before the child is presumed hung.
+# 30 min tolerates a slow NFS subtree; a deadlocked child never recovers.
+STALE_THRESHOLD_SECONDS = 1800
+
+# A scan database is proportional to the root, not to /tmp: a few million rows
+# is several GB. Checked before launching rather than discovered as an sqlite
+# "disk I/O error" from inside the child half an hour in.
+_MIN_FREE_BYTES = 10 * 1024 ** 3
 
 
 def _persist(task: dict) -> None:
@@ -61,8 +74,52 @@ def _try_delete(path: str) -> None:
             pass
 
 
+def _scan_db_dir() -> str:
+    """Directory the child's private scan database is written to.
+
+    Not tempfile.gettempdir(): /tmp is a small partition (tmpfs on some hosts),
+    so a scan of a large root filled it and died. ~/.scidk/scans/ is a sibling
+    of the ~/.scidk/db/ that holds files.db, which the results are merged into,
+    so the scan database and its destination share one filesystem.
+
+    ``SCIDK_SCAN_DB_DIR`` overrides it — a host whose home is on a small disk
+    can point scans at the big one without a code change.
+    """
+    return os.path.expanduser(
+        os.environ.get('SCIDK_SCAN_DB_DIR') or '~/.scidk/scans'
+    )
+
+
 def _tmp_db_path(task_id: str) -> str:
-    return os.path.join(tempfile.gettempdir(), f'scidk_scan_{task_id}.db')
+    return os.path.join(_scan_db_dir(), f'scidk_scan_{task_id}.db')
+
+
+def _preflight_scan_dir(directory: str) -> Optional[str]:
+    """None if ``directory`` can hold a scan database, else why it cannot.
+
+    Returns the reason rather than raising so the caller can put it straight
+    into the task row: a typo in SCIDK_SCAN_DB_DIR or a full disk should fail
+    the task with something readable, not with a traceback from the child.
+    """
+    try:
+        os.makedirs(directory, exist_ok=True)
+    except Exception as e:
+        return f'Scan database directory {directory} could not be created: {e}'
+    if not os.path.isdir(directory):
+        return f'Scan database directory {directory} is not a directory'
+    if not os.access(directory, os.W_OK | os.X_OK):
+        return f'Scan database directory {directory} is not writable'
+    try:
+        free = shutil.disk_usage(directory).free
+    except Exception as e:
+        return f'Could not check free space on {directory}: {e}'
+    if free < _MIN_FREE_BYTES:
+        return (
+            f'Not enough free space for a scan database: '
+            f'{free / 1024 ** 3:.1f} GB available on {directory}, '
+            f'{_MIN_FREE_BYTES / 1024 ** 3:.0f} GB required'
+        )
+    return None
 
 
 def _read_tail(path: str, limit: int = 500) -> str:
@@ -74,8 +131,17 @@ def _read_tail(path: str, limit: int = 500) -> str:
 
 
 def _scanner_scan_id(tmp_db: str) -> Optional[str]:
-    """Newest scan id in the child's database, or None if it has not started."""
+    """Newest scan id in the child's database, or None if it has not started.
+
+    The size check is not an optimisation. sqlite3.connect() *creates* a missing
+    file, so polling a deleted tmp_db used to leave a 0-byte stub behind — after
+    which "SELECT id FROM scans" raised forever, this returned None forever, and
+    the monitor froze the task row with no error. The child writes to the
+    unlinked inode, so that stub can never gain a scans table.
+    """
     try:
+        if not os.path.exists(tmp_db) or os.path.getsize(tmp_db) == 0:
+            return None
         conn = sqlite3.connect(tmp_db, timeout=5)
         try:
             row = conn.execute(
@@ -111,6 +177,21 @@ def launch_scanner(task_id: str, task_dict: dict,
 
     tmp_db = _tmp_db_path(task_id)
     log_path = f'{tmp_db}.log'
+
+    problem = _preflight_scan_dir(os.path.dirname(tmp_db))
+    if problem:
+        task_dict['status'] = 'error'
+        task_dict['error'] = problem
+        task_dict['status_message'] = f'Failed: {problem}'
+        task_dict['ended'] = time.time()
+        _persist(task_dict)
+        # The queue has already counted this job's workers as spent. Without
+        # handing the budget back, a failed pre-flight leaves every later scan
+        # queued forever.
+        _start_next(task_id, files_db_path, max_total_workers, max_concurrent,
+                    live_tasks, scans_registry)
+        return
+
     # A previous attempt's leftovers would be merged as if they were ours.
     _try_delete(tmp_db)
 
@@ -184,6 +265,13 @@ def _monitor(proc: subprocess.Popen, task_id: str, task_dict: dict, tmp_db: str,
     """
     scanner_scan_id = None
     last_poll = 0.0
+    # Consecutive polls that found no readable child database.
+    _no_scan_id_misses = 0
+    # Liveness: the child's own files_scanned counter must advance. None until
+    # the first successful read, so a slow start on a huge tree is not killed
+    # before it has walked anything.
+    _last_files_scanned = None
+    _last_progress_time = time.monotonic()
     while True:
         # Wait on the child in short slices rather than sleeping the poll
         # interval: a small scan can finish in well under a second, and sleeping
@@ -202,7 +290,22 @@ def _monitor(proc: subprocess.Popen, task_id: str, task_dict: dict, tmp_db: str,
             if scanner_scan_id is None:
                 scanner_scan_id = _scanner_scan_id(tmp_db)
             if not scanner_scan_id:
+                _no_scan_id_misses += 1
+                if _no_scan_id_misses > 60:   # 60 x 5s poll = 5 minutes
+                    task_dict['status'] = 'error'
+                    task_dict['status_message'] = (
+                        'Scanner child DB missing after 5 min \u2014 '
+                        'process may have crashed'
+                    )
+                    _persist(task_dict)
+                    # on_job_finished() is deliberately NOT called: with no
+                    # child database we can neither merge results nor confirm
+                    # the child exited, and handing the worker budget back
+                    # while a live process may still be walking would
+                    # over-subscribe the queue. The row needs an operator.
+                    return
                 continue
+            _no_scan_id_misses = 0
             conn_tmp = sqlite3.connect(tmp_db, timeout=5)
             try:
                 rows = conn_tmp.execute(
@@ -222,6 +325,28 @@ def _monitor(proc: subprocess.Popen, task_id: str, task_dict: dict, tmp_db: str,
             # until then no total is actually known.
             task_dict['processed'] = files_seen
             _persist(task_dict)
+
+            # A deadlocked child keeps its last scan_progress row forever, so
+            # re-persisting it every 5s makes updated_at look fresh while
+            # nothing is happening. Advancement, not freshness, is the signal.
+            if _last_files_scanned is None or files_seen != _last_files_scanned:
+                _last_files_scanned = files_seen
+                _last_progress_time = time.monotonic()
+            else:
+                elapsed = time.monotonic() - _last_progress_time
+                if elapsed > STALE_THRESHOLD_SECONDS:
+                    logger.warning(
+                        "Scanner stale for %.0f s (task %s, pid %s, "
+                        "files_scanned stuck at %s) \u2014 sending SIGTERM",
+                        elapsed, task_id, proc.pid, files_seen,
+                    )
+                    proc.send_signal(signal.SIGTERM)
+                    # The scanner installs no SIGTERM handler (it only catches
+                    # KeyboardInterrupt, i.e. SIGINT), so this kills it
+                    # outright: returncode becomes -15 and the returncode != 0
+                    # branch below marks the task 'error' and calls
+                    # _start_next(). Partial rows are never merged.
+                    break
         except Exception:
             pass  # a poll failure must never end the scan
 

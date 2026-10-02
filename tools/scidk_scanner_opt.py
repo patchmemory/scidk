@@ -56,6 +56,7 @@ import sqlite3
 import sys
 import threading
 import time
+import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -436,7 +437,17 @@ def _writer_thread(
     stats: Dict,
     stats_lock: threading.Lock,
     quiet: bool,
+    writer_error: Optional[List[BaseException]] = None,
 ) -> None:
+    """Sole owner of the SQLite connection.
+
+    ``writer_error`` is a caller-owned list, mutated in place so walk_path()
+    sees the failure across the thread boundary. Every SQLite call here is
+    guarded: an unhandled OperationalError (disk full, locked DB) used to kill
+    this thread silently, after which the 16000-slot queue filled, all workers
+    blocked forever in write_q.put(), and the main thread blocked forever in
+    as_completed() — a 0% CPU hang that never exits. See drain_until_stop().
+    """
     FILE_SQL = """INSERT INTO files(
         path, parent_path, name, depth, type, size,
         modified_time, file_extension, mime_type,
@@ -496,35 +507,83 @@ def _writer_thread(
               end="", flush=True)
         last_print = now
 
+    def record_failure(e: BaseException) -> None:
+        """Publish the failure to the caller and to stderr.
+
+        There is no logger in this module, so stderr is the channel — and it is
+        the right one: launch_scanner() redirects the child's stderr to
+        <tmp_db>.log, which the monitor reads back with _read_tail() and stores
+        as the task's error message.
+        """
+        if writer_error is not None and not writer_error:
+            writer_error.append(e)
+        print(f"\n[fatal] writer thread failed: {e}", file=sys.stderr)
+        traceback.print_exception(type(e), e, e.__traceback__, file=sys.stderr)
+        sys.stderr.flush()
+
+    def drain_until_stop() -> None:
+        """Keep consuming and discarding until _STOP, then let the thread end.
+
+        Draining once is not enough: the workers would unblock, push, keep
+        walking, and refill the queue within seconds — restoring the exact
+        deadlock this guard exists to prevent. Consuming until _STOP lets the
+        walk finish and lets walk_path() reach its writer_error check, which
+        exits the process non-zero so the monitor's returncode != 0 branch
+        settles the task as 'error'.
+        """
+        file_buf.clear()
+        item_buf.clear()
+        while True:
+            try:
+                if write_q.get(timeout=0.5) is _STOP:
+                    return
+            except queue.Empty:
+                continue
+
     while True:
         try:
             item = write_q.get(timeout=0.5)
         except queue.Empty:
-            flush()
-            write_progress()
+            try:
+                flush()
+                write_progress()
+            except Exception as e:
+                record_failure(e)
+                drain_until_stop()
+                return
             print_progress()
             continue
 
         if item is _STOP:
-            flush()
-            now = time.time()
-            with stats_lock:
-                f, d, b = stats["files"], stats["dirs"], stats["bytes"]
-            conn.executemany(
-                "INSERT OR REPLACE INTO scan_progress(scan_id,metric,value,updated) VALUES(?,?,?,?)",
-                [(scan_id, "files_scanned", f, now),
-                 (scan_id, "dirs_scanned",  d, now),
-                 (scan_id, "bytes_scanned", b, now)],
-            )
-            conn.commit()
+            try:
+                flush()
+                now = time.time()
+                with stats_lock:
+                    f, d, b = stats["files"], stats["dirs"], stats["bytes"]
+                conn.executemany(
+                    "INSERT OR REPLACE INTO scan_progress(scan_id,metric,value,updated) VALUES(?,?,?,?)",
+                    [(scan_id, "files_scanned", f, now),
+                     (scan_id, "dirs_scanned",  d, now),
+                     (scan_id, "bytes_scanned", b, now)],
+                )
+                conn.commit()
+            except Exception as e:
+                # _STOP is already consumed, so there is nothing left to drain
+                # and no producer left to unblock — just report and exit.
+                record_failure(e)
             break
 
         file_row, item_row = item
         file_buf.append(file_row)
         item_buf.append(item_row)
-        if len(file_buf) >= BATCH:
-            flush()
-        write_progress()
+        try:
+            if len(file_buf) >= BATCH:
+                flush()
+            write_progress()
+        except Exception as e:
+            record_failure(e)
+            drain_until_stop()
+            return
         print_progress()
 
 
@@ -596,6 +655,18 @@ def _walk_subtree(
                 write_q.put(rows)
 
 
+def _abort_on_writer_error(writer_error: List[BaseException]) -> None:
+    """Exit non-zero if the writer thread failed.
+
+    Nothing was written after the failure, so the child's database holds a
+    partial tree under a scan whose status is still 'running'. Exiting non-zero
+    routes the task to _monitor()'s returncode != 0 branch, which marks it
+    'error' and never merges those rows into files.db.
+    """
+    if writer_error:
+        sys.exit(f"Scanner aborted: writer thread failed \u2014 {writer_error[0]}")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Orchestrator — splits top-level dirs across workers, single writer thread
 # ─────────────────────────────────────────────────────────────────────────────
@@ -626,9 +697,14 @@ def walk_path(
     # Queue sized so workers can stay busy without blowing memory
     write_q: "queue.Queue" = queue.Queue(maxsize=workers * 1000)
 
+    # Shared by reference with the writer thread: the list object is the
+    # channel, so an append() there is visible here without any locking (the
+    # only write happens before writer.join() returns, which is the barrier).
+    writer_error: List[BaseException] = []
+
     writer = threading.Thread(
         target=_writer_thread,
-        args=(write_q, conn, scan_id, stats, stats_lock, quiet),
+        args=(write_q, conn, scan_id, stats, stats_lock, quiet, writer_error),
         daemon=True,
         name="scidk-writer",
     )
@@ -641,6 +717,7 @@ def walk_path(
         print(f"\n[error] Cannot scan root: {e}", file=sys.stderr)
         write_q.put(_STOP)
         writer.join()
+        _abort_on_writer_error(writer_error)
         return stats
 
     top_dirs  = [e.path for e in top_entries
@@ -707,6 +784,11 @@ def walk_path(
 
     write_q.put(_STOP)
     writer.join()
+    # Checked after join(), not inside the pool block: the writer keeps draining
+    # after a failure so the walk can finish, and only join() guarantees it has
+    # published its error. A non-zero exit is what tells the monitor in
+    # scanner_subprocess.py to take its returncode != 0 branch.
+    _abort_on_writer_error(writer_error)
     return stats
 
 
