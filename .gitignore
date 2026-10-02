@@ -85,3 +85,5 @@ gunicorn.log
 /out.txt
 /out*.txt
 /out_*.txt
+# demo bundles built from demo_data/*/
+demo_data/*.zip

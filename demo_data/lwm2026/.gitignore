@@ -7,5 +7,3 @@ __pycache__/
 parley.env
 review/
 *.zip
-review/
-*.zip
