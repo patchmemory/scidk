@@ -1,0 +1,239 @@
+session_id,kind,value,unit,method,detected
+LWM-IVIS-M10-W06,total_flux,572000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M10-W07,total_flux,587000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M10-W08,total_flux,1540000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M10-W09,total_flux,14600000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M10-W09,total_flux_left,10700000.0,p/s,"thoracic ROI, left view (Living Image)",True
+LWM-IVIS-M10-W09,total_flux_right,1870000.0,p/s,"thoracic ROI, right view (Living Image)",True
+LWM-IVIS-M10-W10,total_flux,26100000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M10-W10,total_flux_left,22200000.0,p/s,"thoracic ROI, left view (Living Image)",True
+LWM-IVIS-M10-W10,total_flux_right,2810000.0,p/s,"thoracic ROI, right view (Living Image)",True
+LWM-IVIS-M10-W11,total_flux,19000000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M10-W11,total_flux_left,27600000.0,p/s,"thoracic ROI, left view (Living Image)",True
+LWM-IVIS-M10-W11,total_flux_right,3640000.0,p/s,"thoracic ROI, right view (Living Image)",True
+LWM-IVIS-M10-W11,total_flux_prone,4840000.0,p/s,"thoracic ROI, prone view (Living Image)",True
+LWM-IVIS-M10-W12,total_flux,184000000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M10-W12,total_flux_left,228000000.0,p/s,"thoracic ROI, left view (Living Image)",True
+LWM-IVIS-M10-W12,total_flux_prone,37000000.0,p/s,"thoracic ROI, prone view (Living Image)",True
+LWM-IVIS-M10-W13,total_flux,2450000000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M10-W13,total_flux_left,1540000000.0,p/s,"thoracic ROI, left view (Living Image)",True
+LWM-IVIS-M10-W13,total_flux_right,470000000.0,p/s,"thoracic ROI, right view (Living Image)",True
+LWM-IVIS-M10-W13,total_flux_prone,142000000.0,p/s,"thoracic ROI, prone view (Living Image)",True
+LWM-IVIS-M10-W14,total_flux,16100000000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M10-W14,total_flux_prone,3030000000.0,p/s,"thoracic ROI, prone view (Living Image)",True
+LWM-MCT-M10-W06,aerated_lung_pct,72.33,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M10-W07,aerated_lung_pct,79.94,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M10-W08,aerated_lung_pct,85.1,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M10-W09,aerated_lung_pct,76.59,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M10-W10,aerated_lung_pct,74.76,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M10-W11,aerated_lung_pct,69.57,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M10-W13,aerated_lung_pct,44.66,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M10-W14,aerated_lung_pct,28.28,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MRI-M10-W06,tumor_pixel_count,803,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M10-W07,tumor_pixel_count,1254,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M10-W08,tumor_pixel_count,725,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M10-W09,tumor_pixel_count,1560,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M10-W11,tumor_pixel_count,4411,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M10-W12,tumor_pixel_count,11197,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M10-W13,tumor_pixel_count,26264,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M10-W14,tumor_pixel_count,42263,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MCT-M11-W06,aerated_lung_pct,78.73,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M11-W07,aerated_lung_pct,80.72,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M11-W08,aerated_lung_pct,78.28,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M11-W09,aerated_lung_pct,79.16,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M11-W10,aerated_lung_pct,78.19,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M11-W11,aerated_lung_pct,72.13,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M11-W13,aerated_lung_pct,73.29,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M11-W14,aerated_lung_pct,66.0,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MRI-M11-W06,tumor_pixel_count,170,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M11-W07,tumor_pixel_count,200,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M11-W08,tumor_pixel_count,306,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M11-W09,tumor_pixel_count,195,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M11-W11,tumor_pixel_count,573,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M11-W12,tumor_pixel_count,895,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M11-W13,tumor_pixel_count,2338,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M11-W14,tumor_pixel_count,3756,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MCT-M12-W06,aerated_lung_pct,76.24,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M12-W07,aerated_lung_pct,81.97,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M12-W08,aerated_lung_pct,80.54,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M12-W09,aerated_lung_pct,84.83,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M12-W10,aerated_lung_pct,81.56,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M12-W11,aerated_lung_pct,62.02,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M12-W13,aerated_lung_pct,52.81,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M12-W14,aerated_lung_pct,39.99,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MRI-M12-W06,tumor_pixel_count,1371,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M12-W07,tumor_pixel_count,1025,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M12-W08,tumor_pixel_count,749,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M12-W09,tumor_pixel_count,1077,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M12-W11,tumor_pixel_count,3004,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M12-W12,tumor_pixel_count,3039,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M12-W13,tumor_pixel_count,17361,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M12-W14,tumor_pixel_count,44126,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-IVIS-M13-W06,total_flux,510000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M13-W07,total_flux,311000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M13-W08,total_flux,650000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M13-W09,total_flux,3740000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M13-W09,total_flux_left,4690000.0,p/s,"thoracic ROI, left view (Living Image)",True
+LWM-IVIS-M13-W09,total_flux_right,765000.0,p/s,"thoracic ROI, right view (Living Image)",True
+LWM-IVIS-M13-W10,total_flux,3880000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M13-W10,total_flux_left,6210000.0,p/s,"thoracic ROI, left view (Living Image)",True
+LWM-IVIS-M13-W10,total_flux_right,650000.0,p/s,"thoracic ROI, right view (Living Image)",True
+LWM-IVIS-M13-W11,total_flux,33800000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M13-W11,total_flux_left,29500000.0,p/s,"thoracic ROI, left view (Living Image)",True
+LWM-IVIS-M13-W11,total_flux_right,5360000.0,p/s,"thoracic ROI, right view (Living Image)",True
+LWM-IVIS-M13-W11,total_flux_prone,3190000.0,p/s,"thoracic ROI, prone view (Living Image)",True
+LWM-IVIS-M13-W12,total_flux,55600000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M13-W12,total_flux_left,88100000.0,p/s,"thoracic ROI, left view (Living Image)",True
+LWM-IVIS-M13-W12,total_flux_right,42800000.0,p/s,"thoracic ROI, right view (Living Image)",True
+LWM-IVIS-M13-W12,total_flux_prone,37900000.0,p/s,"thoracic ROI, prone view (Living Image)",True
+LWM-IVIS-M13-W13,total_flux,306000000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M13-W13,total_flux_left,334000000.0,p/s,"thoracic ROI, left view (Living Image)",True
+LWM-IVIS-M13-W13,total_flux_right,109000000.0,p/s,"thoracic ROI, right view (Living Image)",True
+LWM-IVIS-M13-W13,total_flux_prone,109000000.0,p/s,"thoracic ROI, prone view (Living Image)",True
+LWM-MCT-M13-W06,aerated_lung_pct,77.55,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M13-W07,aerated_lung_pct,81.01,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M13-W08,aerated_lung_pct,82.35,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M13-W09,aerated_lung_pct,80.78,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M13-W10,aerated_lung_pct,73.3,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M13-W11,aerated_lung_pct,54.01,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M13-W13,aerated_lung_pct,21.94,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M13-W14,aerated_lung_pct,10.78,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MRI-M13-W06,tumor_pixel_count,266,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M13-W07,tumor_pixel_count,239,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M13-W08,tumor_pixel_count,390,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M13-W09,tumor_pixel_count,1812,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M13-W11,tumor_pixel_count,21858,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M13-W12,tumor_pixel_count,43981,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M13-W13,tumor_pixel_count,52223,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M13-W14,tumor_pixel_count,65774,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-IVIS-M14-W06,total_flux,289000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M14-W07,total_flux,233000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M14-W08,total_flux,353000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M14-W09,total_flux,1460000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M14-W09,total_flux_left,1580000.0,p/s,"thoracic ROI, left view (Living Image)",True
+LWM-IVIS-M14-W09,total_flux_right,161000.0,p/s,"thoracic ROI, right view (Living Image)",True
+LWM-IVIS-M14-W10,total_flux,1630000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M14-W10,total_flux_left,3270000.0,p/s,"thoracic ROI, left view (Living Image)",True
+LWM-IVIS-M14-W10,total_flux_right,167000.0,p/s,"thoracic ROI, right view (Living Image)",True
+LWM-IVIS-M14-W11,total_flux,3240000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M14-W11,total_flux_left,10500000.0,p/s,"thoracic ROI, left view (Living Image)",True
+LWM-IVIS-M14-W11,total_flux_right,2920000.0,p/s,"thoracic ROI, right view (Living Image)",True
+LWM-IVIS-M14-W11,total_flux_prone,4320000.0,p/s,"thoracic ROI, prone view (Living Image)",True
+LWM-IVIS-M14-W12,total_flux,6760000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M14-W12,total_flux_left,13400000.0,p/s,"thoracic ROI, left view (Living Image)",True
+LWM-IVIS-M14-W12,total_flux_prone,12500000.0,p/s,"thoracic ROI, prone view (Living Image)",True
+LWM-IVIS-M14-W13,total_flux,36300000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M14-W13,total_flux_left,36300000.0,p/s,"thoracic ROI, left view (Living Image)",True
+LWM-IVIS-M14-W13,total_flux_right,9490000.0,p/s,"thoracic ROI, right view (Living Image)",True
+LWM-IVIS-M14-W13,total_flux_prone,11800000.0,p/s,"thoracic ROI, prone view (Living Image)",True
+LWM-IVIS-M14-W14,total_flux,61000000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M14-W14,total_flux_prone,38200000.0,p/s,"thoracic ROI, prone view (Living Image)",True
+LWM-MCT-M14-W06,aerated_lung_pct,79.09,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M14-W07,aerated_lung_pct,77.92,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M14-W08,aerated_lung_pct,77.23,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M14-W09,aerated_lung_pct,78.41,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M14-W10,aerated_lung_pct,82.26,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M14-W11,aerated_lung_pct,71.0,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M14-W13,aerated_lung_pct,75.71,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M14-W14,aerated_lung_pct,57.53,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MRI-M14-W06,tumor_pixel_count,715,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M14-W07,tumor_pixel_count,532,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M14-W08,tumor_pixel_count,656,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M14-W09,tumor_pixel_count,645,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M14-W11,tumor_pixel_count,945,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M14-W12,tumor_pixel_count,1660,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M14-W13,tumor_pixel_count,4569,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M14-W14,tumor_pixel_count,6948,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-IVIS-M15-W06,total_flux,96200.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M15-W07,total_flux,70700.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M15-W08,total_flux,108000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M15-W09,total_flux,176000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M15-W09,total_flux_left,135000.0,p/s,"thoracic ROI, left view (Living Image)",True
+LWM-IVIS-M15-W09,total_flux_right,94900.0,p/s,"thoracic ROI, right view (Living Image)",True
+LWM-IVIS-M15-W10,total_flux,241000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M15-W10,total_flux_left,143000.0,p/s,"thoracic ROI, left view (Living Image)",True
+LWM-IVIS-M15-W10,total_flux_right,94400.0,p/s,"thoracic ROI, right view (Living Image)",True
+LWM-IVIS-M15-W11,total_flux,192000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M15-W11,total_flux_left,170000.0,p/s,"thoracic ROI, left view (Living Image)",True
+LWM-IVIS-M15-W11,total_flux_right,81100.0,p/s,"thoracic ROI, right view (Living Image)",True
+LWM-IVIS-M15-W12,total_flux,350000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M15-W12,total_flux_prone,422000.0,p/s,"thoracic ROI, prone view (Living Image)",True
+LWM-IVIS-M15-W13,total_flux,1450000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M15-W13,total_flux_prone,615000.0,p/s,"thoracic ROI, prone view (Living Image)",True
+LWM-IVIS-M15-W14,total_flux,6930000.0,p/s,"thoracic ROI, supine view (Living Image)",True
+LWM-IVIS-M15-W14,total_flux_prone,1300000.0,p/s,"thoracic ROI, prone view (Living Image)",True
+LWM-MCT-M15-W06,aerated_lung_pct,77.26,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M15-W07,aerated_lung_pct,84.75,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M15-W08,aerated_lung_pct,80.87,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M15-W09,aerated_lung_pct,79.49,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M15-W10,aerated_lung_pct,84.06,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M15-W11,aerated_lung_pct,72.72,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M15-W13,aerated_lung_pct,74.57,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M15-W14,aerated_lung_pct,77.87,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MRI-M15-W06,tumor_pixel_count,501,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MCT-M17-W06,aerated_lung_pct,80.09,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M17-W07,aerated_lung_pct,80.98,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M17-W08,aerated_lung_pct,82.48,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M17-W09,aerated_lung_pct,81.55,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M17-W10,aerated_lung_pct,80.46,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M17-W11,aerated_lung_pct,72.99,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M17-W13,aerated_lung_pct,64.59,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M17-W14,aerated_lung_pct,13.87,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MRI-M17-W08,tumor_pixel_count,301,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M17-W09,tumor_pixel_count,338,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M17-W11,tumor_pixel_count,1037,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M17-W12,tumor_pixel_count,2356,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M17-W13,tumor_pixel_count,4972,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M17-W14,tumor_pixel_count,56298,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MCT-M18-W06,aerated_lung_pct,82.23,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M18-W07,aerated_lung_pct,84.02,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M18-W08,aerated_lung_pct,89.59,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M18-W09,aerated_lung_pct,83.73,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M18-W10,aerated_lung_pct,82.26,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M18-W11,aerated_lung_pct,78.9,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M18-W13,aerated_lung_pct,83.65,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M18-W14,aerated_lung_pct,84.37,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M19-W06,aerated_lung_pct,82.92,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M19-W07,aerated_lung_pct,85.99,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M19-W08,aerated_lung_pct,85.94,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M19-W09,aerated_lung_pct,81.38,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M19-W10,aerated_lung_pct,80.33,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M19-W11,aerated_lung_pct,69.59,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M19-W13,aerated_lung_pct,56.92,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M19-W14,aerated_lung_pct,55.66,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MRI-M19-W08,tumor_pixel_count,169,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M19-W09,tumor_pixel_count,630,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M19-W11,tumor_pixel_count,2481,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M19-W12,tumor_pixel_count,4446,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M19-W13,tumor_pixel_count,6479,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MRI-M19-W14,tumor_pixel_count,9021,pixels,tumor ROI segmentation in Dragonfly (Anderson),True
+LWM-MCT-M67-W06,aerated_lung_pct,78.06,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M67-W07,aerated_lung_pct,75.63,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M67-W08,aerated_lung_pct,85.68,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M67-W09,aerated_lung_pct,84.6,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M67-W10,aerated_lung_pct,85.15,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M67-W11,aerated_lung_pct,78.01,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M67-W13,aerated_lung_pct,83.53,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M67-W14,aerated_lung_pct,84.57,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M68-W06,aerated_lung_pct,83.7,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M68-W07,aerated_lung_pct,79.86,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M68-W08,aerated_lung_pct,80.77,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M68-W09,aerated_lung_pct,82.27,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M68-W10,aerated_lung_pct,82.0,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M68-W11,aerated_lung_pct,81.84,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M68-W13,aerated_lung_pct,80.54,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M68-W14,aerated_lung_pct,82.44,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M69-W06,aerated_lung_pct,82.01,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M69-W07,aerated_lung_pct,80.71,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M69-W08,aerated_lung_pct,82.78,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M69-W09,aerated_lung_pct,83.41,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M69-W10,aerated_lung_pct,86.57,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M69-W11,aerated_lung_pct,78.69,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M69-W13,aerated_lung_pct,80.24,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M69-W14,aerated_lung_pct,80.76,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M75-W06,aerated_lung_pct,82.41,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M75-W07,aerated_lung_pct,84.2,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M75-W08,aerated_lung_pct,85.53,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M75-W09,aerated_lung_pct,85.04,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M75-W10,aerated_lung_pct,84.66,% of total lung volume,aerated-lung segmentation (Anderson),True
+LWM-MCT-M75-W11,aerated_lung_pct,80.32,% of total lung volume,aerated-lung segmentation (Anderson),True

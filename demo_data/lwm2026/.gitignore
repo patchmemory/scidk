@@ -1,0 +1,11 @@
+# local connection settings (contain a password)
+neo4j.env
+# files the notebook writes
+export/
+__pycache__/
+.ipynb_checkpoints/
+parley.env
+review/
+*.zip
+review/
+*.zip
