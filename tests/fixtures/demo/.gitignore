@@ -1,0 +1,2 @@
+# tree/ mirrors a real folder listing; keep its placeholder spreadsheets
+!*.xlsx

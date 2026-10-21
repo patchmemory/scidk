@@ -1,0 +1,19 @@
+##$Method=<Bruker:FLASH>
+##$PVM_GeoObj=( 1, 65 )
+##$PVM_EchoTime=3
+##$PVM_RepetitionTime=100
+##$PVM_NEchoImages=1
+##$PVM_NAverages=1
+##$PVM_NRepetitions=1
+##$PVM_Matrix=( 2 )
+256 256
+##$PVM_Fov=( 2 )
+40 40
+##$PVM_SpatResol=( 2 )
+0.15625 0.15625
+##$PVM_SliceThick=1
+##$PVM_ObjOrderScheme=Interlaced
+##$PVM_SPackArrNSlices=( 3 )
+5 1 1
+##$PVM_SPackArrSliceOrient=( 3 )
+axial sagittal coronal

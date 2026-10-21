@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 # Import transparency layer test fixtures
-pytest_plugins = ['tests.fixtures.transparency_test_data']
+pytest_plugins = ['tests.fixtures.transparency_test_data', 'tests.fixtures.demo.pytest_plugin']
 
 
 @pytest.fixture(scope="session", autouse=True)

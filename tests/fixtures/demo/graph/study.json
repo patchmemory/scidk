@@ -1,0 +1,44 @@
+{
+  "dataset": "LWM-DEMO-2026",
+  "synthetic": false,
+  "placeholders": "acquisition parameters, cage/ID pairing, sex, age",
+  "study": {
+    "id": "AIPT-LUNG-MULTIMODAL-2024",
+    "title": "Multimodal monitoring of mouse lung tumors (protocol development)",
+    "facility": "Koch Institute Animal Imaging & Preclinical Testing core",
+    "purpose": "Protocol development: compare MRI, microCT and IVIS for tracking lung tumor burden",
+    "species": "Mus musculus",
+    "strain": "TBD",
+    "model": "Lung tumor model with luciferase reporter (details TBD)",
+    "cac_protocol": "TBD",
+    "acquisition": "Milton (protocol development, microCT)",
+    "analysis": "Anderson (tumor segmentation, 2025)",
+    "start_date": "2023-12-11",
+    "imaging_weeks": "6-14",
+    "imaging_start": "2024-01-22",
+    "imaging_end": "2024-03-19",
+    "endpoint": "Lung tumor burden over time",
+    "source_folders": "atwai: Milton_CornwallBrady/Protocol Development in vivo/MultiModal Lung tumor test (microCT recon); Anderson_Scott/Multimodal/MultiModal Lung tumor test (raw + processed); Dropbox MultiModal/LungTumor",
+    "note": "Structure and measurement values are real (analysis results in source_results/). Acquisition parameters, cage/ID pairing, sex and age are placeholders."
+  },
+  "modalities": [
+    {
+      "name": "IVIS",
+      "instrument": "PerkinElmer IVIS Spectrum",
+      "readout": "Bioluminescence, thoracic ROI total flux (p/s); supine, prone, left, right views",
+      "pattern_name": "ivis_session"
+    },
+    {
+      "name": "microCT",
+      "instrument": "Bruker SkyScan 1276",
+      "readout": "Aerated lung, % of total lung volume (falls as tumor grows)",
+      "pattern_name": "bruker_skyscan_scan"
+    },
+    {
+      "name": "MRI",
+      "instrument": "Bruker BioSpec (model TBD)",
+      "readout": "Tumor ROI size, pixels (Dragonfly segmentation)",
+      "pattern_name": "bruker_paravision_mr"
+    }
+  ]
+}

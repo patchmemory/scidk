@@ -1,0 +1,19 @@
+##$Method=<Bruker:FcFLASH>
+##$PVM_GeoObj=( 1, 65 )
+##$PVM_EchoTime=3.5
+##$PVM_RepetitionTime=79.2888599349357
+##$PVM_NEchoImages=1
+##$PVM_NAverages=18
+##$PVM_NRepetitions=1
+##$PVM_Matrix=( 2 )
+256 256
+##$PVM_Fov=( 2 )
+25 25
+##$PVM_SpatResol=( 2 )
+0.09765625 0.09765625
+##$PVM_SliceThick=0.8
+##$PVM_ObjOrderScheme=Sequential
+##$PVM_SPackArrNSlices=( 1 )
+12
+##$PVM_SPackArrSliceOrient=( 1 )
+axial

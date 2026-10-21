@@ -1,0 +1,14 @@
+id,study_id,sex,cage,ear_tag,group,age_at_inoculation_wk,placeholder_fields
+M10,AIPT-LUNG-MULTIMODAL-2024,,A,none,USGI tumor injection,,cage and ear_tag pairing; sex and age unknown
+M11,AIPT-LUNG-MULTIMODAL-2024,,B,1L1R,USGI tumor injection,,cage and ear_tag pairing; sex and age unknown
+M12,AIPT-LUNG-MULTIMODAL-2024,,B,1Left,USGI tumor injection,,cage and ear_tag pairing; sex and age unknown
+M13,AIPT-LUNG-MULTIMODAL-2024,,B,2Left,USGI tumor injection,,cage and ear_tag pairing; sex and age unknown
+M14,AIPT-LUNG-MULTIMODAL-2024,,B,none,USGI tumor injection,,cage and ear_tag pairing; sex and age unknown
+M15,AIPT-LUNG-MULTIMODAL-2024,,C,1LR0,USGI tumor injection,,cage and ear_tag pairing; sex and age unknown
+M17,AIPT-LUNG-MULTIMODAL-2024,,C,L1,USGI tumor injection,,cage and ear_tag pairing; sex and age unknown
+M18,AIPT-LUNG-MULTIMODAL-2024,,C,L2R1,USGI tumor injection,,cage and ear_tag pairing; sex and age unknown
+M19,AIPT-LUNG-MULTIMODAL-2024,,C,L2,USGI tumor injection,,cage and ear_tag pairing; sex and age unknown
+M67,AIPT-LUNG-MULTIMODAL-2024,,D,left,control (not injected),,cage and ear_tag pairing; sex and age unknown
+M68,AIPT-LUNG-MULTIMODAL-2024,,D,none,control (not injected),,cage and ear_tag pairing; sex and age unknown
+M69,AIPT-LUNG-MULTIMODAL-2024,,E,left,control (not injected),,cage and ear_tag pairing; sex and age unknown
+M75,AIPT-LUNG-MULTIMODAL-2024,,E,none,control (not injected),,cage and ear_tag pairing; sex and age unknown

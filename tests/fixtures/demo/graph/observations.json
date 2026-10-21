@@ -1,0 +1,325 @@
+[
+  {
+    "id": "OBS-GAP-MRI-W10",
+    "kind": "data_gap",
+    "modality": "MRI",
+    "weeks": [
+      10
+    ],
+    "text": "No MRI in week 10 except mouse 13, which was scanned early (Fri Feb 16) with extra T1/T2 axial and coronal series; that scan was not segmented.",
+    "reason": "MRI specialist on vacation that week",
+    "author": "Study team",
+    "about": [
+      {
+        "type": "Study",
+        "id": "AIPT-LUNG-MULTIMODAL-2024"
+      },
+      {
+        "type": "Modality",
+        "id": "MRI"
+      }
+    ]
+  },
+  {
+    "id": "OBS-GAP-MCT-W12",
+    "kind": "data_gap",
+    "modality": "microCT",
+    "weeks": [
+      12
+    ],
+    "text": "No microCT in week 12 for any mouse; the atwai index shows no reconstruction activity at all Mar 1-7, 2024.",
+    "reason": "microCT specialist on vacation that week",
+    "author": "Study team",
+    "about": [
+      {
+        "type": "Study",
+        "id": "AIPT-LUNG-MULTIMODAL-2024"
+      },
+      {
+        "type": "Modality",
+        "id": "microCT"
+      }
+    ]
+  },
+  {
+    "id": "OBS-CONTROLS",
+    "kind": "study_design",
+    "text": "Mice 67, 68, 69 and 75 are uninjected controls; the other 9 mice received the USGI tumor injection. Controls were imaged on every modality but not analyzed on MRI or IVIS, and are excluded from the take rate.",
+    "author": "Study team",
+    "about": [
+      {
+        "type": "Study",
+        "id": "AIPT-LUNG-MULTIMODAL-2024"
+      },
+      {
+        "type": "Subject",
+        "id": "M67"
+      },
+      {
+        "type": "Subject",
+        "id": "M68"
+      },
+      {
+        "type": "Subject",
+        "id": "M69"
+      },
+      {
+        "type": "Subject",
+        "id": "M75"
+      }
+    ]
+  },
+  {
+    "id": "OBS-EXIT-M75",
+    "kind": "early_exit",
+    "subject": "M75",
+    "weeks": [
+      11
+    ],
+    "text": "Mouse 75 (an uninjected control) has no imaging after week 11 on any modality.",
+    "reason": "control; reason for exit not recorded",
+    "author": "Data curation",
+    "about": [
+      {
+        "type": "Study",
+        "id": "AIPT-LUNG-MULTIMODAL-2024"
+      },
+      {
+        "type": "Subject",
+        "id": "M75"
+      }
+    ]
+  },
+  {
+    "id": "OBS-MRI-ANALYZED",
+    "kind": "analysis_coverage",
+    "modality": "MRI",
+    "text": "MRI tumor size was measured for 8 mice (10, 11, 12, 13, 14, 15, 17, 19). Mouse 15 has only week 6; mice 17 and 19 start at week 8; 18, 67, 68, 69 and 75 were imaged but not segmented. Values are reported as pixel counts but are voxels summed over slices; each session's ParaVision voxel size (0.0122 mm3) converts them to mm3.",
+    "author": "Data curation",
+    "about": [
+      {
+        "type": "Study",
+        "id": "AIPT-LUNG-MULTIMODAL-2024"
+      },
+      {
+        "type": "Modality",
+        "id": "MRI"
+      },
+      {
+        "type": "Subject",
+        "id": "M15"
+      },
+      {
+        "type": "Subject",
+        "id": "M18"
+      },
+      {
+        "type": "Subject",
+        "id": "M67"
+      },
+      {
+        "type": "Subject",
+        "id": "M68"
+      },
+      {
+        "type": "Subject",
+        "id": "M69"
+      },
+      {
+        "type": "Subject",
+        "id": "M75"
+      }
+    ]
+  },
+  {
+    "id": "OBS-IVIS-ANALYZED",
+    "kind": "analysis_coverage",
+    "modality": "IVIS",
+    "text": "IVIS flux was quantified for 4 mice only (10, 13, 14, 15), in up to four views: supine (weeks 6-14), left and right (9-14), prone (11-14). Mouse 13 has no supine week 14.",
+    "author": "Data curation",
+    "about": [
+      {
+        "type": "Study",
+        "id": "AIPT-LUNG-MULTIMODAL-2024"
+      },
+      {
+        "type": "Modality",
+        "id": "IVIS"
+      },
+      {
+        "type": "Subject",
+        "id": "M10"
+      },
+      {
+        "type": "Subject",
+        "id": "M13"
+      },
+      {
+        "type": "Subject",
+        "id": "M14"
+      },
+      {
+        "type": "Subject",
+        "id": "M15"
+      }
+    ]
+  },
+  {
+    "id": "OBS-IVIS-W13-FOLDER",
+    "kind": "provenance",
+    "modality": "IVIS",
+    "weeks": [
+      13
+    ],
+    "text": "The Dropbox week-13 IVIS folder is a copy of week 12 (same Mar 5 sequences), but the analysis sheet has distinct week-13 values, so the week-13 images are misfiled or stored elsewhere.",
+    "author": "Data curation",
+    "about": [
+      {
+        "type": "Study",
+        "id": "AIPT-LUNG-MULTIMODAL-2024"
+      },
+      {
+        "type": "Modality",
+        "id": "IVIS"
+      }
+    ]
+  },
+  {
+    "id": "OBS-MCT-INVERSE",
+    "kind": "measurement_note",
+    "modality": "microCT",
+    "text": "microCT reports aerated lung as % of total lung volume, which falls as tumor grows. Mice 13, 17, 10 and 12 drop from ~80% to 11-40% by week 14; 18, 67, 68 and 69 stay near 80%.",
+    "author": "Anderson (analysis)",
+    "about": [
+      {
+        "type": "Modality",
+        "id": "microCT"
+      }
+    ]
+  },
+  {
+    "id": "OBS-IVIS-DISCORDANCE",
+    "kind": "modality_discordance",
+    "modality": "IVIS",
+    "compared_to": [
+      "microCT",
+      "MRI"
+    ],
+    "text": "IVIS separates high (10, 13) from low (14, 15) burden like microCT and MRI, but orders them differently: mouse 10 is brightest on IVIS while mouse 13 has the most tumor on MRI and microCT. Flux is a single-view, 2D signal.",
+    "possible_causes": "depth attenuation in lung; luciferin uptake timing; necrotic tumor cores; view dependence",
+    "author": "Anderson (analysis summary)",
+    "about": [
+      {
+        "type": "Study",
+        "id": "AIPT-LUNG-MULTIMODAL-2024"
+      },
+      {
+        "type": "Modality",
+        "id": "IVIS"
+      }
+    ],
+    "contrasts": [
+      "microCT",
+      "MRI"
+    ]
+  },
+  {
+    "id": "OBS-MCT-W14-RECON",
+    "kind": "protocol_change",
+    "modality": "microCT",
+    "weeks": [
+      14
+    ],
+    "text": "Every week-14 reconstruction has exactly 667 slices (SkyScan logs), unlike every earlier week (493-720); a fixed reconstruction range was used that week.",
+    "author": "Data curation (instrument logs)",
+    "about": [
+      {
+        "type": "Modality",
+        "id": "microCT"
+      }
+    ]
+  },
+  {
+    "id": "OBS-MCT-EXPOSURE",
+    "kind": "protocol_change",
+    "modality": "microCT",
+    "weeks": [
+      8
+    ],
+    "text": "microCT exposure changed from 127 ms (weeks 6-7) to 139 ms (week 8 onward); voltage (100 kV), current (200 uA), filter (Al 0.5 mm) and voxel size (36.9 um) stayed fixed.",
+    "author": "Data curation (instrument logs)",
+    "about": [
+      {
+        "type": "Modality",
+        "id": "microCT"
+      }
+    ]
+  },
+  {
+    "id": "OBS-MCT-DOSE",
+    "kind": "measurement_note",
+    "modality": "microCT",
+    "text": "The scanner estimates about 434 mGy per scan for a mouse, about 3.5 Gy over the 8 weekly scans; worth weighing in longitudinal designs, since radiation can affect tumor growth.",
+    "author": "Data curation (instrument logs)",
+    "about": [
+      {
+        "type": "Study",
+        "id": "AIPT-LUNG-MULTIMODAL-2024"
+      },
+      {
+        "type": "Modality",
+        "id": "microCT"
+      }
+    ]
+  },
+  {
+    "id": "OBS-MRI-W12-SLICES",
+    "kind": "protocol_change",
+    "modality": "MRI",
+    "weeks": [
+      12
+    ],
+    "text": "In week 12 most T2 axial series used 40 slices (20 mm coverage) and TR 4000 ms, instead of 46 slices (23 mm) and TR 4379 ms in every other week; large tumors could extend past the covered region.",
+    "author": "Data curation (instrument logs)",
+    "about": [
+      {
+        "type": "Modality",
+        "id": "MRI"
+      }
+    ]
+  },
+  {
+    "id": "OBS-IVIS-EXPOSURE",
+    "kind": "protocol_change",
+    "modality": "IVIS",
+    "weeks": [
+      12,
+      14
+    ],
+    "text": "IVIS used 60 s exposures through week 11, then shorter ones (20-25 s in week 12, 0.75-60 s in week 14), consistent with bright tumors saturating the camera. Flux is exposure-normalized, but late images are not acquired the same way.",
+    "author": "Data curation (instrument logs)",
+    "about": [
+      {
+        "type": "Modality",
+        "id": "IVIS"
+      }
+    ]
+  },
+  {
+    "id": "OBS-MCT-STORAGE",
+    "kind": "provenance",
+    "modality": "microCT",
+    "text": "Only reconstructions are on atwai (no SkyScan projections). Identical copies sit in Milton's protocol-development folder, Anderson's raw data folder and the facility archive; the Dropbox copy stops at week 11.",
+    "author": "Data curation",
+    "about": [
+      {
+        "type": "Study",
+        "id": "AIPT-LUNG-MULTIMODAL-2024"
+      },
+      {
+        "type": "Modality",
+        "id": "microCT"
+      }
+    ]
+  }
+]
