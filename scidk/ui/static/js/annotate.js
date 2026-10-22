@@ -537,7 +537,7 @@
   function attrSelectByConf(level) {
     document.querySelectorAll('.attr-cb').forEach(cb => {
       const c = _attrCandidates[parseInt(cb.dataset.i, 10)];
-      if (c && c.confidence === level) cb.checked = true;
+      if (c && (level === 'ALL' || c.confidence === level)) cb.checked = true;
     });
   }
 
@@ -888,7 +888,7 @@
     'clear-filter':      clearAnchorFilter,
     'toggle-custom-rel': toggleCustomRel,
     'find-candidates':   runAttribution,
-    'select-conf':       attrSelectByConf,       // arg: 'HIGH' | 'MED' | 'LOW'
+    'select-conf':       attrSelectByConf,       // arg: 'HIGH' | 'MED' | 'LOW' | 'ALL'
     'clear-candidates':  attrClearSel,
     'confirm':           runConfirm,
     'collect-source':    setCollectSource,       // arg: 'selection' | 'collection'

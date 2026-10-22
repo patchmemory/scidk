@@ -4,6 +4,8 @@
   <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <!-- Tom Select (vendored, not CDN: facility deployments may be air-gapped) -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/vendor/tom-select.default.min.css') }}">
+  <!-- Tabler icons (the `ti ti-*` classes), vendored for the same reason -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/vendor/tabler-icons/tabler-icons.min.css') }}">
   <meta charset="utf-8" />
   <title>{% block title %}-SciDK->{% endblock %}</title>
   <script>
