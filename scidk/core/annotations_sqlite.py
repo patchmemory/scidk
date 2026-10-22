@@ -3,6 +3,8 @@ import sqlite3
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
+from .path_index_sqlite import db_path_from_env
+
 # SQLite storage for selections and annotations
 # Tables:
 # - selections(id TEXT PRIMARY KEY, name TEXT, created REAL)
@@ -12,9 +14,9 @@ from typing import Optional, Dict, Any, List
 
 
 def _db_path() -> Path:
-    base = os.environ.get('SCIDK_DB_PATH')
+    base = db_path_from_env(os.environ.get('SCIDK_DB_PATH'))
     if base:
-        p = Path(base)
+        p = base
     else:
         p = Path.home() / '.scidk' / 'db' / 'files.db'
     p.parent.mkdir(parents=True, exist_ok=True)

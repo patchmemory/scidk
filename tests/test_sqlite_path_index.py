@@ -54,3 +54,19 @@ def test_batch_insert_and_counts(monkeypatch, tmp_path):
         assert rows == 2
     finally:
         conn.close()
+
+
+def test_db_path_from_env_accepts_sqlite_url():
+    from pathlib import Path
+    from scidk.core.path_index_sqlite import db_path_from_env
+    assert db_path_from_env('sqlite:////abs/files.db') == Path('/abs/files.db')
+    assert db_path_from_env('sqlite:///rel/files.db') == Path('rel/files.db')
+    assert db_path_from_env('/abs/files.db') == Path('/abs/files.db')
+    assert db_path_from_env('') is None
+
+
+def test_conftest_pins_scan_db_dir_outside_home():
+    import os
+    from pathlib import Path
+    scan_dir = os.environ.get('SCIDK_SCAN_DB_DIR')
+    assert scan_dir and not Path(scan_dir).resolve().is_relative_to(Path.home() / '.scidk')

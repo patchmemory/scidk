@@ -51,6 +51,11 @@ def _pin_repo_local_test_env():
     # Settings DB for auth and configuration
     os.environ.setdefault("SCIDK_SETTINGS_DB", str(db_dir / 'test_settings.db'))
 
+    # Scan dbs and crates: never the real ~/.scidk. A fresh dir per session, so a
+    # "latest snapshot per root" lookup can't see a previous session's scans.
+    os.environ.setdefault("SCIDK_SCAN_DB_DIR", tempfile.mkdtemp(prefix="scans-", dir=tmp_root))
+    os.environ.setdefault("SCIDK_ROCRATE_DIR", str(tmp_root / "crates"))
+
     # Providers and auth safe defaults
     os.environ.setdefault("SCIDK_PROVIDERS", "local_fs,mounted_fs")
     os.environ.setdefault("NEO4J_AUTH", "none")

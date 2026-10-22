@@ -9,11 +9,21 @@ import hashlib
 # files(path, parent_path, name, depth, type, size, modified_time, file_extension, mime_type, etag, hash, remote, scan_id, extra_json)
 
 
+def db_path_from_env(value: Optional[str]) -> Optional[Path]:
+    """SCIDK_DB_PATH as a filesystem path; accepts a plain path or a ``sqlite:///`` URL."""
+    if not value:
+        return None
+    if value.startswith('sqlite:///'):
+        # SQLAlchemy form: sqlite:///rel/path or sqlite:////abs/path
+        value = value[len('sqlite:///'):]
+    return Path(value)
+
+
 def _db_path() -> Path:
     # Allow override via env; default to ~/.scidk/db/files.db
-    base = os.environ.get('SCIDK_DB_PATH')
+    base = db_path_from_env(os.environ.get('SCIDK_DB_PATH'))
     if base:
-        p = Path(base)
+        p = base
     else:
         p = Path.home() / '.scidk' / 'db' / 'files.db'
     p.parent.mkdir(parents=True, exist_ok=True)

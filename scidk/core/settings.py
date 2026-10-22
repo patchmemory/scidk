@@ -87,7 +87,9 @@ class InterpreterSettings:
 # Global settings helpers (use same table as InterpreterSettings)
 def _get_db_path() -> str:
     """Get path to settings database."""
-    return os.environ.get('SCIDK_DB_PATH', os.path.join(os.getcwd(), 'scidk.db'))
+    from scidk.core.path_index_sqlite import db_path_from_env
+    p = db_path_from_env(os.environ.get('SCIDK_DB_PATH'))
+    return str(p) if p else os.path.join(os.getcwd(), 'scidk.db')
 
 
 def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
