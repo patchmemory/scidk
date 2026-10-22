@@ -112,7 +112,9 @@ Study Date and Time=01 Jan 2024  10:00:00
 
         assert result['status'] == 'success'
         data = result['data']
-        assert data['dataset_id'] == 'test'
+        # Named after the directory, not the log (bf52ce5: the graph key must
+        # not depend on how the log happens to be named).
+        assert data['dataset_id'] == Path(tmpdir).name
         assert data['voxel_size_um'] == 5.0
         assert data['stages']['raw'] == 0  # No TIFF files
 
@@ -141,3 +143,33 @@ def test_bruker_microct_no_log_file():
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+
+
+def test_bruker_microct_rec_dir_without_log_or_images_is_an_error():
+    """A *_Rec folder is routed here by its name alone; empty, it is not a dataset."""
+    from scidk.interpreters.bruker_microct_dataset import BrukerMicroCtDatasetInterpreter
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        rec = Path(tmpdir) / 'wk9_99_Rec'
+        rec.mkdir()
+        interp = BrukerMicroCtDatasetInterpreter()
+        assert interp.can_handle(rec)
+        result = interp.interpret(rec)
+        assert result['status'] == 'error'
+        assert 'No acquisition .log file' in result['data']['error']
+
+
+def test_bruker_microct_rec_dir_with_images_but_no_log_still_succeeds():
+    """The demo's wk9_75_Rec: reconstructed TIFFs, no log. Still a dataset."""
+    from scidk.interpreters.bruker_microct_dataset import BrukerMicroCtDatasetInterpreter
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        rec = Path(tmpdir) / 'wk9_75_Rec'
+        rec.mkdir()
+        for n in ('wk9_75_pp1.tif', 'wk9_75_pp2.tif'):
+            (rec / n).write_bytes(b'')
+        result = BrukerMicroCtDatasetInterpreter().interpret(rec)
+        assert result['status'] == 'success'
+        assert result['data']['stages']['reconstructed'] == 2

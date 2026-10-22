@@ -362,6 +362,13 @@ class BrukerMicroCtDatasetInterpreter:
                         'to_match': {'id': f'{dataset_id}_analysis'},
                     })
 
+            # Nothing recognisable: no log to read and no image stack. A
+            # success here would put an empty ImagingDataset in the graph, e.g.
+            # for any emptied folder that can_handle() matches by its _Rec name.
+            if not (acq_log or rec_log) and not (raw_tiff_count or rec_tiff_count or nifti_count):
+                return self._error(
+                    f'No acquisition .log file or image stack found in {dataset_dir}')
+
             # ----------------------------------------------------------
             # 7. Summary data
             # ----------------------------------------------------------
