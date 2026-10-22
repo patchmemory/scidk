@@ -50,7 +50,11 @@ def _auth_disabled():
     from flask import current_app
     from ..core.auth import get_auth_manager
     db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
-    return not get_auth_manager(db_path=db_path).is_enabled()
+    try:
+        return not get_auth_manager(db_path=db_path).is_enabled()
+    except Exception:
+        # Fail closed: a settings DB that won't open is not "auth off".
+        return False
 
 
 def require_role(*allowed_roles):

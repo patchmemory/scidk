@@ -201,7 +201,9 @@ class AuthManager:
         """Check if authentication is currently enabled.
 
         Returns:
-            bool: True if auth is enabled, False otherwise
+            bool: True if auth is enabled, False otherwise. True as well when
+            the settings DB can't be read: auth off means every route runs, so
+            an unreadable DB must not look like "no users configured".
         """
         try:
             # Check if there are any enabled users in auth_users (multi-user mode)
@@ -214,8 +216,11 @@ class AuthManager:
             cur = self.db.execute("SELECT enabled FROM auth_config WHERE id = 1")
             row = cur.fetchone()
             return bool(row and row[0]) if row else False
-        except Exception:
-            return False
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(
+                'Auth state unreadable in %s (%s); treating auth as enabled', self.db_path, e)
+            return True
 
     def get_config(self) -> Dict[str, Any]:
         """Get current auth configuration (without password hash).
