@@ -87,7 +87,10 @@
   function toggle() { _panelOpen ? close() : open(); }
 
   // ── Pill ──
+  // Every change to _items passes through here, so it is also where the
+  // change is announced (the Annotate drawer re-renders its scope on it).
   function _updatePill() {
+    document.dispatchEvent(new CustomEvent('scidk:collectionchange', { detail: { size: _items.length } }));
     const pill = document.getElementById('coll-pill');
     const count_el = document.getElementById('coll-count');
     const meta = document.getElementById('cp-meta');

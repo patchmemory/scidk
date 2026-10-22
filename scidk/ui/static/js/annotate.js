@@ -776,11 +776,41 @@
         if (el) el.innerHTML = `<span class="text-danger">${_attrEsc(d.error || `Error ${r.status}`)}</span>`;
         return;
       }
-      if (el) el.innerHTML = `<span class="text-success">Started — task ${_attrEsc(d.task_id || '')}</span>`;
+      if (el) el.innerHTML = `<span class="text-muted">Running — task ${_attrEsc(d.task_id || '')}…</span>`;
       if (typeof global.startTaskPoll === 'function') global.startTaskPoll();
+      if (d.task_id) _pollInterpretTask(d.task_id);
     } catch (e) {
       if (el) el.innerHTML = `<span class="text-danger">${_attrEsc(e.message)}</span>`;
     }
+  }
+
+  // Follows the run to the end, then reloads the status above it; without this
+  // the tab kept showing the pre-run state until it was reopened.
+  let _interpPoll = null;
+  function _pollInterpretTask(taskId) {
+    clearTimeout(_interpPoll);
+    const el = document.getElementById('interp-run-status');
+    const tick = async () => {
+      let t = {};
+      try {
+        const r = await fetch(BASE() + '/api/tasks/' + encodeURIComponent(taskId));
+        t = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(t.error || `HTTP ${r.status}`);
+      } catch (e) {
+        if (el) el.innerHTML = `<span class="text-danger">Lost track of the task: ${_attrEsc(e.message)}</span>`;
+        return;
+      }
+      if (t.status === 'completed') {
+        if (el) el.innerHTML = '<span class="text-success">Done.</span>';
+      } else if (t.status === 'error' || t.status === 'canceled') {
+        if (el) el.innerHTML = `<span class="text-danger">${t.status === 'error' ? 'Failed' : 'Canceled'}${t.error ? ': ' + _attrEsc(t.error) : ''}</span>`;
+      } else {
+        _interpPoll = setTimeout(tick, 1500);
+        return;
+      }
+      if (_activeTab() === 'interpret') loadInterpreterStatus();
+    };
+    _interpPoll = setTimeout(tick, 1000);
   }
 
   // ── Drawer plumbing ────────────────────────────────────────────────────
@@ -806,6 +836,23 @@
       ? `${n} selected`
       : (coll ? `${coll} in collection` : 'nothing selected');
   }
+
+  // The drawer used to render its scope once, on open; selecting more rows (or
+  // changing the Collection) underneath left it describing the old one.
+  let _scopeTimer = null;
+  function _onScopeChange() {
+    if (!global.Drawers || global.Drawers.active() !== 'annotate-drawer') return;
+    _updateScopeLabel();
+    const tab = _activeTab();
+    if (tab === 'collect') _renderCollectScope();
+    // Debounced: status is a request, and select-all fires once per change.
+    if (tab === 'interpret') {
+      clearTimeout(_scopeTimer);
+      _scopeTimer = setTimeout(loadInterpreterStatus, 300);
+    }
+  }
+  document.addEventListener('scidk:selectionchange', _onScopeChange);
+  document.addEventListener('scidk:collectionchange', _onScopeChange);
 
   function open(tab) {
     _updateScopeLabel();

@@ -443,7 +443,7 @@ tbody.querySelectorAll('tr[data-id]').forEach(tr=>{const id=tr.dataset.id,type=t
 tbody.addEventListener('change',e=>{const cb=e.target.closest('.row-cb');if(!cb)return;const id=cb.dataset.id,idx=+cb.dataset.idx;if(e.shiftKey&&lastSelIndex>=0){const all=[...tbody.querySelectorAll('.row-cb')];const lo=Math.min(lastSelIndex,idx),hi=Math.max(lastSelIndex,idx);for(let i=lo;i<=hi;i++){const c=all[i];if(!c)continue;if(cb.checked)selItems.add(c.dataset.id);else selItems.delete(c.dataset.id);c.checked=cb.checked;}}else{if(cb.checked)selItems.add(id);else selItems.delete(id);}lastSelIndex=idx;updateSelUI();},true);}
 
 // Selection
-function updateSelUI(){const n=selItems.size;document.getElementById('sel-badge-count').textContent=n+' selected';const bar=document.getElementById('selection-bar');if(bar)bar.classList.toggle('visible',selMode&&n>0);const cbs=[...document.getElementById('file-list').querySelectorAll('.row-cb')];const allSel=cbs.length&&cbs.every(c=>c.checked),someSel=cbs.some(c=>c.checked);const scb=document.getElementById('select-all-cb');if(scb){scb.checked=allSel;scb.indeterminate=someSel&&!allSel;}}
+function updateSelUI(){const n=selItems.size;document.getElementById('sel-badge-count').textContent=n+' selected';const bar=document.getElementById('selection-bar');if(bar)bar.classList.toggle('visible',selMode&&n>0);const cbs=[...document.getElementById('file-list').querySelectorAll('.row-cb')];const allSel=cbs.length&&cbs.every(c=>c.checked),someSel=cbs.some(c=>c.checked);const scb=document.getElementById('select-all-cb');if(scb){scb.checked=allSel;scb.indeterminate=someSel&&!allSel;}document.dispatchEvent(new CustomEvent('scidk:selectionchange',{detail:{size:n}}));}
 function enterSelMode(){selMode=true;document.getElementById('file-table').classList.add('sel-mode');document.getElementById('toggle-sel-btn').textContent='Exit selection';}
 function exitSelMode(){selMode=false;selItems.clear();lastSelIndex=-1;document.getElementById('file-table').classList.remove('sel-mode');document.getElementById('selection-bar').classList.remove('visible');document.getElementById('toggle-sel-btn').textContent='☑ Select files';if(mode==='live')document.getElementById('scan-folder-btn').style.display='';updateSelUI();}
 document.getElementById('toggle-sel-btn').addEventListener('click',()=>selMode?exitSelMode():enterSelMode());
@@ -506,7 +506,7 @@ document.getElementById('snapshot-save-config-btn').addEventListener('click',()=
 document.getElementById('snapshot-save-scan-btn').addEventListener('click',()=>saveModalConfig(true));
 
 // Keyboard
-document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='a'&&selMode){e.preventDefault();document.getElementById('select-all-cb').checked=true;document.getElementById('select-all-cb').dispatchEvent(new Event('change'));}});
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='a'&&selMode&&!(window.Drawers&&window.Drawers.active())){e.preventDefault();document.getElementById('select-all-cb').checked=true;document.getElementById('select-all-cb').dispatchEvent(new Event('change'));}});
 
 // Visibility
 document.addEventListener('visibilitychange',()=>{if(document.hidden){if(taskPollInterval){clearInterval(taskPollInterval);taskPollInterval=null;}}else if(scanRunning)startTaskPoll();});
