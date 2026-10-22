@@ -23,7 +23,10 @@
   <!-- ── Scan tab ── -->
   <div class="sharing-tab-panel active" id="scan-tab-scan">
 
-    <div class="drawer-field">
+    {# Hidden until wired (FILES_PAGE_REVIEW 3b): the server ignores scope,
+       "run interpreters", "commit after" and patterns (api_tasks.py), so
+       only "current folder" + depth do anything. #}
+    <div class="drawer-field" hidden>
       <label>Scope</label>
       <select id="scan-scope-sel" class="form-select form-select-sm">
         <option value="folder">Current folder</option>
@@ -53,7 +56,7 @@
     <div class="drawer-field">
       <label>Options</label>
       <div class="drawer-check-group">
-        <label class="drawer-check-label">
+        <label class="drawer-check-label" hidden>
           <input type="checkbox" id="scan-opt-interpret" checked>
           Run interpreters after scan
         </label>
@@ -61,14 +64,14 @@
           <input type="checkbox" id="scan-opt-fast-list">
           Fast list <span class="text-muted small">(rclone only)</span>
         </label>
-        <label class="drawer-check-label">
+        <label class="drawer-check-label" hidden>
           <input type="checkbox" id="scan-opt-commit">
           Commit to graph after scan
         </label>
       </div>
     </div>
 
-    <div class="drawer-field">
+    <div class="drawer-field" hidden>
       <label>Include / exclude patterns</label>
       <input type="text" id="scan-patterns" class="form-control form-control-sm"
              placeholder="e.g. *.fcs, *.tif — blank for all">

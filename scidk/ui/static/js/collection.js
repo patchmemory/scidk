@@ -216,11 +216,17 @@
     const menu = document.getElementById('saveas-menu');
     const btn  = document.getElementById('saveas-btn');
     if (!menu || !btn) return;
+    // The panel's transform makes position:fixed relative to the panel, and
+    // its overflow clips; opened upward from the top of the page the menu
+    // landed off-screen. Moved to <body> it positions against the viewport.
+    if (menu.parentElement !== document.body) document.body.appendChild(menu);
     const rect = btn.getBoundingClientRect();
-    menu.style.left   = rect.left + 'px';
-    menu.style.bottom = (window.innerHeight - rect.top + 5) + 'px';
-    menu.style.top    = 'auto';
     menu.classList.add('open'); _saveMenuOpen = true;
+    const h = menu.offsetHeight, w = menu.offsetWidth;
+    const below = rect.bottom + 5;
+    menu.style.bottom = 'auto';
+    menu.style.top  = (below + h <= window.innerHeight ? below : Math.max(5, rect.top - h - 5)) + 'px';
+    menu.style.left = Math.max(5, Math.min(rect.left, window.innerWidth - w - 5)) + 'px';
   }
   function _closeSaveMenu() {
     document.getElementById('saveas-menu')?.classList.remove('open');
@@ -283,6 +289,11 @@
       e.stopPropagation(); _saveMenuOpen ? _closeSaveMenu() : _openSaveMenu();
     });
     document.addEventListener('click', e => {
+      // The menu lives on <body> (see _openSaveMenu), outside saveas-wrap.
+      if (document.getElementById('saveas-menu')?.contains(e.target)) {
+        if (e.target.closest('.saveas-item')) _closeSaveMenu();
+        return;
+      }
       if (!document.getElementById('saveas-wrap')?.contains(e.target)) _closeSaveMenu();
     });
     document.getElementById('save-dataset-btn')?.addEventListener('click', saveAsDataset);
@@ -336,7 +347,9 @@
     // Keyboard
     document.addEventListener('keydown', e => {
       // Shift+Alt+C — toggle panel
-      if (e.shiftKey && e.altKey && (e.key === 'C' || e.key === 'c' || e.key === 'ç')) {
+      const a = document.activeElement;
+      const typing = a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+      if (!typing && e.shiftKey && e.altKey && (e.key === 'C' || e.key === 'c' || e.key === 'ç')) {
         e.preventDefault(); toggle(); return;
       }
       // Ctrl+D — save as Dataset (only when panel open)

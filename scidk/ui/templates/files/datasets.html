@@ -129,7 +129,7 @@ main { max-width:100% !important; padding:0 !important; }
           <div class="sidebar-section-header">
             <span id="servers-header">DRIVES</span>
             <div style="display:flex;gap:2px;">
-              <button id="new-snapshot-btn" title="New snapshot" style="display:none;">+</button>
+              <button id="new-snapshot-btn" title="New snapshot" style="display:none;" hidden>+</button>{# hidden: browses from / and "Create and scan now" would scan it (FILES_PAGE_REVIEW 3g) #}
               <button id="history-btn" title="Scan history">
                 <i class="ti ti-clock" aria-hidden="true" style="font-size:12px;"></i>
               </button>
@@ -207,7 +207,7 @@ main { max-width:100% !important; padding:0 !important; }
         <span class="badge-x">×</span>
       </button>
       <button class="btn btn-sm btn-outline-secondary" id="clear-sel-btn">Clear</button>
-      <button class="btn btn-sm btn-primary" id="scan-selected-btn">🔍 Scan selected</button>
+      <button class="btn btn-sm btn-primary" id="scan-selected-btn" hidden>🔍 Scan selected</button>{# hidden: scans the whole folder (FILES_PAGE_REVIEW 3c) #}
       <button class="btn btn-sm btn-outline-success" id="add-to-coll-btn">+ Collection</button>
     </div>
 
@@ -487,7 +487,8 @@ async function fetchNeo4jStatus(){try{const r=await fetch(SCIDK_BASE+'/api/healt
 
 // Search
 const searchInput=document.getElementById('tree-search-input');let searchTimer;
-document.addEventListener('keydown',e=>{if(e.key==='/'&&document.activeElement!==searchInput){e.preventDefault();searchInput.focus();}});
+// Not while typing: '/' is part of every path, and Add Drive's path box sent it here.
+document.addEventListener('keydown',e=>{const a=document.activeElement;if(e.key==='/'&&a!==searchInput&&!(a&&(a.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)))){e.preventDefault();searchInput.focus();}});
 searchInput.addEventListener('input',e=>{const q=e.target.value.toLowerCase().trim();document.querySelectorAll('#servers-tree .tree-node').forEach(el=>{el.style.display=(!q||el.textContent.toLowerCase().includes(q))?'':'none';});clearTimeout(searchTimer);if(q.length>1)searchTimer=setTimeout(()=>performGlobalSearch(q),600);if(!q)clearBrowser();});
 async function performGlobalSearch(q){setTableLoading();document.getElementById('breadcrumb-nav').innerHTML=`<span class="text-muted">Results for "<strong>${esc(q)}</strong>"</span>`;try{const r=await fetch(SCIDK_BASE+'/api/scans');const scans=await r.json();if(!Array.isArray(scans)||!scans.length){document.getElementById('file-list').innerHTML='<tr class="empty-row"><td colspan="7">No scans to search.</td></tr>';return;}const results=await Promise.all(scans.map(s=>fetch(SCIDK_BASE+`/api/scans/${s.id}/browse?page_size=500`).then(r=>r.json()).then(d=>(d.entries||[]).filter(e=>e.name.toLowerCase().includes(q)).map(e=>({...e,_scanId:s.id}))).catch(()=>[])));const all=results.flat().slice(0,200);if(!all.length){document.getElementById('file-list').innerHTML=`<tr class="empty-row"><td colspan="7">No results for "${esc(q)}"</td></tr>`;return;}renderFileList(all,{mode:'search'});}catch(e){document.getElementById('file-list').innerHTML=`<tr class="empty-row"><td colspan="7" class="text-danger">Search failed: ${esc(e.message)}</td></tr>`;}}
 
