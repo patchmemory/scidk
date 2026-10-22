@@ -15,6 +15,30 @@ class LLMProviderFactory:
     """Factory to create LLM providers from settings or environment."""
 
     @staticmethod
+    def for_request(settings: Optional[Dict[str, Any]] = None) -> LLMProvider:
+        """The provider for the current request's user: their own OpenAI-compatible
+        setting (Settings → AI) if they have one, else the legacy settings/env.
+
+        An explicit ``provider`` in the request body still selects a legacy
+        provider. Not settings['chat_llm_provider']: the call sites fill that
+        from SCIDK_CHAT_LLM_PROVIDER or default it to 'ollama', so it is never
+        empty and would always win over the user's own setting.
+        """
+        settings = settings or {}
+        try:
+            from flask import current_app, g, has_request_context, request
+            if has_request_context() and not (request.get_json(silent=True) or {}).get('provider'):
+                from .provider_settings import provider_for
+                db = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+                provider = provider_for(db, getattr(g, 'scidk_user', None) or '')
+                if provider is not None:
+                    return provider
+        except Exception as e:  # noqa: BLE001 - fall back to the legacy path
+            import logging
+            logging.getLogger(__name__).warning("User LLM setting unusable, using legacy provider: %s", e)
+        return LLMProviderFactory.from_settings(settings)
+
+    @staticmethod
     def from_settings(settings: Optional[Dict[str, Any]] = None) -> LLMProvider:
         """
         Build provider from settings dict or environment variables.

@@ -266,7 +266,7 @@ def api_chat_graphrag():
                     'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
                 }
 
-                provider_obj = LLMProviderFactory.from_settings(settings)
+                provider_obj = LLMProviderFactory.for_request(settings)
                 start_time_lookup = time.time()
 
                 # Step 1: Generate Cypher using specialized prompt
@@ -411,7 +411,7 @@ If there are no results, say so clearly."""
                     'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
                 }
 
-                provider_obj = LLMProviderFactory.from_settings(settings)
+                provider_obj = LLMProviderFactory.for_request(settings)
 
                 # Generate summary with count queries
                 result = generate_summary(driver, database or "neo4j", provider_obj, neo4j_schema)
@@ -460,7 +460,7 @@ If there are no results, say so clearly."""
                     'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
                 }
 
-                provider_obj = LLMProviderFactory.from_settings(settings)
+                provider_obj = LLMProviderFactory.for_request(settings)
 
                 # Get chat Neo4j client for context retrieval
                 chat_driver = get_chat_neo4j_client()
@@ -535,7 +535,7 @@ If there are no results, say so clearly."""
                     'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
                 }
 
-                provider_obj = LLMProviderFactory.from_settings(settings)
+                provider_obj = LLMProviderFactory.for_request(settings)
 
                 # Base system prompt
                 base_prompt = "You are a research data assistant for SciDK. Answer questions about the knowledge graph and scientific data."
@@ -911,7 +911,7 @@ def api_chat_graphrag_stream():
                         'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
                     }
 
-                    provider_obj = LLMProviderFactory.from_settings(settings)
+                    provider_obj = LLMProviderFactory.for_request(settings)
                     chat_driver = get_chat_neo4j_client()
 
                     # Retrieve context
@@ -1082,7 +1082,7 @@ def api_chat_graphrag_stream():
                         'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
                     }
 
-                    provider_obj = LLMProviderFactory.from_settings(settings)
+                    provider_obj = LLMProviderFactory.for_request(settings)
                     start_time = time.time()
 
                     # Generate Cypher query
@@ -1184,7 +1184,7 @@ Provide a clear, concise natural language answer based on these results."""
                         'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
                     }
 
-                    provider_obj = LLMProviderFactory.from_settings(settings)
+                    provider_obj = LLMProviderFactory.for_request(settings)
 
                     # Stream summary with native LLM streaming
                     summary_text = ''
@@ -1248,7 +1248,7 @@ Provide a clear, concise natural language answer based on these results."""
                         'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
                     }
 
-                    provider = LLMProviderFactory.from_settings(settings)
+                    provider = LLMProviderFactory.for_request(settings)
                     base_prompt = "You are a research data assistant for SciDK."
 
                     start_time = time.time()
@@ -2149,7 +2149,7 @@ def api_chat_graphrag_v2():
             'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
         }
 
-        provider = LLMProviderFactory.from_settings(settings)
+        provider = LLMProviderFactory.for_request(settings)
 
         # Base system prompt (provider will integrate schema_context)
         base_prompt = "You are a research data assistant for SciDK."
@@ -2265,7 +2265,7 @@ def api_chat_graphrag_v2_stream():
                 'chat_openai_api_key': os.environ.get('SCIDK_CHAT_OPENAI_API_KEY'),
             }
 
-            provider = LLMProviderFactory.from_settings(settings)
+            provider = LLMProviderFactory.for_request(settings)
 
             # Base system prompt
             base_prompt = "You are a research data assistant for SciDK."
