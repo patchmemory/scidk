@@ -79,3 +79,22 @@ def test_init_db_adds_hint_column_to_an_old_files_table(tmp_path, monkeypatch):
     pix.init_db()
     cols = {r[1] for r in sqlite3.connect(db).execute("PRAGMA table_info(files)")}
     assert 'interpreter_hint' in cols
+
+
+def test_import_into_fresh_files_db_leaves_the_snapshot_intact(demo_files_db, tmp_path, monkeypatch):
+    """A fresh files.db has no scans/scan_items tables until migrations run. The
+    unqualified table names used to resolve to the attached snapshot instead:
+    the import deleted the snapshot's scan rows and wrote none to files.db."""
+    import hashlib
+    import shutil
+    snap_src, scan_id = demo_files_db
+    snap = tmp_path / 'snap.db'
+    shutil.copy(snap_src, snap)
+    before = hashlib.sha256(snap.read_bytes()).hexdigest()
+    files_db = tmp_path / 'fresh.db'
+    monkeypatch.setenv('SCIDK_DB_PATH', str(files_db))
+    merge_scan_results(str(snap), str(files_db), scan_id, {'provider_id': 'local_fs', 'root_id': '/'})
+    assert hashlib.sha256(snap.read_bytes()).hexdigest() == before
+    assert _one(files_db, "SELECT status FROM scans WHERE id=?", scan_id) == ('completed',)
+    assert _one(files_db, "SELECT count(*) FROM scan_items WHERE scan_id=?", scan_id)[0] == \
+        _one(snap, "SELECT count(*) FROM scan_items WHERE scan_id=?", scan_id)[0] > 0

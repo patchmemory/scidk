@@ -47,6 +47,13 @@ def import_scan(snapshot_db: str, files_db_path: str, scan_id: str,
     conn = sqlite3.connect(files_db_path, timeout=30, isolation_level=None)
     try:
         conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
+        # scans / scan_items belong to migrations.py, which a fresh files.db may
+        # not have run yet. Without them, the unqualified names below resolved to
+        # the attached snapshot's own tables: the import deleted the snapshot's
+        # scan rows and never wrote one to files.db. Hence migrate() first, and
+        # main. / scan_tmp. on every table.
+        from ...core import migrations as _migs
+        _migs.migrate(conn)
         conn.execute("ATTACH DATABASE ? AS scan_tmp", (snapshot_db,))
         try:
             counts = conn.execute(
@@ -59,9 +66,9 @@ def import_scan(snapshot_db: str, files_db_path: str, scan_id: str,
 
             conn.execute("BEGIN IMMEDIATE")
             try:
-                conn.execute("DELETE FROM files WHERE scan_id=?", (scan_id,))
-                conn.execute("DELETE FROM scan_items WHERE scan_id=?", (scan_id,))
-                conn.execute("DELETE FROM scans WHERE id=?", (scan_id,))
+                conn.execute("DELETE FROM main.files WHERE scan_id=?", (scan_id,))
+                conn.execute("DELETE FROM main.scan_items WHERE scan_id=?", (scan_id,))
+                conn.execute("DELETE FROM main.scans WHERE id=?", (scan_id,))
                 # Normalised on the way in:
                 # - the scanner's interpreted_as is a routing hint, not a run, so
                 #   it goes to interpreter_hint, and interpreted_as /
@@ -72,7 +79,7 @@ def import_scan(snapshot_db: str, files_db_path: str, scan_id: str,
                 #   scanner leaves it NULL.
                 conn.execute(
                     """
-                    INSERT INTO files(
+                    INSERT INTO main.files(
                         path, parent_path, name, depth, type, size,
                         modified_time, file_extension, mime_type,
                         etag, hash, remote, scan_id, extra_json,
@@ -87,7 +94,7 @@ def import_scan(snapshot_db: str, files_db_path: str, scan_id: str,
                 )
                 conn.execute(
                     """
-                    INSERT INTO scan_items(
+                    INSERT INTO main.scan_items(
                         scan_id, path, type, size, modified_time,
                         file_extension, mime_type, etag, hash, extra_json)
                     SELECT scan_id, path, type, size, modified_time,
@@ -104,7 +111,7 @@ def import_scan(snapshot_db: str, files_db_path: str, scan_id: str,
                 # drawer shows a scan with no size.
                 conn.execute(
                     """
-                    INSERT INTO scans(id, root, started, completed, status, extra_json)
+                    INSERT INTO main.scans(id, root, started, completed, status, extra_json)
                     SELECT id, root, started, completed, 'completed',
                            json_set(coalesce(extra_json,'{}'),
                              '$.file_count', ?,
