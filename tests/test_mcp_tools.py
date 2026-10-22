@@ -156,7 +156,8 @@ def test_tool_definitions_complete():
     """Test that all tools have proper definitions."""
     from scidk.ai import mcp_tools
 
-    assert len(mcp_tools.TOOL_DEFINITIONS) == 5
+    # 5 graph tools, plus count_nodes and the files.db tools (agent_tools, Task 5)
+    assert len(mcp_tools.TOOL_DEFINITIONS) == 11
 
     for tool_def in mcp_tools.TOOL_DEFINITIONS:
         assert "name" in tool_def
@@ -213,7 +214,10 @@ def test_get_tool_definitions_filters_by_category():
         'query_knowledge_graph'
     ]
     assert [t['name'] for t in mcp_tools.get_tool_definitions('summarization')] == [
-        'summarize_dataset'
+        'summarize_dataset', 'count_nodes'
+    ]
+    assert [t['name'] for t in mcp_tools.get_tool_definitions('files')] == [
+        'scan_summary', 'list_collections', 'get_collection', 'search_datasets', 'unclaimed_summary'
     ]
 
 

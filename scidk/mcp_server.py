@@ -48,6 +48,7 @@ sys.path.insert(0, str(project_root))
 
 # Import SciDK modules
 from scidk.ai import mcp_tools
+from scidk.agent_tools.registry import CHAT_ONLY
 from neo4j import GraphDatabase
 
 
@@ -145,50 +146,24 @@ async def main():
                 inputSchema=tool_def["input_schema"]
             )
             for tool_def in mcp_tools.TOOL_DEFINITIONS
+            if tool_def["name"] not in CHAT_ONLY
         ]
 
     @server.call_tool()
     async def call_tool(name: str, arguments: Any) -> List[TextContent]:
-        """Handle tool calls."""
-        try:
-            if name == "query_knowledge_graph":
-                result = await scidk_server.query_knowledge_graph(
-                    cypher=arguments.get("cypher"),
-                    parameters=arguments.get("parameters"),
-                    limit=arguments.get("limit", 50)
-                )
-            elif name == "get_schema":
-                result = await scidk_server.get_schema(
-                    max_labels=arguments.get("max_labels", 50),
-                    max_props_per_label=arguments.get("max_props_per_label", 5)
-                )
-            elif name == "summarize_dataset":
-                result = await scidk_server.summarize_dataset(
-                    label=arguments.get("label"),
-                    relationship=arguments.get("relationship")
-                )
-            elif name == "get_label_profile":
-                result = await scidk_server.get_label_profile(
-                    label=arguments["label"]
-                )
-            elif name == "list_labels":
-                result = await scidk_server.list_labels()
-            else:
-                result = {"status": "error", "error": f"Unknown tool: {name}"}
-
-            return [TextContent(
-                type="text",
-                text=json.dumps(result, indent=2)
-            )]
-
-        except Exception as e:
-            return [TextContent(
-                type="text",
-                text=json.dumps({
-                    "status": "error",
-                    "error": str(e)
-                }, indent=2)
-            )]
+        """Run a tool through the shared registry, so the result passes the same
+        disclosure filter as every other adapter (agent_tools.run_tool)."""
+        from scidk.agent_tools.registry import ToolContext, run_tool
+        from scidk.core.path_index_sqlite import db_path_from_env
+        files_db = db_path_from_env(os.getenv('SCIDK_FILES_DB') or os.getenv('SCIDK_DB_PATH'))
+        ctx = ToolContext(
+            driver=scidk_server.driver,
+            database=scidk_server.neo4j_database,
+            files_db=str(files_db) if files_db else None,
+            settings_db=scidk_server.settings_db_path,
+        )
+        result = run_tool(name, arguments or {}, ctx)
+        return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
     # Run server
     async with stdio_server() as (read_stream, write_stream):

@@ -1,0 +1,724 @@
+"""Read-only tools over Neo4j (moved from scidk/ai/mcp_tools.py, which re-exports them).
+
+The functions below are the original MCP tool implementations, unchanged. The
+``agent_*`` handlers at the end are what the registry runs for every adapter:
+they serialize Neo4j values to plain dicts (so the disclosure filter can see
+labels), cap result sizes, check Cypher against the sharing policy, and read in
+a read transaction.
+"""
+import logging
+import os
+import re
+import sqlite3
+from typing import Dict, Any, List, Optional, Set
+from neo4j import Driver
+
+from ..ai.schema_context import get_schema_context
+
+logger = logging.getLogger(__name__)
+
+
+# Clauses that mutate the graph. Checked as whole tokens, never as substrings —
+# `created_at`, `dataset`, and `OFFSET` all contain a forbidden keyword as a
+# substring and are perfectly valid in a read query.
+FORBIDDEN_KEYWORDS = frozenset(
+    {'CREATE', 'MERGE', 'DELETE', 'REMOVE', 'SET', 'DROP', 'DETACH'}
+)
+
+
+# Guard for identifiers that must be interpolated into Cypher rather than
+# passed as parameters. Same pattern as canvas_service._LABEL_RE / _REL_RE,
+# which guards the write path; kept local so importing this module does not
+# pull in the services layer (the MCP server runs as its own process).
+#
+# Interpolation rather than `WHERE $label IN labels(n)` is deliberate here.
+# Parameterizing the label removes it from the node pattern, so Neo4j can no
+# longer use the label index and each of these reads degrades into a scan of
+# the entire graph. The pattern below admits no backtick, whitespace, or
+# operator character, so a label that passes it cannot escape the quoting.
+_IDENTIFIER_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+
+def _validate_identifier(value: Any, kind: str) -> Optional[str]:
+    """Return an error message if ``value`` is unsafe to interpolate, else None.
+
+    Args:
+        value: The caller-supplied label or relationship type.
+        kind: What the value names, for the error message ("label"/"relationship").
+    """
+    if not isinstance(value, str) or not value:
+        return f"Invalid {kind}: expected a non-empty string, got {value!r}."
+    if not _IDENTIFIER_RE.match(value):
+        return (
+            f"Invalid {kind} {value!r}: must start with a letter or underscore "
+            "and contain only letters, digits, and underscores."
+        )
+    return None
+
+
+def _cypher_tokens(cypher: str) -> Set[str]:
+    """Split Cypher into upper-cased word tokens for keyword matching.
+
+    Splitting on ``\\W+`` isolates every keyword, because Cypher requires a
+    non-word character (whitespace, parenthesis, colon, comma, operator) on
+    both sides of a clause keyword. That holds for the operator spellings too:
+    ``IS NULL`` and ``STARTS WITH`` split into their own word tokens, and
+    punctuation-only operators like ``<>`` and ``->`` split into empty strings,
+    which never match a keyword.
+
+    The check stays deliberately conservative in one direction: string literals
+    and comments are tokenized along with the query, so a read query containing
+    the word ``set`` inside a quoted value is rejected. Stripping literals first
+    would need to model quote escaping correctly, and getting that wrong would
+    let a real write clause through — for a safety filter, a false rejection is
+    the better failure.
+    """
+    return set(re.split(r'\W+', cypher.upper()))
+
+
+def query_knowledge_graph(
+    driver: Driver,
+    cypher: str,
+    database: str = "neo4j",
+    parameters: Optional[Dict[str, Any]] = None,
+    limit: Optional[int] = 50
+) -> Dict[str, Any]:
+    """
+    Execute a safe read-only Cypher query against the Neo4j knowledge graph.
+
+    Safety features:
+    - Blocks write keywords (CREATE, MERGE, DELETE, etc.) as whole tokens, so
+      read queries mentioning `created_at`, `dataset`, or `OFFSET` are allowed
+    - Adds LIMIT if not present
+    - Parameterized queries supported
+
+    Args:
+        driver: Neo4j driver instance
+        cypher: Cypher query string (read-only)
+        database: Database name (default "neo4j")
+        parameters: Optional query parameters for parameterized queries
+        limit: Max number of rows to return (default 50)
+
+    Returns:
+        {
+            "status": "success" | "error",
+            "rows": [...] | null,
+            "row_count": int,
+            "error": str | null
+        }
+    """
+    # Safety check: block write operations. Token matching, not substring
+    # matching — see _cypher_tokens.
+    tokens = _cypher_tokens(cypher)
+    found = tokens & FORBIDDEN_KEYWORDS
+
+    if found:
+        keyword = sorted(found)[0]
+        return {
+            "status": "error",
+            "rows": None,
+            "row_count": 0,
+            "error": f"Forbidden keyword '{keyword}' detected. Only read-only queries allowed."
+        }
+
+    # Add LIMIT if not present. Also a token check: a query selecting a property
+    # named `limit_value` has no LIMIT clause and still needs one appended.
+    if 'LIMIT' not in tokens:
+        cypher = f"{cypher.rstrip(';')} LIMIT {limit}"
+
+    try:
+        with driver.session(database=database) as session:
+            result = session.run(cypher, parameters or {})
+            rows = [dict(record) for record in result]
+
+            return {
+                "status": "success",
+                "rows": rows,
+                "row_count": len(rows),
+                "error": None
+            }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "rows": None,
+            "row_count": 0,
+            "error": str(e)
+        }
+
+
+def get_schema(
+    driver: Driver,
+    database: str = "neo4j",
+    max_labels: int = 50,
+    max_props_per_label: int = 5
+) -> Dict[str, Any]:
+    """
+    Get the current Neo4j schema (labels, relationships, properties).
+
+    Uses the Schema Intelligence layer's cached schema retrieval.
+
+    Args:
+        driver: Neo4j driver instance
+        database: Database name (default "neo4j")
+        max_labels: Maximum number of labels to return (default 50)
+        max_props_per_label: Max properties per label (default 5)
+
+    Returns:
+        {
+            "status": "success" | "error",
+            "schema": {
+                "labels": [...],
+                "relationships": [...],
+                "properties": {...},
+                "label_counts": {...}
+            } | null,
+            "error": str | null
+        }
+    """
+    try:
+        schema = get_schema_context(
+            driver,
+            database=database,
+            max_labels=max_labels,
+            max_props_per_label=max_props_per_label
+        )
+
+        return {
+            "status": "success",
+            "schema": {
+                "labels": schema.get("labels", []),
+                "relationships": schema.get("relationships", []),
+                "properties": schema.get("properties", {}),
+                "label_counts": schema.get("label_counts", {})
+            },
+            "error": None
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "schema": None,
+            "error": str(e)
+        }
+
+
+def summarize_dataset(
+    driver: Driver,
+    database: str = "neo4j",
+    label: Optional[str] = None,
+    relationship: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Generate statistical summary of the dataset or specific label/relationship.
+
+    This is a basic implementation that returns node/relationship counts.
+    Future enhancement: integrate with the full summarization pipeline.
+
+    Args:
+        driver: Neo4j driver instance
+        database: Database name (default "neo4j")
+        label: Optional specific label to summarize
+        relationship: Optional specific relationship to summarize
+
+    Returns:
+        {
+            "status": "success" | "error",
+            "summary": str | null,
+            "error": str | null
+        }
+    """
+    # Same interpolation guard as get_label_profile: both identifiers land
+    # inside backticks in the patterns below, and both come from the caller.
+    invalid = (
+        _validate_identifier(label, 'label') if label
+        else _validate_identifier(relationship, 'relationship') if relationship
+        else None
+    )
+    if invalid:
+        return {"status": "error", "summary": None, "error": invalid}
+
+    try:
+        if label:
+            query = f"""
+            MATCH (n:`{label}`)
+            WITH count(n) as node_count, labels(n) as label_list
+            RETURN node_count, label_list[0] as label
+            """
+        elif relationship:
+            query = f"""
+            MATCH ()-[r:`{relationship}`]->()
+            RETURN count(r) as rel_count, type(r) as rel_type
+            """
+        else:
+            query = """
+            MATCH (n)
+            WITH count(n) as total_nodes
+            CALL db.labels() YIELD label
+            RETURN total_nodes, count(label) as label_count
+            """
+
+        with driver.session(database=database) as session:
+            result = session.run(query)
+            record = result.single()
+
+            if record:
+                summary = f"Dataset summary: {dict(record)}"
+            else:
+                summary = "No data found"
+
+            return {
+                "status": "success",
+                "summary": summary,
+                "error": None
+            }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "summary": None,
+            "error": str(e)
+        }
+
+
+# Ceiling on the property keys pulled from Neo4j before ranking is applied.
+# Ranking can only reorder what this query returned, so the cap is generous
+# rather than presentational; a label carrying more distinct keys than this has
+# the rest dropped, and `properties_truncated` says so in the response.
+MAX_PROPERTY_KEYS = 200
+
+
+def _settings_db_path(explicit: Optional[str] = None) -> str:
+    """Resolve scidk_settings.db the way scidk.app._resolve_settings_db_path does.
+
+    The MCP server runs as its own process with no Flask app, so app.config is
+    not available here — the env var and the cwd default are.
+    """
+    return explicit or os.environ.get('SCIDK_SETTINGS_DB') or 'scidk_settings.db'
+
+
+def _open_settings_db(path: str) -> Optional[sqlite3.Connection]:
+    """Open the settings DB, or return None if it is not there.
+
+    Deliberately does not create the file: sqlite3.connect() on a missing path
+    would leave an empty database behind in whatever directory the MCP server
+    happened to start in, and an empty database is indistinguishable from a real
+    one with no Schema Intelligence rows. Nothing here writes to it.
+    """
+    if not os.path.exists(path):
+        return None
+    try:
+        return sqlite3.connect(path)
+    except Exception:
+        return None
+
+
+def get_label_profile(
+    driver: Driver,
+    label: str,
+    database: str = "neo4j",
+    sqlite_conn=None,
+    settings_db_path: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get the Schema Intelligence profile for a specific label.
+
+    Neo4j supplies the facts about the graph — node count, which property keys
+    exist and how often, outgoing relationships. The Schema Intelligence layer
+    in scidk_settings.db supplies how that label should be *presented*: its
+    description, its chat context mode, the always/never include pins, and the
+    usage-weighted property ranking. Properties come back in rank order with
+    never_include dropped and always_include pinned to the front, which is the
+    same shaping the chat path gets from get_enriched_schema_context.
+
+    Falls back to raw frequency order when the settings database or the SI
+    tables are unreachable, and to SI defaults when the label simply has no
+    label_profile row. Either way `schema_intelligence` in the response says
+    which happened.
+
+    Args:
+        driver: Neo4j driver instance
+        label: Label name to get profile for
+        database: Database name (default "neo4j")
+        sqlite_conn: Open connection to scidk_settings.db. When omitted, one is
+            opened from settings_db_path and closed before returning.
+        settings_db_path: Override for the settings DB location. Defaults to
+            $SCIDK_SETTINGS_DB, then scidk_settings.db in the cwd.
+
+    Returns:
+        {
+            "status": "success" | "error",
+            "profile": {
+                "label": str,
+                "node_count": int,
+                "description": str | null,
+                "chat_context_mode": "top_n" | "all" | "exclude",
+                "chat_context_n": int,
+                "always_include": [str],
+                "never_include": [str],
+                "properties": [{"name": str, "frequency": int}],
+                "properties_truncated": bool,
+                "chat_context_properties": [str],
+                "relationships": [...],
+                "schema_intelligence": "applied" | "unavailable"
+            } | null,
+            "error": str | null
+        }
+    """
+    # The label is interpolated into the node patterns below to keep the label
+    # index in play, so it must be validated first — a backtick would otherwise
+    # escape the quoting, and the write-keyword filter does not cover this path.
+    invalid = _validate_identifier(label, 'label')
+    if invalid:
+        return {"status": "error", "profile": None, "error": invalid}
+
+    try:
+        # Get node count
+        count_query = f"MATCH (n:`{label}`) RETURN count(n) as count"
+
+        with driver.session(database=database) as session:
+            count_result = session.run(count_query)
+            count_record = count_result.single()
+            node_count = count_record['count'] if count_record else 0
+
+            # Get properties with frequency. Frequency order is only the input
+            # to ranking below, not the order returned to the caller.
+            props_query = f"""
+            MATCH (n:`{label}`)
+            UNWIND keys(n) AS prop
+            WITH prop, count(*) as freq
+            RETURN prop, freq
+            ORDER BY freq DESC
+            LIMIT {MAX_PROPERTY_KEYS}
+            """
+
+            props_result = session.run(props_query)
+            properties = [
+                {"name": record["prop"], "frequency": record["freq"]}
+                for record in props_result
+            ]
+
+            # Get relationships
+            rels_query = f"""
+            MATCH (n:`{label}`)-[r]->(m)
+            WITH type(r) as rel_type, labels(m) as target_labels, count(*) as freq
+            RETURN rel_type, target_labels[0] as target_label, freq
+            ORDER BY freq DESC
+            LIMIT 10
+            """
+
+            rels_result = session.run(rels_query)
+            relationships = [
+                {
+                    "type": record["rel_type"],
+                    "target": record["target_label"],
+                    "frequency": record["freq"]
+                }
+                for record in rels_result
+            ]
+
+        # Shape the Neo4j facts through the Schema Intelligence layer. Done
+        # outside the driver session — it reads SQLite, not Neo4j.
+        si = _apply_schema_intelligence(
+            label, properties, sqlite_conn, settings_db_path
+        )
+
+        return {
+            "status": "success",
+            "profile": {
+                "label": label,
+                "node_count": node_count,
+                "properties_truncated": len(properties) >= MAX_PROPERTY_KEYS,
+                "relationships": relationships,
+                **si,
+            },
+            "error": None
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "profile": None,
+            "error": str(e)
+        }
+
+
+def _apply_schema_intelligence(
+    label: str,
+    properties: List[Dict[str, Any]],
+    sqlite_conn=None,
+    settings_db_path: Optional[str] = None
+) -> Dict[str, Any]:
+    """Reorder `properties` by usage rank and attach the label's SI profile.
+
+    `properties` arrives in Neo4j frequency order. Returns the profile fields
+    plus a `properties` list reordered by ``get_ranked_properties`` — pinned
+    first, then ranked, then unranked — with ``never_include`` dropped.
+
+    Never raises: on any failure the caller keeps frequency order and the
+    response reports ``schema_intelligence: 'unavailable'``.
+    """
+    frequencies = {p['name']: p['frequency'] for p in properties}
+    fallback = {
+        'description': None,
+        'chat_context_mode': 'top_n',
+        'chat_context_n': 5,
+        'always_include': [],
+        'never_include': [],
+        'properties': properties,
+        'chat_context_properties': [p['name'] for p in properties[:5]],
+        'schema_intelligence': 'unavailable',
+    }
+
+    conn = sqlite_conn
+    opened_here = False
+    if conn is None:
+        conn = _open_settings_db(_settings_db_path(settings_db_path))
+        if conn is None:
+            return fallback
+        opened_here = True
+
+    try:
+        # Imported here rather than at module scope: schema_intelligence pulls in
+        # numpy and requests for the embedding phases, and the MCP server should
+        # not pay for those on import.
+        from ..services import schema_intelligence as si
+
+        profile = si.get_label_profile(label, conn)
+        all_names = list(frequencies.keys())
+
+        ranked = si.get_ranked_properties(
+            label_name=label,
+            sqlite_conn=conn,
+            all_properties=all_names,
+            top_n=0,  # 0 = no truncation; this tool reports the whole label
+            always_include=profile['always_include'],
+            never_include=profile['never_include'],
+        )
+
+        # What the chat path would actually put in the prompt for this label.
+        # Mirrors get_enriched_schema_context, including its handling of
+        # chat_context_mode: 'exclude' drops the label, and every other mode
+        # truncates to chat_context_n.
+        if profile['chat_context_mode'] == 'exclude':
+            chat_context = []
+        else:
+            chat_context = si.get_ranked_properties(
+                label_name=label,
+                sqlite_conn=conn,
+                all_properties=all_names,
+                top_n=profile['chat_context_n'],
+                always_include=profile['always_include'],
+                never_include=profile['never_include'],
+            )
+
+        return {
+            **profile,
+            'properties': [
+                {'name': name, 'frequency': frequencies.get(name, 0)}
+                for name in ranked
+            ],
+            'chat_context_properties': chat_context,
+            'schema_intelligence': 'applied',
+        }
+
+    except Exception as e:  # noqa: BLE001
+        # A missing table, a locked database, an import failure — the graph facts
+        # are still worth returning, so degrade instead of failing the tool.
+        logger.warning(
+            "Schema Intelligence unavailable for label %r, "
+            "falling back to frequency order: %s", label, e
+        )
+        return fallback
+    finally:
+        if opened_here:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def list_labels(
+    driver: Driver,
+    database: str = "neo4j"
+) -> Dict[str, Any]:
+    """
+    Get all label names with their node counts.
+
+    Args:
+        driver: Neo4j driver instance
+        database: Database name (default "neo4j")
+
+    Returns:
+        {
+            "status": "success" | "error",
+            "labels": [
+                {"name": str, "count": int},
+                ...
+            ] | null,
+            "error": str | null
+        }
+    """
+    try:
+        with driver.session(database=database) as session:
+            # Get all labels
+            labels_result = session.run("CALL db.labels() YIELD label RETURN label")
+            labels = [record["label"] for record in labels_result]
+
+            # Get counts for each label
+            label_data = []
+            for label in labels:
+                count_result = session.run(f"MATCH (n:`{label}`) RETURN count(n) as count")
+                count_record = count_result.single()
+                count = count_record['count'] if count_record else 0
+                label_data.append({"name": label, "count": count})
+
+            # Sort by count descending
+            label_data.sort(key=lambda x: x["count"], reverse=True)
+
+            return {
+                "status": "success",
+                "labels": label_data,
+                "error": None
+            }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "labels": None,
+            "error": str(e)
+        }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Agent handlers: what the registry runs (agent_tools/registry.py).
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: Hard cap on rows in any agent result, so it fits in any model's context.
+MAX_ROWS = 50
+
+GRAPH_NOT_CONNECTED = {
+    "status": "error",
+    "error": "The knowledge graph is not connected on this SciDK instance (no Neo4j configured). "
+             "File-index tools such as scan_summary still work.",
+}
+
+
+def serialize(value: Any) -> Any:
+    """Neo4j values as plain JSON-able data. Nodes and relationships become dicts
+    carrying ``_labels`` / ``_type``, which is what the disclosure filter keys on."""
+    from neo4j.graph import Node, Path, Relationship
+    if isinstance(value, Node):
+        return {'_labels': sorted(value.labels), '_id': value.element_id,
+                **{k: serialize(v) for k, v in value.items()}}
+    if isinstance(value, Relationship):
+        return {'_type': value.type, '_id': value.element_id,
+                '_start': value.start_node.element_id if value.start_node else None,
+                '_end': value.end_node.element_id if value.end_node else None,
+                **{k: serialize(v) for k, v in value.items()}}
+    if isinstance(value, Path):
+        return {'nodes': [serialize(n) for n in value.nodes],
+                'relationships': [serialize(r) for r in value.relationships]}
+    if isinstance(value, dict):
+        return {k: serialize(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [serialize(v) for v in value]
+    if hasattr(value, 'iso_format'):      # neo4j temporal types
+        return value.iso_format()
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def agent_query_graph(ctx, cypher: str, parameters: Optional[Dict[str, Any]] = None,
+                      limit: Optional[int] = None) -> Dict[str, Any]:
+    """Read-only Cypher for agents: write keywords blocked, sharing policy checked,
+    run in a read transaction (writes fail server-side too), at most MAX_ROWS rows."""
+    if ctx.driver is None:
+        return dict(GRAPH_NOT_CONNECTED)
+    if not isinstance(cypher, str) or not cypher.strip():
+        return {"status": "error", "error": "cypher is required"}
+    found = _cypher_tokens(cypher) & FORBIDDEN_KEYWORDS
+    if found:
+        return {"status": "error",
+                "error": f"Forbidden keyword '{sorted(found)[0]}' detected. Only read-only queries allowed."}
+    from .disclosure import check_cypher
+    refused = check_cypher(cypher, ctx.policy, parameters)
+    if refused:
+        return {"status": "refused", "error": refused}
+    cap = max(1, min(int(limit or MAX_ROWS), MAX_ROWS))
+    if 'LIMIT' not in _cypher_tokens(cypher):
+        cypher = f"{cypher.rstrip().rstrip(';')} LIMIT {cap + 1}"
+
+    def work(tx):
+        result = tx.run(cypher, parameters or {})
+        rows = []
+        for record in result:
+            rows.append({k: serialize(v) for k, v in record.items()})
+            if len(rows) > cap:
+                break
+        return rows
+
+    try:
+        with ctx.driver.session(database=ctx.database) as session:
+            rows = session.execute_read(work)
+    except Exception as e:  # noqa: BLE001 - the model needs the message to fix its query
+        return {"status": "error", "error": str(e)}
+    truncated = len(rows) > cap
+    return {"status": "success", "rows": rows[:cap], "row_count": min(len(rows), cap),
+            "truncated": truncated,
+            **({"note": f"Only the first {cap} rows are shown; add aggregation or a narrower MATCH."}
+               if truncated else {})}
+
+
+def agent_get_schema(ctx, max_labels: int = 50, max_props_per_label: int = 5) -> Dict[str, Any]:
+    if ctx.driver is None:
+        return dict(GRAPH_NOT_CONNECTED)
+    return serialize(get_schema(ctx.driver, ctx.database, min(int(max_labels), MAX_ROWS),
+                                min(int(max_props_per_label), 20)))
+
+
+def agent_summarize_dataset(ctx, label: Optional[str] = None,
+                            relationship: Optional[str] = None) -> Dict[str, Any]:
+    if ctx.driver is None:
+        return dict(GRAPH_NOT_CONNECTED)
+    return serialize(summarize_dataset(ctx.driver, ctx.database, label, relationship))
+
+
+def agent_get_label_profile(ctx, label: str) -> Dict[str, Any]:
+    if ctx.driver is None:
+        return dict(GRAPH_NOT_CONNECTED)
+    return serialize(get_label_profile(ctx.driver, label, ctx.database,
+                                       settings_db_path=ctx.settings_db))
+
+
+def agent_list_labels(ctx) -> Dict[str, Any]:
+    if ctx.driver is None:
+        return dict(GRAPH_NOT_CONNECTED)
+    return serialize(list_labels(ctx.driver, ctx.database))
+
+
+def agent_count_nodes(ctx, label: str, where: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Count nodes of one label, optionally with property equality filters."""
+    if ctx.driver is None:
+        return dict(GRAPH_NOT_CONNECTED)
+    invalid = _validate_identifier(label, 'label')
+    if invalid:
+        return {"status": "error", "error": invalid}
+    where = where or {}
+    for key in where:
+        bad = _validate_identifier(key, 'property')
+        if bad:
+            return {"status": "error", "error": bad}
+        if ctx.policy.is_hidden([label], key):
+            return {"status": "refused",
+                    "error": f"`{label}.{key}` is hidden from AI tools by sharing settings."}
+    clause = ' AND '.join(f"n.`{k}` = $p{i}" for i, k in enumerate(where))
+    query = f"MATCH (n:`{label}`){' WHERE ' + clause if clause else ''} RETURN count(n) AS count"
+    params = {f"p{i}": v for i, v in enumerate(where.values())}
+    try:
+        with ctx.driver.session(database=ctx.database) as session:
+            count = session.execute_read(lambda tx: tx.run(query, params).single()['count'])
+    except Exception as e:  # noqa: BLE001
+        return {"status": "error", "error": str(e)}
+    return {"status": "success", "label": label, "where": where, "count": int(count)}
