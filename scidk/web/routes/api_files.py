@@ -1975,7 +1975,10 @@ def api_scan_delete(scan_id):
             conn = pix.connect()
             try:
                 cur = conn.cursor()
-                # Delete related records first
+                # Delete related records first. files too: they used to be
+                # left behind, still browsable and committable, under a scan id
+                # nothing listed any more.
+                cur.execute("DELETE FROM files WHERE scan_id = ?", (scan_id,))
                 cur.execute("DELETE FROM scan_items WHERE scan_id = ?", (scan_id,))
                 cur.execute("DELETE FROM scan_progress WHERE scan_id = ?", (scan_id,))
                 try:

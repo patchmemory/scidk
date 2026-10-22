@@ -38,7 +38,24 @@ _POLL_SECONDS = 5.0          # how often the child's progress table is read
 _WAIT_SLICE_SECONDS = 0.25   # how quickly the child's exit is noticed
 _MERGE_ATTEMPTS = 3
 _MERGE_RETRY_SECONDS = 5.0
-_BUSY_TIMEOUT_MS = 30000
+
+# The settings DB the scan-database Resource is recorded in. The monitor thread
+# has no app context, so launch_scanner notes the path whenever it runs inside
+# one (a request); a queued scan started later from a monitor thread reuses it.
+# Not on task_dict, because GET /api/tasks/<id> returns that dict whole.
+_settings_db_path: Optional[str] = None
+
+
+def _settings_db() -> str:
+    try:
+        from flask import current_app, has_app_context
+        if has_app_context():
+            global _settings_db_path
+            _settings_db_path = current_app.config.get('SCIDK_SETTINGS_DB') or _settings_db_path
+    except Exception:
+        pass
+    return _settings_db_path or os.environ.get('SCIDK_SETTINGS_DB') or 'scidk_settings.db'
+
 
 # How long files_scanned may sit unchanged before the child is presumed hung.
 # 30 min tolerates a slow NFS subtree; a deadlocked child never recovers.
@@ -171,6 +188,7 @@ def launch_scanner(task_id: str, task_dict: dict,
     through that registry and 404s otherwise. It is passed in rather than looked
     up because the monitor thread has no Flask app context.
     """
+    _settings_db()  # note it now, while a request's app context may exist
     if files_db_path is None:
         from .path_index_sqlite import _db_path
         files_db_path = str(_db_path())
@@ -454,136 +472,44 @@ def _monitor(proc: subprocess.Popen, task_id: str, task_dict: dict, tmp_db: str,
         f"Completed: {merged['file_count']:,} files, "
         f"{merged['folder_count']:,} folders"
     )
+    _keep_as_resource(task_dict, tmp_db, scanner_scan_id, merged)
     _persist(task_dict)
-    _try_delete(tmp_db)
     _try_delete(log_path)
     _start_next(task_id, files_db_path, max_total_workers, max_concurrent, live_tasks, scans_registry)
 
 
+def _keep_as_resource(task_dict: dict, tmp_db: str, scan_id: str, merged: dict) -> None:
+    """Keep the scan database as the Resource snapshot and record the Resource.
+
+    Never fails the scan: the import already succeeded, so a problem here is
+    reported in the task and the snapshot is dropped as before.
+    """
+    from ..pipeline.scan_resource import keep_snapshot, upsert_scan_resource
+    from .host_id import host_id_for
+    host = host_id_for(task_dict.get('provider_id') or 'local_fs', task_dict.get('root_id') or '/')
+    root = str(task_dict.get('path') or '')
+    try:
+        snapshot = keep_snapshot(tmp_db, _scan_db_dir(), host, root)
+        task_dict['snapshot_path'] = snapshot
+    except Exception as e:
+        task_dict['status_message'] += f' (snapshot not kept: {e})'
+        _try_delete(tmp_db)
+        return
+    try:
+        resource = upsert_scan_resource(_settings_db(), host, root, snapshot, scan_id,
+                                        merged['file_count'], merged['folder_count'])
+        task_dict['resource_id'] = resource.get('id')
+    except Exception as e:
+        task_dict['status_message'] += f' (Resource not recorded: {e})'
+
+
 def merge_scan_results(tmp_db: str, files_db_path: str, scanner_scan_id: str,
                        task_dict: Optional[dict] = None) -> dict:
-    """Copy one scan from the child's database into files.db.
-
-    ATTACH is safe here: files.db is WAL (path_index_sqlite.py:28) and nothing
-    else in the codebase attaches anything.
-
-    Idempotent by delete-then-insert, not by INSERT OR IGNORE: files.db's
-    ``files`` table has no PRIMARY KEY and no unique index, so OR IGNORE has no
-    conflict target there and a retried merge would duplicate every row. The
-    three DELETEs are scoped to this scan id, which is a uuid4 the child just
-    minted, so they can only remove rows left by an earlier attempt at this
-    same merge. Cross-file atomicity is not guaranteed in WAL mode; being
-    re-runnable is what makes a partial failure recoverable.
-
-    Column lists are explicit because ``SELECT *`` does not line up: files.db's
-    ``files`` has 19 columns (init_db adds interpreted_at,
-    interpreter_version and interpreter_hint) and the child's has 16.
-    """
-    # files.db may never have been initialised on a fresh deployment:
-    # migrations.migrate() creates scans/scan_items/background_tasks but the
-    # files table belongs to init_db, beside the DDL that owns it. Idempotent,
-    # and a no-op on an index that already exists.
-    from .path_index_sqlite import init_db as _init_db
-    _init_db()
-    from .host_id import host_id_for
-    host_id = host_id_for((task_dict or {}).get('provider_id') or 'local_fs',
-                          (task_dict or {}).get('root_id') or '/')
-
-    conn = sqlite3.connect(files_db_path, timeout=30, isolation_level=None)
-    try:
-        conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
-        conn.execute("ATTACH DATABASE ? AS scan_tmp", (tmp_db,))
-        try:
-            counts = conn.execute(
-                "SELECT coalesce(sum(type='file'),0), coalesce(sum(type='folder'),0) "
-                "FROM scan_tmp.files WHERE scan_id=?",
-                (scanner_scan_id,),
-            ).fetchone()
-            file_count = int(counts[0] or 0)
-            folder_count = int(counts[1] or 0)
-
-            conn.execute("BEGIN IMMEDIATE")
-            try:
-                conn.execute("DELETE FROM files WHERE scan_id=?", (scanner_scan_id,))
-                conn.execute("DELETE FROM scan_items WHERE scan_id=?", (scanner_scan_id,))
-                conn.execute("DELETE FROM scans WHERE id=?", (scanner_scan_id,))
-                # Normalised on the way in:
-                # - the scanner's interpreted_as is a routing hint, not a run, so
-                #   it goes to interpreter_hint, and interpreted_as /
-                #   interpretation_json stay NULL until an interpreter runs.
-                #   Otherwise commit writes an empty :Interpretation per hinted
-                #   row and Interpret shows every hint as a failed run.
-                # - remote is the host label commit keys File nodes on; the
-                #   scanner leaves it NULL.
-                conn.execute(
-                    """
-                    INSERT INTO files(
-                        path, parent_path, name, depth, type, size,
-                        modified_time, file_extension, mime_type,
-                        etag, hash, remote, scan_id, extra_json,
-                        interpreter_hint)
-                    SELECT path, parent_path, name, depth, type, size,
-                           modified_time, file_extension, mime_type,
-                           etag, hash, coalesce(remote, ?), scan_id, extra_json,
-                           interpreted_as
-                      FROM scan_tmp.files WHERE scan_id=?
-                    """,
-                    (host_id, scanner_scan_id),
-                )
-                conn.execute(
-                    """
-                    INSERT INTO scan_items(
-                        scan_id, path, type, size, modified_time,
-                        file_extension, mime_type, etag, hash, extra_json)
-                    SELECT scan_id, path, type, size, modified_time,
-                           file_extension, mime_type, etag, hash, extra_json
-                      FROM scan_tmp.scan_items WHERE scan_id=?
-                    """,
-                    (scanner_scan_id,),
-                )
-                # The child writes status='complete'; every reader in this app
-                # looks for 'completed' (api_tasks.py:38 filters
-                # IN ('completed','committed')), so normalise on the way in.
-                # extra_json is topped up with the keys /api/scans reads
-                # (api_files.py:1497-1512) — without file_count the History
-                # drawer shows a scan with no size.
-                conn.execute(
-                    """
-                    INSERT INTO scans(id, root, started, completed, status, extra_json)
-                    SELECT id, root, started, completed, 'completed',
-                           json_set(coalesce(extra_json,'{}'),
-                             '$.file_count', ?,
-                             '$.folder_count', ?,
-                             '$.recursive', json('true'),
-                             '$.duration_sec', coalesce(completed,0) - coalesce(started,0),
-                             '$.source', 'scidk_scanner_opt',
-                             '$.provider_id', ?,
-                             '$.root_id', ?)
-                      FROM scan_tmp.scans WHERE id=?
-                    """,
-                    (
-                        file_count, folder_count,
-                        (task_dict or {}).get('provider_id') or 'local_fs',
-                        (task_dict or {}).get('root_id') or '/',
-                        scanner_scan_id,
-                    ),
-                )
-                conn.execute("COMMIT")
-            except Exception:
-                try:
-                    conn.execute("ROLLBACK")
-                except Exception:
-                    pass
-                raise
-        finally:
-            try:
-                conn.execute("DETACH DATABASE scan_tmp")
-            except Exception:
-                pass
-    finally:
-        conn.close()
-    return {'file_count': file_count, 'folder_count': folder_count,
-            'scan_id': scanner_scan_id}
+    """Import the child's scan into files.db: Pass 2, see pipeline.passes.import_scan."""
+    from ..pipeline.passes.import_scan import import_scan
+    return import_scan(tmp_db, files_db_path, scanner_scan_id,
+                       provider_id=(task_dict or {}).get('provider_id') or 'local_fs',
+                       root_id=(task_dict or {}).get('root_id') or '/')
 
 
 def _register_scan(scans_registry: Optional[Dict[str, dict]], task_dict: dict,
