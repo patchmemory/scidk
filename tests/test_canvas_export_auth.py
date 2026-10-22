@@ -64,7 +64,8 @@ def client(auth_app):
 
 
 @pytest.mark.parametrize('route', EXPORT_ROUTES)
-def test_export_requires_authentication(client, route):
+def test_export_requires_authentication(client, auth, route):
+    auth.create_user('someone', 'password123', role='user')  # turns auth on
     resp = client.post(route, json=SNAPSHOT)
 
     assert resp.status_code == 401

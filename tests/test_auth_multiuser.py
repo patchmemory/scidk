@@ -398,8 +398,9 @@ class TestRBACDecorator:
         assert 'error' in data
         assert 'permission' in data['error'].lower()
 
-    def test_require_admin_decorator_blocks_unauthenticated(self, client):
-        """Test that @require_admin blocks unauthenticated requests."""
+    def test_require_admin_decorator_blocks_unauthenticated(self, client, auth):
+        """Test that @require_admin blocks unauthenticated requests once auth is on."""
+        auth.create_user('someone', 'password123', role='user')  # turns auth on
         response = client.get('/api/users')
         assert response.status_code == 401
 

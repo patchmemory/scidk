@@ -40,6 +40,19 @@ def _authenticate_bearer_token():
         g.scidk_user_id = user['id']
 
 
+def _auth_disabled():
+    """True when auth is off for this instance: no enabled users and no legacy config.
+
+    Matches auth_middleware, which lets every request through in that case. The
+    decorators used to bypass only under pytest/TESTING/SCIDK_E2E_TEST, so a
+    no-auth deployment got 401 on every role-gated route while tests passed.
+    """
+    from flask import current_app
+    from ..core.auth import get_auth_manager
+    db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+    return not get_auth_manager(db_path=db_path).is_enabled()
+
+
 def require_role(*allowed_roles):
     """Decorator to require specific role(s) for a route.
 
@@ -63,24 +76,8 @@ def require_role(*allowed_roles):
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
-            # In test mode with auth disabled, allow all requests
-            # This matches the behavior of auth_middleware which skips auth in test mode
-            import os
-            import sys
-            from flask import current_app
-            is_testing = (
-                current_app.config.get('TESTING', False) or
-                'pytest' in sys.modules or
-                os.environ.get('SCIDK_E2E_TEST')
-            )
-            if is_testing and not os.environ.get('PYTEST_TEST_AUTH'):
-                # In test mode - check if auth is actually enabled
-                from ..core.auth import get_auth_manager
-                db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
-                auth = get_auth_manager(db_path=db_path)
-                if not auth.is_enabled():
-                    # Auth disabled in tests - allow the request
-                    return f(*args, **kwargs)
+            if _auth_disabled():
+                return f(*args, **kwargs)
 
             # Bearer API token first, then fall through to session cookie auth.
             _authenticate_bearer_token()
@@ -123,21 +120,8 @@ def require_admin(f):
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # In test mode with auth disabled, allow all requests
-        import os
-        import sys
-        from flask import current_app
-        is_testing = (
-            current_app.config.get('TESTING', False) or
-            'pytest' in sys.modules or
-            os.environ.get('SCIDK_E2E_TEST')
-        )
-        if is_testing and not os.environ.get('PYTEST_TEST_AUTH'):
-            from ..core.auth import get_auth_manager
-            db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
-            auth = get_auth_manager(db_path=db_path)
-            if not auth.is_enabled():
-                return f(*args, **kwargs)
+        if _auth_disabled():
+            return f(*args, **kwargs)
 
         # Bearer API token first, then fall through to session cookie auth.
         _authenticate_bearer_token()

@@ -246,7 +246,8 @@ class TestBuildRouteAuth:
         assert user_id is not None, f'no such role: {role}'
         return auth.create_user_session(user_id, f'{role}_person')
 
-    def test_unauthenticated_is_rejected(self, auth_client):
+    def test_unauthenticated_is_rejected(self, auth_client, auth):
+        auth.create_user('someone', 'password123', role='user')  # turns auth on
         resp = auth_client.post('/api/rocrate/build', json={'paths': ['/data/aipt/cohortA']})
 
         assert resp.status_code == 401
