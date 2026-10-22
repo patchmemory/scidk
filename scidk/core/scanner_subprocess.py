@@ -593,15 +593,8 @@ def _register_scan(scans_registry: Optional[Dict[str, dict]], task_dict: dict,
     try:
         provider_id = task_dict.get('provider_id') or 'local_fs'
         root_id = task_dict.get('root_id') or '/'
-        host_id = None
-        try:
-            if provider_id == 'local_fs':
-                import socket as _sock
-                host_id = f"local:{_sock.gethostname()}"
-            elif provider_id == 'mounted_fs':
-                host_id = f"mounted:{root_id}"
-        except Exception:
-            host_id = f"{provider_id}:{root_id}"
+        from .host_id import host_id_for
+        host_id = host_id_for(provider_id, root_id)
         started = task_dict.get('started') or 0.0
         ended = task_dict.get('ended') or time.time()
         from pathlib import Path as _Path

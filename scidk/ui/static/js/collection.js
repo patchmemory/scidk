@@ -6,7 +6,9 @@
  * Annotate (Collect tab), and Save as Dataset.
  *
  * Exposes: window.Collection
- *   .add(files)          — add [{name, path, provider}] to collection
+ *   .add(files)          — add [{name, path, provider_id, root_id, scan_id, type}]
+ *   .entryFromId(id)     — a selection id (full path) as a collection entry
+ *   .payload(f)          — an entry as the Dataset / sweep routes expect it
  *   .remove(name)        — remove by filename
  *   .clear()             — discard all (with confirm)
  *   .items()             — returns current array (readonly copy)
@@ -148,7 +150,7 @@
         // folder it sits in, and not its basename. That is the composite key
         // File nodes carry, so it is the only form the sweep can match on the
         // index; a basename is ambiguous across the graph and unindexed.
-        body: JSON.stringify({ files: _items.map(f => ({ path: _fullPath(f), host: f.provider || '' })) })
+        body: JSON.stringify({ files: _items.map(payload) })
       });
       if (!r.ok) { el.style.display='none'; return; }
       const d = await r.json();
@@ -174,9 +176,8 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name.trim(),
-          // Resolved here rather than relying on the server to join folder
-          // and basename — the same (path, host) key the sweep sends.
-          files: _items.map(f => ({ name: f.name, path: _fullPath(f), host: f.provider || '' }))
+          // Same entries the sweep sends; the server derives the host.
+          files: _items.map(payload)
         })
       });
       const d = await r.json().catch(() => ({}));
@@ -221,6 +222,31 @@
     const dir = (f.path || '').replace(/\/+$/, '');
     if (!dir) return f.name || '';
     return dir.endsWith('/' + f.name) || dir === f.name ? dir : dir + '/' + f.name;
+  }
+
+  // Where an entry lives. The server turns provider_id + root_id (or, in Index
+  // view, the scan) into the host label commit wrote, so a collected file lands
+  // on the committed (path, host) node. Sending the provider id as the host
+  // matched nothing and created stub nodes beside the real files.
+  function entryFromId(id) {
+    const s = String(id || '');
+    const cut = s.lastIndexOf('/');
+    const types = global.itemTypes;
+    return {
+      name: cut >= 0 ? s.slice(cut + 1) : s,
+      path: cut >= 0 ? s.slice(0, cut) : (global.currentPath || ''),
+      provider_id: global.currentServer || '',
+      root_id: global.currentRoot || '',
+      scan_id: global.mode === 'snapshot' ? (global.activeScanId || '') : '',
+      type: (types && types.get(s)) || 'file',
+    };
+  }
+
+  function payload(f) {
+    return {
+      name: f.name, path: _fullPath(f), type: f.type || 'file',
+      provider_id: f.provider_id || '', root_id: f.root_id || '', scan_id: f.scan_id || '',
+    };
   }
 
   function _esc(s) {
@@ -285,11 +311,7 @@
     // Add to collection from selection bar
     document.getElementById('add-to-coll-btn')?.addEventListener('click', () => {
       if (typeof selItems === 'undefined' || !selItems.size) { toast('No files selected'); return; }
-      const files = [...selItems].map(id => ({
-        name: id.split('/').pop(),
-        path: (typeof currentPath !== 'undefined' ? currentPath : ''),
-        provider: (typeof currentServer !== 'undefined' ? currentServer : '')
-      }));
+      const files = [...selItems].map(entryFromId);
       const added = add(files);
       if (added) {
         selItems.clear();
@@ -323,6 +345,6 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _wire);
   else _wire();
 
-  global.Collection = { add, remove, clear, items, count, open, close, toggle, sweep, saveAsDataset, exportFileList };
+  global.Collection = { add, remove, clear, items, count, open, close, toggle, sweep, saveAsDataset, exportFileList, entryFromId, payload };
 
 })(window);

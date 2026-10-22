@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Tuple
 
 from flask import Blueprint, current_app, jsonify, request
 
+from ...core.host_id import PROVIDER_IDS, host_id_for, is_host_label
 from ..decorators import require_role
 
 bp = Blueprint('annotation', __name__, url_prefix='/api')
@@ -60,19 +61,86 @@ def _neo4j_client():
         raise Neo4jUnavailable(f'Could not reach Neo4j at {uri}: {exc}') from exc
 
 
+def _entry_host(entry: Dict[str, Any]) -> str:
+    """The committed ``host`` label for one request entry, or '' if unknown.
+
+    Derived server-side with :func:`host_id_for`, the function commit uses, so a
+    Collect of a committed file lands on the same ``(path, host)`` node. The page
+    sends ``provider_id`` + ``root_id`` (and ``scan_id`` in Index view, whose
+    scan may be on another drive than the sidebar cursor). A ``host`` that is
+    already a label is kept; a bare provider id in ``host`` / ``provider`` (what
+    the page used to send) is treated as ``provider_id``.
+    """
+    scan_id = str(entry.get('scan_id') or '').strip()
+    if scan_id:
+        try:
+            scan = current_app.extensions['scidk'].get('scans', {}).get(scan_id) or {}
+        except Exception:
+            scan = {}
+        if is_host_label(scan.get('host_id')):
+            return scan['host_id']
+
+    root_id = str(entry.get('root_id') or '').strip()
+    provider_id = str(entry.get('provider_id') or '').strip()
+    host = str(entry.get('host') or entry.get('provider') or '').strip()
+    if not provider_id and host in PROVIDER_IDS:
+        provider_id = host
+    if provider_id:
+        if provider_id != 'local_fs' and not root_id:
+            return ''
+        return host_id_for(provider_id, root_id)
+    return host if is_host_label(host) else ''
+
+
+def _expand_folder(folder: str) -> Tuple[List[Dict[str, str]], bool]:
+    """Files under ``folder`` in the scan index, and whether the index knows it.
+
+    A folder is not a File, so it can't be a Dataset member itself (it used to
+    become a ``:File {stub: true}``). Its indexed files are added instead: a range
+    scan on ``idx_files_path``, deduplicated across scans, capped one past
+    ``_MAX_FILES`` so the caller can refuse an oversized collection.
+    """
+    from ...core import path_index_sqlite as pix
+    folder = folder.rstrip('/')
+    try:
+        conn = pix.connect()
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT path, name FROM files "
+                "WHERE path > ? AND path < ? AND type = 'file' LIMIT ?",
+                (folder + '/', folder + '0', _MAX_FILES + 1),
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception:
+        return [], False
+    return [{'path': r[0], 'filename': r[1]} for r in rows], bool(rows)
+
+
 def _normalise_files(raw: Any) -> Tuple[List[Dict[str, str]], List[str]]:
     """Request file entries as ``{path, filename, host}``, plus any complaints.
 
-    Accepts the structured form the drawer sends —
-    ``{"name": ..., "path": ..., "host": ...}`` — where ``path`` may be either
-    the file's own full path or the folder holding it. Both spellings appear in
-    the page (the Collection stores a folder in ``path``; a selection id is a
-    full path), so the two are reconciled here rather than in four call sites:
-    if ``path`` does not already end in the filename, the filename is appended.
+    Accepts the structured form the page sends —
+    ``{"name", "path", "provider_id", "root_id", "scan_id"?, "type"?}`` — where
+    ``path`` may be either the file's own full path or the folder holding it.
+    Both spellings appear in the page (the Collection stores a folder in
+    ``path``; a selection id is a full path), so the two are reconciled here
+    rather than in four call sites: if ``path`` does not already end in the
+    filename, the filename is appended.
+
+    ``type: "folder"`` entries are expanded to their indexed files (see
+    :func:`_expand_folder`); a folder the index has never seen is reported in
+    the complaints and skipped.
     """
     files: List[Dict[str, str]] = []
     problems: List[str] = []
     seen = set()
+
+    def _add(path: str, filename: str, host: str) -> None:
+        key = (path, host)
+        if key not in seen:
+            seen.add(key)
+            files.append({'path': path, 'filename': filename, 'host': host})
 
     for i, entry in enumerate(raw or []):
         if not isinstance(entry, dict):
@@ -80,10 +148,9 @@ def _normalise_files(raw: Any) -> Tuple[List[Dict[str, str]], List[str]]:
             continue
         filename = str(entry.get('name') or entry.get('filename') or '').strip()
         path = str(entry.get('path') or '').strip()
-        host = str(entry.get('host') or entry.get('provider') or '').strip()
 
         if not filename and path:
-            filename = path.rsplit('/', 1)[-1]
+            filename = path.rstrip('/').rsplit('/', 1)[-1]
         if not filename:
             problems.append(f'files[{i}] has neither name nor path')
             continue
@@ -93,11 +160,20 @@ def _normalise_files(raw: Any) -> Tuple[List[Dict[str, str]], List[str]]:
         if not path.endswith('/' + filename) and path != filename:
             path = path.rstrip('/') + '/' + filename
 
-        key = (path, host)
-        if key in seen:
+        host = _entry_host(entry)
+        if not host:
+            problems.append(f'files[{i}] ({filename}) has no provider_id/root_id to place it on a host')
             continue
-        seen.add(key)
-        files.append({'path': path, 'filename': filename, 'host': host})
+
+        if str(entry.get('type') or '').lower() == 'folder':
+            members, known = _expand_folder(path)
+            if not known:
+                problems.append(f'folder {path} has no scanned files; scan it first, or select its files')
+            for m in members:
+                _add(m['path'], m['filename'], host)
+            continue
+
+        _add(path, filename, host)
 
     return files, problems
 

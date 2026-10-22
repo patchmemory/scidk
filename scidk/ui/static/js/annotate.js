@@ -23,7 +23,9 @@
  * Page state this module reads, when the page provides it:
  *   window.selItems     — Set of selected row ids (full paths)
  *   window.currentPath  — folder currently being browsed
- *   window.currentServer— provider id of the current drive, used as host
+ *   window.currentServer— provider id of the current drive (provider_id)
+ *   window.currentRoot  — root id of the current drive (root_id)
+ *   window.itemTypes    — Map of row id → 'file' | 'folder'
  */
 ;(function (global) {
   'use strict';
@@ -594,31 +596,17 @@
 
   let _collectSource = 'selection';
 
-  // A file entry the Dataset route can resolve: File nodes are keyed by
-  // (path, host), so a bare basename is not enough. selItems holds full paths,
-  // so split rather than guess.
-  function _fileFromSelectionId(id) {
-    const s = String(id || '');
-    const cut = s.lastIndexOf('/');
-    return {
-      name: cut >= 0 ? s.slice(cut + 1) : s,
-      path: cut >= 0 ? s.slice(0, cut) : (global.currentPath || ''),
-      host: global.currentServer || '',
-    };
-  }
-
+  // Entries the Dataset route can resolve: File nodes are keyed by
+  // (path, host), and the server derives the host from provider_id + root_id
+  // (Collection.entryFromId / .payload). Folders go as type 'folder'; the
+  // server adds their scanned files rather than making the folder a File.
   function _collectFiles() {
-    if (_collectSource === 'collection') {
-      const items = (global.Collection ? global.Collection.items() : []) || [];
-      return items.map(f => ({
-        name: f.name,
-        path: f.path || '',
-        host: f.provider || global.currentServer || '',
-      }));
-    }
+    const C = global.Collection;
+    if (!C) return [];
+    if (_collectSource === 'collection') return (C.items() || []).map(C.payload);
     const sel = global.selItems;
     if (!sel || !sel.size) return [];
-    return [...sel].map(_fileFromSelectionId);
+    return [...sel].map(id => C.payload(C.entryFromId(id)));
   }
 
   function setCollectSource(src) {
@@ -634,12 +622,16 @@
     const note  = document.getElementById('collect-scope-note');
     const items = document.getElementById('collect-scope-items');
     const files = _collectFiles();
+    const nFolders = files.filter(f => f.type === 'folder').length;
+    const nFiles = files.length - nFolders;
     if (note) {
       const lbl = note.querySelector('.sn-label');
       if (lbl) {
-        lbl.textContent = _collectSource === 'collection'
-          ? `From collection · ${files.length} file${files.length === 1 ? '' : 's'}`
-          : `From selection · ${files.length} file${files.length === 1 ? '' : 's'}`;
+        const parts = [`${nFiles} file${nFiles === 1 ? '' : 's'}`];
+        // A folder isn't a Dataset member itself; its scanned files are.
+        if (nFolders) parts.push(`${nFolders} folder${nFolders === 1 ? '' : 's'} (adds its scanned files)`);
+        lbl.textContent = (_collectSource === 'collection' ? 'From collection · ' : 'From selection · ')
+          + parts.join(' + ');
       }
       note.classList.toggle('empty', files.length === 0);
     }
@@ -684,7 +676,9 @@
       if (!r.ok) { _setCollectStatus(_attrEsc(d.error || `Error ${r.status}`), 'danger'); return; }
       _setCollectStatus(
         `✓ Dataset "${_attrEsc(d.name || name)}" — ${d.files_linked || 0} file(s) linked`
-        + (d.stubs_created ? `, ${d.stubs_created} stub node(s) created` : ''),
+        + (d.stubs_created ? `, ${d.stubs_created} stub node(s) created` : '')
+        + (d.problems && d.problems.length
+          ? `<br><span class="text-warning">Skipped: ${d.problems.map(_attrEsc).join('; ')}</span>` : ''),
         'success');
     } catch (e) {
       _setCollectStatus('Write failed: ' + _attrEsc(e.message), 'danger');

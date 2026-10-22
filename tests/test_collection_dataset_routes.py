@@ -277,3 +277,58 @@ def test_sweep_excludes_the_collection_from_the_missing_list(client, fake_graph)
     params = _params_for(graph, ':Dataset')
     assert params['keys'] == [['p/a.fcs', 'h']]
     assert 'WHERE NOT [m.path, m.host] IN $keys' in _query_for(graph, ':Dataset')
+
+
+# ── Host and folders (FILES_PAGE_REVIEW X2 / 8c) ───────────────────────────
+
+def test_collect_and_commit_share_one_path_host(client, fake_graph, tmp_path):
+    """A scanned file collected from the Files page lands on the node commit wrote.
+
+    The page used to send the provider id ('local_fs') as the host; commit keys
+    File nodes on scan['host_id'] ('local:<hostname>'), so the two never met.
+    """
+    root = tmp_path / 'study'
+    (root / 'wk9_11_Rec').mkdir(parents=True)
+    for n in ('a.tif', 'b.tif'):
+        (root / 'wk9_11_Rec' / n).write_bytes(b'x')
+    r = client.post('/api/scans', json={
+        'provider_id': 'local_fs', 'root_id': '/', 'path': str(root), 'recursive': True,
+    })
+    assert r.status_code in (200, 201, 202), r.get_json()
+    scans = client.application.extensions['scidk']['scans']
+    committed_host = next(s for s in scans.values() if s.get('path') == str(root))['host_id']
+
+    graph = fake_graph(write_results=[[{'dataset_id': 'd', 'created': True}], [{'linked': 3, 'stubs': 0}]])
+    r = client.post('/api/datasets/collections', json={'name': 'D', 'files': [
+        # a file, as the page sends it now
+        {'name': 'a.tif', 'path': str(root / 'wk9_11_Rec'), 'provider_id': 'local_fs', 'root_id': '/'},
+        # the old payload: provider id in `host`
+        {'name': 'b.tif', 'path': str(root / 'wk9_11_Rec'), 'host': 'local_fs'},
+        # a folder: expanded to its scanned files, never a File itself
+        {'name': 'wk9_11_Rec', 'path': str(root), 'type': 'folder', 'provider_id': 'local_fs', 'root_id': '/'},
+    ]})
+    assert r.status_code == 200, r.get_json()
+    files = _params_for(graph, 'UNWIND $files')['files']
+    assert {f['host'] for f in files} == {committed_host}
+    assert sorted(f['path'] for f in files) == [str(root / 'wk9_11_Rec' / 'a.tif'), str(root / 'wk9_11_Rec' / 'b.tif')]
+
+
+def test_unscanned_folder_is_reported_not_stubbed(client, fake_graph):
+    graph = fake_graph(write_results=[[{'dataset_id': 'd', 'created': True}], [{'linked': 1, 'stubs': 0}]])
+    r = client.post('/api/datasets/collections', json={'name': 'D', 'files': [
+        {'name': 'a.fcs', 'path': '/data/p', 'provider_id': 'local_fs'},
+        {'name': 'never_scanned', 'path': '/data/p', 'type': 'folder', 'provider_id': 'local_fs'},
+    ]})
+    body = r.get_json()
+    assert r.status_code == 200, body
+    assert [f['filename'] for f in _params_for(graph, 'UNWIND $files')['files']] == ['a.fcs']
+    assert any('never_scanned' in p for p in body['problems'])
+
+
+def test_mounted_entry_without_root_has_no_host(client, fake_graph):
+    fake_graph()
+    r = client.post('/api/datasets/collections', json={'name': 'D', 'files': [
+        {'name': 'a.fcs', 'path': '/mnt/x', 'provider_id': 'mounted_fs'},
+    ]})
+    assert r.status_code == 400
+    assert 'host' in r.get_json()['problems'][0]

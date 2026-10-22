@@ -650,17 +650,8 @@ class ScansService:
             root_label = None
 
         host_type = provider_id
-        host_id = None
-        try:
-            if provider_id == 'rclone':
-                host_id = f"rclone:{(root_id or '').rstrip(':')}"
-            elif provider_id == 'local_fs':
-                import socket as _sock
-                host_id = f"local:{_sock.gethostname()}"
-            elif provider_id == 'mounted_fs':
-                host_id = f"mounted:{root_id}"
-        except Exception:
-            host_id = f"{provider_id}:{root_id}" if root_id else provider_id
+        from ..core.host_id import host_id_for
+        host_id = host_id_for(provider_id, root_id)
 
         scan = {
             'id': scan_id,
