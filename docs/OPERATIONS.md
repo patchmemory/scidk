@@ -125,6 +125,15 @@ sudo tail -f /var/log/nginx/error.log
 
 ## Backup and Restore Procedures
 
+> **Back up the encryption key file with the settings database.** Each user's
+> LLM API key (Settings → LLM Provider) is stored encrypted in
+> `scidk_settings.db`, with the key in `.scidk_secret.key` in the same
+> directory (or in `SCIDK_ENCRYPTION_KEY`, if set). The built-in backup copies
+> `scidk_settings.db` but **not** `.scidk_secret.key`, so after a restore every
+> user has to re-enter their API key unless the key file was saved too. Keep
+> it separate from the database copy, readable only by the SciDK user
+> (`chmod 600`): together they decrypt every stored key.
+
 ### Configuration Backup
 
 **Via Web UI** (recommended):
