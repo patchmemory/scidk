@@ -131,6 +131,16 @@ def _find_work(
         if interpreter_id:
             interpreted_clause = "f.interpreted_as = ?"
             params.append(interpreter_id)
+        # Scans merged since interpreter_hint exists keep the scanner's guess
+        # there. Only within one scan: interpreter_hint has no index, and an
+        # unindexed OR term turns the whole-index form into a full table scan.
+        # Unscoped runs still find hinted rows through the extension table.
+        if scan_id:
+            if interpreter_id:
+                interpreted_clause += " OR f.interpreter_hint = ?"
+                params.append(interpreter_id)
+            else:
+                interpreted_clause += " OR f.interpreter_hint IS NOT NULL"
 
         if extensions:
             ext_placeholders = ','.join('?' for _ in extensions)
@@ -144,7 +154,7 @@ def _find_work(
         params.append(scan_id)
 
     sql = (
-        "SELECT f.path, f.interpreted_as, f.file_extension, f.hash, f.scan_id, "
+        "SELECT f.path, COALESCE(f.interpreted_as, f.interpreter_hint), f.file_extension, f.hash, f.scan_id, "
         "       COALESCE(f.remote, '') AS host "
         "FROM files f "
         f"WHERE {' AND '.join(where)} "

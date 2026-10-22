@@ -89,6 +89,14 @@ def init_db(conn: Optional[sqlite3.Connection] = None):
                 cur.execute("ALTER TABLE files ADD COLUMN interpreted_at REAL;")
             if 'interpreter_version' not in cols:
                 cur.execute("ALTER TABLE files ADD COLUMN interpreter_version TEXT;")
+            # The scanner's guess at which interpreter fits a row (extension,
+            # magic bytes or a directory pattern). Its own column so that
+            # interpreted_as only ever means an interpreter actually ran; the
+            # import moves the scanner's value here (scanner_subprocess
+            # merge_scan_results). No index: an index build would read the whole
+            # table on a large existing files.db at startup.
+            if 'interpreter_hint' not in cols:
+                cur.execute("ALTER TABLE files ADD COLUMN interpreter_hint TEXT;")
         except Exception:
             # best-effort; ignore if failed (old SQLite variants)
             pass

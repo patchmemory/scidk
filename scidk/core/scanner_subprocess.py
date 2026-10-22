@@ -476,8 +476,8 @@ def merge_scan_results(tmp_db: str, files_db_path: str, scanner_scan_id: str,
     re-runnable is what makes a partial failure recoverable.
 
     Column lists are explicit because ``SELECT *`` does not line up: files.db's
-    ``files`` has 18 columns (init_db adds interpreted_at and
-    interpreter_version) and the child's has 16.
+    ``files`` has 19 columns (init_db adds interpreted_at,
+    interpreter_version and interpreter_hint) and the child's has 16.
     """
     # files.db may never have been initialised on a fresh deployment:
     # migrations.migrate() creates scans/scan_items/background_tasks but the
@@ -485,6 +485,9 @@ def merge_scan_results(tmp_db: str, files_db_path: str, scanner_scan_id: str,
     # and a no-op on an index that already exists.
     from .path_index_sqlite import init_db as _init_db
     _init_db()
+    from .host_id import host_id_for
+    host_id = host_id_for((task_dict or {}).get('provider_id') or 'local_fs',
+                          (task_dict or {}).get('root_id') or '/')
 
     conn = sqlite3.connect(files_db_path, timeout=30, isolation_level=None)
     try:
@@ -504,20 +507,28 @@ def merge_scan_results(tmp_db: str, files_db_path: str, scanner_scan_id: str,
                 conn.execute("DELETE FROM files WHERE scan_id=?", (scanner_scan_id,))
                 conn.execute("DELETE FROM scan_items WHERE scan_id=?", (scanner_scan_id,))
                 conn.execute("DELETE FROM scans WHERE id=?", (scanner_scan_id,))
+                # Normalised on the way in:
+                # - the scanner's interpreted_as is a routing hint, not a run, so
+                #   it goes to interpreter_hint, and interpreted_as /
+                #   interpretation_json stay NULL until an interpreter runs.
+                #   Otherwise commit writes an empty :Interpretation per hinted
+                #   row and Interpret shows every hint as a failed run.
+                # - remote is the host label commit keys File nodes on; the
+                #   scanner leaves it NULL.
                 conn.execute(
                     """
                     INSERT INTO files(
                         path, parent_path, name, depth, type, size,
                         modified_time, file_extension, mime_type,
                         etag, hash, remote, scan_id, extra_json,
-                        interpreted_as, interpretation_json)
+                        interpreter_hint)
                     SELECT path, parent_path, name, depth, type, size,
                            modified_time, file_extension, mime_type,
-                           etag, hash, remote, scan_id, extra_json,
-                           interpreted_as, interpretation_json
+                           etag, hash, coalesce(remote, ?), scan_id, extra_json,
+                           interpreted_as
                       FROM scan_tmp.files WHERE scan_id=?
                     """,
-                    (scanner_scan_id,),
+                    (host_id, scanner_scan_id),
                 )
                 conn.execute(
                     """

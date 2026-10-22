@@ -214,7 +214,8 @@ class CommitService:
             try:
                 rows = conn.execute(
                     "SELECT path, interpreted_as, interpretation_json FROM files "
-                    "WHERE scan_id = ? AND interpreted_as IS NOT NULL",
+                    # interpreted_at: a run, not a scanner hint (see interpreter_hint)
+                    "WHERE scan_id = ? AND interpreted_as IS NOT NULL AND interpreted_at IS NOT NULL",
                     (scan_id,)
                 ).fetchall()
             finally:

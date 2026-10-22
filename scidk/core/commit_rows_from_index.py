@@ -80,6 +80,11 @@ def build_rows_for_scan_from_index(scan_id: str, scan: Dict, include_hierarchy: 
     folders_seen = set()
 
     for (p, parent, name, depth, typ, size, mtime, ext, mime, interpreted_as, interp_json, interpreted_at) in items:
+        # Only a run (interpreted_at set) is an interpretation. Rows merged
+        # before interpreter_hint existed still carry the scanner's hint in
+        # interpreted_as; committing those wrote empty :Interpretation nodes.
+        if not interpreted_at:
+            interpreted_as, interp_json = None, None
         if typ == 'folder':
             if p in folders_seen:
                 continue

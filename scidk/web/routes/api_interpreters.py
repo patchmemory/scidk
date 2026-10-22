@@ -298,7 +298,8 @@ def api_interpreters_status():
         row = best.get(path)
         if row is None:
             continue
-        ran = row['interpreted_as']
+        # Without interpreted_at it's a scanner hint from an older merge, not a run.
+        ran = row['interpreted_as'] if row['interpreted_at'] else None
         expected = _expected_interpreter(row['extension'])
         for interpreter_id in {i for i in (ran, expected) if i}:
             entry = by_interpreter.setdefault(interpreter_id, {})
