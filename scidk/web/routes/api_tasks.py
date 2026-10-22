@@ -8,6 +8,7 @@ import os
 
 from ..helpers import get_neo4j_params as _get_neo4j_params, build_commit_rows, commit_to_neo4j, get_or_build_scan_index
 from ..helpers import commit_to_neo4j_batched
+from ...core import scan_owner as _scan_owner
 
 bp = Blueprint('tasks', __name__, url_prefix='/api')
 
@@ -230,6 +231,9 @@ def api_tasks_create():
             # a row whose writer_pid is not the running server's PID was
             # written by a process that no longer exists.
             'writer_pid': os.getpid(),
+            # Recorded as the scan's owner when the scan is registered; the
+            # worker threads have no request to ask (core/scan_owner.py).
+            'started_by': _scan_owner.current_username(),
         }
         # Seed a provisional total from the last scan of this path (or a parent)
         # so the UI has something to show while the count pass runs.
@@ -629,6 +633,7 @@ def api_tasks_create():
                         },
                     }
                     scans[scan_id] = scan
+                    _scan_owner.record(scan_id, task.get('started_by'))
                     # Persist scan summary to SQLite (best-effort)
                     try:
                         from ...core import path_index_sqlite as pix

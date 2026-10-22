@@ -376,6 +376,8 @@ def ui_scan():
     }
     scans = ext.setdefault('scans', {})
     scans[scan_id] = scan
+    from ...core import scan_owner as _scan_owner
+    _scan_owner.record(scan_id, _scan_owner.current_username())
     # Persist scan summary to SQLite (best-effort)
     try:
         from ...core import path_index_sqlite as pix

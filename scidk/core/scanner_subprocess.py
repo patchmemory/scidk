@@ -535,6 +535,8 @@ def _register_scan(scans_registry: Optional[Dict[str, dict]], task_dict: dict,
         started = task_dict.get('started') or 0.0
         ended = task_dict.get('ended') or time.time()
         from pathlib import Path as _Path
+        from . import scan_owner as _scan_owner
+        _scan_owner.record(scanner_scan_id, task_dict.get('started_by'))
         scans_registry[scanner_scan_id] = {
             'id': scanner_scan_id,
             'path': task_dict.get('path'),

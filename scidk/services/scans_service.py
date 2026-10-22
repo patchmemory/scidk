@@ -679,6 +679,8 @@ class ScansService:
         }
         scans = app.extensions['scidk'].setdefault('scans', {})
         scans[scan_id] = scan
+        from ..core import scan_owner as _scan_owner
+        _scan_owner.record(scan_id, _scan_owner.current_username())
         # Emit selective cache metrics to logs for observability
         try:
             app.logger.info(f"scan metrics: skipped_dirs={int(getattr(self, '_skipped_dirs', 0))} skipped_files={int(getattr(self, '_skipped_files', 0))} walk_time_ms={float(getattr(self, '_walk_time_ms', 0.0)):.2f}")

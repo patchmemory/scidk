@@ -671,6 +671,8 @@ def api_scan():
             }
             scans = _get_ext().setdefault('scans', {})
             scans[scan_id] = scan
+            from ...core import scan_owner as _scan_owner
+            _scan_owner.record(scan_id, _scan_owner.current_username())
             # Persist scan summary to SQLite (best-effort)
             try:
                 from ...core import path_index_sqlite as pix
@@ -1957,7 +1959,20 @@ def api_scan_entries(scan_id):
     return svc.list_all(scan_id, page_size, token, filters)
 
 @bp.delete('/scans/<scan_id>')
+@require_role('admin', 'user')
 def api_scan_delete(scan_id):
+    """Delete a scan and its index rows. Admins can delete any scan; a user only
+    one they started (core/scan_owner.py). With auth off the decorator lets every
+    request through, and there is no role to check."""
+    from flask import g
+    from ...core import scan_owner as _scan_owner
+    role = getattr(g, 'scidk_user_role', None)
+    if role is not None and role != 'admin':
+        owner = _scan_owner.owner_of(scan_id)
+        if owner is None or owner != getattr(g, 'scidk_user', None):
+            return jsonify({'error': 'Only an admin or the user who ran this scan can delete it',
+                            'scan_id': scan_id}), 403
+
     scans = current_app.extensions['scidk'].setdefault('scans', {})
     existed = scan_id in scans
 
@@ -1993,6 +2008,7 @@ def api_scan_delete(scan_id):
         except Exception as e:
             current_app.logger.warning(f"Failed to delete scan {scan_id} from SQLite: {e}")
 
+    _scan_owner.forget(scan_id)
     return jsonify({"status": "ok", "deleted": True, "scan_id": scan_id, "existed": existed}), 200
 
 

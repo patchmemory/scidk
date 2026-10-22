@@ -109,3 +109,79 @@ def test_delete_scan_removes_its_files_rows(tmp_path, monkeypatch):
     assert rows() > 0
     assert client.delete(f'/api/scans/{scan_id}').status_code == 200
     assert rows() == 0
+
+
+# ── Who may delete a scan ──────────────────────────────────────────────────
+
+@pytest.fixture
+def auth_on(tmp_path, monkeypatch):
+    monkeypatch.setenv('PYTEST_TEST_AUTH', '1')  # enforce, as in production
+    monkeypatch.setenv('SCIDK_DB_PATH', str(tmp_path / 'files.db'))
+    app = create_app()
+    app.config['TESTING'] = True
+    app.config['state.backend'] = 'sqlite'
+    app.config['SCIDK_SETTINGS_DB'] = str(tmp_path / 'settings.db')
+    from scidk.core.auth import get_auth_manager
+    auth = get_auth_manager(db_path=app.config['SCIDK_SETTINGS_DB'])
+
+    def headers(name, role):
+        uid = auth.create_user(name, 'password123', role=role)
+        return {'Authorization': f'Bearer {auth.create_user_session(uid, name)}'}
+    users = {'alice': headers('alice', 'user'), 'bob': headers('bob', 'user'),
+             'root': headers('root', 'admin')}
+    data = tmp_path / 'data'
+    data.mkdir()
+    (data / 'a.txt').write_text('x')
+    return app.test_client(), users, data
+
+
+def _scan_as(client, headers, path):
+    r = client.post('/api/scan', json={'path': str(path), 'recursive': True}, headers=headers)
+    assert r.status_code == 200, r.get_json()
+    return r.get_json()['scan_id']
+
+
+def test_delete_scan_needs_login(auth_on):
+    client, users, data = auth_on
+    scan_id = _scan_as(client, users['alice'], data)
+    assert client.delete(f'/api/scans/{scan_id}').status_code == 401
+
+
+def test_user_deletes_own_scan_not_others(auth_on):
+    client, users, data = auth_on
+    scan_id = _scan_as(client, users['alice'], data)
+    r = client.delete(f'/api/scans/{scan_id}', headers=users['bob'])
+    assert r.status_code == 403, r.get_json()
+    assert client.delete(f'/api/scans/{scan_id}', headers=users['alice']).status_code == 200
+
+
+def test_admin_deletes_any_scan(auth_on):
+    client, users, data = auth_on
+    scan_id = _scan_as(client, users['alice'], data)
+    assert client.delete(f'/api/scans/{scan_id}', headers=users['root']).status_code == 200
+
+
+def test_scan_with_no_recorded_owner_is_admin_only(auth_on):
+    client, users, data = auth_on
+    scan_id = _scan_as(client, users['root'], data)
+    from scidk.core import scan_owner
+    scan_owner.forget(scan_id)
+    assert client.delete(f'/api/scans/{scan_id}', headers=users['alice']).status_code == 403
+
+
+def test_files_page_scan_records_its_owner(auth_on, demo_tree, tmp_path, monkeypatch):
+    client, users, _ = auth_on
+    monkeypatch.setenv('SCIDK_SCAN_DB_DIR', str(tmp_path / 'scans'))
+    r = client.post('/api/tasks', json={'type': 'scan', 'path': str(demo_tree), 'recursive': True,
+                                        'provider_id': 'local_fs', 'root_id': '/'}, headers=users['alice'])
+    assert r.status_code == 202, r.get_json()
+    task_id = r.get_json()['task_id']
+    for _ in range(120):
+        task = client.get(f'/api/tasks/{task_id}', headers=users['alice']).get_json()
+        if task.get('status') in ('completed', 'error', 'canceled'):
+            break
+        time.sleep(0.25)
+    assert task['status'] == 'completed', task
+    from scidk.core import scan_owner
+    assert scan_owner.owner_of(task['scan_id']) == 'alice'
+    assert client.delete(f"/api/scans/{task['scan_id']}", headers=users['bob']).status_code == 403
