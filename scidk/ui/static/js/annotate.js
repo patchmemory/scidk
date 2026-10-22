@@ -629,7 +629,7 @@
       if (lbl) {
         const parts = [`${nFiles} file${nFiles === 1 ? '' : 's'}`];
         // A folder isn't a Dataset member itself; its scanned files are.
-        if (nFolders) parts.push(`${nFolders} folder${nFolders === 1 ? '' : 's'} (adds its scanned files)`);
+        if (nFolders) parts.push(nFolders === 1 ? '1 folder (its scanned files)' : `${nFolders} folders (their scanned files)`);
         lbl.textContent = (_collectSource === 'collection' ? 'From collection · ' : 'From selection · ')
           + parts.join(' + ');
       }

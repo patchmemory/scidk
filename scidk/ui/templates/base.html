@@ -15,6 +15,9 @@
   <style>
     :root { --fg:#222; --muted:#666; --bg:#fff; --accent:#0a6; }
     * { box-sizing: border-box; }
+    /* `hidden` always hides, even on elements whose class sets display
+       (.drawer-check-label is display:flex), whether or not Bootstrap loaded. */
+    [hidden] { display: none !important; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif; margin: 0; color: var(--fg); background: var(--bg); }
     header { display:flex; align-items: center; justify-content: flex-start; gap: .75rem; padding: 0.75rem 1rem; border-bottom: 1px solid #eee; position: sticky; top:0; background: var(--bg); }
     header h1 { margin: 0; font-size: 1.1rem; font-weight: 600; }
