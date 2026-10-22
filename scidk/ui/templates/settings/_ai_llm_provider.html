@@ -88,7 +88,9 @@
       return d;
     }
 
-    $('llm-preset').addEventListener('change', () => { applyPreset(true); if ($('llm-base-url').value) loadModels(); });
+    // Auto-load only when the preset brings its own URL; 'custom' would otherwise
+    // query the previous preset's endpoint.
+    $('llm-preset').addEventListener('change', () => { applyPreset(true); if (preset().base_url) loadModels(); });
     $('llm-load-models').addEventListener('click', loadModels);
     $('llm-save').addEventListener('click', () => save());
     $('llm-clear-key').addEventListener('click', () => { if (confirm('Remove your stored API key?')) save({ clear_key: true, api_key: undefined }); });

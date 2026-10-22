@@ -110,13 +110,20 @@ def save(settings_db: str, username: Optional[str], *, preset: Optional[str] = N
     return public_settings(settings_db, username)
 
 
-def credentials(settings_db: str, username: Optional[str]) -> Optional[Dict[str, Any]]:
-    """Server-side only: {base_url, model, api_key, preset} for the user, or None."""
-    row = _row(settings_db, username or '')
-    if not row or not row.get('base_url') or not row.get('model'):
-        return None
-    return {'base_url': row['base_url'], 'model': row['model'], 'preset': row.get('preset') or '',
+def stored_endpoint(settings_db: str, username: Optional[str]) -> Dict[str, Any]:
+    """Server-side only: whatever is stored, complete or not ({} if nothing).
+    Listing models needs the key before a model has been chosen."""
+    row = _row(settings_db, username or '') or {}
+    return {'base_url': row.get('base_url') or '', 'model': row.get('model') or '',
+            'preset': row.get('preset') or '',
             'api_key': secret_store.decrypt(settings_db, row.get('api_key_enc'))}
+
+
+def credentials(settings_db: str, username: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Server-side only: {base_url, model, api_key, preset}, or None until both a
+    base URL and a model are set (what a chat turn needs)."""
+    stored = stored_endpoint(settings_db, username)
+    return stored if stored['base_url'] and stored['model'] else None
 
 
 def provider_for(settings_db: str, username: Optional[str]):

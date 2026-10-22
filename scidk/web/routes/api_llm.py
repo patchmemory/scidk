@@ -58,9 +58,9 @@ def put_settings():
 
 def _endpoint_from_request():
     """base_url/api_key to try: the request's (an unsaved form), else the stored ones."""
-    from ...ai.provider_settings import credentials
+    from ...ai.provider_settings import stored_endpoint
     body = request.get_json(silent=True) or {}
-    stored = credentials(_db(), _me()) or {}
+    stored = stored_endpoint(_db(), _me())
     base_url = (body.get('base_url') or request.args.get('base_url') or stored.get('base_url') or '').strip()
     # The stored key only ever goes to the stored endpoint, never to a URL
     # typed into the form but not yet saved.

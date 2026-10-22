@@ -209,3 +209,12 @@ def test_for_request_prefers_the_users_setting(two_users, parley):
                 LLMProviderFactory.for_request({'chat_llm_provider': 'openai'})
     finally:
         os.environ.update(monkeypatch_env)
+
+
+def test_models_can_be_listed_before_a_model_is_chosen(two_users, parley):
+    """The browser saves URL + key, then loads models to pick one: no model yet."""
+    _, c, u = two_users
+    c.put('/api/llm/settings', headers=u['alice'], json={'preset': 'custom', 'base_url': parley, 'api_key': GOOD_KEY})
+    r = c.get('/api/llm/models', headers=u['alice'], query_string={'base_url': parley})
+    assert r.status_code == 200, r.get_json()
+    assert 'claude-sonnet-5-5' in r.get_json()['models']
