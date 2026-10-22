@@ -171,18 +171,27 @@
     const name = prompt('Dataset name:', '');
     if (!name?.trim()) { toast('Name required to create a Dataset'); return; }
     try {
-      const r = await fetch(BASE() + '/api/datasets/collections', {
+      // Same entries the sweep sends; the server derives the host.
+      const body = { name: name.trim(), files: _items.map(payload) };
+      const post = () => fetch(BASE() + '/api/datasets/collections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          // Same entries the sweep sends; the server derives the host.
-          files: _items.map(payload)
-        })
+        body: JSON.stringify(body)
       });
-      const d = await r.json().catch(() => ({}));
+      let r = await post();
+      let d = await r.json().catch(() => ({}));
+      // The name is taken: never merge without asking.
+      if (r.status === 409 && d.exists) {
+        if (!confirm(`A Dataset named "${body.name}" already exists with ${d.members} file(s). Add these files to it?`)) {
+          toast('Not saved'); return;
+        }
+        body.add_to_existing = true;
+        r = await post();
+        d = await r.json().catch(() => ({}));
+      }
       if (r.ok) {
-        toast(`Dataset "${name.trim()}" created — ${_items.length} files linked`);
+        toast(`Dataset "${body.name}" ${d.created === false ? 'updated' : 'created'} — ${d.files_linked || 0} files linked`
+          + (d.problems && d.problems.length ? ` · ${d.problems.length} skipped` : ''));
         close();
       } else { toast('Failed: ' + (d.error || r.status)); }
     } catch (e) { toast('Error: ' + e.message); }

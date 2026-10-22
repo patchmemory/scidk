@@ -662,20 +662,32 @@
     if (btn) btn.disabled = true;
     _setCollectStatus('Writing to the graph…');
     try {
-      const r = await fetch(BASE() + '/api/datasets/collections', {
+      const body = {
+        name,
+        modality: modalityEl ? modalityEl.value : '',
+        description: descEl ? descEl.value : '',
+        files,
+      };
+      const post = () => fetch(BASE() + '/api/datasets/collections', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          name,
-          modality: modalityEl ? modalityEl.value : '',
-          description: descEl ? descEl.value : '',
-          files,
-        }),
+        body: JSON.stringify(body),
       });
-      const d = await r.json().catch(() => ({}));
+      let r = await post();
+      let d = await r.json().catch(() => ({}));
+      // The name is taken: never merge without asking.
+      if (r.status === 409 && d.exists) {
+        if (!confirm(`A Dataset named "${name}" already exists with ${d.members} file(s). Add these files to it?`)) {
+          _setCollectStatus('Not saved: choose another name, or confirm adding to the existing Dataset.', 'warning');
+          return;
+        }
+        body.add_to_existing = true;
+        r = await post();
+        d = await r.json().catch(() => ({}));
+      }
       if (!r.ok) { _setCollectStatus(_attrEsc(d.error || `Error ${r.status}`), 'danger'); return; }
       _setCollectStatus(
-        `✓ Dataset "${_attrEsc(d.name || name)}" — ${d.files_linked || 0} file(s) linked`
+        `✓ Dataset "${_attrEsc(d.name || name)}" ${d.created === false ? 'updated' : 'created'} — ${d.files_linked || 0} file(s) linked`
         + (d.stubs_created ? `, ${d.stubs_created} stub node(s) created` : '')
         + (d.problems && d.problems.length
           ? `<br><span class="text-warning">Skipped: ${d.problems.map(_attrEsc).join('; ')}</span>` : ''),

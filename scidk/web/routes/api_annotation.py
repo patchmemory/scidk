@@ -185,7 +185,12 @@ def _normalise_files(raw: Any) -> Tuple[List[Dict[str, str]], List[str]]:
 def api_datasets_from_collection():
     """Write a collection to the graph as one ``:Dataset`` with CONTAINS edges.
 
-    Response: ``{status, dataset_id, name, files_linked, stubs_created}``.
+    Response: ``{status, dataset_id, name, created, files_linked, stubs_created}``.
+
+    A name that already belongs to a collection Dataset is refused with 409
+    (``{exists: true, members}``) unless the body says ``add_to_existing``, so
+    re-using a name never silently merges into someone else's Dataset. Blank
+    ``modality`` / ``description`` keep the stored values rather than erasing them.
 
     Files already in the graph are matched on ``(path, host)``. Files that are
     not — scanned but never committed, or never scanned at all — get a stub node
@@ -208,7 +213,24 @@ def api_datasets_from_collection():
     except Neo4jUnavailable as e:
         return jsonify({'error': str(e)}), 503
 
+    add_to_existing = bool(body.get('add_to_existing'))
+
     try:
+        existing = client.execute_read(
+            "MATCH (d:Dataset {name: $name, source: 'collection'}) "
+            "OPTIONAL MATCH (d)-[:CONTAINS]->(f:File) "
+            # Grouped on d, so no match is no row (a bare count() is always one row)
+            "RETURN elementId(d) AS dataset_id, count(f) AS members",
+            {'name': name},
+        )
+        if existing and not add_to_existing:
+            return jsonify({
+                'error': f'A Dataset named "{name}" already exists',
+                'exists': True,
+                'name': name,
+                'members': int(existing[0].get('members') or 0),
+            }), 409
+
         # A Dataset built from a collection has no directory of its own, so it
         # is keyed on its name. dataset_node_service keys the ones it derives
         # from a scan on (path, host) — a different kind of Dataset, and one
@@ -216,27 +238,33 @@ def api_datasets_from_collection():
         records = client.execute_write(
             "MERGE (d:Dataset {name: $name, source: 'collection'}) "
             "ON CREATE SET d.created_at = timestamp() "
-            "SET d.modality = $modality, d.description = $description, "
+            "SET d.modality = coalesce($modality, d.modality), "
+            "    d.description = coalesce($description, d.description), "
             "    d.updated_at = timestamp() "
-            "RETURN elementId(d) AS dataset_id, d.created_at = d.updated_at AS created",
+            "RETURN elementId(d) AS dataset_id",
             {
                 'name': name,
-                'modality': str(body.get('modality') or '') or None,
-                'description': str(body.get('description') or '') or None,
+                # None, not '', so coalesce keeps the stored value
+                'modality': str(body.get('modality') or '').strip() or None,
+                'description': str(body.get('description') or '').strip() or None,
             },
         )
         dataset_id = records[0].get('dataset_id') if records else None
+        created = not existing
 
         # One round trip for the whole batch. Matched on (path, host) so the
         # composite index applies; MERGE rather than MATCH so a file the graph
-        # has not seen still ends up in the Dataset, marked as a stub.
+        # has not seen still ends up in the Dataset, marked as a stub. Only
+        # stubs this call created are counted, not ones an earlier Collect made.
         link = client.execute_write(
             "MATCH (d:Dataset {name: $name, source: 'collection'}) "
             "UNWIND $files AS row "
+            "OPTIONAL MATCH (prior:File {path: row.path, host: row.host}) "
+            "WITH d, row, prior IS NULL AS is_new "
             "MERGE (f:File {path: row.path, host: row.host}) "
             "  ON CREATE SET f.filename = row.filename, f.stub = true "
             "MERGE (d)-[:CONTAINS]->(f) "
-            "RETURN count(f) AS linked, sum(CASE WHEN f.stub THEN 1 ELSE 0 END) AS stubs",
+            "RETURN count(f) AS linked, sum(CASE WHEN is_new THEN 1 ELSE 0 END) AS stubs",
             {'name': name, 'files': files},
         )
     except Exception as e:  # noqa: BLE001 - the write is the route's whole job
@@ -253,6 +281,7 @@ def api_datasets_from_collection():
         'status': 'ok',
         'dataset_id': dataset_id,
         'name': name,
+        'created': created,
         'files_linked': linked,
         'stubs_created': stubs,
     }

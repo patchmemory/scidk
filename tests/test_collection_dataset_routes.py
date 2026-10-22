@@ -85,6 +85,7 @@ def test_create_dataset_links_files_and_reports_counts(client, fake_graph):
         'status': 'ok',
         'dataset_id': '4:abc:1',
         'name': 'AIPT Vevo June 2026 Cohort',
+        'created': True,
         'files_linked': 2,
         'stubs_created': 0,
     }
@@ -112,7 +113,7 @@ def test_create_dataset_matches_file_on_path_and_host(client, fake_graph):
     client.post('/api/datasets/collections', json={
         'name': 'D', 'files': [{'name': 'a.fcs', 'path': 'p/a.fcs', 'host': 'h'}],
     })
-    link = _query_for(graph, 'CONTAINS')
+    link = _query_for(graph, 'UNWIND $files')
     # Composite key, both halves. path-only would be a scan of every File node.
     assert 'MERGE (f:File {path: row.path, host: row.host})' in link
     # File nodes spell it `filename`, not `name`.
@@ -126,7 +127,7 @@ def test_create_dataset_stubs_files_the_graph_has_never_seen(client, fake_graph)
         'name': 'D', 'files': [{'name': f'{i}.fcs', 'path': 'p', 'host': 'h'} for i in range(3)],
     })
     assert r.get_json()['stubs_created'] == 2
-    assert 'ON CREATE SET f.filename = row.filename, f.stub = true' in _query_for(graph, 'CONTAINS')
+    assert 'ON CREATE SET f.filename = row.filename, f.stub = true' in _query_for(graph, 'UNWIND $files')
 
 
 def test_create_dataset_deduplicates_the_same_file_twice(client, fake_graph):
@@ -137,7 +138,7 @@ def test_create_dataset_deduplicates_the_same_file_twice(client, fake_graph):
             {'name': 'a.fcs', 'path': 'p', 'host': 'h'},
         ],
     })
-    assert len(_params_for(graph, 'CONTAINS')['files']) == 1
+    assert len(_params_for(graph, 'UNWIND $files')['files']) == 1
 
 
 def test_create_dataset_requires_a_name_and_files(client, fake_graph):
@@ -332,3 +333,43 @@ def test_mounted_entry_without_root_has_no_host(client, fake_graph):
     ]})
     assert r.status_code == 400
     assert 'host' in r.get_json()['problems'][0]
+
+
+# ── No silent merge (FILES_PAGE_REVIEW 8c / AR#6) ──────────────────────────
+
+def test_existing_name_is_refused_without_add_to_existing(client, fake_graph):
+    graph = fake_graph(read_results=[{'dataset_id': 'd', 'members': 2}])
+    r = client.post('/api/datasets/collections', json={
+        'name': 'Review DS A', 'files': [{'name': 'a', 'path': 'p', 'host': 'h'}],
+    })
+    assert r.status_code == 409
+    assert r.get_json()['exists'] is True and r.get_json()['members'] == 2
+    assert not [q for q, _ in graph.calls if 'MERGE' in q]
+
+
+def test_add_to_existing_keeps_stored_fields_when_blank(client, fake_graph):
+    graph = fake_graph(read_results=[{'dataset_id': 'd', 'members': 2}],
+                       write_results=[[{'dataset_id': 'd'}], [{'linked': 3, 'stubs': 0}]])
+    r = client.post('/api/datasets/collections', json={
+        'name': 'Review DS A', 'add_to_existing': True, 'modality': '', 'description': '  ',
+        'files': [{'name': 'a', 'path': 'p', 'host': 'h'}],
+    })
+    assert r.status_code == 200 and r.get_json()['created'] is False
+    q = _query_for(graph, 'MERGE (d:Dataset')
+    assert 'coalesce($modality, d.modality)' in q and 'coalesce($description, d.description)' in q
+    p = _params_for(graph, 'MERGE (d:Dataset')
+    assert p['modality'] is None and p['description'] is None
+
+
+def test_existence_check_groups_so_no_match_is_no_row(client, fake_graph):
+    graph = fake_graph(write_results=[[{'dataset_id': 'd'}], [{'linked': 1, 'stubs': 1}]])
+    client.post('/api/datasets/collections', json={'name': 'D', 'files': [{'name': 'a', 'path': 'p', 'host': 'h'}]})
+    q = _query_for(graph, 'count(f) AS members')
+    assert 'elementId(d) AS dataset_id, count(f)' in q
+
+
+def test_only_stubs_this_call_created_are_counted(client, fake_graph):
+    graph = fake_graph(write_results=[[{'dataset_id': 'd'}], [{'linked': 1, 'stubs': 0}]])
+    client.post('/api/datasets/collections', json={'name': 'D', 'files': [{'name': 'a', 'path': 'p', 'host': 'h'}]})
+    q = _query_for(graph, 'UNWIND $files')
+    assert 'OPTIONAL MATCH (prior:File' in q and 'CASE WHEN is_new' in q
