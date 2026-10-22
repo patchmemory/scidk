@@ -12,11 +12,15 @@ extras are visible without SDK model quirks:
 from __future__ import annotations
 
 import json
+import logging
+import time
 from typing import Any, Dict, Generator, List, Optional
 
 import requests
 
 from .llm_providers import LLMProvider
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_TOKENS = 8192   # thinking models spend part of it before answering
 TIMEOUT_S = 120
@@ -69,6 +73,7 @@ def chat_completion(base_url: str, api_key: Optional[str], model: str,
     body: Dict[str, Any] = {'model': model, 'messages': messages, 'max_tokens': max_tokens, **extra}
     if tools:
         body['tools'] = tools
+    started = time.time()
     try:
         resp = requests.post(_url(base_url, '/chat/completions'), headers=_headers(api_key),
                              data=json.dumps(body), timeout=timeout)
@@ -78,6 +83,13 @@ def chat_completion(base_url: str, api_key: Optional[str], model: str,
     data = resp.json()
     choice = (data.get('choices') or [{}])[0]
     message = choice.get('message') or {}
+    usage = data.get('usage') or {}
+    # One line per call, for spending visibility; never the messages or the key.
+    logger.info('llm_call model=%s prompt_tokens=%s completion_tokens=%s cost=%s request_id=%s '
+                'finish=%s ms=%d', data.get('model') or model, usage.get('prompt_tokens'),
+                usage.get('completion_tokens'), resp.headers.get('x-parley-v1-cost'),
+                resp.headers.get('x-parley-v1-request-id'), choice.get('finish_reason'),
+                (time.time() - started) * 1000)
     return {
         'content': message.get('content'),
         'tool_calls': message.get('tool_calls') or [],
