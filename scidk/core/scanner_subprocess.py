@@ -462,7 +462,6 @@ def _monitor(proc: subprocess.Popen, task_id: str, task_dict: dict, tmp_db: str,
 
     _register_scan(scans_registry, task_dict, scanner_scan_id, merged)
 
-    task_dict['status'] = 'completed'
     task_dict['scan_id'] = scanner_scan_id
     task_dict['total'] = merged['file_count']
     task_dict['total_is_estimate'] = False
@@ -473,8 +472,11 @@ def _monitor(proc: subprocess.Popen, task_id: str, task_dict: dict, tmp_db: str,
         f"{merged['folder_count']:,} folders"
     )
     _keep_as_resource(task_dict, tmp_db, scanner_scan_id, merged)
-    _persist(task_dict)
     _try_delete(log_path)
+    # Last: GET /api/tasks/<id> serves this live dict, so 'completed' must not
+    # show before the snapshot and Resource exist.
+    task_dict['status'] = 'completed'
+    _persist(task_dict)
     _start_next(task_id, files_db_path, max_total_workers, max_concurrent, live_tasks, scans_registry)
 
 
