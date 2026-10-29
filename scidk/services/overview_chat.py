@@ -4,8 +4,8 @@ import json
 
 from ..agent_tools.registry import run_tool, available_tool_definitions
 from ..agent_tools.security import PolicyStore, REFUSAL, endpoint_identity
-from ..ai import provider_settings
 from ..ai.openai_compatible import chat_completion
+from ..ai.shared_provider import resolve as governed_credentials
 
 
 def overview_turn(ctx, body):
@@ -30,7 +30,7 @@ def context_turn(ctx, body, *, profile, allowed, enrich=None):
         name, args = selection['tool'], selection['arguments']
         def authorize():
             with PolicyStore(ctx.settings_db).resolve(ctx.identity) as policy:
-                creds = provider_settings.credentials(ctx.settings_db, policy.username)
+                creds = governed_credentials(ctx.settings_db, policy.username)
                 if (not creds or endpoint_identity(creds['base_url']) != policy.destination[1]
                         or creds['model'] != policy.destination[2]):
                     raise ValueError()
@@ -58,8 +58,8 @@ def context_turn(ctx, body, *, profile, allowed, enrich=None):
         if answer.get('tool_calls') or answer.get('refusal') or not isinstance(answer.get('content'), str):
             raise ValueError()
         # Recheck support and grants after transport; never return stale citations.
-        _, after = authorize()
-        if after != context:
+        after_provider, after = authorize()
+        if after != context or after_provider != current:
             raise ValueError()
         return {'status': 'success', 'reply': answer['content'][:16000], 'context': context,
                 'notice': 'AI-generated explanation; verify against the authorized sources below.'}

@@ -43,6 +43,8 @@ def test_sharing_preview_edit_reset_and_download(gui_page):
     page.route('**/api/plugins/nih_dms/datasets/entity%3Afixture-dataset/prepare', prepare)
     open_files(page, origin)
     select_dataset(page)
+    expect(page.locator('#dataset-knowledge')).to_have_attribute('href', '/knowledge?domain=research&id=entity%3Afixture-dataset')
+    expect(page.locator('#dataset-review')).to_have_attribute('href', '/review?domain=research&id=entity%3Afixture-dataset')
     page.get_by_role('button', name='Prepare for Sharing', exact=True).click()
     page.get_by_label('Repository', exact=True).fill('Investigator repository')
     page.get_by_role('button', name='Preview dataset DMS draft').click()

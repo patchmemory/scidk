@@ -16,6 +16,37 @@ from jsonpath_ng import parse as jsonpath_parse
 bp = Blueprint('settings', __name__, url_prefix='/api')
 
 
+@bp.before_request
+def protect_global_credentials_and_configuration():
+    # Prompt 15 follow-up explicitly approves named-admin gates for these
+    # global, credential-bearing operations, including their no-auth bypass.
+    protected = ('/api/settings/api-endpoints', '/api/settings/export',
+                 '/api/settings/import', '/api/settings/backups', '/api/backups/')
+    if any(request.path == prefix or request.path.startswith(prefix.rstrip('/') + '/') for prefix in protected):
+        from ..named_session import named_session
+        try:
+            named_session(admin=True)
+        except Exception:
+            return jsonify(error='Named administrator session required'), 403, {'Cache-Control': 'no-store'}
+
+
+@bp.after_request
+def private_configuration_response(response):
+    if request.path.startswith(('/api/settings/api-endpoints', '/api/settings/export',
+                                '/api/settings/import', '/api/settings/backups', '/api/backups/')):
+        response.headers['Cache-Control'] = 'no-store'
+        if response.is_json:
+            payload = response.get_json()
+            if isinstance(payload, dict):
+                if response.status_code >= 400 and payload.get('error') != 'Named administrator session required':
+                    payload['error'] = 'Global configuration operation unavailable; check the configuration locally.'
+                result = payload.get('test_result')
+                if isinstance(result, dict) and result.get('success') is False:
+                    result['error'] = 'Endpoint test unavailable; check configuration locally.'
+                response.set_data(current_app.json.dumps(payload))
+    return response
+
+
 def _get_endpoint_registry():
     """Get or create APIEndpointRegistry instance."""
     from ...core.api_endpoint_registry import APIEndpointRegistry, get_encryption_key
@@ -266,7 +297,9 @@ def test_api_endpoint(endpoint_id):
 
         # Make request
         try:
-            response = requests.get(endpoint['url'], headers=headers, timeout=10)
+            response = requests.get(endpoint['url'], headers=headers, timeout=10, allow_redirects=False)
+            if 300 <= response.status_code < 400:
+                return jsonify(status='error', error='Endpoint redirects are unavailable'), 502
             response.raise_for_status()
         except requests.exceptions.Timeout:
             return jsonify({
@@ -841,6 +874,28 @@ def update_security_auth_config():
         existing_users = auth.list_users(include_disabled=True)
         existing_config = auth.get_config()
 
+        # First-run setup is a separate trusted operation, never an anonymous
+        # administrator session. Prefer the local development CLI. Embedders
+        # retaining HTTP setup must explicitly provide a high-entropy token.
+        if not existing_users and not existing_config.get('has_password'):
+            import secrets
+            expected = current_app.config.get('SCIDK_AUTH_BOOTSTRAP_TOKEN')
+            supplied = request.headers.get('X-SciDK-Bootstrap', '')
+            if (not isinstance(expected, str) or len(expected) < 32
+                    or not secrets.compare_digest(expected, supplied)
+                    or request.remote_addr not in {'127.0.0.1', '::1'}
+                    or request.headers.get('Authorization')
+                    or request.headers.get('Sec-Fetch-Site') not in (None, 'same-origin', 'none')
+                    or (request.headers.get('Origin') and request.headers['Origin'].rstrip('/') != request.host_url.rstrip('/'))
+                    or enabled is not True):
+                return jsonify(error='Trusted first-administrator setup required'), 403
+        else:
+            from ..named_session import named_session
+            try:
+                named_session(admin=True)
+            except Exception:
+                return jsonify(error='Named administrator session required'), 403
+
         # If there are no users yet, this is the first user - must be admin
         if enabled and len(existing_users) == 0:
             if not password:
@@ -849,9 +904,15 @@ def update_security_auth_config():
                     'error': 'Password is required when enabling authentication for the first time'
                 }), 400
 
+            # Serialize first-user creation across concurrent setup requests.
+            auth.db.execute('BEGIN IMMEDIATE')
+            if auth.list_users(include_disabled=True):
+                auth.db.rollback()
+                return jsonify(error='Administrator already established'), 403
             # Create first user as admin
             user_id = auth.create_user(username, password, role='admin', created_by='system')
             if not user_id:
+                auth.db.rollback()
                 return jsonify({
                     'status': 'error',
                     'error': 'Failed to create admin user'

@@ -64,7 +64,9 @@
         const data = await json('/api/annotations?file_id=' + encodeURIComponent(selection.key) + '&limit=100');
         if (version !== state.version) return;
         content.replaceChildren(); raw(data.items, content);
-        const p = document.createElement('p'); p.textContent = 'Annotations use the stored object identity. Use the existing Annotate drawer for file attribution, collection and interpretation.'; content.append(p);
+        const p = document.createElement('p'); p.textContent = 'Annotations use the stored object identity. The existing Annotate drawer uses the checked Files selection for attribution, collection and interpretation. Inspecting an object does not select files.'; content.append(p);
+        const open = document.createElement('button'); open.textContent = 'Open Annotate for checked Files';
+        open.onclick = () => window.Annotate?.open(); content.append(open);
       } catch (error) { if (version === state.version) content.textContent = error.message; }
     }
   }

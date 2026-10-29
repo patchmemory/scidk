@@ -333,8 +333,10 @@ class TestAuthAPIEndpoints:
 
     def test_first_user_is_admin(self, client):
         """Test that the first user created through auth setup is automatically an admin."""
+        # Trusted operator explicitly enables one-time loopback HTTP setup.
+        client.application.config['SCIDK_AUTH_BOOTSTRAP_TOKEN'] = 'synthetic-bootstrap-token-at-least-32-characters'
         # Enable authentication for the first time (creates first user)
-        response = client.post('/api/settings/security/auth', json={
+        response = client.post('/api/settings/security/auth', headers={'X-SciDK-Bootstrap': 'synthetic-bootstrap-token-at-least-32-characters'}, json={
             'enabled': True,
             'username': 'firstuser',
             'password': 'password123'

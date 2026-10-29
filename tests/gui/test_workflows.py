@@ -181,3 +181,22 @@ def test_folder_mouse_inspection_timer(gui_page):
     # Wait beyond the explicit 400ms single-click debounce to catch stale folder selection.
     page.wait_for_timeout(450)
     expect(page.locator('#inspector-title')).to_have_text('File / folder: metadata.xml')
+
+
+def test_existing_annotations_adapter_and_resources(gui_page, gui_artifacts):
+    page, origin, app = gui_page
+    # Display-only legacy attribution responses; no graph write is exercised.
+    page.route('**/api/schema/labels', lambda route: route.fulfill(json={'labels': []}))
+    page.route('**/api/schema/relationship-types', lambda route: route.fulfill(json={'types': []}))
+    page.route('**/api/schema/property-types?*', lambda route: route.fulfill(json={'properties': []}))
+    page.route('**/api/files/attribution/**', lambda route: route.fulfill(json={'anchors': [], 'properties': [], 'suggestions': [], 'types': []}))
+    page.goto(origin + '/annotations')
+    expect(page).to_have_url(origin + '/datasets?panel=annotations')
+    expect(page.locator('#annotate-drawer')).to_be_visible()
+    expect(page.locator('#annotate-scope-label')).to_contain_text('nothing selected')
+    for tab in ['attribute', 'collect', 'interpret']:
+        expect(page.locator('[data-annotate-tab="' + tab + '"]')).to_be_visible()
+    page.screenshot(path=str(gui_artifacts / 'prompt15-existing-annotate-drawer.png'), full_page=True)
+    page.goto(origin + '/pipeline/sources')
+    expect(page.get_by_role('heading', level=1)).to_be_visible()
+    assert not any(method not in ('GET', 'HEAD') for method, _ in app.extensions['gui_test_requests'])

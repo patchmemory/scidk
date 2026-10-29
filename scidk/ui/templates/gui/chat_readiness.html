@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block title %}SciDK — Chat readiness{% endblock %}
+{% block content %}
+<section style="max-width:1000px;margin:auto">
+<h1>Chat readiness</h1>
+<p>Administrator checklist for this named session. Checks do not contact a provider, approve a model, change grants, or expose credentials.</p>
+<form id="readiness-form">
+<label for="readiness-profile">Assistant</label><select id="readiness-profile"><option value="overview">Overview</option><option value="review">Review</option></select>
+<label for="readiness-tool">Context kind</label><select id="readiness-tool"><option value="get_system_context">System context</option><option value="get_ontology_context">Ontology context</option><option value="explain_fact">Accepted fact</option></select>
+<label for="readiness-id">Selected stable context ID (optional)</label><input id="readiness-id" maxlength="256">
+<button>Check readiness</button>
+</form>
+<p id="readiness-status" role="status">Select a known permitted context to verify authorization. No record discovery is performed.</p>
+<ul id="readiness-checks"></ul>
+<p>Readiness does not grant human reviewer permission. Overview remains accepted-only. Freeform legacy chat is not a substitute for authorized context.</p>
+<nav aria-label="Existing workflows"><a href="{{ request.script_root }}/pipeline/sources">Resources: Source → Schema → Mapping</a> · <a href="{{ request.script_root }}/annotations">Annotations: existing Files drawer</a> · <a href="{{ request.script_root }}/settings#ai-chat/llm-provider">Personal provider settings</a></nav>
+</section>
+<script defer src="{{ url_for('static', filename='js/chat_readiness.js') }}"></script>
+{% endblock %}

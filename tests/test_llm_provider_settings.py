@@ -152,7 +152,7 @@ def test_test_connection_and_models(two_users, parley):
     assert ok['ok'] and ok['models'] == 2 and ok['cost'] == '0.0004'
     assert c.get('/api/llm/models', headers=u['alice']).get_json()['models'][0] == 'claude-sonnet-5-5'
     bad = c.post('/api/llm/test', headers=u['bob'], json={'base_url': parley, 'api_key': 'sk-nope'}).get_json()
-    assert not bad['ok'] and '401' in bad['error']
+    assert not bad['ok'] and bad['error'] == 'Provider unavailable; check endpoint and your credential.'
 
 
 def test_stored_key_is_not_sent_to_another_url(two_users, parley):

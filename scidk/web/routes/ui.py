@@ -34,7 +34,8 @@ def _get_ext():
 def gui_context():
     return {'gui_v3': current_app.config.get('SCIDK_GUI_V3_ENABLED') is True,
             'overview_chat_enabled': current_app.config.get('SCIDK_OVERVIEW_CHAT_ENABLED') is True,
-            'dataset_sharing_enabled': current_app.config.get('SCIDK_DATASET_SHARING_ENABLED') is True}
+            'dataset_sharing_enabled': current_app.config.get('SCIDK_DATASET_SHARING_ENABLED') is True,
+            'chat_readiness_enabled': current_app.config.get('SCIDK_CHAT_READINESS_ENABLED') is True}
 
 
 def _gui_page(page):
@@ -124,6 +125,33 @@ def review_adapter(operation):
         return jsonify(status='conflict', error='This item changed. Reload it and prepare a new decision.'), 409, headers
     except Exception:
         return jsonify(REFUSAL), 403, headers
+
+
+@bp.route('/admin/chat-readiness', methods=['GET', 'POST'])
+def chat_readiness():
+    from ..named_session import named_session
+    if (current_app.config.get('SCIDK_GUI_V3_ENABLED') is not True or
+            current_app.config.get('SCIDK_CHAT_READINESS_ENABLED') is not True):
+        return jsonify(error='Readiness unavailable'), 404, {'Cache-Control': 'no-store'}
+    try:
+        named_session(admin=True)
+    except Exception:
+        return jsonify(error='Named administrator session required'), 403, {'Cache-Control': 'no-store'}
+    if request.method == 'GET':
+        return render_template('gui/chat_readiness.html'), 200, {'Cache-Control': 'no-store'}
+    from ...agent_tools.context import context_from_app
+    from ...services.chat_readiness import checklist
+    try:
+        result = checklist(current_app, context_from_app(current_app, channel='chat'), request.get_json(silent=True))
+        return jsonify(result), 200, {'Cache-Control': 'no-store'}
+    except Exception:
+        return jsonify(error='Invalid or unavailable readiness check'), 400, {'Cache-Control': 'no-store'}
+
+
+@bp.get('/annotations')
+def annotations_page():
+    # Reuse the full Files drawer; no second annotation page/store.
+    return redirect(url_for('ui.datasets', panel='annotations'))
 
 
 @bp.get('/overview')

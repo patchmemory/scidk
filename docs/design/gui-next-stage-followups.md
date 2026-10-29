@@ -39,3 +39,27 @@ Prompt 16. Review-specific presentation changes do not resolve these issues.
 ## Later: Controlled Burn
 
 - Follow `docs/roadmap/scidk-controlled-burn-fast-follow.md` after internal demo feedback.
+
+## Prompt 15 implementation checkpoint
+
+Prompt 15 adds named-admin boolean readiness, an isolated authenticated development
+launcher and tiny synthetic System hook, deterministic HTTP-provider verification,
+server-only shared usage grants, approved global credential/configuration gates,
+and a trusted first-admin bootstrap transition. See
+`gui-development-startup.md`, `gui-prompt15-reconciliation.md` and
+`gui-prompt15-report.md` for exact scope and validation.
+
+Resources Source → Schema → Mapping and the native Annotate drawer are retained;
+`/annotations` is a route adapter. JSON builder round-trip and new capability-based
+source operations remain unavailable/unverified. Live Dataset onboarding requires
+operational ontology reconciliation, source-scoped evidence, named human review
+and applied support; no automatic acceptance or bulk migration was performed.
+
+Port 5001 was observed with named auth and Overview/Review flags off. A separate
+port-5002 startup is documented; the existing listener was not restarted. The
+System-only development hook does not supply research assertions or ReviewService.
+Operational Knowledge/Review assembly, exact model approvals, real Resource/evidence
+grants and live provider connectivity remain configuration/integration work.
+User-reported Parley checkpoint remains $13.44 cumulative and unverified; Prompt 15
+made no paid requests. Browser artifacts are unapproved candidates; no baseline
+was accepted automatically. Prompt 16 and 17 requirements above remain open.

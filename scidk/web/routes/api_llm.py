@@ -20,6 +20,23 @@ bp = Blueprint('api_llm', __name__, url_prefix='/api/llm')
 _ROLES = ('admin', 'user')
 
 
+@bp.before_request
+def credential_boundary():
+    # Preserve named header-session clients for personal settings. API tokens,
+    # legacy/no-auth sessions and cross-origin browser calls cannot use keys.
+    from ..named_session import named_session
+    try:
+        named_session(allow_header=request.endpoint != 'api_llm.import_parley_env')
+    except Exception:
+        return jsonify(error='Named authorized session required'), 403, {'Cache-Control': 'no-store'}
+
+
+@bp.after_request
+def private_response(response):
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
 def _db():
     return current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
 
@@ -47,12 +64,14 @@ def get_settings():
 def put_settings():
     from ...ai.provider_settings import save
     body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict) or set(body) - {'preset', 'base_url', 'model', 'api_key', 'clear_key'}:
+        return jsonify(error='Invalid provider settings'), 400
     try:
         out = save(_db(), _me(), preset=body.get('preset'), base_url=body.get('base_url'),
                    model=body.get('model'), api_key=body.get('api_key') or None,
                    clear_key=bool(body.get('clear_key')))
-    except ValueError as e:
-        return jsonify({'error': str(e)}), 400
+    except (ValueError, TypeError, AttributeError):
+        return jsonify({'error': 'Invalid provider settings'}), 400
     return jsonify(out)
 
 
@@ -60,6 +79,8 @@ def _endpoint_from_request():
     """base_url/api_key to try: the request's (an unsaved form), else the stored ones."""
     from ...ai.provider_settings import stored_endpoint
     body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict) or set(body) - {'base_url', 'api_key', 'model'}:
+        raise ValueError()
     stored = stored_endpoint(_db(), _me())
     base_url = (body.get('base_url') or request.args.get('base_url') or stored.get('base_url') or '').strip()
     # The stored key only ever goes to the stored endpoint, never to a URL
@@ -74,13 +95,16 @@ def _endpoint_from_request():
 @require_role(*_ROLES)
 def models():
     from ...ai.openai_compatible import ProviderError, list_models
-    base_url, api_key, _ = _endpoint_from_request()
+    try:
+        base_url, api_key, _ = _endpoint_from_request()
+    except (ValueError, TypeError, AttributeError):
+        return jsonify(error='Invalid provider request', models=[]), 400
     if not base_url:
         return jsonify({'error': 'Set a base URL first', 'models': []}), 400
     try:
         return jsonify({'models': list_models(base_url, api_key)})
-    except ProviderError as e:
-        return jsonify({'error': str(e), 'models': []}), 502
+    except Exception:
+        return jsonify({'error': 'Provider unavailable; check endpoint and your credential.', 'models': []}), 502
 
 
 @bp.post('/test')
@@ -89,7 +113,11 @@ def test_connection():
     """Lists models; with a model set, also runs a tiny completion so a bad
     model id or an exhausted budget shows up here rather than in the chat."""
     from ...ai.openai_compatible import ProviderError, chat_completion, list_models
-    base_url, api_key, model = _endpoint_from_request()
+    import re
+    try:
+        base_url, api_key, model = _endpoint_from_request()
+    except (ValueError, TypeError, AttributeError):
+        return jsonify(ok=False, error='Invalid provider request'), 400
     if not base_url:
         return jsonify({'ok': False, 'error': 'Set a base URL first'}), 400
     out = {'ok': False, 'base_url': base_url}
@@ -103,11 +131,14 @@ def test_connection():
             turn = chat_completion(base_url, api_key, model,
                                    [{'role': 'user', 'content': 'Reply with the single word: ok'}],
                                    max_tokens=256, timeout=60)
-            out.update({'model': turn['model'], 'finish_reason': turn['finish_reason'],
-                        'cost': turn['cost'], 'refusal': turn['refusal']})
+            out.update({'model': model, 'refusal': bool(turn.get('refusal')),
+                        'finish_reason': turn.get('finish_reason') if turn.get('finish_reason') in
+                        {'stop', 'length', 'content_filter'} else 'unknown'})
+            if re.fullmatch(r'[0-9]{1,10}(\.[0-9]{1,10})?', str(turn.get('cost', ''))):
+                out['cost'] = str(turn['cost'])
         out['ok'] = True
-    except ProviderError as e:
-        out['error'] = str(e)
+    except Exception:
+        out['error'] = 'Provider unavailable; check endpoint and your credential.'
     return jsonify(out), 200
 
 
@@ -143,12 +174,15 @@ def import_parley_env():
     if not _single_user_install():
         return jsonify({'error': 'Importing from `parley env` is only offered on a single-user install. '
                                  'Paste your own key instead.'}), 403
+    body = request.get_json(silent=True) or {}
+    if (not isinstance(body, dict) or set(body) - {'model'}
+            or (body.get('model') is not None and not isinstance(body['model'], str))):
+        return jsonify(error='Invalid provider request'), 400
     try:
         env = read_parley_env()
+        out = save(_db(), _me(), preset='parley',
+                   base_url=env.get('PARLEY_BASE_URL') or PARLEY_DEFAULT_BASE_URL,
+                   model=body.get('model'), api_key=env['PARLEY_API_KEY'])
     except Exception:
         return jsonify({'error': 'Parley environment import unavailable'}), 400
-    body = request.get_json(silent=True) or {}
-    out = save(_db(), _me(), preset='parley',
-               base_url=env.get('PARLEY_BASE_URL') or PARLEY_DEFAULT_BASE_URL,
-               model=body.get('model'), api_key=env['PARLEY_API_KEY'])
     return jsonify(out)

@@ -29,7 +29,7 @@ PARLEY_DEFAULT_BASE_URL = 'https://parley.api.mit.edu/v1'
 def presets() -> List[Dict[str, Any]]:
     return [
         {'id': 'parley', 'label': 'MIT Parley',
-         'base_url': os.environ.get('PARLEY_BASE_URL') or PARLEY_DEFAULT_BASE_URL,
+         'base_url': PARLEY_DEFAULT_BASE_URL,
          'key_placeholder': 'sk-parley-v1-…', 'needs_key': True,
          'note': 'Your own Parley key; usage is billed to you.'},
         {'id': 'openai', 'label': 'OpenAI', 'base_url': 'https://api.openai.com/v1',
@@ -92,6 +92,9 @@ def save(settings_db: str, username: Optional[str], *, preset: Optional[str] = N
     base_url = (base_url if base_url is not None else current.get('base_url') or '').strip()
     if base_url and not _URL_RE.match(base_url):
         raise ValueError('base_url must be an http(s) URL')
+    if base_url:
+        from ..agent_tools.security import endpoint_identity
+        base_url = endpoint_identity(base_url)
     enc = current.get('api_key_enc')
     if clear_key:
         enc = None

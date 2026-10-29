@@ -1,5 +1,6 @@
 <!-- AI & Chat > LLM Provider Section: one OpenAI-compatible endpoint, per user (Parley Task 1) -->
 <section id="ai-chat-llm-provider-section" class="settings-section">
+  {% if gui_v3 and chat_readiness_enabled %}<p><a href="{{ request.script_root }}/admin/chat-readiness">Administrator chat readiness checklist</a></p>{% endif %}
   <h1>LLM Provider</h1>
   <p class="small">
     Your own connection to an OpenAI-compatible endpoint: MIT Parley, OpenAI, or a local Ollama.

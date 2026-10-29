@@ -538,4 +538,9 @@ loadServers(); fetchTasks(); fetchNeo4jStatus();
 
 <!-- Attribution JS (inline for now — extract to annotate.js per JUNIE_MODULARIZATION_TASKS.md) -->
 <script src="{{ url_for('static', filename='js/dms.js') }}"></script>
+<script>
+if (new URLSearchParams(location.search).get('panel') === 'annotations') {
+  window.addEventListener('load', () => window.Annotate?.open());
+}
+</script>
 {% endblock %}
