@@ -4,7 +4,10 @@ The v0.1 proposal was approved with clarifications in `codex_prompt_02.txt`
 and implementation was authorized to continue on 2026-10-29.
 The [assessment](knowledge-curation-assessment.md) records observed limitations.
 [Implementation stage 1](knowledge-curation-stage-1.md) is complete: isolated
-ledger/validation and 30 new passing tests. Stages 2–6 remain pending.
+ledger/validation and 30 new passing tests.
+[Implementation stage 2](knowledge-curation-stage-2.md) implements authorized
+review and recoverable materialization. Stages 3–6 remain pending; do not start
+Stage 3 until the Stage 2 results have been reviewed.
 The historical design-stage completion report below predates this approval.
 
 ## Focused implementation commits after approval

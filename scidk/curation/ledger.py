@@ -15,7 +15,7 @@ import uuid
 from .contracts import (CONTRACT, ConflictError, ContractError, canonical, digest,
                         entity_ref, fact_id, fields, text)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 _TABLES = ('evidence', 'assertions', 'decisions', 'submissions')
 _DDL = '''
 CREATE TABLE curation_schema (version INTEGER PRIMARY KEY, contract TEXT NOT NULL);
@@ -55,17 +55,19 @@ def migrate(path):
     try:
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if tables:
-            if tables != {*_TABLES, 'curation_schema'}:
+            if 'curation_schema' not in tables:
                 raise ConflictError('Not an isolated curation database')
-            if conn.execute('SELECT version, contract FROM curation_schema').fetchall() != [(SCHEMA_VERSION, CONTRACT)]:
-                raise ConflictError('Unsupported ledger version')
+            from .migrations import upgrade
+            upgrade(conn)
             return
         triggers = '\n'.join(
             f"CREATE TRIGGER immutable_{table}_{action.lower()} BEFORE {action} ON {table} "
             "BEGIN SELECT RAISE(ABORT, 'append-only curation ledger'); END;"
             for table in (*_TABLES, 'curation_schema') for action in ('UPDATE', 'DELETE'))
         conn.executescript('BEGIN IMMEDIATE;\n' + _DDL + triggers +
-                           f"\nINSERT INTO curation_schema VALUES ({SCHEMA_VERSION}, '{CONTRACT}');\nCOMMIT;")
+                           f"\nINSERT INTO curation_schema VALUES (1, '{CONTRACT}');\nCOMMIT;")
+        from .migrations import upgrade
+        upgrade(conn)
     finally:
         conn.close()
 
@@ -79,7 +81,7 @@ class Ledger:
         self.can_read_evidence = can_read_evidence
         # mode=rw prevents accidental creation; construction never migrates.
         with self._connection() as conn:
-            if conn.execute('SELECT version, contract FROM curation_schema').fetchall() != [(SCHEMA_VERSION, CONTRACT)]:
+            if conn.execute('SELECT version, contract FROM curation_schema ORDER BY version').fetchall() != [(1, CONTRACT), (SCHEMA_VERSION, CONTRACT)]:
                 raise ConflictError('Unsupported ledger version')
 
     @contextmanager

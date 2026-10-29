@@ -107,7 +107,9 @@ class Ontology:
         return deepcopy(self._labels[name])
 
     def property(self, label, key, value):
-        self._validate_property(self.label(label)['properties'].get(identifier(key)), value)
+        prop = self.label(label)['properties'].get(identifier(key))
+        self._validate_property(prop, value)
+        return prop
 
     @staticmethod
     def _validate_property(prop, value):
@@ -146,3 +148,4 @@ class Ontology:
             raise ConflictError('Endpoint relationship property definitions disagree')
         prop = next((p for p in definitions[0] if p['name'] == key), None)
         self._validate_property(prop, value)
+        return prop

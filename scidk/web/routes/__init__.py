@@ -104,3 +104,7 @@ def register_blueprints(app):
     app.register_blueprint(api_agent.bp)  # Agent tools: HTTP, functions.json, OpenAPI, sharing (Task 5)
     app.register_blueprint(api_rocrate.bp)  # Files page → RO-Crate build/download
     app.register_blueprint(api_enrichment.bp)  # Post-scan interpreter dispatcher
+
+    # Curation is explicitly opt-in and never migrates or connects a graph here.
+    from .api_curation import register_curation
+    register_curation(app)
