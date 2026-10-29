@@ -1,0 +1,26 @@
+{
+  "registration": {
+    "namespace": "MONDO",
+    "resource_kind": "ontology",
+    "source_uri": "https://purl.obolibrary.org/obo/mondo.owl",
+    "version": "offline-demo-2026-10-29",
+    "identifier_format": "MONDO:[0-9]{7}",
+    "resolver": {"mode": "offline", "identifier_style": "obo", "uri_prefix": "http://purl.obolibrary.org/obo/"},
+    "retrieved_at": "2026-10-29T00:00:00Z",
+    "citation": "Mondo Disease Ontology, https://mondo.monarchinitiative.org/; hand-curated offline demonstration subset, not a verified upstream release",
+    "visibility": "public",
+    "metadata": {"fixture_only": true, "upstream_release_verified": false}
+  },
+  "concepts": [
+    {
+      "accession": "MONDO:0004992",
+      "uri": "http://purl.obolibrary.org/obo/MONDO_0004992",
+      "label": "cancer",
+      "synonyms": ["malignant neoplasm"],
+      "namespace": "MONDO",
+      "version": "offline-demo-2026-10-29",
+      "citation": "MONDO:0004992; offline demonstration record",
+      "provenance": {"method": "hand-curated offline fixture", "retrieved_at": "2026-10-29T00:00:00Z", "upstream_release_verified": false}
+    }
+  ]
+}

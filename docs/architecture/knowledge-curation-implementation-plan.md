@@ -11,7 +11,10 @@ review and recoverable materialization.
 boundary after policy approval in `codex_prompt_05.txt`: 406 relevant tests pass,
 1 is skipped and none are deselected. Legacy unscoped agent/chat/embedding paths
 are suspended; no new agent-facing curation tools are enabled.
-Stages 4–6 remain pending. Do not begin Stage 4 until Stage 3 results are reviewed.
+[Implementation stage 4](knowledge-curation-stage-4.md) adds bounded generated
+system/ontology projections and an offline selected-concept registry after review.
+The MONDO example uses a separately approved fixture-only ontology. Stages 5–6
+remain pending; Stage 5 requires review of Stage 4 results.
 The historical design-stage completion report below predates this approval.
 
 ## Focused implementation commits after approval

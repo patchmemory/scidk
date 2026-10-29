@@ -78,6 +78,7 @@ package-dir = {"" = "."}
 # collected as a package at all. Note that this declares data for this package
 # only — templates, static JS and interpreter profiles are still undeclared.
 "scidk.concept_graph" = ["*.yaml", "*.cypher"]
+"scidk.knowledge" = ["fixtures/*.json"]
 
 [tool.setuptools.packages.find]
 include = ["scidk*"]
