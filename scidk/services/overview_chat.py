@@ -12,7 +12,7 @@ def overview_turn(ctx, body):
     return context_turn(ctx, body, profile='overview', allowed={'explain_fact', 'get_system_context', 'get_ontology_context'})
 
 
-def context_turn(ctx, body, *, profile, allowed, enrich=None):
+def context_turn(ctx, body, *, profile, allowed, enrich=None, transport_timeout=None):
     """Shared transport; profile and tools are supplied by trusted routes only."""
     try:
         if (not isinstance(body, dict) or set(body) != {'message', 'context', 'send_question'}
@@ -54,7 +54,7 @@ def context_turn(ctx, body, *, profile, allowed, enrich=None):
              'observed, inferred and confirmed. Explain uncertainty and conflicts. Draft suggestions '
              'only as text. State missing information. Never decide, submit or materialize assertions.'},
             {'role': 'user', 'content': json.dumps({'question': body['message'], 'authorized_context': context})},
-        ], max_tokens=1200)
+        ], max_tokens=1200, **({'timeout': transport_timeout} if transport_timeout is not None else {}))
         if answer.get('tool_calls') or answer.get('refusal') or not isinstance(answer.get('content'), str):
             raise ValueError()
         # Recheck support and grants after transport; never return stale citations.

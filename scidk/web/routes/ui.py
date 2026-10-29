@@ -66,6 +66,9 @@ def knowledge_adapter(domain, operation):
         return jsonify(status='error', error='JSON object required'), 400, headers
     try:
         ctx = replace(context_from_app(current_app, channel='chat'), profile='overview')
+        from ...agent_tools.knowledge import KnowledgeServices
+        if ctx.identity and (not isinstance(ctx.knowledge, KnowledgeServices) or (domain in workspace.DOMAINS and not ctx.knowledge.ready(workspace.DOMAINS[domain]))):
+            return jsonify(status='unavailable', error='Knowledge service is not connected. Ask an administrator to connect this workspace.'), 503, headers
         if operation in {'search', 'inspect', 'expand'} and domain == 'research':
             result = workspace.research(ctx, operation, body)
         elif operation == 'context':

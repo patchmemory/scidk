@@ -82,6 +82,7 @@ def test_research_graph_inspector_layout_and_saved_positions(gui_page, gui_artif
     page.locator('#kw-expand').click()
     expect(page.locator('#kw-entities button')).to_have_count(2)
     assert cy(page, 'cy.edges().length') == 1
+    page.locator('#kw-advanced summary').click()
     page.locator('#kw-edge-filter').select_option('PI_OF')
     page.locator('#kw-algorithm').select_option('circle'); page.locator('#kw-apply-layout').click()
     cy(page, 'cy.nodes()[0].position({x: 145,y: 202})')
@@ -101,6 +102,7 @@ def test_research_graph_inspector_layout_and_saved_positions(gui_page, gui_artif
 def test_sketch_nodes_edges_notes_and_private_persistence(gui_page, gui_artifacts):
     page, _, _, _ = open_workspace(gui_page)
     page.get_by_role('tab', name='Sketch', exact=True).click()
+    page.locator('#kw-draft-tools summary').click()
     page.locator('#kw-draft-name').fill('Unresolved acquisition'); page.locator('#kw-add-node').click()
     page.locator('#kw-draft-name').fill('Proposed workflow'); page.locator('#kw-add-node').click()
     ids = cy(page, 'cy.nodes().map(n=>n.id())', True)
@@ -115,6 +117,7 @@ def test_sketch_nodes_edges_notes_and_private_persistence(gui_page, gui_artifact
     page.reload(); page.get_by_role('tab', name='Sketch', exact=True).click()
     page.locator('#kw-load-sketch').click(); expect(page.locator('#kw-status')).to_contain_text('Reopened private sketch')
     assert cy(page, 'cy.nodes().length', True) == 2 and cy(page, 'cy.edges().length', True) == 1
+    page.locator('#kw-draft-tools summary').click()
     expect(page.locator('#kw-notes')).to_have_value('A private draft; no evidence or decision implied.')
     expect(page.get_by_role('button', name='Submit proposal', exact=True)).to_be_disabled()
     expect(page.get_by_role('button', name='Commit to graph', exact=True)).to_be_disabled()
@@ -162,7 +165,7 @@ def test_context_link_revocation_and_no_stale_inspector(gui_page):
     with sqlite3.connect(d.db) as conn:
         conn.execute('DELETE FROM agent_resource_grant WHERE user_id=?', (d.alice,))
     page.locator('#kw-entities button').click()
-    expect(page.locator('#kw-status')).to_contain_text('cannot authorize')
+    expect(page.locator('#kw-status')).to_contain_text('Knowledge access is unavailable')
     expect(page.locator('#kw-inspection')).to_have_text('')
     expect(page.locator('#kw-entities button')).to_have_count(0)
     page.locator('#kw-domain').select_option('system')
@@ -190,6 +193,7 @@ def test_domain_sketch_and_responsive_split(gui_page, gui_artifacts, domain):
     page.locator('#kw-entities button').first.click()
     expect(page.locator('#kw-inspection')).to_contain_text('sources')
     page.get_by_role('tab', name='Sketch', exact=True).click()
+    page.locator('#kw-draft-tools summary').click()
     page.locator('#kw-add-reference').click()
     expect(page.locator('#kw-status')).to_contain_text('Stable reference added')
     reference = cy(page, 'cy.nodes()[0].data()', True)
@@ -213,3 +217,40 @@ def test_domain_sketch_and_responsive_split(gui_page, gui_artifacts, domain):
     assert cy(page, 'cy.nodes().filter(n => !!n.data("reference"))[0].data("reference_version")', True) == reference['reference_version']
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
     page.screenshot(path=str(gui_artifacts / ('knowledge-' + domain + '-sketch-1024.png')), full_page=True)
+
+
+def test_visual_draft_placement_connection_and_inspector(gui_page, gui_artifacts):
+    page, _, _, _ = open_workspace(gui_page)
+    page.get_by_role('tab', name='Sketch', exact=True).click()
+    canvas = page.locator('#kw-sketch')
+    page.get_by_role('button', name='Place a node', exact=True).click()
+    canvas.click(position={'x': 140, 'y': 100})
+    page.get_by_role('button', name='Place a node', exact=True).click()
+    canvas.click(position={'x': 340, 'y': 180})
+    assert cy(page, 'cy.nodes().length', True) == 2
+    page.get_by_role('button', name='Connect drafts', exact=True).click()
+    canvas.click(position={'x': 140, 'y': 100}); canvas.click(position={'x': 340, 'y': 180})
+    assert cy(page, 'cy.edges().length', True) == 1
+    canvas.click(position={'x': 140, 'y': 100})
+    page.get_by_label('Draft name', exact=True).fill('Synthetic visual idea')
+    page.get_by_role('button', name='Update selected draft').click()
+    assert cy(page, 'cy.nodes()[0].data("properties").name', True) == 'Synthetic visual idea'
+    page.get_by_role('button', name='Save private draft', exact=True).click()
+    expect(page.locator('#kw-status')).to_contain_text('Saved private sketch')
+    page.screenshot(path=str(gui_artifacts / 'prompt16-visual-sketch.png'), full_page=True)
+    page.reload(); page.get_by_role('tab', name='Sketch', exact=True).click()
+    page.get_by_role('button', name='Reopen private draft', exact=True).click()
+    expect(page.locator('#kw-status')).to_contain_text('Reopened private sketch')
+    assert cy(page, 'cy.edges().length', True) == 1
+
+
+@pytest.mark.parametrize('viewport', [(1440, 900), (1280, 800), (1024, 768)])
+def test_prompt16_knowledge_canvas_candidate(gui_page, gui_artifacts, viewport):
+    page, _, _, _ = open_workspace(gui_page)
+    page.set_viewport_size({'width': viewport[0], 'height': viewport[1]})
+    search_person(page)
+    page.get_by_role('tab', name='Graph', exact=True).click()
+    assert not page.locator('#kw-advanced').evaluate('el => el.open')
+    expect(page.get_by_role('button', name='Fit canvas')).to_be_visible()
+    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+    page.screenshot(path=str(gui_artifacts / f'prompt16-knowledge-{viewport[0]}x{viewport[1]}.png'), full_page=True)

@@ -63,6 +63,7 @@ def make_disposable_app():
             'chat/concept-graph/status': {}, 'chat/concept-graph/intents': {'intents': []},
             'chat/concept-graph/tools': {'tools': []}, 'providers': {'providers': []},
             'settings/rclone-interpret': {}, 'rclone/mounts': {'mounts': []},
+            'schema/map': {'nodes': [], 'edges': [], 'node_count': 0, 'edge_count': 0},
             'llm/presets': {'presets': []}, 'chat/schema/status': {}, 'users': {'users': []},
             'audit-log': {'entries': []}, 'scripts/scripts': {'status': 'ok', 'scripts': []},
             'labels': {'status':'success', 'labels': []}, 'settings/table-formats': {'formats': []},

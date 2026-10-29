@@ -27,7 +27,7 @@ def test_navigation_and_placeholders(gui_page):
     page, origin, app = gui_page
     page.goto(origin+'/overview?profile=review')
     expect(page.get_by_label('Your question')).to_be_disabled()
-    expect(page.get_by_role('button', name='Send', exact=True)).to_be_disabled()
+    expect(page.get_by_role('button', name='Ask SciDK', exact=True)).to_be_disabled()
     for name, path in [('Files & Datasets','/datasets'), ('Resources','/pipeline/sources'),
                        ('Knowledge','/knowledge'), ('Review','/review'), ('Overview','/overview')]:
         page.locator('header nav').get_by_role('link', name=name, exact=True).click()
@@ -136,11 +136,9 @@ class OfflineDependencyError(RuntimeError):
     pass
 
 
-@pytest.mark.xfail(strict=True, raises=OfflineDependencyError, reason='GUI-004: legacy Settings requires external Cytoscape; offline vendoring deferred')
 def test_settings_offline_navigation(gui_page):
     page, origin, _ = gui_page
     page.goto(origin+'/overview')
-    page.gui_expected_external.add('https://unpkg.com/cytoscape@3.27.0/dist/cytoscape.min.js')
     page.locator('header nav').get_by_role('link',name='Settings',exact=True).click()
     expect(page).to_have_url(origin+'/settings')
     expect(page.get_by_role('heading',level=1).first).to_be_visible()
@@ -200,3 +198,13 @@ def test_existing_annotations_adapter_and_resources(gui_page, gui_artifacts):
     page.goto(origin + '/pipeline/sources')
     expect(page.get_by_role('heading', level=1)).to_be_visible()
     assert not any(method not in ('GET', 'HEAD') for method, _ in app.extensions['gui_test_requests'])
+
+
+@pytest.mark.parametrize('viewport', [(1440, 900), (1280, 800), (1024, 768)])
+def test_prompt16_settings_candidate(gui_page, gui_artifacts, viewport):
+    page, origin, _ = gui_page
+    page.set_viewport_size({'width': viewport[0], 'height': viewport[1]})
+    page.goto(origin + '/settings')
+    expect(page.locator('.settings-container')).to_be_visible()
+    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+    page.screenshot(path=str(gui_artifacts / f'prompt16-settings-{viewport[0]}x{viewport[1]}.png'), full_page=True)

@@ -81,8 +81,10 @@ Connectivity is always labeled unverified by this no-network diagnostic; a
 successful connection test or chat is separate evidence. A key is optional for
 the local fake, so `credential_present=false` is informational.
 
-At `/overview`, select System context, enter the same stable ID, ask a synthetic
-question and explicitly check the disclosure consent box. The response is a
+At `/overview`, choose System documentation and ask “Explain the synthetic System
+workflow”, then explicitly check the disclosure consent box and press Ask SciDK.
+No node ID is required. A Knowledge selection can instead carry its stable context
+through an Ask about selection link; it is reauthorized server-side. The response is a
 constant synthetic explanation. No history, model-selected tools or arbitrary
 query is sent. A remote provider requires a separately approved exact destination,
 credential/usage rights and explicit authorization for paid calls/content.

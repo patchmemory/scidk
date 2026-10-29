@@ -63,3 +63,16 @@ grants and live provider connectivity remain configuration/integration work.
 User-reported Parley checkpoint remains $13.44 cumulative and unverified; Prompt 15
 made no paid requests. Browser artifacts are unapproved candidates; no baseline
 was accepted automatically. Prompt 16 and 17 requirements above remain open.
+
+## Prompt 16 implementation checkpoint
+
+Shared opt-in sidebar/design tokens, no-ID bounded Ask SciDK discovery and linked
+sources, progressive Knowledge tools, visual private Sketch placement/connection,
+and stable Files/Knowledge-to-Ask links are implemented. Settings now uses the
+bundled Cytoscape asset. See `gui-prompt16-report.md` for limits and wireframe gaps;
+its human acceptance checklist remains pending. Existing tools and security gates
+are retained. Semantic/freeform retrieval, fictional dashboard metrics, complete
+field-level trust rendering, drag-to-dock, unified Resources builder composition
+and full cross-page history are not claimed as implemented. No paid calls or
+existing service restart occurred. User-reported spend is now $15.91, unverified.
+Prompt 17 remains unstarted and retains the operational/demo blockers above.

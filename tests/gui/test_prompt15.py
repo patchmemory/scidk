@@ -63,10 +63,9 @@ def test_readiness_and_system_fake_provider(gui_page, gui_artifacts):
     page.screenshot(path=str(gui_artifacts / 'prompt15-admin-readiness.png'), full_page=True)
     page.goto(origin + '/overview')
     page.get_by_label('Your question').fill('Explain this synthetic System context.')
-    page.get_by_label('Source context', exact=True).select_option('get_system_context')
-    page.get_by_label('Fact or context node ID').fill('system:synthetic-demo')
+    page.get_by_label('Look in').select_option('system')
     page.locator('#overview-consent').check()
-    page.get_by_role('button', name='Send', exact=True).click()
+    page.get_by_role('button', name='Ask SciDK', exact=True).click()
     expect(page.locator('#overview-answer')).to_contain_text('Synthetic System context')
     assert len(calls) == 1 and 'tools' not in calls[0][1]
     page.screenshot(path=str(gui_artifacts / 'prompt15-system-fake-chat.png'), full_page=True)

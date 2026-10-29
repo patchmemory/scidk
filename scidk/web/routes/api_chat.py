@@ -3199,7 +3199,18 @@ def api_overview_chat():
     from ...agent_tools.security import REFUSAL
     from ...services.overview_chat import overview_turn
     if current_app.config.get('SCIDK_OVERVIEW_CHAT_ENABLED') is not True:
-        return jsonify(REFUSAL), 403
+        return jsonify(REFUSAL), 403, {'Cache-Control': 'no-store'}
     ctx = replace(context_from_app(current_app, channel='chat'), profile='overview')
-    result = overview_turn(ctx, request.get_json(silent=True))
-    return jsonify(result), 200 if result['status'] == 'success' else 403, {'Cache-Control': 'no-store'}
+    body = request.get_json(silent=True)
+    if isinstance(body, dict) and 'context' not in body:
+        from ..named_session import named_session
+        try:
+            named_session()
+        except Exception:
+            return jsonify(REFUSAL), 403, {'Cache-Control': 'no-store'}
+        from ...services.overview_discovery import discovery_turn
+        result = discovery_turn(ctx, body)
+    else:
+        result = overview_turn(ctx, body)
+    status = {'success': 200, 'empty': 200, 'unavailable': 503, 'bounded': 422}.get(result['status'], 403)
+    return jsonify(result), status, {'Cache-Control': 'no-store'}

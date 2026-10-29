@@ -39,8 +39,9 @@
     .toast.success { background: #0a6; }
   </style>
   {% block head %}{% endblock %}
+  {% if gui_v3 %}<link rel="stylesheet" href="{{ url_for('static', filename='css/gui_design.css') }}">{% endif %}
 </head>
-<body>
+<body{% if gui_v3 %} class="gui-v3"{% endif %}>
 <header data-testid="header">
   <h1><a href="{{ request.script_root }}/" style="text-decoration:none;color:inherit;font-family:monospace;letter-spacing:0.02em;font-weight:600" data-testid="nav-home">-SciDK-></a></h1>
   <nav data-testid="nav">
@@ -64,6 +65,7 @@
 </header>
 <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 <main data-testid="main">
+  {% if gui_v3 %}<nav class="context-trail" aria-label="Workspace trail"><a href="{{ request.script_root }}/overview">Workspace</a><span aria-hidden="true">/</span><span id="workspace-trail">{{ request.path.split('/')[-1]|replace('-', ' ')|title }}</span></nav>{% endif %}
   {% if entities_tab %}{% include '_entities_tabs.html' %}{% endif %}
   {% block content %}{% endblock %}
 </main>

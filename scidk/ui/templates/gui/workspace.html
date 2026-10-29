@@ -3,28 +3,23 @@
 <section class="workspace">
 <h1>{{ page }}</h1>
 {% if page == 'Overview' %}
-<h2>Ask SciDK</h2>
-<p>Explore permitted, accepted knowledge with the Overview assistant.</p>
-<label for="overview-question">Your question</label>
-{% if overview_chat_enabled %}
+<p class="eyebrow">Discover · Connect · Curate</p>
+<p class="page-lede">Explore your research, understand its sources and turn connected knowledge into your next step.</p>
+<section class="ask-panel" aria-labelledby="ask-heading">
+<h2 id="ask-heading">Ask SciDK</h2><p>Start with a question. We’ll look for matching knowledge you’re allowed to use.</p>
 <form id="overview-chat">
-<textarea id="overview-question" required maxlength="4000" placeholder="Ask about your research" rows="4" style="display:block;width:100%;max-width:800px"></textarea>
-<label for="overview-context-type">Source context</label>
-<select id="overview-context-type"><option value="explain_fact">Accepted research fact</option><option value="get_system_context">System context</option><option value="get_ontology_context">Canonical ontology context</option></select>
-<label for="overview-context-id">Fact or context node ID</label><input id="overview-context-id" required maxlength="256">
-<label><input type="checkbox" id="overview-consent" required> Send this question and its authorized source context to my configured provider.</label>
-<button id="overview-send">Send</button>
-<p id="overview-status" role="status">Each question uses fresh source permissions. Earlier conversation turns are not sent.</p>
-<pre id="overview-answer" style="white-space:pre-wrap"></pre>
-<details><summary>Authorized sources and citations</summary><pre id="overview-sources" style="white-space:pre-wrap"></pre></details>
+<label for="overview-question">Your question</label>
+<textarea id="overview-question" required maxlength="4000" placeholder="Find a dataset, explore an entity, or ask about a workflow…" rows="3"{% if not overview_chat_enabled %} disabled{% endif %}></textarea>
+<div class="ask-controls"><label for="overview-scope">Look in</label><select id="overview-scope"><option value="accessible">My accessible knowledge</option><option value="system">System documentation</option><option value="selection" disabled>Current selection</option></select><button id="overview-send" class="primary"{% if not overview_chat_enabled %} disabled{% endif %}>Ask SciDK</button></div>
+<label class="consent"><input type="checkbox" id="overview-consent" required{% if not overview_chat_enabled %} disabled{% endif %}> Send this question and its matching authorized sources to my approved provider. Earlier questions are not sent.</label>
 </form>
+<div class="suggestions" aria-label="Suggested questions"><button type="button" data-question="Find synthetic datasets">Find a dataset</button><button type="button" data-question="Find Synthetic Investigator">Explore an investigator</button><button type="button" data-question="Explain the synthetic System workflow" data-scope="system">Understand a workflow</button></div>
+<p id="overview-status" role="status">{% if overview_chat_enabled %}Search uses names and released properties. Ask about a specific entity or documentation topic.{% else %}Ask SciDK is unavailable. An administrator needs to connect Knowledge services and enable the approved assistant.{% endif %}</p>
+<div id="overview-results"><h3 id="overview-answer-heading" hidden>AI interpretation</h3><pre id="overview-answer"></pre><h3 id="overview-source-heading" hidden>Retrieved facts &amp; sources</h3><div id="overview-source-links"></div><details id="overview-source-details" hidden><summary>Inspect authorized source details</summary><pre id="overview-sources"></pre></details></div>
+</section>
+<div class="workflow-cards"><a class="panel" href="{{ request.script_root }}/datasets"><strong>Explore files &amp; datasets →</strong><span>Browse storage, inspect scientific metadata and prepare a sharing draft.</span></a><a class="panel" href="{{ request.script_root }}/knowledge"><strong>Connect your knowledge →</strong><span>Explore supported entities and sketch new ideas privately.</span></a><a class="panel" href="{{ request.script_root }}/review"><strong>Review the evidence →</strong><span>Examine citations and record explicit human decisions.</span></a></div>
+<details><summary>Advanced tools &amp; configuration</summary><a href="{{ request.script_root }}/chat">Existing chat sessions &amp; GraphRAG tools</a> · <a href="{{ request.script_root }}/settings#ai-chat/llm-provider">Personal provider settings</a><p>Explicit-ID context requests remain available through the existing API. This assistant supports bounded name/property lookup, not general graph questions or unrestricted analysis.</p></details>
 <script defer src="{{ url_for('static', filename='js/overview_chat.js') }}"></script>
-{% else %}
-<textarea id="overview-question" disabled aria-describedby="chat-unavailable" placeholder="Ask about your research" rows="4" style="display:block;width:100%;max-width:800px"></textarea>
-<button disabled>Send</button>
-<p id="chat-unavailable" role="status">Chat unavailable: an approved conversational transport with per-turn disclosure and a server-bound Overview profile is required. No question or conversation is sent.</p>
-{% endif %}
-<p><a href="{{ request.script_root }}/chat">Existing chat sessions</a> · <a href="{{ request.script_root }}/settings#ai-chat/llm-provider">Provider settings</a></p>
 {% elif page == 'Knowledge' %}
 <p>The existing knowledge tools remain available while the combined workspace is prepared.</p>
 <p><a href="{{ request.script_root }}/map">Maps &amp; Canvas</a> · <a href="{{ request.script_root }}/entities">Entities</a> · <a href="{{ request.script_root }}/entities?tab=relationships">Relationships</a> · <a href="{{ request.script_root }}/results">Results</a></p>

@@ -31,7 +31,7 @@ def test_visual_reference(gui_page, gui_artifacts, request, screen, viewport):
         if screen == 'resources':
             expect(page.get_by_test_id('sources-empty')).to_be_visible()
         elif screen == 'overview':
-            expect(page.get_by_role('button',name='Send',exact=True)).to_be_disabled()
+            expect(page.get_by_role('button',name='Ask SciDK',exact=True)).to_be_disabled()
         elif screen == 'review':
             expect(page.get_by_text('Review workspace unavailable',exact=False)).to_be_visible()
     page.evaluate('document.fonts.ready')

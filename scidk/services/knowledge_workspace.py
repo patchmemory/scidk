@@ -9,6 +9,7 @@ from pathlib import Path
 import json
 import re
 import sqlite3
+import time
 
 from ..agent_tools.registry import available_tool_definitions, run_tool
 from ..agent_tools.facts import FactDisclosure
@@ -33,12 +34,15 @@ def authorized(ctx, domain):
 
 
 class ResearchReader:
-    def __init__(self, ctx, conn, policy):
+    def __init__(self, ctx, conn, policy, *, deadline=None):
+        self.deadline = deadline
         self.ctx, self.conn, self.policy = ctx, conn, policy
         self.facts = ctx.knowledge.assertions.facts
         self.bytes = 0
 
     def fact(self, fid):
+        if self.deadline is not None and time.monotonic() > self.deadline:
+            raise WorkspaceLimit()
         value = self.facts._fact(self.conn, self.policy, fid, True, set())
         self.bytes += len(json.dumps(value).encode())
         if self.bytes > 2 * 1024 * 1024:
@@ -100,16 +104,18 @@ class ResearchReader:
         return {'nodes': list(nodes.values()), 'edges': edges}
 
 
-def research(ctx, operation, args):
+def research(ctx, operation, args, *, deadline=None):
     ctx = authorized(ctx, 'research')
     facts = ctx.knowledge.assertions.facts
     if not isinstance(facts, FactDisclosure) or facts.store.path != Path(ctx.settings_db).resolve():
         raise DisclosureDenied()
     with facts.store.resolve(ctx.identity) as policy, closing(sqlite3.connect(
             facts.ledger.path.as_uri() + '?mode=ro', uri=True)) as conn:
+        if deadline is not None:
+            conn.set_progress_handler(lambda: time.monotonic() > deadline, 1000)
         conn.execute('PRAGMA query_only=ON')
         conn.execute('BEGIN')
-        reader = ResearchReader(ctx, conn, policy)
+        reader = ResearchReader(ctx, conn, policy, deadline=deadline)
         if operation == 'search':
             if set(args) - {'q', 'label', 'offset'} or not isinstance(args.get('q', ''), str) or len(args.get('q', '')) > 256:
                 raise DisclosureDenied()

@@ -12,24 +12,27 @@
     {selector: 'edge[?provisional]', style: {'line-style': 'dashed', 'line-color': '#e67e22'}},
     ...SciDKGraph.schemaStyles
   ];
-  const graph = SciDKGraph.init($('kw-graph'), [], {additionalStyles: styles, layout: {name: 'preset'}});
-  const sketch = SciDKGraph.init($('kw-sketch'), [], {additionalStyles: styles, layout: {name: 'preset'}});
+  const graph = SciDKGraph.init($('kw-graph'), [], {additionalStyles: styles, maxZoom: 1.5, layout: {name: 'preset'}});
+  const sketch = SciDKGraph.init($('kw-sketch'), [], {additionalStyles: styles, maxZoom: 1.5, layout: {name: 'preset'}});
   const notice = text => { $('kw-status').textContent = text; };
+  let sketchMode = null, connectSource = null, draftSelected = null;
   const edgeId = e => 'projection-edge:' + JSON.stringify([e.source, e.type, e.target]);
   function reset() {
+    sketchMode = null; connectSource = null; draftSelected = null; $('kw-draft-inspector').hidden = true; $('kw-connect').setAttribute('aria-pressed', 'false');
     ++state.version; state.records.clear(); state.selected = null; state.next = null;
     graph.elements().remove(); sketch.elements().remove(); $('kw-notes').value = '';
-    $('kw-inspection').textContent = ''; $('kw-trust').textContent = 'Select an authorized record.';
+    $('kw-inspection').textContent = ''; $('kw-selection-title').textContent = 'Nothing selected'; $('kw-trust').textContent = 'Select an authorized record.';
     $('kw-entities').replaceChildren(); $('kw-next').hidden = true;
     $('kw-blockers').hidden = true; $('kw-blockers').textContent = '';
     $('kw-edge-filter').replaceChildren(new Option('All relationships', ''));
+    $('kw-ask-link').href = base + '/overview'; $('kw-review-link').href = base + '/review';
   }
   async function api(operation, body, domain = state.domain) {
     const response = await fetch(base + '/api/knowledge/' + domain + '/' + operation, {
       method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
     });
     const data = await response.json();
-    if (!response.ok || data.status !== 'success') throw new Error(data.error || 'Knowledge operation unavailable.');
+    if (!response.ok || data.status !== 'success') throw new Error(response.status === 503 ? 'This Knowledge service is not connected. Ask an administrator to connect the workspace.' : 'Knowledge access is unavailable. Ask an administrator to check source grants and the approved provider.');
     return data.result;
   }
   function url() {
@@ -97,7 +100,7 @@
     try {
       const result = await api(operation, body);
       if (version !== state.version) return;
-      ingest(result, merge); notice('Authorized ' + state.domain + ' result. Select a record to recheck and inspect it.');
+      ingest(result, merge); notice(result.nodes?.length ? 'Select a record to inspect its sources and current support.' : 'No permitted matches. Try another name or ask an administrator to check source access.');
     } catch (error) { if (version === state.version) { reset(); notice(error.message); } }
   }
   async function inspect(record) {
@@ -125,7 +128,9 @@
         ...(state.domain === 'ontology' ? {catalog: record.catalog || state.catalog} : {})};
       $('kw-trust').textContent = state.domain === 'research' ? 'Accepted and applied; epistemic status is recorded separately in support.' :
         'Generated projection; inspect source revisions, hashes, freshness and catalog authority. This is not a reviewed research assertion.';
+      $('kw-selection-title').textContent = state.selected.properties?.name || state.selected.name || state.selected.type || 'Selected knowledge';
       $('kw-inspection').textContent = JSON.stringify(state.selected, null, 2);
+      $('kw-ask-link').href = base + '/overview?' + new URLSearchParams({domain: state.domain, id: record.id});
       $('kw-review-link').href = base + '/review?domain=' + state.domain + '&id=' + encodeURIComponent(record.id);
       url();
     } catch (error) { if (version === state.version) { reset(); notice(error.message); } }
@@ -133,6 +138,18 @@
   graph.on('tap', 'node,edge', event => inspect(event.target.data('record')));
   sketch.on('tap', 'node,edge', event => {
     const data = event.target.data();
+    draftSelected = event.target; $('kw-selection-title').textContent = data.displayLabel || data.label || 'Selected draft';
+    $('kw-draft-inspector').hidden = !data.provisional || !event.target.isNode();
+    $('kw-edit-name').value = data.displayLabel || '';
+    if (sketchMode === 'connect' && event.target.isNode()) {
+      if (!connectSource) { connectSource = data.id; $('kw-sketch-help').textContent = 'Now select the destination node.'; }
+      else if (connectSource !== data.id) {
+        SciDKCanvas.add(sketch, SciDKCanvas.provisionalEdge(connectSource, data.id, $('kw-edge-type').value.trim() || 'RELATES_TO'));
+        connectSource = null; sketchMode = null; $('kw-connect').setAttribute('aria-pressed', 'false');
+        $('kw-sketch-help').textContent = 'Draft connection created. Save your private draft to keep it.';
+      }
+      return;
+    }
     if (data.reference) {
       inspect({id: data.reference, source: data.source, catalog: data.catalog});
     } else {
@@ -141,6 +158,20 @@
     }
     $('kw-edge-source').value = data.id;
   });
+  $('kw-place-node').onclick = () => { sketchMode = 'place'; connectSource = null; $('kw-connect').setAttribute('aria-pressed', 'false'); $('kw-sketch-help').textContent = 'Click an empty point on the canvas to place a private draft node.'; };
+  sketch.on('tap', event => {
+    if (event.target !== sketch || sketchMode !== 'place') return;
+    const node = SciDKCanvas.provisionalNode(sketch, $('kw-draft-type').value.trim() || 'Concept', $('kw-draft-name').value.trim() || 'New concept');
+    node.position = event.position; SciDKCanvas.add(sketch, node); sketchMode = null;
+    $('kw-sketch-help').textContent = 'Node placed. Select it to edit its name in the inspector, or drag to arrange.';
+  });
+  $('kw-connect').onclick = () => { sketchMode = sketchMode === 'connect' ? null : 'connect'; connectSource = null; $('kw-connect').setAttribute('aria-pressed', String(sketchMode === 'connect')); $('kw-sketch-help').textContent = sketchMode ? 'Select the source node, then the destination node.' : 'Connection cancelled.'; };
+  $('kw-edit-apply').onclick = () => {
+    const name = $('kw-edit-name').value.trim();
+    if (!name || !draftSelected?.isNode() || !draftSelected.data('provisional')) return;
+    draftSelected.data({displayLabel: name, properties: {...draftSelected.data('properties'), name}});
+    $('kw-inspection').textContent = JSON.stringify(draftSelected.data(), null, 2);
+  };
   async function changeDomain() {
     reset(); state.domain = $('kw-domain').value; state.catalog = 'canonical';
     $('kw-search-form').hidden = state.domain !== 'research';
@@ -189,7 +220,7 @@
   $('kw-show-entities').onclick = () => { state.view = 'entities'; layout(); };
   $('kw-show-graph').onclick = () => { state.view = 'graph'; layout(); };
   $('kw-add-node').onclick = () => {
-    const name = $('kw-draft-name').value.trim(), type = $('kw-draft-type').value.trim();
+    const name = $('kw-draft-name').value.trim() || 'New concept', type = $('kw-draft-type').value.trim();
     if (!name || !type) { notice('Enter a draft name and type.'); return; }
     SciDKCanvas.add(sketch, SciDKCanvas.provisionalNode(sketch, type, name));
     sketch.fit(); notice('Draft added privately; no assertion or graph fact was created.');

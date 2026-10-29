@@ -1,0 +1,93 @@
+/* GUI v3 shared vocabulary, scoped away from preserved legacy installations. */
+.gui-v3 {
+  --fg:#243347; --muted:#5b6b7e; --bg:#eef2f6; --accent:#245c8b;
+  --surface:#fff; --border:#d7e0ea; --radius:14px; --shadow:0 4px 20px #192d4307;
+  background:var(--bg); color:var(--fg); font-size:14px; line-height:1.5;
+}
+.gui-v3 header[data-testid=header] {position:fixed;inset:0 auto 0 0;width:190px;z-index:1000;background:#192d43;color:#f4f7fa;border:0;padding:24px 12px;display:flex;flex-direction:column;align-items:stretch;gap:24px}
+.gui-v3 header h1 {font-size:23px;padding:0 10px;letter-spacing:-.04em}
+.gui-v3 header nav {display:flex;flex-direction:column;gap:5px}
+.gui-v3 header nav a {display:block;margin:0;padding:11px 12px;border-radius:9px;color:#dbe5ef;font-weight:500}
+.gui-v3 header nav a:hover {background:#ffffff12;color:white}
+.gui-v3 header nav a.active {background:#2d4b68;color:white;box-shadow:inset 3px 0 #8bbfe9}
+.gui-v3 #auth-status {margin: auto 0 0 !important;flex-wrap:wrap;padding:10px;font-size:12px}
+.gui-v3 #auth-username {color:#dbe5ef !important;overflow-wrap:anywhere}
+.gui-v3 #logout-btn {color:#b3d9f7 !important}
+.gui-v3 main[data-testid=main] {margin-left:190px;padding:30px 32px 48px;width:calc(100% - 190px);max-width:1600px}
+.gui-v3 h1 {font-size:28px;line-height:1.2;letter-spacing:-.035em;font-weight:700;margin:0 0 10px}
+.gui-v3 h2 {font-size:18px;letter-spacing:-.015em;margin:0 0 12px}
+.gui-v3 h3 {font-size:15px;margin:16px 0 8px}
+.gui-v3 p {color:var(--muted);margin:8px 0 16px}
+.gui-v3 a {color:var(--accent);text-underline-offset:3px}
+.gui-v3 button,.gui-v3 select,.gui-v3 input:not([type=checkbox]):not([type=radio]):not([type=color]),.gui-v3 textarea {font:inherit;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--fg);padding:8px 11px;max-width:100%;box-sizing:border-box}
+.gui-v3 button {cursor:pointer;font-weight:600;transition:background .12s,border-color .12s}
+.gui-v3 button:hover:not(:disabled) {background:#e8f0fa;border-color:#91afcc}
+.gui-v3 button:disabled {opacity:.55;cursor:default}
+.gui-v3 button[aria-selected=true],.gui-v3 button.primary {background:#245c8b;color:white;border-color:#245c8b}
+.gui-v3 :focus-visible {outline:3px solid #2882c9;outline-offset:3px}
+.gui-v3 textarea {width:100%;resize:vertical}
+.gui-v3 input[type=checkbox] {accent-color:#245c8b;width:16px;height:16px;vertical-align:middle}
+.gui-v3 .panel,.gui-v3 .card,.gui-v3 #kw-inspector,.gui-v3 .rw-columns>section {background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px;box-shadow:var(--shadow)}
+.gui-v3 details {border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin:12px 0;background:#ffffff8a}
+.gui-v3 summary {cursor:pointer;font-weight:600;color:var(--fg)}
+.gui-v3 pre {white-space:pre-wrap;overflow-wrap:anywhere;background:#f5f8fb;border-radius:8px;padding:12px;font-size:12px}
+.gui-v3 table {background:white;border:1px solid var(--border);font-size:13px}
+.gui-v3 th {background:#f5f8fb;color:var(--muted);font-weight:600}
+.gui-v3 td,.gui-v3 th {border-color:#e5ebf1;padding:10px 12px}
+.gui-v3 .workspace {max-width:1150px;margin:auto}
+.gui-v3 .eyebrow {color:var(--accent);text-transform:uppercase;font-size:11px;letter-spacing:.12em;font-weight:700;margin-bottom:10px}
+.gui-v3 .page-lede {max-width:700px;font-size:15px}
+.gui-v3 .ask-panel {margin:28px 0;padding:28px;background:white;border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow)}
+.gui-v3 .ask-panel textarea {background:#f8fafc;border-radius:12px;min-height:110px;margin:10px 0}
+.gui-v3 .ask-controls {display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:12px 0}
+.gui-v3 .consent {font-size:12px;color:var(--muted);display:flex;gap:8px;align-items:flex-start;max-width:650px}
+.gui-v3 .suggestions {display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
+.gui-v3 .suggestions button {font-size:12px;border-radius:20px;font-weight:500}
+.gui-v3 .workflow-cards {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:24px}
+.gui-v3 .workflow-cards a {display:block;text-decoration:none;color:var(--fg)}
+.gui-v3 .workflow-cards a:hover {border-color:#91afcc}
+.gui-v3 .workflow-cards strong {display:block;font-size:16px;margin-bottom:8px}
+.gui-v3 .workflow-cards span {color:var(--muted);font-size:13px}
+.gui-v3 #overview-answer:empty,.gui-v3 #overview-sources:empty {display:none}
+.gui-v3 #overview-answer {font:inherit;background:white;padding:0}
+.gui-v3 #overview-results>article {border-top:1px solid var(--border);padding:16px 0}
+.gui-v3 .source-link {display:block;margin:8px 0;font-weight:600}
+.gui-v3 #knowledge-workspace,.gui-v3 #review-workspace {padding:0;color:var(--fg)}
+.gui-v3 #kw-panes>section {background:white;border-radius:14px;border:1px solid var(--border);padding:16px}
+.gui-v3 .kw-cytoscape {height:470px;background:radial-gradient(#cfdae6 1px,transparent 1px);background-size:18px 18px;border:1px solid var(--border);border-radius:10px}
+.gui-v3 .kw-toolbar,.gui-v3 .rw-toolbar {gap:8px;margin:12px 0}
+.gui-v3 #kw-search-form,.gui-v3 #kw-context-form {display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:16px 0}
+.gui-v3 #kw-search {flex:1;min-width:160px}
+.gui-v3 #kw-inspector {margin-top:16px}
+.gui-v3 #kw-entities button,.gui-v3 #rw-queue button {background:white;border:1px solid var(--border);border-radius:10px;padding:14px;margin:8px 0}
+.gui-v3 #kw-sketch-pane>p {font-size:12px}
+.gui-v3 #rw-assistant {background:white;border:1px solid var(--border);border-radius:14px;padding:22px;margin-top:20px}
+.gui-v3 #gui-files {border:1px solid var(--border);border-radius:14px;background:white;padding:12px;margin-bottom:16px}
+.gui-v3 #shared-inspector {top:24px;right:20px;bottom:24px;z-index:990;box-shadow:0 8px 30px #192d431a}
+.gui-v3 #shared-inspector.expanded {left:214px}
+.gui-v3 .files-page {border:1px solid var(--border);border-radius:14px;overflow:hidden;background:white}
+.gui-v3 .context-trail {display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px;margin:0 0 18px;color:var(--muted)}
+@media(max-width:1100px) {.gui-v3 main[data-testid=main] {padding:24px 20px}.gui-v3 .workflow-cards {grid-template-columns:1fr}.gui-v3 .files-page.with-inspector,.gui-v3 #gui-datasets.with-inspector {margin-right:0}.gui-v3 #shared-inspector {position:relative;top:auto;right:auto;bottom:auto;width:100%;max-height:70vh;margin-top:16px}.gui-v3 #shared-inspector.expanded {left:auto;width:100%}}
+@media(max-width:700px) {.gui-v3 header[data-testid=header] {position:relative;width:100%;gap:12px;padding:14px}.gui-v3 header nav {flex-direction:row;flex-wrap:wrap}.gui-v3 header nav a {padding:7px 9px}.gui-v3 #auth-status {display:none !important}.gui-v3 main[data-testid=main] {margin:0;width:100%;padding:20px 14px}.gui-v3 .ask-panel {padding:18px}}
+@media(prefers-reduced-motion:reduce) {.gui-v3 * {transition:none !important;scroll-behavior:auto !important}}
+.gui-v3 button.primary:hover:not(:disabled) {background:#1b4b75;border-color:#1b4b75;color:white}
+.gui-v3 .source-card {border-color:var(--border);border-radius:14px;padding:18px;box-shadow:var(--shadow)}
+.gui-v3 .badge {border-radius:20px;padding:3px 9px;font-size:11px}
+.gui-v3 .settings-container {background:white;border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.gui-v3 .settings-sidebar {background:#f6f8fb;border-color:var(--border)}
+.gui-v3 .kw-workarea {display:grid;grid-template-columns:minmax(0,1fr);gap:18px;align-items:start}
+.gui-v3 .kw-workarea>* {min-width:0}
+.gui-v3 #kw-inspector {position:sticky;top:24px;margin-top:12px}
+@media(min-width:1250px) {.gui-v3 .kw-workarea {grid-template-columns:minmax(0,1fr) 300px}}
+.gui-v3 main:has(.settings-container) {padding:24px !important}
+.gui-v3 .settings-container {height:calc(100vh - 110px)}
+.gui-v3 .settings-content {min-width:0}
+.gui-v3 #overview-source-links dl {display:grid;grid-template-columns:minmax(100px,1fr) 3fr;gap:8px}
+.gui-v3 #overview-source-links dd {margin:0;overflow-wrap:anywhere}
+@media(max-width:900px) {.gui-v3 .settings-sidebar {min-width:170px;width:170px}.gui-v3 .settings-content {padding:16px}}
+.gui-v3 #gui-files button[aria-selected=true] {background:#245c8b;color:white;border-color:#245c8b}
+@media(min-width:701px) and (max-width:1100px) {
+  .gui-v3 #shared-inspector {max-height:calc(100vh - 400px);min-height:200px}
+  .gui-v3 #shared-inspector.expanded {position:fixed;left:210px;right:20px;top:24px;bottom:24px;width:auto;max-height:none}
+}
+.gui-v3 button[aria-selected=true]:hover:not(:disabled) {background:#1b4b75;color:white;border-color:#1b4b75}

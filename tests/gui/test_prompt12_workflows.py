@@ -15,14 +15,13 @@ def test_enabled_overview_renders_answer_as_text(gui_page):
     page.route('**/api/chat/overview', answer)
     page.goto(origin + '/overview?profile=review')
     page.get_by_label('Your question').fill('Explain this fact')
-    page.get_by_label('Fact or context node ID').fill('fact:demo')
     page.locator('#overview-consent').check()
-    page.get_by_role('button', name='Send', exact=True).click()
+    page.get_by_role('button', name='Ask SciDK', exact=True).click()
     expect(page.locator('#overview-answer')).to_have_text('<img src=x onerror=alert(1)>')
     expect(page.locator('#overview-answer img')).to_have_count(0)
     expect(page.locator('#overview-sources')).to_contain_text('Synthetic')
     assert sent == [{'message': 'Explain this fact', 'send_question': True,
-                     'context': {'tool': 'explain_fact', 'arguments': {'fact_id': 'fact:demo'}}}]
+                     'scope': 'accessible'}]
 
 
 def test_sharing_preview_edit_reset_and_download(gui_page):

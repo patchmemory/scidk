@@ -39,6 +39,9 @@
       knowledge.hidden = selection.kind !== 'dataset' || !record.entity_ref;
       knowledge.href = base + '/knowledge?domain=research&id=' + encodeURIComponent(record.entity_ref || '');
     }
+    let ask = $('dataset-ask');
+    if (!ask && knowledge) { ask = document.createElement('a'); ask.id = 'dataset-ask'; ask.textContent = 'Ask about this dataset'; knowledge.after(ask); }
+    if (ask) { ask.hidden = selection.kind !== 'dataset' || !record.entity_ref; ask.href = base + '/overview?' + new URLSearchParams({domain: 'research', id: record.entity_ref || ''}); }
     const review = $('dataset-review');
     if (review) {
       review.hidden = selection.kind !== 'dataset' || !record.entity_ref;
