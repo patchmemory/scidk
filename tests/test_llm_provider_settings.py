@@ -181,7 +181,12 @@ def test_import_from_parley_env_on_single_user_install(tmp_path, monkeypatch):
     app = create_app()
     app.config['TESTING'] = True
     app.config['SCIDK_SETTINGS_DB'] = str(tmp_path / 'settings.db')
-    out = app.test_client().post('/api/llm/import-parley-env', json={'model': 'claude-sonnet-5-5'})
+    from scidk.core.auth import get_auth_manager
+    auth = get_auth_manager(db_path=app.config['SCIDK_SETTINGS_DB'])
+    uid = auth.create_user('admin', 'synthetic-password', role='admin')
+    client = app.test_client()
+    client.set_cookie('scidk_session', auth.create_user_session(uid, 'admin'))
+    out = client.post('/api/llm/import-parley-env', json={'model': 'claude-sonnet-5-5'})
     body = out.get_json()
     assert out.status_code == 200, body
     assert body['base_url'] == 'https://parley.example/v1' and body['key_hint'] == 'sk-…9999'

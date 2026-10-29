@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block title %}SciDK — Review{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/review_workspace.css') }}">
+<section id="review-workspace">
+<h1>Review</h1>
+<p>Examine permitted assertions and their evidence. Human decisions are recorded separately from graph application.</p>
+<nav aria-label="Review context"><a id="rw-return" href="{{ request.script_root }}/knowledge">Return to Knowledge</a> · <a href="{{ request.script_root }}/datasets">Files &amp; Datasets</a></nav>
+<form id="rw-filters" class="rw-toolbar" aria-label="Review queue filters">
+<label>Assertion kind <select id="rw-kind" aria-label="Assertion kind"><option value="">All kinds</option><option value="node">Node existence</option><option value="property">Property</option><option value="relationship">Relationship</option></select></label>
+<label>Domain <select id="rw-domain" aria-label="Domain"><option value="">All domains</option><option value="research">Research</option><option value="ontology">Ontology</option><option value="system">System</option></select></label>
+<label>Status <select id="rw-filter-status" aria-label="Status"><option value="">All statuses</option><option value="proposed">Proposed</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option><option value="superseded">Superseded</option></select></label>
+<label>Source Resource ID <input id="rw-source" maxlength="256"></label>
+<button id="rw-refresh">Apply filters</button><button type="button" id="rw-clear-context" hidden>Show permitted queue</button>
+</form>
+<p id="rw-status" role="status" aria-live="polite">Loading permitted assertions…</p>
+<div class="rw-columns">
+<section aria-labelledby="rw-queue-heading"><h2 id="rw-queue-heading">Assertion queue</h2><div id="rw-queue" aria-busy="true"></div><button id="rw-next" hidden>Next page</button>
+<details><summary>Queue capabilities</summary><p>Reviewer assignment is unavailable because the ledger has no assignment contract. Filters and pages include only permitted records. Discovery is bounded to 500 candidates.</p></details></section>
+<section id="rw-detail" aria-labelledby="rw-detail-heading"><h2 id="rw-detail-heading" tabindex="-1">Assertion inspector</h2>
+<p id="rw-selection">Select an assertion to inspect its permitted claim and citations.</p>
+<dl id="rw-summary"></dl>
+<h3>Claim</h3><pre id="rw-claim"></pre><h3>Evidence and citations</h3><div id="rw-evidence"></div>
+<details><summary>Decisions, conflicts and freshness</summary><p>Acceptance does not change inferred evidence into confirmed evidence. A decision does not prove graph application. Live source freshness is unavailable; compare the pinned source version and access time.</p><button id="rw-history" disabled>Load authorized decision history</button><pre id="rw-history-data"></pre><pre id="rw-conflicts"></pre></details>
+<section aria-label="Human review decision"><h3>Human decision</h3>
+<p>Requires a named administrator with an explicit reviewer grant and access to all affected support. Materialization is unavailable here.</p>
+<button id="rw-prepare" disabled>Prepare human decision</button>
+<form id="rw-decision" hidden>
+<label>Decision <select id="rw-action" aria-label="Decision"><option value="accept">Accept</option><option value="reject">Reject</option><option value="supersede">Supersede accepted assertion</option></select></label>
+<label id="rw-replacement-label" hidden>Replacement assertion ID <input id="rw-replacement" maxlength="256"></label>
+<label>Rationale <textarea id="rw-rationale" required maxlength="4000" rows="3"></textarea></label>
+<label><input id="rw-confirm" type="checkbox" required> I examined the evidence and confirm this human decision.</label>
+<button id="rw-decide">Record decision</button><button type="button" id="rw-cancel">Cancel</button>
+</form></section>
+</section>
+</div>
+<section id="rw-assistant" aria-labelledby="rw-assistant-heading"><h2 id="rw-assistant-heading">Review assistant</h2>
+<p>Explain the selected assertion and its permitted citations, compare uncertainty, or draft a proposal as text. The assistant cannot decide or apply changes. Each question uses fresh permissions; conversation history is not sent.</p>
+{% if assistant_enabled %}
+<form id="rw-chat"><label>Question about selected assertion <textarea id="rw-question" required maxlength="4000" rows="3"></textarea></label>
+<label><input id="rw-send-consent" type="checkbox" required> Send my question and the selected authorized assertion to my configured, approved provider.</label><button id="rw-send" disabled>Ask Review assistant</button></form>
+{% else %}<p>Assistant unavailable: SCIDK_REVIEW_CHAT_ENABLED must be enabled separately with approved provider configuration and grants.</p>{% endif %}
+<p id="rw-chat-status" role="status"></p><pre id="rw-answer"></pre><details><summary>Assistant source context</summary><pre id="rw-chat-sources"></pre></details>
+<details><summary>Submit an evidence-backed proposal</summary><p>Advanced: supply a validated assertion referencing existing evidence and a pinned ontology. An explicit proposal scope grant is required. Submission creates a proposal only; it does not accept or materialize it. Unstructured Sketch translation and evidence capture remain unavailable.</p>
+<form id="rw-proposal"><label>Assertion JSON <textarea id="rw-proposal-json" required rows="5"></textarea></label><label>Idempotency key <input id="rw-caller-key" required maxlength="256"></label><label><input id="rw-proposal-consent" type="checkbox" required> I explicitly permit submission of this proposal.</label><button id="rw-submit-proposal">Submit proposal</button></form><p id="rw-proposal-status" role="status"></p></details>
+</section>
+</section>
+<script defer src="{{ url_for('static', filename='js/review_workspace.js') }}"></script>
+{% endblock %}

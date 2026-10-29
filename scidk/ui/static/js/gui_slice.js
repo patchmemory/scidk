@@ -39,6 +39,11 @@
       knowledge.hidden = selection.kind !== 'dataset' || !record.entity_ref;
       knowledge.href = base + '/knowledge?domain=research&id=' + encodeURIComponent(record.entity_ref || '');
     }
+    const review = $('dataset-review');
+    if (review) {
+      review.hidden = selection.kind !== 'dataset' || !record.entity_ref;
+      review.href = base + '/review?domain=research&id=' + encodeURIComponent(record.entity_ref || '');
+    }
     document.querySelectorAll('[data-inspector-tab]').forEach(b => {
       const active = b.dataset.inspectorTab === state.inspectorTab;
       b.setAttribute('aria-selected', String(active)); b.setAttribute('tabindex', active ? '0' : '-1');

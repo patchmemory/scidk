@@ -5,10 +5,10 @@
 * ``PUT  /api/llm/settings``           {preset, base_url, model, api_key?, clear_key?}
 * ``GET  /api/llm/models``             models from the endpoint (?base_url= to try another)
 * ``POST /api/llm/test``               Test connection: list models, optionally a 1-token turn
-* ``POST /api/llm/import-parley-env``  single-user installs only: take the key from `parley env`
+* ``POST /api/llm/import-parley-env``  named admin, single-user installs only
 
-Everything is per caller: a user reads and writes only their own setting, so no
-role check beyond being logged in. The key never comes back from any route.
+Provider settings are per caller. Environment import additionally requires a
+named administrator on a single-user installation. Keys never return in full.
 """
 from __future__ import annotations
 
@@ -114,24 +114,39 @@ def test_connection():
 def _single_user_install() -> bool:
     from ...core.auth import get_auth_manager
     auth = get_auth_manager(db_path=_db())
-    if not auth.is_enabled():
-        return True
-    return len(auth.list_users(include_disabled=True)) <= 1
+    try:
+        return auth.is_enabled() and len(auth.list_users(include_disabled=True)) == 1
+    finally:
+        auth.close()
 
 
 @bp.post('/import-parley-env')
-@require_role(*_ROLES)
+@require_role('admin')
 def import_parley_env():
     """Explicit only. On a shared server `parley env` would hand every user the
     admin's key and billing, so this refuses unless the install has one user."""
     from ...ai.provider_settings import PARLEY_DEFAULT_BASE_URL, read_parley_env, save
+    # require_role intentionally bypasses checks on no-auth installations. OS
+    # credentials must never be imported through that bootstrap bypass or tokens.
+    from ...core.auth import get_auth_manager
+    auth = get_auth_manager(db_path=_db())
+    try:
+        token = request.cookies.get('scidk_session')
+        user = auth.get_session_user(token) if token and auth.is_enabled() else None
+        if (request.headers.get('Authorization') or not user or user.get('role') != 'admin'
+                or auth.is_session_locked(token)
+                or request.headers.get('Sec-Fetch-Site') not in (None, 'same-origin', 'none')
+                or (request.headers.get('Origin') and request.headers['Origin'].rstrip('/') != request.host_url.rstrip('/'))):
+            return jsonify(error='Named administrator session required'), 403
+    finally:
+        auth.close()
     if not _single_user_install():
         return jsonify({'error': 'Importing from `parley env` is only offered on a single-user install. '
                                  'Paste your own key instead.'}), 403
     try:
         env = read_parley_env()
-    except Exception as e:  # noqa: BLE001 - message is for the user
-        return jsonify({'error': str(e)}), 400
+    except Exception:
+        return jsonify({'error': 'Parley environment import unavailable'}), 400
     body = request.get_json(silent=True) or {}
     out = save(_db(), _me(), preset='parley',
                base_url=env.get('PARLEY_BASE_URL') or PARLEY_DEFAULT_BASE_URL,

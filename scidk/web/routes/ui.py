@@ -43,6 +43,9 @@ def _gui_page(page):
         abort(404)
     if page == 'Knowledge' and current_app.config.get('SCIDK_KNOWLEDGE_WORKSPACE_ENABLED', True) is True:
         return render_template('gui/knowledge.html')
+    if page == 'Review' and current_app.config.get('SCIDK_REVIEW_WORKSPACE_ENABLED') is True:
+        return render_template('gui/review.html',
+            assistant_enabled=current_app.config.get('SCIDK_REVIEW_CHAT_ENABLED') is True)
     return render_template('gui/workspace.html', page=page)
 
 
@@ -74,6 +77,51 @@ def knowledge_adapter(domain, operation):
         else:
             raise ValueError()
         return jsonify(status='success', result=result), 200, headers
+    except Exception:
+        return jsonify(REFUSAL), 403, headers
+
+
+@bp.post('/api/review/<operation>')
+def review_adapter(operation):
+    from ...agent_tools.context import context_from_app
+    from ...agent_tools.security import REFUSAL
+    from ...curation.contracts import ConflictError
+    from ...services import review_workspace as workspace
+    headers = {'Cache-Control': 'no-store'}
+    if (current_app.config.get('SCIDK_GUI_V3_ENABLED') is not True or
+            current_app.config.get('SCIDK_REVIEW_WORKSPACE_ENABLED') is not True or
+            request.headers.get('Authorization') or
+            request.headers.get('Sec-Fetch-Site') not in (None, 'same-origin', 'none') or
+            (request.headers.get('Origin') and request.headers['Origin'].rstrip('/') != request.host_url.rstrip('/'))):
+        return jsonify(REFUSAL), 403, headers
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify(status='error', error='JSON object required'), 400, headers
+    try:
+        ctx = workspace.authorized(context_from_app(current_app, channel='chat'))
+        if operation == 'queue':
+            result = workspace.queue(ctx, body)
+        elif operation == 'inspect' and not set(body) - {'id', 'history'}:
+            result = workspace.inspect(ctx, body.get('id'), history=body.get('history', False))
+        elif operation == 'preview' and set(body) == {'id'}:
+            if current_app.config.get('SCIDK_CURATION_ENABLED') is not True:
+                raise ValueError()
+            result = workspace.preview(ctx, current_app.extensions.get('curation_review'), body['id'])
+        elif operation == 'decide':
+            if current_app.config.get('SCIDK_CURATION_ENABLED') is not True:
+                raise ValueError()
+            result = workspace.decide(ctx, current_app.extensions.get('curation_review'), body)
+        elif operation == 'assistant' and current_app.config.get('SCIDK_REVIEW_CHAT_ENABLED') is True:
+            result = workspace.assistant(ctx, body)
+            if result.get('status') != 'success':
+                raise ValueError()
+        elif operation == 'propose':
+            result = workspace.propose(ctx, body)
+        else:
+            raise ValueError()
+        return jsonify(status='success', result=result), 200, headers
+    except ConflictError:
+        return jsonify(status='conflict', error='This item changed. Reload it and prepare a new decision.'), 409, headers
     except Exception:
         return jsonify(REFUSAL), 403, headers
 

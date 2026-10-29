@@ -1,0 +1,18 @@
+#review-workspace {color:#20364d;max-width:1600px;margin:auto}
+#review-workspace .rw-toolbar {display:flex;flex-wrap:wrap;gap:12px;align-items:end;margin-top:20px}
+#review-workspace label {display:block;margin:8px 0}
+#review-workspace input:not([type=checkbox]),#review-workspace select {padding:6px;max-width:100%}
+#review-workspace button {padding:8px 12px;cursor:pointer}
+#review-workspace button:disabled {cursor:default}
+#review-workspace :focus-visible {outline:3px solid #2168ab;outline-offset:3px}
+#review-workspace .rw-columns {display:grid;grid-template-columns:minmax(240px,1fr) minmax(0,2fr);gap:18px}
+#review-workspace section section,#rw-assistant {border:1px solid #ccd9e7;border-radius:8px;padding:16px;margin:14px 0;background:#f8fbff;min-width:0}
+#rw-queue button {display:block;width:100%;text-align:left;margin:8px 0;overflow-wrap:anywhere;background:white;border:1px solid #ccd9e7;border-radius:5px}
+#rw-queue button[aria-current=true] {border:2px solid #2168ab}
+#review-workspace pre {white-space:pre-wrap;overflow-wrap:anywhere;max-height:380px;overflow:auto;background:white;padding:10px}
+#review-workspace textarea {display:block;width:100%;box-sizing:border-box}
+#review-workspace dl {display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px}
+#review-workspace dd {margin:0;overflow-wrap:anywhere}
+#review-workspace details {margin:14px 0}
+#review-workspace summary {cursor:pointer}
+@media(max-width:1100px){#review-workspace .rw-columns{grid-template-columns:1fr}}
