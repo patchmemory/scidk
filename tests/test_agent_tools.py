@@ -187,8 +187,9 @@ def test_all_adapters_list_the_same_tools(client):
     spec = client.get('/api/agent/openapi.json').get_json()
     openapi = {op['post']['operationId'] for op in spec['paths'].values()}
     import scidk.mcp_server as mcp_server  # list_tools reads the registry, minus CHAT_ONLY
-    mcp = {t['name'] for t in mcp_server.mcp_tools.TOOL_DEFINITIONS if t['name'] not in mcp_server.CHAT_ONLY}
-    assert http == funcs == openapi == mcp == set(registry.tool_names())
+    mcp = {t['name'] for t in mcp_server.ScidkMcpServer().tool_definitions()}
+    # Static catalog membership no longer grants runtime tool discovery.
+    assert http == funcs == openapi == mcp == set()
     assert spec['openapi'] == '3.1.0'
 
 

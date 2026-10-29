@@ -34,12 +34,17 @@ def _driver(app) -> Any:
         return driver, database
 
 
-def context_from_app(app, user: Optional[str] = None) -> ToolContext:
+def context_from_app(app, user: Optional[str] = None, *, channel='http') -> ToolContext:
     from .security import identity_from_request
+    from flask import request
     db = app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
     try:
-        identity = identity_from_request(db, channel='http')
+        identity = identity_from_request(db, channel=channel)
     except Exception:
         identity = None
     # Refused legacy queries must not initialize graph drivers or touch files.db.
-    return ToolContext(settings_db=db, identity=identity)
+    return ToolContext(settings_db=db, identity=identity,
+                       profile=request.args.get('profile', app.config.get('SCIDK_ASSISTANT_PROFILE', 'overview')),
+                       knowledge=app.extensions.get('knowledge_services'),
+                       knowledge_enabled=app.config.get('SCIDK_KNOWLEDGE_CONTEXT_ENABLED', False) is True,
+                       proposal_enabled=app.config.get('SCIDK_CURATION_ENABLED', False) is True)

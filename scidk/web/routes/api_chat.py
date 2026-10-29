@@ -3169,3 +3169,23 @@ def api_concept_graph_reseed():
         }), 200
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500
+
+
+@bp.get('/chat/functions.json')
+def api_chat_functions():
+    """Scoped discovery for the existing per-user chat/provider configuration."""
+    from ...agent_tools.context import context_from_app
+    from ...agent_tools.registry import openai_functions
+    return jsonify(openai_functions(ctx=context_from_app(current_app, channel='chat')))
+
+
+@bp.post('/chat/tools/<name>')
+def api_chat_tool(name):
+    """Fixed tool execution adapter; no unscoped history, planner or model call."""
+    from ...agent_tools.context import context_from_app
+    from ...agent_tools.registry import run_tool
+    body = request.get_json(silent=True)
+    if body is None and request.data:
+        return jsonify(status='error', error='Body must be JSON'), 400
+    return jsonify(run_tool(name, {} if body is None else body,
+                            context_from_app(current_app, channel='chat')))

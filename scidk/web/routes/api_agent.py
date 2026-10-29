@@ -7,7 +7,7 @@
 * ``GET/PUT /api/agent/sharing``       per-property sharing_mode (raw / hidden)
 
 Nothing here defines or runs a tool itself: every run goes through
-``agent_tools.registry.run_tool``, which applies ``filter_for_agent``. Auth is the
+``agent_tools.registry.run_tool``, which applies the shared scoped authorization and disclosure checks. Auth is the
 app's own: a session or a per-user Bearer API token, same roles as the UI.
 """
 from __future__ import annotations
@@ -28,8 +28,9 @@ def _public(tool):
 @bp.get('/tools')
 @require_role(*_READ_ROLES)
 def list_tools():
-    from ...agent_tools.registry import CHAT_ONLY, TOOL_DEFINITIONS
-    tools = [_public(t) for t in TOOL_DEFINITIONS if t['name'] not in CHAT_ONLY]
+    from ...agent_tools.registry import CHAT_ONLY, available_tool_definitions
+    from ...agent_tools.context import context_from_app
+    tools = [_public(t) for t in available_tool_definitions(context_from_app(current_app)) if t['name'] not in CHAT_ONLY]
     return jsonify({'tools': tools, 'count': len(tools)})
 
 
@@ -44,7 +45,7 @@ def run(name: str):
     if body is None and request.data:
         return jsonify({'status': 'error', 'error': 'Body must be JSON'}), 400
     ctx = context_from_app(current_app, getattr(g, 'scidk_user', None))
-    result = run_tool(name, body or {}, ctx)
+    result = run_tool(name, {} if body is None else body, ctx)
     return jsonify(result), 200
 
 
@@ -52,17 +53,19 @@ def run(name: str):
 @require_role(*_READ_ROLES)
 def functions():
     from ...agent_tools.registry import openai_functions
-    return jsonify(openai_functions())
+    from ...agent_tools.context import context_from_app
+    return jsonify(openai_functions(ctx=context_from_app(current_app)))
 
 
 @bp.get('/openapi.json')
 def openapi():
     """No role check: it only describes the API. With auth on, the app middleware still
     requires a session or token, so a hosted importer needs one too."""
-    from ...agent_tools.registry import CHAT_ONLY, TOOL_DEFINITIONS
+    from ...agent_tools.registry import CHAT_ONLY, available_tool_definitions
+    from ...agent_tools.context import context_from_app
     base = request.host_url.rstrip('/') + (request.script_root or '')
     paths = {}
-    for t in TOOL_DEFINITIONS:
+    for t in available_tool_definitions(context_from_app(current_app)):
         if t['name'] in CHAT_ONLY:
             continue
         paths[f"/api/agent/tools/{t['name']}"] = {'post': {
@@ -78,8 +81,8 @@ def openapi():
     return jsonify({
         'openapi': '3.1.0',
         'info': {'title': 'SciDK agent tools', 'version': '1.0.0',
-                 'description': 'Read-only tools over this SciDK instance. Results are filtered by SciDK '
-                                'sharing settings before they are returned.'},
+                 'description': 'Scoped knowledge tools permitted for this authenticated principal and assistant profile. '
+                                'Proposals require explicit grants; review and materialization are human-only.'},
         'servers': [{'url': base}],
         'paths': paths,
         'components': {

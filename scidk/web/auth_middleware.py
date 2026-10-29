@@ -180,6 +180,7 @@ def enforce_agent_token_boundary():
             auth.close()
     if token_id:
         if request.endpoint not in {'api_agent.list_tools', 'api_agent.run',
-                                    'api_agent.functions', 'api_agent.openapi'}:
+                                    'api_agent.functions', 'api_agent.openapi',
+                                    'chat.api_chat_tool', 'chat.api_chat_functions'}:
             from ..agent_tools.security import REFUSAL
             return jsonify(REFUSAL), 403

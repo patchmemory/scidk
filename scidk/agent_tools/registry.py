@@ -6,7 +6,8 @@ the definitions stay JSON-serialisable for /api/platform/tools and seeding.
 
 ``run_tool`` checks the current disclosure authority before execution. Legacy
 unscoped handlers are suspended; only a future explicitly scoped template may
-release records. ``openai_functions`` is the catalog view, with suspension notes.
+release records. Scoped knowledge tools use the shared authenticated boundary;
+``openai_functions`` returns only permitted runtime definitions.
 """
 from __future__ import annotations
 
@@ -215,6 +216,11 @@ for _definition in TOOL_DEFINITIONS:
                                   'this legacy tool refuses execution. ' + _definition['description'])
 
 
+# Static catalog for trusted internal consumers. Runtime discovery is filtered.
+from .knowledge import DEFINITIONS as KNOWLEDGE_DEFINITIONS, NAMES as KNOWLEDGE_NAMES
+TOOL_DEFINITIONS.extend(KNOWLEDGE_DEFINITIONS)
+
+
 def get_tool_definitions(category: Optional[str] = None) -> List[Dict[str, Any]]:
     """Return the canonical tool registry, optionally narrowed to one category.
 
@@ -257,6 +263,8 @@ _HANDLERS: Dict[str, Callable[..., Dict[str, Any]]] = {
     'search_datasets': tools_sql.search_datasets,
     'unclaimed_summary': tools_sql.unclaimed_summary,
 }
+from .knowledge import dispatch as _knowledge_dispatch
+_HANDLERS.update({name: _knowledge_dispatch for name in KNOWLEDGE_NAMES})
 _BY_NAME = {t['name']: t for t in TOOL_DEFINITIONS}
 
 
@@ -270,6 +278,10 @@ class ToolContext:
     user: Optional[str] = None
     policy: SharingPolicy = field(default_factory=SharingPolicy)
     identity: Any = None
+    profile: str = 'overview'
+    knowledge: Any = None
+    knowledge_enabled: bool = False
+    proposal_enabled: bool = False
 
 
 def tool_names(include_chat_only: bool = False) -> List[str]:
@@ -278,6 +290,8 @@ def tool_names(include_chat_only: bool = False) -> List[str]:
 
 def run_tool(name: str, arguments: Optional[Dict[str, Any]], ctx: ToolContext) -> Dict[str, Any]:
     """Agent boundary. Legacy unscoped handlers are suspended, never executed."""
+    if name in KNOWLEDGE_NAMES:
+        return _run_knowledge(name, arguments, ctx)
     if name not in _HANDLERS:
         return {"status": "error", "error": f"Unknown tool: {name}"}
     if arguments is not None and not isinstance(arguments, dict):
@@ -294,16 +308,54 @@ def run_tool(name: str, arguments: Optional[Dict[str, Any]], ctx: ToolContext) -
     try:
         with PolicyStore(ctx.settings_db).resolve(ctx.identity):
             # Every legacy handler queries an unscoped graph or file-index view.
-            # No source-aware template is registered yet. Refuse BEFORE handler
-            # execution, even for an otherwise approved principal/destination.
+            # Scoped tools use the separate branch above. Refuse these legacy
+            # handlers even for an otherwise approved principal/destination.
             return dict(REFUSAL)
     except Exception:
         return dict(REFUSAL)
 
 
-def openai_functions(include_chat_only: bool = False) -> List[Dict[str, Any]]:
+def openai_functions(include_chat_only: bool = False, *, ctx=None) -> List[Dict[str, Any]]:
     """The registry as OpenAI-style tool definitions (what the chat sends to Parley)."""
     return [{"type": "function",
              "function": {"name": t['name'], "description": t['description'],
                           "parameters": t['input_schema']}}
-            for t in TOOL_DEFINITIONS if include_chat_only or t['name'] not in CHAT_ONLY]
+            for t in available_tool_definitions(ctx) if include_chat_only or t['name'] not in CHAT_ONLY]
+
+
+def available_tool_definitions(ctx=None):
+    """Runtime discovery only. No identity/capability/backend implies no tools."""
+    from copy import deepcopy
+    from .security import PolicyStore
+    from .capabilities import permitted_tools
+    from .knowledge import KnowledgeServices
+    try:
+        if not ctx or not ctx.knowledge_enabled or not isinstance(ctx.knowledge, KnowledgeServices):
+            return []
+        with PolicyStore(ctx.settings_db).resolve(ctx.identity) as policy:
+            names = permitted_tools(policy, ctx.profile)
+            return deepcopy([t for t in TOOL_DEFINITIONS if t['name'] in names and ctx.knowledge.ready(t['name'])
+                             and (t['name'] != 'submit_assertion' or ctx.proposal_enabled)])
+    except Exception:
+        return []
+
+
+def _run_knowledge(name, arguments, ctx):
+    from jsonschema import Draft202012Validator
+    from .security import PolicyStore, REFUSAL, DisclosureDenied
+    from .capabilities import permitted_tools
+    from .knowledge import KnowledgeServices
+    from ..curation.contracts import canonical
+    try:
+        if (not ctx.knowledge_enabled or not isinstance(ctx.knowledge, KnowledgeServices) or not ctx.knowledge.ready(name)
+                or (name == 'submit_assertion' and not ctx.proposal_enabled)):
+            raise DisclosureDenied()
+        with PolicyStore(ctx.settings_db).resolve(ctx.identity) as policy:
+            if name not in permitted_tools(policy, ctx.profile):
+                raise DisclosureDenied()
+            args = {} if arguments is None else arguments
+            if len(canonical(args).encode()) > 65536 or not Draft202012Validator(_BY_NAME[name]['input_schema']).is_valid(args):
+                return {'status': 'error', 'error': 'Invalid tool arguments.'}
+            return _knowledge_dispatch(name, args, ctx, policy)
+    except Exception:
+        return dict(REFUSAL)

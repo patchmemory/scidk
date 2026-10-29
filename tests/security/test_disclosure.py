@@ -211,7 +211,7 @@ def test_all_arbitrary_queries_refused_before_execution(secured, monkeypatch, qu
     assert run_tool('query_knowledge_graph', {'cypher': query}, ctx) == REFUSAL
 
 
-def test_all_existing_tools_refuse_even_for_approved_principal(secured, monkeypatch):
+def test_legacy_and_disabled_tools_refuse_even_for_approved_principal(secured, monkeypatch):
     from scidk.agent_tools import registry
     s = secured
     for name in tool_names():
@@ -219,7 +219,10 @@ def test_all_existing_tools_refuse_even_for_approved_principal(secured, monkeypa
         schema = registry._BY_NAME[name]['input_schema']
         args = {key: 'synthetic' for key in schema.get('required', [])}
         assert run_tool(name, args, ToolContext(settings_db=s.db, identity=s.identity)) == REFUSAL
-    assert not any('assertion' in name or 'materializ' in name or 'review' in name for name in tool_names())
+    # Stage 5 adds scoped assertion tools, still disabled without explicit
+    # service/flag/profile/capability setup. Human decision tools remain absent.
+    assert registry.available_tool_definitions(ToolContext(settings_db=s.db, identity=s.identity)) == []
+    assert not any('materializ' in name or 'review' in name or 'supersede' in name for name in tool_names())
 
 
 def test_arbitrary_result_filter_never_trusts_source_hints():

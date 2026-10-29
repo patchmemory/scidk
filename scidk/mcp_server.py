@@ -1,30 +1,9 @@
 #!/usr/bin/env python3
-"""
-SciDK MCP Server - Model Context Protocol server exposing core SciDK tools.
+"""SciDK MCP adapter over the canonical scoped agent registry.
 
-This server provides external AI agents (Claude Desktop, etc.) with access to:
-- Neo4j knowledge graph querying
-- Schema introspection
-- Dataset summarization
-- Label profile retrieval
-
-Usage:
-    python -m scidk.mcp_server
-
-Or add to Claude Desktop config:
-    {
-      "mcpServers": {
-        "scidk": {
-          "command": "python",
-          "args": ["-m", "scidk.mcp_server"],
-          "env": {
-            "NEO4J_URI": "bolt://localhost:7687",
-            "NEO4J_USER": "neo4j",
-            "NEO4J_PASSWORD": "password"
-          }
-        }
-      }
-    }
+Stdio has no principal binding and advertises no tools. A trusted host may inject
+an authenticated ToolContext; discovery/execution still recheck all policy. No
+identity is accepted from environment variables or tool arguments.
 """
 import asyncio
 import os
@@ -56,11 +35,11 @@ class ScidkMcpServer:
     """
     SciDK MCP Server implementation.
 
-    Provides 5 core tools for external AI agents to interact with SciDK.
+    Shares the HTTP/chat handlers; never constructs an unscoped graph context.
     """
 
-    def __init__(self):
-        """Initialize server with Neo4j connection."""
+    def __init__(self, *, tool_context=None):
+        """Initialize without graph I/O; stdio remains unbound by default."""
         self.neo4j_uri = os.getenv('NEO4J_URI', 'bolt://localhost:7687')
         self.neo4j_user = os.getenv('NEO4J_USER', 'neo4j')
         self.neo4j_password = os.getenv('NEO4J_PASSWORD', 'password')
@@ -83,6 +62,10 @@ class ScidkMcpServer:
         # Stdio has no authenticated principal or approved destination. No graph
         # connection may be attempted for calls which will be refused.
         self.driver = None
+        # Only a trusted hosting adapter can inject a verified server binding.
+        # Stdio/env/tool arguments never construct identities or capabilities.
+        from scidk.agent_tools.registry import ToolContext
+        self.tool_context = tool_context if tool_context is not None else ToolContext(settings_db=self.settings_db_path)
 
     def close(self):
         """Close Neo4j connection."""
@@ -91,7 +74,11 @@ class ScidkMcpServer:
 
     def dispatch(self, name, arguments):
         from scidk.agent_tools.registry import ToolContext, run_tool
-        return run_tool(name, arguments, ToolContext(settings_db=self.settings_db_path))
+        return run_tool(name, arguments, self.tool_context)
+
+    def tool_definitions(self):
+        from scidk.agent_tools.registry import available_tool_definitions
+        return available_tool_definitions(self.tool_context)
 
     async def query_knowledge_graph(self, cypher, parameters=None, limit=50):
         return self.dispatch('query_knowledge_graph', dict(cypher=cypher, parameters=parameters, limit=limit))
@@ -136,7 +123,7 @@ async def main():
                 description=tool_def["description"],
                 inputSchema=tool_def["input_schema"]
             )
-            for tool_def in mcp_tools.TOOL_DEFINITIONS
+            for tool_def in scidk_server.tool_definitions()
             if tool_def["name"] not in CHAT_ONLY
         ]
 
@@ -144,7 +131,7 @@ async def main():
     async def call_tool(name: str, arguments: Any) -> List[TextContent]:
         """Run a tool through the shared registry, so the result passes the same
         disclosure filter as every other adapter (agent_tools.run_tool)."""
-        result = scidk_server.dispatch(name, arguments or {})
+        result = scidk_server.dispatch(name, {} if arguments is None else arguments)
         return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
     # Run server

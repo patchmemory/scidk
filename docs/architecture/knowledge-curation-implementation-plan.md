@@ -13,8 +13,10 @@ boundary after policy approval in `codex_prompt_05.txt`: 406 relevant tests pass
 are suspended; no new agent-facing curation tools are enabled.
 [Implementation stage 4](knowledge-curation-stage-4.md) adds bounded generated
 system/ontology projections and an offline selected-concept registry after review.
-The MONDO example uses a separately approved fixture-only ontology. Stages 5–6
-remain pending; Stage 5 requires review of Stage 4 results.
+The MONDO example uses a separately approved fixture-only ontology.
+[Implementation stage 5](knowledge-curation-stage-5.md) adds shared scoped tools,
+explicit proposal capabilities and declarative assistant profiles after Stage 4
+review. Stage 6 remains pending and requires review of Stage 5 results.
 The historical design-stage completion report below predates this approval.
 
 ## Focused implementation commits after approval

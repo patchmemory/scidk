@@ -1,7 +1,7 @@
 """Bounded, internal-only disclosure of applied, currently supported ledger facts.
 
-No graph payloads are trusted. No tool/route is registered here. A future fixed
-agent template can call read_fact; arbitrary query results cannot use this path.
+No graph payloads are trusted. The shared explain_fact handler calls read_fact;
+arbitrary query results cannot use this path.
 """
 import json
 from contextlib import closing

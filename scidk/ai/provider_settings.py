@@ -190,3 +190,45 @@ def disclosed_fact_turn(settings_db, identity, disclosure, fact_id, *, include_e
         return {'status': 'success', 'finish_reason': 'sent'}
     except Exception:
         return dict(REFUSAL)
+
+
+def disclosed_tool_turn(ctx, name, arguments):
+    """Internal fixed-result send over the existing OpenAI-compatible client.
+
+    No caller-supplied messages/history/provider overrides and no autonomous tool
+    loop. Proposal invocation still requires the shared explicit capability and
+    scoped grants. Provider text is not treated as authorized stored knowledge.
+    """
+    from ..agent_tools.registry import run_tool, openai_functions, available_tool_definitions
+    from ..agent_tools.security import PolicyStore, REFUSAL, endpoint_identity
+    from .openai_compatible import chat_completion
+    try:
+        with PolicyStore(ctx.settings_db).resolve(ctx.identity) as policy:
+            configured = credentials(ctx.settings_db, policy.username)
+            if (not configured or endpoint_identity(configured['base_url']) != policy.destination[1]
+                    or configured['model'] != policy.destination[2]):
+                return dict(REFUSAL)
+        if name not in {t['name'] for t in available_tool_definitions(ctx)}:
+            return dict(REFUSAL)
+        result = run_tool(name, arguments, ctx)
+        if result.get('status') != 'success':
+            return dict(REFUSAL)
+        with PolicyStore(ctx.settings_db).resolve(ctx.identity) as policy:
+            current = credentials(ctx.settings_db, policy.username)
+            if (not current or endpoint_identity(current['base_url']) != policy.destination[1]
+                    or current['model'] != policy.destination[2]
+                    or current['base_url'] != configured['base_url'] or current['model'] != configured['model']):
+                return dict(REFUSAL)
+            # All shared authorization is re-evaluated immediately before send.
+            # submit_assertion replay is actor-scoped/idempotent, never a second proposal.
+            result = run_tool(name, arguments, ctx)
+            definitions = openai_functions(ctx=ctx)
+            if result.get('status') != 'success' or name not in {d['function']['name'] for d in definitions}:
+                return dict(REFUSAL)
+            import json
+            outbound = (current['base_url'], current['api_key'], current['model'],
+                        [{'role': 'user', 'content': json.dumps(result)}])
+        chat_completion(*outbound, tools=definitions)
+        return {'status': 'success', 'finish_reason': 'sent'}
+    except Exception:
+        return dict(REFUSAL)
