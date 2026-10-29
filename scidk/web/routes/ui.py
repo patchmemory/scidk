@@ -41,7 +41,41 @@ def _gui_page(page):
     if current_app.config.get('SCIDK_GUI_V3_ENABLED') is not True:
         from flask import abort
         abort(404)
+    if page == 'Knowledge' and current_app.config.get('SCIDK_KNOWLEDGE_WORKSPACE_ENABLED', True) is True:
+        return render_template('gui/knowledge.html')
     return render_template('gui/workspace.html', page=page)
+
+
+@bp.route('/api/knowledge/<domain>/<operation>', methods=['POST'])
+def knowledge_adapter(domain, operation):
+    """Governed human-only adapters, independent of preserved legacy APIs."""
+    from dataclasses import replace
+    from ...agent_tools.context import context_from_app
+    from ...agent_tools.security import REFUSAL
+    from ...services import knowledge_workspace as workspace
+    headers = {'Cache-Control': 'no-store'}
+    if (current_app.config.get('SCIDK_GUI_V3_ENABLED') is not True or
+            current_app.config.get('SCIDK_KNOWLEDGE_WORKSPACE_ENABLED', True) is not True):
+        return jsonify(REFUSAL), 403, headers
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify(status='error', error='JSON object required'), 400, headers
+    try:
+        ctx = replace(context_from_app(current_app, channel='chat'), profile='overview')
+        if operation in {'search', 'inspect', 'expand'} and domain == 'research':
+            result = workspace.research(ctx, operation, body)
+        elif operation == 'context':
+            result = workspace.context(ctx, domain, body)
+        elif operation in {'load', 'save'}:
+            if set(body) - {'kind', 'canvas'} or (operation == 'load' and 'canvas' in body) or (operation == 'save' and not isinstance(body.get('canvas'), dict)):
+                raise ValueError()
+            result = workspace.canvas(ctx, domain, body.get('canvas') if operation == 'save' else None,
+                                      kind=body.get('kind', 'sketch'))
+        else:
+            raise ValueError()
+        return jsonify(status='success', result=result), 200, headers
+    except Exception:
+        return jsonify(REFUSAL), 403, headers
 
 
 @bp.get('/overview')

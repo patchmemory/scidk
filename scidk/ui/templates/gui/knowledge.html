@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block title %}SciDK — Knowledge{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/knowledge_workspace.css') }}">
+<section id="knowledge-workspace">
+<h1>Knowledge</h1>
+<p>Explore supported knowledge and keep exploratory drafts separate from reviewed facts.</p>
+<div class="kw-toolbar">
+<label>Domain <select id="kw-domain"><option value="research">Research</option><option value="ontology">Ontology</option><option value="system">System</option></select></label>
+<div role="tablist" aria-label="Knowledge views">{% for view in ['Graph','Entities','Sketch'] %}<button role="tab" id="kw-tab-{{ view|lower }}" aria-controls="kw-{{ view|lower }}-pane" aria-selected="{{ 'true' if loop.first else 'false' }}">{{ view }}</button>{% endfor %}</div>
+<label>Layout <select id="kw-layout"><option value="single">Single pane</option><option value="split">Split pane</option><option value="three">Three panes</option></select></label>
+<button id="kw-save-layout">Save layout preference</button>
+</div>
+<form id="kw-search-form"><label for="kw-search">Search authorized Research entities</label><input id="kw-search" maxlength="256"><label id="kw-label-label">Entity type <input id="kw-label" maxlength="128"></label><button id="kw-search-button">Search</button></form>
+<form id="kw-context-form" hidden><label for="kw-context-id">Context node ID</label><input id="kw-context-id" maxlength="256"><label id="kw-catalog-label">Registered catalog <input id="kw-catalog" value="canonical" maxlength="256"></label><button>Load context</button></form>
+<p id="kw-status" role="status">Access requires a named session, source/evidence grants, and an approved stored provider. No model request is made here.</p>
+<p id="kw-blockers" role="alert" hidden></p>
+<div id="kw-panes" data-layout="single">
+<section id="kw-graph-pane" role="tabpanel" aria-labelledby="kw-tab-graph">
+<h2>Graph</h2><div class="kw-toolbar">
+<label>Layout algorithm <select id="kw-algorithm"><option value="cose">Force directed</option><option value="circle">Circle</option><option value="grid">Grid</option><option value="breadthfirst">Breadth first</option></select></label>
+<button id="kw-apply-layout">Apply layout</button><button id="kw-fit">Fit</button><button id="kw-expand">Expand selected</button>
+<label>Relationship filter <select id="kw-edge-filter"><option value="">All relationships</option></select></label>
+<label>Node color <input id="kw-color" type="color" value="#4e79a7"></label>
+<button id="kw-save-graph">Save graph view</button><button id="kw-load-graph">Reopen graph view</button>
+</div><div id="kw-graph" class="kw-cytoscape" aria-label="Authorized knowledge graph"></div>
+</section>
+<section id="kw-entities-pane" hidden role="tabpanel" aria-labelledby="kw-tab-entities"><h2>Entities</h2><p>Only permitted, currently supported records or authorized projection entries appear.</p><div id="kw-entities"></div><button id="kw-next" hidden>Next page</button></section>
+<section id="kw-sketch-pane" hidden role="tabpanel" aria-labelledby="kw-tab-sketch"><h2>Sketch</h2>
+<p>Private, user-authored drafts. Markers describe planning intent; they do not submit assertions or indicate a real review decision.</p>
+<div class="kw-toolbar"><label>Draft type <input id="kw-draft-type" value="Concept" maxlength="128"></label><label>Name <input id="kw-draft-name" maxlength="256"></label><button id="kw-add-node">Add draft node</button><button id="kw-add-reference">Reference selected knowledge</button><button id="kw-remove-draft">Remove selected</button><button id="kw-arrange-draft">Arrange draft</button></div>
+<div class="kw-toolbar"><label>Source draft ID <input id="kw-edge-source" maxlength="256"></label><label>Target draft ID <input id="kw-edge-target" maxlength="256"></label><label>Relationship <input id="kw-edge-type" maxlength="128"></label><button id="kw-add-edge">Add draft relationship</button></div>
+<div class="kw-toolbar"><label>Planning marker <select id="kw-marker"><option>unresolved</option><option>suggested investigation</option><option>proposed assertion</option><option>pending human review</option></select></label><button id="kw-set-marker">Mark selected draft</button><button id="kw-save-sketch">Save private draft</button><button id="kw-load-sketch">Reopen private draft</button></div>
+<label>Notes, incomplete concepts and proposed adaptations <textarea id="kw-notes" maxlength="8000" rows="3"></textarea></label>
+<div id="kw-sketch" class="kw-cytoscape" aria-label="Private knowledge sketch"></div>
+<p>Unavailable: automatic investigation, Sketch-to-curation submission, direct graph commit, ontology mutation and sharing. Use the existing reviewed curation workflow when a governed adapter is available.</p>
+<button disabled>Investigate</button><button disabled>Submit proposal</button><button disabled>Commit to graph</button>
+</section>
+</div>
+<aside id="kw-inspector" aria-label="Knowledge inspector"><h2>Inspector</h2><p id="kw-trust">Select an entity or relationship to inspect authorized support.</p><pre id="kw-inspection"></pre><button id="kw-show-entities">Show in Entities</button><button id="kw-show-graph">Show in Graph</button><a id="kw-review-link" href="{{ request.script_root }}/review">Review</a><a id="kw-files-link" href="{{ request.script_root }}/datasets">Files &amp; Datasets</a><p>Only permitted source details are shown. Review history is unavailable here, and review decisions are never inferred from graph presence.</p></aside>
+<details><summary>Preserved legacy interfaces and saved records</summary><p>These retain their existing behavior and are separate from this governed workspace.</p><a href="{{ request.script_root }}/map">Maps &amp; Canvas</a> · <a href="{{ request.script_root }}/entities">Entities</a> · <a href="{{ request.script_root }}/entities?tab=relationships">Relationships</a> · <a href="{{ request.script_root }}/results">Results</a></details>
+</section>
+<script src="{{ url_for('static', filename='vendor/cytoscape/cytoscape.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/graph_utils.js') }}"></script>
+<script src="{{ url_for('static', filename='js/canvas_editor.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/knowledge_workspace.js') }}"></script>
+{% endblock %}

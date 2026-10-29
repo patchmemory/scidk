@@ -399,6 +399,7 @@
     </div>
 
 <script src="https://unpkg.com/cytoscape@3.27.0/dist/cytoscape.min.js"></script>
+<script src="{{ url_for('static', filename='js/canvas_editor.js') }}"></script>
 <!-- Canvas mode (Push 2): edge drawing.
      cytoscape-edgehandles' UMD reads window._.memoize/throttle, so lodash must
      load first; it then auto-registers cy.edgehandles against the global cytoscape. -->
@@ -1805,19 +1806,8 @@
     if (!label) return;
     const name = (prompt('Node name:', '') || '').trim();
     if (!name) return;
-    const ext = cy.extent();
-    const id = 'prov-' + Math.random().toString(36).slice(2, 10);
-    const def = {
-      group: 'nodes',
-      // baseLabel keeps the node's TYPE stable for sidebar styling even if
-      // applyGraphFormatting later rewrites data('label') to a display name (Push 6).
-      data: { id, label, baseLabel: label, displayLabel: name, properties: { name }, provisional: true },
-      position: { x: (ext.x1 + ext.x2) / 2 + (Math.random() - 0.5) * 120,
-                  y: (ext.y1 + ext.y2) / 2 + (Math.random() - 0.5) * 120 },
-      grabbable: true,
-    };
-    const ur = getUr(tabId);
-    if (ur) ur.do('add', def); else cy.add(def);
+    const def = SciDKCanvas.provisionalNode(cy, label, name);
+    SciDKCanvas.add(cy, def, getUr(tabId));
     ensureProvisionalInSidebar(tabId);  // Push 6: surface new label for styling
     scheduleSessionSave(tabId);
   }
@@ -1827,8 +1817,7 @@
     if (!cy) return;
     const sel = cy.$(':selected');
     if (sel.nonempty()) {
-      const ur = getUr(tabId);
-      if (ur) ur.do('remove', sel); else sel.remove();
+      SciDKCanvas.remove(cy, getUr(tabId));
       scheduleSessionSave(tabId);
     }
   }

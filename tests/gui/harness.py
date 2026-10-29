@@ -30,6 +30,9 @@ def make_gui_app():
 def make_disposable_app():
     app = make_gui_app()
     app.config['SCIDK_GUI_V3_ENABLED'] = True
+    # Preserve the Prompt 10/12 visual fixture while new Knowledge candidates
+    # receive separate human review. Real governed workflows use their own app.
+    app.config['SCIDK_KNOWLEDGE_WORKSPACE_ENABLED'] = False
     app.extensions['gui_test_requests'] = []
 
     @app.before_request

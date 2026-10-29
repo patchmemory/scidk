@@ -1,0 +1,14 @@
+#knowledge-workspace {max-width:100%; padding:12px; color:#203448}
+#knowledge-workspace button,#knowledge-workspace input,#knowledge-workspace select {margin:4px;padding:6px;max-width:100%}
+.kw-toolbar {display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+#kw-panes {display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-top:12px}
+#kw-panes[data-layout=split] {grid-template-columns:repeat(2,minmax(0,1fr))}
+#kw-panes[data-layout=three] {grid-template-columns:repeat(3,minmax(0,1fr))}
+#kw-panes > section,#kw-inspector {min-width:0;border:1px solid #ccd7e3;border-radius:8px;padding:12px;background:#f9fbfd}
+.kw-cytoscape {height:440px;width:100%;min-width:0;background:white;border:1px solid #d9e3ec;resize:vertical;overflow:hidden}
+#kw-inspector {margin-top:12px} #kw-inspection {white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto}
+#kw-entities button {display:block;width:100%;text-align:left;overflow-wrap:anywhere}
+#kw-inspector a {display:inline-block;margin:6px}
+#kw-notes {display:block;width:100%;box-sizing:border-box} #kw-blockers {color:#8c320c}
+#knowledge-workspace :focus-visible {outline:3px solid #165dba;outline-offset:2px}
+@media(max-width:1000px) {#kw-panes[data-layout] {grid-template-columns:minmax(0,1fr)}}

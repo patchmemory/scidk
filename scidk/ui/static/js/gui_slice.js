@@ -34,6 +34,11 @@
     const record = selection.record;
     $('inspector-title').textContent = (selection.kind === 'dataset' ? 'Dataset: ' : 'File / folder: ') + (record.name || record.path || selection.key);
     $('dataset-sharing').hidden = selection.kind !== 'dataset';
+    const knowledge = $('dataset-knowledge');
+    if (knowledge) {
+      knowledge.hidden = selection.kind !== 'dataset' || !record.entity_ref;
+      knowledge.href = base + '/knowledge?domain=research&id=' + encodeURIComponent(record.entity_ref || '');
+    }
     document.querySelectorAll('[data-inspector-tab]').forEach(b => {
       const active = b.dataset.inspectorTab === state.inspectorTab;
       b.setAttribute('aria-selected', String(active)); b.setAttribute('tabindex', active ? '0' : '-1');

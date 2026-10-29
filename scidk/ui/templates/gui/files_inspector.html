@@ -14,6 +14,7 @@
 <div role="tablist" aria-label="Inspector">{% for tab in ['Metadata','Annotations','Provenance'] %}<button role="tab" id="inspector-tab-{{ tab|lower }}" aria-controls="inspector-content" tabindex="{{ 0 if loop.first else -1 }}" data-inspector-tab="{{ tab }}" aria-selected="{{ 'true' if loop.first else 'false' }}">{{ tab }}</button>{% endfor %}</div>
 <div id="inspector-content" role="tabpanel" aria-labelledby="inspector-tab-metadata" aria-live="polite"></div>
 <div id="dataset-sharing" hidden>
+<a id="dataset-knowledge" hidden>Open corresponding Research knowledge</a>
 {% if dataset_sharing_enabled %}
 <button id="sharing-start">Prepare for Sharing</button>
 <section id="sharing-guide" hidden aria-label="Dataset sharing preparation">
