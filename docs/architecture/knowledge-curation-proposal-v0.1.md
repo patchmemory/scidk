@@ -1,6 +1,7 @@
 # Knowledge and curation architecture v0.1 — PROPOSED
 
-Date: 2026-10-29. **Not approved or applied.**
+Date: 2026-10-29. **Approved for isolated implementation with clarifications in
+`codex_prompt_02.txt`; no production application authorized.**
 Recommended contract version: `curation/0.1.0`; operational ontology revision:
 `scidk-knowledge-0.1.0-proposed`, finalized only after catalog reconciliation.
 This document is a proposal, not another editable operational schema.

@@ -1,8 +1,11 @@
-# Knowledge curation implementation and validation plan — PROPOSED
+# Knowledge curation implementation and validation plan
 
-Stage 0 and Stage 1 artifacts are complete for review. Implementation starts
-only after approval of [v0.1](knowledge-curation-proposal-v0.1.md).
+The v0.1 proposal was approved with clarifications in `codex_prompt_02.txt`
+and implementation was authorized to continue on 2026-10-29.
 The [assessment](knowledge-curation-assessment.md) records observed limitations.
+[Implementation stage 1](knowledge-curation-stage-1.md) is complete: isolated
+ledger/validation and 30 new passing tests. Stages 2–6 remain pending.
+The historical design-stage completion report below predates this approval.
 
 ## Focused implementation commits after approval
 
