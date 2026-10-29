@@ -14,10 +14,18 @@ from ..agent_tools.security import DisclosureDenied, PolicyStore
 from ..curation.auth import request_reviewer
 from ..curation.review import ReviewService
 from .overview_chat import context_turn
+from .human_policy import HumanIdentity, resolve_workspace
 
 
 def authorized(ctx, tool='get_assertion'):
     ctx = replace(ctx, profile='review')
+    if type(ctx.identity) is HumanIdentity:
+        if (tool != 'get_assertion' or not ctx.knowledge_enabled or not ctx.knowledge
+                or not isinstance(ctx.knowledge.assertions, AssertionAccess)
+                or ctx.knowledge.assertions.facts.store.path != Path(ctx.settings_db).resolve()):
+            raise DisclosureDenied()
+        with resolve_workspace(ctx, 'review_read'):
+            return ctx
     if (not ctx.identity or ctx.identity.token_id or ctx.identity.channel != 'chat'
             or tool not in {d['name'] for d in available_tool_definitions(ctx)}
             or not isinstance(ctx.knowledge.assertions, AssertionAccess)
@@ -31,7 +39,7 @@ def inspect(ctx, aid, *, history=False):
     if not isinstance(aid, str) or not 0 < len(aid) <= 256 or type(history) is not bool:
         raise DisclosureDenied()
     access = ctx.knowledge.assertions
-    with PolicyStore(ctx.settings_db).resolve(ctx.identity) as policy:
+    with resolve_workspace(ctx, 'review_read') as policy:
         result = access.inspect(policy, aid, include_history=history)
         # Immutable source metadata is checked independently, never copied from
         # candidate identity claims, source locators or raw source payloads.

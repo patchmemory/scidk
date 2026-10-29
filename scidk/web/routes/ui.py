@@ -65,7 +65,9 @@ def knowledge_adapter(domain, operation):
     if not isinstance(body, dict):
         return jsonify(status='error', error='JSON object required'), 400, headers
     try:
-        ctx = replace(context_from_app(current_app, channel='chat'), profile='overview')
+        from ...services.human_policy import human_context
+        ctx = replace(human_context(current_app) if domain == 'research' else
+                      context_from_app(current_app, channel='chat'), profile='overview')
         from ...agent_tools.knowledge import KnowledgeServices
         if ctx.identity and (not isinstance(ctx.knowledge, KnowledgeServices) or (domain in workspace.DOMAINS and not ctx.knowledge.ready(workspace.DOMAINS[domain]))):
             return jsonify(status='unavailable', error='Knowledge service is not connected. Ask an administrator to connect this workspace.'), 503, headers
@@ -102,7 +104,9 @@ def review_adapter(operation):
     if not isinstance(body, dict):
         return jsonify(status='error', error='JSON object required'), 400, headers
     try:
-        ctx = workspace.authorized(context_from_app(current_app, channel='chat'))
+        from ...services.human_policy import human_context
+        ctx = workspace.authorized(context_from_app(current_app, channel='chat')
+                                   if operation in {'assistant', 'propose'} else human_context(current_app))
         if operation == 'queue':
             result = workspace.queue(ctx, body)
         elif operation == 'inspect' and not set(body) - {'id', 'history'}:

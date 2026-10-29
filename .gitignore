@@ -87,3 +87,4 @@ gunicorn.log
 /out_*.txt
 # demo bundles built from demo_data/*/
 demo_data/*.zip
+/.scidk_secret.key

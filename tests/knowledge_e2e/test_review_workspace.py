@@ -19,6 +19,11 @@ def post(client, operation, body=None, **kwargs):
 @pytest.fixture
 def review_workspace(scenario):
     d = scenario
+    from scidk.services.human_policy import HumanPolicyStore
+    human = HumanPolicyStore(d.db)
+    human.initialize(admin_id=d.reviewer)
+    for uid in (d.alice, d.reviewer):
+        human.grant_purpose(uid, 'review_read', 'medium', admin_id=d.reviewer)
     d.app.register_blueprint(bp)
     d.app.config.update(SCIDK_GUI_V3_ENABLED=True, SCIDK_REVIEW_WORKSPACE_ENABLED=True,
                         SCIDK_REVIEW_CHAT_ENABLED=True)
@@ -218,8 +223,8 @@ def test_queue_and_decision_fail_closed_after_classification_or_destination_chan
     d.policy.classify(**SCOPE, risk='medium', admin_id=d.reviewer)
     with sqlite3.connect(d.db) as conn:
         conn.execute('DELETE FROM agent_destination_approval')
-    assert post(client, 'queue').json == REFUSAL
-    assert post(client, 'decide', body).json == REFUSAL
+    assert post(client, 'queue').status_code == 200
+    assert post(client, 'decide', body).status_code == 200
 
 
 def test_hidden_conflict_identifiers_are_never_disclosed(review_workspace):

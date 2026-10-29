@@ -46,6 +46,7 @@ class KnowledgeServices:
     assertions: Any = None  # AssertionAccess over existing ledger + FactDisclosure
     system_root: Any = None
     applicability: str = 'knowledge-context/1'
+    legacy: Any = None  # Explicit human-only source snapshot; never dispatched to AI.
 
     def ready(self, name):
         if name == 'get_system_context':

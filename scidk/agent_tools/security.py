@@ -208,6 +208,7 @@ class ResolvedPolicy:
     def __init__(self, conn, user_id, username, destination, modes):
         self.conn, self.user_id, self.username = conn, user_id, username
         self.destination, self.modes = destination, modes
+        self.max_risk = destination[3] if destination else None
 
     def resource(self, scope):
         if not isinstance(scope, dict) or set(scope) != {'namespace', 'resource_id'}:
@@ -218,7 +219,7 @@ class ResolvedPolicy:
             'WHERE c.namespace=? AND c.resource_id=? AND g.user_id=?',
             (scope['namespace'], scope['resource_id'], self.user_id)).fetchone()
         # High is globally forbidden even if a malformed approval claims high.
-        if not row or row[0] not in RANK or RANK[row[0]] > RANK[self.destination[3]]:
+        if not row or row[0] not in RANK or self.max_risk not in RANK or RANK[row[0]] > RANK[self.max_risk]:
             raise DisclosureDenied()
 
     def property(self, label, prop):

@@ -13,8 +13,9 @@ import time
 
 from ..agent_tools.registry import available_tool_definitions, run_tool
 from ..agent_tools.facts import FactDisclosure
-from ..agent_tools.security import DisclosureDenied, PolicyStore
+from ..agent_tools.security import DisclosureDenied
 from .canvas_service import CanvasService
+from .human_policy import HumanIdentity, resolve_workspace
 
 DOMAINS = {'research': 'explain_fact', 'ontology': 'get_ontology_context', 'system': 'get_system_context'}
 MAX_CANDIDATES = 500
@@ -26,6 +27,12 @@ class WorkspaceLimit(ValueError):
 
 def authorized(ctx, domain):
     ctx = replace(ctx, profile='overview')
+    if type(ctx.identity) is HumanIdentity:
+        if (domain != 'research' or not ctx.knowledge_enabled or not ctx.knowledge
+                or not ctx.knowledge.ready(DOMAINS[domain])):
+            raise DisclosureDenied()
+        with resolve_workspace(ctx, 'research_browse'):
+            return ctx
     if (domain not in DOMAINS or not ctx.identity or ctx.identity.token_id
             or ctx.identity.channel != 'chat' or DOMAINS[domain] not in
             {d['name'] for d in available_tool_definitions(ctx)}):
@@ -109,13 +116,17 @@ def research(ctx, operation, args, *, deadline=None):
     facts = ctx.knowledge.assertions.facts
     if not isinstance(facts, FactDisclosure) or facts.store.path != Path(ctx.settings_db).resolve():
         raise DisclosureDenied()
-    with facts.store.resolve(ctx.identity) as policy, closing(sqlite3.connect(
+    with resolve_workspace(ctx, 'research_browse') as policy, closing(sqlite3.connect(
             facts.ledger.path.as_uri() + '?mode=ro', uri=True)) as conn:
         if deadline is not None:
             conn.set_progress_handler(lambda: time.monotonic() > deadline, 1000)
         conn.execute('PRAGMA query_only=ON')
         conn.execute('BEGIN')
         reader = ResearchReader(ctx, conn, policy, deadline=deadline)
+        from .human_legacy import LegacySnapshot
+        legacy = ctx.knowledge.legacy if type(ctx.identity) is HumanIdentity else None
+        if legacy is not None and (not isinstance(legacy, LegacySnapshot) or legacy.ledger is not facts.ledger):
+            raise DisclosureDenied()
         if operation == 'search':
             if set(args) - {'q', 'label', 'offset'} or not isinstance(args.get('q', ''), str) or len(args.get('q', '')) > 256:
                 raise DisclosureDenied()
@@ -132,10 +143,14 @@ def research(ctx, operation, args, *, deadline=None):
                 if (not label or node['type'] == label) and args.get('q', '').casefold() in json.dumps(
                         [node['id'], node['type'], node['properties']], ensure_ascii=False).casefold():
                     nodes.append(node)
+            if legacy:
+                nodes.extend(legacy.search(policy, args.get('q', ''), label))
             return {'nodes': nodes[offset:offset + 25], 'edges': [],
                     'next_offset': offset + 25 if len(nodes) > offset + 25 else None}
         if operation not in {'inspect', 'expand'} or set(args) != {'id'} or not isinstance(args['id'], str) or len(args['id']) > 256:
             raise DisclosureDenied()
+        if legacy and args['id'].startswith('legacy:'):
+            return {'nodes': [legacy.read(policy, args['id'])], 'edges': []}
         return reader.inspect(args['id'], expand=operation == 'expand')
 
 
@@ -217,7 +232,7 @@ def canvas(ctx, domain, body=None, *, kind='sketch'):
                 if data.get('source') not in ids or data.get('target') not in ids:
                     raise DisclosureDenied()
     # Re-resolve policy after potentially slow reference checks; no model call.
-    with PolicyStore(ctx.settings_db).resolve(ctx.identity):
+    with resolve_workspace(ctx, 'research_browse'):
         authorized(ctx, domain)
         if body is not None:
             service.save_session(str(ctx.identity.user_id), value, context_key)

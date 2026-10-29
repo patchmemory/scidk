@@ -126,7 +126,9 @@
       renderEntities();
       state.selected = {...fresh, id: record.id, ...(result.version ? {projectionVersion: result.version} : {}),
         ...(state.domain === 'ontology' ? {catalog: record.catalog || state.catalog} : {})};
-      $('kw-trust').textContent = state.domain === 'research' ? 'Accepted and applied; epistemic status is recorded separately in support.' :
+      $('kw-trust').textContent = state.domain === 'research' ?
+        (fresh.curation_status === 'legacy/unreviewed' ? 'Legacy / unreviewed. Graph presence does not establish acceptance or application.' :
+          'Accepted and applied; epistemic status is recorded separately in support.') :
         'Generated projection; inspect source revisions, hashes, freshness and catalog authority. This is not a reviewed research assertion.';
       $('kw-selection-title').textContent = state.selected.properties?.name || state.selected.name || state.selected.type || 'Selected knowledge';
       $('kw-inspection').textContent = JSON.stringify(state.selected, null, 2);
@@ -310,7 +312,11 @@
   $('kw-save-graph').onclick = () => save('graph'); $('kw-load-graph').onclick = () => load('graph');
   $('kw-save-sketch').onclick = () => save('sketch'); $('kw-load-sketch').onclick = () => load('sketch');
   const initialId = params.get('id');
-  changeDomain().then(() => {
-    if (initialId && state.domain === 'research') retrieve('expand', {id: initialId});
+  changeDomain().then(async () => {
+    if (initialId && state.domain === 'research') {
+      await retrieve('expand', {id: initialId});
+      const selected = state.records.get(initialId);
+      if (selected && state.domain === 'research') await inspect(selected);
+    }
   });
 })();

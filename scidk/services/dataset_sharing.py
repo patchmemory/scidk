@@ -14,6 +14,7 @@ import zipfile
 from ..agent_tools.facts import FactDisclosure
 from ..agent_tools.registry import available_tool_definitions
 from ..agent_tools.security import DisclosureDenied
+from .human_policy import HumanIdentity, resolve_workspace
 
 MAX_FILES = 256
 FIELDS = {'Dataset': {'name', 'description', 'modality'},
@@ -22,14 +23,16 @@ FIELDS = {'Dataset': {'name', 'description', 'modality'},
 
 def dataset_snapshot(ctx, dataset_id):
     """One snapshot; refuse unknown, unaccepted, hidden or oversized membership."""
-    if (not ctx.identity or ctx.identity.token_id or ctx.identity.channel != 'chat'
+    human = type(ctx.identity) is HumanIdentity
+    if (not ctx.identity or ctx.identity.token_id or ctx.identity.channel not in {'chat', 'human'}
             or not isinstance(dataset_id, str) or not 1 <= len(dataset_id) <= 256
-            or 'explain_fact' not in {d['name'] for d in available_tool_definitions(ctx)}):
+            or (not human and 'explain_fact' not in {d['name'] for d in available_tool_definitions(ctx)})
+            or (human and (not ctx.knowledge_enabled or not ctx.knowledge))):
         raise DisclosureDenied()
     facts = ctx.knowledge.assertions.facts
     if not isinstance(facts, FactDisclosure) or facts.store.path != Path(ctx.settings_db).resolve():
         raise DisclosureDenied()
-    with facts.store.resolve(ctx.identity) as policy, closing(sqlite3.connect(
+    with resolve_workspace(ctx, 'research_browse') as policy, closing(sqlite3.connect(
             facts.ledger.path.as_uri() + '?mode=ro', uri=True)) as conn:
         conn.execute('PRAGMA query_only=ON')
         conn.execute('BEGIN')

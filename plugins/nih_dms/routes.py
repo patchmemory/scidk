@@ -43,7 +43,6 @@ DOWNLOAD_FILENAME = 'nih-dms-plan-draft.md'
 def prepare_dataset(dataset_id):
     """Human-only selected-dataset preview or metadata/script ZIP download."""
     from dataclasses import replace
-    from scidk.agent_tools.context import context_from_app
     from scidk.agent_tools.security import REFUSAL
     from scidk.services.dataset_sharing import (
         dataset_snapshot, investigator_fields, draft_plan as scoped_plan, sharing_package, safe_relative,
@@ -58,7 +57,8 @@ def prepare_dataset(dataset_id):
     except ValueError:
         return jsonify(status='error', error='Invalid investigator fields'), 400
     try:
-        ctx = replace(context_from_app(current_app, channel='chat'), profile='overview')
+        from scidk.services.human_policy import human_context
+        ctx = replace(human_context(current_app), profile='overview')
         snapshot = dataset_snapshot(ctx, dataset_id)
         if body.get('download'):
             payload = sharing_package(snapshot, fields)

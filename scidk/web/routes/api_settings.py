@@ -967,15 +967,6 @@ def get_auto_lock_config():
         settings_db = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
         import sqlite3
         conn = sqlite3.connect(settings_db)
-        cur = conn.execute(
-            """
-            SELECT value FROM settings
-            WHERE key IN ('auto_lock_enabled', 'auto_lock_timeout_minutes')
-            """
-        )
-        rows = cur.fetchall()
-        conn.close()
-
         config = {
             'enabled': False,
             'timeout_minutes': 5,  # Default 5 minutes
@@ -983,10 +974,9 @@ def get_auto_lock_config():
 
         # Parse settings (stored as key-value pairs)
         settings_dict = {}
-        conn = sqlite3.connect(settings_db)
-        cur = conn.execute("SELECT key, value FROM settings")
-        for row in cur.fetchall():
-            settings_dict[row[0]] = row[1]
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='settings'").fetchone():
+            settings_dict = dict(conn.execute("SELECT key, value FROM settings WHERE key IN "
+                "('auto_lock_enabled','auto_lock_timeout_minutes')").fetchall())
         conn.close()
 
         if 'auto_lock_enabled' in settings_dict:

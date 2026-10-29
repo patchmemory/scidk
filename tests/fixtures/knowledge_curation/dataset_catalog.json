@@ -1,0 +1,6 @@
+[
+  {"name": "Dataset", "properties": [{"name": "name", "type": "string"}],
+   "relationships": [{"type": "CONTAINS", "to_label": "File"}]},
+  {"name": "File", "properties": [{"name": "relative_path", "type": "string"},
+    {"name": "size_bytes", "type": "integer"}, {"name": "extension", "type": "string"}]}
+]

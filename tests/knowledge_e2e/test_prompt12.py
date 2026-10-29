@@ -76,13 +76,14 @@ def test_overview_revocation_after_send_discards_answer(scenario, monkeypatch):
 @pytest.fixture
 def datasets(scenario, request):
     d = scenario
+    from scidk.services.human_policy import HumanPolicyStore
+    human = HumanPolicyStore(d.db)
+    human.initialize(admin_id=d.reviewer)
+    for uid in (d.alice, d.bob):
+        human.grant_purpose(uid, 'research_browse', 'medium', admin_id=d.reviewer)
     # Fixture-only catalog; no production ontology migration or auto-import.
-    definitions = d.definitions + [
-        {'name': 'Dataset', 'properties': [{'name': 'name', 'type': 'string'}],
-         'relationships': [{'type': 'CONTAINS', 'to_label': 'File'}]},
-        {'name': 'File', 'properties': [{'name': 'relative_path', 'type': 'string'},
-          {'name': 'size_bytes', 'type': 'integer'}, {'name': 'extension', 'type': 'string'}]},
-    ]
+    from .conftest import FIXTURES
+    definitions = d.definitions + json.loads((FIXTURES / 'dataset_catalog.json').read_text())
     d.ledger.ontology = Ontology([], definitions)
     d.app.register_blueprint(dms_bp)
     collections = []
