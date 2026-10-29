@@ -29,6 +29,34 @@ def _get_ext():
     return current_app.extensions['scidk']
 
 
+# Experimental shell is opt-in; reading pages never initializes policy/storage.
+@bp.app_context_processor
+def gui_context():
+    return {'gui_v3': current_app.config.get('SCIDK_GUI_V3_ENABLED') is True}
+
+
+def _gui_page(page):
+    if current_app.config.get('SCIDK_GUI_V3_ENABLED') is not True:
+        from flask import abort
+        abort(404)
+    return render_template('gui/workspace.html', page=page)
+
+
+@bp.get('/overview')
+def overview():
+    return _gui_page('Overview')
+
+
+@bp.get('/knowledge')
+def knowledge():
+    return _gui_page('Knowledge')
+
+
+@bp.get('/review')
+def review():
+    return _gui_page('Review')
+
+
 # Routes
 @bp.get('/login')
 def login():
@@ -38,7 +66,9 @@ def login():
 
 @bp.get('/')
 def index():
-    """Settings page (landing page)."""
+    """Settings page, or opt-in Overview landing page."""
+    if current_app.config.get("SCIDK_GUI_V3_ENABLED") is True and request.path != "/settings":
+        return _gui_page("Overview")
     ext = _get_ext()
     datasets = ext['graph'].list_datasets()
     reg = ext['registry']
@@ -335,7 +365,8 @@ def integrate_redirect():
 @bp.get('/settings')
 def settings():
     """Redirect to landing page (backward compatibility)."""
-    # Preserve hash fragment if present in referrer
+    if current_app.config.get("SCIDK_GUI_V3_ENABLED") is True:
+        return index()
     return redirect(url_for('ui.index'))
 
 

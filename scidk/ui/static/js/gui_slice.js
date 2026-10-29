@@ -1,0 +1,87 @@
+/* Opt-in shell: reuse services, never send metadata to a provider. */
+(function () {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  if (!$('gui-files')) return;
+  const base = window.SCIDK_BASE || '';
+  const state = {tab: 'Files', inspectorTab: 'Metadata', selected: {}, expanded: false, version: 0};
+  const browser = document.querySelector('.files-page');
+  let closed = false;
+  function raw(value, parent) {
+    if (value && typeof value === 'object') {
+      const details = document.createElement('details'); details.open = true;
+      const summary = document.createElement('summary'); summary.textContent = 'Nested metadata / raw JSON';
+      const pre = document.createElement('pre'); pre.textContent = JSON.stringify(value, null, 2);
+      details.append(summary, pre); parent.append(details);
+    } else { const pre = document.createElement('pre'); pre.textContent = String(value ?? 'Not recorded'); parent.append(pre); }
+  }
+  async function json(url) {
+    const response = await fetch(base + url);
+    if (!response.ok) throw new Error('Service unavailable (' + response.status + ')');
+    return response.json();
+  }
+  async function render() {
+    const version = ++state.version;
+    const selection = state.selected[state.tab];
+    $('shared-inspector').hidden = !selection || closed;
+    browser.classList.toggle('with-inspector', !!selection && !closed);
+    if (!selection) return;
+    $('shared-inspector').classList.toggle('expanded', state.expanded);
+    $('inspector-expand').textContent = state.expanded ? 'Restore docked inspector' : 'Expand';
+    $('inspector-expand').setAttribute('aria-expanded', String(state.expanded));
+    const record = selection.record;
+    $('inspector-title').textContent = (selection.kind === 'dataset' ? 'Dataset: ' : 'File / folder: ') + (record.name || record.path || selection.key);
+    $('dataset-sharing').hidden = selection.kind !== 'dataset';
+    document.querySelectorAll('[data-inspector-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.inspectorTab === state.inspectorTab)));
+    const content = $('inspector-content'); content.replaceChildren();
+    if (state.inspectorTab === 'Metadata') raw(record, content);
+    if (state.inspectorTab === 'Provenance') {
+      raw({provider_id: record.provider_id, scan_id: record.scan_id, source: record.source,
+        provenance: record.provenance, evidence: record.evidence}, content);
+      const p = document.createElement('p'); p.textContent = 'Only stored provenance is shown. Acceptance and current support have not been established for this browser record.'; content.append(p);
+    }
+    if (state.inspectorTab === 'Annotations') {
+      content.textContent = 'Loading annotations…';
+      try {
+        // Never issue an unfiltered annotations request when no stable identity exists.
+        if (!selection.key) throw new Error('No annotation identity available');
+        const data = await json('/api/annotations?file_id=' + encodeURIComponent(selection.key) + '&limit=100');
+        if (version !== state.version) return;
+        content.replaceChildren(); raw(data.items, content);
+        const p = document.createElement('p'); p.textContent = 'Annotations use the stored object identity. Use the existing Annotate drawer for file attribution, collection and interpretation.'; content.append(p);
+      } catch (error) { if (version === state.version) content.textContent = error.message; }
+    }
+  }
+  function select(selection) { closed = false; state.selected[state.tab] = selection; render(); }
+  function tab(name) {
+    closed = false; state.tab = name;
+    browser.hidden = name !== 'Files'; $('gui-datasets').hidden = name !== 'Datasets';
+    $('gui-files-tab').setAttribute('aria-selected', String(name === 'Files'));
+    $('gui-datasets-tab').setAttribute('aria-selected', String(name === 'Datasets')); render();
+  }
+  $('gui-files-tab').onclick = () => tab('Files');
+  $('gui-datasets-tab').onclick = () => tab('Datasets');
+  $('inspector-close').onclick = () => { closed = true; render(); };
+  $('inspector-expand').onclick = () => { state.expanded = !state.expanded; render(); };
+  document.querySelectorAll('[data-inspector-tab]').forEach(b => b.onclick = () => { state.inspectorTab = b.dataset.inspectorTab; render(); });
+  document.addEventListener('scidk:inspect', event => { if (state.tab === 'Files') select(event.detail); });
+  function items(records, parent, graph) {
+    parent.replaceChildren();
+    if (!records.length) { parent.textContent = 'No records found.'; return; }
+    records.forEach(item => {
+      const record = graph ? {...item.properties, name: item.name} : item;
+      const key = graph ? item.element_id || item.id : item.id;
+      const button = document.createElement('button'); button.textContent = record.name || record.path || key;
+      button.onclick = () => select({kind: graph ? 'dataset' : 'file', key, record}); parent.append(button);
+    });
+  }
+  let searchVersion = 0;
+  $('dataset-search').onsubmit = async event => {
+    event.preventDefault(); const version = ++searchVersion; $('dataset-results').textContent = 'Searching…';
+    try {
+      const data = await json('/api/canvas/nodes/search?label=Dataset&limit=100&q=' + encodeURIComponent($('dataset-query').value));
+      if (version === searchVersion) items(data.results, $('dataset-results'), true);
+    } catch (error) { if (version === searchVersion) $('dataset-results').textContent = error.message; }
+  };
+  json('/api/datasets').then(data => items(data, $('indexed-datasets'), false)).catch(error => { $('indexed-datasets').textContent = error.message; });
+})();

@@ -44,12 +44,18 @@
 <header data-testid="header">
   <h1><a href="{{ request.script_root }}/" style="text-decoration:none;color:inherit;font-family:monospace;letter-spacing:0.02em;font-weight:600" data-testid="nav-home">-SciDK-></a></h1>
   <nav data-testid="nav">
+    {% if gui_v3 %}
+    {% for label, path in [('Overview','/overview'),('Files & Datasets','/datasets'),('Resources','/pipeline/sources'),('Knowledge','/knowledge'),('Review','/review'),('Settings','/settings')] %}
+    <a href="{{ request.script_root }}{{ path }}">{{ label }}</a>
+    {% endfor %}
+    {% else %}
     <a href="{{ request.script_root }}/results" data-testid="nav-results">Results</a>
     <a href="{{ request.script_root }}/chat" data-testid="nav-chats">Chats</a>
     <a href="{{ request.script_root }}/map" data-testid="nav-maps">Maps</a>
     <a href="{{ request.script_root }}/entities" data-testid="nav-entities">Entities</a>
     <a href="{{ request.script_root }}/datasets" data-testid="nav-files">Files</a>
     <a href="{{ request.script_root }}/pipeline/sources" data-testid="nav-pipeline">Resources</a>
+    {% endif %}
   </nav>
   <div id="auth-status" style="margin-left:auto; display:none;">
     <span id="auth-username" style="color:var(--muted); font-size:0.9em; margin-right:0.5rem;"></span>

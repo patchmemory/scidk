@@ -1,0 +1,11 @@
+#gui-files {padding:12px;background:#f5f8fc;border-bottom:1px solid #dce4ed}
+#gui-files button {padding:7px 12px;margin:4px;border:1px solid #cdd8e4;border-radius:6px;cursor:pointer}
+#gui-files button[aria-selected=true] {background:#dcebf9}
+#gui-files button:disabled {cursor:default}
+#shared-inspector {position:fixed;right:12px;top:155px;bottom:20px;width:min(420px,95vw);z-index:990;background:white;border:1px solid #cdd8e4;border-radius:10px;padding:16px;overflow:auto;box-shadow:0 8px 30px #0002}
+#shared-inspector.expanded {left:12px;width:auto}
+#inspector-content pre {white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
+#dataset-results button,#indexed-datasets button {display:block;text-align:left}
+
+.files-page.with-inspector {margin-right:440px}
+@media(max-width:900px) {.files-page.with-inspector {margin-right:0}}

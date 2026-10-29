@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="workspace">
+<h1>{{ page }}</h1>
+{% if page == 'Overview' %}
+<h2>Ask SciDK</h2>
+<p>Explore permitted, accepted knowledge with the Overview assistant.</p>
+<label for="overview-question">Your question</label>
+<textarea id="overview-question" disabled aria-describedby="chat-unavailable" placeholder="Ask about your research" rows="4" style="display:block;width:100%;max-width:800px"></textarea>
+<button disabled>Send</button>
+<p id="chat-unavailable" role="status">Chat unavailable: an approved conversational transport with per-turn disclosure and a server-bound Overview profile is required. No question or conversation is sent.</p>
+<p><a href="{{ request.script_root }}/chat">Existing chat sessions</a> · <a href="{{ request.script_root }}/settings#ai-chat/llm-provider">Provider settings</a></p>
+{% elif page == 'Knowledge' %}
+<p>The existing knowledge tools remain available while the combined workspace is prepared.</p>
+<p><a href="{{ request.script_root }}/map">Maps &amp; Canvas</a> · <a href="{{ request.script_root }}/entities">Entities</a> · <a href="{{ request.script_root }}/entities?tab=relationships">Relationships</a> · <a href="{{ request.script_root }}/results">Results</a></p>
+{% else %}
+<p>Review workspace unavailable in this slice. Human review remains subject to explicit reviewer grants and the curation feature flag. No review, acceptance or materialization is performed here.</p>
+{% endif %}
+{% if page == 'Overview' %}<p><a href="{{ request.script_root }}/datasets">Browse Files &amp; Datasets</a> · <a href="{{ request.script_root }}/pipeline/sources">Manage Resources</a></p>{% endif %}
+</section>
+{% endblock %}
