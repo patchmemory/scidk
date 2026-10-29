@@ -35,12 +35,11 @@ def _driver(app) -> Any:
 
 
 def context_from_app(app, user: Optional[str] = None) -> ToolContext:
-    from ..core.path_index_sqlite import _db_path
-    driver, database = _driver(app)
-    return ToolContext(
-        driver=driver,
-        database=database or None,
-        files_db=str(_db_path()),
-        settings_db=app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db'),
-        user=user,
-    )
+    from .security import identity_from_request
+    db = app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+    try:
+        identity = identity_from_request(db, channel='http')
+    except Exception:
+        identity = None
+    # Refused legacy queries must not initialize graph drivers or touch files.db.
+    return ToolContext(settings_db=db, identity=identity)

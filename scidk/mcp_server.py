@@ -80,42 +80,33 @@ class ScidkMcpServer:
                 file=sys.stderr,
             )
 
-        # Initialize Neo4j driver
-        try:
-            self.driver = GraphDatabase.driver(
-                self.neo4j_uri,
-                auth=(self.neo4j_user, self.neo4j_password)
-            )
-            # Test connection
-            self.driver.verify_connectivity()
-            print(f"✅ Connected to Neo4j at {self.neo4j_uri}", file=sys.stderr)
-        except Exception as e:
-            print(f"❌ Failed to connect to Neo4j: {e}", file=sys.stderr)
-            sys.exit(1)
+        # Stdio has no authenticated principal or approved destination. No graph
+        # connection may be attempted for calls which will be refused.
+        self.driver = None
 
     def close(self):
         """Close Neo4j connection."""
         if self.driver:
             self.driver.close()
 
-    # Delegate tool implementations to mcp_tools module
-    async def query_knowledge_graph(self, cypher: str, parameters: Optional[Dict[str, Any]] = None, limit: Optional[int] = 50) -> Dict[str, Any]:
-        return mcp_tools.query_knowledge_graph(self.driver, cypher, self.neo4j_database, parameters, limit)
+    def dispatch(self, name, arguments):
+        from scidk.agent_tools.registry import ToolContext, run_tool
+        return run_tool(name, arguments, ToolContext(settings_db=self.settings_db_path))
 
-    async def get_schema(self, max_labels: int = 50, max_props_per_label: int = 5) -> Dict[str, Any]:
-        return mcp_tools.get_schema(self.driver, self.neo4j_database, max_labels, max_props_per_label)
+    async def query_knowledge_graph(self, cypher, parameters=None, limit=50):
+        return self.dispatch('query_knowledge_graph', dict(cypher=cypher, parameters=parameters, limit=limit))
 
-    async def summarize_dataset(self, label: Optional[str] = None, relationship: Optional[str] = None) -> Dict[str, Any]:
-        return mcp_tools.summarize_dataset(self.driver, self.neo4j_database, label, relationship)
+    async def get_schema(self, max_labels=50, max_props_per_label=5):
+        return self.dispatch('get_schema', dict(max_labels=max_labels, max_props_per_label=max_props_per_label))
 
-    async def get_label_profile(self, label: str) -> Dict[str, Any]:
-        return mcp_tools.get_label_profile(
-            self.driver, label, self.neo4j_database,
-            settings_db_path=self.settings_db_path,
-        )
+    async def summarize_dataset(self, label=None, relationship=None):
+        return self.dispatch('summarize_dataset', dict(label=label, relationship=relationship))
 
-    async def list_labels(self) -> Dict[str, Any]:
-        return mcp_tools.list_labels(self.driver, self.neo4j_database)
+    async def get_label_profile(self, label):
+        return self.dispatch('get_label_profile', dict(label=label))
+
+    async def list_labels(self):
+        return self.dispatch('list_labels', {})
 
 
 # ============================================================================
@@ -153,16 +144,7 @@ async def main():
     async def call_tool(name: str, arguments: Any) -> List[TextContent]:
         """Run a tool through the shared registry, so the result passes the same
         disclosure filter as every other adapter (agent_tools.run_tool)."""
-        from scidk.agent_tools.registry import ToolContext, run_tool
-        from scidk.core.path_index_sqlite import db_path_from_env
-        files_db = db_path_from_env(os.getenv('SCIDK_FILES_DB') or os.getenv('SCIDK_DB_PATH'))
-        ctx = ToolContext(
-            driver=scidk_server.driver,
-            database=scidk_server.neo4j_database,
-            files_db=str(files_db) if files_db else None,
-            settings_db=scidk_server.settings_db_path,
-        )
-        result = run_tool(name, arguments or {}, ctx)
+        result = scidk_server.dispatch(name, arguments or {})
         return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
     # Run server

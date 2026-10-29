@@ -13,6 +13,20 @@ logger = logging.getLogger(__name__)
 
 bp = Blueprint('chat', __name__, url_prefix='/api')
 
+# These paths collect unscoped graph/schema/history context before model calls.
+# A provider approval cannot authorize unknown source content. Keep routes present
+# but refuse before query, context construction, session history or network I/O.
+@bp.before_request
+def enforce_chat_disclosure():
+    if request.endpoint in {
+        'chat.api_chat_graphrag', 'chat.api_chat_graphrag_stream',
+        'chat.api_chat_graphrag_v2', 'chat.api_chat_graphrag_v2_stream',
+        'chat.api_chat_schema_refresh_embeddings',
+    }:
+        from ...agent_tools.security import REFUSAL
+        return jsonify(REFUSAL), 403
+
+
 # ========== SSE Connection Limiter ==========
 # Track active SSE connections to prevent worker pool exhaustion
 # With 16 sync gunicorn workers, limit to 12 concurrent streams

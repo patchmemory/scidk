@@ -440,18 +440,9 @@ def get_enriched_schema_context(neo4j_driver,
 
 def embed_text(text: str, ollama_url: str,
                model: str = EMBED_MODEL) -> Optional[List[float]]:
-    """Call Ollama embeddings API. Returns float list or None."""
-    try:
-        resp = requests.post(
-            f"{ollama_url.rstrip('/')}{OLLAMA_EMBED_ENDPOINT}",
-            json={"model": model, "prompt": text},
-            timeout=30
-        )
-        resp.raise_for_status()
-        return resp.json().get('embedding')
-    except Exception as e:
-        logger.warning(f"Embedding failed ({model}): {e}")
-        return None
+    """Unscoped embeddings are suspended; no localhost/provider exemptions."""
+    logger.warning('Embedding suspended pending Resource-scoped disclosure authorization')
+    return None
 
 
 def _vector_to_blob(v: List[float]) -> bytes:

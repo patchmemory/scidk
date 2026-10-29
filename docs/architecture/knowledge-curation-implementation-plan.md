@@ -6,8 +6,12 @@ The [assessment](knowledge-curation-assessment.md) records observed limitations.
 [Implementation stage 1](knowledge-curation-stage-1.md) is complete: isolated
 ledger/validation and 30 new passing tests.
 [Implementation stage 2](knowledge-curation-stage-2.md) implements authorized
-review and recoverable materialization. Stages 3–6 remain pending; do not start
-Stage 3 until the Stage 2 results have been reviewed.
+review and recoverable materialization.
+[Implementation stage 3](knowledge-curation-stage-3.md) implements the disclosure
+boundary after policy approval in `codex_prompt_05.txt`: 406 relevant tests pass,
+1 is skipped and none are deselected. Legacy unscoped agent/chat/embedding paths
+are suspended; no new agent-facing curation tools are enabled.
+Stages 4–6 remain pending. Do not begin Stage 4 until Stage 3 results are reviewed.
 The historical design-stage completion report below predates this approval.
 
 ## Focused implementation commits after approval

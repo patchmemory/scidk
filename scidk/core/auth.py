@@ -885,6 +885,7 @@ class AuthManager:
                     'username': user['username'],
                     'role': user['role'],
                     'enabled': user['enabled'],
+                    'token_id': token_id,
                 }
 
             return None

@@ -202,13 +202,13 @@ class TestApiTokenEndpoints:
         assert client.post('/api/settings/tokens', json={'user_id': admin_id}, headers=hdr).status_code == 400
         assert client.post('/api/settings/tokens', json={'user_id': 99999, 'label': 'x'}, headers=hdr).status_code == 404
 
-    def test_api_token_authenticates_as_admin(self, client, auth):
+    def test_api_token_cannot_bypass_agent_boundary_as_admin(self, client, auth):
         admin_id, admin_session = self._admin(auth)
         created = auth.create_api_token(admin_id, 'admin token')
 
-        # Use the API token (not a session) as Bearer on an admin-only route.
+        # API credentials must use the agent boundary, even for an admin.
         resp = client.get('/api/users', headers={'Authorization': f'Bearer {created["token"]}'})
-        assert resp.status_code == 200
+        assert resp.status_code == 403
 
     def test_api_token_carries_user_role(self, client, auth):
         user_id, _ = self._user(auth)

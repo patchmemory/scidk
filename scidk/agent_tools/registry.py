@@ -4,9 +4,9 @@ Moved from scidk/ai/mcp_tools.py (which re-exports it). Each entry is plain data
 (name, description, input_schema, category); handlers live in ``_HANDLERS`` so
 the definitions stay JSON-serialisable for /api/platform/tools and seeding.
 
-``run_tool`` is the one way to execute a tool. It runs the handler, then
-``disclosure.filter_for_agent`` on the whole result, so no adapter can skip the
-filter. ``openai_functions`` is the chat window's and functions.json's view.
+``run_tool`` checks the current disclosure authority before execution. Legacy
+unscoped handlers are suspended; only a future explicitly scoped template may
+release records. ``openai_functions`` is the catalog view, with suspension notes.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 from . import tools_graph, tools_sql
-from .disclosure import SharingPolicy, filter_for_agent, load_policy
+from .disclosure import SharingPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -210,6 +210,11 @@ TOOL_DEFINITIONS = [
 ]
 
 
+for _definition in TOOL_DEFINITIONS:
+    _definition['description'] = ('Currently suspended: Resource-scoped disclosure is required; '
+                                  'this legacy tool refuses execution. ' + _definition['description'])
+
+
 def get_tool_definitions(category: Optional[str] = None) -> List[Dict[str, Any]]:
     """Return the canonical tool registry, optionally narrowed to one category.
 
@@ -264,6 +269,7 @@ class ToolContext:
     settings_db: Optional[str] = None
     user: Optional[str] = None
     policy: SharingPolicy = field(default_factory=SharingPolicy)
+    identity: Any = None
 
 
 def tool_names(include_chat_only: bool = False) -> List[str]:
@@ -271,7 +277,7 @@ def tool_names(include_chat_only: bool = False) -> List[str]:
 
 
 def run_tool(name: str, arguments: Optional[Dict[str, Any]], ctx: ToolContext) -> Dict[str, Any]:
-    """Run one tool and return its filtered result. Never raises."""
+    """Agent boundary. Legacy unscoped handlers are suspended, never executed."""
     if name not in _HANDLERS:
         return {"status": "error", "error": f"Unknown tool: {name}"}
     if arguments is not None and not isinstance(arguments, dict):
@@ -284,18 +290,15 @@ def run_tool(name: str, arguments: Optional[Dict[str, Any]], ctx: ToolContext) -
     missing = [k for k in schema.get('required', []) if args.get(k) in (None, '')]
     if missing:
         return {"status": "error", "error": f"Missing required argument(s) for {name}: {', '.join(missing)}"}
+    from .security import PolicyStore, REFUSAL
     try:
-        ctx.policy = load_policy(ctx.settings_db)
-    except Exception as e:  # noqa: BLE001 - fail closed
-        logger.error("Sharing policy unreadable (%s); refusing tool %s", e, name)
-        return {"status": "error", "error": "SciDK can't read its sharing settings right now, so it "
-                                            "won't send data to an AI. Try again or ask an admin."}
-    try:
-        result = _HANDLERS[name](ctx, **args)
-    except Exception as e:  # noqa: BLE001
-        logger.exception("Tool %s failed", name)
-        result = {"status": "error", "error": f"{type(e).__name__}: {e}"}
-    return filter_for_agent(result, ctx.policy)
+        with PolicyStore(ctx.settings_db).resolve(ctx.identity):
+            # Every legacy handler queries an unscoped graph or file-index view.
+            # No source-aware template is registered yet. Refuse BEFORE handler
+            # execution, even for an otherwise approved principal/destination.
+            return dict(REFUSAL)
+    except Exception:
+        return dict(REFUSAL)
 
 
 def openai_functions(include_chat_only: bool = False) -> List[Dict[str, Any]]:

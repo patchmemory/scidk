@@ -135,6 +135,7 @@ def check_auth():
         g.scidk_user = user['username']
         g.scidk_user_role = user.get('role', 'admin')
         g.scidk_user_id = user.get('id')
+        g.scidk_api_token_id = user.get('token_id')
         return None
     else:
         # Not authenticated - redirect to login page with original URL
@@ -155,4 +156,30 @@ def init_auth_middleware(app):
     Args:
         app: Flask application instance
     """
+    app.before_request(enforce_agent_token_boundary)
     app.before_request(check_auth)
+
+
+def enforce_agent_token_boundary():
+    """API tokens are external-client credentials, not human UI credentials.
+
+    Prevent graph/SQL/export/settings APIs from bypassing the disclosure boundary.
+    Session credentials remain human-only; do not distribute them to AI clients.
+    """
+    from flask import g, jsonify
+    token_id = getattr(g, 'scidk_api_token_id', None)
+    header = request.headers.get('Authorization', '')
+    if header.startswith('Bearer '):
+        # Run even for public/bootstrap routes and mixed session/token requests.
+        # Otherwise a bearer token could reach an unguarded human endpoint.
+        auth = get_auth_manager(db_path=current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db'))
+        try:
+            user = auth.verify_api_token(header[7:])
+            token_id = user.get('token_id') if user else None
+        finally:
+            auth.close()
+    if token_id:
+        if request.endpoint not in {'api_agent.list_tools', 'api_agent.run',
+                                    'api_agent.functions', 'api_agent.openapi'}:
+            from ..agent_tools.security import REFUSAL
+            return jsonify(REFUSAL), 403

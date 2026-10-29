@@ -38,6 +38,7 @@ def _authenticate_bearer_token():
         g.scidk_user = user['username']
         g.scidk_user_role = user['role']
         g.scidk_user_id = user['id']
+        g.scidk_api_token_id = user.get('token_id')
 
 
 def _auth_disabled():

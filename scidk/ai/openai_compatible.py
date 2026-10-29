@@ -42,6 +42,8 @@ def _url(base_url: str, path: str) -> str:
 
 
 def _raise_for(resp: requests.Response) -> None:
+    if 300 <= resp.status_code < 400:
+        raise ProviderError('Provider redirect refused')
     if resp.ok:
         return
     try:
@@ -55,7 +57,7 @@ def _raise_for(resp: requests.Response) -> None:
 
 def list_models(base_url: str, api_key: Optional[str], timeout: float = 20) -> List[str]:
     try:
-        resp = requests.get(_url(base_url, '/models'), headers=_headers(api_key), timeout=timeout)
+        resp = requests.get(_url(base_url, '/models'), headers=_headers(api_key), timeout=timeout, allow_redirects=False)
     except requests.RequestException as e:
         raise ProviderError(f'Could not reach {base_url}: {e}') from e
     _raise_for(resp)
@@ -76,7 +78,7 @@ def chat_completion(base_url: str, api_key: Optional[str], model: str,
     started = time.time()
     try:
         resp = requests.post(_url(base_url, '/chat/completions'), headers=_headers(api_key),
-                             data=json.dumps(body), timeout=timeout)
+                             data=json.dumps(body), timeout=timeout, allow_redirects=False)
     except requests.RequestException as e:
         raise ProviderError(f'Could not reach {base_url}: {e}') from e
     _raise_for(resp)

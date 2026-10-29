@@ -153,3 +153,40 @@ def read_parley_env(timeout: float = 20) -> Dict[str, str]:
     if not found.get('PARLEY_API_KEY'):
         raise RuntimeError('parley env printed no PARLEY_API_KEY; run `parley login` first.')
     return found
+
+
+def disclosed_fact_turn(settings_db, identity, disclosure, fact_id, *, include_evidence=False):
+    """Internal fixed-content send using the existing provider/client configuration.
+
+    Not an agent tool. No arbitrary user prompt, system context, graph payload or
+    history is accepted. Rechecks policy immediately before transport and binds
+    the actual configured endpoint/model. Returns no provider errors/metadata.
+    """
+    from ..agent_tools.security import PolicyStore, REFUSAL, endpoint_identity
+    from .openai_compatible import chat_completion
+    try:
+        from pathlib import Path
+        if Path(settings_db).resolve() != disclosure.store.path:
+            return dict(REFUSAL)
+        result = disclosure.read_fact(fact_id, identity, include_evidence=include_evidence)
+        if result.get('status') != 'success':
+            return dict(REFUSAL)
+        with PolicyStore(settings_db).resolve(identity) as policy:
+            configured = credentials(settings_db, policy.username)
+            if (not configured or endpoint_identity(configured['base_url']) != policy.destination[1]
+                    or configured['model'] != policy.destination[2]):
+                return dict(REFUSAL)
+            # Re-authorize the content rather than reuse a caller-supplied envelope.
+            current = disclosure.read_fact(fact_id, identity, include_evidence=include_evidence)
+            if current.get('status') != 'success':
+                return dict(REFUSAL)
+            import json
+            outbound = (configured['base_url'], configured['api_key'], configured['model'],
+                        [{'role': 'user', 'content': json.dumps(current['fact'])}])
+        # Do not hold the settings read transaction across network I/O: a slow
+        # provider must not block administrative revocations or token activity.
+        chat_completion(*outbound)
+        # Backend text and metadata are not an authorized fact serialization.
+        return {'status': 'success', 'finish_reason': 'sent'}
+    except Exception:
+        return dict(REFUSAL)
