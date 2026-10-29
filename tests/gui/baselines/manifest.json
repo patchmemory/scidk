@@ -1,0 +1,49 @@
+{
+  "browser": "152.0.7977.82",
+  "engine": "chromium",
+  "locale": "en-US",
+  "timezone": "UTC",
+  "device_scale_factor": 1,
+  "human_review": "pending",
+  "status": "initial provisional references; human review pending",
+  "platform": "Linux, system Chrome 152.0.7977.82, installed system fonts",
+  "prompt": "codex_prompt_10.txt",
+  "source_checkpoint": "f83dae1 plus scoped Prompt 10 interaction fixes",
+  "viewports": [
+    [
+      1440,
+      900
+    ],
+    [
+      1280,
+      800
+    ],
+    [
+      1024,
+      768
+    ]
+  ],
+  "files": {
+    "datasets-1024x768.png": "b954f1fe987c96dd63594e75c29cece0c09ce8798119e6a2bc21c13d8dfc311e",
+    "datasets-1280x800.png": "3c6c2e60276f7ea28c344c7ac9f7c1490890f963f51a4def4a2f5bcbfa01e4a4",
+    "datasets-1440x900.png": "d160e149f5dcd87245e87cbb4374435bbc0d8043a4b550720e58558b21d06315",
+    "expanded-metadata-1024x768.png": "c74f4c3c1dac87de731c9affbe697f97f3105e063d9b9130625729ee5b49aabe",
+    "expanded-metadata-1280x800.png": "55044a9ea36590ebf8410433a5decc5741fb94a9d6374f57855763219d579df5",
+    "expanded-metadata-1440x900.png": "9e543d16de42358ea86289a87450477fbb79e3149433496b391a87b19cfa454a",
+    "files-1024x768.png": "c8af505fa9ad4f3cf00bbc334f253e153d2cc9728927330b779a654e553283aa",
+    "files-1280x800.png": "9e138a7cd29bd71c12f7dcf1e2e781b395bf9c004f95a884d9750bcfc4b35121",
+    "files-1440x900.png": "774e562971ba2dfc6e98f5a532759d32497ff5aec73891e84991f6c7187bcfb5",
+    "knowledge-1024x768.png": "4ac68b596769a6fb0a880755e942be39dc2edec36ee8ecab6d1a0aff7c1e12fd",
+    "knowledge-1280x800.png": "0bdec6cc98c332325bcdf9bdb0f53c5600e36bae218817a6815215fc518cb2ab",
+    "knowledge-1440x900.png": "cf3c519824a21874815216dab1c20acfcd39e689128ca6986d4c5372c34fbb10",
+    "overview-1024x768.png": "37b1351b7e25034023b58b6e88357141b3f8733f397b0b87ecde9dfc7e4d18f9",
+    "overview-1280x800.png": "3883d9f117e3973a40a72db92a8db4533cd9796c7a163702fd9dcf65823b350f",
+    "overview-1440x900.png": "647279e398d74799f4bab423c5e0169160eb89d530801ecb5866bf21b3b5371e",
+    "resources-1024x768.png": "465872512b656b516fc2872f6fc594f1becc007bc7730f98452cdf993b1ad058",
+    "resources-1280x800.png": "6667132de48b999efad5d7d9c51ee68f625f4c098c1f2814d129f4e442f8d46f",
+    "resources-1440x900.png": "1c418a98389be67083f2a65a87f31353c02865f432880e1139f03ea04ab20c7b",
+    "review-1024x768.png": "c8ef75708566c5f75f6a0281c20c51f72bcd4cd939529a3aa38974c6be3b22e7",
+    "review-1280x800.png": "feaea389719c7dcca245410e49d8eecab0f4539233a664f24e3cd4f192b3a67f",
+    "review-1440x900.png": "550d6f9147e07d2e4b8d90486602d0cd75ad9374b3f879017ff50095a474ed01"
+  }
+}

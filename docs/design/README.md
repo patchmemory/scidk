@@ -13,3 +13,7 @@ Implemented first slice: [migration map](scidk-gui-migration-map.md) and
 linked authoritative inputs for this pass; the original vision/demo documents in
 the primary checkout were not edited. The executable user request was
 `codex_prompt_09.txt` (its internal heading says Prompt 08).
+
+Prompt 10 validation foundation: [testing instructions](gui-testing.md),
+[testing report](gui-testing-report.md), and [human UX checklist](gui-human-ux-checklist.md).
+Initial screenshot references remain provisional pending human review.

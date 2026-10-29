@@ -27,3 +27,17 @@ For each subsequent pass, record prompt identifier, start/end timestamps, human 
 - Tests: focused GUI 3 passed; final regression 430 passed, 0 failed, 1 skipped.
 - Blockers: safe conversational transport, scoped DMS adapter, live disposable
   Neo4j verification. No later GUI slice started.
+
+
+## GUI testing foundation — codex_prompt_10.txt
+
+- Full start timestamp was not captured. First in-pass clock checkpoint:
+  2026-10-29 18:23:13 UTC (after initial reads; not the full pass start).
+- Browser and regression validation completed: 2026-10-29 18:35 UTC, minute precision.
+- Human UX review time and new cumulative account cost: not supplied.
+- Commit: focused checkpoint on `design/knowledge-curation-20261029`; exact hash
+  recorded in the completion response, including this report/checkpoint.
+- Browser: 28 passed, 0 failed, 0 skipped, 1 expected failure (legacy Settings CDN).
+- Non-browser regression: 128 passed, 0 failed, 0 skipped, 1 deselected.
+- Changed files, defects and limits: [GUI testing report](gui-testing-report.md).
+- Initial visual references remain provisional; all human task scores remain blank.

@@ -7,6 +7,7 @@
   const state = {tab: 'Files', inspectorTab: 'Metadata', selected: {}, expanded: false, version: 0};
   const browser = document.querySelector('.files-page');
   let closed = false;
+  let returnFocus;
   function raw(value, parent) {
     if (value && typeof value === 'object') {
       const details = document.createElement('details'); details.open = true;
@@ -25,6 +26,7 @@
     const selection = state.selected[state.tab];
     $('shared-inspector').hidden = !selection || closed;
     browser.classList.toggle('with-inspector', !!selection && !closed);
+    $('gui-datasets').classList.toggle('with-inspector', !!selection && !closed);
     if (!selection) return;
     $('shared-inspector').classList.toggle('expanded', state.expanded);
     $('inspector-expand').textContent = state.expanded ? 'Restore docked inspector' : 'Expand';
@@ -32,7 +34,11 @@
     const record = selection.record;
     $('inspector-title').textContent = (selection.kind === 'dataset' ? 'Dataset: ' : 'File / folder: ') + (record.name || record.path || selection.key);
     $('dataset-sharing').hidden = selection.kind !== 'dataset';
-    document.querySelectorAll('[data-inspector-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.inspectorTab === state.inspectorTab)));
+    document.querySelectorAll('[data-inspector-tab]').forEach(b => {
+      const active = b.dataset.inspectorTab === state.inspectorTab;
+      b.setAttribute('aria-selected', String(active)); b.setAttribute('tabindex', active ? '0' : '-1');
+    });
+    $('inspector-content').setAttribute('aria-labelledby', 'inspector-tab-' + state.inspectorTab.toLowerCase());
     const content = $('inspector-content'); content.replaceChildren();
     if (state.inspectorTab === 'Metadata') raw(record, content);
     if (state.inspectorTab === 'Provenance') {
@@ -52,18 +58,38 @@
       } catch (error) { if (version === state.version) content.textContent = error.message; }
     }
   }
-  function select(selection) { closed = false; state.selected[state.tab] = selection; render(); }
+  function select(selection) { returnFocus = document.activeElement; closed = false; state.selected[state.tab] = selection; render(); }
   function tab(name) {
     closed = false; state.tab = name;
     browser.hidden = name !== 'Files'; $('gui-datasets').hidden = name !== 'Datasets';
     $('gui-files-tab').setAttribute('aria-selected', String(name === 'Files'));
-    $('gui-datasets-tab').setAttribute('aria-selected', String(name === 'Datasets')); render();
+    $('gui-datasets-tab').setAttribute('aria-selected', String(name === 'Datasets'));
+    $('gui-files-tab').setAttribute('tabindex', name === 'Files' ? '0' : '-1');
+    $('gui-datasets-tab').setAttribute('tabindex', name === 'Datasets' ? '0' : '-1'); render();
   }
   $('gui-files-tab').onclick = () => tab('Files');
   $('gui-datasets-tab').onclick = () => tab('Datasets');
-  $('inspector-close').onclick = () => { closed = true; render(); };
+  function closeInspector() { closed = true; render(); returnFocus?.focus(); }
+  $('inspector-close').onclick = closeInspector;
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !$('shared-inspector').hidden) {
+      event.preventDefault(); closeInspector();
+    }
+  });
   $('inspector-expand').onclick = () => { state.expanded = !state.expanded; render(); };
   document.querySelectorAll('[data-inspector-tab]').forEach(b => b.onclick = () => { state.inspectorTab = b.dataset.inspectorTab; render(); });
+  function keyboardTabs(buttons) {
+    buttons.forEach((button, index) => { button.onkeydown = event => {
+      let next;
+      if (event.key === 'ArrowRight') next = (index + 1) % buttons.length;
+      if (event.key === 'ArrowLeft') next = (index + buttons.length - 1) % buttons.length;
+      if (event.key === 'Home') next = 0;
+      if (event.key === 'End') next = buttons.length - 1;
+      if (next !== undefined) { event.preventDefault(); buttons[next].focus(); buttons[next].click(); }
+    }; });
+  }
+  keyboardTabs([$('gui-files-tab'), $('gui-datasets-tab')]);
+  keyboardTabs([...document.querySelectorAll('[data-inspector-tab]')]);
   document.addEventListener('scidk:inspect', event => { if (state.tab === 'Files') select(event.detail); });
   function items(records, parent, graph) {
     parent.replaceChildren();

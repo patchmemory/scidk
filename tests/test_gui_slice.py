@@ -1,20 +1,13 @@
 """Opt-in GUI boundaries and real browser selection/state checks."""
 from pathlib import Path
-from types import SimpleNamespace
 import pytest
-from flask import Flask
-from scidk.web.routes.ui import bp
 
 ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture
 def gui_app():
-    app = Flask(__name__, template_folder=str(ROOT/'scidk/ui/templates'), static_folder=str(ROOT/'scidk/ui/static'))
-    app.register_blueprint(bp)
-    app.extensions['scidk'] = {'graph': SimpleNamespace(list_datasets=lambda: [], schema_summary=lambda: {}),
-        'registry': SimpleNamespace(by_id={}, by_extension={}, rules=SimpleNamespace(rules=[]))}
-    app.config['TESTING'] = True
-    return app
+    from tests.gui.harness import make_gui_app
+    return make_gui_app()
 
 
 def test_shell_opt_in_and_legacy_routes(gui_app):
