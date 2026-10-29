@@ -6,9 +6,24 @@
 <h2>Ask SciDK</h2>
 <p>Explore permitted, accepted knowledge with the Overview assistant.</p>
 <label for="overview-question">Your question</label>
+{% if overview_chat_enabled %}
+<form id="overview-chat">
+<textarea id="overview-question" required maxlength="4000" placeholder="Ask about your research" rows="4" style="display:block;width:100%;max-width:800px"></textarea>
+<label for="overview-context-type">Source context</label>
+<select id="overview-context-type"><option value="explain_fact">Accepted research fact</option><option value="get_system_context">System context</option><option value="get_ontology_context">Canonical ontology context</option></select>
+<label for="overview-context-id">Fact or context node ID</label><input id="overview-context-id" required maxlength="256">
+<label><input type="checkbox" id="overview-consent" required> Send this question and its authorized source context to my configured provider.</label>
+<button id="overview-send">Send</button>
+<p id="overview-status" role="status">Each question uses fresh source permissions. Earlier conversation turns are not sent.</p>
+<pre id="overview-answer" style="white-space:pre-wrap"></pre>
+<details><summary>Authorized sources and citations</summary><pre id="overview-sources" style="white-space:pre-wrap"></pre></details>
+</form>
+<script defer src="{{ url_for('static', filename='js/overview_chat.js') }}"></script>
+{% else %}
 <textarea id="overview-question" disabled aria-describedby="chat-unavailable" placeholder="Ask about your research" rows="4" style="display:block;width:100%;max-width:800px"></textarea>
 <button disabled>Send</button>
 <p id="chat-unavailable" role="status">Chat unavailable: an approved conversational transport with per-turn disclosure and a server-bound Overview profile is required. No question or conversation is sent.</p>
+{% endif %}
 <p><a href="{{ request.script_root }}/chat">Existing chat sessions</a> · <a href="{{ request.script_root }}/settings#ai-chat/llm-provider">Provider settings</a></p>
 {% elif page == 'Knowledge' %}
 <p>The existing knowledge tools remain available while the combined workspace is prepared.</p>

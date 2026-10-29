@@ -32,7 +32,9 @@ def _get_ext():
 # Experimental shell is opt-in; reading pages never initializes policy/storage.
 @bp.app_context_processor
 def gui_context():
-    return {'gui_v3': current_app.config.get('SCIDK_GUI_V3_ENABLED') is True}
+    return {'gui_v3': current_app.config.get('SCIDK_GUI_V3_ENABLED') is True,
+            'overview_chat_enabled': current_app.config.get('SCIDK_OVERVIEW_CHAT_ENABLED') is True,
+            'dataset_sharing_enabled': current_app.config.get('SCIDK_DATASET_SHARING_ENABLED') is True}
 
 
 def _gui_page(page):

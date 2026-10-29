@@ -58,7 +58,15 @@
       } catch (error) { if (version === state.version) content.textContent = error.message; }
     }
   }
-  function select(selection) { returnFocus = document.activeElement; closed = false; state.selected[state.tab] = selection; render(); }
+  function select(selection) {
+    returnFocus = document.activeElement; closed = false; state.selected[state.tab] = selection;
+    if ($('sharing-guide')) {
+      $('sharing-guide').hidden = true; $('sharing-draft').textContent = '';
+      $('sharing-status').textContent = ''; $('sharing-download').disabled = true;
+      document.querySelectorAll('[data-sharing-field]').forEach(input => { input.value = ''; });
+    }
+    render();
+  }
   function tab(name) {
     closed = false; state.tab = name;
     browser.hidden = name !== 'Files'; $('gui-datasets').hidden = name !== 'Datasets';
@@ -110,4 +118,50 @@
     } catch (error) { if (version === searchVersion) $('dataset-results').textContent = error.message; }
   };
   json('/api/datasets').then(data => items(data, $('indexed-datasets'), false)).catch(error => { $('indexed-datasets').textContent = error.message; });
+  if ($('sharing-start')) {
+    let sharingVersion = 0;
+    $('sharing-start').onclick = () => { $('sharing-guide').hidden = false; };
+    document.querySelectorAll('[data-sharing-field]').forEach(input => input.oninput = () => {
+      ++sharingVersion; $('sharing-download').disabled = true;
+    });
+    async function prepare(download) {
+      const selected = state.selected.Datasets;
+      // A Neo4j element ID/path is not a stable curation identity.
+      const id = selected?.record.entity_ref;
+      if (!id) { $('sharing-status').textContent = 'Unavailable: this dataset has no stable curation identity or authorized membership.'; return; }
+      const version = ++sharingVersion;
+      $('sharing-download').disabled = true;
+      $('sharing-status').textContent = 'Checking dataset permissions and current support…';
+      const fields = {};
+      document.querySelectorAll('[data-sharing-field]').forEach(input => { fields[input.dataset.sharingField] = input.value; });
+      try {
+        const response = await fetch(base + '/api/plugins/nih_dms/datasets/' + encodeURIComponent(id) + '/prepare', {
+          method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({fields, download})
+        });
+        if (!response.ok) {
+          const error = await response.json(); throw new Error(error.error || 'Dataset preparation unavailable.');
+        }
+        if (download) {
+          const blob = await response.blob();
+          if (version !== sharingVersion || selected !== state.selected.Datasets) return;
+          const url = URL.createObjectURL(blob); const link = document.createElement('a');
+          link.href = url; link.download = 'dataset-sharing-draft.zip'; link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          $('sharing-status').textContent = 'Read README.md and review the scripts before preparing a local copy.';
+        } else {
+          const data = await response.json();
+          if (version !== sharingVersion || selected !== state.selected.Datasets) return;
+          if (data.status !== 'success') throw new Error(data.error || 'Dataset preparation unavailable.');
+          $('sharing-draft').textContent = data.markdown;
+          $('sharing-status').textContent = data.notice;
+          if (!data.package_ready) return;
+        }
+        $('sharing-download').disabled = false;
+      } catch (error) {
+        if (version === sharingVersion && selected === state.selected.Datasets) $('sharing-status').textContent = error.message;
+      }
+    }
+    $('sharing-preview').onclick = () => prepare(false);
+    $('sharing-download').onclick = () => prepare(true);
+  }
 })();

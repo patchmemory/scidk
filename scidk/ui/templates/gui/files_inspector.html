@@ -13,6 +13,23 @@
 <h2 id="inspector-title"></h2><button id="inspector-close">Close inspector</button><button id="inspector-expand" aria-expanded="false">Expand</button>
 <div role="tablist" aria-label="Inspector">{% for tab in ['Metadata','Annotations','Provenance'] %}<button role="tab" id="inspector-tab-{{ tab|lower }}" aria-controls="inspector-content" tabindex="{{ 0 if loop.first else -1 }}" data-inspector-tab="{{ tab }}" aria-selected="{{ 'true' if loop.first else 'false' }}">{{ tab }}</button>{% endfor %}</div>
 <div id="inspector-content" role="tabpanel" aria-labelledby="inspector-tab-metadata" aria-live="polite"></div>
-<div id="dataset-sharing" hidden><button disabled aria-describedby="sharing-unavailable">Prepare for Sharing</button><p id="sharing-unavailable">Unavailable: dataset-scoped export requires an authorized membership and evidence adapter. The legacy NIH DMS exporter summarizes the whole graph.</p></div>
+<div id="dataset-sharing" hidden>
+{% if dataset_sharing_enabled %}
+<button id="sharing-start">Prepare for Sharing</button>
+<section id="sharing-guide" hidden aria-label="Dataset sharing preparation">
+<h3>1. Review this dataset</h3><p>A draft requires authorized, currently supported dataset membership and metadata. Source files stay on your machine.</p>
+<h3>2. Complete investigator details</h3>
+{% for field, label in [('repository','Repository'),('retention_years','Retention (years, 1–999)'),('access_contact','Access contact'),('software','Software and tools'),('oversight','Oversight responsibilities')] %}
+<label for="sharing-{{ field }}">{{ label }}</label><input id="sharing-{{ field }}" data-sharing-field="{{ field }}" maxlength="1000">
+{% endfor %}
+<label for="sharing-sharing_mode">Sharing mode</label><select id="sharing-sharing_mode" data-sharing-field="sharing_mode"><option value="">Investigator to decide</option><option value="open">Open</option><option value="controlled_access">Controlled access</option><option value="registered_access">Registered access</option><option value="metadata_only">Metadata only</option><option value="not_shared">Not shared</option></select>
+<h3>3. Review and download</h3><p>Review the NIH draft, citations, file manifest, consent and access restrictions. The download contains metadata and local copy scripts; it does not upload or de-identify data.</p>
+<button id="sharing-preview">Preview dataset DMS draft</button><button id="sharing-download" disabled>Download preparation package</button>
+<p id="sharing-status" role="status"></p><pre id="sharing-draft" style="white-space:pre-wrap"></pre>
+</section>
+{% else %}
+<button disabled aria-describedby="sharing-unavailable">Prepare for Sharing</button><p id="sharing-unavailable">Unavailable: dataset-scoped export requires an authorized membership and evidence adapter. The legacy NIH DMS exporter summarizes the whole graph.</p>
+{% endif %}
+</div>
 </aside></section>
 <script defer src="{{ url_for('static', filename='js/gui_slice.js') }}"></script>

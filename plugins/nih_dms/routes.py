@@ -16,7 +16,7 @@ import logging
 import sqlite3
 from typing import Any, Optional, Tuple
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify, request, Response
 
 from scidk.web.decorators import require_role
 
@@ -37,6 +37,54 @@ _PLAN_ROLES = ('admin', 'user')
 
 #: Filename offered when the draft is downloaded rather than displayed.
 DOWNLOAD_FILENAME = 'nih-dms-plan-draft.md'
+
+
+@bp.post('/datasets/<dataset_id>/prepare')
+def prepare_dataset(dataset_id):
+    """Human-only selected-dataset preview or metadata/script ZIP download."""
+    from dataclasses import replace
+    from scidk.agent_tools.context import context_from_app
+    from scidk.agent_tools.security import REFUSAL
+    from scidk.services.dataset_sharing import (
+        dataset_snapshot, investigator_fields, draft_plan as scoped_plan, sharing_package, safe_relative,
+    )
+    if current_app.config.get('SCIDK_DATASET_SHARING_ENABLED') is not True:
+        return jsonify(REFUSAL), 403
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or set(body) - {'fields', 'download'} or type(body.get('download', False)) is not bool:
+        return jsonify(status='error', error='Invalid sharing request'), 400
+    try:
+        fields = investigator_fields(body.get('fields', {}))
+    except ValueError:
+        return jsonify(status='error', error='Invalid investigator fields'), 400
+    try:
+        ctx = replace(context_from_app(current_app, channel='chat'), profile='overview')
+        snapshot = dataset_snapshot(ctx, dataset_id)
+        if body.get('download'):
+            payload = sharing_package(snapshot, fields)
+            # Recheck grants, evidence, membership and support before download.
+            if dataset_snapshot(ctx, dataset_id) != snapshot:
+                raise ValueError()
+            return Response(payload, mimetype='application/zip', headers={
+                'Content-Disposition': 'attachment; filename="dataset-sharing-draft.zip"',
+                'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'})
+        markdown = scoped_plan(snapshot, fields)
+        package_ready = True
+        try:
+            paths = [safe_relative(f.get('relative_path')) for f in snapshot['files']]
+            package_ready = len({p.casefold() for p in paths}) == len(paths)
+        except ValueError:
+            package_ready = False
+        if dataset_snapshot(ctx, dataset_id) != snapshot:
+            raise ValueError()
+        response = jsonify(status='success', markdown=markdown, snapshot=snapshot, package_ready=package_ready,
+            notice=('Review all fields and file membership before preparing a local copy.' if package_ready else
+                    'Draft available. Package requires supported, unique portable relative paths for every member file.'))
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    except Exception:
+        # Never expose whether an unknown or unauthorized dataset exists.
+        return jsonify(REFUSAL), 403
 
 
 def _neo4j_client():

@@ -3189,3 +3189,17 @@ def api_chat_tool(name):
         return jsonify(status='error', error='Body must be JSON'), 400
     return jsonify(run_tool(name, {} if body is None else body,
                             context_from_app(current_app, channel='chat')))
+
+
+@bp.post('/chat/overview')
+def api_overview_chat():
+    """Server-bound Overview; no Review selector or legacy conversation replay."""
+    from dataclasses import replace
+    from ...agent_tools.context import context_from_app
+    from ...agent_tools.security import REFUSAL
+    from ...services.overview_chat import overview_turn
+    if current_app.config.get('SCIDK_OVERVIEW_CHAT_ENABLED') is not True:
+        return jsonify(REFUSAL), 403
+    ctx = replace(context_from_app(current_app, channel='chat'), profile='overview')
+    result = overview_turn(ctx, request.get_json(silent=True))
+    return jsonify(result), 200 if result['status'] == 'success' else 403, {'Cache-Control': 'no-store'}
