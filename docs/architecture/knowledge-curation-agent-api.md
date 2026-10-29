@@ -88,10 +88,11 @@ applied receipt verification, matching graph binding, current ontology revision,
 endpoint access, nonconflicting property values and optional permitted citations.
 A graph object's existence does not prove acceptance. Proposed, superseded,
 rejected, conflicting or unapplied support is never described as a currently
-accepted fact. If all relevant assertion records are separately authorized,
+accepted fact. In the Review profile, if all relevant assertion records are separately authorized,
 an unsupported result uses `curation_status=not_currently_supported` and
 `assertion_statuses`; it does not return raw candidate values. Unknown, inaccessible
-and legacy/unclassified facts are indistinguishable refusals. A retained old
+and legacy/unclassified facts are indistinguishable refusals. Overview refuses
+all unsupported facts, even when the same user has Review metadata grants. A retained old
 Neo4j value never overrides ledger decisions.
 
 The assertion inspector returns the claim domain/type/version/epistemic status

@@ -158,10 +158,12 @@ class AssertionAccess:
                 policy.property(label, key)
             return result
 
-    def explain(self, policy, identity, fact_id, *, include_evidence=True):
+    def explain(self, policy, identity, fact_id, *, include_evidence=True, allow_unsupported=False):
         current = self.facts.read_fact(fact_id, identity, include_evidence=include_evidence)
         if current['status'] == 'success':
             return current
+        if not allow_unsupported:
+            raise DisclosureDenied()
         # Only explicitly permitted ledger assertions can explain unsupported
         # facts. Unknown/legacy/unclassified and inaccessible facts remain identical.
         with closing(sqlite3.connect(self.ledger.path.as_uri() + '?mode=ro', uri=True)) as conn:

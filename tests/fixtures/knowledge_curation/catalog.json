@@ -1,0 +1,15 @@
+[
+  {
+    "name": "Person",
+    "properties": [{"name":"name","type":"string"},{"name":"email","type":"string"}],
+    "relationships": [{"type":"PI_OF","to_label":"Project","direction":"outgoing",
+                       "properties":[{"name":"role","type":"string","allowed_values":["PI"]}]}]
+  },
+  {
+    "name":"Project",
+    "matching_key":"project_id",
+    "properties":[{"name":"project_id","type":"string"},{"name":"short_description","type":"string"},
+                  {"name":"record_source","type":"string"}]
+  },
+  {"name":"SyntheticWorkOrder","properties":[{"name":"disease_alignments","type":"list"}]}
+]

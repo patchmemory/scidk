@@ -83,7 +83,8 @@ def dispatch(name, args, ctx, policy):
             raise DisclosureDenied()
         return service.read(args['entry_id'], ctx.identity, depth=args.get('depth', 3), limit=args.get('limit', 128))
     if name == 'explain_fact':
-        return services.assertions.explain(policy, ctx.identity, args['fact_id'], include_evidence=args.get('include_evidence', True))
+        return services.assertions.explain(policy, ctx.identity, args['fact_id'],
+            include_evidence=args.get('include_evidence', True), allow_unsupported=ctx.profile == 'review')
     if name == 'get_assertion':
         return {'status': 'success', 'assertion': services.assertions.inspect(policy, args['assertion_id'],
                                                                             include_history=args.get('include_history', False))}

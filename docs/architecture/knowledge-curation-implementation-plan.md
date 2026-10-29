@@ -16,7 +16,9 @@ system/ontology projections and an offline selected-concept registry after revie
 The MONDO example uses a separately approved fixture-only ontology.
 [Implementation stage 5](knowledge-curation-stage-5.md) adds shared scoped tools,
 explicit proposal capabilities and declarative assistant profiles after Stage 4
-review. Stage 6 remains pending and requires review of Stage 5 results.
+review. [Implementation stage 6](knowledge-curation-stage-6.md) validates the
+synthetic source-to-query slice and records backend/GUI/DMS readiness after
+Stage 5 review. GUI implementation remains pending review of Stage 6 results.
 The historical design-stage completion report below predates this approval.
 
 ## Focused implementation commits after approval
