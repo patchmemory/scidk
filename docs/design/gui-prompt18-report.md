@@ -143,5 +143,7 @@ ontology explicitly. Do not derive authority from a filesystem path, profile
 name, scan UUID, admin role or Neo4j presence. This pass stops the legacy adapter
 at that boundary, as required by the approved human-browsing policy.
 
-Implementation commit is recorded by a subsequent documentation-only commit so
-that the exact hash can be included without a self-referential Git hash.
+Implementation commit: `90cdc32942cf39b6d2629fa15bd2e7c6dc975d80`.
+This hash is recorded in a subsequent documentation-only commit. All tracked work
+was committed; the pre-existing untracked inputs and additional user authorization
+remain preserved outside the implementation commit.
