@@ -97,7 +97,7 @@ def operation_permission():
     if ('/instances/' in path or path.endswith(('/execute', '/run', '/commit', '/enrich'))
             or '/import-triples/' in path or path.endswith(('/transfer-to-primary', '/import-csv'))):
         return 'graph_entity_write'
-    if '/api/canvas/' in path or '/api/maps/' in path or path.startswith('/api/queries'):
+    if '/api/canvas/' in path or '/api/maps/' in path or path.startswith('/api/queries') or path == '/api/graph/query':
         return 'graph_management_read'  # private view state, not graph application
     return 'graph_schema_write'
 
@@ -115,8 +115,13 @@ def enforce():
     try:
         # Raw query facilities are not conferred by management grants. Existing
         # curated operations remain the only available graph write paths.
-        if request.path in {'/api/neo4j/query', '/api/graph/query'}:
+        if request.path == '/api/neo4j/query':
             raise DisclosureDenied()
+        # Raw Cypher is read-only: it needs the management read grant for the exact
+        # connection (or named profile) and is executed in a read transaction.
+        raw_cypher = request.path == '/api/graph/query' and request.method == 'POST'
+        if raw_cypher:
+            authorize_profile((request.get_json(silent=True) or {}).get('profile_name'))
         permission = operation_permission()
         primary(permission)
         g.graph_management_permission = permission
@@ -140,7 +145,7 @@ def enforce():
         if request.path.endswith(('/execute', '/run', '/transfer-to-primary', '/import-csv', '/enrich', '/discovered/import')):
             raise DisclosureDenied()
         body = request.get_json(silent=True) or {}
-        saved_map = request.path.startswith(('/api/maps/saved', '/api/queries'))
+        saved_map = request.path.startswith(('/api/maps/saved', '/api/queries')) or raw_cypher
         if isinstance(body, dict) and body.get('query') and not saved_map:
             raise DisclosureDenied()
         # The legacy label writer interpolates identifiers. Values remain

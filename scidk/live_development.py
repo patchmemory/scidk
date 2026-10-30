@@ -76,6 +76,7 @@ def read_only_request():
     safe = ('/api/auth/', '/api/knowledge/', '/api/maps/saved', '/api/queries')
     if (request.path.startswith(safe) or request.path in {
             '/api/development/readiness', '/api/canvas/session', '/api/chat/overview',
+            '/api/graph/query',
             '/admin/chat-readiness'}):
         return None
     return jsonify(status='unavailable', error='This live development profile permits graph reads and local view state only.'), 403, {'Cache-Control':'no-store'}

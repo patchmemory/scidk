@@ -115,8 +115,9 @@ class Neo4jClient:
             List of records as dictionaries
         """
         with self._session() as session:
-            result = session.run(query, parameters or {})
-            return [dict(record) for record in result]
+            # A true read transaction: the server rejects any write clause.
+            return session.execute_read(
+                lambda tx: [dict(record) for record in tx.run(query, parameters or {})])
 
     def execute_write(self, query: str, parameters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """Execute a write query and return results as list of dicts.
