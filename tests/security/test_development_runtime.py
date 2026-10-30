@@ -78,6 +78,7 @@ def test_live_profile_blocks_legacy_graph_write_paths():
     for path in ('/api/pipeline/sources/x/run', '/api/graph/commit', '/api/settings/neo4j'):
         with app.test_request_context(path, method='POST', json={}):
             assert read_only_request()[1] == 403
-    for path in ('/api/auth/login', '/api/development/readiness', '/api/canvas/session'):
+    for path in ('/api/auth/login', '/api/development/readiness', '/api/canvas/session',
+                 '/api/graph/query', '/api/canvas/nodes/expand', '/api/canvas/nodes/verify'):
         with app.test_request_context(path, method='POST', json={}):
             assert read_only_request() is None
