@@ -360,12 +360,14 @@ def _serialize_neo4j_value(value):
     if isinstance(value, Node):
         return {
             'id': value.id,
+            'element_id': getattr(value, 'element_id', None),
             'labels': list(value.labels),
             'properties': dict(value.items())
         }
     elif isinstance(value, Relationship):
         return {
             'id': value.id,
+            'element_id': getattr(value, 'element_id', None),
             'type': value.type,
             'start_node': value.start_node.id,
             'end_node': value.end_node.id,

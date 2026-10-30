@@ -1273,6 +1273,7 @@
 
     // Initialize Canvas mode (toggle + node search/add)
     initCanvasMode(tab.id);
+    bindExpandHandlers(tab.id);
   }
 
   // ===== CANVAS MODE (Push 1: toggle + node search/add) =====
@@ -1528,6 +1529,23 @@
     return _relTypesCache;
   }
 
+  // Item 5: double-tap a real node to expand its children (fan-out → ellipsis);
+  // tap an ellipsis node to lazy-load the collapsed subtree. Bound once per tab so
+  // it works in Explore as well as Canvas mode (nodes need a graph element_id).
+  function bindExpandHandlers(tabId) {
+    const cy = getCy(tabId);
+    if (!cy) { setTimeout(() => bindExpandHandlers(tabId), 120); return; }
+    if (!window.expandBound) window.expandBound = {};
+    if (window.expandBound[tabId]) return;
+    window.expandBound[tabId] = true;
+    cy.on('dbltap', 'node', (evt) => {
+      const n = evt.target;
+      if (n.data('ellipsis')) return;
+      if (n.data('element_id')) expandNode(tabId, n);
+    });
+    cy.on('tap', 'node[?ellipsis]', (evt) => lazyLoadEllipsis(tabId, evt.target));
+  }
+
   // Enable edge-drawing + change tracking for a tab's canvas.
   function enableCanvasTools(tabId) {
     const cy = getCy(tabId);
@@ -1573,14 +1591,7 @@
     if (!window.canvasChangeBound) window.canvasChangeBound = {};
     if (!window.canvasChangeBound[tabId]) {
       cy.on('add remove position data', () => scheduleSessionSave(tabId));
-      // Item 5: double-tap a real node to expand its children (fan-out → ellipsis);
-      // tap an ellipsis node to lazy-load the collapsed subtree.
-      cy.on('dbltap', 'node', (evt) => {
-        const n = evt.target;
-        if (n.data('ellipsis')) return;
-        if (n.data('element_id')) expandNode(tabId, n);
-      });
-      cy.on('tap', 'node[?ellipsis]', (evt) => lazyLoadEllipsis(tabId, evt.target));
+      bindExpandHandlers(tabId);
 
       // Geometry-based edge box-select (Push 6): a marquee should grab any edge
       // whose segment passes through (or into) the rectangle, even when both
@@ -2992,6 +3003,8 @@
                 label: val.labels[0] || 'Node',
                 labels: val.labels,
                 properties: val.properties || {},
+                // Graph element id: lets double-click expand this node (Explore and Canvas)
+                element_id: val.element_id || null,
                 // Create display label from properties
                 displayLabel: val.properties?.name || val.properties?.title || val.properties?.id || nodeId
               });
@@ -3023,7 +3036,8 @@
             label: node.displayLabel,
             fullLabel: node.label,
             labels: node.labels,
-            properties: node.properties
+            properties: node.properties,
+            element_id: node.element_id
           },
           classes: 'instance-node'
         });
