@@ -518,3 +518,86 @@ def test_overview_graph_turn_runs_granted_tools_and_shows_the_calls(secured, mon
     CapabilityStore(s.db).grant_tool(s.alice, 'overview', 'list_labels', admin_id=s.admin, allow=False)
     assert overview_chat.graph_turn(ctx, body) == REFUSAL
     assert not sent
+
+
+def _sharing_row(s, label, prop, mode):
+    with sqlite3.connect(s.db) as conn:
+        conn.execute("INSERT OR REPLACE INTO agent_sharing(label,property,mode) VALUES (?,?,?)", (label, prop, mode))
+
+
+def test_unknown_sharing_mode_is_hidden_in_graph_tools(secured):
+    from scidk.agent_tools.disclosure import load_policy
+    from scidk.agent_tools.registry import run_tool
+    s = secured
+    for mode in ('pseudonymized', 'something-new', ''):
+        _sharing_row(s, 'Sample', 'secret', mode)
+        assert load_policy(s.db).is_hidden(['Sample'], 'secret'), mode
+        node = [{'n': {'_labels': ['Sample'], '_id': '1', 'name': 'a', 'secret': 'x-value'}}]
+        ctx = _graph_ctx(s, [('RETURN n', node)], ['query_knowledge_graph'])
+        out = run_tool('query_knowledge_graph', {'cypher': 'MATCH (n:Sample) RETURN n'}, ctx)
+        assert out['status'] == 'success' and 'x-value' not in json.dumps(out), mode
+        assert run_tool('query_knowledge_graph', {'cypher': 'MATCH (n:Sample) RETURN n.secret'}, ctx)['status'] == 'refused'
+
+
+def test_hidden_property_never_appears_in_any_graph_tool_output(secured, monkeypatch):
+    from scidk.agent_tools import tools_graph
+    from scidk.agent_tools.registry import run_tool
+    s = secured
+    _sharing_row(s, 'Sample', 'secret', 'hidden')
+    node = {'_labels': ['Sample'], '_id': '1', 'name': 'a', 'secret': 'x-value'}
+    script = [('db.labels', [{'label': 'Sample'}]), ('count(n)', [{'count': 3}]),
+              ('RETURN n', [{'n': node}]), ('RETURN m', [{'m': {'nested': [node]}}])]
+    monkeypatch.setattr(tools_graph, 'get_schema', lambda *a, **k: {
+        'status': 'success', 'schema': {'labels': ['Sample'], 'relationships': [],
+                                         'properties': {'Sample': ['name', 'secret']}, 'secret': 'x-value'}})
+    ctx = _graph_ctx(s, script, ['list_labels', 'count_nodes', 'get_schema', 'query_knowledge_graph'])
+    outputs = [
+        run_tool('list_labels', {}, ctx),
+        run_tool('count_nodes', {'label': 'Sample'}, ctx),
+        run_tool('count_nodes', {'label': 'Sample', 'where': {'secret': 'x-value'}}, ctx),
+        run_tool('get_schema', {}, ctx),
+        run_tool('query_knowledge_graph', {'cypher': 'MATCH (n:Sample) RETURN n'}, ctx),
+        run_tool('query_knowledge_graph', {'cypher': 'MATCH (m:Sample) RETURN m'}, ctx),
+        run_tool('query_knowledge_graph', {'cypher': 'MATCH (n:Sample) RETURN n.secret'}, ctx),
+    ]
+    for out in outputs:
+        text = json.dumps(out)
+        assert 'x-value' not in text and '"secret"' not in text.replace('`secret`', ''), text
+    assert outputs[2]['status'] == 'refused' and outputs[6]['status'] == 'refused'
+
+
+def test_graph_turn_keeps_tool_definitions_on_every_round_and_retries_a_dropped_connection(secured, monkeypatch):
+    from dataclasses import replace
+    from scidk.ai import provider_settings
+    from scidk.ai.openai_compatible import ProviderError
+    from scidk.services import overview_chat
+    s = secured
+    provider_settings.save(s.db, 'alice', preset='custom', base_url='https://parley.example/v1',
+                           model='fixture-model', api_key='fixture-key')
+    ctx = replace(_graph_ctx(s, [('db.labels', [{'label': 'Sample'}]), ('count(n)', [{'count': 3}])], ['list_labels']),
+                  identity=BoundIdentity(s.alice, 'chat'))
+    monkeypatch.setattr(overview_chat.time, 'sleep', lambda _s: None)
+    seen, dropped = [], []
+
+    def model(base_url, api_key, name, messages, tools=None, **extra):
+        # Parley/Bedrock answers 400 when tool results are sent without tool definitions.
+        assert tools, 'tool definitions must accompany tool results on every round'
+        if not dropped:
+            dropped.append(1)
+            raise ProviderError('Could not reach https://parley.example/v1: connection reset')
+        seen.append(messages[-1]['role'])
+        if len(seen) <= overview_chat.MAX_TOOL_ROUNDS:
+            call = {'id': f'c{len(seen)}', 'type': 'function', 'function': {'name': 'list_labels', 'arguments': '{}'}}
+            return {'content': None, 'tool_calls': [call], 'refusal': None,
+                    'raw_message': {'role': 'assistant', 'content': None, 'tool_calls': [call]}}
+        assert messages[-1]['role'] == 'user' and 'Answer now' in messages[-1]['content']
+        return {'content': 'Sample: 3', 'tool_calls': [], 'refusal': None, 'raw_message': {}}
+    monkeypatch.setattr(overview_chat, 'chat_completion', model)
+    body = {'message': 'labels?', 'scope': 'graph', 'send_question': True}
+    out = overview_chat.graph_turn(ctx, body)
+    assert out['status'] == 'success' and out['reply'] == 'Sample: 3' and len(out['context']['tool_calls']) == 3
+    # A model that never stops calling tools fails closed instead of looping.
+    monkeypatch.setattr(overview_chat, 'chat_completion', lambda *a, **k: {
+        'content': None, 'refusal': None, 'raw_message': {'role': 'assistant', 'content': None},
+        'tool_calls': [{'id': 'x', 'type': 'function', 'function': {'name': 'list_labels', 'arguments': '{}'}}]})
+    assert overview_chat.graph_turn(ctx, body) == REFUSAL

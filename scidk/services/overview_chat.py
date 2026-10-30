@@ -1,13 +1,16 @@
 """Single-turn Overview conversation over freshly disclosed fixed-tool context."""
 from dataclasses import replace
 import json
+import logging
+import time
 
 from ..agent_tools.registry import run_tool, available_tool_definitions
 from ..agent_tools.security import PolicyStore, REFUSAL, endpoint_identity
-from ..ai.openai_compatible import chat_completion
+from ..ai.openai_compatible import chat_completion, ProviderError
 from ..ai.shared_provider import resolve as governed_credentials
 
 
+logger = logging.getLogger(__name__)
 MAX_TOOL_ROUNDS = 3
 MAX_TOOL_RESULT_CHARS = 24000
 
@@ -20,6 +23,7 @@ def graph_turn(ctx, body):
     from ..agent_tools.capabilities import permitted_tools
     from ..agent_tools.profiles import GRAPH_AGENT_TOOLS
     from ..agent_tools.registry import TOOL_DEFINITIONS
+    stage = 'request'
     try:
         if (not isinstance(body, dict) or set(body) != {'message', 'scope', 'send_question'}
                 or body['scope'] != 'graph' or body['send_question'] is not True
@@ -40,6 +44,7 @@ def graph_turn(ctx, body):
             if not tools:
                 raise ValueError()
             return creds, tools
+        stage = 'authorize'
         creds, tools = authorize()
         definitions = [{'type': 'function', 'function': {'name': t['name'], 'description': t['description'],
                                                          'parameters': t['input_schema']}}
@@ -47,20 +52,42 @@ def graph_turn(ctx, body):
         messages = [
             {'role': 'system', 'content': 'You answer questions about the SciDK knowledge graph. Use the provided '
              'read-only tools to look at the graph and answer only from their results; do not invent data. '
-             'list_labels gives every node label with its count. Say when a result was truncated or withheld.'},
+             'Tools: list_labels (every node label with its count); count_nodes (count one label, optionally '
+             'filtered by property values); get_schema (labels, relationship types, properties); '
+             'query_knowledge_graph (read-only Cypher, e.g. MATCH (n:Sample) RETURN n.SampleType AS type, '
+             'count(*) AS n; relationship types between labels: MATCH (a:Dataset)-[r]-(b) RETURN type(r) AS rel, '
+             'labels(b) AS label, count(*) AS n). Prefer one or two tool calls, then answer. '
+             'Say when a result was truncated or withheld.'},
             {'role': 'user', 'content': body['message']},
         ]
         calls, reply = [], None
         for round_number in range(MAX_TOOL_ROUNDS + 1):
+            stage = 'authorize'
             current, tools = authorize()
             if current != creds:
                 raise ValueError()
-            answer = chat_completion(current['base_url'], current['api_key'], current['model'], messages,
-                                     max_tokens=1200, timeout=60,
-                                     **({'tools': definitions} if round_number < MAX_TOOL_ROUNDS else {}))
+            if round_number == MAX_TOOL_ROUNDS:
+                # The provider rejects tool results unless tool definitions are sent too, so the last
+                # round keeps them and asks for the answer instead.
+                messages.append({'role': 'user', 'content': 'Answer now from the tool results above; no more tool calls.'})
+            stage = 'provider'
+            for attempt in range(4):
+                try:
+                    answer = chat_completion(current['base_url'], current['api_key'], current['model'], messages,
+                                             max_tokens=1200, timeout=60, tools=definitions)
+                    break
+                except ProviderError as error:
+                    if attempt == 3 or not str(error).startswith(('Could not reach', 'HTTP 5')):
+                        raise
+                    logger.warning('graph_turn provider error, retrying: %s', str(error)[:80])
+                    time.sleep(1 + attempt)
+            stage = 'parse'
             if answer.get('refusal'):
                 raise ValueError()
             requested = answer.get('tool_calls') or []
+            if requested and round_number == MAX_TOOL_ROUNDS:
+                stage = 'rounds-exhausted'
+                raise ValueError()
             if not requested:
                 if not isinstance(answer.get('content'), str):
                     raise ValueError()
@@ -73,16 +100,22 @@ def graph_turn(ctx, body):
                     args = json.loads(call['function'].get('arguments') or '{}')
                 except ValueError:
                     args = None
+                stage = 'tool'
                 result = run_tool(name, args, ctx) if name in tools else dict(REFUSAL)
+                logger.info('graph_turn tool=%s status=%s', name, result.get('status'))
                 calls.append({'tool': name, 'arguments': args, 'result': result})
                 messages.append({'role': 'tool', 'tool_call_id': call['id'],
                                  'content': json.dumps(result)[:MAX_TOOL_RESULT_CHARS]})
         if reply is None:
+            stage = 'rounds-exhausted'
             raise ValueError()
         return {'status': 'success', 'reply': reply[:16000], 'context': {'tool_calls': calls},
                 'notice': 'AI-generated from the read-only graph tool results shown below; verify them.' if calls else
                           'No graph tool was called, so this answer is NOT taken from the graph.'}
-    except Exception:
+    except Exception as error:
+        # Category only (no message text, key or graph data) so a failed demo turn can be diagnosed.
+        logger.warning('graph_turn failed stage=%s error=%s %s', stage, type(error).__name__,
+                       str(error)[-300:] if stage == 'provider' else '')
         return dict(REFUSAL)
 
 
