@@ -3197,12 +3197,19 @@ def api_overview_chat():
     from dataclasses import replace
     from ...agent_tools.context import context_from_app
     from ...agent_tools.security import REFUSAL
-    from ...services.overview_chat import overview_turn
+    from ...services.overview_chat import overview_turn, graph_turn
     if current_app.config.get('SCIDK_OVERVIEW_CHAT_ENABLED') is not True:
         return jsonify(REFUSAL), 403, {'Cache-Control': 'no-store'}
     ctx = replace(context_from_app(current_app, channel='chat'), profile='overview')
     body = request.get_json(silent=True)
-    if isinstance(body, dict) and 'context' not in body:
+    if isinstance(body, dict) and body.get('scope') == 'graph':
+        from ..named_session import named_session
+        try:
+            named_session()
+        except Exception:
+            return jsonify(REFUSAL), 403, {'Cache-Control': 'no-store'}
+        result = graph_turn(ctx, body)
+    elif isinstance(body, dict) and 'context' not in body:
         from ..named_session import named_session
         try:
             named_session()

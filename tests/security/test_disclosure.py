@@ -482,3 +482,39 @@ def test_graph_query_is_read_only_capped_and_filtered(secured):
     assert shown['disclosure']['withheld_properties'] == 1
     named = run_tool('query_knowledge_graph', {'cypher': 'MATCH (n:Sample) RETURN n.secret'}, ctx)
     assert named['status'] == 'refused'
+
+
+def test_overview_graph_turn_runs_granted_tools_and_shows_the_calls(secured, monkeypatch):
+    from dataclasses import replace
+    from scidk.ai import provider_settings
+    from scidk.services import overview_chat
+    s = secured
+    provider_settings.save(s.db, 'alice', preset='custom', base_url='https://parley.example/v1',
+                           model='fixture-model', api_key='fixture-key')
+    chat = BoundIdentity(s.alice, 'chat')
+    ctx = replace(_graph_ctx(s, [('db.labels', [{'label': 'Sample'}]), ('count(n)', [{'count': 3}])], ['list_labels']),
+                  identity=chat)
+    sent = []
+
+    def model(base_url, api_key, name, messages, tools=None, **extra):
+        sent.append((len(messages), bool(tools)))
+        if len(messages) == 2:
+            call = {'id': 'c1', 'type': 'function', 'function': {'name': 'list_labels', 'arguments': '{}'}}
+            return {'content': None, 'tool_calls': [call], 'refusal': None,
+                    'raw_message': {'role': 'assistant', 'content': None, 'tool_calls': [call]}}
+        assert messages[-1]['role'] == 'tool' and 'Sample' in messages[-1]['content']
+        return {'content': 'Sample: 3', 'tool_calls': [], 'refusal': None, 'raw_message': {}}
+    monkeypatch.setattr(overview_chat, 'chat_completion', model)
+    body = {'message': 'What node labels are in the graph and how many of each?', 'scope': 'graph', 'send_question': True}
+    out = overview_chat.graph_turn(ctx, body)
+    assert out['status'] == 'success' and out['reply'] == 'Sample: 3'
+    assert [c['tool'] for c in out['context']['tool_calls']] == ['list_labels']
+    assert out['context']['tool_calls'][0]['result']['labels'] == [{'name': 'Sample', 'count': 3}]
+    # Extra keys, a token identity, or no tool grant never reach the model.
+    sent.clear()
+    assert overview_chat.graph_turn(ctx, {**body, 'history': []}) == REFUSAL
+    assert overview_chat.graph_turn(replace(ctx, identity=s.identity), body) == REFUSAL
+    from scidk.agent_tools.capabilities import CapabilityStore
+    CapabilityStore(s.db).grant_tool(s.alice, 'overview', 'list_labels', admin_id=s.admin, allow=False)
+    assert overview_chat.graph_turn(ctx, body) == REFUSAL
+    assert not sent

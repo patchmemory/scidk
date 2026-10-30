@@ -31,6 +31,7 @@
       $('overview-answer').textContent = data.reply; $('overview-answer-heading').hidden = false;
       $('overview-sources').textContent = JSON.stringify(data.context, null, 2);
       $('overview-source-heading').hidden = false; $('overview-source-details').hidden = false;
+      if (data.context.tool_calls) $('overview-source-details').open = true;
       for (const source of data.context.retrieved_sources || []) {
         const link = document.createElement('a'); link.className = 'source-link';
         link.textContent = source.title + ' · ' + (source.domain === 'research' ? 'Accepted, applied support' : 'Documentation & provenance');
