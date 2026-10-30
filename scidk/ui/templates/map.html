@@ -1237,7 +1237,7 @@
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid #e0e0e0; margin-bottom: 0.5rem;">
           <h3 style="margin: 0; font-size: 1rem;">Query Editor</h3>
           <div style="display: flex; gap: 0.5rem; align-items: center;">
-            <button class="run-query-${tab.id} btn btn-sm btn-success" data-testid="run-query-${tab.id}" title="Raw queries are unavailable under management grants" disabled>▶ Run</button>
+            <button class="run-query-${tab.id} btn btn-sm btn-success" data-testid="run-query-${tab.id}" title="Run query">▶ Run</button>
             <button class="save-map-${tab.id} btn btn-sm btn-primary" data-testid="save-map-${tab.id}" title="Save entire map configuration">💾 Save Map</button>
             <button class="save-query-${tab.id} btn btn-sm btn-outline-secondary" data-testid="save-query-${tab.id}" title="Save query">💾 Query</button>
             <button class="load-library-${tab.id} btn btn-sm btn-outline-secondary" data-testid="load-library-${tab.id}" title="Load from library">📚 Library</button>
@@ -2674,6 +2674,7 @@
       console.error('Error rendering schema:', error);
     }
   }
+  window.renderSchemaVisualization = renderSchemaVisualization;
 
   // Initialize query button handlers
   function initQueryButtons(tabId) {
@@ -3133,13 +3134,9 @@
         statusEl.style.color = '#666';
 
         try {
-          // Get selected Neo4j connection
-          const selectedConnection = window.getSelectedNeo4jConnection ? window.getSelectedNeo4jConnection() : null;
-
+          // The server runs this against the authorized management connection
+          // (read transaction); the connection id is not a saved profile name.
           const requestBody = { query };
-          if (selectedConnection) {
-            requestBody.profile_name = selectedConnection;
-          }
 
           const resp = await fetch(window.SCIDK_BASE + '/api/graph/query', {
             method: 'POST',
@@ -3990,7 +3987,24 @@
         renderMapList(); // Re-render to update active state
         console.log(`✓ Loaded map: ${map.name}`);
 
-        alert(`Loaded map: ${map.name}\nSaved query text is available for inspection. Raw execution requires a separate authorization contract.`);
+        // Auto-run the query after loading the map (with delay to ensure connection is set)
+        if (map.query) {
+          setTimeout(() => {
+            // Find the active tab's run button
+            const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+            const runBtn = activeTabId ? document.querySelector(`.run-query-${activeTabId}`) : null;
+            if (runBtn) {
+              console.log(`Auto-running query for loaded map on tab ${activeTabId}...`);
+              runBtn.click();
+            } else {
+              console.error(`Run button not found for tab ${activeTabId} - query will need to be run manually`);
+            }
+          }, 800); // Delay to ensure connection and editor are ready
+
+          alert(`Loaded map: ${map.name}\nQuery will run automatically...`);
+        } else {
+          alert(`Loaded map: ${map.name}`);
+        }
       }
     } catch (error) {
       console.error('Error loading map:', error);
@@ -4202,10 +4216,10 @@ window.applySchemaSettingsMode = function(mode) {
 
       // Re-render based on mode
       if (newMode === 'schema') {
-        // Don't auto-render schema - user should run a query or load a saved map
-        // if (typeof renderSchemaVisualization === 'function') {
-        //   await renderSchemaVisualization(activeTabId);
-        // }
+        // Show the full schema (combined labels + graph) when switching to Schema mode.
+        if (typeof window.renderSchemaVisualization === 'function') {
+          await window.renderSchemaVisualization(activeTabId);
+        }
       } else if (newMode === 'instance') {
         // Clear graph and show message to run query
         const cy = window.cytoscapeInstances && window.cytoscapeInstances[activeTabId];
@@ -4835,7 +4849,7 @@ window.populateInstancesTable = async function(results, tabId) {
         connectionSelect.replaceChildren(option);
         connectionSelect.value = connection.id;
         selectedConnection = connection.id;
-        connectionStatus.textContent = `Using authorized Neo4j connection ${connection.connection_id.slice(0, 12)}. Raw query execution is disabled.`;
+        connectionStatus.textContent = `Using authorized Neo4j connection ${connection.connection_id.slice(0, 12)}. Queries run read-only.`;
       } catch (error) {
         console.error('Failed to load Neo4j connections:', error);
         connectionSelect.innerHTML = '<option value="">Error loading connections</option>';
