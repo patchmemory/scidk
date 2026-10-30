@@ -19,3 +19,35 @@
   header, header nav {flex-wrap:wrap}
   header nav {display:flex}
 }
+
+/* Scans tab */
+#gui-scans .scans-layout {display:grid;grid-template-columns:minmax(190px,250px) minmax(0,1fr) minmax(220px,300px);gap:14px;align-items:start}
+#gui-scans .scans-layout > * {min-width:0}
+#gui-scans .scans-toggle {display:block;font-size:12px;margin:4px 0}
+#gui-scans #scans-list {max-height:72vh;overflow-y:auto;overflow-x:hidden;font-size:12px}
+#gui-scans #scans-list details {border-bottom:1px solid #dce4ed;padding:2px 0}
+#gui-scans #scans-list summary {cursor:pointer;display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+#gui-scans #scans-list summary .meta, #gui-scans .meta {color:#52606d;font-size:11px}
+#gui-scans #scans-list summary .meta {text-align:right}
+#gui-scans #scans-list button {display:block;width:100%;margin:1px 0;padding:3px 6px;text-align:left;white-space:normal;overflow-wrap:anywhere}
+#gui-scans #scans-list button[aria-current=true] {background:#dcebf9}
+#gui-scans #scans-list .older {margin:2px 0 4px 8px;font-size:11px}
+#gui-scans #scans-list .scan-meta {display:block;color:#52606d;font-size:11px}
+#gui-scans #scans-crumbs {overflow-wrap:anywhere}
+#gui-scans #scans-crumbs button {margin:1px;padding:2px 6px}
+#gui-scans #scans-search {display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:6px 0}
+#gui-scans #scans-search input {flex:1 1 160px;min-width:0;padding:5px}
+#gui-scans #scans-table {width:100%;font-size:12px;table-layout:fixed;border-collapse:collapse}
+#gui-scans #scans-table col.c-type {width:54px} #gui-scans #scans-table col.c-size {width:72px}
+#gui-scans #scans-table col.c-mod {width:112px} #gui-scans #scans-table col.c-ext {width:56px}
+#gui-scans #scans-table th {text-align:left}
+#gui-scans #scans-table th button {margin:0;padding:2px 4px;border:0;background:none;font-weight:bold}
+#gui-scans #scans-table th[aria-sort=ascending] button::after {content:" ▲"} #gui-scans #scans-table th[aria-sort=descending] button::after {content:" ▼"}
+#gui-scans #scans-table td {overflow-wrap:anywhere;vertical-align:top;border-top:1px solid #eef2f6;padding:2px 4px}
+#gui-scans #scans-table td button {margin:0;padding:1px 4px;border:0;background:none;text-align:left;white-space:normal;overflow-wrap:anywhere;color:#165dba}
+#gui-scans #scans-table tr.member td:first-child {padding-left:22px}
+#gui-scans .where {display:block;color:#52606d;font-size:11px}
+#gui-scans #scans-datasets button {display:block;width:100%;margin:3px 0;padding:5px 8px;text-align:left;white-space:normal;overflow-wrap:anywhere}
+#gui-scans .ds-line {font-size:12px;font-weight:600}
+#gui-scans .ds-name {font-size:11px;color:#3e4c59;overflow-wrap:anywhere}
+@media(max-width:1000px) {#gui-scans .scans-layout {grid-template-columns:minmax(0,1fr)}}

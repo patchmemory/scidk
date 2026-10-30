@@ -4,16 +4,20 @@
   const $ = id => document.getElementById(id);
   if (!$('gui-scans')) return;
   const base = window.SCIDK_BASE || '';
-  const st = {scans: null, scan: null, path: null, next: 0, version: 0};
+  const SERIES_MIN = 3;
+  const st = {scans: null, shares: null, scan: null, path: null, next: 0, version: 0, rows: [], sort: null, open: new Set(),
+              search: null, cursor: null};
   const fmt = (n) => {
     if (n == null) return '';
     const u = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']; let i = 0, v = Number(n);
     while (v >= 1000 && i < u.length - 1) { v /= 1000; i++; }
-    return (i > 1 ? v.toFixed(i >= 4 ? 1 : 0) : v.toFixed(0)) + ' ' + u[i];
+    return (i > 1 ? v.toFixed(i >= 4 ? 1 : (v < 10 ? 1 : 0)) : v.toFixed(0)) + ' ' + u[i];
   };
-  const num = n => n == null ? '–' : Number(n).toLocaleString();
+  const num = n => Number(n).toLocaleString();
+  const short = n => n == null ? '' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? Math.round(n / 1e3) + 'K' : num(n);
   const when = t => t ? new Date(t * 1000).toISOString().slice(0, 16).replace('T', ' ') : '';
   const el = (tag, text, attrs) => { const e = document.createElement(tag); if (text != null) e.textContent = text; Object.assign(e, attrs || {}); return e; };
+  const btn = (text, onclick, title) => { const b = el('button', text); b.type = 'button'; b.onclick = onclick; if (title) b.title = title; return b; };
   async function get(url, params) {
     const response = await fetch(base + url + '?' + new URLSearchParams(params || {}));
     let data = {};
@@ -22,30 +26,47 @@
     return data;
   }
   function status(text) { $('scans-status').textContent = text; }
+  const flags = () => ({system: $('scans-system').checked ? '1' : '0'});
+
+  /* ---- left panel: share -> scans, one total per share ---- */
+  function scanButton(s, label) {
+    const b = el('button'); b.type = 'button'; b.dataset.scanId = s.id; b.title = s.root;
+    b.append(label || s.root);
+    const meta = el('span', [s.date, s.files != null ? num(s.files) + ' files' : null, s.bytes ? fmt(s.bytes) : null,
+      /^(complete|completed|committed)$/i.test(s.status || '') ? null : s.status].filter(Boolean).join(' · '), {className: 'scan-meta'});
+    b.append(meta);
+    b.onclick = () => open(s, s.root);
+    return b;
+  }
 
   function renderScans() {
     const list = $('scans-list'); list.replaceChildren();
-    const groups = new Map(); let hidden = 0;
-    for (const s of st.scans) {
-      if (s.files === 0) { hidden++; continue; }
-      if (!groups.has(s.share)) groups.set(s.share, []);
-      groups.get(s.share).push(s);
-    }
-    const total = g => g.reduce((a, s) => a + (s.files || 0), 0);
-    [...groups.entries()].sort((a, b) => total(b[1]) - total(a[1])).forEach(([share, scans]) => {
-      scans.sort((a, b) => (b.files || 0) - (a.files || 0));
-      const bytes = scans.reduce((a, s) => a + (s.bytes || 0), 0);
-      const box = el('details', null, {open: scans.some(s => s.files > 1000000)});
-      box.append(el('summary', share + ' · ' + num(total(scans)) + ' files' + (bytes ? ' · ' + fmt(bytes) : '')));
-      scans.forEach(s => {
-        const b = el('button', (s.host ? s.host + ' ' : '') + s.root + ' — ' + num(s.files) + ' files' + (s.bytes ? ', ' + fmt(s.bytes) : '') + ' (' + s.status + ')');
-        b.type = 'button'; b.style.display = 'block'; b.style.textAlign = 'left'; b.style.margin = '2px 0';
-        b.dataset.scanId = s.id; b.onclick = () => open(s, s.root);
-        box.append(b);
-      });
+    const byId = new Map(st.scans.map(s => [s.id, s]));
+    st.shares.forEach(sh => {
+      const primary = byId.get(sh.primary_id);
+      const box = el('details', null, {open: !!primary && sh.files > 1000000});
+      const sum = el('summary'); sum.append(el('span', sh.share),
+        el('span', sh.files != null ? short(sh.files) + ' files' + (sh.date ? ' · ' + sh.date : '') : 'no complete scan', {className: 'meta', title: sh.files != null ? num(sh.files) + ' files' : ''}));
+      box.append(sum);
+      if (primary) {
+        box.append(scanButton(primary));
+        if (!sh.primary_is_full_root) box.append(el('p', 'No full-root scan of this share; showing its latest complete scan.', {className: 'meta'}));
+      }
+      if (sh.older_ids.length) {
+        const older = el('details', null, {className: 'older'});
+        older.append(el('summary', 'older / partial scans (' + sh.older_ids.length + ')'));
+        sh.older_ids.forEach(id => { const s = byId.get(id); if (s) older.append(scanButton(s)); });
+        box.append(older);
+      }
       list.append(box);
     });
-    if (hidden) list.append(el('p', hidden + ' empty scans not listed.'));
+    const empty = st.scans.filter(s => s.files === 0).length;
+    if (empty) list.append(el('p', empty + ' empty scans not listed.', {className: 'meta'}));
+    markCurrent();
+  }
+  function markCurrent() {
+    document.querySelectorAll('#scans-list button[data-scan-id]').forEach(b =>
+      b.setAttribute('aria-current', String(!!st.scan && b.dataset.scanId === st.scan.id)));
   }
 
   function crumbs() {
@@ -53,68 +74,150 @@
     const root = st.scan.root, rel = st.path.startsWith(root) ? st.path.slice(root.length).replace(/^\//, '') : '';
     const sep = root.endsWith('/') || root.endsWith(':') ? '' : '/';
     let acc = root;
-    const link = (label, path) => { const b = el('button', label); b.type = 'button'; b.onclick = () => open(st.scan, path); return b; };
-    nav.append(link(root, root));
-    if (rel) rel.split('/').forEach(part => { acc = acc + (acc === root ? sep : '/') + part; nav.append(el('span', ' / '), link(part, acc)); });
+    nav.append(btn(root, () => open(st.scan, root)));
+    if (rel) rel.split('/').forEach(part => { acc = acc + (acc === root ? sep : '/') + part; const p = acc; nav.append(el('span', ' / '), btn(part, () => open(st.scan, p))); });
   }
 
-  function addRows(entries) {
-    const rows = $('scans-rows');
-    entries.forEach(e => {
-      const tr = el('tr');
-      const name = el('td'); const isDir = e.type === 'folder';
-      if (isDir) { const b = el('button', '📁 ' + e.name); b.type = 'button'; b.onclick = () => open(st.scan, e.path); name.append(b); }
-      else name.textContent = '📄 ' + e.name;
-      tr.append(name, el('td', e.type), el('td', isDir ? '' : fmt(e.size)), el('td', when(e.modified)), el('td', e.extension || ''));
-      rows.append(tr);
+  /* ---- listing: numbered series collapsed, sortable on the loaded page ---- */
+  function items() {
+    const searching = !!st.search;
+    const counts = new Map();
+    if (!searching) st.rows.forEach(e => { if (e.series) counts.set(e.series, (counts.get(e.series) || 0) + 1); });
+    const out = [], groups = new Map();
+    st.rows.forEach(e => {
+      if (!searching && e.series && counts.get(e.series) >= SERIES_MIN) {
+        let g = groups.get(e.series);
+        if (!g) { g = {group: e.series, members: [], size: 0, modified: 0, name: e.series}; groups.set(e.series, g); out.push(g); }
+        g.members.push(e); g.size += e.size || 0; g.modified = Math.max(g.modified, e.modified || 0);
+      } else out.push({row: e, name: e.name, size: e.size || 0, modified: e.modified || 0});
+    });
+    if (st.sort) {
+      const {key, dir} = st.sort;
+      out.sort((a, b) => dir * (key === 'name' ? a.name.localeCompare(b.name, undefined, {numeric: true, sensitivity: 'base'}) : (a[key] - b[key])));
+    }
+    return out;
+  }
+
+  function rowFor(e, member) {
+    const tr = el('tr', null, {className: member ? 'member' : ''});
+    const name = el('td'); const isDir = e.type === 'folder';
+    const rel = st.search && e.path.startsWith(st.path) ? e.path.slice(st.path.length).replace(/^\//, '').split('/').slice(0, -1).join('/') : '';
+    if (isDir) name.append(btn('📁 ' + e.name, () => open(st.scan, e.path), e.path)); else name.append(el('span', '📄 ' + e.name, {title: e.path}));
+    if (rel) name.append(el('span', rel, {className: 'where'}));
+    tr.append(name, el('td', e.type), el('td', isDir ? '' : fmt(e.size)), el('td', when(e.modified)), el('td', e.extension || ''));
+    return tr;
+  }
+
+  function renderRows() {
+    const body = $('scans-rows'); body.replaceChildren();
+    const more = $('scans-more').hidden ? '' : '+';  // groups only cover the rows loaded so far
+    items().forEach(it => {
+      if (it.row) { body.append(rowFor(it.row)); return; }
+      const open_ = st.open.has(it.group);
+      const tr = el('tr'); const name = el('td');
+      name.append(btn((open_ ? '▾ ' : '▸ ') + '📄 ' + it.group + ' · ' + num(it.members.length) + more + ' files · ' + fmt(it.size) + (more ? '+' : ''),
+        () => { open_ ? st.open.delete(it.group) : st.open.add(it.group); renderRows(); }, 'Show or hide the ' + it.members.length + ' files in this series'));
+      name.firstChild.setAttribute('aria-expanded', String(open_));
+      tr.append(name, el('td', 'series'), el('td', fmt(it.size)), el('td', when(it.modified)), el('td'));
+      body.append(tr);
+      if (open_) it.members.forEach(e => body.append(rowFor(e, true)));
+    });
+    document.querySelectorAll('#scans-table th[aria-sort]').forEach(th => {
+      const k = th.querySelector('button').dataset.sort;
+      th.setAttribute('aria-sort', st.sort && st.sort.key === k ? (st.sort.dir > 0 ? 'ascending' : 'descending') : 'none');
     });
   }
+  document.querySelectorAll('#scans-table [data-sort]').forEach(b => {
+    b.onclick = () => {
+      const key = b.dataset.sort;
+      st.sort = st.sort && st.sort.key === key ? (st.sort.dir > 0 ? {key, dir: -1} : null) : {key, dir: 1};
+      renderRows();
+    };
+  });
 
+  /* ---- opening a folder ---- */
   async function open(scan, path) {
-    const version = ++st.version; st.scan = scan; st.path = path; st.next = 0;
-    $('scans-rows').replaceChildren(); $('scans-more').hidden = true; $('scans-datasets').textContent = 'Loading…';
+    const version = ++st.version; st.scan = scan; st.path = path; st.next = 0; st.rows = []; st.search = null; st.cursor = null; st.open.clear();
+    $('scans-rows').replaceChildren(); $('scans-more').hidden = true; $('scans-clear').hidden = true; $('scans-note').textContent = '';
+    $('scans-datasets').textContent = 'Loading…'; markCurrent();
     crumbs(); status('Loading ' + path + '…');
     try {
       const [browse, sets] = await Promise.all([
-        get('/api/external-index/browse', {scan_id: scan.id, path}),
-        get('/api/external-index/datasets', {scan_id: scan.id, path}),
+        get('/api/external-index/browse', Object.assign({scan_id: scan.id, path}, flags())),
+        get('/api/external-index/datasets', Object.assign({scan_id: scan.id, path, workspace: $('scans-workspace').checked ? '1' : '0'}, flags())),
       ]);
       if (version !== st.version) return;
-      addRows(browse.entries); st.next = browse.next_offset; $('scans-more').hidden = !browse.has_more;
+      st.rows = browse.entries; st.next = browse.next_offset; $('scans-more').hidden = !browse.has_more; renderRows();
       status(browse.entries.length ? 'Read-only index · ' + path : 'Read-only index · ' + path + ' (empty folder)');
       renderDatasets(sets);
     } catch (error) { if (version === st.version) { status(error.message); $('scans-datasets').textContent = ''; } }
   }
 
+  /* ---- recognized datasets: profile · files · size · confidence, then the folder name (wrapping) ---- */
   function renderDatasets(sets) {
     const box = $('scans-datasets'); box.replaceChildren();
     if (!sets.datasets.length) { box.textContent = 'No recognized datasets in this folder.'; return; }
     sets.datasets.forEach(d => {
       const where = d.root_path.slice(st.path.length).replace(/^\//, '') || '(this folder)';
-      const b = el('button', d.pattern_name + ' — ' + num(d.file_count) + ' files, ' + fmt(d.total_bytes) + ' · ' + d.status +
-        (d.confidence != null ? ' (' + Number(d.confidence).toFixed(2) + ')' : '') + '\n' + where);
-      b.type = 'button'; b.style.display = 'block'; b.style.textAlign = 'left'; b.style.margin = '3px 0'; b.style.whiteSpace = 'pre-wrap';
-      b.title = d.root_path; b.onclick = () => open(st.scan, d.root_path);
+      const count = d.file_count != null ? (d.file_count_is_minimum ? '≥ ' : '') + num(d.file_count) + ' files' : 'count pending';
+      const size = d.total_bytes != null ? fmt(d.total_bytes) : 'size pending';
+      const conf = d.confidence != null ? 'confidence ' + Number(d.confidence).toFixed(2) : null;
+      const b = el('button'); b.type = 'button'; b.title = d.root_path + (d.status ? ' · ' + d.status : '');
+      b.append(el('div', [d.pattern_name, count, size, conf].filter(Boolean).join(' · '), {className: 'ds-line'}), el('div', where, {className: 'ds-name'}));
+      b.onclick = () => open(st.scan, d.root_path);
       box.append(b);
     });
     if (sets.has_more) box.append(el('p', 'Showing the first ' + sets.datasets.length + '. Open a subfolder to narrow.'));
   }
 
+  /* ---- search: this folder, or this folder and subfolders; 200 per page, 1 s budget ---- */
+  async function runSearch(more) {
+    if (!st.scan) { $('scans-note').textContent = 'Choose a scan and a folder first.'; return; }
+    const q = $('scans-q').value.trim();
+    if (!q) { $('scans-note').textContent = 'Enter a name to search for.'; return; }
+    const version = more ? st.version : ++st.version;
+    if (!more) { st.rows = []; st.cursor = null; st.next = 0; st.open.clear(); $('scans-rows').replaceChildren(); }
+    st.search = {q}; $('scans-clear').hidden = false; $('scans-more').hidden = true;
+    $('scans-note').textContent = 'Searching…';
+    try {
+      const r = await get('/api/external-index/search', Object.assign({scan_id: st.scan.id, path: st.path, q, mode: $('scans-mode').value,
+        scope: $('scans-scope').value, cursor: more ? (st.cursor || '') : ''}, flags()));
+      if (version !== st.version) return;
+      st.rows = st.rows.concat(r.entries); st.cursor = r.next_cursor; $('scans-more').hidden = !r.has_more; renderRows();
+      $('scans-note').textContent = r.message || (num(st.rows.length) + ' match' + (st.rows.length === 1 ? '' : 'es') + ' for "' + q + '" in ' +
+        (r.scope === 'subtree' ? 'this folder and subfolders' : 'this folder') + (r.has_more ? ' (more available)' : ''));
+    } catch (error) { if (version === st.version) $('scans-note').textContent = error.message; }
+  }
+  $('scans-search').onsubmit = ev => { ev.preventDefault(); runSearch(false); };
+  $('scans-clear').onclick = () => { $('scans-q').value = ''; if (st.scan) open(st.scan, st.path); };
+
   $('scans-more').onclick = async () => {
+    if (st.search) { runSearch(true); return; }
     const version = st.version;
     try {
-      const browse = await get('/api/external-index/browse', {scan_id: st.scan.id, path: st.path, offset: st.next});
+      const browse = await get('/api/external-index/browse', Object.assign({scan_id: st.scan.id, path: st.path, offset: st.next}, flags()));
       if (version !== st.version) return;
-      addRows(browse.entries); st.next = browse.next_offset; $('scans-more').hidden = !browse.has_more;
+      st.rows = st.rows.concat(browse.entries); st.next = browse.next_offset; $('scans-more').hidden = !browse.has_more; renderRows();
     } catch (error) { status(error.message); }
   };
+
+  $('scans-system').onchange = () => { if (!st.scan) return; st.search ? runSearch(false) : open(st.scan, st.path); if (st.search) refreshDatasets(); };
+  $('scans-workspace').onchange = () => { if (st.scan) refreshDatasets(); };
+  async function refreshDatasets() {
+    const version = st.version;
+    try {
+      const sets = await get('/api/external-index/datasets', Object.assign({scan_id: st.scan.id, path: st.path, workspace: $('scans-workspace').checked ? '1' : '0'}, flags()));
+      if (version === st.version) renderDatasets(sets);
+    } catch (error) { $('scans-datasets').textContent = error.message; }
+  }
 
   $('gui-scans-tab').addEventListener('click', async () => {
     if (st.scans) return;
     status('Loading scans…');
     try {
-      st.scans = (await get('/api/external-index/scans')).scans;
-      renderScans(); status('Read-only index · choose a scan.');
+      const data = await get('/api/external-index/scans');
+      st.scans = data.scans; st.shares = data.shares;
+      renderScans(); status('Read-only index · choose a share.');
     } catch (error) { status(error.message); }
   });
 })();

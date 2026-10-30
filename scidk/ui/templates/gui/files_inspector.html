@@ -5,12 +5,20 @@
 <section id="gui-scans" hidden role="tabpanel" aria-labelledby="gui-scans-tab">
 <h2>Scans <small>Read-only index</small></h2>
 <p id="scans-status" role="status">Browse an external scan index. Nothing here scans, annotates, shares or writes.</p>
-<div style="display:grid;grid-template-columns:minmax(220px,280px) minmax(0,1fr) minmax(220px,300px);gap:14px;align-items:start">
-<nav id="scans-list" aria-label="Scans by host and share" style="max-height:70vh;overflow:auto"></nav>
-<div><nav id="scans-crumbs" aria-label="Folder path"></nav>
-<table id="scans-table" style="width:100%;font-size:12px"><thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Modified</th><th>Ext</th></tr></thead><tbody id="scans-rows"></tbody></table>
+<div class="scans-layout">
+<nav id="scans-list" aria-label="Shares and their scans"></nav>
+<div class="scans-main"><nav id="scans-crumbs" aria-label="Folder path"></nav>
+<form id="scans-search" role="search" aria-label="Search names in this folder"><input id="scans-q" type="search" placeholder="Name in this folder" aria-label="Name to search for" maxlength="200">
+<select id="scans-mode" aria-label="Match"><option value="prefix">starts with</option><option value="contains">contains</option></select>
+<select id="scans-scope" aria-label="Where"><option value="folder">this folder</option><option value="subtree">this folder and subfolders</option></select>
+<button id="scans-go">Search</button><button type="button" id="scans-clear" hidden>Clear search</button></form>
+<p id="scans-note" role="status"></p>
+<label class="scans-toggle"><input type="checkbox" id="scans-system"> show system files</label>
+<table id="scans-table"><colgroup><col><col class="c-type"><col class="c-size"><col class="c-mod"><col class="c-ext"></colgroup><thead><tr><th scope="col" aria-sort="none"><button type="button" data-sort="name">Name</button></th><th scope="col">Type</th><th scope="col" aria-sort="none"><button type="button" data-sort="size">Size</button></th><th scope="col" aria-sort="none"><button type="button" data-sort="modified">Modified</button></th><th scope="col">Ext</th></tr></thead><tbody id="scans-rows"></tbody></table>
 <button id="scans-more" hidden>Load more</button></div>
-<aside aria-label="Recognized datasets in this folder"><h3>Recognized datasets here</h3><div id="scans-datasets">Select a scan.</div></aside>
+<aside aria-label="Recognized datasets in this folder"><h3>Recognized datasets here</h3>
+<label class="scans-toggle"><input type="checkbox" id="scans-workspace"> show workspace candidates</label>
+<div id="scans-datasets">Select a scan.</div></aside>
 </div>
 </section>
 <section id="gui-datasets" hidden role="tabpanel" aria-labelledby="gui-datasets-tab">
