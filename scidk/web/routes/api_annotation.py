@@ -297,7 +297,7 @@ def api_datasets_from_collection():
 
 
 @bp.post('/datasets/manual')
-@require_role(*_WRITE_ROLES)
+@require_role(*_READ_ROLES)
 def api_datasets_manual():
     """Create a NEW manual ``:Dataset`` from selected files and folders.
 
@@ -306,6 +306,11 @@ def api_datasets_manual():
     with ``CONTAINS`` edges (MERGE only). It is never a Collection and never updates a
     recognized, profile-derived Dataset: the node is keyed on a fresh server UUID.
     Nothing is copied from, or written to, ``files.db``.
+
+    Access: any signed-in user (the same audience as browsing and collecting), through
+    the normal authentication/session handling. No role restriction is added here.
+    DEFERRED: which roles may create manual Datasets in production is an open
+    authorization question, to be decided separately.
     """
     from ...services import collection_service as cs
 
