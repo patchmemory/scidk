@@ -62,6 +62,9 @@ def prepare(state):
     os.environ['SCIDK_GRAPH_MANAGEMENT_MANIFEST'] = str(state / 'management.json')
     os.environ['SCIDK_LIVE_NEO4J_PASSWORD'] = password or ''
     os.environ['SCIDK_LIVE_STATE'] = str(state)
+    # Optional external scan index, opened read-only by the Scans tab only.
+    if config.get('external_index_db'):
+        os.environ['SCIDK_EXTERNAL_INDEX_DB'] = str(config['external_index_db'])
     from .dev_gui import build_app
     return build_app(state, configure='scidk.live_development:configure'), config
 

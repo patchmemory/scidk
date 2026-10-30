@@ -84,7 +84,9 @@
   }
   function tab(name) {
     closed = false; state.tab = name;
-    browser.hidden = name !== 'Files'; $('gui-datasets').hidden = name !== 'Datasets';
+    browser.hidden = name !== 'Files'; $('gui-datasets').hidden = name !== 'Datasets'; $('gui-scans').hidden = name !== 'Scans';
+    $('gui-scans-tab').setAttribute('aria-selected', String(name === 'Scans'));
+    $('gui-scans-tab').setAttribute('tabindex', name === 'Scans' ? '0' : '-1');
     $('gui-files-tab').setAttribute('aria-selected', String(name === 'Files'));
     $('gui-datasets-tab').setAttribute('aria-selected', String(name === 'Datasets'));
     $('gui-files-tab').setAttribute('tabindex', name === 'Files' ? '0' : '-1');
@@ -92,6 +94,7 @@
   }
   $('gui-files-tab').onclick = () => tab('Files');
   $('gui-datasets-tab').onclick = () => tab('Datasets');
+  $('gui-scans-tab').onclick = () => tab('Scans');
   function closeInspector() { closed = true; render(); returnFocus?.focus(); }
   $('inspector-close').onclick = closeInspector;
   document.addEventListener('keydown', event => {
@@ -111,7 +114,7 @@
       if (next !== undefined) { event.preventDefault(); buttons[next].focus(); buttons[next].click(); }
     }; });
   }
-  keyboardTabs([$('gui-files-tab'), $('gui-datasets-tab')]);
+  keyboardTabs([$('gui-files-tab'), $('gui-datasets-tab'), $('gui-scans-tab')]);
   keyboardTabs([...document.querySelectorAll('[data-inspector-tab]')]);
   document.addEventListener('scidk:inspect', event => { if (state.tab === 'Files') select(event.detail); });
   function items(records, parent, graph) {

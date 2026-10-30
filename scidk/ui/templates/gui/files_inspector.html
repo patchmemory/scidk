@@ -1,7 +1,18 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/gui_slice.css') }}">
 <section id="gui-files">
 <h1>Files &amp; Datasets</h1>
-<div role="tablist" aria-label="Files and datasets"><button id="gui-files-tab" aria-controls="gui-files-panel" tabindex="0" role="tab" aria-selected="true">Files</button><button id="gui-datasets-tab" aria-controls="gui-datasets" tabindex="-1" role="tab" aria-selected="false">Datasets</button></div>
+<div role="tablist" aria-label="Files and datasets"><button id="gui-files-tab" aria-controls="gui-files-panel" tabindex="0" role="tab" aria-selected="true">Files</button><button id="gui-datasets-tab" aria-controls="gui-datasets" tabindex="-1" role="tab" aria-selected="false">Datasets</button><button id="gui-scans-tab" aria-controls="gui-scans" tabindex="-1" role="tab" aria-selected="false">Scans</button></div>
+<section id="gui-scans" hidden role="tabpanel" aria-labelledby="gui-scans-tab">
+<h2>Scans <small>Read-only index</small></h2>
+<p id="scans-status" role="status">Browse an external scan index. Nothing here scans, annotates, shares or writes.</p>
+<div style="display:grid;grid-template-columns:minmax(220px,280px) minmax(0,1fr) minmax(220px,300px);gap:14px;align-items:start">
+<nav id="scans-list" aria-label="Scans by host and share" style="max-height:70vh;overflow:auto"></nav>
+<div><nav id="scans-crumbs" aria-label="Folder path"></nav>
+<table id="scans-table" style="width:100%;font-size:12px"><thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Modified</th><th>Ext</th></tr></thead><tbody id="scans-rows"></tbody></table>
+<button id="scans-more" hidden>Load more</button></div>
+<aside aria-label="Recognized datasets in this folder"><h3>Recognized datasets here</h3><div id="scans-datasets">Select a scan.</div></aside>
+</div>
+</section>
 <section id="gui-datasets" hidden role="tabpanel" aria-labelledby="gui-datasets-tab">
 <h2>Recognized datasets</h2>
 <form id="dataset-search"><label for="dataset-query">Search Dataset nodes by name or path</label> <input id="dataset-query" required><button>Search</button></form>
@@ -35,3 +46,4 @@
 </div>
 </aside></section>
 <script defer src="{{ url_for('static', filename='js/gui_slice.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/external_index.js') }}"></script>
