@@ -155,6 +155,17 @@ def test_test_connection_and_models(two_users, parley):
     assert not bad['ok'] and bad['error'] == 'Provider unavailable; check endpoint and your credential.'
 
 
+def test_form_preset_is_ignored_but_unknown_keys_are_rejected(two_users, parley):
+    """The settings form posts `preset` with Test connection / model listing."""
+    _, c, u = two_users
+    form = {'preset': 'parley', 'base_url': parley, 'model': 'claude-sonnet-5-5', 'api_key': GOOD_KEY}
+    ok = c.post('/api/llm/test', headers=u['alice'], json=form)
+    assert ok.status_code == 200 and ok.get_json()['ok'] is True, ok.get_json()
+    bad = c.post('/api/llm/test', headers=u['alice'], json={**form, 'surprise': 1})
+    assert bad.status_code == 400 and bad.get_json()['error'] == 'Invalid provider request'
+    assert c.post('/api/llm/test', headers=u['alice'], json={**form, 'preset': 'custom'}).get_json()['ok'] is True
+
+
 def test_stored_key_is_not_sent_to_another_url(two_users, parley):
     _, c, u = two_users
     c.put('/api/llm/settings', headers=u['alice'], json={'base_url': parley, 'model': 'm', 'api_key': GOOD_KEY})
