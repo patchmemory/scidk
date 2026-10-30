@@ -161,6 +161,13 @@ def test_files_selection_to_basket_manual_dataset_and_saved_collection(browser_e
             panel_box = page.locator('#cb-panel').bounding_box()
             slot_box = slot.bounding_box()
             assert panel_box['y'] >= slot_box['y'] + slot_box['height'] - 1      # below the toolbar control
+            # Not clipped by the Files container: inside the viewport, and the Save button is what a click hits.
+            assert panel_box['x'] >= 0 and panel_box['x'] + panel_box['width'] <= 1400
+            assert page.evaluate(
+                "(()=>{const r=document.getElementById('cb-save').getBoundingClientRect();"
+                "const t=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return !!t&&t.closest('#cb-save')!==null})()")
+            # Ticking a checkbox must not open the inspector.
+            assert page.locator('#gui-inspector[open], .inspector-open').count() == 0
             expect(page.locator('#cb-summary h4[data-kind="folder"]')).to_have_attribute('data-count', '1')
             expect(page.locator('#cb-summary h4[data-kind="file"]')).to_have_attribute('data-count', '1')
 

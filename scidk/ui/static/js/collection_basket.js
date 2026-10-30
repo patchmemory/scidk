@@ -136,7 +136,7 @@
 #cb-panel{position:fixed;right:16px;bottom:56px;width:420px;max-height:75vh;overflow:auto;z-index:1200;background:#fff;border:1px solid #adb5bd;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.2);font:13px system-ui,sans-serif;padding:12px;display:none}
 #files-collection-slot.cb-docked{position:relative;display:inline-flex;align-items:center}
 #files-collection-slot.cb-docked #cb-pill{position:static;height:28px;padding:0 12px;max-width:340px}
-#files-collection-slot.cb-docked #cb-panel{position:absolute;top:calc(100% + 6px);right:0;bottom:auto;width:440px;max-height:70vh}
+#files-collection-slot.cb-docked #cb-panel{position:fixed;right:auto;bottom:auto;width:440px;max-width:calc(100vw - 16px)}
 #cb-panel.open{display:block}
 #cb-panel h3{margin:0 0 6px;font-size:14px;display:flex;align-items:center;gap:6px} #cb-panel h3 span{flex:1}
 #cb-panel h4{margin:10px 0 2px;font-size:12px}
@@ -167,10 +167,27 @@
   }
 
   function isOpen() { const p = $('cb-panel'); return !!(p && p.classList.contains('open')); }
+
+  // Docked on Files: anchor the panel just below the toolbar control, but position it
+  // against the viewport (fixed) so the Files container's overflow can't clip it.
+  function _place() {
+    const slot = $('files-collection-slot'), p = $('cb-panel');
+    if (!slot || !p || !slot.classList.contains('cb-docked')) return;
+    const r = slot.getBoundingClientRect();
+    const width = Math.min(440, global.innerWidth - 16);
+    const left = Math.max(8, Math.min(r.left, global.innerWidth - width - 8));
+    const top = r.bottom + 6;
+    p.style.left = left + 'px';
+    p.style.top = top + 'px';
+    p.style.maxHeight = Math.max(200, global.innerHeight - top - 12) + 'px';
+  }
+  global.addEventListener('resize', () => { if (isOpen()) _place(); });
+
   function open() {
     _build();
     const p = $('cb-panel'); if (!p) return;
     p.classList.add('open');
+    _place();
     _loadSaved();
     if (_opened && !_opened.members) openSaved(_opened.id, true);
   }
@@ -326,6 +343,7 @@
     pill.title = 'Collection panel';
     panel.replaceChildren();
     if (_view === 'plan') _renderPlan(panel); else _renderMain(panel);
+    if (isOpen()) _place();
   }
 
   async function _json(url, opts) {
