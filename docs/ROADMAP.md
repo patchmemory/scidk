@@ -361,6 +361,15 @@ Dataset: "AIPT Q3 2026 Imaging Cohort"
 
 This is the concept that makes SciDK more than a visualization tool. A dataset defined once flows through DMS compliance, data sharing, annotation, and AI-assisted analysis without re-specifying the scope at each step.
 
+### Read-only Cypher is allowed for people and AI tools; Python execution is not (decided 2026-10-30)
+
+Raw read-only Cypher is approved for both Maps (`POST /api/graph/query`) and AI tools (`list_labels`, `count_nodes`, `get_schema`, `query_knowledge_graph`). Python or script execution stays out of scope for both.
+
+- **Same read path:** both run in a Neo4j read transaction, so the database rejects any write. AI tools additionally refuse write keywords, `CALL`, `LOAD` and `FOREACH`.
+- **Grants required:** an AI tool runs only for a user who holds the explicit AI tool grant (`CapabilityStore.grant_tool`, `overview` profile), an approved destination (endpoint + model), and the `graph_management_read` grant on the one attached graph connection.
+- **Bounded and filtered:** at most 50 rows per call, and every result passes `filter_for_agent`. Properties hidden in sharing settings are stripped, queries that name a hidden property are refused, and unknown sharing modes count as hidden.
+- **Not changed:** graph writes, `/api/neo4j/query`, and the legacy file-index tools stay refused for AI.
+
 ---
 
 ## Longer-Term Tracks
