@@ -119,7 +119,11 @@ def statements(meta, subjects, sessions, measurements, obs, nexts, files=(), fli
     out.append(("study", f"""
         MERGE (n:Study {{id: $id}})
         SET n += $props, {tag}""",
-        {"id": study["id"], "props": {k: v for k, v in study.items() if k != "id"}}, None))
+        {"id": study["id"],
+         "props": {**{k: v for k, v in study.items() if k != "id"},
+                   # Names a user would actually type; MERGE/SET only, nothing is removed.
+                   "name": "LwM2026: Multimodal monitoring of mouse lung tumors",
+                   "aliases": ["LwM2026", "LwM", "lung tumor pilot"]}}, None))
 
     out.append(("modalities", f"""
         UNWIND $rows AS row
