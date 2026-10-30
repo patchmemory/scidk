@@ -6,3 +6,17 @@
   <a href="{{ request.script_root }}/knowledge?domain=research&amp;view=entities">Governed records</a>
 </nav>
 <p class="small">Graph management edits the configured development graph directly. Governed records, curation acceptance and AI disclosure use separate permissions.</p>
+
+{% if development_runtime_enabled %}
+<p class="small"><a href="{{ request.script_root }}/admin/development-readiness">Verify development runtime and backend</a></p>
+{% endif %}
+{% if request.path in ['/entities', '/labels', '/links', '/map'] and g.graph_management_permission is defined %}
+<p id="management-connection" class="small" aria-live="polite">Checking management connection…</p>
+<script>
+fetch(window.SCIDK_BASE + '/api/graph/management-connection')
+  .then(response => response.ok ? response.json() : Promise.reject())
+  .then(data => { document.getElementById('management-connection').textContent =
+    `${data.connection.display_name} · ${data.connection.backend} · ${data.connection.database} · ${data.connection.connection_id.slice(0, 12)}`; })
+  .catch(() => { document.getElementById('management-connection').textContent = 'Management connection unavailable under current authority.'; });
+</script>
+{% endif %}

@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block title %}SciDK — Development readiness{% endblock %}
+{% block content %}
+<h1>Development runtime readiness</h1>
+<p>This checks this running instance and your own authority. Graph reachability uses a bounded read-only query; no research content or credentials are returned.</p>
+<button id="refresh-readiness" class="btn">Refresh checks</button>
+<pre id="development-readiness" aria-live="polite">Checking…</pre>
+<p><a href="{{ request.script_root }}/knowledge">Knowledge</a> · <a href="{{ request.script_root }}/entities">Entities &amp; Labels</a> · <a href="{{ request.script_root }}/map">Maps</a></p>
+<script>
+async function refreshDevelopmentReadiness() {
+  const output = document.getElementById('development-readiness');
+  try {
+    const response = await fetch(window.SCIDK_BASE + '/api/development/readiness', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'
+    });
+    if (!response.ok) throw new Error();
+    output.textContent = JSON.stringify((await response.json()).checks, null, 2);
+  } catch (_) { output.textContent = 'Readiness is unavailable under the current named administrator session.'; }
+}
+document.getElementById('refresh-readiness').onclick = refreshDevelopmentReadiness;
+refreshDevelopmentReadiness();
+</script>
+{% endblock %}

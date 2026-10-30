@@ -88,3 +88,6 @@ gunicorn.log
 # demo bundles built from demo_data/*/
 demo_data/*.zip
 /.scidk_secret.key
+
+# Private operator-accessible development runtime (credentials and local state).
+/.scidk-live-development/

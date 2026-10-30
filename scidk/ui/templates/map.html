@@ -4825,39 +4825,17 @@ window.populateInstancesTable = async function(results, tabId) {
 
     async function loadConnections() {
       try {
-        const response = await fetch(window.SCIDK_BASE + '/api/settings/neo4j/profiles');
+        const response = await fetch(window.SCIDK_BASE + '/api/graph/management-connection');
+        if (!response.ok) throw new Error('Management connection is unavailable');
         const data = await response.json();
-        const profiles = data.profiles || [];
-
-        if (profiles.length === 0) {
-          connectionSelect.innerHTML = '<option value="">No connections configured</option>';
-          connectionStatus.textContent = 'Configure connections in Settings';
-          return;
-        }
-
-        // Build options
-        connectionSelect.innerHTML = '<option value="">Select connection...</option>';
-        profiles.forEach(profile => {
-          const option = document.createElement('option');
-          option.value = profile.name;
-          option.textContent = `${profile.name} (${profile.role || 'primary'})`;
-          connectionSelect.appendChild(option);
-        });
-
-        // Try to select the primary connection by default
-        const primaryProfile = profiles.find(p => p.role === 'primary');
-        if (primaryProfile) {
-          connectionSelect.value = primaryProfile.name;
-          selectedConnection = primaryProfile.name;
-          connectionStatus.textContent = `Using: ${primaryProfile.name}`;
-          console.log(`✓ Auto-selected primary connection: ${primaryProfile.name}`);
-        } else if (profiles.length > 0) {
-          // Fall back to first profile
-          connectionSelect.value = profiles[0].name;
-          selectedConnection = profiles[0].name;
-          connectionStatus.textContent = `Using: ${profiles[0].name}`;
-          console.log(`✓ Auto-selected connection: ${profiles[0].name}`);
-        }
+        const connection = data.connection;
+        const option = document.createElement('option');
+        option.value = connection.id;
+        option.textContent = `${connection.display_name} (${connection.database} · ${connection.connection_id.slice(0, 12)})`;
+        connectionSelect.replaceChildren(option);
+        connectionSelect.value = connection.id;
+        selectedConnection = connection.id;
+        connectionStatus.textContent = `Using authorized Neo4j connection ${connection.connection_id.slice(0, 12)}. Raw query execution is disabled.`;
       } catch (error) {
         console.error('Failed to load Neo4j connections:', error);
         connectionSelect.innerHTML = '<option value="">Error loading connections</option>';

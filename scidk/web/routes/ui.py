@@ -37,7 +37,29 @@ def gui_context():
     return {'gui_v3': current_app.config.get('SCIDK_GUI_V3_ENABLED') is True,
             'overview_chat_enabled': current_app.config.get('SCIDK_OVERVIEW_CHAT_ENABLED') is True,
             'dataset_sharing_enabled': current_app.config.get('SCIDK_DATASET_SHARING_ENABLED') is True,
-            'chat_readiness_enabled': current_app.config.get('SCIDK_CHAT_READINESS_ENABLED') is True}
+            'chat_readiness_enabled': current_app.config.get('SCIDK_CHAT_READINESS_ENABLED') is True,
+            'development_runtime_enabled': bool(current_app.extensions.get('development_runtime'))}
+
+
+@bp.get('/api/graph/management-connection')
+def graph_management_connection():
+    from ...services.development_readiness import connection_description
+    return jsonify(connection=connection_description(current_app)), 200, {'Cache-Control': 'no-store'}
+
+
+@bp.route('/admin/development-readiness', methods=['GET'])
+@bp.route('/api/development/readiness', methods=['POST'])
+def development_readiness():
+    from ...web.named_session import named_session
+    from ...agent_tools.security import REFUSAL
+    from ...services.development_readiness import readiness
+    try:
+        identity = named_session(admin=True)
+    except Exception:
+        return jsonify(REFUSAL), 403, {'Cache-Control': 'no-store'}
+    if request.method == 'GET':
+        return render_template('gui/development_readiness.html'), 200, {'Cache-Control': 'no-store'}
+    return jsonify(checks=readiness(current_app, identity)), 200, {'Cache-Control': 'no-store'}
 
 
 def _gui_page(page):
