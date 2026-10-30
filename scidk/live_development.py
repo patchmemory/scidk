@@ -77,7 +77,10 @@ def read_only_request():
     if (request.path.startswith(safe) or request.path in {
             '/api/development/readiness', '/api/canvas/session', '/api/chat/overview',
             '/api/graph/query', '/api/canvas/nodes/expand', '/api/canvas/nodes/verify',
-            '/admin/chat-readiness'}):
+            '/admin/chat-readiness',
+            # Chat setup: save the caller's own provider setting and test it. The
+            # Parley env import route stays blocked; models listing is a GET.
+            '/api/llm/settings', '/api/llm/test'}):
         return None
     return jsonify(status='unavailable', error='This live development profile permits graph reads and local view state only.'), 403, {'Cache-Control':'no-store'}
 

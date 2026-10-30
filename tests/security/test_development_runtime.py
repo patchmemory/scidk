@@ -75,10 +75,16 @@ def test_live_profile_blocks_legacy_graph_write_paths():
     from flask import Flask
     from scidk.live_development import read_only_request
     app = Flask(__name__)
-    for path in ('/api/pipeline/sources/x/run', '/api/graph/commit', '/api/settings/neo4j'):
+    for path in ('/api/pipeline/sources/x/run', '/api/graph/commit', '/api/settings/neo4j',
+                 '/api/llm/import-parley-env', '/api/neo4j/query', '/api/chat'):
         with app.test_request_context(path, method='POST', json={}):
             assert read_only_request()[1] == 403
+    with app.test_request_context('/api/llm/settings', method='PUT', json={}):
+        assert read_only_request() is None
+    with app.test_request_context('/api/llm/test', method='POST', json={}):
+        assert read_only_request() is None
     for path in ('/api/auth/login', '/api/development/readiness', '/api/canvas/session',
-                 '/api/graph/query', '/api/canvas/nodes/expand', '/api/canvas/nodes/verify'):
+                 '/api/graph/query', '/api/canvas/nodes/expand', '/api/canvas/nodes/verify',
+                 '/api/chat/overview', '/admin/chat-readiness'):
         with app.test_request_context(path, method='POST', json={}):
             assert read_only_request() is None
