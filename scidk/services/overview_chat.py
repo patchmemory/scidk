@@ -60,7 +60,14 @@ def graph_turn(ctx, body):
              '(Sample)-[:OF_TYPE]->(SampleType): MATCH (n:Sample)-[:OF_TYPE]->(t:SampleType) RETURN t.name AS type, '
              'count(n) AS n. Never conclude a property is null or missing without checking the schema. '
              'Relationship types between labels: MATCH (a:Dataset)-[r]-(b) RETURN type(r) AS rel, '
-             'labels(b) AS label, count(*) AS n. Prefer few tool calls, then answer. '
+             'labels(b) AS label, count(*) AS n. '
+             'Rules: (1) Use only relationship types and properties that get_schema returned; never invent one. '
+             '(2) To find a node by a name the user gives, match case-insensitively on name, title, id and '
+             'aliases (any of them; aliases is a list, so use any(a IN n.aliases WHERE toLower(a) = toLower($x))), '
+             'and use the node you find, not a guess. '
+             '(3) For "what is missing" questions, compare what exists across the time or property values that '
+             'are present (for example every week or category against what each item has) and report the gaps. '
+             'Prefer few tool calls, then answer. '
              'Say when a result was truncated or withheld.'},
             {'role': 'user', 'content': body['message']},
         ]
