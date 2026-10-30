@@ -94,3 +94,17 @@ def test_live_profile_blocks_legacy_graph_write_paths():
                  '/api/chat/overview', '/admin/chat-readiness'):
         with app.test_request_context(path, method='POST', json={}):
             assert read_only_request() is None
+
+
+def test_full_access_flag_opens_grant_gates_only_when_set(monkeypatch):
+    from scidk.agent_tools import security
+    from scidk.agent_tools.capabilities import permitted_tools
+    from scidk.agent_tools.profiles import PROFILES
+    from scidk.services.graph_management_policy import authorize_profile, require_connection
+    monkeypatch.setattr(security, 'FULL_ACCESS', False)
+    with pytest.raises(Exception):
+        authorize_profile('no-such-profile')  # fails closed without the flag
+    monkeypatch.setattr(security, 'FULL_ACCESS', True)
+    assert authorize_profile('no-such-profile') is None
+    assert require_connection('bolt://x:7687', 'u', '', 'basic') is None
+    assert permitted_tools(None, 'overview') == PROFILES['overview'] - {'submit_assertion'}

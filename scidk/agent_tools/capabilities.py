@@ -56,6 +56,10 @@ class CapabilityStore(PolicyStore):
 def permitted_tools(policy, profile):
     if profile not in PROFILES:
         raise DisclosureDenied()
+    from . import security
+    if security.FULL_ACCESS:
+        # Live full-access instance: every tool of the profile, except proposals (those need resource grants).
+        return PROFILES[profile] - {'submit_assertion'}
     if policy.conn.execute('SELECT version FROM agent_tool_schema').fetchall() != [(1,)]:
         raise DisclosureDenied()
     role = policy.conn.execute('SELECT role FROM auth_users WHERE id=?', (policy.user_id,)).fetchone()

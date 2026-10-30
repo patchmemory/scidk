@@ -94,9 +94,15 @@ def read_only_request():
 def configure(app):
     from .services.graph_management_policy import configure as configure_management
     configure_management(app)
-    app.before_request(read_only_request)
     state = Path(os.environ['SCIDK_LIVE_STATE'])
     config = json.loads((state / 'runtime.json').read_text())
+    if config.get('full_access') is True:
+        # Demo mode, this instance only: no read-only filter, and the management/AI grant gates pass.
+        # The privacy filter on AI output and the read-only Cypher rule for AI tools stay.
+        from .agent_tools import security
+        security.FULL_ACCESS = True
+    else:
+        app.before_request(read_only_request)
     revision = subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], text=True).strip()
     dirty = bool(subprocess.check_output(['git', '-C', str(ROOT), 'diff', '--name-only', 'HEAD'], text=True).strip())
     # Never return the private state/source paths, usernames or credentials.
@@ -106,7 +112,8 @@ def configure(app):
             fingerprint.update(str(path.relative_to(ROOT)).encode())
             fingerprint.update(path.read_bytes())
     app.extensions['development_runtime'] = dict(git_revision=revision, startup_dirty=dirty,
-        code_fingerprint=fingerprint.hexdigest(), profile='live-development-readonly',
+        code_fingerprint=fingerprint.hexdigest(),
+        profile='live-development-full-access' if config.get('full_access') is True else 'live-development-readonly',
         python_version=sys.version.split()[0], python_environment=hashlib.sha256(sys.prefix.encode()).hexdigest()[:12],
         port=config['port'])
 

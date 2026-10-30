@@ -62,6 +62,9 @@ class ManagementPolicyStore(PolicyStore):
 
 def require_connection(uri, user, database, auth_mode='basic', permission=None):
     """Recheck current authority at actual graph-client use, including profiles."""
+    from ..agent_tools import security
+    if security.FULL_ACCESS:
+        return None
     identity = named_session()
     target = connection_key(uri, user, database, auth_mode)
     if target not in current_app.config.get('SCIDK_DEVELOPMENT_GRAPH_CONNECTIONS', ()):
@@ -80,6 +83,9 @@ def primary(permission='graph_management_read'):
 
 
 def authorize_profile(name, permission='graph_management_read'):
+    from ..agent_tools import security
+    if security.FULL_ACCESS:
+        return None
     if not name:
         return primary(permission)
     from ..core.settings import get_setting
@@ -112,10 +118,13 @@ def enforce():
     if not protected_path():
         return None
     from flask import jsonify
+    from ..agent_tools import security
+    # Live full-access instance: permission gates are off; identifier validation (injection safety) stays.
+    full = security.FULL_ACCESS
     try:
         # Raw query facilities are not conferred by management grants. Existing
         # curated operations remain the only available graph write paths.
-        if request.path == '/api/neo4j/query':
+        if request.path == '/api/neo4j/query' and not full:
             raise DisclosureDenied()
         # Raw Cypher is read-only: it needs the management read grant for the exact
         # connection (or named profile) and is executed in a read transaction.
@@ -128,13 +137,13 @@ def enforce():
         shared = request.path.startswith(('/api/labels', '/api/links', '/api/v2/links', '/api/maps/', '/api/queries'))
         if (request.method == 'DELETE' and shared) or request.path.endswith('/batch/delete'):
             primary('graph_schema_write')
-            if request.headers.get('X-SciDK-Confirm') != 'destructive-shared-change':
+            if request.headers.get('X-SciDK-Confirm') != 'destructive-shared-change' and not full:
                 raise DisclosureDenied()
         # Existing bulk profile operations can open drivers outside Neo4jClient.
         # Do not allow an unscoped "all configured graphs" fallback.
-        if request.path.endswith(('/labels/pull', '/labels/push-all', '/labels/batch/pull')):
+        if request.path.endswith(('/labels/pull', '/labels/push-all', '/labels/batch/pull')) and not full:
             raise DisclosureDenied()
-        if (request.path == '/api/graph/schema/combined' and
+        if (not full and request.path == '/api/graph/schema/combined' and
                 request.args.get('source', 'all') in {'graph', 'all'} and
                 current_app.config.get('graph_backend') != 'memory' and
                 current_app.config.get('graph_backend') != 'in-memory'):
@@ -142,10 +151,10 @@ def enforce():
         # Existing background jobs lose the originating request authorization.
         # They must not execute until a scoped worker authorization contract
         # exists. Ordinary synchronous entity/property editing remains supported.
-        if request.path.endswith(('/execute', '/run', '/transfer-to-primary', '/import-csv', '/enrich', '/discovered/import')):
+        if not full and request.path.endswith(('/execute', '/run', '/transfer-to-primary', '/import-csv', '/enrich', '/discovered/import')):
             raise DisclosureDenied()
         body = request.get_json(silent=True) or {}
-        saved_map = request.path.startswith(('/api/maps/saved', '/api/queries')) or raw_cypher
+        saved_map = full or request.path.startswith(('/api/maps/saved', '/api/queries')) or raw_cypher
         if isinstance(body, dict) and body.get('query') and not saved_map:
             raise DisclosureDenied()
         # The legacy label writer interpolates identifiers. Values remain
@@ -186,7 +195,7 @@ def enforce():
                     profile = json.loads(raw)
                     require_connection(profile.get('uri'), profile.get('user'),
                                        profile.get('database'), 'basic', permission)
-                    if request.method == 'PUT' or request.path.endswith('/push'):
+                    if (request.method == 'PUT' or request.path.endswith('/push')) and not full:
                         raise DisclosureDenied()  # these legacy methods ignore the source profile
         if request.path == '/api/labels' and request.method == 'POST':
             identifier(body.get('name'))
@@ -198,7 +207,7 @@ def enforce():
                            {p.get('name') for p in body.get('properties', [])})
                 removed_rels = ({(r['type'], r['target_label']) for r in previous['relationships']} -
                                 {(r.get('type'), r.get('target_label')) for r in body.get('relationships', [])})
-                if (removed or removed_rels) and request.headers.get('X-SciDK-Confirm') != 'destructive-shared-change':
+                if (removed or removed_rels) and not full and request.headers.get('X-SciDK-Confirm') != 'destructive-shared-change':
                     raise DisclosureDenied()
             for prop in body.get('properties', []):
                 identifier(prop.get('name'))

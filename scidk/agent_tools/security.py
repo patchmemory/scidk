@@ -13,6 +13,9 @@ from urllib.parse import urlsplit, urlunsplit, unquote
 
 REFUSAL = {'status': 'refused', 'error': 'SciDK cannot authorize disclosure for this operation.'}
 RANK = {'low': 0, 'medium': 1}
+#: Process-wide switch set only by the live-development runtime (runtime.json "full_access").
+#: When on, destination approval and tool/grant gates pass; the sharing (privacy) modes still apply.
+FULL_ACCESS = False
 
 
 class DisclosureDenied(ValueError):
@@ -189,6 +192,11 @@ class PolicyStore:
                     raise DisclosureDenied()
                 destination = conn.execute('SELECT d.id,d.endpoint,d.model,d.max_risk FROM agent_destination_approval d '
                     'JOIN agent_token_destination b ON b.destination_id=d.id WHERE b.token_id=?', (identity.token_id,)).fetchone()
+            elif FULL_ACCESS:
+                configured = conn.execute('SELECT base_url,model FROM llm_user_settings WHERE username=?', (user[0],)).fetchone()
+                if not configured:
+                    raise DisclosureDenied()
+                destination = ('full-access', endpoint_identity(configured[0]), configured[1], 'medium')
             elif identity.channel == 'chat':
                 configured = conn.execute('SELECT base_url,model FROM llm_user_settings WHERE username=?', (user[0],)).fetchone()
                 if not configured:
@@ -200,7 +208,12 @@ class PolicyStore:
             if not destination or destination[3] not in RANK or endpoint_identity(destination[1]) != destination[1]:
                 raise DisclosureDenied()
             # Missing sharing table is policy unavailability, not an empty/raw policy.
-            modes = {(label, prop): mode for label, prop, mode in conn.execute('SELECT label,property,mode FROM agent_sharing')}
+            try:
+                modes = {(label, prop): mode for label, prop, mode in conn.execute('SELECT label,property,mode FROM agent_sharing')}
+            except sqlite3.OperationalError:
+                if not FULL_ACCESS:
+                    raise
+                modes = {}
             yield ResolvedPolicy(conn, identity.user_id, user[0], destination, modes)
 
 

@@ -8,7 +8,14 @@ from .graph_management_policy import ManagementPolicyStore, connection_key, prim
 def connection_description(app):
     from ..core.neo4j_config import get_neo4j_params
     uri, user, _, database, mode = get_neo4j_params(app)
-    target = connection_key(uri, user, database, mode)
+    try:
+        target = connection_key(uri, user, database, mode)
+    except Exception:
+        from ..agent_tools import security
+        if not security.FULL_ACCESS:
+            raise
+        # Full access: a profile with a blank database (the server default) must not break the banner.
+        target = None
     return dict(id='PRIMARY', display_name='Configured development primary', database=database,
                 connection_id=target, backend='Neo4j', raw_query_execution=False)
 
