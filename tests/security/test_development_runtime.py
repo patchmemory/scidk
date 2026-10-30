@@ -83,6 +83,12 @@ def test_live_profile_blocks_legacy_graph_write_paths():
         assert read_only_request() is None
     with app.test_request_context('/api/llm/test', method='POST', json={}):
         assert read_only_request() is None
+    with app.test_request_context('/api/settings/neo4j/profiles', method='POST', json={}):
+        assert read_only_request() is None
+    for method, path in (('DELETE', '/api/settings/neo4j/profiles/x'), ('PUT', '/api/settings/neo4j/profiles/x/activate'),
+                         ('POST', '/api/settings/neo4j/profiles/x')):
+        with app.test_request_context(path, method=method, json={}):
+            assert read_only_request()[1] == 403
     for path in ('/api/auth/login', '/api/development/readiness', '/api/canvas/session',
                  '/api/graph/query', '/api/canvas/nodes/expand', '/api/canvas/nodes/verify',
                  '/api/chat/overview', '/admin/chat-readiness'):

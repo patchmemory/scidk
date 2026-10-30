@@ -83,7 +83,10 @@ def read_only_request():
             '/admin/chat-readiness',
             # Chat setup: save the caller's own provider setting and test it. The
             # Parley env import route stays blocked; models listing is a GET.
-            '/api/llm/settings', '/api/llm/test'}):
+            '/api/llm/settings', '/api/llm/test',
+            # Save a named Neo4j connection profile (e.g. NExtSEEK) in this state's own settings.
+            # Exact path only: delete/activate and the primary connection stay blocked.
+            '/api/settings/neo4j/profiles'}):
         return None
     return jsonify(status='unavailable', error='This live development profile permits graph reads and local view state only.'), 403, {'Cache-Control':'no-store'}
 
