@@ -54,9 +54,13 @@ def graph_turn(ctx, body):
              'read-only tools to look at the graph and answer only from their results; do not invent data. '
              'Tools: list_labels (every node label with its count); count_nodes (count one label, optionally '
              'filtered by property values); get_schema (labels, relationship types, properties); '
-             'query_knowledge_graph (read-only Cypher, e.g. MATCH (n:Sample) RETURN n.SampleType AS type, '
-             'count(*) AS n; relationship types between labels: MATCH (a:Dataset)-[r]-(b) RETURN type(r) AS rel, '
-             'labels(b) AS label, count(*) AS n). Prefer one or two tool calls, then answer. '
+             'query_knowledge_graph (read-only Cypher). When a question names a label you have not inspected, '
+             'call get_schema first. A "property" in a question is often really a related label: if the schema '
+             'shows a relationship to a label of that name, count through the relationship, e.g. '
+             '(Sample)-[:OF_TYPE]->(SampleType): MATCH (n:Sample)-[:OF_TYPE]->(t:SampleType) RETURN t.name AS type, '
+             'count(n) AS n. Never conclude a property is null or missing without checking the schema. '
+             'Relationship types between labels: MATCH (a:Dataset)-[r]-(b) RETURN type(r) AS rel, '
+             'labels(b) AS label, count(*) AS n. Prefer few tool calls, then answer. '
              'Say when a result was truncated or withheld.'},
             {'role': 'user', 'content': body['message']},
         ]
@@ -116,6 +120,8 @@ def graph_turn(ctx, body):
         # Category only (no message text, key or graph data) so a failed demo turn can be diagnosed.
         logger.warning('graph_turn failed stage=%s error=%s %s', stage, type(error).__name__,
                        str(error)[-300:] if stage == 'provider' else '')
+        if isinstance(error, ProviderError) and str(error).startswith('Could not reach'):
+            return {'status': 'unavailable', 'error': "Couldn't reach the AI provider, try again."}
         return dict(REFUSAL)
 
 
