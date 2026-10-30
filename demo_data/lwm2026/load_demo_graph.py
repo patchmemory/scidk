@@ -122,7 +122,7 @@ def statements(meta, subjects, sessions, measurements, obs, nexts, files=(), fli
         {"id": study["id"],
          "props": {**{k: v for k, v in study.items() if k != "id"},
                    # Names a user would actually type; MERGE/SET only, nothing is removed.
-                   "uid": study["id"],  # other Study nodes are keyed by uid
+                   "uid": "LwM2026",  # the short code users type; other Study nodes are keyed by a string uid (id stays the long id)
                    "name": "LwM2026: Multimodal monitoring of mouse lung tumors",
                    "aliases": ["LwM2026", "LwM", "lung tumor pilot"]}}, None))
 
