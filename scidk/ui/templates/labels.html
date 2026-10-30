@@ -4013,7 +4013,6 @@ function populateStatistics(label) {
 
     <div style="margin-bottom: 1.5rem;">
       <h4 class="small" style="font-weight: bold; margin-bottom: 0.5rem;">Instances</h4>
-      <div class="small" style="color: #999;">Instance count requires Neo4j connection</div>
       <div class="small" style="margin-top: 0.5rem;">
         <button class="btn btn-sm btn-outline-primary" onclick="loadInstanceCount('${label.name}')" style="font-size: 0.75rem;">
           Check Neo4j
@@ -4022,6 +4021,7 @@ function populateStatistics(label) {
       <div id="instance-count-${label.name}" style="margin-top: 0.5rem;"></div>
     </div>
   `;
+  loadInstanceCount(label.name);
 }
 
 async function loadInstanceCount(labelName) {
