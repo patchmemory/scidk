@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SCIDK_LIVE_REPO=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+SCIDK_LIVE_PYTHON=${SCIDK_LIVE_PYTHON:-/home/patch/PycharmProjects/scidk/.venv/bin/python}
+exec env -i PATH=/usr/bin:/bin PYTHONPATH="$SCIDK_LIVE_REPO" \
+  "$SCIDK_LIVE_PYTHON" -m scidk.live_development "$@"

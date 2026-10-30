@@ -9,6 +9,10 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sys
+
+# This virtualenv also serves another checkout; pin this script's repository.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from playwright.sync_api import sync_playwright, expect
 
 
@@ -65,36 +69,53 @@ def main():
             expect(page.locator('#readonly-relationships-container')).to_contain_text('OF_TYPE')
             report['capabilities']['labels_and_property_types'] = 'PASS'
             page.screenshot(path=str(artifacts / 'live-labels-1440x900.png'), full_page=True)
-            instances = page.request.get(origin + '/api/labels/Sample/instances?limit=10&with_relationships=true')
+            # Independently identify one existing, non-personal metadata example
+            # on the approved backend; do not rely on arbitrary first-page order.
+            # This is a fixed read query, not an HTTP raw-query permission.
+            from scidk.live_development import load
+            from neo4j import GraphDatabase, READ_ACCESS, Query
+            _, connection, graph_password = load(state)
+            graph_auth = None if connection['auth_mode'] == 'none' else (connection['user'], graph_password)
+            query = ("MATCH (:Sample)-[:DERIVED_FROM]->(n:Sample)-[:OF_TYPE]->(:SampleType) "
+                     "WHERE all(k IN keys(n) WHERE k IN ['uuid','_imported_stub']) "
+                     "AND NOT EXISTS { MATCH (n)--(other) WHERE any(l IN labels(other) WHERE NOT l IN ['Sample','SampleType']) } "
+                     "RETURN elementId(n) AS id LIMIT 1")
+            with GraphDatabase.driver(connection['uri'], auth=graph_auth, connection_timeout=5) as driver:
+                with driver.session(database=connection['database'], default_access_mode=READ_ACCESS) as session:
+                    reference = session.run(Query(query, timeout=5)).single()
+            assert reference, 'No non-personal existing metadata example; do not broaden content access automatically'
+            instances = page.request.get(origin + '/api/labels/Sample/instances?limit=1&with_relationships=true&instance_id=' + reference['id'])
             assert instances.status == 200
-            candidates = [node for node in instances.json()['instances']
-                if set(node['properties']) <= {'uuid', '_imported_stub'}
-                and node['properties'].get('_imported_stub')
-                and any(r['direction'] == 'in' for r in node.get('relatedTo', []))
-                and any(r['direction'] == 'out' for r in node.get('relatedTo', []))
-                and all(set(r.get('neighbor_labels') or []) <= {'Sample', 'SampleType'} for r in node.get('relatedTo', []))]
-            assert candidates, 'No bounded non-personal metadata example with both directions; do not broaden content access automatically'
-            selected = candidates[0]
+            selected = instances.json()['instances'][0]
+            assert selected['id'] == reference['id']
+            assert set(selected['properties']) <= {'uuid', '_imported_stub'}
+            assert all(set(r.get('neighbor_labels') or []) <= {'Sample', 'SampleType'} for r in selected.get('relatedTo', []))
+            assert {r['direction'] for r in selected['relatedTo']} == {'in', 'out'}
+            report['independent_backend_match'] = True
             page.goto(origin + '/entities?tab=entities&management_label=Sample&management_id=' + selected['id'])
             expect(page.locator('#instance-table-container')).to_contain_text('Open in Graph')
             page.locator('#instance-table-container [id$="-badge"]').click()
             expect(page.locator('.related-instance').first).to_be_visible()
             report['capabilities']['instances_properties_incoming_outgoing'] = 'PASS'
             expect(page.locator('#toast-container > *')).to_have_count(0)
+            page.wait_for_load_state('networkidle')
+            page.locator('#instance-table-container').evaluate("el => el.scrollIntoView({block: 'center'})")
             page.screenshot(path=str(artifacts / 'live-entities-1440x900.png'), full_page=True)
             page.locator('.related-instance').first.click()
             expect(page.locator('#instance-table-container')).to_contain_text('Open in Graph')
+            page.wait_for_load_state('networkidle')
             report['capabilities']['related_entity_selection'] = 'PASS'
             for width, height in [(1440, 900), (1024, 768)]:
                 page.set_viewport_size(dict(width=width, height=height))
                 expect(page.locator('#toast-container > *')).to_have_count(0)
+                page.locator('#instance-table-container').evaluate("el => el.scrollIntoView({block: 'center'})")
                 page.screenshot(path=str(artifacts / f'live-inspector-{width}x{height}.png'), full_page=True)
             page.get_by_role('link', name='Open in Graph', exact=True).click()
             expect(page.get_by_role('link', name='Return to entity inspector')).to_be_visible()
             expect(page.locator('#neo4j-connection-select')).to_contain_text(config['connection_key'][:12])
             assert page.locator('#neo4j-connection-select').input_value() == 'PRIMARY'
             assert page.evaluate('Object.values(window.cytoscapeInstances || {}).some(cy => cy.nodes().length > 0)')
-            expect(page.locator('#map-list')).to_be_visible()
+            expect(page.locator('#save-current-map')).to_be_visible()
             def map_dialog(dialog):
                 dialog.accept('Live development metadata view' if 'map name' in dialog.message else
                               'Existing development metadata; graph unchanged' if dialog.type == 'prompt' else None)
@@ -114,7 +135,9 @@ def main():
             report['capabilities']['maps_selection_and_return'] = 'PASS'
             report['capabilities']['saved_views'] = 'PASS: save/load in the new private settings store; no existing shared views modified'
             page.remove_listener('dialog', map_dialog)
-            page.get_by_role('navigation', name='Research tools').get_by_role('link', name='Relationships & Links').click()
+            with page.expect_response('**/api/links/discovered') as discovered:
+                page.get_by_role('navigation', name='Research tools').get_by_role('link', name='Relationships & Links').click()
+            assert discovered.value.status == 200
             expect(page.locator('#links-container, .links-container').first).to_be_visible()
             page.locator('.link-filter-tab[data-filter="available"]').click()
             expect(page.locator('#link-list')).to_contain_text('OF_TYPE')
@@ -137,6 +160,9 @@ def main():
             assert page.request.patch(origin + '/api/labels/Sample/instances/' + selected['id'], data=dict(property='uuid', value='denied')).status == 403
             report['capabilities']['write_and_raw_query_refusal'] = 'PASS'
             report['readiness'] = page.request.post(origin + '/api/development/readiness', data={}).json()['checks']
+            page.goto(origin + '/admin/development-readiness')
+            expect(page.locator('#development-readiness')).to_contain_text('"reachability": "connected"')
+            page.screenshot(path=str(artifacts / 'live-readiness.png'), full_page=True)
             assert not errors, 'Unexpected browser JavaScript error'
             report['browser'] = browser.version
             report['status'] = 'graph_management_gate_passed_with_remaining_workspace_blockers'

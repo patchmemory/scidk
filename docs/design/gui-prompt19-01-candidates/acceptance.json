@@ -1,0 +1,65 @@
+{
+  "origin": "http://127.0.0.1:5010",
+  "connection_id": "a90e99e182a7ec46e56cb8e0290662b7e41466d8ace717b5df2950bbd88c4635",
+  "capabilities": {
+    "login": "PASS",
+    "labels_and_property_types": "PASS",
+    "instances_properties_incoming_outgoing": "PASS",
+    "related_entity_selection": "PASS",
+    "maps_selection_and_return": "PASS",
+    "saved_views": "PASS: save/load in the new private settings store; no existing shared views modified",
+    "relationship_types": "PASS",
+    "files_datasets": "PARTIAL: live local workspace available; separate state has no imported datasets or Resources",
+    "resources": "PARTIAL: live local workspace available; separate state has no imported datasets or Resources",
+    "knowledge": "BLOCKED: governed source provenance unavailable; management remains independent",
+    "review": "BLOCKED: no governed service/source authority",
+    "ask": "BLOCKED: no governed service/source authority or approved provider; no model call made",
+    "write_and_raw_query_refusal": "PASS"
+  },
+  "scope": "Existing development graph; bounded imported Sample/SampleType metadata only; no seeding",
+  "readiness": {
+    "ai": {
+      "authorized_source_context": false,
+      "connectivity": "not_probed",
+      "disclosure_approved": false,
+      "status": "not_configured"
+    },
+    "files": {
+      "status": "authorized_but_empty"
+    },
+    "graph": {
+      "backend": "Neo4j",
+      "connection_id": "a90e99e182a7ec46e56cb8e0290662b7e41466d8ace717b5df2950bbd88c4635",
+      "database": "neo4j",
+      "grants": {
+        "graph_entity_write": false,
+        "graph_management_read": true,
+        "graph_schema_write": false
+      },
+      "reachability": "connected",
+      "status": "ready"
+    },
+    "knowledge": {
+      "status": "governed_source_provenance_unavailable"
+    },
+    "named_authentication": true,
+    "resources": {
+      "status": "authorized_but_empty"
+    },
+    "review": {
+      "status": "not_configured"
+    },
+    "runtime": {
+      "code_fingerprint": "d021a4f06bd8c7b5cbe5cf22d4447155062f86c1926129132c4ddbdf6cc262fe",
+      "git_revision": "b650f4be9a18c899dd022526bf2087a7de9da7f5",
+      "port": 5010,
+      "profile": "live-development-readonly",
+      "python_environment": "0809a53248d7",
+      "python_version": "3.12.12",
+      "startup_dirty": false
+    }
+  },
+  "independent_backend_match": true,
+  "browser": "152.0.7977.82",
+  "status": "graph_management_gate_passed_with_remaining_workspace_blockers"
+}
