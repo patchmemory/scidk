@@ -14,8 +14,8 @@
 <button id="scans-go">Search</button><button type="button" id="scans-clear" hidden>Clear search</button></form>
 <p id="scans-note" role="status"></p>
 <label class="scans-toggle"><input type="checkbox" id="scans-system"> show system files</label>
-<table id="scans-table"><colgroup><col><col class="c-type"><col class="c-size"><col class="c-mod"><col class="c-ext"></colgroup><thead><tr><th scope="col" aria-sort="none"><button type="button" data-sort="name">Name</button></th><th scope="col">Type</th><th scope="col" aria-sort="none"><button type="button" data-sort="size">Size</button></th><th scope="col" aria-sort="none"><button type="button" data-sort="modified">Modified</button></th><th scope="col">Ext</th></tr></thead><tbody id="scans-rows"></tbody></table>
-<button id="scans-more" hidden>Load more</button></div>
+<table id="scans-table"><colgroup><col class="c-pick"><col><col class="c-type"><col class="c-size"><col class="c-mod"><col class="c-ext"></colgroup><thead><tr><th scope="col" class="c-pick"><span class="sr-only">Select</span></th><th scope="col" aria-sort="none"><button type="button" data-sort="name">Name</button></th><th scope="col">Type</th><th scope="col" aria-sort="none"><button type="button" data-sort="size">Size</button></th><th scope="col" aria-sort="none"><button type="button" data-sort="modified">Modified</button></th><th scope="col">Ext</th></tr></thead><tbody id="scans-rows"></tbody></table>
+<button id="scans-add" type="button" title="Add the checked rows and datasets to the collection">Add to collection</button> <button id="scans-more" hidden>Load more</button></div>
 <aside aria-label="Recognized datasets in this folder"><h3>Recognized datasets here</h3>
 <label class="scans-toggle"><input type="checkbox" id="scans-workspace"> show workspace candidates</label>
 <div id="scans-datasets">Select a scan.</div></aside>

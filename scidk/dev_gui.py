@@ -57,6 +57,11 @@ def build_app(state_dir, *, init_admin=None, configure=None):
         SCIDK_OVERVIEW_CHAT_ENABLED=True, SCIDK_REVIEW_WORKSPACE_ENABLED=True,
         SCIDK_REVIEW_CHAT_ENABLED=True, SCIDK_KNOWLEDGE_CONTEXT_ENABLED=True,
         SCIDK_CURATION_ENABLED=True, SCIDK_DATASET_SHARING_ENABLED=True)
+    # The launcher runs from the state directory, so the relative plugins/ discovery finds
+    # nothing; register the sharing-plan routes (dataset and collection) explicitly.
+    if 'nih_dms' not in app.blueprints:
+        from plugins.nih_dms.routes import bp as nih_dms_bp
+        app.register_blueprint(nih_dms_bp)
     if 'api_curation' not in app.blueprints:
         from .web.routes.api_curation import register_curation
         register_curation(app)

@@ -185,7 +185,7 @@
       let d = await r.json().catch(() => ({}));
       // The name is taken: never merge without asking.
       if (r.status === 409 && d.exists) {
-        if (!confirm(`A Dataset named "${body.name}" already exists with ${d.members} file(s). Add these files to it?`)) {
+        if (!confirm(`A Collection named "${body.name}" already exists with ${d.members} member(s). Add these to it?`)) {
           toast('Not saved'); return;
         }
         body.add_to_existing = true;
@@ -193,7 +193,7 @@
         d = await r.json().catch(() => ({}));
       }
       if (r.ok) {
-        toast(`Dataset "${body.name}" ${d.created === false ? 'updated' : 'created'} — ${d.files_linked || 0} files linked`
+        toast(`Collection "${body.name}" ${d.created === false ? 'updated' : 'created'} — ${d.files_linked || 0} files linked`
           + (d.problems && d.problems.length ? ` · ${d.problems.length} skipped` : ''));
         close();
       } else { toast('Failed: ' + (d.error || r.status)); }
@@ -335,6 +335,25 @@
     document.getElementById('add-to-coll-btn')?.addEventListener('click', () => {
       if (typeof selItems === 'undefined' || !selItems.size) { toast('No files selected'); return; }
       const files = [...selItems].map(entryFromId);
+      // The one collection panel (collection_basket.js) takes files and folders by (path, host).
+      if (global.CollectionBasket) {
+        const items = [...selItems].map(id => {
+          const f = entryFromId(id);
+          const tr = [...document.querySelectorAll('#file-list tr[data-id]')].find(r => r.dataset.id === id);
+          const size = tr && tr.dataset.size ? Number(tr.dataset.size) : null;
+          const isDir = f.type === 'folder';
+          return {key: (isDir ? 'folder|' : 'file|') + (f.provider_id || '') + '|' + (f.root_id || '') + '|' + (f.scan_id || '') + '|' + id,
+                  kind: isDir ? 'folder' : 'file', label: f.name, title: id, size: isDir ? null : size,
+                  p: {path: id, name: f.name, provider_id: f.provider_id, root_id: f.root_id, scan_id: f.scan_id, size: isDir ? null : size}};
+        });
+        const n = global.CollectionBasket.add(items);
+        selItems.clear();
+        document.querySelectorAll('#file-list .row-cb').forEach(cb => cb.checked = false);
+        if (typeof updateSelUI === 'function') updateSelUI();
+        global.CollectionBasket.open();
+        toast(n ? n + ' added to the collection' : 'Already in the collection');
+        return;
+      }
       const added = add(files);
       if (added) {
         selItems.clear();

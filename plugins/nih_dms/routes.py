@@ -87,6 +87,54 @@ def prepare_dataset(dataset_id):
         return jsonify(REFUSAL), 403
 
 
+@bp.post('/collections/<collection_id>/draft_plan')
+@require_role(*_PLAN_ROLES)
+def draft_collection_plan(collection_id):
+    """Draft the sharing plan for one ``:Collection``, summarizing all its members.
+
+    The dataset-scoped plan, widened: datasets by profile, total files and bytes,
+    file types, storage locations, the linked request/study, samples with their
+    types and any public repository links from ``Sample.Link_PrimaryData``. It is
+    still scoped to this collection's members, and the PHI warnings are kept.
+
+    Body: ``{"fields": {repository, retention_years, sharing_mode, access_contact, ...}}``.
+    """
+    from scidk.agent_tools.security import REFUSAL
+    from scidk.services import collection_service as cs
+    from scidk.services.dataset_sharing import investigator_fields
+    if current_app.config.get('SCIDK_DATASET_SHARING_ENABLED') is not True:
+        return jsonify(REFUSAL), 403
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict) or set(body) - {'fields'}:
+        return jsonify(status='error', error='Invalid sharing request'), 400
+    try:
+        fields = investigator_fields(body.get('fields', {}))
+    except ValueError:
+        return jsonify(status='error', error='Invalid investigator fields'), 400
+    try:
+        client = _neo4j_client()
+    except GraphUnavailable as exc:
+        return jsonify(status='error', code='neo4j_unavailable', error=str(exc)), 503
+    try:
+        summary = cs.collection_summary(client, collection_id)
+        if not summary:
+            return jsonify(status='error', error='Collection not found'), 404
+        markdown = cs.collection_plan(summary, fields)
+    except Exception as exc:  # noqa: BLE001 - report, do not emit a half-plan
+        logger.exception('nih_dms: collection plan failed')
+        return jsonify(status='error', code='generation_failed', error=f'{type(exc).__name__}: {exc}'), 500
+    finally:
+        try:
+            client.close()
+        except Exception:  # noqa: BLE001
+            pass
+    response = jsonify(status='success', markdown=markdown, summary={
+        k: summary[k] for k in ('id', 'name', 'members', 'total_files', 'total_bytes', 'context_counts',
+                                'samples', 'datasets_by_profile', 'public_links', 'warnings')})
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
 def _neo4j_client():
     """A connected ``Neo4jClient``, or raise :class:`GraphUnavailable`.
 

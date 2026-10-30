@@ -370,6 +370,23 @@ Raw read-only Cypher is approved for both Maps (`POST /api/graph/query`) and AI 
 - **Bounded and filtered:** at most 50 rows per call, and every result passes `filter_for_agent`. Properties hidden in sharing settings are stripped, queries that name a hidden property are refused, and unknown sharing modes count as hidden.
 - **Not changed:** graph writes, `/api/neo4j/query`, and the legacy file-index tools stay refused for AI.
 
+### Data model: File, Folder, Dataset, Collection (decided by Adam, 2026-10-30)
+
+Four levels, each with one job:
+
+| Level | Meaning | Relationships |
+|---|---|---|
+| **File** | A leaf. Interpreters extract metadata from it. | `(File)-[:INTERPRETED_AS]->(Interpretation)` |
+| **Folder** | Storage structure. | `(Folder)-[:CONTAINS]->(File \| Folder)` |
+| **Dataset** | The smallest meaningful unit. Recognized by a profile, or made by hand. | `(Dataset)-[:CONTAINS]->(File \| Folder)`, `(Dataset)-[:HAS_PART]->(Dataset)` |
+| **Collection** (new label `:Collection`) | A purpose-built grouping for sharing and analysis. The unit that gets a sharing plan and an RO-Crate. | `(Collection)-[:INCLUDES]->(Dataset \| Folder \| File \| Request \| Study \| Sample \| SampleType \| Investigator \| Lab)` |
+
+- **Change from earlier code:** `POST /api/datasets/collections` used to write a collection as a `:Dataset`. New collections are `:Collection` with `INCLUDES` edges (`POST /api/collections` is the full form; the old path writes the same thing). Existing `:Dataset` nodes made by the old route are left as they are; they are listed, not migrated.
+- **Datasets join by reference:** a recognized dataset picked from Scans is a `:Dataset` keyed on `(scan_id, root_path)` with `profile`, `file_count`, `bytes` and `source='files.db'`. Its file rows are never copied into the graph, and `files.db` stays read-only.
+- **Selection:** checkboxes on Files (files, folders), Scans (files, folders, recognized datasets) and Knowledge → Entities (any node, for context). One collection panel shows members by kind with counts and sizes.
+- **Sharing plan:** drafted per collection from its members, by extending the dataset-scoped NIH DMS plan. PHI warnings are kept; no new checks.
+- **Not yet:** RO-Crate export and AI signature review. A collection maps onto `rocrate_bridge` as one crate root with its members as `hasPart`.
+
 ---
 
 ## Longer-Term Tracks

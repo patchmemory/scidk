@@ -981,6 +981,7 @@
           <button id="btn-push-instances" class="btn btn-sm btn-success" data-testid="push-instances-btn" style="display: none;">Push Changes</button>
           <button id="btn-download-csv" class="btn btn-sm btn-outline-secondary" data-testid="download-csv-btn" style="display: none;">Download CSV</button>
           <button id="btn-upload-csv" class="btn btn-sm btn-outline-secondary" data-testid="upload-csv-btn">Upload CSV</button>
+          <button id="btn-add-to-collection" class="btn btn-sm btn-outline-success" data-testid="add-to-collection-btn" title="Add the checked rows to the collection (context such as a Request, Study or Sample)">Add to collection</button>
           <button id="btn-refresh-instances" class="btn btn-sm btn-outline-secondary" data-testid="refresh-instances-btn">Refresh</button>
         </div>
       </div>
@@ -4512,7 +4513,7 @@ function renderInstanceTable() {
 
   // Build table
   let html = '<table class="instance-table"><thead><tr>';
-  html += '<th>ID</th>';
+  html += '<th><span style="position:absolute;left:-9999px">Select</span></th><th>ID</th>';
   properties.forEach(prop => {
     html += `<th>${prop}</th>`;
   });
@@ -4524,6 +4525,7 @@ function renderInstanceTable() {
   instanceData.forEach(instance => {
     html += '<tr>';
     const instanceName = instance.properties.name || instance.properties.filename || currentLabel.name;
+    html += `<td><input type="checkbox" class="instance-pick" data-id="${escapeHtml(instance.id)}" aria-label="Select for collection"></td>`;
     html += `<td><strong>${escapeHtml(String(instanceName))}</strong><br><a href="${window.SCIDK_BASE}/map?management_label=${encodeURIComponent(currentLabel.name)}&management_id=${encodeURIComponent(instance.id)}&management_name=${encodeURIComponent(instanceName)}">Open in Graph</a></td>`;
     properties.forEach(prop => {
       const value = instance.properties[prop] || '';
@@ -4566,6 +4568,25 @@ function renderInstanceTable() {
   container.querySelectorAll('.related-instance').forEach(button => {
     button.onclick = () => openRelatedInstance(button.dataset.label, button.dataset.id);
   });
+
+  const addToCollection = document.getElementById('btn-add-to-collection');
+  if (addToCollection) {
+    addToCollection.onclick = () => {
+      const picked = Array.from(container.querySelectorAll('.instance-pick:checked')).map(box => box.dataset.id);
+      const label = currentLabel.name;
+      const items = picked.map(id => {
+        const inst = instanceData.find(i => i.id === id);
+        const handle = inst ? (inst.properties.name || inst.properties.uid || inst.properties.id || '') : '';
+        return {key: 'context|' + id, kind: 'context', label: label + (handle ? ' ' + String(handle).slice(0, 40) : ''), tag: label,
+                p: {label, id}};
+      });
+      if (!window.CollectionBasket) return;
+      const added = window.CollectionBasket.add(items);
+      container.querySelectorAll('.instance-pick:checked').forEach(box => { box.checked = false; });
+      window.CollectionBasket.open();
+      showToast(added ? `${added} ${label} record(s) added to the collection` : 'Check rows first (or already in the collection)', 'info');
+    };
+  }
 
   // Show pagination
   document.getElementById('instance-pagination').style.display = 'flex';

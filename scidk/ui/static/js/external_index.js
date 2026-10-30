@@ -98,13 +98,33 @@
     return out;
   }
 
+  /* ---- collection picks: files and folders by (path, host); datasets by reference ---- */
+  const hostLabel = () => 'files.db:' + ((st.scan && (st.scan.host || st.scan.share)) || (st.scan && st.scan.id) || 'scan');
+  function pickFor(e) {
+    const scan = st.scan, host = hostLabel(), isDir = e.type === 'folder';
+    return window.CollectionBasket && window.CollectionBasket.checkbox(() => ({
+      key: (isDir ? 'folder|' : 'file|') + host + '|' + e.path, kind: isDir ? 'folder' : 'file', label: e.name, title: e.path,
+      size: isDir ? null : e.size,
+      p: {path: e.path, name: e.name, host, scan_id: scan.id, size: isDir ? null : e.size},
+    }), 'Select ' + e.name + ' for the collection');
+  }
+  function pickDataset(d) {
+    const scan = st.scan;
+    return window.CollectionBasket && window.CollectionBasket.checkbox(() => ({
+      key: 'dataset|' + scan.id + '|' + d.root_path, kind: 'dataset', label: d.root_path.replace(/\/+$/, '').split('/').pop() || d.root_path,
+      title: d.root_path, size: d.total_bytes, files: d.file_count, tag: d.pattern_name,
+      p: {scan_id: scan.id, root_path: d.root_path, profile: d.pattern_name, file_count: d.file_count, bytes: d.total_bytes},
+    }), 'Select dataset ' + d.root_path + ' for the collection');
+  }
+
   function rowFor(e, member) {
     const tr = el('tr', null, {className: member ? 'member' : ''});
+    const pick = el('td'); const cb = pickFor(e); if (cb) pick.append(cb);
     const name = el('td'); const isDir = e.type === 'folder';
     const rel = st.search && e.path.startsWith(st.path) ? e.path.slice(st.path.length).replace(/^\//, '').split('/').slice(0, -1).join('/') : '';
     if (isDir) name.append(btn('📁 ' + e.name, () => open(st.scan, e.path), e.path)); else name.append(el('span', '📄 ' + e.name, {title: e.path}));
     if (rel) name.append(el('span', rel, {className: 'where'}));
-    tr.append(name, el('td', e.type), el('td', isDir ? '' : fmt(e.size)), el('td', when(e.modified)), el('td', e.extension || ''));
+    tr.append(pick, name, el('td', e.type), el('td', isDir ? '' : fmt(e.size)), el('td', when(e.modified)), el('td', e.extension || ''));
     return tr;
   }
 
@@ -118,7 +138,7 @@
       name.append(btn((open_ ? '▾ ' : '▸ ') + '📄 ' + it.group + ' · ' + num(it.members.length) + more + ' files · ' + fmt(it.size) + (more ? '+' : ''),
         () => { open_ ? st.open.delete(it.group) : st.open.add(it.group); renderRows(); }, 'Show or hide the ' + it.members.length + ' files in this series'));
       name.firstChild.setAttribute('aria-expanded', String(open_));
-      tr.append(name, el('td', 'series'), el('td', fmt(it.size)), el('td', when(it.modified)), el('td'));
+      tr.append(el('td'), name, el('td', 'series'), el('td', fmt(it.size)), el('td', when(it.modified)), el('td'));
       body.append(tr);
       if (open_) it.members.forEach(e => body.append(rowFor(e, true)));
     });
@@ -165,7 +185,9 @@
       const b = el('button'); b.type = 'button'; b.title = d.root_path + (d.status ? ' · ' + d.status : '');
       b.append(el('div', [d.pattern_name, count, size, conf].filter(Boolean).join(' · '), {className: 'ds-line'}), el('div', where, {className: 'ds-name'}));
       b.onclick = () => open(st.scan, d.root_path);
-      box.append(b);
+      const line = el('div', null, {className: 'ds-pick'}); const dcb = pickDataset(d);
+      if (dcb) line.append(dcb);
+      line.append(b); box.append(line);
     });
     if (sets.has_more) box.append(el('p', 'Showing the first ' + sets.datasets.length + '. Open a subfolder to narrow.'));
   }
@@ -188,6 +210,11 @@
         (r.scope === 'subtree' ? 'this folder and subfolders' : 'this folder') + (r.has_more ? ' (more available)' : ''));
     } catch (error) { if (version === st.version) $('scans-note').textContent = error.message; }
   }
+  $('scans-add').onclick = () => {
+    if (!window.CollectionBasket) return;
+    const added = window.CollectionBasket.addChecked($('gui-scans'));
+    $('scans-note').textContent = added ? added + ' added to the collection.' : 'Check rows or datasets first (or they are already in the collection).';
+  };
   $('scans-search').onsubmit = ev => { ev.preventDefault(); runSearch(false); };
   $('scans-clear').onclick = () => { $('scans-q').value = ''; if (st.scan) open(st.scan, st.path); };
 

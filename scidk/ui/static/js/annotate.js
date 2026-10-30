@@ -677,8 +677,8 @@
       let d = await r.json().catch(() => ({}));
       // The name is taken: never merge without asking.
       if (r.status === 409 && d.exists) {
-        if (!confirm(`A Dataset named "${name}" already exists with ${d.members} file(s). Add these files to it?`)) {
-          _setCollectStatus('Not saved: choose another name, or confirm adding to the existing Dataset.', 'warning');
+        if (!confirm(`A Collection named "${name}" already exists with ${d.members} member(s). Add these to it?`)) {
+          _setCollectStatus('Not saved: choose another name, or confirm adding to the existing Collection.', 'warning');
           return;
         }
         body.add_to_existing = true;
@@ -687,8 +687,7 @@
       }
       if (!r.ok) { _setCollectStatus(_attrEsc(d.error || `Error ${r.status}`), 'danger'); return; }
       _setCollectStatus(
-        `✓ Dataset "${_attrEsc(d.name || name)}" ${d.created === false ? 'updated' : 'created'} — ${d.files_linked || 0} file(s) linked`
-        + (d.stubs_created ? `, ${d.stubs_created} stub node(s) created` : '')
+        `✓ Collection "${_attrEsc(d.name || name)}" ${d.created === false ? 'updated' : 'created'} — ${(d.linked && d.linked.file) || 0} file(s), ${(d.linked && d.linked.folder) || 0} folder(s) included`
         + (d.problems && d.problems.length
           ? `<br><span class="text-warning">Skipped: ${d.problems.map(_attrEsc).join('; ')}</span>` : ''),
         'success');

@@ -3,8 +3,9 @@
 The Collection panel accumulates files across folders; these two routes are
 what it does with them:
 
-* ``POST /api/datasets/collections`` — write the collection as a ``:Dataset``
-  node with ``CONTAINS`` edges to each file.
+* ``POST /api/collections`` and ``POST /api/datasets/collections`` — write the
+  collection as a ``:Collection`` node with ``INCLUDES`` edges to its members
+  (datasets by reference, folders, files, context nodes).
 * ``POST /api/collections/sweep`` — ask whether the collection is a *complete*
   Dataset, or a partial copy of one the graph already knows.
 
@@ -178,35 +179,27 @@ def _normalise_files(raw: Any) -> Tuple[List[Dict[str, str]], List[str]]:
     return files, problems
 
 
-# ── I1 — create a Dataset from a collection ────────────────────────────────
+# ── I1 — save a collection ──────────────────────────────────────────────────
 
-@bp.post('/datasets/collections')
-@require_role(*_WRITE_ROLES)
-def api_datasets_from_collection():
-    """Write a collection to the graph as one ``:Dataset`` with CONTAINS edges.
+def _created_by() -> str:
+    from flask import g
+    return str(getattr(g, 'scidk_user', '') or 'unknown')
 
-    Response: ``{status, dataset_id, name, created, files_linked, stubs_created}``.
 
-    A name that already belongs to a collection Dataset is refused with 409
-    (``{exists: true, members}``) unless the body says ``add_to_existing``, so
-    re-using a name never silently merges into someone else's Dataset. Blank
-    ``modality`` / ``description`` keep the stored values rather than erasing them.
+def _save_collection_request(body: Dict[str, Any], raw_members: Any):
+    """Shared by the two POST routes: validate, MERGE the Collection, report counts."""
+    from ...services import collection_service as cs
 
-    Files already in the graph are matched on ``(path, host)``. Files that are
-    not — scanned but never committed, or never scanned at all — get a stub node
-    flagged ``stub: true``, so the Dataset is complete on the day it is made and
-    a later commit MERGEs onto the same node rather than creating a second one.
-    """
-    body = request.get_json(silent=True) or {}
     name = str(body.get('name') or '').strip()
     if not name:
         return jsonify({'error': 'name is required'}), 400
 
-    files, problems = _normalise_files(body.get('files'))
-    if not files:
-        return jsonify({'error': 'files is required', 'problems': problems}), 400
-    if len(files) > _MAX_FILES:
-        return jsonify({'error': f'too many files ({len(files)}); the maximum is {_MAX_FILES}'}), 400
+    members, problems = cs.normalise_members(raw_members, _entry_host)
+    total = cs.member_count(members)
+    if not total:
+        return jsonify({'error': 'members is required', 'problems': problems}), 400
+    if total > _MAX_FILES:
+        return jsonify({'error': f'too many members ({total}); the maximum is {_MAX_FILES}'}), 400
 
     try:
         client = _neo4j_client()
@@ -214,59 +207,19 @@ def api_datasets_from_collection():
         return jsonify({'error': str(e)}), 503
 
     add_to_existing = bool(body.get('add_to_existing'))
-
     try:
-        existing = client.execute_read(
-            "MATCH (d:Dataset {name: $name, source: 'collection'}) "
-            "OPTIONAL MATCH (d)-[:CONTAINS]->(f:File) "
-            # Grouped on d, so no match is no row (a bare count() is always one row)
-            "RETURN elementId(d) AS dataset_id, count(f) AS members",
-            {'name': name},
-        )
+        existing = cs.find_by_name(client, name)
         if existing and not add_to_existing:
             return jsonify({
-                'error': f'A Dataset named "{name}" already exists',
+                'error': f'A Collection named "{name}" already exists',
                 'exists': True,
                 'name': name,
                 'members': int(existing[0].get('members') or 0),
             }), 409
-
-        # A Dataset built from a collection has no directory of its own, so it
-        # is keyed on its name. dataset_node_service keys the ones it derives
-        # from a scan on (path, host) — a different kind of Dataset, and one
-        # this must not collide with, hence the source marker.
-        records = client.execute_write(
-            "MERGE (d:Dataset {name: $name, source: 'collection'}) "
-            "ON CREATE SET d.created_at = timestamp() "
-            "SET d.modality = coalesce($modality, d.modality), "
-            "    d.description = coalesce($description, d.description), "
-            "    d.updated_at = timestamp() "
-            "RETURN elementId(d) AS dataset_id",
-            {
-                'name': name,
-                # None, not '', so coalesce keeps the stored value
-                'modality': str(body.get('modality') or '').strip() or None,
-                'description': str(body.get('description') or '').strip() or None,
-            },
-        )
-        dataset_id = records[0].get('dataset_id') if records else None
-        created = not existing
-
-        # One round trip for the whole batch. Matched on (path, host) so the
-        # composite index applies; MERGE rather than MATCH so a file the graph
-        # has not seen still ends up in the Dataset, marked as a stub. Only
-        # stubs this call created are counted, not ones an earlier Collect made.
-        link = client.execute_write(
-            "MATCH (d:Dataset {name: $name, source: 'collection'}) "
-            "UNWIND $files AS row "
-            "OPTIONAL MATCH (prior:File {path: row.path, host: row.host}) "
-            "WITH d, row, prior IS NULL AS is_new "
-            "MERGE (f:File {path: row.path, host: row.host}) "
-            "  ON CREATE SET f.filename = row.filename, f.stub = true "
-            "MERGE (d)-[:CONTAINS]->(f) "
-            "RETURN count(f) AS linked, sum(CASE WHEN is_new THEN 1 ELSE 0 END) AS stubs",
-            {'name': name, 'files': files},
-        )
+        result = cs.save_collection(
+            client, name=name, description=str(body.get('description') or '').strip() or None,
+            created_by=_created_by(), members=members,
+            collection_id=existing[0].get('id') if existing else None)
     except Exception as e:  # noqa: BLE001 - the write is the route's whole job
         return jsonify({'error': f'{type(e).__name__}: {e}'}), 502
     finally:
@@ -275,21 +228,92 @@ def api_datasets_from_collection():
         except Exception:
             pass
 
-    linked = int(link[0].get('linked') or 0) if link else 0
-    stubs = int(link[0].get('stubs') or 0) if link else 0
     out: Dict[str, Any] = {
         'status': 'ok',
-        'dataset_id': dataset_id,
+        'collection_id': result['id'],
         'name': name,
-        'created': created,
-        'files_linked': linked,
-        'stubs_created': stubs,
+        'created': not existing,
+        'linked': result['linked'],
+        'files_linked': result['linked']['file'],
     }
+    if result['not_found']:
+        out['not_found'] = result['not_found']
     if problems:
-        # Reported alongside a successful write rather than instead of one: the
-        # files that were well-formed were still linked.
+        # Reported alongside a successful write rather than instead of one.
         out['problems'] = problems
     return jsonify(out), 200
+
+
+@bp.post('/collections')
+@require_role(*_WRITE_ROLES)
+def api_collections_create():
+    """Write a ``:Collection`` with ``INCLUDES`` edges to its members.
+
+    Body: ``{name, description?, add_to_existing?, members: [...]}`` where each
+    member is ``{kind: dataset|folder|file|context, ...}``:
+
+    * ``dataset`` — ``scan_id``, ``root_path`` and optional ``profile``,
+      ``file_count``, ``bytes``: joins by reference (a ``:Dataset`` keyed on
+      ``(scan_id, root_path)``, ``source='files.db'``); no file rows are copied.
+    * ``folder`` / ``file`` — ``path``, ``name`` and a host (``host``, or
+      ``provider_id`` + ``root_id``).
+    * ``context`` — ``label`` (e.g. Request, Study, Sample, SampleType,
+      Investigator, Lab) and the node's element ``id``; the node must already exist.
+
+    Graph writes are MERGE only. A name already taken answers 409 unless
+    ``add_to_existing`` is set.
+    """
+    body = request.get_json(silent=True) or {}
+    return _save_collection_request(body, body.get('members'))
+
+
+@bp.post('/datasets/collections')
+@require_role(*_WRITE_ROLES)
+def api_datasets_from_collection():
+    """The Files-page Collect panel's route: a collection of files and folders.
+
+    Used to write a ``:Dataset`` with ``CONTAINS`` edges. It now writes a
+    ``:Collection`` with ``INCLUDES`` edges (a Dataset is the smallest meaningful
+    unit; a Collection is a purpose-built grouping). Entries are
+    ``{name, path, provider_id, root_id, scan_id?, type?}``; ``type: "folder"``
+    makes a ``:Folder`` member, anything else a ``:File``. Existing ``:Dataset``
+    nodes written by the old route are left alone.
+    """
+    body = request.get_json(silent=True) or {}
+    members = []
+    for entry in body.get('files') or []:
+        if not isinstance(entry, dict):
+            members.append(entry)
+            continue
+        path = str(entry.get('path') or '').strip()
+        filename = str(entry.get('name') or entry.get('filename') or '').strip()
+        if not filename and path:
+            filename = path.rstrip('/').rsplit('/', 1)[-1]
+        if path and filename and not path.endswith('/' + filename) and path != filename:
+            path = path.rstrip('/') + '/' + filename
+        members.append(dict(entry, kind='folder' if str(entry.get('type') or '').lower() == 'folder' else 'file',
+                            path=path, name=filename))
+    return _save_collection_request(body, members)
+
+
+@bp.get('/collections')
+@require_role(*_READ_ROLES)
+def api_collections_list():
+    """Existing collections: id, name, description, created_by, created_at, member count."""
+    from ...services import collection_service as cs
+    try:
+        client = _neo4j_client()
+    except Neo4jUnavailable as e:
+        return jsonify({'error': str(e), 'collections': []}), 503
+    try:
+        return jsonify({'collections': cs.list_collections(client)}), 200
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'error': f'{type(e).__name__}: {e}', 'collections': []}), 502
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
 
 
 # ── I2 — completeness sweep ────────────────────────────────────────────────

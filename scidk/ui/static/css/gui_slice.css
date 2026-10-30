@@ -38,6 +38,7 @@
 #gui-scans #scans-search {display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:6px 0}
 #gui-scans #scans-search input {flex:1 1 160px;min-width:0;padding:5px}
 #gui-scans #scans-table {width:100%;font-size:12px;table-layout:fixed;border-collapse:collapse}
+#gui-scans #scans-table col.c-pick {width:26px} #gui-scans .sr-only {position:absolute;left:-9999px}
 #gui-scans #scans-table col.c-type {width:54px} #gui-scans #scans-table col.c-size {width:72px}
 #gui-scans #scans-table col.c-mod {width:112px} #gui-scans #scans-table col.c-ext {width:56px}
 #gui-scans #scans-table th {text-align:left}
@@ -45,9 +46,12 @@
 #gui-scans #scans-table th[aria-sort=ascending] button::after {content:" ▲"} #gui-scans #scans-table th[aria-sort=descending] button::after {content:" ▼"}
 #gui-scans #scans-table td {overflow-wrap:anywhere;vertical-align:top;border-top:1px solid #eef2f6;padding:2px 4px}
 #gui-scans #scans-table td button {margin:0;padding:1px 4px;border:0;background:none;text-align:left;white-space:normal;overflow-wrap:anywhere;color:#165dba}
-#gui-scans #scans-table tr.member td:first-child {padding-left:22px}
+#gui-scans #scans-table tr.member td:nth-child(2) {padding-left:22px}
+#gui-scans .ds-pick {display:flex;align-items:flex-start;gap:4px}
 #gui-scans .where {display:block;color:#52606d;font-size:11px}
 #gui-scans #scans-datasets button {display:block;width:100%;margin:3px 0;padding:5px 8px;text-align:left;white-space:normal;overflow-wrap:anywhere}
 #gui-scans .ds-line {font-size:12px;font-weight:600}
 #gui-scans .ds-name {font-size:11px;color:#3e4c59;overflow-wrap:anywhere}
 @media(max-width:1000px) {#gui-scans .scans-layout {grid-template-columns:minmax(0,1fr)}}
+
+#gui-scans .ds-pick button {flex:1}
