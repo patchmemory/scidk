@@ -159,3 +159,6 @@ evidence, property, ontology-version or stable source-identity bindings. Those
 blockers remain; management records are never relabeled as accepted assertions.
 Neo4j element IDs are transient inspector lookup context, never governed identity.
 Browser candidates require human review and do not update approved baselines.
+
+Implementation revision: `3b3d9d1d60bf58cbf9a5f0ff84772b478b295489`. Verification counts and browser evidence
+are recorded in `docs/design/gui-prompt18-02-report.md`.

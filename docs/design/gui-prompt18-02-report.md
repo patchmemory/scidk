@@ -2,7 +2,7 @@
 
 Implemented under the explicit approval in `scidk_prompt_18_02_b.txt`.
 Branch: `design/knowledge-curation-20261029`; starting HEAD: `04a8e09`.
-Implementation revision is recorded below after commit. All unrelated untracked
+Implementation revision: `3b3d9d1d60bf58cbf9a5f0ff84772b478b295489`. All unrelated untracked
 prompts, handoffs and user documents are preserved. Prompt 19 has not begun.
 
 ## Result
