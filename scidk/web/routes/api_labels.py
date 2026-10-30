@@ -9,6 +9,8 @@ Provides REST endpoints for:
 from flask import Blueprint, jsonify, request, current_app
 
 bp = Blueprint('labels', __name__, url_prefix='/api')
+from ...services.graph_management_policy import enforce as enforce_graph_management
+bp.before_request(enforce_graph_management)
 
 
 def _get_label_service():
@@ -783,7 +785,11 @@ def get_label_instances(name):
         offset = int(request.args.get('offset', 0))
         with_relationships = request.args.get('with_relationships', 'false').lower() == 'true'
 
-        result = service.get_label_instances(name, limit=limit, offset=offset, with_relationships=with_relationships)
+        instance_id = request.args.get('instance_id')
+        if not 1 <= limit <= 100 or not 0 <= offset <= 10000 or (instance_id is not None and len(instance_id) > 256):
+            return jsonify(status='error', error='Invalid instance bounds'), 400
+        result = service.get_label_instances(name, limit=limit, offset=offset,
+            with_relationships=with_relationships, instance_id=instance_id)
 
         if result.get('status') == 'error':
             return jsonify(result), 500

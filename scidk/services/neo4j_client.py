@@ -75,6 +75,7 @@ class Neo4jClient:
         self._driver = None
 
     def connect(self):
+        self._authorize_management()
         from neo4j import GraphDatabase  # type: ignore
         auth = None if self._auth_mode == 'none' else (self._user, self._password)
         self._driver = GraphDatabase.driver(self._uri, auth=auth)
@@ -88,11 +89,19 @@ class Neo4jClient:
             pass
 
     def _session(self):
+        self._authorize_management()
         if self._driver is None:
             raise RuntimeError("Neo4jClient not connected")
         if self._database:
             return self._driver.session(database=self._database)
         return self._driver.session()
+
+    def _authorize_management(self):
+        from flask import has_request_context, g
+        from .graph_management_policy import protected_path, require_connection
+        if has_request_context() and protected_path():
+            require_connection(self._uri, self._user, self._database, self._auth_mode,
+                               getattr(g, 'graph_management_permission', 'graph_management_read'))
 
     # --- Query Operations ---
     def execute_read(self, query: str, parameters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
@@ -119,6 +128,12 @@ class Neo4jClient:
         Returns:
             List of records as dictionaries
         """
+        from flask import has_request_context, g
+        from .graph_management_policy import protected_path, require_connection
+        if has_request_context() and protected_path():
+            permission = getattr(g, 'graph_management_permission', 'graph_entity_write')
+            require_connection(self._uri, self._user, self._database, self._auth_mode,
+                'graph_schema_write' if permission == 'graph_schema_write' else 'graph_entity_write')
         with self._session() as session:
             result = session.run(query, parameters or {})
             records = [dict(record) for record in result]
@@ -534,6 +549,10 @@ def get_neo4j_client(role: Optional[str] = None):
                         client.connect()
                         return client
         except Exception as e:
+            from flask import has_request_context
+            from .graph_management_policy import protected_path
+            if has_request_context() and protected_path():
+                raise  # a denied/missing profile must never become primary authority
             # Fall back to default connection
             if app:
                 app.logger.warning(f"Failed to get Neo4j connection for role {role}: {e}")

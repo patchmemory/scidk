@@ -56,6 +56,6 @@ def test_operational_assembly_frontend(gui_page, gui_artifacts, viewport):
     app.extensions.pop('knowledge_services')
     page.locator('#kw-search-button').click()
     expect(page.locator('#kw-status')).to_contain_text('/api/knowledge/readiness')
-    # Request native pages without loading their external legacy script assets.
+    # Governed browsing grants do not authorize native graph management pages.
     for route in ('/entities', '/entities?tab=relationships', '/map'):
-        assert page.request.get(origin + route).status == 200
+        assert page.request.get(origin + route).status == 403

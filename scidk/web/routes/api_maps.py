@@ -10,6 +10,8 @@ from scidk.services.saved_maps_service import get_saved_maps_service
 logger = logging.getLogger(__name__)
 
 bp = Blueprint("api_maps", __name__, url_prefix="/api/maps")
+from ...services.graph_management_policy import enforce as enforce_graph_management
+bp.before_request(enforce_graph_management)
 
 
 def _get_saved_maps_service():

@@ -67,6 +67,14 @@ class LabelService:
             labels = []
             for row in rows:
                 name, props_json, rels_json, created_at, updated_at, source_type, source_id, sync_config_json, neo4j_source_profile, matching_key = row
+                from flask import has_request_context
+                if has_request_context():
+                    from .graph_management_policy import protected_path, authorize_profile
+                    if protected_path():
+                        try:
+                            authorize_profile(neo4j_source_profile)
+                        except Exception:
+                            continue
                 labels.append({
                     'name': name,
                     'properties': json.loads(props_json) if props_json else [],
@@ -111,6 +119,11 @@ class LabelService:
                 return None
 
             name, props_json, rels_json, created_at, updated_at, source_type, source_id, sync_config_json, neo4j_source_profile, matching_key = row
+            from flask import has_request_context
+            if has_request_context():
+                from .graph_management_policy import protected_path, authorize_profile
+                if protected_path():
+                    authorize_profile(neo4j_source_profile)
 
             # Get outgoing relationships (defined on this label)
             relationships = json.loads(rels_json) if rels_json else []
@@ -186,6 +199,29 @@ class LabelService:
         for rel in relationships:
             if not isinstance(rel, dict) or 'type' not in rel or 'target_label' not in rel:
                 raise ValueError(f"Invalid relationship structure: {rel}")
+
+        # Imports use this same writer. Enforce removals and source authority
+        # here too so an alternate HTTP import path cannot bypass confirmation.
+        from flask import has_request_context, request
+        if has_request_context():
+            from .graph_management_policy import protected_path, authorize_profile
+            if protected_path():
+                import re
+                from ..agent_tools.security import DisclosureDenied
+                authorize_profile(neo4j_source_profile, 'graph_schema_write')
+                identifiers = [name] + [p['name'] for p in properties]
+                identifiers += [v for r in relationships for v in (r['type'], r['target_label'])]
+                if matching_key:
+                    identifiers.append(matching_key)
+                if any(not isinstance(v, str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', v) for v in identifiers):
+                    raise DisclosureDenied()
+                previous = self.get_label(name)
+                if previous:
+                    removed = {p['name'] for p in previous['properties']} - {p['name'] for p in properties}
+                    removed_rels = ({(r['type'], r['target_label']) for r in previous['relationships']} -
+                                    {(r['type'], r['target_label']) for r in relationships})
+                    if (removed or removed_rels) and request.headers.get('X-SciDK-Confirm') != 'destructive-shared-change':
+                        raise DisclosureDenied()
 
         props_json = json.dumps(properties)
         rels_json = json.dumps(relationships)
@@ -652,7 +688,7 @@ class LabelService:
                 'error': str(e)
             }
 
-    def get_label_instances(self, name: str, limit: int = 100, offset: int = 0, with_relationships: bool = False) -> Dict[str, Any]:
+    def get_label_instances(self, name: str, limit: int = 100, offset: int = 0, with_relationships: bool = False, instance_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Get instances of a label from Neo4j.
 
@@ -718,17 +754,20 @@ class LabelService:
                     # Must collect all relationships in a single aggregation to avoid Neo4j grouping issues
                     query = f"""
                     MATCH (n:{name})
+                    WHERE $instance_id IS NULL OR elementId(n) = $instance_id
                     OPTIONAL MATCH (n)-[r_out]->(out_neighbor)
                     OPTIONAL MATCH (in_neighbor)-[r_in]->(n)
                     WITH n,
                          collect(DISTINCT {{
                             neighbor_id: elementId(out_neighbor),
+                            neighbor_name: coalesce(out_neighbor.name, out_neighbor.filename, ''),
                             rel_type: type(r_out),
                             direction: 'out',
                             properties: properties(r_out),
                             neighbor_labels: labels(out_neighbor)
                          }}) + collect(DISTINCT {{
                             neighbor_id: elementId(in_neighbor),
+                            neighbor_name: coalesce(in_neighbor.name, in_neighbor.filename, ''),
                             rel_type: type(r_in),
                             direction: 'in',
                             properties: properties(r_in),
@@ -742,12 +781,13 @@ class LabelService:
                 else:
                     query = f"""
                     MATCH (n:{name})
+                    WHERE $instance_id IS NULL OR elementId(n) = $instance_id
                     RETURN elementId(n) as id, properties(n) as properties
                     SKIP $offset
                     LIMIT $limit
                     """
 
-                results = neo4j_client.execute_read(query, {'offset': offset, 'limit': limit})
+                results = neo4j_client.execute_read(query, {'offset': offset, 'limit': limit, 'instance_id': instance_id})
 
                 instances = []
                 for r in results:

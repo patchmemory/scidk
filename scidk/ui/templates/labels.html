@@ -2059,6 +2059,9 @@ function escapeHtml(text) {
   div.textContent = text;
   return div.innerHTML;
 }
+function escapeAttribute(text) {
+  return escapeHtml(String(text)).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 
 function renderLabelList() {
   const container = document.getElementById('label-list');
@@ -2192,7 +2195,7 @@ function loadLabel(name) {
     return;
   }
 
-  fetch(window.SCIDK_BASE + `/api/labels/${name}`)
+  return fetch(window.SCIDK_BASE + `/api/labels/${name}`)
     .then(r => r.json())
     .then(data => {
       if (data.status === 'success') {
@@ -3168,6 +3171,10 @@ async function saveLabel() {
   }).filter(r => r && r.type && r.source_label);
 
   const payload = { name, properties, relationships };
+  const removesSchema = currentLabel && (
+    (currentLabel.properties || []).some(p => !properties.some(next => next.name === p.name)) ||
+    (currentLabel.relationships || []).some(r => !relationships.some(next => next.type === r.type && next.target_label === r.target_label)));
+  if (removesSchema && !confirm('Remove shared property or relationship definitions? Direct schema changes do not create curation decisions.')) return;
 
   console.log('Saving label with payload:', payload);
   console.log('Incoming relationships to apply:', incomingRelationships);
@@ -3176,7 +3183,7 @@ async function saveLabel() {
     // First save the current label
     const resp = await fetch(window.SCIDK_BASE + '/api/labels', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(removesSchema ? {'X-SciDK-Confirm': 'destructive-shared-change'} : {}) },
       body: JSON.stringify(payload)
     });
 
@@ -3313,7 +3320,7 @@ function deleteLabel() {
 
   if (!confirm(`Delete label "${currentLabel.name}"?`)) return;
 
-  fetch(window.SCIDK_BASE + `/api/labels/${currentLabel.name}`, { method: 'DELETE' })
+  fetch(window.SCIDK_BASE + `/api/labels/${currentLabel.name}`, { method: 'DELETE', headers: {'X-SciDK-Confirm': 'destructive-shared-change'} })
     .then(r => r.json())
     .then(data => {
       if (data.status === 'success') {
@@ -3935,7 +3942,7 @@ async function batchDelete() {
   try {
     const resp = await fetch(window.SCIDK_BASE + '/api/labels/batch/delete', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: {'Content-Type': 'application/json', 'X-SciDK-Confirm': 'destructive-shared-change'},
       body: JSON.stringify({ label_names: labelNames })
     });
 
@@ -4471,6 +4478,22 @@ function pushInstancesWithPreview() {
   modalElements.countEl.innerHTML = `<strong>Total changes:</strong> ${changeCount} instance(s)`;
 }
 
+async function openRelatedInstance(label, id) {
+  await loadLabel(label);
+  if (!currentLabel || currentLabel.name !== label) return;
+  const response = await fetch(window.SCIDK_BASE + `/api/labels/${encodeURIComponent(label)}/instances?with_relationships=true&instance_id=${encodeURIComponent(id)}&limit=1`);
+  const result = await response.json();
+  if (!response.ok || result.status !== 'success') { showToast('Related entity is unavailable under current management authority.', 'error'); return; }
+  instanceData = result.instances; instanceTotal = result.total; instanceChanges = {};
+  renderInstanceTable();
+  document.getElementById('instance-table-container').scrollIntoView({block: 'nearest'});
+}
+
+const managementSelection = new URLSearchParams(location.search);
+if (managementSelection.get('management_label') && managementSelection.get('management_id')) {
+  openRelatedInstance(managementSelection.get('management_label'), managementSelection.get('management_id'));
+}
+
 function renderInstanceTable() {
   const container = document.getElementById('instance-table-container');
 
@@ -4500,13 +4523,14 @@ function renderInstanceTable() {
 
   instanceData.forEach(instance => {
     html += '<tr>';
-    html += `<td style="font-family: monospace; font-size: 0.75rem;">${instance.id.substring(0, 8)}...</td>`;
+    const instanceName = instance.properties.name || instance.properties.filename || currentLabel.name;
+    html += `<td><strong>${escapeHtml(String(instanceName))}</strong><br><a href="${window.SCIDK_BASE}/map?management_label=${encodeURIComponent(currentLabel.name)}&management_id=${encodeURIComponent(instance.id)}&management_name=${encodeURIComponent(instanceName)}">Open in Graph</a></td>`;
     properties.forEach(prop => {
       const value = instance.properties[prop] || '';
       const hasChange = instanceChanges[instance.id] && instanceChanges[instance.id][prop] !== undefined;
       const displayValue = hasChange ? instanceChanges[instance.id][prop] : value;
       const changeClass = hasChange ? ' instance-cell-changed' : '';
-      html += `<td><div class="instance-cell-editable${changeClass}" data-id="${instance.id}" data-prop="${prop}" contenteditable="true">${displayValue}</div></td>`;
+      html += `<td><div class="instance-cell-editable${changeClass}" data-id="${escapeHtml(instance.id)}" data-prop="${escapeHtml(prop)}" contenteditable="true">${escapeHtml(String(displayValue))}</div></td>`;
     });
 
     // Add related-to column
@@ -4523,9 +4547,10 @@ function renderInstanceTable() {
           <div id="${relId}" style="display: none; margin-top: 0.5rem; font-size: 0.85em; color: #666; max-height: 200px; overflow-y: auto;">
             ${relatedTo.map(rel => {
               const dirArrow = rel.direction === 'out' ? '→' : '←';
-              const labels = rel.neighbor_labels && rel.neighbor_labels.length > 0 ? rel.neighbor_labels[0] : 'Node';
+              const neighborLabel = (rel.neighbor_labels || []).find(name => labels.some(label => label.name === name)) || (rel.neighbor_labels || [])[0] || 'Node';
               return `<div style="padding: 0.25rem 0; border-bottom: 1px solid #eee;">
-                <strong>${rel.rel_type}</strong> ${dirArrow} ${labels}
+                <strong>${escapeHtml(rel.rel_type)}</strong> ${dirArrow}
+                <button class="related-instance btn btn-sm" data-label="${escapeAttribute(neighborLabel)}" data-id="${escapeAttribute(rel.neighbor_id)}">${escapeHtml(String(rel.neighbor_name || neighborLabel))}</button>
               </div>`;
             }).join('')}
           </div>
@@ -4538,6 +4563,9 @@ function renderInstanceTable() {
 
   html += '</tbody></table>';
   container.innerHTML = html;
+  container.querySelectorAll('.related-instance').forEach(button => {
+    button.onclick = () => openRelatedInstance(button.dataset.label, button.dataset.id);
+  });
 
   // Show pagination
   document.getElementById('instance-pagination').style.display = 'flex';

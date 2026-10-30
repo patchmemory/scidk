@@ -17,6 +17,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 bp = Blueprint('links_v2', __name__, url_prefix='/api/v2')
+from ...services.graph_management_policy import enforce as enforce_graph_management
+bp.before_request(enforce_graph_management)
 
 
 def _get_link_service():

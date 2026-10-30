@@ -42,7 +42,8 @@ def test_navigation_and_placeholders(gui_page):
     expect(page.locator('header nav').get_by_role('link', name='Settings')).to_have_attribute('href','/settings')
     client = app.test_client()
     for path in ['/settings', '/chat', '/map', '/entities', '/labels', '/links', '/results', '/pipeline/sources']:
-        assert client.get(path, follow_redirects=True).status_code == 200, path
+        expected = 403 if path in {'/map', '/entities', '/labels', '/links'} else 200
+        assert client.get(path, follow_redirects=True).status_code == expected, path
     assert client.get('/integrate').status_code in (301,302)
     assert not any('/chat/tools' in path or 'nih_dms' in path for _,path in app.extensions['gui_test_requests'])
 

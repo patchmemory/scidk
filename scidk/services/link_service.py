@@ -363,6 +363,21 @@ class LinkService:
         Returns:
             List of match dicts with source and target info
         """
+        from flask import has_request_context
+        if has_request_context():
+            from .graph_management_policy import protected_path
+            if protected_path():
+                from ..agent_tools.security import DisclosureDenied
+                if definition.get('source_type') not in {'label', 'graph'}:
+                    raise DisclosureDenied()
+                config = definition.get('source_config') or {}
+                if config.get('where_clause'):
+                    raise DisclosureDenied()
+                for value in (definition.get('source_label'), config.get('label'),
+                              (definition.get('target_config') or {}).get('label'),
+                              (definition.get('match_config') or {}).get('target_field')):
+                    if value and not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', value):
+                        raise DisclosureDenied()
         # Fetch source data
         source_data = self._fetch_source_data(definition)
         if not source_data:
@@ -1101,7 +1116,7 @@ class LinkService:
             if neo4j_client:
                 neo4j_client.close()
 
-    def discover_relationships(self, profile_name: Optional[str] = None, promote_to_active: bool = True) -> List[Dict[str, Any]]:
+    def discover_relationships(self, profile_name: Optional[str] = None, promote_to_active: bool = True, include_primary: bool = False) -> List[Dict[str, Any]]:
         """
         Query Neo4j to discover existing relationship types across all nodes.
 
@@ -1226,7 +1241,8 @@ class LinkService:
 
         # Filter out PRIMARY database entries - they belong in Active tab, not Available
         # Available should only show external/read-only database relationships
-        discovered = [d for d in discovered if d['database'] != 'PRIMARY']
+        if not include_primary:
+            discovered = [d for d in discovered if d['database'] != 'PRIMARY']
 
         # Deduplicate by triple pattern - show one entry per unique (source, rel, target)
         # Keep all database sources in a list for the badge display

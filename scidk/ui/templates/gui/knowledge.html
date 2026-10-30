@@ -5,6 +5,7 @@
 <section id="knowledge-workspace">
 <h1>Knowledge</h1>
 <p>Explore supported knowledge and keep exploratory drafts separate from reviewed facts.</p>
+{% include '_knowledge_management_nav.html' %}
 <div class="kw-toolbar">
 <label>Domain <select id="kw-domain"><option value="research">Research</option><option value="ontology">Ontology</option><option value="system">System</option></select></label>
 <div role="tablist" aria-label="Knowledge views">{% for view in ['Graph','Entities','Sketch'] %}<button role="tab" id="kw-tab-{{ view|lower }}" aria-controls="kw-{{ view|lower }}-pane" aria-selected="{{ 'true' if loop.first else 'false' }}">{{ view }}</button>{% endfor %}</div>
@@ -13,7 +14,7 @@
 </div>
 <form id="kw-search-form"><label for="kw-search">Search authorized Research entities</label><input id="kw-search" maxlength="256"><label id="kw-label-label">Entity type <input id="kw-label" maxlength="128"></label><button id="kw-search-button">Search</button></form>
 <form id="kw-context-form" hidden><label for="kw-context-id">Context node ID</label><input id="kw-context-id" maxlength="256"><label id="kw-catalog-label">Registered catalog <input id="kw-catalog" value="canonical" maxlength="256"></label><button>Load context</button></form>
-<p id="kw-status" role="status">Access requires a named session, source/evidence grants, and an approved stored provider. No model request is made here.</p>
+<p id="kw-status" role="status">Human Research access requires a named session and purpose, Resource and evidence grants. No AI provider is required.</p>
 <p id="kw-blockers" role="alert" hidden></p>
 <div class="kw-workarea"><div id="kw-panes" data-layout="single">
 <section id="kw-graph-pane" role="tabpanel" aria-labelledby="kw-tab-graph">

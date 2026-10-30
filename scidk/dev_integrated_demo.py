@@ -233,7 +233,6 @@ def _configure(app, *, seed):
           <p>Use Files → Datasets search “Synthetic” to inspect this collection and prepare sharing.</p>
           {% endblock %}''', **info)
 
-    @app.before_request
     def synthetic_collection_search():
         # Narrow development-only adapter over the same real governed ledger;
         # never intercept other labels, queries, writes or operational graph data.
@@ -249,3 +248,6 @@ def _configure(app, *, seed):
             except Exception:
                 from .agent_tools.security import REFUSAL
                 return jsonify(REFUSAL), 403
+    # This exact synthetic Dataset adapter uses governed authorization instead
+    # of graph-management authority. It must run before the legacy API gate.
+    app.before_request_funcs.setdefault(None, []).insert(0, synthetic_collection_search)

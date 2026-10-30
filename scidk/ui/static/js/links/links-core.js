@@ -1545,7 +1545,7 @@ function deleteLinkDefinition() {
   if (!tripleBuilder.link_id) return;
   if (!confirm('Delete this link definition?')) return;
 
-  fetch(window.SCIDK_BASE + `/api/links/${tripleBuilder.link_id}`, { method: 'DELETE' })
+  fetch(window.SCIDK_BASE + `/api/links/${tripleBuilder.link_id}`, { method: 'DELETE', headers: {'X-SciDK-Confirm': 'destructive-shared-change'} })
     .then(r => r.json())
     .then(result => {
       if (result.status === 'success') {

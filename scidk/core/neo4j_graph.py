@@ -25,6 +25,13 @@ class Neo4jGraph:
             pass
 
     def _session(self):
+        from flask import has_request_context, g
+        if has_request_context():
+            from ..services.graph_management_policy import protected_path, require_connection
+            if protected_path():
+                require_connection(self._uri, self._auth[0] if self._auth else None,
+                    self._db, self._auth_mode,
+                    getattr(g, 'graph_management_permission', 'graph_management_read'))
         return self._driver.session(database=self._db) if self._db else self._driver.session()
 
     # Dataset APIs (kept minimal to reduce RAM usage)

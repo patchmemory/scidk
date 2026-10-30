@@ -156,6 +156,8 @@ def init_auth_middleware(app):
     Args:
         app: Flask application instance
     """
+    from ..services.graph_management_policy import enforce
+    app.before_request(enforce)
     app.before_request(enforce_agent_token_boundary)
     app.before_request(check_auth)
 

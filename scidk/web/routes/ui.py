@@ -21,6 +21,8 @@ import hashlib
 
 # Create blueprint
 bp = Blueprint('ui', __name__)
+from ...services.graph_management_policy import enforce as enforce_graph_management
+bp.before_request(enforce_graph_management)
 
 
 # Helper to access app extensions

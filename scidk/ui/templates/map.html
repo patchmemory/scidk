@@ -398,23 +398,23 @@
       <!-- Individual tab contents will be dynamically created here by JavaScript -->
     </div>
 
-<script src="https://unpkg.com/cytoscape@3.27.0/dist/cytoscape.min.js"></script>
+<script src="{{ url_for('static', filename='vendor/cytoscape/cytoscape.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/canvas_editor.js') }}"></script>
 <!-- Canvas mode (Push 2): edge drawing.
      cytoscape-edgehandles' UMD reads window._.memoize/throttle, so lodash must
      load first; it then auto-registers cy.edgehandles against the global cytoscape. -->
-<script src="https://unpkg.com/lodash@4.17.21/lodash.min.js"></script>
-<script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
+<script src="{{ url_for('static', filename='vendor/management/lodash.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/management/edgehandles.js') }}"></script>
 <!-- Canvas mode (Push 5): undo/redo. Loads after cytoscape (and lodash, kept
      before it for edgehandles); it auto-registers cy.undoRedo() on the global. -->
-<script src="https://unpkg.com/cytoscape-undo-redo@1.3.3/cytoscape-undo-redo.js"></script>
+<script src="{{ url_for('static', filename='vendor/management/undo-redo.js') }}"></script>
 
 <!-- CodeMirror 5 with Cypher mode -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.js"></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.css" />
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/cypher/cypher.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/edit/matchbrackets.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/edit/closebrackets.min.js"></script>
+<script src="{{ url_for('static', filename='vendor/management/codemirror.min.js') }}"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/management/codemirror.min.css') }}" />
+<script src="{{ url_for('static', filename='vendor/management/cypher.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/management/matchbrackets.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/management/closebrackets.min.js') }}"></script>
 <style>
   .CodeMirror {
     height: 100%;
@@ -425,6 +425,9 @@
 
 <script>
 (async function() {
+  // The multi-tab workspace owns its own canvases. This older initializer is
+  // retained for templates that provide the singleton container.
+  if (!document.getElementById('schema-graph')) return;
   function qs(params){
     const u = new URLSearchParams();
     for (const [k,v] of Object.entries(params)) if (v) u.set(k, v);
@@ -893,7 +896,7 @@
     if (!confirm('Delete this query from the library?')) return;
 
     try {
-      const resp = await fetch(window.SCIDK_BASE + `/api/queries/${queryId}`, { method: 'DELETE' });
+      const resp = await fetch(window.SCIDK_BASE + `/api/queries/${queryId}`, { method: 'DELETE', headers: {'X-SciDK-Confirm': 'destructive-shared-change'} });
 
       if (resp.ok) {
         document.querySelector('[style*="fixed"]')?.remove();
@@ -1234,7 +1237,7 @@
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid #e0e0e0; margin-bottom: 0.5rem;">
           <h3 style="margin: 0; font-size: 1rem;">Query Editor</h3>
           <div style="display: flex; gap: 0.5rem; align-items: center;">
-            <button class="run-query-${tab.id} btn btn-sm btn-success" data-testid="run-query-${tab.id}" title="Run query">▶ Run</button>
+            <button class="run-query-${tab.id} btn btn-sm btn-success" data-testid="run-query-${tab.id}" title="Raw queries are unavailable under management grants" disabled>▶ Run</button>
             <button class="save-map-${tab.id} btn btn-sm btn-primary" data-testid="save-map-${tab.id}" title="Save entire map configuration">💾 Save Map</button>
             <button class="save-query-${tab.id} btn btn-sm btn-outline-secondary" data-testid="save-query-${tab.id}" title="Save query">💾 Query</button>
             <button class="load-library-${tab.id} btn btn-sm btn-outline-secondary" data-testid="load-library-${tab.id}" title="Load from library">📚 Library</button>
@@ -3422,7 +3425,7 @@
             if (!confirm('Delete this query from the library?')) return;
 
             try {
-              const resp = await fetch(window.SCIDK_BASE + `/api/queries/${queryId}`, { method: 'DELETE' });
+              const resp = await fetch(window.SCIDK_BASE + `/api/queries/${queryId}`, { method: 'DELETE', headers: {'X-SciDK-Confirm': 'destructive-shared-change'} });
 
               if (resp.ok) {
                 overlay.remove();
@@ -3699,6 +3702,31 @@
 
   // Initialize tabs
   init();
+  const managementSelection = new URLSearchParams(location.search);
+  const managementId = managementSelection.get('management_id');
+  const managementLabel = managementSelection.get('management_label');
+  if (managementId && managementLabel) {
+    fetch(window.SCIDK_BASE + `/api/labels/${encodeURIComponent(managementLabel)}/instances?instance_id=${encodeURIComponent(managementId)}&limit=1`)
+      .then(response => response.ok ? response.json() : Promise.reject(new Error('Management selection unavailable')))
+      .then(async result => {
+        const node = result.instances?.[0];
+        if (!node) return;
+        // The original tab renderer initializes Cytoscape asynchronously.
+        for (let attempt = 0; !window.cytoscapeInstances?.[activeTabId] && attempt < 100; attempt++) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        if (!window.cytoscapeInstances?.[activeTabId]) throw new Error('Graph initialization unavailable');
+        addCanvasNode(activeTabId, {id: node.id, element_id: node.id, label: managementLabel,
+          name: node.properties.name || node.properties.filename || managementLabel, properties: node.properties});
+        const cy = window.cytoscapeInstances[activeTabId];
+        cy.getElementById(node.id).style('label', node.properties.name || node.properties.filename || managementLabel).select();
+        cy.fit(undefined, 60); cy.zoom(Math.min(cy.zoom(), 1)); cy.center();
+        const link = document.createElement('a');
+        link.textContent = 'Return to entity inspector';
+        link.href = window.SCIDK_BASE + `/entities?tab=entities&management_label=${encodeURIComponent(managementLabel)}&management_id=${encodeURIComponent(managementId)}`;
+        document.querySelector('nav[aria-label="Research tools"]').append(link);
+      }).catch(() => { /* refused selection never reuses cached metadata */ });
+  }
 })();
 
 // === MAP LIBRARY ===
@@ -3962,24 +3990,7 @@
         renderMapList(); // Re-render to update active state
         console.log(`✓ Loaded map: ${map.name}`);
 
-        // Auto-run the query after loading the map (with delay to ensure connection is set)
-        if (map.query) {
-          setTimeout(() => {
-            // Find the active tab's run button
-            const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
-            const runBtn = activeTabId ? document.querySelector(`.run-query-${activeTabId}`) : null;
-            if (runBtn) {
-              console.log(`Auto-running query for loaded map on tab ${activeTabId}...`);
-              runBtn.click();
-            } else {
-              console.error(`Run button not found for tab ${activeTabId} - query will need to be run manually`);
-            }
-          }, 800); // Delay to ensure connection and editor are ready
-
-          alert(`Loaded map: ${map.name}\nQuery will run automatically...`);
-        } else {
-          alert(`Loaded map: ${map.name}`);
-        }
+        alert(`Loaded map: ${map.name}\nSaved query text is available for inspection. Raw execution requires a separate authorization contract.`);
       }
     } catch (error) {
       console.error('Error loading map:', error);
@@ -3995,7 +4006,7 @@
     if (!confirm(`Delete map "${map.name}"?`)) return;
 
     try {
-      const response = await fetch(window.SCIDK_BASE + `/api/maps/saved/${mapId}`, { method: 'DELETE' });
+      const response = await fetch(window.SCIDK_BASE + `/api/maps/saved/${mapId}`, { method: 'DELETE', headers: {'X-SciDK-Confirm': 'destructive-shared-change'} });
       const data = await response.json();
 
       if (data.status === 'ok') {

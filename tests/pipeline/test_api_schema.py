@@ -341,7 +341,29 @@ def test_the_rendered_page_javascript_parses(client, csv_path, tmp_path, page):
 
 # ----------------------------------------------- the scoped canvas session
 
-def test_deleting_a_source_clears_its_schema_canvas_session(client, csv_path):
+@pytest.fixture
+def management_client(app, client, monkeypatch):
+    """Explicit named read authority for Canvas state, without a graph driver."""
+    from scidk.core.auth import AuthManager
+    from scidk.services.graph_management_policy import ManagementPolicyStore, connection_key
+    monkeypatch.setenv('NEO4J_AUTH', 'none')
+    cfg = dict(uri='bolt://127.0.0.1:59998', user=None, database='neo4j')
+    app.extensions['scidk']['neo4j_config'] = cfg
+    target = connection_key(cfg['uri'], None, 'neo4j', 'none')
+    app.config['SCIDK_DEVELOPMENT_GRAPH_CONNECTIONS'] = [target]
+    auth = AuthManager(app.config['SCIDK_SETTINGS_DB'])
+    admin = auth.create_user('canvas-admin', 'disposable-password', role='admin')
+    user = admin  # Pipeline source administration also requires the existing admin role.
+    policy = ManagementPolicyStore(app.config['SCIDK_SETTINGS_DB'])
+    policy.initialize(admin_id=admin)
+    policy.grant(user, target, 'graph_management_read', admin_id=admin)
+    client.set_cookie('scidk_session', auth.create_user_session(user, 'canvas-admin'))
+    auth.close()
+    return client
+
+
+def test_deleting_a_source_clears_its_schema_canvas_session(management_client, csv_path):
+    client = management_client
     """Task C relies on the cleanup a0583d8 added; this is the check that it fires."""
     source = make_source(client, csv_path)
     context_id = f"pipeline_source:{source['id']}"
@@ -363,7 +385,8 @@ def test_deleting_a_source_clears_its_schema_canvas_session(client, csv_path):
         .get_json()["canvas"] is None
 
 
-def test_a_source_schema_canvas_does_not_touch_the_main_maps_canvas(client, csv_path):
+def test_a_source_schema_canvas_does_not_touch_the_main_maps_canvas(management_client, csv_path):
+    client = management_client
     """The main canvas is context_id '' and must be unaffected by anything scoped."""
     source = make_source(client, csv_path)
     main = {"nodes": [{"id": "1", "label": "Sample", "name": "S1"}], "edges": []}

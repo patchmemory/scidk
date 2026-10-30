@@ -19,6 +19,8 @@ from ..user_context import current_user_key
 from ...services.canvas_service import DEFAULT_CONTEXT_ID
 
 bp = Blueprint('api_canvas', __name__, url_prefix='/api/canvas')
+from ...services.graph_management_policy import enforce as enforce_graph_management
+bp.before_request(enforce_graph_management)
 
 # Canvas tuning constants (shared with the frontend via GET /api/canvas/config).
 CANVAS_FANOUT_THRESHOLD = 20   # subtree size above which we collapse to an ellipsis node

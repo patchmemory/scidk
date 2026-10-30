@@ -15,6 +15,8 @@ import json
 logger = logging.getLogger(__name__)
 
 bp = Blueprint('links', __name__, url_prefix='/api')
+from ...services.graph_management_policy import enforce as enforce_graph_management
+bp.before_request(enforce_graph_management)
 
 
 def _get_link_service():
@@ -518,7 +520,8 @@ def discover_relationships():
         profile = request.args.get('profile')
         service = _get_link_service()
 
-        relationships = service.discover_relationships(profile_name=profile)
+        relationships = service.discover_relationships(profile_name=profile,
+            promote_to_active=False, include_primary=True)
 
         return jsonify({
             'status': 'success',

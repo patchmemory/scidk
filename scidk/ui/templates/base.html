@@ -66,6 +66,7 @@
 <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 <main data-testid="main">
   {% if gui_v3 %}<nav class="context-trail" aria-label="Workspace trail"><a href="{{ request.script_root }}/overview">Workspace</a><span aria-hidden="true">/</span><span id="workspace-trail">{{ request.path.split('/')[-1]|replace('-', ' ')|title }}</span></nav>{% endif %}
+  {% if gui_v3 and (entities_tab or request.path == '/map') %}{% include '_knowledge_management_nav.html' %}{% endif %}
   {% if entities_tab %}{% include '_entities_tabs.html' %}{% endif %}
   {% block content %}{% endblock %}
 </main>

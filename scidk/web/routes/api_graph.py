@@ -10,6 +10,8 @@ import os
 from ..decorators import require_role
 from ..helpers import get_neo4j_params, build_commit_rows, commit_to_neo4j, get_or_build_scan_index
 bp = Blueprint('graph', __name__, url_prefix='/api')
+from ...services.graph_management_policy import enforce as enforce_graph_management
+bp.before_request(enforce_graph_management)
 
 def _get_ext():
     """Get SciDK extensions from current Flask current_app."""

@@ -223,15 +223,19 @@ def test_visual_draft_placement_connection_and_inspector(gui_page, gui_artifacts
     page, _, _, _ = open_workspace(gui_page)
     page.get_by_role('tab', name='Sketch', exact=True).click()
     canvas = page.locator('#kw-sketch')
+    def canvas_click(x, y):
+        # Tool buttons and the tall canvas cannot both fit in the viewport.
+        canvas.evaluate("el => el.scrollIntoView({block:'center'})")
+        canvas.click(position={'x': x, 'y': y})
     page.get_by_role('button', name='Place a node', exact=True).click()
-    canvas.click(position={'x': 140, 'y': 100})
+    canvas_click(140, 100)
     page.get_by_role('button', name='Place a node', exact=True).click()
-    canvas.click(position={'x': 340, 'y': 180})
+    canvas_click(340, 180)
     assert cy(page, 'cy.nodes().length', True) == 2
     page.get_by_role('button', name='Connect drafts', exact=True).click()
-    canvas.click(position={'x': 140, 'y': 100}); canvas.click(position={'x': 340, 'y': 180})
+    canvas_click(140, 100); canvas_click(340, 180)
     assert cy(page, 'cy.edges().length', True) == 1
-    canvas.click(position={'x': 140, 'y': 100})
+    canvas_click(140, 100)
     page.get_by_label('Draft name', exact=True).fill('Synthetic visual idea')
     page.get_by_role('button', name='Update selected draft').click()
     assert cy(page, 'cy.nodes()[0].data("properties").name', True) == 'Synthetic visual idea'
