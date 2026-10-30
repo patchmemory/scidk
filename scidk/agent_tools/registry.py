@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from . import tools_graph, tools_sql
 from .disclosure import SharingPolicy
+from .profiles import GRAPH_AGENT_TOOLS
 
 logger = logging.getLogger(__name__)
 
@@ -211,7 +212,7 @@ TOOL_DEFINITIONS = [
 ]
 
 
-for _definition in TOOL_DEFINITIONS:
+for _definition in (d for d in TOOL_DEFINITIONS if d['name'] not in GRAPH_AGENT_TOOLS):
     _definition['description'] = ('Currently suspended: Resource-scoped disclosure is required; '
                                   'this legacy tool refuses execution. ' + _definition['description'])
 
@@ -304,13 +305,42 @@ def run_tool(name: str, arguments: Optional[Dict[str, Any]], ctx: ToolContext) -
     missing = [k for k in schema.get('required', []) if args.get(k) in (None, '')]
     if missing:
         return {"status": "error", "error": f"Missing required argument(s) for {name}: {', '.join(missing)}"}
+    if name in GRAPH_AGENT_TOOLS:
+        return _run_graph(name, args, ctx)
     from .security import PolicyStore, REFUSAL
     try:
         with PolicyStore(ctx.settings_db).resolve(ctx.identity):
-            # Every legacy handler queries an unscoped graph or file-index view.
-            # Scoped tools use the separate branch above. Refuse these legacy
+            # The remaining legacy handlers query an unscoped file-index view.
+            # Scoped tools use the branches above. Refuse these legacy
             # handlers even for an otherwise approved principal/destination.
             return dict(REFUSAL)
+    except Exception:
+        return dict(REFUSAL)
+
+
+def _run_graph(name, args, ctx):
+    """Read-only graph tools: only with the AI tool grant, an approved destination and the
+    management read grant for the attached graph connection. Runs in a read transaction,
+    capped at 50 rows, and every result passes the sharing filter."""
+    from .security import PolicyStore, REFUSAL
+    from .capabilities import permitted_tools
+    from .disclosure import filter_for_agent
+    from dataclasses import replace
+    try:
+        with PolicyStore(ctx.settings_db).resolve(ctx.identity) as policy:
+            if name not in permitted_tools(policy, ctx.profile):
+                return dict(REFUSAL)
+            sharing = SharingPolicy(modes={k: m for k, m in policy.modes.items() if m != 'raw'})
+        driver, database = ctx.driver, ctx.database
+        if driver is None:
+            # Same authority as POST /api/graph/query: the attached connection only.
+            from flask import current_app
+            from ..services.graph_management_policy import primary
+            from .context import _driver
+            primary('graph_management_read')
+            driver, database = _driver(current_app)
+        result = _HANDLERS[name](replace(ctx, driver=driver, database=database, policy=sharing), **args)
+        return filter_for_agent(result, sharing)
     except Exception:
         return dict(REFUSAL)
 

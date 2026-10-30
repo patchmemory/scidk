@@ -28,31 +28,35 @@ def test_filter_drops_hidden_property_and_says_so():
         {'s': {'_labels': ['Subject'], 'id': 'M11', 'ear_tag': 'none'}},
     ]}
     out = filter_for_agent(result, HIDE_EAR_TAG)
-    assert out == REFUSAL
+    assert 'ear_tag' not in json.dumps(out['rows'])
+    assert out['rows'][0]['s']['id'] == 'M10'
+    assert out['disclosure']['withheld_properties'] == 2
+    assert 'Subject' in out['disclosure']['note']
 
 
 def test_same_property_name_on_another_label_is_kept():
     out = filter_for_agent({'rows': [{'n': {'_labels': ['Cage'], 'ear_tag': 'x'}}]}, HIDE_EAR_TAG)
-    assert out == REFUSAL
+    assert out['rows'][0]['n']['ear_tag'] == 'x' and 'disclosure' not in out
 
 
 def test_label_less_maps_drop_any_hidden_name():
     """properties(n) or a map projection loses the label: be conservative."""
     out = filter_for_agent({'rows': [{'p': {'id': 'M10', 'ear_tag': '1L1R'}}]}, HIDE_EAR_TAG)
-    assert out == REFUSAL
+    assert out['rows'] == [{'p': {'id': 'M10'}}]
 
 
 def test_unknown_mode_fails_closed():
     policy = SharingPolicy(modes={('Subject', 'ear_tag'): 'pseudonymized'})
     out = filter_for_agent({'rows': [{'s': {'_labels': ['Subject'], 'ear_tag': '1L1R'}}]}, policy)
-    assert out == REFUSAL
+    assert 'ear_tag' not in out['rows'][0]['s']
 
 
 def test_high_risk_source_records_are_withheld_whole():
     policy = SharingPolicy(withheld_sources=frozenset({'src-high'}))
     out = filter_for_agent({'rows': [{'n': {'_labels': ['Subject'], 'id': 'a', 'source_id': 'src-high'}},
                                      {'n': {'_labels': ['Subject'], 'id': 'b'}}]}, policy)
-    assert out == REFUSAL
+    assert out['rows'] == [{'n': None}, {'n': {'_labels': ['Subject'], 'id': 'b'}}]
+    assert out['disclosure']['withheld_records'] == 1
 
 
 @pytest.mark.parametrize('cypher', [
@@ -72,8 +76,8 @@ def test_cypher_reading_hidden_data_is_refused(cypher):
     "MATCH (a)-[r:HAS_SESSION]->(b) RETURN a, r, b",
     "MATCH (s) RETURN s.ear_tag_count",
 ])
-def test_ordinary_cypher_also_requires_scoping(cypher):
-    assert check_cypher(cypher, HIDE_EAR_TAG)
+def test_ordinary_cypher_is_not_refused(cypher):
+    assert check_cypher(cypher, HIDE_EAR_TAG) is None
 
 
 def test_sharing_modes_round_trip(tmp_path):

@@ -225,11 +225,15 @@ def test_legacy_and_disabled_tools_refuse_even_for_approved_principal(secured, m
     assert not any('materializ' in name or 'review' in name or 'supersede' in name for name in tool_names())
 
 
-def test_arbitrary_result_filter_never_trusts_source_hints():
+def test_result_filter_strips_hidden_properties_and_never_trusts_source_hints():
     from scidk.agent_tools.disclosure import SharingPolicy, filter_for_agent, check_cypher
-    for result in ({'count': 7}, {'rows': [{'source_id': 'public', 'secret': 'hidden'}]}, {'error': 'private path'}):
-        assert filter_for_agent(result, SharingPolicy()) == REFUSAL
-    assert check_cypher('RETURN 1', SharingPolicy())
+    hidden = SharingPolicy(modes={('Subject', 'secret'): 'hidden'})
+    row = {'rows': [{'n': {'_labels': ['Subject'], 'source_id': 'public', 'secret': 'hidden', 'id': 'a'}}]}
+    out = filter_for_agent(row, hidden)
+    assert 'secret' not in out['rows'][0]['n'] and out['rows'][0]['n']['id'] == 'a'
+    # A property name used as a free alias is not a graph value, but a hidden name in Cypher is refused.
+    assert check_cypher('MATCH (n) RETURN n.secret', hidden)
+    assert check_cypher('RETURN 1', SharingPolicy()) is None
 
 
 def test_policy_management_requires_named_existing_admin(secured):
@@ -379,3 +383,102 @@ def test_slow_provider_does_not_hold_policy_lock(secured, monkeypatch):
     monkeypatch.setattr(openai_compatible, 'chat_completion', transport)
     assert provider_settings.disclosed_fact_turn(s.db, s.identity, s.disclosure, s.person['fact_id'])['status'] == 'success'
     assert read(s) == REFUSAL
+
+
+# ── Read-only graph tools for AI (approved policy, Oct 30) ─────────────────
+
+class _Rows(list):
+    def single(self):
+        return self[0] if self else None
+
+
+class _FakeTx:
+    def __init__(self, script):
+        self.script, self.queries = script, []
+
+    def run(self, query, params=None):
+        self.queries.append(query)
+        for needle, rows in self.script:
+            if needle in query:
+                return _Rows(rows)
+        return _Rows([])
+
+
+class _FakeSession:
+    def __init__(self, tx):
+        self.tx = tx
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def execute_read(self, work):
+        return work(self.tx)
+
+
+class _FakeDriver:
+    def __init__(self, script):
+        self.tx = _FakeTx(script)
+
+    def session(self, database=None):
+        return _FakeSession(self.tx)
+
+
+def _graph_ctx(s, script, tools):
+    from scidk.agent_tools.capabilities import CapabilityStore
+    from scidk.agent_tools.registry import ToolContext
+    caps = CapabilityStore(s.db)
+    caps.initialize(admin_id=s.admin)
+    for tool in tools:
+        caps.grant_tool(s.alice, 'overview', tool, admin_id=s.admin)
+    return ToolContext(settings_db=s.db, identity=s.identity, profile='overview',
+                       driver=_FakeDriver(script), database='neo4j')
+
+
+def test_graph_tools_need_the_ai_tool_grant(secured):
+    from scidk.agent_tools.registry import run_tool
+    s = secured
+    ctx = _graph_ctx(s, [('db.labels', [{'label': 'Sample'}]), ('count(n)', [{'count': 3}])], ['list_labels'])
+    out = run_tool('list_labels', {}, ctx)
+    assert out['status'] == 'success' and out['labels'] == [{'name': 'Sample', 'count': 3}]
+    # Not granted: refused even though the destination is approved.
+    assert run_tool('count_nodes', {'label': 'Sample'}, ctx) == REFUSAL
+    assert run_tool('query_knowledge_graph', {'cypher': 'MATCH (n) RETURN n'}, ctx) == REFUSAL
+    # The profile that holds no graph tools cannot be granted them.
+    from scidk.agent_tools.capabilities import CapabilityStore
+    with pytest.raises(DisclosureDenied):
+        CapabilityStore(s.db).grant_tool(s.alice, 'review', 'list_labels', admin_id=s.admin)
+
+
+def test_graph_tools_without_identity_or_destination_are_refused(secured):
+    from dataclasses import replace
+    from scidk.agent_tools.registry import run_tool
+    s = secured
+    ctx = _graph_ctx(s, [], ['list_labels'])
+    assert run_tool('list_labels', {}, replace(ctx, identity=None)) == REFUSAL
+    s.store.revoke_destination('parley', admin_id=s.admin)
+    assert run_tool('list_labels', {}, ctx) == REFUSAL
+
+
+def test_graph_query_is_read_only_capped_and_filtered(secured):
+    from scidk.agent_tools import disclosure
+    from scidk.agent_tools.registry import run_tool
+    s = secured
+    many = [{'n': {'id': i}} for i in range(80)]
+    ctx = _graph_ctx(s, [('RETURN n', many)], ['query_knowledge_graph'])
+    out = run_tool('query_knowledge_graph', {'cypher': 'MATCH (n) RETURN n'}, ctx)
+    assert out['status'] == 'success' and out['row_count'] == 50 and out['truncated'] is True
+    assert ctx.driver.tx.queries and ctx.driver.tx.queries[0].endswith('LIMIT 51')
+    for cypher in ('MATCH (n) SET n.x = 1 RETURN n', 'MATCH (n) DETACH DELETE n',
+                   'CALL db.labels() YIELD label RETURN label', "LOAD CSV FROM 'http://x' AS r RETURN r"):
+        assert run_tool('query_knowledge_graph', {'cypher': cypher}, ctx)['status'] in {'error', 'refused'}
+    disclosure.set_mode(s.db, 'Sample', 'secret', 'hidden', 'admin')
+    node = [{'n': {'_labels': ['Sample'], '_id': '1', 'name': 'a', 'secret': 'x'}}]
+    ctx = _graph_ctx(s, [('RETURN n', node)], [])
+    shown = run_tool('query_knowledge_graph', {'cypher': 'MATCH (n:Sample) RETURN n'}, ctx)
+    assert shown['status'] == 'success' and 'secret' not in json.dumps(shown['rows'])
+    assert shown['disclosure']['withheld_properties'] == 1
+    named = run_tool('query_knowledge_graph', {'cypher': 'MATCH (n:Sample) RETURN n.secret'}, ctx)
+    assert named['status'] == 'refused'

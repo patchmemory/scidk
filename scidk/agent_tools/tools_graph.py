@@ -642,6 +642,9 @@ def agent_query_graph(ctx, cypher: str, parameters: Optional[Dict[str, Any]] = N
     if found:
         return {"status": "error",
                 "error": f"Forbidden keyword '{sorted(found)[0]}' detected. Only read-only queries allowed."}
+    if _cypher_tokens(cypher) & {'CALL', 'LOAD', 'FOREACH'}:
+        return {"status": "refused",
+                "error": "CALL, LOAD and FOREACH are not available to AI tools; use MATCH ... RETURN."}
     from .disclosure import check_cypher
     refused = check_cypher(cypher, ctx.policy, parameters)
     if refused:
@@ -674,8 +677,13 @@ def agent_query_graph(ctx, cypher: str, parameters: Optional[Dict[str, Any]] = N
 def agent_get_schema(ctx, max_labels: int = 50, max_props_per_label: int = 5) -> Dict[str, Any]:
     if ctx.driver is None:
         return dict(GRAPH_NOT_CONNECTED)
-    return serialize(get_schema(ctx.driver, ctx.database, min(int(max_labels), MAX_ROWS),
-                                min(int(max_props_per_label), 20)))
+    out = get_schema(ctx.driver, ctx.database, min(int(max_labels), MAX_ROWS),
+                     min(int(max_props_per_label), 20))
+    schema = out.get('schema')
+    if schema and isinstance(schema.get('properties'), dict):
+        schema['properties'] = {label: [p for p in props if not ctx.policy.is_hidden([label], p)]
+                                for label, props in schema['properties'].items()}
+    return serialize(out)
 
 
 def agent_summarize_dataset(ctx, label: Optional[str] = None,
@@ -695,7 +703,20 @@ def agent_get_label_profile(ctx, label: str) -> Dict[str, Any]:
 def agent_list_labels(ctx) -> Dict[str, Any]:
     if ctx.driver is None:
         return dict(GRAPH_NOT_CONNECTED)
-    return serialize(list_labels(ctx.driver, ctx.database))
+
+    def work(tx):
+        found = []
+        for label in [r['label'] for r in tx.run("CALL db.labels() YIELD label RETURN label")]:
+            count = tx.run(f"MATCH (n:`{label.replace('`', '``')}`) RETURN count(n) AS count").single()
+            found.append({"name": label, "count": int(count['count']) if count else 0})
+        return found
+    try:
+        with ctx.driver.session(database=ctx.database) as session:
+            labels = session.execute_read(work)
+    except Exception as e:  # noqa: BLE001
+        return {"status": "error", "error": str(e)}
+    labels.sort(key=lambda x: x["count"], reverse=True)
+    return {"status": "success", "labels": labels[:MAX_ROWS], "truncated": len(labels) > MAX_ROWS, "error": None}
 
 
 def agent_count_nodes(ctx, label: str, where: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
