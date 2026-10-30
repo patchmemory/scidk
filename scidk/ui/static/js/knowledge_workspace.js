@@ -32,7 +32,7 @@
       method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
     });
     const data = await response.json();
-    if (!response.ok || data.status !== 'success') throw new Error(response.status === 503 ? 'This Knowledge service is not connected. Ask an administrator to connect the workspace.' : 'Knowledge access is unavailable. Ask an administrator to check source grants and the approved provider.');
+    if (!response.ok || data.status !== 'success') throw new Error(response.status === 503 ? 'This Knowledge service is not connected. Ask an administrator to configure existing governed state and run POST /api/knowledge/readiness. See docs/demo/scidk-operational-startup.md.' : state.domain === 'research' ? 'Knowledge access was refused. Ask an administrator to check your research_browse purpose, Resource and evidence grants.' : 'Knowledge access is unavailable. Ask an administrator to check source grants and the approved provider.');
     return data.result;
   }
   function url() {
@@ -317,6 +317,8 @@
       await retrieve('expand', {id: initialId});
       const selected = state.records.get(initialId);
       if (selected && state.domain === 'research') await inspect(selected);
+    } else if (state.domain === 'research' && state.view !== 'sketch') {
+      await retrieve('search', {q: '', label: ''});
     }
   });
 })();

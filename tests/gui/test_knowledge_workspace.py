@@ -165,7 +165,7 @@ def test_context_link_revocation_and_no_stale_inspector(gui_page):
     with sqlite3.connect(d.db) as conn:
         conn.execute('DELETE FROM agent_resource_grant WHERE user_id=?', (d.alice,))
     page.locator('#kw-entities button').click()
-    expect(page.locator('#kw-status')).to_contain_text('Knowledge access is unavailable')
+    expect(page.locator('#kw-status')).to_contain_text('Knowledge access was refused')
     expect(page.locator('#kw-inspection')).to_have_text('')
     expect(page.locator('#kw-entities button')).to_have_count(0)
     page.locator('#kw-domain').select_option('system')

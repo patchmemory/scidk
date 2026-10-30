@@ -50,6 +50,21 @@ def _gui_page(page):
     return render_template('gui/workspace.html', page=page)
 
 
+@bp.post('/api/knowledge/readiness')
+def knowledge_readiness():
+    """Configuration diagnostics only; named same-origin administrator session."""
+    from ...web.named_session import named_session
+    from ...services.human_policy import human_context
+    from ...services.operational_knowledge import readiness
+    from ...agent_tools.security import REFUSAL
+    headers = {'Cache-Control': 'no-store'}
+    try:
+        named_session(admin=True)
+        return jsonify(status='success', checks=readiness(current_app, human_context(current_app))), 200, headers
+    except Exception:
+        return jsonify(REFUSAL), 403, headers
+
+
 @bp.route('/api/knowledge/<domain>/<operation>', methods=['POST'])
 def knowledge_adapter(domain, operation):
     """Governed human-only adapters, independent of preserved legacy APIs."""
@@ -70,7 +85,7 @@ def knowledge_adapter(domain, operation):
                       context_from_app(current_app, channel='chat'), profile='overview')
         from ...agent_tools.knowledge import KnowledgeServices
         if ctx.identity and (not isinstance(ctx.knowledge, KnowledgeServices) or (domain in workspace.DOMAINS and not ctx.knowledge.ready(workspace.DOMAINS[domain]))):
-            return jsonify(status='unavailable', error='Knowledge service is not connected. Ask an administrator to connect this workspace.'), 503, headers
+            return jsonify(status='unavailable', error='Knowledge service is not connected. Ask an administrator to configure existing governed state and run POST /api/knowledge/readiness. See docs/demo/scidk-operational-startup.md.'), 503, headers
         if operation in {'search', 'inspect', 'expand'} and domain == 'research':
             result = workspace.research(ctx, operation, body)
         elif operation == 'context':
