@@ -176,12 +176,106 @@ def save_collection(client, *, name: str, description: Optional[str], created_by
             'not_found': {k: len(members[k]) - linked[k] for k in KINDS if len(members[k]) > linked[k]}}
 
 
+def save_manual_dataset(client, *, name: str, description: Optional[str], created_by: str,
+                        members: Dict[str, List[Dict[str, Any]]],
+                        dataset_id: Optional[str] = None) -> Dict[str, Any]:
+    """MERGE a NEW manual ``:Dataset`` and its ``CONTAINS`` edges to folders and files.
+
+    A manual Dataset is the smallest meaningful unit a person defines by hand
+    (``source='manual'``). It is not a Collection and never touches a recognized,
+    profile-derived Dataset: it is keyed on a fresh server UUID. Graph writes are
+    MERGE only; File/Folder rows are keyed on ``(path, host)`` and nothing is
+    copied from ``files.db``.
+    """
+    did = dataset_id or uuid.uuid4().hex
+    client.execute_write(
+        "MERGE (d:Dataset {id: $id}) "
+        "ON CREATE SET d.name = $name, d.description = $description, d.source = 'manual', "
+        "d.created_by = $created_by, d.created_at = timestamp() "
+        "SET d.updated_at = timestamp()",
+        {'id': did, 'name': name, 'description': description or None, 'created_by': created_by},
+    )
+    linked: Dict[str, int] = {'folder': 0, 'file': 0}
+    if members.get('folder'):
+        rows = client.execute_write(
+            "MATCH (d:Dataset {id: $id}) UNWIND $rows AS row "
+            "MERGE (f:Folder {path: row.path, host: row.host}) "
+            "  ON CREATE SET f.name = row.name "
+            "MERGE (d)-[:CONTAINS]->(f) RETURN count(f) AS linked",
+            {'id': did, 'rows': members['folder']},
+        )
+        linked['folder'] = int((rows[0].get('linked') if rows else 0) or 0)
+    if members.get('file'):
+        rows = client.execute_write(
+            "MATCH (d:Dataset {id: $id}) UNWIND $rows AS row "
+            "MERGE (f:File {path: row.path, host: row.host}) "
+            "  ON CREATE SET f.filename = row.name, f.size_bytes = row.size, f.stub = true "
+            "MERGE (d)-[:CONTAINS]->(f) RETURN count(f) AS linked",
+            {'id': did, 'rows': members['file']},
+        )
+        linked['file'] = int((rows[0].get('linked') if rows else 0) or 0)
+    return {'id': did, 'linked': linked}
+
+
+def get_collection(client, collection_id: str) -> Dict[str, Any]:
+    """One saved collection and its stored members, grouped by kind. ``{}`` if unknown.
+
+    Read-only. Context members carry only ``id``, ``label`` and the short display
+    handle chosen by :func:`_display`; their other properties are not returned.
+    """
+    head = client.execute_read(
+        "MATCH (c:Collection {id: $id}) RETURN c.id AS id, c.name AS name, c.description AS description, "
+        "c.created_by AS created_by, c.created_at AS created_at, c.updated_at AS updated_at",
+        {'id': collection_id})
+    if not head:
+        return {}
+    h = head[0]
+    rows = client.execute_read(
+        "MATCH (c:Collection {id: $id})-[:INCLUDES]->(m) "
+        "RETURN elementId(m) AS eid, labels(m) AS labels, properties(m) AS p LIMIT $limit",
+        {'id': collection_id, 'limit': MAX_MEMBERS})
+    members: Dict[str, List[Dict[str, Any]]] = {k: [] for k in KINDS}
+    for row in rows:
+        labels, p = row.get('labels') or [], row.get('p') or {}
+        if 'Dataset' in labels:
+            members['dataset'].append({
+                'scan_id': p.get('scan_id'), 'root_path': p.get('root_path'), 'name': p.get('name'),
+                'profile': p.get('profile'), 'file_count': p.get('file_count'), 'bytes': p.get('bytes')})
+        elif 'Folder' in labels:
+            members['folder'].append({'path': p.get('path'), 'host': p.get('host'), 'name': p.get('name')})
+        elif 'File' in labels:
+            members['file'].append({'path': p.get('path'), 'host': p.get('host'),
+                                    'filename': p.get('filename'), 'size_bytes': p.get('size_bytes')})
+        else:
+            label = next((l for l in labels if l in CONTEXT_LABELS), labels[0] if labels else '?')
+            members['context'].append({'id': row.get('eid'), 'label': label, 'display': _display(p)})
+    return {
+        'collection': {'id': h.get('id') or collection_id, 'name': h.get('name'),
+                       'description': h.get('description'), 'created_by': h.get('created_by'),
+                       'created_at': h.get('created_at'), 'updated_at': h.get('updated_at')},
+        'members': members,
+    }
+
+
 def list_collections(client) -> List[Dict[str, Any]]:
-    return client.execute_read(
+    """Collection headers with member counts, in total and by kind."""
+    rows = client.execute_read(
         "MATCH (c:Collection) OPTIONAL MATCH (c)-[:INCLUDES]->(m) "
         "RETURN c.id AS id, c.name AS name, c.description AS description, c.created_by AS created_by, "
-        "c.created_at AS created_at, count(m) AS members ORDER BY c.created_at DESC LIMIT 200",
+        "c.created_at AS created_at, count(m) AS members, "
+        "sum(CASE WHEN m:Dataset THEN 1 ELSE 0 END) AS datasets, "
+        "sum(CASE WHEN m:Folder THEN 1 ELSE 0 END) AS folders, "
+        "sum(CASE WHEN m:File THEN 1 ELSE 0 END) AS files "
+        "ORDER BY c.created_at DESC LIMIT 200",
     )
+    out = []
+    for r in rows:
+        r = dict(r)
+        for key in ('datasets', 'folders', 'files'):
+            r[key] = int(r.get(key) or 0)
+        r['context_members'] = max(0, int(r.get('members') or 0) - r['datasets'] - r['folders'] - r['files'])
+        out.append(r)
+    return out
 
 
 # ── sharing plan ────────────────────────────────────────────────────────────
@@ -387,6 +481,8 @@ def collection_facts(summary: Dict[str, Any]):
         counts.append(('Dataset', summary['members']['dataset']))
     if summary['members']['folder']:
         counts.append(('Folder', summary['members']['folder']))
+    if summary['members']['file']:
+        counts.append(('File', summary['members']['file']))
     counts += sorted(summary['context_counts'].items())
     warnings = ('Collection scope only: the members of this one collection. No global graph, publication settings or schema scan was consulted. '
                 'No PHI, consent or de-identification assessment has been performed.',
@@ -394,7 +490,8 @@ def collection_facts(summary: Dict[str, Any]):
     return GraphFacts(
         label_counts=tuple(counts), relationship_counts=(('INCLUDES', sum(summary['members'].values())),),
         file_count=summary['total_files'], file_bytes=summary['total_bytes'], formats=formats,
-        phi_hits=tuple(hits), warnings=warnings)
+        phi_hits=tuple(hits), warnings=warnings,
+        scope='collection', rocrate_export_available=False)
 
 
 def _human(n: int) -> str:

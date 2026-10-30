@@ -28,10 +28,17 @@
     _refreshScopeNotes();
   }
 
+  // The shared CollectionBasket's file/folder picks (the one collection control).
+  function _picks() {
+    return window.CollectionBasket
+      ? window.CollectionBasket.items().filter(x => (x.kind === 'file' || x.kind === 'folder') && x.p && x.p.path)
+      : [];
+  }
+
   function _scopeItems(scope) {
     if (scope === 'collection') {
-      const items = typeof Collection !== 'undefined' ? Collection.items() : [];
-      return { label: `Collection · ${items.length} files`, items: items.map(f => f.name).join(', ') || '—' };
+      const items = _picks();
+      return { label: `Collection · ${items.length} pick${items.length === 1 ? '' : 's'}`, items: items.map(x => x.label).join(', ') || '—' };
     }
     if (scope === 'selection') {
       const sel = typeof selItems !== 'undefined' ? [...selItems] : [];
@@ -45,7 +52,7 @@
     const roc = _scopeItems(_rocScope);
     const dms = _scopeItems(_dmsScope);
     const rNote = document.getElementById('roc-scope-note');
-    if (rNote) { rNote.querySelector('.sn-label').textContent = roc.label; rNote.querySelector('.sn-items').textContent = roc.items; rNote.classList.toggle('empty', typeof Collection !== 'undefined' && _rocScope === 'collection' && !Collection.count()); }
+    if (rNote) { rNote.querySelector('.sn-label').textContent = roc.label; rNote.querySelector('.sn-items').textContent = roc.items; rNote.classList.toggle('empty', _rocScope === 'collection' && !_picks().length); }
     const dNote = document.getElementById('dms-scope-note');
     if (dNote) { dNote.querySelector('.sn-label').textContent = dms.label; dNote.querySelector('.sn-items').textContent = dms.items; }
     document.getElementById('roc-graph-search')?.style && (document.getElementById('roc-graph-search').style.display = _rocScope === 'graph' ? '' : 'none');
@@ -99,7 +106,7 @@
       const d = await r.json().catch(() => ({}));
       if (r.ok && d.status === 'ok') {
         if (res) res.innerHTML = `<span class="text-success">Built ${d.entities} entities.</span> <a href="${BASE()}${d.download_url}" download="${d.filename}">Download ${d.filename}</a>`;
-        if (clearAfter && typeof Collection !== 'undefined') Collection.clear(true);
+        if (clearAfter && window.CollectionBasket) window.CollectionBasket.clear();
       } else { if (res) res.innerHTML = `<span class="text-danger">${esc(d.error || 'Build failed')}</span>`; }
     } catch (e) { if (res) res.innerHTML = `<span class="text-danger">${esc(e.message)}</span>`; }
     finally { if (btn) btn.disabled = false; }
@@ -143,9 +150,7 @@
   }
 
   function _resolveScope(scope) {
-    if (scope === 'collection' && typeof Collection !== 'undefined') {
-      return Collection.items().map(f => (f.path ? f.path + '/' : '') + f.name);
-    }
+    if (scope === 'collection') return _picks().map(x => x.p.path);
     if (scope === 'selection' && typeof selItems !== 'undefined') return [...selItems];
     return [];
   }

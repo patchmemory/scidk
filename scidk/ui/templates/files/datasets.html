@@ -163,14 +163,8 @@ main { max-width:100% !important; padding:0 !important; }
       </div>
       <span class="neo4j-dot" id="neo4j-dot" title="Neo4j: checking…"></span>
 
-      <!-- Collection pill — managed by collection.js -->
-      <button class="coll-pill" id="coll-pill" title="Open Collection (Shift+Alt+C)">
-        <i class="ti ti-stack-2" aria-hidden="true" style="font-size:13px;"></i>
-        <span id="coll-count">0 files</span>
-        <span class="coll-kbd">⇧⌥C</span>
-        <button class="coll-pill-x" id="coll-pill-discard"
-                title="Discard collection" aria-label="Discard collection">×</button>
-      </button>
+      {# The one Collection control: collection_basket.js (loaded by base.html) mounts here. #}
+      <span id="files-collection-slot" data-testid="files-collection-slot"></span>
 
       <button class="btn btn-sm btn-outline-secondary" id="annotate-btn"
               title="Annotate — Attribute, Collect, Interpret"
@@ -209,10 +203,12 @@ main { max-width:100% !important; padding:0 !important; }
       <button class="btn btn-sm btn-outline-secondary" id="clear-sel-btn">Clear</button>
       <button class="btn btn-sm btn-primary" id="scan-selected-btn" hidden>🔍 Scan selected</button>{# hidden: scans the whole folder (FILES_PAGE_REVIEW 3c) #}
       <button class="btn btn-sm btn-outline-success" id="add-to-coll-btn">Add to collection</button>
+      <button class="btn btn-sm btn-outline-primary" id="create-dataset-btn"
+              title="Create a new manual Dataset (not a Collection) from the selected files and folders">Create dataset from selection…</button>
     </div>
 
     <div class="file-table-wrap" id="file-table-wrap">
-      <table class="file-table" id="file-table">
+      <table class="file-table sel-mode" id="file-table">
         <thead>
           <tr>
             <th class="col-cb"><input type="checkbox" id="select-all-cb" title="Select all"></th>
@@ -231,7 +227,8 @@ main { max-width:100% !important; padding:0 !important; }
     </div>
 
     <div class="browser-footer">
-      <button class="btn btn-sm btn-outline-secondary" id="toggle-sel-btn">☑ Select files</button>
+      {# Checkboxes are always visible; this toggle used to hide the primary selection mechanism. #}
+      <button class="btn btn-sm btn-outline-secondary" id="toggle-sel-btn" hidden>☑ Select files</button>
       <button class="btn btn-sm btn-primary" id="scan-folder-btn" disabled>🔍 Scan folder</button>
       <button class="btn btn-sm btn-success" id="commit-scan-btn" style="display:none;">✓ Commit to graph</button>
       <span class="browser-status" id="browser-status"></span>
@@ -251,7 +248,6 @@ main { max-width:100% !important; padding:0 !important; }
 {% include 'files/_scan_panel.html' %}
 {% include 'files/_share_panel.html' %}
 {% include 'files/_add_drive_panel.html' %}
-{% include 'files/_collection_panel.html' %}
 {# No separate _attribution_panel.html: the Annotate drawer's Attribute tab is
    that panel, and including both would duplicate every attr-* element id. #}
 {% include 'files/_dms_panel.html' %}
@@ -318,7 +314,7 @@ main { max-width:100% !important; padding:0 !important; }
 <!-- Shared drawer manager — must load first -->
 <script src="{{ url_for('static', filename='js/drawers.js') }}"></script>
 
-<!-- Collection object — loads second, wires pill and keyboard shortcuts -->
+<!-- Files selection actions over the shared CollectionBasket (base.html) — no Collection UI of its own -->
 <script src="{{ url_for('static', filename='js/collection.js') }}"></script>
 
 <!-- Panel modules — order independent after drawers.js + collection.js -->
@@ -342,7 +338,7 @@ window.SCIDK_BASE = "{{ request.script_root | default('') }}";
  * snapshot modal, and search.
  *
  * All drawer logic is in the JS modules above. This script only handles
- * the file table and sidebar — it reads window.Annotate, window.Collection,
+ * the file table and sidebar — it reads window.Annotate, window.CollectionBasket,
  * window.Drawers, window.ScanPanel, window.SharePanel, window.AddDrive,
  * window.DMS as globals.
  *
@@ -364,7 +360,7 @@ function setStatus(msg,cls=''){const el=document.getElementById('browser-status'
 
 // State
 let mode='live',currentServer=null,currentRoot=null,currentPath='';
-let activeScanId=null,selMode=false,selItems=new Set(),lastSelIndex=-1;
+let activeScanId=null,selMode=true,selItems=new Set(),lastSelIndex=-1;
 let itemTypes=new Map(),scanRunning=false,taskPollInterval=null;
 let _sortField='name',_sortAsc=true;
 
@@ -442,7 +438,7 @@ function renderBreadcrumb(fullPath,prov){const nav=document.getElementById('brea
 
 // File list
 let fileInspectTimer;
-function renderFileList(entries,ctx){clearTimeout(fileInspectTimer);const tbody=document.getElementById('file-list');const table=document.getElementById('file-table');if(!entries.length){tbody.innerHTML='<tr class="empty-row"><td colspan="7">Empty folder</td></tr>';return;}entries.forEach(e=>itemTypes.set(e.id||e.path,e.type));tbody.innerHTML=entries.map((e,idx)=>{const id=e.id||e.path||e.name,icon=e.type==='folder'?'📁':'📄';const size=e.type==='folder'?'':fmtBytes(e.size||e.size_bytes||0);const mod=fmtTime(e.mtime||e.modified||e.last_modified);const scanned=e.scanned_at?`<span style="color:#198754;" title="${fmtTime(e.scanned_at)}">●</span>`:'<span style="color:#adb5bd;">●</span>';return`<tr {% if gui_v3 %}tabindex="0" aria-label="Inspect ${esc(e.name)}"{% endif %} data-id="${esc(id)}" data-type="${esc(e.type)}" data-name="${esc(e.name)}" data-idx="${idx}" data-path="${esc(currentPath||'')}" data-size="${e.type==='folder'?'':(e.size||e.size_bytes||0)}"><td class="col-cb"><input type="checkbox" class="row-cb" data-id="${esc(id)}" data-idx="${idx}" ${selItems.has(id)?'checked':''}></td><td class="col-name"><div class="name-cell"><span class="name-icon">${icon}</span><span>${esc(e.name)}</span></div></td><td class="col-type">${esc(e.type)}</td><td class="col-size">${size}</td><td class="col-modified">${mod}</td><td class="col-scanned" style="text-align:center;">${scanned}</td><td class="col-act"></td></tr>`;}).join('');if(selMode)table.classList.add('sel-mode');if(typeof Collection!=='undefined')Collection._updateHighlights&&Collection._updateHighlights();else document.querySelectorAll('#file-list tr[data-name]').forEach(tr=>{});
+function renderFileList(entries,ctx){clearTimeout(fileInspectTimer);const tbody=document.getElementById('file-list');const table=document.getElementById('file-table');if(!entries.length){tbody.innerHTML='<tr class="empty-row"><td colspan="7">Empty folder</td></tr>';return;}entries.forEach(e=>itemTypes.set(e.id||e.path,e.type));tbody.innerHTML=entries.map((e,idx)=>{const id=e.id||e.path||e.name,icon=e.type==='folder'?'📁':'📄';const size=e.type==='folder'?'':fmtBytes(e.size||e.size_bytes||0);const mod=fmtTime(e.mtime||e.modified||e.last_modified);const scanned=e.scanned_at?`<span style="color:#198754;" title="${fmtTime(e.scanned_at)}">●</span>`:'<span style="color:#adb5bd;">●</span>';return`<tr {% if gui_v3 %}tabindex="0" aria-label="Inspect ${esc(e.name)}"{% endif %} data-id="${esc(id)}" data-type="${esc(e.type)}" data-name="${esc(e.name)}" data-idx="${idx}" data-path="${esc(currentPath||'')}" data-size="${e.type==='folder'?'':(e.size||e.size_bytes||0)}"><td class="col-cb"><input type="checkbox" class="row-cb" data-id="${esc(id)}" data-idx="${idx}" ${selItems.has(id)?'checked':''}></td><td class="col-name"><div class="name-cell"><span class="name-icon">${icon}</span><span>${esc(e.name)}</span></div></td><td class="col-type">${esc(e.type)}</td><td class="col-size">${size}</td><td class="col-modified">${mod}</td><td class="col-scanned" style="text-align:center;">${scanned}</td><td class="col-act"></td></tr>`;}).join('');if(selMode)table.classList.add('sel-mode');if(window.Collection&&window.Collection._updateHighlights)window.Collection._updateHighlights();
 tbody.querySelectorAll('tr[data-id]').forEach(tr=>{const id=tr.dataset.id,type=tr.dataset.type,name=tr.dataset.name,idx=+tr.dataset.idx;{% if gui_v3 %}tr.addEventListener('keydown',event=>{if(event.target===tr&&(event.key==='Enter'||event.key===' ')){event.preventDefault();tr.click();}});{% endif %}const inspectRow=()=>document.dispatchEvent(new CustomEvent('scidk:inspect',{detail:{kind:'file',key:id,record:{...entries[idx],provider_id:ctx.providerId,scan_id:ctx.scanId}}}));
 tr.addEventListener('click',event=>{
   {% if gui_v3 %}
@@ -456,8 +452,10 @@ tbody.addEventListener('change',e=>{const cb=e.target.closest('.row-cb');if(!cb)
 
 // Selection
 function updateSelUI(){const n=selItems.size;document.getElementById('sel-badge-count').textContent=n+' selected';const bar=document.getElementById('selection-bar');if(bar)bar.classList.toggle('visible',selMode&&n>0);const cbs=[...document.getElementById('file-list').querySelectorAll('.row-cb')];const allSel=cbs.length&&cbs.every(c=>c.checked),someSel=cbs.some(c=>c.checked);const scb=document.getElementById('select-all-cb');if(scb){scb.checked=allSel;scb.indeterminate=someSel&&!allSel;}document.dispatchEvent(new CustomEvent('scidk:selectionchange',{detail:{size:n}}));}
-function enterSelMode(){selMode=true;document.getElementById('file-table').classList.add('sel-mode');document.getElementById('toggle-sel-btn').textContent='Exit selection';}
-function exitSelMode(){selMode=false;selItems.clear();lastSelIndex=-1;document.getElementById('file-table').classList.remove('sel-mode');document.getElementById('selection-bar').classList.remove('visible');document.getElementById('toggle-sel-btn').textContent='☑ Select files';if(mode==='live')document.getElementById('scan-folder-btn').style.display='';updateSelUI();}
+// Selection mode is always on: the checkbox column is the primary selection mechanism.
+// exitSelMode keeps its name for the drawer modules that call it; it now only clears the selection.
+function enterSelMode(){selMode=true;document.getElementById('file-table').classList.add('sel-mode');}
+function exitSelMode(){selItems.clear();lastSelIndex=-1;document.getElementById('file-list').querySelectorAll('.row-cb').forEach(c=>c.checked=false);if(mode==='live')document.getElementById('scan-folder-btn').style.display='';updateSelUI();}
 document.getElementById('toggle-sel-btn').addEventListener('click',()=>selMode?exitSelMode():enterSelMode());
 document.getElementById('sel-badge-btn').addEventListener('click',exitSelMode);
 document.getElementById('clear-sel-btn').addEventListener('click',()=>{selItems.clear();lastSelIndex=-1;document.getElementById('file-list').querySelectorAll('.row-cb').forEach(c=>c.checked=false);updateSelUI();});

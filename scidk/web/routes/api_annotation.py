@@ -296,6 +296,79 @@ def api_datasets_from_collection():
     return _save_collection_request(body, members)
 
 
+@bp.post('/datasets/manual')
+@require_role(*_WRITE_ROLES)
+def api_datasets_manual():
+    """Create a NEW manual ``:Dataset`` from selected files and folders.
+
+    Body: ``{name, description?, members: [{kind: "file"|"folder", path, name?, host |
+    provider_id + root_id [+ scan_id], size?}]}``. Writes ``(:Dataset {source:'manual'})``
+    with ``CONTAINS`` edges (MERGE only). It is never a Collection and never updates a
+    recognized, profile-derived Dataset: the node is keyed on a fresh server UUID.
+    Nothing is copied from, or written to, ``files.db``.
+    """
+    from ...services import collection_service as cs
+
+    body = request.get_json(silent=True) or {}
+    name = str(body.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'name is required'}), 400
+    members, problems = cs.normalise_members(body.get('members'), _entry_host)
+    skipped = len(members['dataset']) + len(members['context'])
+    if skipped:
+        problems.append(f'{skipped} dataset/context member(s) ignored: a manual dataset holds files and folders only')
+    members = {'folder': members['folder'], 'file': members['file']}
+    total = cs.member_count(members)
+    if not total:
+        return jsonify({'error': 'members is required', 'problems': problems}), 400
+    if total > _MAX_FILES:
+        return jsonify({'error': f'too many members ({total}); the maximum is {_MAX_FILES}'}), 400
+
+    try:
+        client = _neo4j_client()
+    except Neo4jUnavailable as e:
+        return jsonify({'error': str(e)}), 503
+    try:
+        result = cs.save_manual_dataset(
+            client, name=name, description=str(body.get('description') or '').strip() or None,
+            created_by=_created_by(), members=members)
+    except Exception as e:  # noqa: BLE001 - the write is the route's whole job
+        return jsonify({'error': f'{type(e).__name__}: {e}'}), 502
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+    out: Dict[str, Any] = {'status': 'ok', 'dataset_id': result['id'], 'name': name,
+                           'linked': result['linked']}
+    if problems:
+        out['problems'] = problems
+    return jsonify(out), 200
+
+
+@bp.get('/collections/<collection_id>')
+@require_role(*_READ_ROLES)
+def api_collection_get(collection_id):
+    """One saved collection with its stored members grouped by kind."""
+    from ...services import collection_service as cs
+    try:
+        client = _neo4j_client()
+    except Neo4jUnavailable as e:
+        return jsonify({'error': str(e)}), 503
+    try:
+        found = cs.get_collection(client, collection_id)
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'error': f'{type(e).__name__}: {e}'}), 502
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+    if not found:
+        return jsonify({'error': 'Collection not found'}), 404
+    return jsonify(found), 200
+
+
 @bp.get('/collections')
 @require_role(*_READ_ROLES)
 def api_collections_list():

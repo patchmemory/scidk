@@ -1,5 +1,5 @@
 {# Annotate drawer — Attribute / Collect / Interpret tabs
-   Requires: drawers.css, drawers.js, collection.js, annotate.js
+   Requires: drawers.css, drawers.js, collection_basket.js (base.html), annotate.js
    Open with: window.Drawers.open('annotate-drawer')
               window.Annotate.open()          (pre-seeds from window.selItems)
 #}
@@ -122,8 +122,8 @@
   <!-- ── Collect tab ── -->
   <div class="sharing-tab-panel" id="annotate-tab-collect">
     <p class="drawer-hint" style="margin-bottom:12px;">
-      Group files as a named Dataset node in the graph.
-      Use the Collection (<kbd style="font-size:10px;">⇧⌥C</kbd>) to accumulate
+      Create a new manual Dataset (not a Collection) from files and folders.
+      Use the Collection control (<kbd style="font-size:10px;">⇧⌥C</kbd>) to accumulate
       files across folders first.
     </p>
     <div class="drawer-field">
@@ -160,7 +160,7 @@
         <div class="sn-label">From selection</div>
         <div class="sn-items" id="collect-scope-items">—</div>
       </div>
-      <div class="drawer-hint">Files will be linked via CONTAINS edges. You can add more later.</div>
+      <div class="drawer-hint">Files and folders are linked with CONTAINS edges. A recognized dataset is never changed.</div>
     </div>
     <button class="btn btn-sm btn-primary" id="collect-create-btn"
             data-annotate-action="create-dataset">

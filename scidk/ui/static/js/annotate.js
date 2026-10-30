@@ -596,17 +596,24 @@
 
   let _collectSource = 'selection';
 
-  // Entries the Dataset route can resolve: File nodes are keyed by
+  // Entries the manual-Dataset route can resolve: File/Folder nodes are keyed by
   // (path, host), and the server derives the host from provider_id + root_id
-  // (Collection.entryFromId / .payload). Folders go as type 'folder'; the
-  // server adds their scanned files rather than making the folder a File.
+  // (+ scan_id in Index view). Every entry comes from the shared CollectionBasket
+  // (picks) or is built by it (selection); folders stay Folder references.
+  function _basketEntry(x) {
+    const p = x.p || {};
+    return {name: p.name, path: p.path, type: x.kind === 'folder' ? 'folder' : 'file',
+            provider_id: p.provider_id || '', root_id: p.root_id || '', scan_id: p.scan_id || '', size: p.size};
+  }
   function _collectFiles() {
-    const C = global.Collection;
-    if (!C) return [];
-    if (_collectSource === 'collection') return (C.items() || []).map(C.payload);
+    const B = global.CollectionBasket;
+    if (!B) return [];
+    if (_collectSource === 'collection') {
+      return B.items().filter(x => x.kind === 'file' || x.kind === 'folder').map(_basketEntry);
+    }
     const sel = global.selItems;
     if (!sel || !sel.size) return [];
-    return [...sel].map(id => C.payload(C.entryFromId(id)));
+    return [...sel].map(id => _basketEntry(B.fileItemFromId(id)));
   }
 
   function setCollectSource(src) {
@@ -628,9 +635,9 @@
       const lbl = note.querySelector('.sn-label');
       if (lbl) {
         const parts = [`${nFiles} file${nFiles === 1 ? '' : 's'}`];
-        // A folder isn't a Dataset member itself; its scanned files are.
-        if (nFolders) parts.push(nFolders === 1 ? '1 folder (its scanned files)' : `${nFolders} folders (their scanned files)`);
-        lbl.textContent = (_collectSource === 'collection' ? 'From collection · ' : 'From selection · ')
+        // A folder is linked as a Folder; its descendants are not copied.
+        if (nFolders) parts.push(nFolders === 1 ? '1 folder' : `${nFolders} folders`);
+        lbl.textContent = (_collectSource === 'collection' ? 'From collection picks · ' : 'From selection · ')
           + parts.join(' + ');
       }
       note.classList.toggle('empty', files.length === 0);
@@ -652,7 +659,7 @@
     const files = _collectFiles();
     if (!files.length) {
       _setCollectStatus(_collectSource === 'collection'
-        ? 'The collection is empty.'
+        ? 'There are no collection picks.'
         : 'No files selected.', 'danger');
       return;
     }
@@ -662,32 +669,19 @@
     if (btn) btn.disabled = true;
     _setCollectStatus('Writing to the graph…');
     try {
-      const body = {
-        name,
-        modality: modalityEl ? modalityEl.value : '',
-        description: descEl ? descEl.value : '',
-        files,
-      };
-      const post = () => fetch(BASE() + '/api/datasets/collections', {
+      // A NEW manual Dataset (CONTAINS edges) — not a Collection, and never an
+      // update to a recognized Dataset. `modality` is not stored by this route.
+      const members = files.map(f => ({kind: f.type === 'folder' ? 'folder' : 'file', path: f.path, name: f.name,
+        provider_id: f.provider_id, root_id: f.root_id, scan_id: f.scan_id, size: f.size}));
+      const r = await fetch(BASE() + '/api/datasets/manual', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(body),
+        body: JSON.stringify({name, description: descEl ? descEl.value : '', members}),
       });
-      let r = await post();
-      let d = await r.json().catch(() => ({}));
-      // The name is taken: never merge without asking.
-      if (r.status === 409 && d.exists) {
-        if (!confirm(`A Collection named "${name}" already exists with ${d.members} member(s). Add these to it?`)) {
-          _setCollectStatus('Not saved: choose another name, or confirm adding to the existing Collection.', 'warning');
-          return;
-        }
-        body.add_to_existing = true;
-        r = await post();
-        d = await r.json().catch(() => ({}));
-      }
+      const d = await r.json().catch(() => ({}));
       if (!r.ok) { _setCollectStatus(_attrEsc(d.error || `Error ${r.status}`), 'danger'); return; }
       _setCollectStatus(
-        `✓ Collection "${_attrEsc(d.name || name)}" ${d.created === false ? 'updated' : 'created'} — ${(d.linked && d.linked.file) || 0} file(s), ${(d.linked && d.linked.folder) || 0} folder(s) included`
+        `✓ Dataset "${_attrEsc(d.name || name)}" created — ${(d.linked && d.linked.file) || 0} file(s), ${(d.linked && d.linked.folder) || 0} folder(s) linked`
         + (d.problems && d.problems.length
           ? `<br><span class="text-warning">Skipped: ${d.problems.map(_attrEsc).join('; ')}</span>` : ''),
         'success');
@@ -704,8 +698,8 @@
   function _interpretPaths() {
     const sel = global.selItems;
     if (sel && sel.size) return [...sel];
-    const items = (global.Collection ? global.Collection.items() : []) || [];
-    return items.map(f => (f.path ? f.path + '/' : '') + f.name);
+    const items = global.CollectionBasket ? global.CollectionBasket.items() : [];
+    return items.filter(x => x.kind === 'file' && x.p && x.p.path).map(x => x.p.path);
   }
 
   async function loadInterpreterStatus() {
@@ -830,10 +824,10 @@
     if (!el) return;
     const sel = global.selItems;
     const n = sel ? sel.size : 0;
-    const coll = global.Collection ? global.Collection.count() : 0;
+    const coll = global.CollectionBasket ? global.CollectionBasket.items().length : 0;
     el.textContent = n
       ? `${n} selected`
-      : (coll ? `${coll} in collection` : 'nothing selected');
+      : (coll ? `${coll} collection pick${coll === 1 ? '' : 's'}` : 'nothing selected');
   }
 
   // The drawer used to render its scope once, on open; selecting more rows (or
@@ -851,7 +845,7 @@
     }
   }
   document.addEventListener('scidk:selectionchange', _onScopeChange);
-  document.addEventListener('scidk:collectionchange', _onScopeChange);
+  document.addEventListener('scidk:collectionbasket', _onScopeChange);
 
   function open(tab) {
     _updateScopeLabel();

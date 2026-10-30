@@ -147,6 +147,14 @@ class GraphFacts:
     #: Non-fatal problems worth showing the user next to the draft.
     warnings: Tuple[str, ...] = ()
 
+    #: "graph" for the whole-graph plan; "collection" when the facts describe the
+    #: members of one selected :Collection only. The generator words the draft
+    #: accordingly: a collection is a membership list, not research provenance.
+    scope: str = "graph"  # "graph" | "collection"
+    #: Whether SciDK can export RO-Crate packages today. False for collections:
+    #: that export is future work and a plan must not claim it.
+    rocrate_export_available: bool = False
+
     @property
     def total_nodes(self) -> int:
         """Sum of per-label counts.

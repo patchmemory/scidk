@@ -53,8 +53,18 @@ def test_files_page_is_modular():
 
     # One id from each included panel fragment.
     for drawer_id in ('annotate-drawer', 'scan-drawer', 'sharing-drawer',
-                      'add-drive-drawer', 'coll-panel', 'dms-panel'):
+                      'add-drive-drawer', 'dms-panel'):
         assert f'id="{drawer_id}"' in html, f'{drawer_id} missing'
+
+    # One collection UI: the shared basket mounts into the toolbar slot; the old
+    # Files-only pill/panel (and its footer selection toggle) must not render.
+    assert 'id="files-collection-slot"' in html
+    for gone in ('id="coll-panel"', 'id="coll-pill"', 'id="coll-toast"'):
+        assert gone not in html, f'{gone} should be gone'
+    assert 'js/collection_basket.js' in html          # loaded by base.html
+    assert 'class="file-table sel-mode" id="file-table"' in html   # checkboxes visible by default
+    assert 'id="toggle-sel-btn" hidden' in html
+    assert 'id="create-dataset-btn"' in html and 'id="add-to-coll-btn"' in html
 
     # The Attribute tab replaced the standalone attribution panel; including
     # both would duplicate every attr-* id.
