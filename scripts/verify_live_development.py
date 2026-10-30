@@ -95,13 +95,25 @@ def main():
             assert page.locator('#neo4j-connection-select').input_value() == 'PRIMARY'
             assert page.evaluate('Object.values(window.cytoscapeInstances || {}).some(cy => cy.nodes().length > 0)')
             expect(page.locator('#map-list')).to_be_visible()
+            def map_dialog(dialog):
+                dialog.accept('Live development metadata view' if 'map name' in dialog.message else
+                              'Existing development metadata; graph unchanged' if dialog.type == 'prompt' else None)
+            page.on('dialog', map_dialog)
+            if not page.locator('#map-list .map-item').count():
+                with page.expect_response(lambda response: response.url.endswith('/api/maps/saved') and response.request.method == 'POST') as saved:
+                    page.locator('#save-current-map').click()
+                assert saved.value.status == 201
+            expect(page.locator('#map-list .map-item').first).to_be_visible()
+            page.locator('#map-list .map-item').first.get_by_role('button', name='Load', exact=True).click()
+
             for width, height in [(1440, 900), (1024, 768)]:
                 page.set_viewport_size(dict(width=width, height=height))
                 page.screenshot(path=str(artifacts / f'live-maps-{width}x{height}.png'), full_page=True)
             page.get_by_role('link', name='Return to entity inspector').click()
             expect(page.locator('#instance-table-container')).to_contain_text('Open in Graph')
             report['capabilities']['maps_selection_and_return'] = 'PASS'
-            report['capabilities']['saved_views'] = 'PARTIAL: controls available; separate new state has no existing saved maps; no shared views modified'
+            report['capabilities']['saved_views'] = 'PASS: save/load in the new private settings store; no existing shared views modified'
+            page.remove_listener('dialog', map_dialog)
             page.get_by_role('navigation', name='Research tools').get_by_role('link', name='Relationships & Links').click()
             expect(page.locator('#links-container, .links-container').first).to_be_visible()
             page.locator('.link-filter-tab[data-filter="available"]').click()
@@ -124,6 +136,7 @@ def main():
             assert page.request.post(origin + '/api/graph/query', data=dict(query='RETURN 1')).status == 403
             assert page.request.patch(origin + '/api/labels/Sample/instances/' + selected['id'], data=dict(property='uuid', value='denied')).status == 403
             report['capabilities']['write_and_raw_query_refusal'] = 'PASS'
+            report['readiness'] = page.request.post(origin + '/api/development/readiness', data={}).json()['checks']
             assert not errors, 'Unexpected browser JavaScript error'
             report['browser'] = browser.version
             report['status'] = 'graph_management_gate_passed_with_remaining_workspace_blockers'

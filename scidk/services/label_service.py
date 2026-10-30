@@ -531,8 +531,9 @@ class LabelService:
             # Query for node labels and their properties
             props_query = """
             CALL db.schema.nodeTypeProperties()
-            YIELD nodeType, propertyName, propertyTypes
-            RETURN nodeType, propertyName, propertyTypes
+            YIELD nodeLabels, propertyName, propertyTypes
+            UNWIND nodeLabels AS labelName
+            RETURN DISTINCT ':' + labelName AS nodeType, propertyName, propertyTypes
             """
 
             props_results = neo4j_client.execute_read(props_query)
