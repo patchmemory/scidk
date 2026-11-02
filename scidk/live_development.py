@@ -103,6 +103,9 @@ def configure(app):
         security.FULL_ACCESS = True
     else:
         app.before_request(read_only_request)
+    if config.get('legacy_annotate') is True:
+        # Show the classic Annotate drawer next to the selection bar + inspector (default: replacement only).
+        app.config['SCIDK_LEGACY_ANNOTATE_ENABLED'] = True
     revision = subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], text=True).strip()
     dirty = bool(subprocess.check_output(['git', '-C', str(ROOT), 'diff', '--name-only', 'HEAD'], text=True).strip())
     # Never return the private state/source paths, usernames or credentials.
