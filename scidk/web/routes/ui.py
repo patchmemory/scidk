@@ -73,7 +73,13 @@ def _gui_page(page):
         from flask import abort
         abort(404)
     if page == 'Knowledge' and current_app.config.get('SCIDK_KNOWLEDGE_WORKSPACE_ENABLED', True) is True:
-        return render_template('gui/knowledge.html')
+        # Entities / Maps / Sketch are the Knowledge tabs; `graph` is a compatibility alias for Maps and
+        # `governed` (or a bare domain/id deep link) keeps the governed-projection workspace reachable.
+        from ...services.graph_management_policy import knowledge_view
+        view = knowledge_view(request.args)
+        if view == 'governed':
+            return render_template('gui/knowledge_governed.html')
+        return render_template('gui/knowledge.html', view=view)
     if page == 'Review' and current_app.config.get('SCIDK_REVIEW_WORKSPACE_ENABLED') is True:
         return render_template('gui/review.html',
             assistant_enabled=current_app.config.get('SCIDK_REVIEW_CHAT_ENABLED') is True)

@@ -1,0 +1,12 @@
+{# The Knowledge local tabs: exactly Entities, Maps, Sketch (`view` = the active one, if any). #}
+<style>
+  .knowledge-tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid #e0e0e0; padding: 0 0.5rem; }
+  .knowledge-tabs a { padding: 0.5rem 1rem; text-decoration: none; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; font-size: 0.95em; }
+  .knowledge-tabs a:hover { color: var(--fg); }
+  .knowledge-tabs a[aria-current="page"] { color: var(--fg); font-weight: 600; border-bottom-color: var(--accent); }
+</style>
+<nav class="knowledge-tabs" aria-label="Knowledge views" data-testid="knowledge-tabs">
+  {% for key, label in [('entities', 'Entities'), ('maps', 'Maps'), ('sketch', 'Sketch')] %}
+  <a href="{{ request.script_root }}/knowledge?view={{ key }}" data-testid="knowledge-tab-{{ key }}"{% if view == key %} aria-current="page"{% endif %}>{{ label }}</a>
+  {% endfor %}
+</nav>

@@ -1,7 +1,11 @@
 /* Governed views over shared SciDKGraph and Maps Canvas draft primitives. */
 (function () {
   'use strict';
-  const $ = id => document.getElementById(id);
+  // Sketch-only mode: the Knowledge → Sketch tab renders just the draft canvas. The governed-projection
+  // controls this script also drives are absent there, so lookups fall back to detached stand-ins.
+  const sketchOnly = document.getElementById('knowledge-workspace')?.dataset.kwMode === 'sketch';
+  const stubs = new Map();
+  const $ = id => document.getElementById(id) || (stubs.has(id) ? stubs.get(id) : (stubs.set(id, document.createElement('div')), stubs.get(id)));
   const base = window.SCIDK_BASE || '';
   const params = new URLSearchParams(location.search);
   const state = {domain: ['research', 'ontology', 'system'].includes(params.get('domain')) ? params.get('domain') : 'research',
@@ -32,11 +36,13 @@
       method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
     });
     const data = await response.json();
+    if (sketchOnly && (!response.ok || data.status !== 'success')) throw new Error('Saving and reopening private drafts is not available here. Your sketch still works on this page.');
     if (!response.ok || data.status !== 'success') throw new Error(response.status === 503 ? 'This Knowledge service is not connected. Ask an administrator to configure existing governed state and run POST /api/knowledge/readiness. See docs/demo/scidk-operational-startup.md.' : state.domain === 'research' ? 'Knowledge access was refused. Ask an administrator to check your research_browse purpose, Resource and evidence grants.' : 'Knowledge access is unavailable. Ask an administrator to check source grants and the approved provider.');
     return data.result;
   }
   function url() {
-    const query = new URLSearchParams({domain: state.domain, view: state.view});
+    if (sketchOnly) return;
+    const query = new URLSearchParams({governed: '1', domain: state.domain, view: state.view});
     if (state.selected?.id && !state.selected.id.startsWith('projection-edge:')) query.set('id', state.selected.id);
     history.replaceState(null, '', location.pathname + '?' + query.toString());
   }
@@ -175,6 +181,7 @@
     $('kw-inspection').textContent = JSON.stringify(draftSelected.data(), null, 2);
   };
   async function changeDomain() {
+    if (sketchOnly) { reset(); state.view = 'sketch'; layout(); return; }
     reset(); state.domain = $('kw-domain').value; state.catalog = 'canonical';
     $('kw-search-form').hidden = state.domain !== 'research';
     $('kw-context-form').hidden = state.domain === 'research';
@@ -311,7 +318,7 @@
   $('kw-save-layout').onclick = () => save('layout');
   $('kw-save-graph').onclick = () => save('graph'); $('kw-load-graph').onclick = () => load('graph');
   $('kw-save-sketch').onclick = () => save('sketch'); $('kw-load-sketch').onclick = () => load('sketch');
-  const initialId = params.get('id');
+  const initialId = sketchOnly ? null : params.get('id');
   changeDomain().then(async () => {
     if (initialId && state.domain === 'research') {
       await retrieve('expand', {id: initialId});

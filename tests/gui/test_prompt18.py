@@ -19,7 +19,7 @@ def test_operational_assembly_frontend(gui_page, gui_artifacts, viewport):
              graph_target=info['graph'].target, legacy_records=legacy)
     page.context.add_cookies([{'name': 'scidk_session', 'value': app.extensions['prompt17_session'], 'url': origin}])
     page.set_viewport_size(dict(width=viewport[0], height=viewport[1]))
-    page.goto(origin + '/knowledge?view=entities')
+    page.goto(origin + '/knowledge?governed=1&view=entities')
     dataset = page.locator('#kw-entities button').filter(has_text='Synthetic MRI microCT phantom study')
     expect(dataset).to_have_count(1)
     dataset.click()

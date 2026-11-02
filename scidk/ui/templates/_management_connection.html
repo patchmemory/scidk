@@ -1,0 +1,11 @@
+{# Which graph connection the management apps are using (shared by the legacy pages and Knowledge). #}
+{% if request.path in ['/entities', '/labels', '/links', '/map', '/knowledge'] and g.graph_management_permission is defined %}
+<p id="management-connection" class="small" aria-live="polite">Checking management connection…</p>
+<script>
+fetch(window.SCIDK_BASE + '/api/graph/management-connection')
+  .then(response => response.ok ? response.json() : Promise.reject())
+  .then(data => { document.getElementById('management-connection').textContent =
+    `${data.connection.display_name} · ${data.connection.backend} · ${data.connection.database} · ${data.connection.connection_id.slice(0, 12)}`; })
+  .catch(() => { document.getElementById('management-connection').textContent = 'Management connection unavailable under current authority.'; });
+</script>
+{% endif %}

@@ -54,7 +54,8 @@ def open_workspace(gui_page, query=''):
     }''')
     d, records, hidden = app.extensions['workspace_fixture']
     page.context.add_cookies([{'name': 'scidk_session', 'value': d.auth.create_user_session(d.alice, 'alice'), 'url': origin}])
-    page.goto(origin + '/knowledge' + query)
+    # The governed-projection workspace is explicit: Knowledge's default tabs are the legacy apps.
+    page.goto(origin + '/knowledge?governed=1' + (query.replace('?', '&', 1) if query else ''))
     expect(page.locator('#kw-status')).not_to_contain_text('Checking')
     return page, d, records, hidden
 

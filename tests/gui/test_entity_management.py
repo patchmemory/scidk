@@ -65,9 +65,7 @@ def test_original_entity_management(gui_page, gui_artifacts, viewport):
     page.context.add_cookies([dict(name='scidk_session', value=info['session'], url=origin)])
     page.set_viewport_size(dict(width=viewport[0], height=viewport[1]))
     # No governed purpose/provider is needed for separately granted management.
-    page.gui_expected_http.update(['/api/knowledge/research/load', '/api/knowledge/research/search'])
-    page.goto(origin + '/knowledge?view=entities')
-    page.get_by_role('navigation', name='Research tools').get_by_role('link', name='Entities & Labels').click()
+    page.goto(origin + '/knowledge?view=entities')  # the Labels browser itself, re-homed under Knowledge
     page.locator('#label-list .label-item').filter(has_text='SyntheticSpecimen').click()
     expect(page.locator('#readonly-properties-container')).to_contain_text('name')
     expect(page.locator('#readonly-relationships-container')).to_contain_text('HAS_IMAGE')

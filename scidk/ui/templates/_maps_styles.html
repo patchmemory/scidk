@@ -1,0 +1,345 @@
+{# Maps styles: shared by /map and Knowledge → Maps (included from the head block). #}
+<style>
+  /* === THREE-COLUMN LAYOUT === */
+  .maps-container {
+    display: flex;
+    gap: 0;
+    height: calc(100vh - 60px);
+    position: relative;
+  }
+
+  /* Left Panel: Map Library (placeholder for now) */
+  .map-library-panel {
+    width: 20%;
+    min-width: 250px;
+    border-right: 1px solid #e0e0e0;
+    background: #f9f9f9;
+    overflow-y: auto;
+    padding: 1rem;
+  }
+
+  /* Center Panel: Main workspace */
+  .map-workspace-panel {
+    flex: 1;
+    min-width: 400px;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    overflow: hidden;
+    padding: 1rem;
+  }
+
+  /* Right Panel: Controls */
+  .map-controls-panel {
+    width: 20%;
+    min-width: 250px;
+    border-left: 1px solid #e0e0e0;
+    background: #f9f9f9;
+    overflow-y: auto;
+    padding: 1rem;
+  }
+
+  /* Resizable Dividers */
+  .resizer {
+    width: 6px;
+    cursor: col-resize;
+    background: #e0e0e0;
+    position: relative;
+    flex-shrink: 0;
+    transition: background 0.15s ease;
+  }
+
+  .resizer:hover {
+    background: #2196f3;
+  }
+
+  .resizer::after {
+    content: '⋮';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #999;
+    font-size: 1.2rem;
+    line-height: 0.5rem;
+  }
+
+  .resizer.resizing {
+    background: #2196f3;
+  }
+
+  /* Panel headers */
+  .panel-header {
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #ddd;
+  }
+
+  .panel-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: #333;
+  }
+
+  /* Selection Inspector (Push 6) */
+  #selection-inspector .si-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+  #selection-inspector .si-header h4 {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #666;
+    text-transform: uppercase;
+  }
+  .si-section {
+    margin-bottom: 0.5rem;
+  }
+  .si-caret-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+    padding: 0.25rem 0;
+    font-weight: 600;
+    font-size: 0.78rem;
+    color: #444;
+    user-select: none;
+  }
+  .si-caret {
+    display: inline-block;
+    font-size: 0.7rem;
+    color: #999;
+    transition: transform 0.15s ease;
+  }
+  .si-caret.si-collapsed {
+    transform: rotate(-90deg);
+  }
+  .si-group-list {
+    padding-left: 1.1rem;
+  }
+  .si-group-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.15rem 0;
+    font-size: 0.8rem;
+    cursor: pointer;
+    margin: 0;
+  }
+  .si-group-row input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+  }
+  .si-group-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .si-count {
+    color: #999;
+    font-size: 0.72rem;
+  }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: #999;
+  }
+
+  .empty-state-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    opacity: 0.5;
+  }
+
+  /* Map Library Styles */
+  .library-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+
+  .library-header h3 {
+    font-size: 1rem;
+    margin: 0;
+  }
+
+  #save-current-map {
+    font-size: 0.8rem;
+    padding: 0.25rem 0.5rem;
+  }
+
+  #map-search {
+    width: 100%;
+    font-size: 0.85rem;
+    padding: 0.4rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin-bottom: 0.75rem;
+  }
+
+  .map-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .map-item {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 0.75rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .map-item:hover {
+    border-color: #2196f3;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  }
+
+  .map-item.active {
+    border-color: #2196f3;
+    background: #e3f2fd;
+  }
+
+  .map-name {
+    font-weight: 500;
+    font-size: 0.9rem;
+    margin-bottom: 0.25rem;
+    color: #333;
+  }
+
+  .map-meta {
+    font-size: 0.75rem;
+    color: #999;
+    margin-bottom: 0.5rem;
+  }
+
+  .map-actions {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  .map-actions button {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid #ddd;
+    background: #fff;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .map-actions button:hover {
+    background: #f5f5f5;
+  }
+
+  .map-actions .load-btn:hover {
+    border-color: #2196f3;
+    color: #2196f3;
+  }
+
+  .map-actions .delete-btn {
+    color: #dc3545;
+  }
+
+  .map-actions .delete-btn:hover {
+    border-color: #dc3545;
+    background: #fff5f5;
+  }
+
+  #map-library-loading {
+    text-align: center;
+    padding: 2rem;
+    color: #999;
+    font-size: 0.9rem;
+  }
+
+  /* === TAB STYLES === */
+  .tab-bar {
+    flex-shrink: 0;
+  }
+
+  #tab-container {
+    white-space: nowrap;
+  }
+
+  #tab-container::-webkit-scrollbar {
+    height: 4px;
+  }
+
+  #tab-container::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 2px;
+  }
+
+  .map-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #e0e0e0;
+    border-bottom: none;
+    background: #f5f5f5;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.15s ease;
+    border-radius: 4px 4px 0 0;
+    max-width: 150px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .map-tab:hover {
+    background: #efefef;
+  }
+
+  .map-tab.active {
+    background: #fff;
+    border-bottom: 2px solid #fff;
+    font-weight: 500;
+    position: relative;
+    z-index: 1;
+  }
+
+  .map-tab-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .map-tab-close {
+    color: #999;
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 0.25rem;
+    border: none;
+    background: none;
+  }
+
+  .map-tab-close:hover {
+    color: #dc3545;
+  }
+
+  .tab-content {
+    display: none;
+  }
+
+  .tab-content.active {
+    display: block;
+  }
+
+  #tab-content-area {
+    flex: 1;
+    overflow-y: auto;
+  }
+</style>

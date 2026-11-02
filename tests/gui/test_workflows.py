@@ -25,6 +25,9 @@ def select_dataset(page):
 
 def test_navigation_and_placeholders(gui_page):
     page, origin, app = gui_page
+    # Knowledge opens on Entities, the legacy Labels browser: without a graph-management grant it is
+    # denied exactly like /entities and /map (asserted below), and that page shows the Knowledge tabs.
+    page.gui_expected_http.add('/knowledge')
     page.goto(origin+'/overview?profile=review')
     expect(page.get_by_label('Your question')).to_be_disabled()
     expect(page.get_by_role('button', name='Ask SciDK', exact=True)).to_be_disabled()
@@ -34,7 +37,8 @@ def test_navigation_and_placeholders(gui_page):
         expect(page).to_have_url(origin+path)
         expect(page.get_by_role('heading', level=1).first).to_be_visible()
         if name == 'Knowledge':
-            expect(page.get_by_role('link', name='Maps & Canvas')).to_have_attribute('href', '/map')
+            # Entities / Maps / Sketch are the Knowledge tabs; the legacy Maps route is reached through Maps.
+            expect(page.get_by_role('link', name='Maps', exact=True).last).to_have_attribute('href', '/knowledge?view=maps')
         if name == 'Review':
             expect(page.get_by_text('Review workspace unavailable', exact=False)).to_be_visible()
     # Settings renders the preserved legacy page; its broad administration scripts

@@ -75,7 +75,7 @@ def test_legacy_flag_keeps_the_drawer_and_does_not_duplicate_ids(monkeypatch, tm
 def test_entities_page_mounts_the_same_bar():
     """The Entities page is behind the graph-management read grant, so check its template source."""
     from pathlib import Path
-    source = Path('scidk/ui/templates/labels.html').read_text()
+    source = Path('scidk/ui/templates/_labels_app.html').read_text()
     assert 'id="entities-selection-actions"' in source
     assert "SelectionActions.mount(actionsHost" in source and "surface: 'entities'" in source
     assert "kind: 'context'" in source

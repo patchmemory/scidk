@@ -1,0 +1,4730 @@
+{# Labels browser: content shared by /entities and Knowledge → Entities. #}
+<style>
+  .labels-container {
+    display: flex;
+    gap: 0;
+    margin-top: 1rem;
+    height: calc(100vh - 200px);
+    position: relative;
+  }
+
+  /* Left Panel: Labels List */
+  .labels-list {
+    width: 25%;
+    min-width: 200px;
+    max-width: 50%;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    padding: 0.5rem;
+    overflow-y: auto;
+    transition: width 0.3s ease, min-width 0.3s ease;
+  }
+  .labels-list.collapsed {
+    width: 40px;
+    min-width: 40px;
+    padding: 0.25rem;
+  }
+
+  /* Center Panel: Editor + Instance Browser */
+  .labels-editor {
+    flex: 1;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    padding: 1rem;
+    overflow-y: auto;
+    min-width: 300px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Right Panel: Statistics */
+  .labels-statistics {
+    width: 25%;
+    min-width: 200px;
+    max-width: 40%;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    padding: 1rem;
+    overflow-y: auto;
+    transition: width 0.3s ease, min-width 0.3s ease;
+  }
+  .labels-statistics.collapsed {
+    width: 40px;
+    min-width: 40px;
+    padding: 0.25rem;
+  }
+
+  /* Resizers */
+  .resizer {
+    width: 8px;
+    cursor: col-resize;
+    background: transparent;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .resizer:hover {
+    background: #e0e0e0;
+  }
+  .resizer::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 3px;
+    width: 2px;
+    background: #ddd;
+  }
+  .resizer.resizing {
+    background: #2196f3;
+  }
+
+  /* Collapse/Expand Buttons */
+  .collapse-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #f0f0f0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    width: 24px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 14px;
+    z-index: 10;
+    transition: all 0.2s;
+  }
+  .collapse-btn:hover {
+    background: #e0e0e0;
+    width: 28px;
+  }
+  .collapse-btn-left {
+    right: -12px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+  }
+  .collapse-btn-right {
+    left: -12px;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  .labels-list.collapsed .collapse-btn-left {
+    right: -24px;
+  }
+  .labels-statistics.collapsed .collapse-btn-right {
+    left: -24px;
+  }
+
+  /* Read-only mode styles */
+  .editor-mode-toggle {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    align-items: center;
+  }
+  .readonly-property {
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+    background: #f9f9f9;
+    border-radius: 4px;
+    border-left: 3px solid #2196f3;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .readonly-property:focus {
+    outline: 2px solid #2196f3;
+    outline-offset: 2px;
+    background: #e3f2fd;
+  }
+  .readonly-relationship {
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+    background: #f0f8ff;
+    border-radius: 4px;
+    border-left: 3px solid #4caf50;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .readonly-relationship:focus {
+    outline: 2px solid #4caf50;
+    outline-offset: 2px;
+    background: #e8f5e9;
+  }
+  .badge-type {
+    display: inline-block;
+    padding: 0.15rem 0.4rem;
+    font-size: 0.7rem;
+    border-radius: 3px;
+    background: #e0e0e0;
+    color: #333;
+    margin-left: 0.5rem;
+  }
+  .badge-required {
+    background: #ffebee;
+    color: #c62828;
+  }
+
+  /* Instance Browser */
+  .instance-browser {
+    margin-top: 2rem;
+    border-top: 2px solid #e0e0e0;
+    padding-top: 1rem;
+  }
+  .instance-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+  .instance-table th {
+    background: #f5f5f5;
+    padding: 0.5rem;
+    text-align: left;
+    border-bottom: 2px solid #ddd;
+    font-weight: 600;
+  }
+  .instance-table td {
+    padding: 0.5rem;
+    border-bottom: 1px solid #eee;
+  }
+  .instance-table tr:hover {
+    background: #f9f9f9;
+  }
+  .instance-cell-editable {
+    cursor: text;
+    min-height: 1.5rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+  }
+  .instance-cell-editable:hover {
+    background: #fff8e1;
+    outline: 1px dashed #ffc107;
+  }
+  .instance-cell-editing {
+    background: #fff;
+    outline: 2px solid #2196f3;
+  }
+  .instance-cell-changed {
+    background: #fff3cd !important;
+    border-left: 3px solid #ffc107;
+  }
+  .instance-pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1rem;
+    font-size: 0.875rem;
+  }
+
+  .label-item {
+    padding: 0.5rem;
+    margin-bottom: 0.25rem;
+    cursor: pointer;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    user-select: none; /* Prevent text selection during multi-select */
+    outline: none; /* Remove default focus outline, we'll use custom styling */
+  }
+  .label-item:hover {
+    background: #f3f3f3;
+  }
+  .label-item.active {
+    background: #e3f2fd;
+    border-color: #2196f3;
+  }
+  .label-item.selected {
+    background: #fff3cd;
+    border-color: #ffc107;
+  }
+  .label-item.selected.active {
+    background: #ffe69c;
+    border-color: #ff9800;
+  }
+  .label-item.focused {
+    box-shadow: 0 0 0 2px #2196f3;
+  }
+
+  /* Source badges */
+  .label-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.25rem;
+  }
+
+  .source-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .source-badge.plugin {
+    background: #e3f2fd;
+    color: #1976d2;
+    cursor: pointer;
+  }
+
+  .source-badge.plugin:hover {
+    background: #bbdefb;
+  }
+
+  .source-badge.manual {
+    background: #f5f5f5;
+    color: #616161;
+  }
+
+  .source-badge.system {
+    background: #e8f5e9;
+    color: #388e3c;
+  }
+
+  .source-badge.unknown {
+    background: #fff3e0;
+    color: #f57c00;
+  }
+
+  .source-badge.neo4j {
+    background: #e1f5fe;
+    color: #0277bd;
+    border: 1px solid #b3e5fc;
+  }
+
+  .property-row, .relationship-row {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+    align-items: center;
+  }
+  .property-row input, .relationship-row input, .relationship-row select {
+    flex: 1;
+  }
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+  }
+  .empty-state {
+    text-align: center;
+    color: #999;
+    padding: 2rem;
+  }
+  /* Source label links in incoming relationships */
+  .source-label-link:hover {
+    text-decoration: underline !important;
+    cursor: pointer;
+  }
+  /* Custom Modal */
+  .custom-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1000;
+  }
+  .custom-modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+  }
+  .custom-modal-content {
+    position: relative;
+    background: white;
+    max-width: 700px;
+    margin: 50px auto;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    z-index: 1001;
+  }
+  .custom-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #eee;
+  }
+  .custom-modal-header h5 {
+    margin: 0;
+    font-size: 1.1rem;
+  }
+  .custom-modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    line-height: 1;
+    color: #666;
+  }
+  .custom-modal-close:hover {
+    color: #000;
+  }
+  .custom-modal-body {
+    padding: 1.5rem;
+  }
+  .custom-modal-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #eee;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+
+  /* Chat Intelligence Section */
+  .prop-usage-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+  }
+  .prop-name {
+    min-width: 120px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .prop-bar-container {
+    flex: 1;
+    height: 18px;
+    background: #e0e0e0;
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+  }
+  .prop-bar {
+    height: 100%;
+    background: #4a90e2;
+    transition: width 0.3s ease;
+  }
+  .prop-count {
+    min-width: 40px;
+    text-align: right;
+    color: #666;
+    font-size: 0.8rem;
+  }
+  .intelligence-tag {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    background: #e3f2fd;
+    color: #1976d2;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    margin-right: 0.3rem;
+    margin-bottom: 0.3rem;
+  }
+  .embedding-badge {
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-weight: 500;
+  }
+  .embedding-badge.embedded {
+    background: #e8f5e9;
+    color: #2e7d32;
+  }
+  .embedding-badge.pending {
+    background: #fff3e0;
+    color: #ef6c00;
+  }
+  .embedding-badge.none {
+    background: #f5f5f5;
+    color: #757575;
+  }
+
+  /* Chat Intelligence Editable Components */
+  .intel-unsaved-warning {
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.85rem;
+  }
+  .intel-warning-text {
+    flex: 1;
+    color: #856404;
+    font-weight: 500;
+  }
+  .btn-intel-save-warn,
+  .btn-intel-discard-warn {
+    padding: 0.25rem 0.6rem;
+    font-size: 0.78rem;
+    border-radius: 3px;
+    border: none;
+    cursor: pointer;
+  }
+  .btn-intel-save-warn {
+    background: #28a745;
+    color: white;
+  }
+  .btn-intel-save-warn:hover {
+    background: #218838;
+  }
+  .btn-intel-discard-warn {
+    background: #6c757d;
+    color: white;
+  }
+  .btn-intel-discard-warn:hover {
+    background: #5a6268;
+  }
+
+  .intel-description-input {
+    width: 100%;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 0.4rem 0.5rem;
+    font-size: 0.85rem;
+    resize: vertical;
+    min-height: 2.5rem;
+    font-family: inherit;
+    color: #2d3748;
+    background: #fff;
+    transition: border-color 0.15s;
+  }
+  .intel-description-input:focus {
+    outline: none;
+    border-color: #4a90e2;
+    box-shadow: 0 0 0 2px rgba(74,144,226,0.15);
+  }
+  .intel-hint {
+    font-size: 0.75rem;
+    color: #a0aec0;
+    margin-top: 0.25rem;
+    display: none;
+  }
+  .intel-description-input:focus ~ .intel-hint {
+    display: block;
+  }
+
+  .tag-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    min-height: 1.5rem;
+  }
+  .tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.15rem 0.5rem;
+    background: #edf2ff;
+    color: #3b5bdb;
+    border-radius: 999px;
+    font-size: 0.78rem;
+  }
+  .tag-chip.never {
+    background: #fff5f5;
+    color: #c53030;
+  }
+  .tag-chip-remove {
+    cursor: pointer;
+    opacity: 0.6;
+    font-size: 0.9rem;
+    background: none;
+    border: none;
+    padding: 0;
+    color: inherit;
+    line-height: 1;
+  }
+  .tag-chip-remove:hover {
+    opacity: 1;
+  }
+  .tag-add-container {
+    position: relative;
+  }
+  .tag-add-btn {
+    padding: 0.15rem 0.5rem;
+    font-size: 0.78rem;
+    border: 1px dashed #cbd5e0;
+    border-radius: 999px;
+    background: none;
+    cursor: pointer;
+    color: #718096;
+  }
+  .tag-add-btn:hover {
+    border-color: #4a90e2;
+    color: #4a90e2;
+  }
+
+  .property-dropdown {
+    position: absolute;
+    z-index: 100;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    min-width: 180px;
+    max-height: 200px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+  }
+  .prop-filter-input {
+    padding: 0.4rem 0.5rem;
+    border: none;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 0.82rem;
+    outline: none;
+  }
+  .prop-dropdown-list {
+    list-style: none;
+    margin: 0;
+    padding: 0.25rem 0;
+    overflow-y: auto;
+  }
+  .prop-dropdown-list li {
+    padding: 0.3rem 0.75rem;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+  .prop-dropdown-list li:hover {
+    background: #edf2ff;
+  }
+  .prop-dropdown-list li.disabled {
+    color: #cbd5e0;
+    cursor: default;
+  }
+  .prop-dropdown-list li.disabled:hover {
+    background: none;
+  }
+
+  .intel-mode-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .intel-mode-select {
+    padding: 0.25rem 0.5rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    background: white;
+    cursor: pointer;
+  }
+  .intel-mode-n-wrapper {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.85rem;
+    color: #4a5568;
+  }
+  .intel-n-input {
+    width: 3.5rem;
+    padding: 0.25rem 0.4rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    text-align: center;
+  }
+  .intel-exclude-warning {
+    font-size: 0.78rem;
+    color: #c53030;
+    margin-top: 0.25rem;
+    display: none;
+  }
+
+  .intel-save-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #e2e8f0;
+    animation: slideIn 0.15s ease;
+  }
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .intel-save-hint {
+    font-size: 0.78rem;
+    color: #718096;
+    flex: 1;
+  }
+  .btn-intel-save {
+    padding: 0.3rem 0.75rem;
+    font-size: 0.82rem;
+    background: #4a90e2;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .btn-intel-save:hover {
+    background: #3a7bd5;
+  }
+  .btn-intel-save:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .btn-intel-discard {
+    padding: 0.3rem 0.75rem;
+    font-size: 0.82rem;
+    background: none;
+    color: #718096;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .btn-intel-discard:hover {
+    border-color: #cbd5e0;
+    color: #4a5568;
+  }
+
+  .intel-save-toast {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    padding: 0.5rem 1rem;
+    background: #2d3748;
+    color: white;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    animation: toastIn 0.2s ease;
+    z-index: 1000;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+  .intel-save-toast.error {
+    background: #c53030;
+  }
+  @keyframes toastIn {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+</style>
+
+<h1>Labels</h1>
+<p class="small">Define and manage graph schema labels with properties and relationships.</p>
+
+<div class="labels-container">
+  <!-- Left Panel: Label List -->
+  <div class="labels-list" id="labels-list">
+    <button class="collapse-btn collapse-btn-left" id="collapse-left-btn" title="Collapse panel">◀</button>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+      <h3 class="small" style="margin: 0;">Labels</h3>
+    </div>
+    <div style="display: flex; gap: 0.25rem; margin-bottom: 0.5rem; flex-wrap: wrap;">
+      <div style="position: relative; flex: 1; min-width: fit-content;">
+        <button id="btn-pull-all-neo4j" class="btn btn-sm btn-outline-info" data-testid="pull-all-neo4j-btn" title="Pull all labels from all configured Neo4j connections" style="width: 100%; font-size: 0.75rem; padding-right: 1.5rem;">Pull All</button>
+        <button id="btn-pull-dropdown-toggle" class="btn btn-sm btn-outline-info" title="Choose connection to pull from" style="position: absolute; right: 0; top: 0; height: 100%; padding: 0 0.3rem; border-left: 1px solid rgba(0,0,0,0.1); border-top-left-radius: 0; border-bottom-left-radius: 0;">▼</button>
+        <div id="pull-dropdown-menu" style="display: none; position: absolute; top: 100%; left: 0; min-width: 200px; background: white; border: 1px solid #dee2e6; border-radius: 0.25rem; margin-top: 2px; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.15);"></div>
+      </div>
+      <button id="btn-import-arrows" class="btn btn-sm btn-outline-info" data-testid="import-arrows-btn" style="flex: 1; font-size: 0.75rem; white-space: nowrap;">Import</button>
+      <button id="btn-export-arrows" class="btn btn-sm btn-outline-info" data-testid="export-arrows-btn" style="flex: 1; font-size: 0.75rem; white-space: nowrap;">Export</button>
+    </div>
+    <button id="btn-export-schema-layer" class="btn btn-sm btn-outline-secondary" data-testid="export-schema-layer-btn" style="width: 100%; font-size: 0.75rem; margin-bottom: 0.5rem;" title="Export schema intelligence layer">↓ Export Schema Layer</button>
+    <button id="btn-new-label" class="btn btn-sm" data-testid="new-label-btn" style="width: 100%; font-weight: bold; background: #e0e0e0; color: #555; border: 1px solid #ccc; margin-bottom: 0.5rem;">+ Label</button>
+    <!-- Batch action buttons (shown when multiple labels selected) -->
+    <div id="batch-actions" style="display: none; margin-bottom: 0.5rem; padding: 0.5rem; background: #f0f8ff; border-radius: 4px; border: 1px solid #b3d9ff;">
+      <div class="small" style="margin-bottom: 0.25rem;"><strong id="selection-count">0</strong> selected</div>
+      <div style="display: flex; gap: 0.25rem; flex-wrap: wrap;">
+        <button id="btn-batch-pull" class="btn btn-sm btn-outline-primary" style="flex: 1; font-size: 0.75rem;">Batch Pull</button>
+        <button id="btn-batch-delete" class="btn btn-sm btn-outline-danger" style="flex: 1; font-size: 0.75rem;">Batch Delete</button>
+        <button id="btn-clear-selection" class="btn btn-sm btn-outline-secondary" style="flex: 1; font-size: 0.75rem;">Clear</button>
+      </div>
+    </div>
+    <div id="label-list" data-testid="label-list">
+      <div class="empty-state small">No labels defined</div>
+    </div>
+  </div>
+
+  <!-- Resizer (Left to Center) -->
+  <div class="resizer" id="resizer-left"></div>
+
+  <!-- Center Panel: Label Editor -->
+  <div class="labels-editor" id="label-editor" style="display: none;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <h3 id="editor-title" style="margin: 0;">New Label</h3>
+      <div class="editor-mode-toggle">
+        <button id="btn-toggle-mode" class="btn btn-sm btn-outline-primary" data-testid="toggle-edit-mode" style="display: none;">Edit</button>
+        <button id="btn-cancel-edit" class="btn btn-sm btn-outline-secondary" data-testid="cancel-edit" style="display: none;">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Read-only view -->
+    <div id="readonly-view" style="display: none;">
+      <div style="margin-bottom: 1rem;">
+        <label class="form-label small">Name</label>
+        <div id="readonly-name" style="padding: 0.5rem; background: #f5f5f5; border-radius: 4px; font-weight: bold;"></div>
+      </div>
+
+      <div class="section-header">
+        <h4 class="small" style="margin: 0;">Properties</h4>
+      </div>
+      <div id="readonly-properties-container">
+        <div class="empty-state small">No properties defined</div>
+      </div>
+
+      <div class="section-header">
+        <h4 class="small" style="margin: 0;">Outgoing Relationships</h4>
+      </div>
+      <div id="readonly-relationships-container">
+        <div class="empty-state small">No relationships defined</div>
+      </div>
+
+      <div class="section-header" style="margin-top: 1.5rem;">
+        <h4 class="small" style="margin: 0;">Incoming Relationships</h4>
+      </div>
+      <div id="readonly-incoming-relationships-container">
+        <div class="empty-state small">No incoming relationships</div>
+      </div>
+
+      <!-- Chat Intelligence Section -->
+      <div class="section-header" style="margin-top: 1.5rem;">
+        <h4 class="small" style="margin: 0;">Chat Intelligence</h4>
+      </div>
+      <div id="intelligence-section" class="chat-intelligence-section" style="padding: 0.75rem; background: #f9f9f9; border-radius: 4px; margin-bottom: 1rem;">
+        <!-- Unsaved changes warning banner -->
+        <div id="intel-unsaved-warning" class="intel-unsaved-warning" style="display: none;">
+          <span class="intel-warning-text">You have unsaved changes.</span>
+          <button class="btn-intel-save-warn" onclick="saveIntelligenceProfile()">Save now</button>
+          <button class="btn-intel-discard-warn" onclick="discardAndSwitch()">Discard and switch</button>
+        </div>
+
+        <!-- Description -->
+        <div class="intel-row" style="margin-bottom: 0.75rem;">
+          <label class="small intel-label" style="font-weight: 600; display: block; margin-bottom: 0.25rem;">Description</label>
+          <div class="intel-value">
+            <textarea id="intelligence-description-input" class="intel-description-input"
+                      rows="2"
+                      placeholder="Describe this node type for the AI..."
+                      oninput="markIntelligenceDirty()"></textarea>
+            <div class="intel-hint">
+              Used in chat context and embedding. Editing will trigger re-embedding.
+            </div>
+          </div>
+        </div>
+
+        <!-- Context Mode -->
+        <div class="intel-row" style="margin-bottom: 0.75rem;">
+          <label class="small intel-label" style="font-weight: 600; display: block; margin-bottom: 0.25rem;">Chat Context Mode</label>
+          <div class="intel-value intel-mode-row">
+            <select id="intelligence-mode-select" class="intel-mode-select" onchange="handleModeChange()">
+              <option value="top_n">Top N by usage</option>
+              <option value="all">All properties</option>
+              <option value="exclude">Exclude from chat</option>
+            </select>
+            <span id="intelligence-mode-n-wrapper" class="intel-mode-n-wrapper" style="display: none;">
+              Top
+              <input type="number" id="intelligence-n-input" class="intel-n-input"
+                     value="5" min="1" max="20"
+                     oninput="markIntelligenceDirty()" />
+              properties
+            </span>
+          </div>
+          <div id="intel-exclude-warning" class="intel-exclude-warning" style="display: none;">
+            ⚠ This label will not appear in chat context
+          </div>
+        </div>
+
+        <!-- Always Include -->
+        <div class="intel-row" style="margin-bottom: 0.75rem;">
+          <label class="small intel-label" style="font-weight: 600; display: block; margin-bottom: 0.25rem;">Always Include Properties</label>
+          <div class="intel-value">
+            <div class="tag-input-wrapper" data-field="always_include">
+              <div id="always-include-chips" class="tag-chips"></div>
+              <div class="tag-add-container">
+                <button class="tag-add-btn" onclick="openPropertyDropdown('always_include', event)">+ add</button>
+                <div id="property-dropdown-always" class="property-dropdown" style="display:none">
+                  <input type="text" placeholder="Filter properties..."
+                         class="prop-filter-input"
+                         oninput="filterPropertyDropdown('always_include')" />
+                  <ul id="prop-list-always" class="prop-dropdown-list"></ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Never Include -->
+        <div class="intel-row" style="margin-bottom: 0.75rem;">
+          <label class="small intel-label" style="font-weight: 600; display: block; margin-bottom: 0.25rem;">Never Include Properties</label>
+          <div class="intel-value">
+            <div class="tag-input-wrapper" data-field="never_include">
+              <div id="never-include-chips" class="tag-chips"></div>
+              <div class="tag-add-container">
+                <button class="tag-add-btn" onclick="openPropertyDropdown('never_include', event)">+ add</button>
+                <div id="property-dropdown-never" class="property-dropdown" style="display:none">
+                  <input type="text" placeholder="Filter properties..."
+                         class="prop-filter-input"
+                         oninput="filterPropertyDropdown('never_include')" />
+                  <ul id="prop-list-never" class="prop-dropdown-list"></ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Property Usage -->
+        <div style="margin-bottom: 0.5rem;">
+          <label class="small" style="font-weight: 600; display: block; margin-bottom: 0.25rem;">Property Usage (Last 30 Days)</label>
+        </div>
+        <div id="intelligence-property-usage"></div>
+
+        <!-- Embedding Status -->
+        <div style="margin-top: 0.5rem;">
+          <span id="intelligence-embedding-status" class="badge-type" style="font-size: 0.7rem;"></span>
+        </div>
+
+        <!-- Save/Discard Bar -->
+        <div id="intel-save-bar" class="intel-save-bar" style="display:none">
+          <span id="intel-save-hint" class="intel-save-hint"></span>
+          <button class="btn-intel-save" onclick="saveIntelligenceProfile()">Save Changes</button>
+          <button class="btn-intel-discard" onclick="discardIntelligenceChanges()">Discard</button>
+        </div>
+      </div>
+
+      <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <button id="btn-delete-readonly" class="btn btn-sm btn-outline-danger" data-testid="delete-label-readonly-btn">Delete</button>
+        <button id="btn-pull-neo4j-readonly" class="btn btn-sm btn-outline-secondary" data-testid="pull-neo4j-readonly-btn">Pull from Neo4j</button>
+      </div>
+    </div>
+
+    <!-- Edit view -->
+    <div id="edit-view" style="display: none;">
+      <div style="margin-bottom: 1rem;">
+        <label class="form-label small" for="label-name">Name</label>
+        <input id="label-name" type="text" class="form-control form-control-sm" placeholder="e.g., Project" data-testid="label-name" />
+        <div id="name-error" class="small" style="color: #b00020; display: none;"></div>
+      </div>
+
+      <div class="section-header">
+        <h4 class="small" style="margin: 0;">Properties</h4>
+        <button id="btn-add-property" class="btn btn-sm btn-outline-primary" data-testid="add-property-btn">Add Property</button>
+      </div>
+      <div id="properties-container" data-testid="properties-container">
+        <div class="empty-state small">No properties defined</div>
+      </div>
+
+      <div class="section-header">
+        <h4 class="small" style="margin: 0;">Outgoing Relationships</h4>
+        <button id="btn-add-relationship" class="btn btn-sm btn-outline-primary" data-testid="add-relationship-btn">Add Relationship</button>
+      </div>
+      <div id="relationships-container" data-testid="relationships-container">
+        <div class="empty-state small">No relationships defined</div>
+      </div>
+
+      <div class="section-header" style="margin-top: 1.5rem;">
+        <h4 class="small" style="margin: 0;">Incoming Relationships</h4>
+      </div>
+      <div id="incoming-relationships-container" data-testid="incoming-relationships-container">
+        <div class="empty-state small">No incoming relationships</div>
+      </div>
+      <button id="btn-add-incoming-relationship" class="btn btn-sm btn-outline-primary" data-testid="add-incoming-relationship-btn" style="margin-top: 0.5rem;">Add Incoming Relationship</button>
+
+      <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <button id="btn-save" class="btn btn-sm btn-success" data-testid="save-label-btn">Save</button>
+        <button id="btn-delete" class="btn btn-sm btn-outline-danger" data-testid="delete-label-btn" style="display: none;">Delete</button>
+        <button id="btn-pull-neo4j" class="btn btn-sm btn-outline-secondary" data-testid="pull-neo4j-btn" style="display: none;">Pull</button>
+      </div>
+    </div>
+
+    <!-- Instance Browser Section -->
+    <div class="instance-browser" id="instance-browser" style="display: none;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <div style="display: flex; align-items: center; gap: 1rem;">
+          <h4 class="small" style="margin: 0;">Instances</h4>
+          <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85em; cursor: pointer; user-select: none;">
+            <input type="checkbox" id="toggle-with-relationships" style="cursor: pointer;">
+            <span>Show relationships</span>
+          </label>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+          <button id="btn-pull-instances" class="btn btn-sm btn-outline-primary" data-testid="pull-instances-btn">Pull from Neo4j</button>
+          <button id="btn-transfer-to-primary" class="btn btn-sm btn-warning" data-testid="transfer-to-primary-btn" style="display: none;" title="Transfer instances from source to primary database">Transfer to Primary</button>
+          <button id="btn-push-instances" class="btn btn-sm btn-success" data-testid="push-instances-btn" style="display: none;">Push Changes</button>
+          <button id="btn-download-csv" class="btn btn-sm btn-outline-secondary" data-testid="download-csv-btn" style="display: none;">Download CSV</button>
+          <button id="btn-upload-csv" class="btn btn-sm btn-outline-secondary" data-testid="upload-csv-btn">Upload CSV</button>
+          {# Add to collection · Ask about this — the shared selection bar (selection_actions.js) mounts here. #}
+          <span id="entities-selection-actions" data-testid="entities-selection-actions"></span>
+          <button id="btn-refresh-instances" class="btn btn-sm btn-outline-secondary" data-testid="refresh-instances-btn">Refresh</button>
+        </div>
+      </div>
+
+      <input type="file" id="csv-file-input" accept=".csv" style="display:none;" />
+
+      <div id="instance-table-container">
+        <div class="empty-state small">Click "Pull from Neo4j" to load instances</div>
+      </div>
+
+      <div class="instance-pagination" id="instance-pagination" style="display: none;">
+        <div class="small" id="instance-page-info">Page 1 of 1 (0 instances)</div>
+        <div style="display: flex; gap: 0.5rem;">
+          <button id="btn-instance-prev" class="btn btn-sm btn-outline-secondary" disabled>Previous</button>
+          <button id="btn-instance-next" class="btn btn-sm btn-outline-secondary" disabled>Next</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Resizer (Center to Right) -->
+  <div class="resizer" id="resizer-right"></div>
+
+  <!-- Right Panel: Statistics -->
+  <div class="labels-statistics" id="labels-statistics" style="display: none;">
+    <button class="collapse-btn collapse-btn-right" id="collapse-right-btn" title="Collapse panel">▶</button>
+    <h3 class="small">Statistics</h3>
+
+    <div id="statistics-content">
+      <div class="empty-state small">Select a label to view statistics</div>
+    </div>
+  </div>
+</div>
+
+<!-- Import Modal -->
+<div id="import-arrows-modal" class="custom-modal" style="display: none;">
+  <div class="custom-modal-overlay"></div>
+  <div class="custom-modal-content">
+    <div class="custom-modal-header">
+      <h5>Import Schema</h5>
+      <button type="button" class="custom-modal-close" onclick="closeImportModal()">&times;</button>
+    </div>
+    <div class="custom-modal-body">
+      <!-- Import Type Selection -->
+      <div style="margin-bottom: 1rem; padding: 0.75rem; background: #f9f9f9; border-radius: 4px;">
+        <div style="margin-bottom: 0.5rem;"><strong class="small">Import Type:</strong></div>
+        <div style="display: flex; gap: 1rem;">
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.25rem;">
+            <input type="radio" name="import-type" value="arrows" checked data-testid="import-type-arrows">
+            <span class="small">Arrows.app JSON</span>
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.25rem;">
+            <input type="radio" name="import-type" value="eda" data-testid="import-type-eda">
+            <span class="small">NC3Rs EDA File</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Arrows Import Section -->
+      <div id="arrows-import-section">
+        <p class="small">Paste JSON exported from <a href="https://arrows.app" target="_blank" rel="noopener">arrows.app</a></p>
+        <textarea id="arrows-json-input" class="form-control font-monospace" rows="12" placeholder='{"nodes": [...], "relationships": [...]}'></textarea>
+        <div style="margin-top: 0.5rem;">
+          <label for="arrows-file-input" class="btn btn-sm btn-outline-secondary">
+            Or choose JSON file...
+          </label>
+          <input type="file" id="arrows-file-input" accept=".json" style="display:none">
+          <span id="arrows-file-name" class="small" style="margin-left: 0.5rem;"></span>
+        </div>
+        <div id="import-preview" style="display:none; margin-top: 1rem; padding: 0.75rem; background: #f9f9f9; border-radius: 4px;">
+          <div class="small"><strong>Preview:</strong> <span id="preview-label-count">0</span> labels, <span id="preview-rel-count">0</span> relationships</div>
+        </div>
+      </div>
+
+      <!-- EDA Import Section -->
+      <div id="eda-import-section" style="display: none;">
+        <p class="small">Import experimental design from <a href="https://nc3rs.org.uk/eda" target="_blank" rel="noopener">NC3Rs EDA</a> (.eda file)</p>
+        <div style="margin-top: 0.5rem;">
+          <label for="eda-file-input" class="btn btn-sm btn-outline-success">
+            Choose .eda file...
+          </label>
+          <input type="file" id="eda-file-input" accept=".eda" style="display:none" data-testid="eda-file-input">
+          <span id="eda-file-name" class="small" style="margin-left: 0.5rem;"></span>
+        </div>
+        <div class="small" style="margin-top: 1rem; padding: 0.75rem; background: #f0f8ff; border-radius: 4px; border-left: 3px solid #2196f3;">
+          <strong>EDA Files:</strong> ZIP archives containing experimental designs with node types like Treatment, Subject, Measurement, etc.
+        </div>
+      </div>
+    </div>
+    <div class="custom-modal-footer">
+      <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeImportModal()">Cancel</button>
+      <button type="button" id="import-confirm-btn" class="btn btn-sm btn-success" data-testid="import-confirm-btn">Import</button>
+    </div>
+  </div>
+</div>
+
+<!-- Push/Pull Confirmation Modal -->
+<div id="neo4j-confirm-modal" class="custom-modal" style="display: none;">
+  <div class="custom-modal-overlay"></div>
+  <div class="custom-modal-content">
+    <div class="custom-modal-header">
+      <h5 id="confirm-modal-title">Confirm Action</h5>
+      <button type="button" class="custom-modal-close" onclick="closeConfirmModal()">&times;</button>
+    </div>
+    <div class="custom-modal-body">
+      <p id="confirm-modal-message" class="small" style="margin-bottom: 1rem;">Are you sure?</p>
+
+      <div id="confirm-modal-details" style="background: #f9f9f9; border-radius: 4px; padding: 0.75rem; margin-bottom: 1rem;">
+        <div class="small">
+          <div style="margin-bottom: 0.5rem;"><strong>This will:</strong></div>
+          <ul style="margin: 0; padding-left: 1.5rem;" id="confirm-modal-actions">
+            <!-- Dynamically populated -->
+          </ul>
+        </div>
+        <div id="confirm-modal-count" class="small" style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #e0e0e0;">
+          <!-- Instance count displayed here -->
+        </div>
+      </div>
+
+      <div id="confirm-modal-loading" style="display: none; text-align: center; padding: 1rem;">
+        <div class="small" style="color: #666;">Loading instance count...</div>
+      </div>
+
+      <div id="confirm-modal-error" style="display: none; padding: 0.75rem; background: #fee; border: 1px solid #fcc; border-radius: 4px;">
+        <div class="small" style="color: #c00;">
+          <strong>⚠️ Warning:</strong> <span id="confirm-modal-error-text"></span>
+        </div>
+      </div>
+    </div>
+    <div class="custom-modal-footer">
+      <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeConfirmModal()">Cancel</button>
+      <button type="button" id="confirm-modal-action-btn" class="btn btn-sm btn-success">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Transfer to Primary Modal -->
+<div id="transfer-modal" class="custom-modal" style="display: none;">
+  <div class="custom-modal-overlay"></div>
+  <div class="custom-modal-content">
+    <div class="custom-modal-header">
+      <h5>Transfer to Primary Database</h5>
+      <button type="button" class="custom-modal-close" onclick="closeTransferModal()">&times;</button>
+    </div>
+    <div class="custom-modal-body">
+      <p class="small" style="margin-bottom: 1rem;">
+        This will transfer all instances of <strong id="transfer-label-name"></strong> from
+        <strong id="transfer-source-name"></strong> to the primary database.
+      </p>
+
+      <div style="background: #f0f8ff; border-radius: 4px; padding: 0.75rem; margin-bottom: 1rem; border-left: 3px solid #2196f3;">
+        <div class="small">
+          <strong>What will happen:</strong>
+          <ul style="margin: 0.5rem 0 0 1.5rem; padding: 0;">
+            <li>Nodes will be created/merged in the primary database</li>
+            <li>Relationships between nodes will be preserved</li>
+            <li>Processing happens in batches to avoid memory issues</li>
+            <li>Matching is done using the first required property (or 'id' field)</li>
+          </ul>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 1rem;">
+        <label class="small"><strong>Transfer Mode:</strong></label>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem;">
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
+            <input type="radio" name="transfer-mode" value="nodes_only" id="transfer-mode-nodes-only">
+            <div>
+              <strong class="small">⚡ Nodes Only</strong>
+              <div class="small text-muted">Transfer only nodes, skip relationships (fastest)</div>
+            </div>
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
+            <input type="radio" name="transfer-mode" value="nodes_and_outgoing" id="transfer-mode-nodes-rels" checked>
+            <div>
+              <strong class="small">🔗 Nodes + Relationships</strong>
+              <div class="small text-muted">Transfer nodes and outgoing relationships (recommended)</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 1rem;">
+        <label class="small" for="transfer-batch-size"><strong>Batch Size:</strong></label>
+        <input type="number" id="transfer-batch-size" class="form-control form-control-sm" value="100" min="10" max="1000" style="max-width: 150px;" />
+        <div class="small text-muted" style="margin-top: 0.25rem;">Number of instances to process per batch</div>
+      </div>
+
+      <div style="margin-bottom: 1rem;">
+        <label style="cursor: pointer; display: flex; align-items: start; gap: 0.5rem;">
+          <input type="checkbox" id="transfer-create-placeholders" style="margin-top: 0.25rem;">
+          <div>
+            <strong class="small">Create missing target nodes automatically</strong>
+            <div class="small text-muted">
+              If a relationship points to a node that hasn't been transferred yet, create it with available properties.
+              Tracks source provenance (<code>__source__</code>, <code>__created_at__</code>) for multi-source harmonization.
+              Later transfers will update these nodes with complete data.
+            </div>
+          </div>
+        </label>
+      </div>
+
+      <div id="transfer-progress" style="display: none; padding: 0.75rem; background: #f9f9f9; border-radius: 4px;">
+        <div class="small" style="margin-bottom: 0.75rem;"><strong>Transfer Progress:</strong></div>
+
+        <!-- Phase 1: Nodes -->
+        <div style="margin-bottom: 0.75rem;">
+          <div class="small" style="margin-bottom: 0.25rem; display: flex; justify-content: space-between;">
+            <strong>Phase 1: Nodes</strong>
+            <span id="phase1-status" class="text-muted">0/0</span>
+          </div>
+          <div class="progress" style="height: 20px;">
+            <div id="phase1-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%">0%</div>
+          </div>
+        </div>
+
+        <!-- Phase 2: Relationships -->
+        <div id="phase2-container" style="margin-bottom: 0.75rem;">
+          <div class="small" style="margin-bottom: 0.25rem; display: flex; justify-content: space-between;">
+            <strong>Phase 2: Relationships</strong>
+            <span id="phase2-status" class="text-muted">Waiting...</span>
+          </div>
+          <div class="progress" style="height: 20px;">
+            <div id="phase2-progress-bar" class="progress-bar" role="progressbar" style="width: 0%">0%</div>
+          </div>
+        </div>
+
+        <!-- Time & ETA Stats -->
+        <div class="small text-muted" id="transfer-time-stats">
+          Elapsed: <span id="elapsed-time">0s</span> |
+          ETA: <span id="eta-time">calculating...</span> |
+          Speed: <span id="transfer-speed">--</span>
+        </div>
+      </div>
+
+      <div id="transfer-result" style="display: none; padding: 0.75rem; border-radius: 4px; margin-top: 1rem;">
+        <div class="small">
+          <strong>Transfer Complete:</strong>
+          <ul style="margin: 0.5rem 0 0 1.5rem; padding: 0;">
+            <li><span id="nodes-transferred-count">0</span> nodes transferred</li>
+            <li><span id="rels-transferred-count">0</span> relationships transferred</li>
+            <li>Mode: <code id="transfer-mode-used">nodes_and_outgoing</code></li>
+            <li id="matching-keys-display">Matching keys: <code id="matching-keys-used">{}</code></li>
+          </ul>
+        </div>
+      </div>
+
+      <div id="transfer-error" style="display: none; padding: 0.75rem; background: #fee; border: 1px solid #fcc; border-radius: 4px; margin-top: 1rem;">
+        <div class="small" style="color: #c00;">
+          <strong>⚠️ Error:</strong> <span id="transfer-error-text"></span>
+        </div>
+      </div>
+    </div>
+    <div class="custom-modal-footer">
+      <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeTransferModal()" id="transfer-cancel-btn">Cancel</button>
+      <button type="button" id="transfer-confirm-btn" class="btn btn-sm btn-warning">Start Transfer</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentLabel = null;
+let labels = [];
+let selectedLabels = new Set(); // Track selected label names
+let lastClickedIndex = -1; // For shift+click range selection
+let selectionAnchor = -1; // Anchor point for shift+navigation selection
+
+// Toast function
+function showToast(message, type = 'info') {
+  if (typeof window.toast === 'function') {
+    window.toast(message, type, 3000);
+  } else {
+    console.log(`[${type}] ${message}`);
+  }
+}
+
+// Modal functions
+function openImportModal() {
+  document.getElementById('import-arrows-modal').style.display = 'block';
+  // Reset to Arrows import by default
+  document.querySelector('input[name="import-type"][value="arrows"]').checked = true;
+  switchImportType('arrows');
+}
+
+function closeImportModal() {
+  const modal = document.getElementById('import-arrows-modal');
+  modal.style.display = 'none';
+  // Clear all inputs
+  document.getElementById('arrows-json-input').value = '';
+  document.getElementById('arrows-file-name').textContent = '';
+  document.getElementById('eda-file-name').textContent = '';
+  document.getElementById('import-preview').style.display = 'none';
+  // Reset file inputs
+  document.getElementById('arrows-file-input').value = '';
+  document.getElementById('eda-file-input').value = '';
+}
+
+function switchImportType(type) {
+  const arrowsSection = document.getElementById('arrows-import-section');
+  const edaSection = document.getElementById('eda-import-section');
+
+  if (type === 'arrows') {
+    arrowsSection.style.display = 'block';
+    edaSection.style.display = 'none';
+  } else if (type === 'eda') {
+    arrowsSection.style.display = 'none';
+    edaSection.style.display = 'block';
+  }
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('DOMContentLoaded - initializing labels page');
+
+  try {
+    loadLabels();
+    console.log('loadLabels() called successfully');
+  } catch (e) {
+    console.error('Error calling loadLabels():', e);
+  }
+
+  try {
+    document.getElementById('btn-new-label').addEventListener('click', () => {
+      currentLabel = null;
+      showEditor();
+      clearEditor();
+      document.getElementById('editor-title').textContent = 'New Label';
+      document.getElementById('btn-delete').style.display = 'none';
+      document.getElementById('btn-pull-neo4j').style.display = 'none';
+      // For new labels, start in edit mode
+      isEditMode = true;
+      updateEditorView();
+    });
+    console.log('btn-new-label listener attached');
+  } catch (e) {
+    console.error('Error attaching btn-new-label listener:', e);
+  }
+
+  try {
+    document.getElementById('btn-save').addEventListener('click', saveLabel);
+    document.getElementById('btn-delete').addEventListener('click', deleteLabel);
+    document.getElementById('btn-pull-neo4j').addEventListener('click', pullFromNeo4j);
+    document.getElementById('btn-pull-all-neo4j').addEventListener('click', pullAllFromNeo4j);
+    document.getElementById('btn-add-property').addEventListener('click', addProperty);
+    document.getElementById('btn-add-relationship').addEventListener('click', addRelationship);
+    document.getElementById('btn-add-incoming-relationship').addEventListener('click', addIncomingRelationship);
+    console.log('Main editor button listeners attached');
+  } catch (e) {
+    console.error('Error attaching main editor listeners:', e);
+  }
+
+  // Pull dropdown toggle
+  try {
+    const dropdownToggle = document.getElementById('btn-pull-dropdown-toggle');
+    const dropdownMenu = document.getElementById('pull-dropdown-menu');
+    if (dropdownToggle && dropdownMenu) {
+      dropdownToggle.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (dropdownMenu.style.display === 'none') {
+          await loadPullDropdown();
+          dropdownMenu.style.display = 'block';
+        } else {
+          dropdownMenu.style.display = 'none';
+        }
+      });
+
+      // Close dropdown when clicking outside
+      document.addEventListener('click', (e) => {
+        if (!dropdownToggle.contains(e.target) && !dropdownMenu.contains(e.target)) {
+          dropdownMenu.style.display = 'none';
+        }
+      });
+    }
+  } catch (e) {
+    console.error('Error attaching pull dropdown listener:', e);
+  }
+
+  try {
+    // Mode toggle buttons
+    document.getElementById('btn-toggle-mode').addEventListener('click', toggleEditMode);
+    document.getElementById('btn-cancel-edit').addEventListener('click', cancelEdit);
+    document.getElementById('btn-delete-readonly').addEventListener('click', deleteLabel);
+    document.getElementById('btn-pull-neo4j-readonly').addEventListener('click', pullFromNeo4j);
+    console.log('Mode toggle listeners attached');
+  } catch (e) {
+    console.error('Error attaching mode toggle listeners:', e);
+  }
+
+  try {
+    // Instance browser buttons
+    document.getElementById('btn-pull-instances').addEventListener('click', pullInstances);
+    document.getElementById('btn-transfer-to-primary').addEventListener('click', openTransferModal);
+    document.getElementById('btn-push-instances').addEventListener('click', pushInstancesWithPreview);
+    document.getElementById('btn-download-csv').addEventListener('click', downloadInstancesCSV);
+    document.getElementById('btn-upload-csv').addEventListener('click', () => document.getElementById('csv-file-input').click());
+    document.getElementById('csv-file-input').addEventListener('change', handleCSVUpload);
+    document.getElementById('btn-refresh-instances').addEventListener('click', refreshInstances);
+    document.getElementById('btn-instance-prev').addEventListener('click', () => navigateInstances(-1));
+    document.getElementById('btn-instance-next').addEventListener('click', () => navigateInstances(1));
+
+    // With relationships toggle
+    const toggleWithRelationships = document.getElementById('toggle-with-relationships');
+    // Load saved state from localStorage
+    const savedState = localStorage.getItem('labels_show_relationships') === 'true';
+    toggleWithRelationships.checked = savedState;
+
+    toggleWithRelationships.addEventListener('change', (e) => {
+      // Save to localStorage
+      localStorage.setItem('labels_show_relationships', e.target.checked);
+      // Re-fetch instances with new setting
+      if (currentLabel && instanceData.length > 0) {
+        pullInstances();
+      }
+    });
+
+    console.log('Instance browser listeners attached');
+  } catch (e) {
+    console.error('Error attaching instance browser listeners:', e);
+  }
+
+  // Batch action buttons
+  document.getElementById('btn-batch-pull').addEventListener('click', batchPull);
+  document.getElementById('btn-batch-delete').addEventListener('click', batchDelete);
+  document.getElementById('btn-clear-selection').addEventListener('click', clearSelection);
+
+  // Arrows.app Import/Export
+  document.getElementById('btn-import-arrows')?.addEventListener('click', openImportModal);
+  document.getElementById('btn-export-arrows')?.addEventListener('click', exportToArrows);
+  document.getElementById('btn-export-schema-layer')?.addEventListener('click', exportSchemaLayer);
+
+  // Import type radio button handling
+  document.querySelectorAll('input[name="import-type"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      switchImportType(e.target.value);
+    });
+  });
+
+  // Arrows file input
+  document.getElementById('arrows-file-input')?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        document.getElementById('arrows-json-input').value = ev.target.result;
+        document.getElementById('arrows-file-name').textContent = file.name;
+        previewArrowsImport();
+      };
+      reader.readAsText(file);
+    }
+  });
+
+  document.getElementById('arrows-json-input')?.addEventListener('input', previewArrowsImport);
+
+  // EDA file input
+  document.getElementById('eda-file-input')?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      document.getElementById('eda-file-name').textContent = file.name;
+    } else {
+      document.getElementById('eda-file-name').textContent = '';
+    }
+  });
+
+  // Unified import confirm button
+  document.getElementById('import-confirm-btn')?.addEventListener('click', async () => {
+    const selectedType = document.querySelector('input[name="import-type"]:checked').value;
+
+    if (selectedType === 'arrows') {
+      importFromArrows();
+    } else if (selectedType === 'eda') {
+      const fileInput = document.getElementById('eda-file-input');
+      const file = fileInput.files[0];
+
+      if (!file) {
+        alert('Please select an .eda file');
+        return;
+      }
+
+      if (!file.name.endsWith('.eda')) {
+        alert('File must be .eda format');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const resp = await fetch(window.SCIDK_BASE + '/api/labels/import/eda', {
+          method: 'POST',
+          body: formData
+        });
+
+        const result = await resp.json();
+        if (result.status === 'success') {
+          const msg = `Successfully imported ${result.imported.labels} labels and ${result.imported.relationships} relationships from ${file.name}`;
+          if (result.skipped && result.skipped.length > 0) {
+            alert(msg + `\n\nSkipped ${result.skipped.length} existing labels: ${result.skipped.join(', ')}`);
+          } else {
+            alert(msg);
+          }
+          loadLabels();  // Refresh label list
+          closeImportModal();
+        } else {
+          alert('Import failed: ' + result.error);
+        }
+      } catch (err) {
+        alert('Import error: ' + err.message);
+      }
+    }
+  });
+
+  // Keyboard navigation
+  document.addEventListener('keydown', handleGlobalKeydown);
+
+  // Collapse/Expand functionality
+  const collapseLeftBtn = document.getElementById('collapse-left-btn');
+  const collapseRightBtn = document.getElementById('collapse-right-btn');
+  const leftPanel = document.getElementById('labels-list');
+  const rightPanel = document.getElementById('labels-statistics');
+
+  collapseLeftBtn.addEventListener('click', () => {
+    leftPanel.classList.toggle('collapsed');
+    collapseLeftBtn.textContent = leftPanel.classList.contains('collapsed') ? '▶' : '◀';
+    collapseLeftBtn.title = leftPanel.classList.contains('collapsed') ? 'Expand panel' : 'Collapse panel';
+  });
+
+  collapseRightBtn.addEventListener('click', () => {
+    rightPanel.classList.toggle('collapsed');
+    collapseRightBtn.textContent = rightPanel.classList.contains('collapsed') ? '◀' : '▶';
+    collapseRightBtn.title = rightPanel.classList.contains('collapsed') ? 'Expand panel' : 'Collapse panel';
+  });
+
+  // Resizer functionality for both dividers
+  const resizerLeft = document.getElementById('resizer-left');
+  const resizerRight = document.getElementById('resizer-right');
+  const container = document.querySelector('.labels-container');
+
+  let activeResizer = null;
+
+  function startResize(resizer) {
+    activeResizer = resizer;
+    resizer.classList.add('resizing');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }
+
+  resizerLeft.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    startResize(resizerLeft);
+  });
+
+  resizerRight.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    startResize(resizerRight);
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!activeResizer) return;
+
+    const containerRect = container.getBoundingClientRect();
+
+    if (activeResizer === resizerLeft) {
+      // Resize left panel
+      const newWidth = e.clientX - containerRect.left;
+      const minWidth = leftPanel.classList.contains('collapsed') ? 40 : 200;
+      const maxWidth = containerRect.width * 0.5;
+
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        leftPanel.style.width = `${newWidth}px`;
+      }
+    } else if (activeResizer === resizerRight) {
+      // Resize right panel
+      const newWidth = containerRect.right - e.clientX;
+      const minWidth = rightPanel.classList.contains('collapsed') ? 40 : 200;
+      const maxWidth = containerRect.width * 0.4;
+
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        rightPanel.style.width = `${newWidth}px`;
+      }
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (activeResizer) {
+      activeResizer.classList.remove('resizing');
+      activeResizer = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+  });
+});
+
+// Global keyboard navigation handler
+function handleGlobalKeydown(e) {
+  // Don't intercept if user is typing in an input/textarea/select
+  const activeElement = document.activeElement;
+  const isTyping = activeElement && (
+    activeElement.tagName === 'INPUT' ||
+    activeElement.tagName === 'TEXTAREA' ||
+    activeElement.tagName === 'SELECT'
+  );
+
+  // Let buttons and links handle Enter/Space themselves, UNLESS we're actively navigating labels
+  if (activeElement && (activeElement.tagName === 'BUTTON' || activeElement.tagName === 'A') && (e.key === 'Enter' || e.key === ' ')) {
+    // If we're navigating in the label list (lastClickedIndex is set), prioritize that
+    if (e.key === 'Enter' && lastClickedIndex >= 0 && lastClickedIndex < labels.length) {
+      // Check if we're still in the label navigation context (not tabbed away)
+      const focusIsInSidePanel = activeElement.closest('#labels-list');
+      if (focusIsInSidePanel) {
+        e.preventDefault();
+        loadLabel(labels[lastClickedIndex].name);
+        return;
+      }
+    }
+    // Button/link is focused and we're not in side panel navigation - let it work normally
+    return;
+  }
+
+  // Handle up/down navigation within editor fields (properties and relationships)
+  if (isTyping && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    const isInEditor = activeElement.closest('#label-editor');
+    if (isInEditor) {
+      // For SELECT elements, only allow up/down if dropdown is already open
+      if (activeElement.tagName === 'SELECT') {
+        // Check if select is expanded (we'll prevent default unless Enter was pressed)
+        if (!activeElement.dataset.dropdownOpen) {
+          e.preventDefault();
+          navigateEditorFields(e.key === 'ArrowUp' ? -1 : 1);
+          return;
+        }
+        // If dropdown is open, allow normal behavior
+        return;
+      }
+
+      // For INPUT fields, allow up/down to navigate between rows
+      if (activeElement.tagName === 'INPUT') {
+        e.preventDefault();
+        navigateEditorFields(e.key === 'ArrowUp' ? -1 : 1);
+        return;
+      }
+    }
+  }
+
+  // Handle up/down navigation for buttons within editor rows (delete, nav buttons)
+  if (!isTyping && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    const isInEditorRow = activeElement && activeElement.closest('.property-row, .relationship-row');
+    if (isInEditorRow && activeElement.tagName === 'BUTTON') {
+      e.preventDefault();
+      navigateEditorFields(e.key === 'ArrowUp' ? -1 : 1);
+      return;
+    }
+  }
+
+  // For SELECT elements in editor: Enter/Space opens dropdown, letter keys search, Escape closes it
+  if (activeElement && activeElement.tagName === 'SELECT' && activeElement.closest('#label-editor')) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      activeElement.dataset.dropdownOpen = 'true';
+      return; // Allow default behavior
+    } else if (e.key === 'Escape') {
+      // If dropdown is open, close it; otherwise return focus to side panel
+      if (activeElement.dataset.dropdownOpen) {
+        activeElement.dataset.dropdownOpen = '';
+        activeElement.blur();
+        return;
+      }
+      // If dropdown not open, fall through to general Escape handling
+    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      // Letter/number key: open dropdown and allow search
+      activeElement.dataset.dropdownOpen = 'true';
+      return; // Allow default behavior for letter search
+    }
+  }
+
+  // Escape key in editor: return focus to side panel
+  if (e.key === 'Escape' && !isTyping) {
+    const isInEditor = activeElement && activeElement.closest('#label-editor');
+    if (isInEditor && lastClickedIndex >= 0 && lastClickedIndex < labels.length) {
+      e.preventDefault();
+      returnFocusToSidePanel();
+      return;
+    }
+  }
+
+  // Escape key while typing in editor: return focus to side panel
+  if (e.key === 'Escape' && isTyping) {
+    const isInEditor = activeElement && activeElement.closest('#label-editor');
+    if (isInEditor) {
+      e.preventDefault();
+      returnFocusToSidePanel();
+      return;
+    }
+  }
+
+  // Handle Ctrl+A (select all labels) - works even when not typing
+  if ((e.ctrlKey || e.metaKey) && e.key === 'a' && !isTyping) {
+    e.preventDefault();
+    selectAllLabels();
+    return;
+  }
+
+  // Escape key in side panel: move focus to top buttons
+  if (e.key === 'Escape' && !isTyping) {
+    const isInSidePanel = activeElement && activeElement.closest('#labels-list');
+    if (isInSidePanel) {
+      e.preventDefault();
+      returnFocusToTopButtons();
+      return;
+    }
+  }
+
+  // Tab key in side panel: check if we're navigating out to top buttons
+  if (e.key === 'Tab' && !isTyping && !e.shiftKey) {
+    const isInLabelList = activeElement && activeElement.classList.contains('label-item');
+    if (isInLabelList) {
+      // Clear label selection state when tabbing out
+      clearLabelNavigationState();
+    }
+  }
+
+  // Shift+Tab into side panel from editor: set up navigation state
+  if (e.key === 'Tab' && !isTyping && e.shiftKey) {
+    const isInEditor = activeElement && activeElement.closest('#label-editor');
+    if (isInEditor && currentLabel) {
+      // User is shift-tabbing from editor, might go back to side panel
+      // We'll handle this after the focus change
+    }
+  }
+
+  // Don't handle other keys if user is typing
+  if (isTyping) return;
+
+  // Don't handle side panel navigation if focus is in the editor
+  const isInEditor = activeElement && activeElement.closest('#label-editor');
+  if (isInEditor && (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'Home' || e.key === 'End')) {
+    // Focus is in editor, don't trigger side panel navigation
+    return;
+  }
+
+  // Check if shift is held for range selection
+  const shiftHeld = e.shiftKey;
+
+  // Handle navigation keys
+  switch(e.key) {
+    case 'ArrowUp':
+      e.preventDefault();
+      navigateLabels(-1, shiftHeld);
+      break;
+    case 'ArrowDown':
+      e.preventDefault();
+      navigateLabels(1, shiftHeld);
+      break;
+    case 'Home':
+      e.preventDefault();
+      navigateToLabel(0, shiftHeld);
+      break;
+    case 'End':
+      e.preventDefault();
+      navigateToLabel(labels.length - 1, shiftHeld);
+      break;
+    case 'PageUp':
+      e.preventDefault();
+      navigateLabels(-10, shiftHeld);
+      break;
+    case 'PageDown':
+      e.preventDefault();
+      navigateLabels(10, shiftHeld);
+      break;
+    case 'Enter':
+      // Only handle Enter for label loading if we're not focused on an interactive element
+      if (lastClickedIndex >= 0 && lastClickedIndex < labels.length) {
+        // Don't interfere if focus is in the editor
+        const focusInEditor = document.activeElement && document.activeElement.closest('#label-editor');
+        if (!focusInEditor) {
+          e.preventDefault();
+          loadLabel(labels[lastClickedIndex].name);
+        }
+      }
+      break;
+    case 'Delete':
+      if (selectedLabels.size > 0) {
+        e.preventDefault();
+        batchDelete();
+      }
+      break;
+    case 'p':
+    case 'P':
+      if (selectedLabels.size > 0) {
+        e.preventDefault();
+        batchPull();
+      }
+      break;
+    case 'd':
+    case 'D':
+      if (selectedLabels.size > 0) {
+        e.preventDefault();
+        batchDelete();
+      }
+      break;
+    case 'c':
+    case 'C':
+      if (selectedLabels.size > 0) {
+        e.preventDefault();
+        clearSelection();
+      }
+      break;
+  }
+}
+
+function navigateLabels(delta, shiftHeld = false) {
+  if (labels.length === 0) return;
+
+  let newIndex;
+  if (lastClickedIndex === -1) {
+    // No label selected yet, start at beginning
+    newIndex = delta > 0 ? 0 : labels.length - 1;
+  } else {
+    newIndex = lastClickedIndex + delta;
+  }
+
+  // Clamp to valid range
+  newIndex = Math.max(0, Math.min(labels.length - 1, newIndex));
+
+  navigateToLabel(newIndex, shiftHeld);
+}
+
+function navigateToLabel(index, shiftHeld = false) {
+  if (index < 0 || index >= labels.length) return;
+
+  if (shiftHeld) {
+    // Set anchor if this is the first shift+navigation
+    if (selectionAnchor === -1) {
+      selectionAnchor = lastClickedIndex !== -1 ? lastClickedIndex : index;
+    }
+
+    // Clear current selection and reselect from anchor to new position
+    selectedLabels.clear();
+    const start = Math.min(selectionAnchor, index);
+    const end = Math.max(selectionAnchor, index);
+    for (let i = start; i <= end; i++) {
+      if (i < labels.length) {
+        selectedLabels.add(labels[i].name);
+      }
+    }
+  } else {
+    // Normal navigation: clear selection and reset anchor
+    clearSelection();
+    selectionAnchor = -1;
+  }
+
+  lastClickedIndex = index;
+
+  // Visual highlight by making it "active"
+  renderLabelList();
+
+  // Scroll into view
+  const container = document.getElementById('label-list');
+  const items = container.querySelectorAll('.label-item');
+  if (items[index]) {
+    items[index].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+}
+
+function selectAllLabels() {
+  selectedLabels.clear();
+  labels.forEach(label => selectedLabels.add(label.name));
+  renderLabelList();
+}
+
+// Navigate between editor fields (properties and relationships) with up/down arrows
+// Navigates within the same column (e.g., property names, types, checkboxes)
+function navigateEditorFields(direction) {
+  const activeElement = document.activeElement;
+  if (!activeElement) return;
+
+  const currentRow = activeElement.closest('.property-row, .relationship-row');
+  if (!currentRow) return;
+
+  // Determine which column we're in based on the active element
+  let fieldType = activeElement.dataset.field;
+
+  if (!fieldType) {
+    if (activeElement.type === 'checkbox') {
+      fieldType = 'checkbox';
+    } else if (activeElement.classList.contains('btn-outline-danger') ||
+               activeElement.textContent === '×') {
+      fieldType = 'delete-btn';
+    } else if (activeElement.classList.contains('target-label-nav')) {
+      fieldType = 'nav-btn';
+    } else {
+      // Unrecognized field type, don't navigate
+      return;
+    }
+  }
+
+  // Get the container (properties or relationships)
+  const container = currentRow.parentElement;
+  const rows = Array.from(container.querySelectorAll('.property-row, .relationship-row'));
+  const currentRowIndex = rows.indexOf(currentRow);
+
+  // Calculate target row
+  let targetRowIndex = currentRowIndex + direction;
+
+  // Wrap around
+  if (targetRowIndex < 0) targetRowIndex = rows.length - 1;
+  if (targetRowIndex >= rows.length) targetRowIndex = 0;
+
+  const targetRow = rows[targetRowIndex];
+  if (!targetRow) return;
+
+  // Find the same field type in the target row
+  let targetField;
+  if (fieldType === 'checkbox') {
+    targetField = targetRow.querySelector('input[type="checkbox"]');
+  } else if (fieldType === 'delete-btn') {
+    targetField = targetRow.querySelector('.btn-outline-danger');
+  } else if (fieldType === 'nav-btn') {
+    targetField = targetRow.querySelector('.target-label-nav');
+  } else {
+    targetField = targetRow.querySelector(`[data-field="${fieldType}"]`);
+  }
+
+  if (targetField) {
+    targetField.focus();
+
+    // For text inputs, select all text
+    if (targetField.tagName === 'INPUT' && targetField.type === 'text') {
+      targetField.select();
+    }
+  }
+}
+
+// Attach event handlers to SELECT elements to track dropdown state
+function attachSelectHandlers(container) {
+  container.querySelectorAll('select').forEach(select => {
+    // Clear dropdown state on change or blur
+    select.addEventListener('change', () => {
+      select.dataset.dropdownOpen = '';
+    });
+    select.addEventListener('blur', () => {
+      select.dataset.dropdownOpen = '';
+    });
+  });
+}
+
+// Return focus to the side panel (currently selected label)
+function returnFocusToSidePanel() {
+  const container = document.getElementById('label-list');
+  const items = container.querySelectorAll('.label-item');
+  if (lastClickedIndex >= 0 && lastClickedIndex < items.length) {
+    items[lastClickedIndex].focus();
+  }
+}
+
+// Return focus to top buttons (Pull All, Import, Export, + Label)
+function returnFocusToTopButtons() {
+  const firstButton = document.getElementById('btn-pull-all-neo4j');
+  if (firstButton) {
+    firstButton.focus();
+  }
+}
+
+// Clear label navigation state when tabbing out of side panel
+function clearLabelNavigationState() {
+  lastClickedIndex = -1;
+  selectionAnchor = -1;
+}
+
+function loadLabels() {
+  console.log('loadLabels() executing, fetching /api/labels');
+  const container = document.getElementById('label-list');
+  container.innerHTML = '<div class="empty-state small" style="padding: 2rem; text-align: center;">Loading labels...</div>';
+
+  fetch(window.SCIDK_BASE + '/api/labels')
+    .then(r => {
+      console.log('loadLabels() got response, status:', r.status);
+      if (!r.ok) {
+        throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+      }
+      return r.json();
+    })
+    .then(data => {
+      console.log('loadLabels() got data, count:', (data.labels || []).length);
+      if (data.status === 'success') {
+        labels = data.labels || [];
+        renderLabelList();
+        if (labels.length === 0) {
+          console.log('No labels found. Try clicking "Pull All" to import from Neo4j.');
+        }
+      } else {
+        console.error('API returned error:', data.error);
+        showToast('Error loading labels: ' + (data.error || 'Unknown error'), 'error');
+        container.innerHTML = '<div class="empty-state small">Error loading labels. Check console.</div>';
+      }
+    })
+    .catch(err => {
+      console.error('loadLabels() error:', err);
+      showToast('Network error: ' + err.message, 'error');
+      container.innerHTML = '<div class="empty-state small">Network error. Check console.</div>';
+    });
+}
+
+function getSourceBadge(label) {
+  // Check for Neo4j source profile first (highest priority for display)
+  if (label.neo4j_source_profile) {
+    const profileName = label.neo4j_source_profile;
+    return `
+      <span class="source-badge neo4j"
+            title="Schema pulled from Neo4j connection: ${escapeHtml(profileName)}">
+      🔗 ${escapeHtml(profileName)}
+      </span>
+    `;
+  }
+
+  const sourceType = label.source_type || 'manual';
+  const sourceId = label.source_id;
+
+  let icon, className, clickHandler = '', displayText = '';
+
+  switch(sourceType) {
+    case 'plugin_instance':
+      icon = '📦';
+      className = 'source-badge plugin';
+      // Get display text from API or use source_id
+      displayText = sourceId ? `Plugin: ${sourceId.substring(0, 20)}` : 'Plugin';
+      clickHandler = sourceId ? ` onclick="event.stopPropagation(); navigateToPluginInstance('${escapeHtml(sourceId)}');" style="cursor: pointer;"` : '';
+      break;
+    case 'manual':
+      icon = '✏️';
+      className = 'source-badge manual';
+      displayText = 'Manual';
+      break;
+    case 'system':
+      icon = '🔧';
+      className = 'source-badge system';
+      displayText = 'System';
+      break;
+    default:
+      icon = '❓';
+      className = 'source-badge unknown';
+      displayText = sourceType;
+  }
+
+  const title = getSourceDisplayText(sourceType, sourceId);
+
+  return `
+    <span class="${className}"
+          title="${escapeHtml(title)}"
+          ${clickHandler}>
+      ${icon} ${escapeHtml(displayText)}
+    </span>
+  `;
+}
+
+function getSourceDisplayText(sourceType, sourceId) {
+  if (sourceType === 'plugin_instance' && sourceId) {
+    return `Plugin Instance: ${sourceId}`;
+  } else if (sourceType === 'system') {
+    return 'Built-in System Label';
+  } else if (sourceType === 'manual') {
+    return 'Manually Created Label';
+  } else {
+    return sourceType || 'Unknown Source';
+  }
+}
+
+function navigateToPluginInstance(instanceId) {
+  // Navigate to Settings > Plugins
+  window.location.href = window.SCIDK_BASE + '/settings#plugins';
+  // Store the instance ID to highlight after navigation
+  sessionStorage.setItem('highlight_plugin_instance', instanceId);
+}
+
+function escapeHtml(text) {
+  if (typeof text !== 'string') return text;
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+function escapeAttribute(text) {
+  return escapeHtml(String(text)).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function renderLabelList() {
+  const container = document.getElementById('label-list');
+  if (labels.length === 0) {
+    container.innerHTML = '<div class="empty-state small">No labels defined</div>';
+    updateBatchActionsVisibility();
+    return;
+  }
+
+  // Compute incoming relationship counts for each label
+  const incomingCounts = {};
+  labels.forEach(label => {
+    incomingCounts[label.name] = 0;
+  });
+  labels.forEach(label => {
+    (label.relationships || []).forEach(rel => {
+      if (rel.target_label && incomingCounts[rel.target_label] !== undefined) {
+        incomingCounts[rel.target_label]++;
+      }
+    });
+  });
+
+  container.innerHTML = labels.map((label, index) => {
+    const outgoing = label.relationships.length;
+    const incoming = incomingCounts[label.name] || 0;
+    const total = outgoing + incoming;
+    const relText = total === 1 ? '1 relationship' : `${total} relationships`;
+    const detailText = incoming > 0 ? ` (${outgoing} out, ${incoming} in)` : '';
+
+    const isActive = currentLabel && currentLabel.name === label.name;
+    const isSelected = selectedLabels.has(label.name);
+    const isFocused = lastClickedIndex === index;
+    const classes = ['label-item', isActive && 'active', isSelected && 'selected', isFocused && 'focused'].filter(Boolean).join(' ');
+
+    // Generate source badge
+    const sourceBadge = getSourceBadge(label);
+
+    return `
+      <div class="${classes}"
+           data-label="${label.name}"
+           data-index="${index}"
+           data-testid="label-item"
+           tabindex="${isFocused ? '0' : '-1'}">
+        <div class="label-header">
+          <strong>${label.name}</strong>
+          ${sourceBadge}
+        </div>
+        <div class="small">${label.properties.length} properties, ${relText}${detailText}</div>
+      </div>
+    `;
+  }).join('');
+
+  // Add click handlers with multi-select support
+  container.querySelectorAll('.label-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      const labelName = item.dataset.label;
+      const index = parseInt(item.dataset.index);
+
+      if (e.ctrlKey || e.metaKey) {
+        // Ctrl/Cmd+Click: Toggle selection
+        toggleLabelSelection(labelName);
+        lastClickedIndex = index;
+        selectionAnchor = -1; // Reset anchor on ctrl-click
+      } else if (e.shiftKey && lastClickedIndex !== -1) {
+        // Shift+Click: Range selection
+        selectLabelRange(lastClickedIndex, index);
+      } else {
+        // Regular click: Clear selection and load label
+        clearSelection();
+        loadLabel(labelName);
+        lastClickedIndex = index;
+        selectionAnchor = -1; // Reset anchor on regular click
+      }
+    });
+  });
+
+  updateBatchActionsVisibility();
+}
+
+function toggleLabelSelection(labelName) {
+  if (selectedLabels.has(labelName)) {
+    selectedLabels.delete(labelName);
+  } else {
+    selectedLabels.add(labelName);
+  }
+  renderLabelList();
+}
+
+function selectLabelRange(startIndex, endIndex) {
+  const start = Math.min(startIndex, endIndex);
+  const end = Math.max(startIndex, endIndex);
+
+  for (let i = start; i <= end; i++) {
+    if (i < labels.length) {
+      selectedLabels.add(labels[i].name);
+    }
+  }
+
+  renderLabelList();
+}
+
+function clearSelection() {
+  selectedLabels.clear();
+  selectionAnchor = -1; // Reset anchor when clearing selection
+  renderLabelList();
+}
+
+function updateBatchActionsVisibility() {
+  const batchActions = document.getElementById('batch-actions');
+  const selectionCount = document.getElementById('selection-count');
+
+  if (selectedLabels.size > 0) {
+    batchActions.style.display = 'block';
+    selectionCount.textContent = selectedLabels.size;
+  } else {
+    batchActions.style.display = 'none';
+  }
+}
+
+function loadLabel(name) {
+  // Check for unsaved intelligence changes
+  if (intelligenceProfileDirty && currentLabel && currentLabel.name !== name) {
+    const warning = document.getElementById('intel-unsaved-warning');
+    warning.style.display = 'flex';
+
+    // Store the target label name for later
+    warning.dataset.targetLabel = name;
+
+    // Scroll to warning
+    document.getElementById('intelligence-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+
+  return fetch(window.SCIDK_BASE + `/api/labels/${name}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'success') {
+        currentLabel = data.label;
+        showEditor();
+        populateEditor(currentLabel);
+        renderLabelList(); // Update active state
+
+        // Keep focus in the side panel after loading
+        setTimeout(() => {
+          const container = document.getElementById('label-list');
+          const items = container.querySelectorAll('.label-item');
+          if (lastClickedIndex >= 0 && lastClickedIndex < items.length) {
+            items[lastClickedIndex].focus();
+          }
+        }, 0);
+      } else {
+        showToast('Error loading label: ' + (data.error || 'Unknown error'), 'error');
+      }
+    })
+    .catch(err => showToast('Network error: ' + err.message, 'error'));
+}
+
+function showEditor() {
+  document.getElementById('label-editor').style.display = 'flex';
+  document.getElementById('labels-statistics').style.display = 'block';
+}
+
+let isEditMode = false;
+
+function clearEditor() {
+  document.getElementById('label-name').value = '';
+  document.getElementById('label-name').readOnly = false;
+  document.getElementById('properties-container').innerHTML = '<div class="empty-state small">No properties defined</div>';
+  document.getElementById('relationships-container').innerHTML = '<div class="empty-state small">No relationships defined</div>';
+  document.getElementById('incoming-relationships-container').innerHTML = '<div class="empty-state small">No incoming relationships</div>';
+  document.getElementById('name-error').style.display = 'none';
+
+  // Also clear read-only view
+  document.getElementById('readonly-name').textContent = '';
+  document.getElementById('readonly-properties-container').innerHTML = '<div class="empty-state small">No properties defined</div>';
+  document.getElementById('readonly-relationships-container').innerHTML = '<div class="empty-state small">No relationships defined</div>';
+  document.getElementById('readonly-incoming-relationships-container').innerHTML = '<div class="empty-state small">No incoming relationships</div>';
+}
+
+function toggleEditMode() {
+  isEditMode = !isEditMode;
+  updateEditorView();
+}
+
+function cancelEdit() {
+  isEditMode = false;
+  // Reload current label to discard changes
+  if (currentLabel) {
+    populateEditor(currentLabel);
+  }
+  updateEditorView();
+}
+
+function updateEditorView() {
+  const readonlyView = document.getElementById('readonly-view');
+  const editView = document.getElementById('edit-view');
+  const toggleBtn = document.getElementById('btn-toggle-mode');
+  const cancelBtn = document.getElementById('btn-cancel-edit');
+
+  if (isEditMode) {
+    readonlyView.style.display = 'none';
+    editView.style.display = 'block';
+    toggleBtn.style.display = 'none';
+    cancelBtn.style.display = 'inline-block';
+  } else {
+    readonlyView.style.display = 'block';
+    editView.style.display = 'none';
+    // Only show toggle button if we have a current label (not for new labels)
+    if (currentLabel) {
+      toggleBtn.style.display = 'inline-block';
+    } else {
+      toggleBtn.style.display = 'none';
+    }
+    cancelBtn.style.display = 'none';
+  }
+}
+
+function populateEditor(label) {
+  document.getElementById('editor-title').textContent = label.name;
+
+  // Start in read-only mode for existing labels
+  isEditMode = false;
+
+  // Show instance browser
+  document.getElementById('instance-browser').style.display = 'block';
+
+  // Update "Pull Instances" button text to show source
+  const pullBtn = document.getElementById('btn-pull-instances');
+  const transferBtn = document.getElementById('btn-transfer-to-primary');
+  const sourceProfile = label.neo4j_source_profile;
+
+  if (pullBtn) {
+    pullBtn.textContent = sourceProfile ? `Pull from ${sourceProfile}` : 'Pull from Neo4j';
+    pullBtn.title = sourceProfile ? `Pull instances from ${sourceProfile} connection` : 'Pull instances from Neo4j';
+  }
+
+  // Show Transfer button only if label has a source profile
+  if (transferBtn) {
+    transferBtn.style.display = sourceProfile ? 'inline-block' : 'none';
+  }
+
+  // Populate read-only view
+  document.getElementById('readonly-name').textContent = label.name;
+
+  const readonlyPropsContainer = document.getElementById('readonly-properties-container');
+  if (label.properties.length === 0) {
+    readonlyPropsContainer.innerHTML = '<div class="empty-state small">No properties defined</div>';
+  } else {
+    readonlyPropsContainer.innerHTML = label.properties.map((prop, idx) => `
+      <div class="readonly-property" tabindex="0" data-nav-group="property" data-nav-index="${idx}">
+        <strong>${prop.name}</strong>
+        <span class="badge-type">${prop.type}</span>
+        ${prop.required ? '<span class="badge-type badge-required">required</span>' : ''}
+      </div>
+    `).join('');
+  }
+
+  const readonlyRelsContainer = document.getElementById('readonly-relationships-container');
+  if (label.relationships.length === 0) {
+    readonlyRelsContainer.innerHTML = '<div class="empty-state small">No relationships defined</div>';
+  } else {
+    readonlyRelsContainer.innerHTML = label.relationships.map((rel, idx) => `
+      <div class="readonly-relationship" tabindex="0" data-nav-group="outgoing-rel" data-nav-index="${idx}">
+        <em>${label.name}</em> —[<strong>${rel.type}</strong>]→ <a href="#" class="target-label-link" data-label="${rel.target_label}" style="color: var(--accent); text-decoration: none; font-weight: bold;">${rel.target_label}</a>
+      </div>
+    `).join('');
+  }
+
+  const readonlyIncomingContainer = document.getElementById('readonly-incoming-relationships-container');
+  const incomingRels = label.incoming_relationships || [];
+  if (incomingRels.length === 0) {
+    readonlyIncomingContainer.innerHTML = '<div class="empty-state small">No incoming relationships</div>';
+  } else {
+    readonlyIncomingContainer.innerHTML = incomingRels.map((rel, idx) => `
+      <div class="readonly-relationship" tabindex="0" data-nav-group="incoming-rel" data-nav-index="${idx}">
+        <a href="#" class="source-label-link" data-label="${rel.source_label}" style="color: var(--accent); text-decoration: none; font-weight: bold;">${rel.source_label}</a> —[<strong>${rel.type}</strong>]→ <em>${label.name}</em>
+      </div>
+    `).join('');
+  }
+
+  // Populate edit view (same as before)
+  document.getElementById('label-name').value = label.name;
+  document.getElementById('label-name').readOnly = true;
+  document.getElementById('btn-delete').style.display = 'inline-block';
+  document.getElementById('btn-pull-neo4j').style.display = 'inline-block';
+
+  // Populate statistics panel
+  populateStatistics(label);
+
+  // Render properties (edit view)
+  const propsContainer = document.getElementById('properties-container');
+  if (label.properties.length === 0) {
+    propsContainer.innerHTML = '<div class="empty-state small">No properties defined</div>';
+  } else {
+    propsContainer.innerHTML = label.properties.map((prop, i) => createPropertyRow(prop, i)).join('');
+    attachSelectHandlers(propsContainer);
+  }
+
+  // Render outgoing relationships
+  const relsContainer = document.getElementById('relationships-container');
+  if (label.relationships.length === 0) {
+    relsContainer.innerHTML = '<div class="empty-state small">No relationships defined</div>';
+  } else {
+    relsContainer.innerHTML = label.relationships.map((rel, i) => createRelationshipRow(rel, i)).join('');
+
+    // Add click handlers for navigation buttons
+    relsContainer.querySelectorAll('.target-label-nav').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const targetLabel = btn.dataset.target;
+        if (targetLabel) {
+          loadLabel(targetLabel);
+        }
+      });
+    });
+
+    attachSelectHandlers(relsContainer);
+  }
+
+  // Render incoming relationships (edit view - editable like outgoing relationships)
+  const incomingContainer = document.getElementById('incoming-relationships-container');
+  const incomingRelsEdit = label.incoming_relationships || [];
+  if (incomingRelsEdit.length === 0) {
+    incomingContainer.innerHTML = '<div class="empty-state small">No incoming relationships defined</div>';
+  } else {
+    incomingContainer.innerHTML = incomingRelsEdit.map((rel, i) => createIncomingRelationshipRow(rel, i)).join('');
+    attachSelectHandlers(incomingContainer);
+  }
+
+  // Set to read-only mode
+  updateEditorView();
+
+  // Add click handlers for label links in read-only mode
+  document.querySelectorAll('.target-label-link, .source-label-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const targetLabel = e.target.dataset.label;
+      loadLabel(targetLabel);
+    });
+  });
+
+  // Add keyboard navigation for properties and relationships in read-only mode
+  document.querySelectorAll('.readonly-property, .readonly-relationship').forEach(item => {
+    item.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+
+        const currentGroup = item.dataset.navGroup;
+        const currentIndex = parseInt(item.dataset.navIndex);
+
+        // Get all items in the same group
+        const groupItems = Array.from(document.querySelectorAll(`[data-nav-group="${currentGroup}"]`));
+
+        let targetIndex;
+        if (e.key === 'ArrowDown') {
+          targetIndex = currentIndex + 1;
+          // If at end of current group, move to first item of next group
+          if (targetIndex >= groupItems.length) {
+            const nextGroup = getNextNavGroup(currentGroup);
+            if (nextGroup) {
+              const nextGroupItems = document.querySelectorAll(`[data-nav-group="${nextGroup}"]`);
+              if (nextGroupItems.length > 0) {
+                nextGroupItems[0].focus();
+              }
+            }
+            return;
+          }
+        } else {
+          targetIndex = currentIndex - 1;
+          // If at start of current group, move to last item of previous group
+          if (targetIndex < 0) {
+            const prevGroup = getPrevNavGroup(currentGroup);
+            if (prevGroup) {
+              const prevGroupItems = document.querySelectorAll(`[data-nav-group="${prevGroup}"]`);
+              if (prevGroupItems.length > 0) {
+                prevGroupItems[prevGroupItems.length - 1].focus();
+              }
+            }
+            return;
+          }
+        }
+
+        if (groupItems[targetIndex]) {
+          groupItems[targetIndex].focus();
+        }
+      }
+    });
+  });
+
+  // Load intelligence profile
+  loadIntelligenceProfile(label.name);
+}
+
+// Intelligence profile state
+let intelligenceProfileData = null;
+let intelligenceProfileDirty = false;
+
+function loadIntelligenceProfile(labelName) {
+  fetch(window.SCIDK_BASE + `/api/chat/schema/label/${labelName}`)
+    .then(r => r.json())
+    .then(data => {
+      intelligenceProfileData = data;
+      intelligenceProfileDirty = false;
+
+      // Description
+      const descInput = document.getElementById('intelligence-description-input');
+      descInput.value = data.description || '';
+
+      // Context mode
+      const modeSelect = document.getElementById('intelligence-mode-select');
+      const nInput = document.getElementById('intelligence-n-input');
+      const nWrapper = document.getElementById('intelligence-mode-n-wrapper');
+      const excludeWarning = document.getElementById('intel-exclude-warning');
+
+      const mode = data.chat_context_mode || 'top_n';
+      const n = data.chat_context_n || 5;
+
+      modeSelect.value = mode;
+      nInput.value = n;
+
+      if (mode === 'top_n') {
+        nWrapper.style.display = 'inline-flex';
+        excludeWarning.style.display = 'none';
+      } else if (mode === 'exclude') {
+        nWrapper.style.display = 'none';
+        excludeWarning.style.display = 'block';
+      } else {
+        nWrapper.style.display = 'none';
+        excludeWarning.style.display = 'none';
+      }
+
+      // Always include chips
+      const alwaysChips = document.getElementById('always-include-chips');
+      renderChips(alwaysChips, data.always_include || [], 'always');
+
+      // Never include chips
+      const neverChips = document.getElementById('never-include-chips');
+      renderChips(neverChips, data.never_include || [], 'never');
+
+      // Property usage bars
+      const usageEl = document.getElementById('intelligence-property-usage');
+      if (data.property_rankings && data.property_rankings.length > 0) {
+        const maxCount = Math.max(...data.property_rankings.map(r => r.query_count || 0));
+        usageEl.innerHTML = data.property_rankings.slice(0, 10).map(ranking => {
+          const pct = maxCount > 0 ? (ranking.query_count / maxCount) * 100 : 0;
+          return `
+            <div class="prop-usage-row">
+              <span class="prop-name">${ranking.property}</span>
+              <div class="prop-bar-container">
+                <div class="prop-bar" style="width: ${pct}%"></div>
+              </div>
+              <span class="prop-count">${ranking.query_count || 0}</span>
+            </div>
+          `;
+        }).join('');
+      } else {
+        usageEl.innerHTML = '<div class="small" style="color: #999;">No usage data yet</div>';
+      }
+
+      // Embedding status
+      const statusEl = document.getElementById('intelligence-embedding-status');
+      const status = data.embedding_status || 'none';
+      statusEl.className = `embedding-badge ${status}`;
+      if (status === 'embedded') {
+        statusEl.textContent = '● Embedded';
+      } else if (status === 'pending') {
+        statusEl.textContent = '○ Not embedded';
+      } else {
+        statusEl.textContent = '○ No embedding';
+      }
+
+      // Hide save bar
+      document.getElementById('intel-save-bar').style.display = 'none';
+      document.getElementById('intel-unsaved-warning').style.display = 'none';
+    })
+    .catch(err => {
+      console.error('Failed to load intelligence profile:', err);
+      document.getElementById('intelligence-section').innerHTML =
+        '<div class="small" style="color: #b00020;">Failed to load intelligence data</div>';
+    });
+}
+
+function renderChips(container, properties, type) {
+  if (properties.length === 0) {
+    container.innerHTML = '<span class="empty-chips-text" style="color: #999; font-size: 0.8rem;">None</span>';
+    return;
+  }
+
+  container.innerHTML = properties.map(prop => `
+    <span class="tag-chip ${type === 'never' ? 'never' : ''}">
+      ${prop}
+      <button class="tag-chip-remove" onclick="removeChip('${type === 'always' ? 'always_include' : 'never_include'}', '${prop}')" title="Remove">×</button>
+    </span>
+  `).join('');
+}
+
+function removeChip(field, property) {
+  const chips = field === 'always_include'
+    ? getChips('always-include-chips')
+    : getChips('never-include-chips');
+
+  const filtered = chips.filter(p => p !== property);
+
+  if (field === 'always_include') {
+    renderChips(document.getElementById('always-include-chips'), filtered, 'always');
+  } else {
+    renderChips(document.getElementById('never-include-chips'), filtered, 'never');
+  }
+
+  markIntelligenceDirty();
+}
+
+function getChips(containerId) {
+  const container = document.getElementById(containerId);
+  const chipEls = container.querySelectorAll('.tag-chip');
+  return Array.from(chipEls).map(chip => chip.textContent.replace('×', '').trim());
+}
+
+function openPropertyDropdown(field, event) {
+  event.stopPropagation();
+
+  const dropdownId = `property-dropdown-${field === 'always_include' ? 'always' : 'never'}`;
+  const dropdown = document.getElementById(dropdownId);
+  const listId = `prop-list-${field === 'always_include' ? 'always' : 'never'}`;
+  const list = document.getElementById(listId);
+
+  // Close other dropdowns
+  document.querySelectorAll('.property-dropdown').forEach(d => {
+    if (d.id !== dropdownId) d.style.display = 'none';
+  });
+
+  // Toggle this dropdown
+  if (dropdown.style.display === 'block') {
+    dropdown.style.display = 'none';
+    return;
+  }
+
+  // Get available properties
+  const availableProps = currentLabel ? currentLabel.properties.map(p => p.name) : [];
+  const alwaysInclude = getChips('always-include-chips');
+  const neverInclude = getChips('never-include-chips');
+
+  // Populate list
+  list.innerHTML = availableProps.map(prop => {
+    const isAlways = alwaysInclude.includes(prop);
+    const isNever = neverInclude.includes(prop);
+    const disabled = (field === 'always_include' && isAlways) || (field === 'never_include' && isNever);
+
+    return `
+      <li class="${disabled ? 'disabled' : ''}"
+          onclick="${disabled ? '' : `addChip('${field}', '${prop}')`}">
+        ${prop} ${disabled ? '(already added)' : ''}
+      </li>
+    `;
+  }).join('');
+
+  dropdown.style.display = 'block';
+
+  // Clear filter input
+  dropdown.querySelector('.prop-filter-input').value = '';
+}
+
+function filterPropertyDropdown(field) {
+  const dropdownId = `property-dropdown-${field === 'always_include' ? 'always' : 'never'}`;
+  const dropdown = document.getElementById(dropdownId);
+  const filter = dropdown.querySelector('.prop-filter-input').value.toLowerCase();
+  const items = dropdown.querySelectorAll('.prop-dropdown-list li');
+
+  items.forEach(item => {
+    const text = item.textContent.toLowerCase();
+    item.style.display = text.includes(filter) ? 'block' : 'none';
+  });
+}
+
+function addChip(field, property) {
+  const alwaysChips = getChips('always-include-chips');
+  const neverChips = getChips('never-include-chips');
+
+  // Check if property is in the other list (mutual exclusivity)
+  if (field === 'always_include' && neverChips.includes(property)) {
+    // Remove from never, add to always
+    const filtered = neverChips.filter(p => p !== property);
+    renderChips(document.getElementById('never-include-chips'), filtered, 'never');
+    renderChips(document.getElementById('always-include-chips'), [...alwaysChips, property], 'always');
+    showPropertyMoveIndicator(property, 'never', 'always');
+  } else if (field === 'never_include' && alwaysChips.includes(property)) {
+    // Remove from always, add to never
+    const filtered = alwaysChips.filter(p => p !== property);
+    renderChips(document.getElementById('always-include-chips'), filtered, 'always');
+    renderChips(document.getElementById('never-include-chips'), [...neverChips, property], 'never');
+    showPropertyMoveIndicator(property, 'always', 'never');
+  } else {
+    // Add to the target list
+    if (field === 'always_include' && !alwaysChips.includes(property)) {
+      renderChips(document.getElementById('always-include-chips'), [...alwaysChips, property], 'always');
+    } else if (field === 'never_include' && !neverChips.includes(property)) {
+      renderChips(document.getElementById('never-include-chips'), [...neverChips, property], 'never');
+    }
+  }
+
+  // Close dropdown
+  const dropdownId = `property-dropdown-${field === 'always_include' ? 'always' : 'never'}`;
+  document.getElementById(dropdownId).style.display = 'none';
+
+  markIntelligenceDirty();
+}
+
+function showPropertyMoveIndicator(property, from, to) {
+  // Brief visual indicator that property moved between lists
+  const hint = document.getElementById('intel-save-hint');
+  hint.textContent = `Moved "${property}" from ${from} → ${to}`;
+  setTimeout(() => updateSaveHint(), 2000);
+}
+
+function handleModeChange() {
+  const mode = document.getElementById('intelligence-mode-select').value;
+  const nWrapper = document.getElementById('intelligence-mode-n-wrapper');
+  const excludeWarning = document.getElementById('intel-exclude-warning');
+
+  if (mode === 'top_n') {
+    nWrapper.style.display = 'inline-flex';
+    excludeWarning.style.display = 'none';
+  } else if (mode === 'exclude') {
+    nWrapper.style.display = 'none';
+    excludeWarning.style.display = 'block';
+  } else {
+    nWrapper.style.display = 'none';
+    excludeWarning.style.display = 'none';
+  }
+
+  markIntelligenceDirty();
+}
+
+function markIntelligenceDirty() {
+  if (!intelligenceProfileData) return;
+
+  intelligenceProfileDirty = true;
+
+  // Show save bar
+  document.getElementById('intel-save-bar').style.display = 'flex';
+
+  updateSaveHint();
+}
+
+function updateSaveHint() {
+  if (!intelligenceProfileData) return;
+
+  const descInput = document.getElementById('intelligence-description-input');
+  const modeSelect = document.getElementById('intelligence-mode-select');
+  const nInput = document.getElementById('intelligence-n-input');
+
+  const descChanged = descInput.value !== (intelligenceProfileData.description || '');
+  const modeChanged = modeSelect.value !== (intelligenceProfileData.chat_context_mode || 'top_n');
+  const alwaysChips = getChips('always-include-chips');
+  const neverChips = getChips('never-include-chips');
+
+  const alwaysChanged = JSON.stringify(alwaysChips.sort()) !==
+    JSON.stringify((intelligenceProfileData.always_include || []).sort());
+  const neverChanged = JSON.stringify(neverChips.sort()) !==
+    JSON.stringify((intelligenceProfileData.never_include || []).sort());
+
+  const hint = document.getElementById('intel-save-hint');
+
+  if (descChanged) {
+    hint.textContent = 'Will re-embed after save';
+  } else if (modeChanged) {
+    hint.textContent = 'Chat context will update immediately';
+  } else if (alwaysChanged || neverChanged) {
+    hint.textContent = 'Property filters updated';
+  } else {
+    hint.textContent = '';
+  }
+}
+
+async function saveIntelligenceProfile() {
+  if (!currentLabel) return;
+
+  const descInput = document.getElementById('intelligence-description-input');
+  const modeSelect = document.getElementById('intelligence-mode-select');
+  const nInput = document.getElementById('intelligence-n-input');
+
+  const payload = {
+    description: descInput.value,
+    chat_context_mode: modeSelect.value,
+    chat_context_n: parseInt(nInput.value) || 5,
+    always_include: getChips('always-include-chips'),
+    never_include: getChips('never-include-chips')
+  };
+
+  const btn = document.querySelector('.btn-intel-save');
+  btn.textContent = 'Saving...';
+  btn.disabled = true;
+
+  try {
+    const resp = await fetch(
+      window.SCIDK_BASE + `/api/chat/schema/label/${encodeURIComponent(currentLabel.name)}`,
+      {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      }
+    );
+    const data = await resp.json();
+
+    if (data.success) {
+      intelligenceProfileDirty = false;
+      document.getElementById('intel-save-bar').style.display = 'none';
+      document.getElementById('intel-unsaved-warning').style.display = 'none';
+
+      // Update embedding status if re-embedded
+      const statusEl = document.getElementById('intelligence-embedding-status');
+      if (payload.description) {
+        statusEl.className = 'embedding-badge embedded';
+        statusEl.textContent = '● Embedded';
+      }
+
+      showIntelSaveToast(
+        payload.description && (payload.description !== intelligenceProfileData.description)
+          ? '✓ Saved and re-embedded'
+          : '✓ Saved'
+      );
+
+      // Reload profile data
+      loadIntelligenceProfile(currentLabel.name);
+    } else {
+      btn.textContent = 'Save Changes';
+      btn.disabled = false;
+      showIntelSaveToast('Save failed: ' + (data.error || 'Unknown error'), true);
+    }
+  } catch (e) {
+    console.error('Save error:', e);
+    btn.textContent = 'Save Changes';
+    btn.disabled = false;
+    showIntelSaveToast('Save failed', true);
+  }
+}
+
+function discardIntelligenceChanges() {
+  if (!currentLabel) return;
+
+  intelligenceProfileDirty = false;
+  document.getElementById('intel-save-bar').style.display = 'none';
+  document.getElementById('intel-unsaved-warning').style.display = 'none';
+
+  // Reload from saved data
+  loadIntelligenceProfile(currentLabel.name);
+}
+
+function discardAndSwitch() {
+  const warning = document.getElementById('intel-unsaved-warning');
+  const targetLabel = warning.dataset.targetLabel;
+
+  intelligenceProfileDirty = false;
+  warning.style.display = 'none';
+  document.getElementById('intel-save-bar').style.display = 'none';
+
+  if (targetLabel) {
+    loadLabel(targetLabel);
+  }
+}
+
+function showIntelSaveToast(message, isError = false) {
+  const toast = document.createElement('div');
+  toast.className = `intel-save-toast ${isError ? 'error' : ''}`;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+
+  setTimeout(() => {
+    toast.remove();
+  }, 3000);
+}
+
+// Close dropdowns when clicking outside
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.tag-add-container')) {
+    document.querySelectorAll('.property-dropdown').forEach(d => {
+      d.style.display = 'none';
+    });
+  }
+});
+
+function getNextNavGroup(currentGroup) {
+  const groups = ['property', 'outgoing-rel', 'incoming-rel'];
+  const currentIdx = groups.indexOf(currentGroup);
+  return currentIdx < groups.length - 1 ? groups[currentIdx + 1] : null;
+}
+
+function getPrevNavGroup(currentGroup) {
+  const groups = ['property', 'outgoing-rel', 'incoming-rel'];
+  const currentIdx = groups.indexOf(currentGroup);
+  return currentIdx > 0 ? groups[currentIdx - 1] : null;
+}
+
+function addProperty() {
+  const container = document.getElementById('properties-container');
+  if (container.querySelector('.empty-state')) {
+    container.innerHTML = '';
+  }
+  container.insertAdjacentHTML('beforeend', createPropertyRow({name: '', type: 'string', required: false}));
+  attachSelectHandlers(container);
+}
+
+function handlePropertyRemoval(button) {
+  // Get the property name before removal
+  const propertyRow = button.closest('.property-row');
+  const propertyName = propertyRow.dataset.propName;
+
+  // Remove the property row
+  propertyRow.remove();
+
+  // Clean up any instance changes for this property
+  if (propertyName && currentLabel && instanceData.length > 0) {
+    Object.keys(instanceChanges).forEach(instanceId => {
+      if (instanceChanges[instanceId] && instanceChanges[instanceId][propertyName] !== undefined) {
+        delete instanceChanges[instanceId][propertyName];
+        // Remove instance from changes if no properties left
+        if (Object.keys(instanceChanges[instanceId]).length === 0) {
+          delete instanceChanges[instanceId];
+        }
+      }
+    });
+
+    // Hide push button if no changes left
+    if (Object.keys(instanceChanges).length === 0) {
+      document.getElementById('btn-push-instances').style.display = 'none';
+    }
+  }
+}
+
+function createPropertyRow(prop, index) {
+  return `
+    <div class="property-row" data-index="${index || ''}" data-testid="property-row" data-prop-name="${prop.name || ''}">
+      <input type="text" class="form-control form-control-sm" placeholder="Property name"
+             value="${prop.name || ''}" data-field="name" data-testid="property-name" />
+      <select class="form-select form-select-sm" data-field="type" data-testid="property-type">
+        <option value="string" ${prop.type === 'string' ? 'selected' : ''}>string</option>
+        <option value="number" ${prop.type === 'number' ? 'selected' : ''}>number</option>
+        <option value="boolean" ${prop.type === 'boolean' ? 'selected' : ''}>boolean</option>
+        <option value="date" ${prop.type === 'date' ? 'selected' : ''}>date</option>
+        <option value="datetime" ${prop.type === 'datetime' ? 'selected' : ''}>datetime</option>
+      </select>
+      <div class="form-check" style="flex: 0 0 auto; display: flex; align-items: center;">
+        <input type="checkbox" class="form-check-input" ${prop.required ? 'checked' : ''}
+               data-field="required" data-testid="property-required" />
+        <label class="form-check-label small" style="margin-left: 0.25rem;">Required</label>
+      </div>
+      <button class="btn btn-sm btn-outline-danger" onclick="handlePropertyRemoval(this)" data-testid="remove-property-btn">×</button>
+    </div>
+  `;
+}
+
+function addRelationship() {
+  const container = document.getElementById('relationships-container');
+  if (container.querySelector('.empty-state')) {
+    container.innerHTML = '';
+  }
+  container.insertAdjacentHTML('beforeend', createRelationshipRow({type: '', target_label: '', properties: []}));
+  attachSelectHandlers(container);
+}
+
+function addIncomingRelationship() {
+  const container = document.getElementById('incoming-relationships-container');
+  if (container.querySelector('.empty-state')) {
+    container.innerHTML = '';
+  }
+  container.insertAdjacentHTML('beforeend', createIncomingRelationshipRow({type: '', source_label: '', properties: []}));
+  attachSelectHandlers(container);
+}
+
+async function addIncomingRelationshipOLD() {
+  if (!currentLabel) return;
+
+  // Build label options excluding current label
+  const availableLabels = labels.filter(l => l.name !== currentLabel.name);
+
+  if (availableLabels.length === 0) {
+    showToast('No other labels available', 'info');
+    return;
+  }
+
+  const labelOptions = availableLabels.map(l =>
+    `<option value="${l.name}">${l.name}</option>`
+  ).join('\n');
+
+  // Show modal with source label selector and relationship type input
+  const modalElements = showConfirmModal(
+    `Add Incoming Relationship to "${currentLabel.name}"`,
+    'Select the source label and enter the relationship type.',
+    [
+      '<div style="margin-top: 0.5rem;">',
+      '  <label style="display: block; margin-bottom: 0.25rem; font-weight: bold;">Source Label:</label>',
+      '  <select id="incoming-source-label" class="form-select form-select-sm" style="width: 100%;">',
+      '    <option value="">-- Select source label --</option>',
+      labelOptions,
+      '  </select>',
+      '</div>',
+      '<div style="margin-top: 0.75rem;">',
+      '  <label style="display: block; margin-bottom: 0.25rem; font-weight: bold;">Relationship Type:</label>',
+      '  <input id="incoming-rel-type" type="text" class="form-control form-control-sm" placeholder="e.g., HAS_SAMPLE" style="width: 100%;" />',
+      '</div>'
+    ],
+    async () => {
+      const sourceLabel = document.getElementById('incoming-source-label').value;
+      const relType = document.getElementById('incoming-rel-type').value.trim();
+
+      if (!sourceLabel) {
+        showToast('Please select a source label', 'error');
+        return;
+      }
+
+      if (!relType) {
+        showToast('Please enter a relationship type', 'error');
+        return;
+      }
+
+      closeConfirmModal();
+      showToast('Adding relationship...', 'info');
+
+      try {
+        // Fetch the source label
+        const resp = await fetch(window.SCIDK_BASE + `/api/labels/${sourceLabel}`);
+        const data = await resp.json();
+
+        if (data.status !== 'success') {
+          showToast('Error fetching source label: ' + (data.error || 'Unknown error'), 'error');
+          return;
+        }
+
+        const sourceLabelDef = data.label;
+
+        // Check if relationship already exists
+        const existingRel = sourceLabelDef.relationships.find(rel =>
+          rel.type === relType && rel.target_label === currentLabel.name
+        );
+
+        if (existingRel) {
+          showToast(`Relationship ${relType} already exists from ${sourceLabel}`, 'info');
+          return;
+        }
+
+        // Add the new relationship to source label
+        const updatedRelationships = [
+          ...sourceLabelDef.relationships,
+          {
+            type: relType,
+            target_label: currentLabel.name,
+            properties: []
+          }
+        ];
+
+        // Save the updated source label
+        const saveResp = await fetch(window.SCIDK_BASE + '/api/labels', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: sourceLabelDef.name,
+            properties: sourceLabelDef.properties,
+            relationships: updatedRelationships
+          })
+        });
+
+        const saveData = await saveResp.json();
+
+        if (saveData.status === 'success') {
+          showToast(`Added relationship from ${sourceLabel}`, 'success');
+
+          // Reload current label to update incoming relationships display
+          const refreshResp = await fetch(window.SCIDK_BASE + `/api/labels/${currentLabel.name}`);
+          const refreshData = await refreshResp.json();
+
+          if (refreshData.status === 'success') {
+            currentLabel = refreshData.label;
+            populateEditor(currentLabel);
+            // Stay in read-only mode
+            isEditMode = false;
+            updateEditorView();
+          }
+        } else {
+          showToast('Error saving changes: ' + (saveData.error || 'Unknown error'), 'error');
+        }
+      } catch (err) {
+        console.error('Error adding relationship:', err);
+        showToast('Network error: ' + err.message, 'error');
+      }
+    }
+  );
+
+  // Show details immediately
+  modalElements.loadingEl.style.display = 'none';
+  modalElements.detailsEl.style.display = 'block';
+}
+
+function createRelationshipRow(rel, index) {
+  const labelOptions = labels.map(l =>
+    `<option value="${l.name}" ${rel.target_label === l.name ? 'selected' : ''}>${l.name}</option>`
+  ).join('\n        ');
+
+  // Add navigation button if target label is selected
+  const hasTarget = rel.target_label && rel.target_label !== '';
+  const navButton = hasTarget
+    ? `<button class="btn btn-sm btn-outline-primary target-label-nav" data-target="${rel.target_label}" title="Go to ${rel.target_label}" style="flex: 0 0 auto;">→</button>`
+    : '';
+
+  return `
+    <div class="relationship-row" data-index="${index || ''}" data-testid="relationship-row">
+      <input type="text" class="form-control form-control-sm" placeholder="Type (e.g., HAS_FILE)"
+             value="${rel.type || ''}" data-field="type" data-testid="relationship-type" />
+      <select class="form-select form-select-sm" data-field="target_label" data-testid="relationship-target">
+        <option value="">-- Select target label --</option>
+        ${labelOptions}
+      </select>
+      ${navButton}
+      <button class="btn btn-sm btn-outline-danger" onclick="this.parentElement.remove()" data-testid="remove-relationship-btn">×</button>
+    </div>
+  `;
+}
+
+function createIncomingRelationshipRow(rel, index) {
+  // Filter out current label from source options
+  const sourceOptions = labels
+    .filter(l => !currentLabel || l.name !== currentLabel.name)
+    .map(l =>
+      `<option value="${l.name}" ${rel.source_label === l.name ? 'selected' : ''}>${l.name}</option>`
+    ).join('\n        ');
+
+  // Add navigation button if source label is selected
+  const hasSource = rel.source_label && rel.source_label !== '';
+  const navButton = hasSource
+    ? `<button class="btn btn-sm btn-outline-primary source-label-nav" data-source="${rel.source_label}" title="Go to ${rel.source_label}" style="flex: 0 0 auto;">→</button>`
+    : '';
+
+  return `
+    <div class="incoming-relationship-row" data-index="${index || ''}" data-testid="incoming-relationship-row">
+      <select class="form-select form-select-sm" data-field="source_label" data-testid="incoming-relationship-source">
+        <option value="">-- Select source label --</option>
+        ${sourceOptions}
+      </select>
+      <input type="text" class="form-control form-control-sm" placeholder="Type (e.g., HAS_SAMPLE)"
+             value="${rel.type || ''}" data-field="type" data-testid="incoming-relationship-type" />
+      ${navButton}
+      <button class="btn btn-sm btn-outline-danger" onclick="this.parentElement.remove()" data-testid="remove-incoming-relationship-btn">×</button>
+    </div>
+  `;
+}
+
+async function saveLabel() {
+  const name = document.getElementById('label-name').value.trim();
+  if (!name) {
+    document.getElementById('name-error').textContent = 'Label name is required';
+    document.getElementById('name-error').style.display = 'block';
+    return;
+  }
+  document.getElementById('name-error').style.display = 'none';
+
+  // Gather properties
+  const properties = Array.from(document.querySelectorAll('.property-row')).map(row => {
+    const nameInput = row.querySelector('[data-field="name"]');
+    const typeSelect = row.querySelector('[data-field="type"]');
+    const requiredCheckbox = row.querySelector('[data-field="required"]');
+
+    if (!nameInput || !typeSelect || !requiredCheckbox) {
+      console.error('Missing field in property row:', row);
+      return null;
+    }
+
+    return {
+      name: nameInput.value.trim(),
+      type: typeSelect.value,
+      required: requiredCheckbox.checked
+    };
+  }).filter(p => p && p.name);
+
+  // Gather relationships (only from outgoing relationships container)
+  const relsContainer = document.getElementById('relationships-container');
+  const relationships = Array.from(relsContainer.querySelectorAll('.relationship-row')).map(row => {
+    const typeInput = row.querySelector('[data-field="type"]');
+    const targetSelect = row.querySelector('[data-field="target_label"]');
+
+    if (!typeInput || !targetSelect) {
+      console.error('Missing field in relationship row:', row);
+      return null;
+    }
+
+    return {
+      type: typeInput.value.trim(),
+      target_label: targetSelect.value,
+      properties: []
+    };
+  }).filter(r => r && r.type && r.target_label);
+
+  // Gather incoming relationships from the edit UI
+  const incomingContainer = document.getElementById('incoming-relationships-container');
+  const incomingRelationships = Array.from(incomingContainer.querySelectorAll('.incoming-relationship-row')).map(row => {
+    const typeInput = row.querySelector('[data-field="type"]');
+    const sourceSelect = row.querySelector('[data-field="source_label"]');
+
+    if (!typeInput || !sourceSelect) {
+      console.error('Missing field in incoming relationship row:', row);
+      return null;
+    }
+
+    return {
+      type: typeInput.value.trim(),
+      source_label: sourceSelect.value,
+      properties: []
+    };
+  }).filter(r => r && r.type && r.source_label);
+
+  const payload = { name, properties, relationships };
+  const removesSchema = currentLabel && (
+    (currentLabel.properties || []).some(p => !properties.some(next => next.name === p.name)) ||
+    (currentLabel.relationships || []).some(r => !relationships.some(next => next.type === r.type && next.target_label === r.target_label)));
+  if (removesSchema && !confirm('Remove shared property or relationship definitions? Direct schema changes do not create curation decisions.')) return;
+
+  console.log('Saving label with payload:', payload);
+  console.log('Incoming relationships to apply:', incomingRelationships);
+
+  try {
+    // First save the current label
+    const resp = await fetch(window.SCIDK_BASE + '/api/labels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(removesSchema ? {'X-SciDK-Confirm': 'destructive-shared-change'} : {}) },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await resp.json();
+    console.log('Save response:', data);
+
+    if (data.status !== 'success') {
+      console.error('Error saving label:', data);
+      showToast('Error saving label: ' + (data.error || 'Unknown error'), 'error');
+      return;
+    }
+
+    showToast('Label saved successfully', 'success');
+
+    // Now handle incoming relationship changes
+    await applyIncomingRelationshipChanges(name, incomingRelationships);
+
+    // Refresh the label to get updated incoming relationships
+    const refreshResp = await fetch(window.SCIDK_BASE + `/api/labels/${name}`);
+    const refreshData = await refreshResp.json();
+
+    if (refreshData.status === 'success') {
+      currentLabel = refreshData.label;
+      loadLabels();
+      populateEditor(currentLabel);
+      // Switch back to read-only mode after save
+      isEditMode = false;
+      updateEditorView();
+      // Refresh instance table if instances are loaded (removes columns for deleted properties)
+      if (instanceData.length > 0) {
+        renderInstanceTable();
+      }
+    }
+  } catch (err) {
+    console.error('Network error saving label:', err);
+    showToast('Network error: ' + err.message, 'error');
+  }
+}
+
+async function applyIncomingRelationshipChanges(targetLabel, desiredIncoming) {
+  // Get original incoming relationships
+  const originalIncoming = currentLabel.incoming_relationships || [];
+
+  // Find relationships to add and remove
+  const toAdd = desiredIncoming.filter(desired =>
+    !originalIncoming.find(orig =>
+      orig.source_label === desired.source_label && orig.type === desired.type
+    )
+  );
+
+  const toRemove = originalIncoming.filter(orig =>
+    !desiredIncoming.find(desired =>
+      desired.source_label === orig.source_label && desired.type === orig.type
+    )
+  );
+
+  console.log('Incoming relationships to add:', toAdd);
+  console.log('Incoming relationships to remove:', toRemove);
+
+  // Remove relationships from source labels
+  for (const rel of toRemove) {
+    try {
+      const resp = await fetch(window.SCIDK_BASE + `/api/labels/${rel.source_label}`);
+      const data = await resp.json();
+
+      if (data.status === 'success') {
+        const sourceLabelDef = data.label;
+        const updatedRels = sourceLabelDef.relationships.filter(r =>
+          !(r.type === rel.type && r.target_label === targetLabel)
+        );
+
+        await fetch(window.SCIDK_BASE + '/api/labels', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: sourceLabelDef.name,
+            properties: sourceLabelDef.properties,
+            relationships: updatedRels
+          })
+        });
+
+        console.log(`Removed ${rel.type} from ${rel.source_label}`);
+      }
+    } catch (err) {
+      console.error(`Error removing relationship from ${rel.source_label}:`, err);
+    }
+  }
+
+  // Add relationships to source labels
+  for (const rel of toAdd) {
+    try {
+      const resp = await fetch(window.SCIDK_BASE + `/api/labels/${rel.source_label}`);
+      const data = await resp.json();
+
+      if (data.status === 'success') {
+        const sourceLabelDef = data.label;
+
+        // Check if relationship already exists
+        const exists = sourceLabelDef.relationships.find(r =>
+          r.type === rel.type && r.target_label === targetLabel
+        );
+
+        if (!exists) {
+          const updatedRels = [
+            ...sourceLabelDef.relationships,
+            {
+              type: rel.type,
+              target_label: targetLabel,
+              properties: []
+            }
+          ];
+
+          await fetch(window.SCIDK_BASE + '/api/labels', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: sourceLabelDef.name,
+              properties: sourceLabelDef.properties,
+              relationships: updatedRels
+            })
+          });
+
+          console.log(`Added ${rel.type} to ${rel.source_label}`);
+        }
+      }
+    } catch (err) {
+      console.error(`Error adding relationship to ${rel.source_label}:`, err);
+    }
+  }
+}
+
+function deleteLabel() {
+  if (!currentLabel) return;
+
+  if (!confirm(`Delete label "${currentLabel.name}"?`)) return;
+
+  fetch(window.SCIDK_BASE + `/api/labels/${currentLabel.name}`, { method: 'DELETE', headers: {'X-SciDK-Confirm': 'destructive-shared-change'} })
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'success') {
+        showToast('Label deleted successfully', 'success');
+        currentLabel = null;
+        document.getElementById('label-editor').style.display = 'none';
+        loadLabels();
+      } else {
+        showToast('Error deleting label: ' + (data.error || 'Unknown error'), 'error');
+      }
+    })
+    .catch(err => showToast('Network error: ' + err.message, 'error'));
+}
+
+async function deleteIncomingRelationship(sourceLabel, relType, targetLabel) {
+  // Show confirmation modal
+  const modalElements = showConfirmModal(
+    `Delete relationship?`,
+    `This will remove the relationship from "${sourceLabel}".`,
+    [
+      `Source: ${sourceLabel}`,
+      `Relationship: [${relType}]`,
+      `Target: ${targetLabel}`,
+      '',
+      '⚠️ This action cannot be undone.'
+    ],
+    async () => {
+      closeConfirmModal();
+      showToast('Deleting relationship...', 'info');
+
+      try {
+        // Fetch the source label
+        const resp = await fetch(window.SCIDK_BASE + `/api/labels/${sourceLabel}`);
+        const data = await resp.json();
+
+        if (data.status !== 'success') {
+          showToast('Error fetching source label: ' + (data.error || 'Unknown error'), 'error');
+          return;
+        }
+
+        const sourceLabelDef = data.label;
+
+        // Remove the relationship from source label's relationships array
+        const updatedRelationships = sourceLabelDef.relationships.filter(rel => {
+          return !(rel.type === relType && rel.target_label === targetLabel);
+        });
+
+        // Save the updated source label
+        const saveResp = await fetch(window.SCIDK_BASE + '/api/labels', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: sourceLabelDef.name,
+            properties: sourceLabelDef.properties,
+            relationships: updatedRelationships
+          })
+        });
+
+        const saveData = await saveResp.json();
+
+        if (saveData.status === 'success') {
+          showToast(`Removed relationship from ${sourceLabel}`, 'success');
+
+          // Reload current label to update incoming relationships display
+          const refreshResp = await fetch(window.SCIDK_BASE + `/api/labels/${targetLabel}`);
+          const refreshData = await refreshResp.json();
+
+          if (refreshData.status === 'success') {
+            currentLabel = refreshData.label;
+            populateEditor(currentLabel);
+            // Stay in read-only mode
+            isEditMode = false;
+            updateEditorView();
+          }
+        } else {
+          showToast('Error saving changes: ' + (saveData.error || 'Unknown error'), 'error');
+        }
+      } catch (err) {
+        console.error('Error deleting relationship:', err);
+        showToast('Network error: ' + err.message, 'error');
+      }
+    }
+  );
+
+  // Show details immediately
+  modalElements.loadingEl.style.display = 'none';
+  modalElements.detailsEl.style.display = 'block';
+}
+
+// Modal helper functions
+function showConfirmModal(title, message, actions, onConfirm) {
+  const modal = document.getElementById('neo4j-confirm-modal');
+  const titleEl = document.getElementById('confirm-modal-title');
+  const messageEl = document.getElementById('confirm-modal-message');
+  const actionsEl = document.getElementById('confirm-modal-actions');
+  const countEl = document.getElementById('confirm-modal-count');
+  const detailsEl = document.getElementById('confirm-modal-details');
+  const loadingEl = document.getElementById('confirm-modal-loading');
+  const errorEl = document.getElementById('confirm-modal-error');
+  const actionBtn = document.getElementById('confirm-modal-action-btn');
+
+  // Set content
+  titleEl.textContent = title;
+  messageEl.textContent = message;
+  actionsEl.innerHTML = actions.map(action => `<li>${action}</li>`).join('');
+
+  // Reset state
+  detailsEl.style.display = 'none';
+  loadingEl.style.display = 'block';
+  errorEl.style.display = 'none';
+  countEl.innerHTML = '';
+
+  // Set up action button
+  actionBtn.onclick = () => {
+    closeConfirmModal();
+    onConfirm();
+  };
+
+  // Show modal
+  modal.style.display = 'block';
+
+  return { countEl, detailsEl, loadingEl, errorEl };
+}
+
+function closeConfirmModal() {
+  document.getElementById('neo4j-confirm-modal').style.display = 'none';
+}
+
+// Transfer to Primary Modal functions
+function openTransferModal() {
+  if (!currentLabel) return;
+
+  const sourceProfile = currentLabel.neo4j_source_profile;
+  if (!sourceProfile) {
+    showToast('This label has no source profile configured', 'error');
+    return;
+  }
+
+  // Reset modal state
+  document.getElementById('transfer-label-name').textContent = currentLabel.name;
+  document.getElementById('transfer-source-name').textContent = sourceProfile;
+  document.getElementById('transfer-batch-size').value = 100;
+  document.getElementById('transfer-progress').style.display = 'none';
+  document.getElementById('transfer-result').style.display = 'none';
+  document.getElementById('transfer-error').style.display = 'none';
+  document.getElementById('transfer-confirm-btn').style.display = 'inline-block';
+  document.getElementById('transfer-cancel-btn').textContent = 'Cancel';
+
+  // Show modal
+  document.getElementById('transfer-modal').style.display = 'flex';
+
+  // Set up confirm button
+  const confirmBtn = document.getElementById('transfer-confirm-btn');
+  confirmBtn.onclick = startTransfer;
+}
+
+async function closeTransferModal() {
+  // Cancel transfer if running
+  if (currentLabel) {
+    try {
+      await fetch(window.SCIDK_BASE + `/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-cancel`, {
+        method: 'POST'
+      });
+    } catch (error) {
+      // Ignore cancel errors
+    }
+  }
+
+  document.getElementById('transfer-modal').style.display = 'none';
+}
+
+async function startTransfer() {
+  if (!currentLabel) return;
+
+  // Check if transfer already running
+  try {
+    const statusResponse = await fetch(window.SCIDK_BASE + `/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-status`);
+    const statusData = await statusResponse.json();
+
+    if (statusData.transfer_active) {
+      showToast('Transfer already in progress for this label. Please wait or cancel first.', 'warning');
+      return;
+    }
+  } catch (error) {
+    // Ignore status check errors, proceed with transfer
+  }
+
+  const batchSize = parseInt(document.getElementById('transfer-batch-size').value) || 100;
+  const mode = document.querySelector('input[name="transfer-mode"]:checked').value;
+  const createPlaceholders = document.getElementById('transfer-create-placeholders').checked;
+
+  // Hide confirm button, show progress
+  document.getElementById('transfer-confirm-btn').style.display = 'none';
+  document.getElementById('transfer-progress').style.display = 'block';
+  document.getElementById('transfer-result').style.display = 'none';
+  document.getElementById('transfer-error').style.display = 'none';
+
+  // Show/hide Phase 2 based on transfer mode
+  const phase2Container = document.getElementById('phase2-container');
+  if (mode === 'nodes_only') {
+    phase2Container.style.display = 'none';
+  } else {
+    phase2Container.style.display = 'block';
+  }
+
+  // Helper function to format time as "2m 15s" or "45s"
+  function formatTime(seconds) {
+    if (seconds < 60) return `${seconds}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs}s`;
+  }
+
+  // Start progress polling with enhanced two-phase tracking
+  const startTime = Date.now();
+
+  const pollInterval = setInterval(async () => {
+    try {
+      const statusResp = await fetch(window.SCIDK_BASE + `/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-status`);
+      const statusData = await statusResp.json();
+
+      if (statusData.transfer_active && statusData.progress) {
+        const p = statusData.progress;
+
+        // Calculate elapsed time
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        document.getElementById('elapsed-time').textContent = formatTime(elapsed);
+
+        // Phase 1: Nodes
+        if (p.phase_1) {
+          const p1 = p.phase_1;
+          const p1Bar = document.getElementById('phase1-progress-bar');
+          p1Bar.style.width = `${p1.percent}%`;
+          p1Bar.textContent = `${p1.percent}%`;
+          document.getElementById('phase1-status').textContent =
+            `${(p1.completed || 0).toLocaleString()}/${(p1.total || 0).toLocaleString()}`;
+
+          // Mark Phase 1 complete
+          if (p1.percent === 100) {
+            p1Bar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+            p1Bar.classList.add('bg-success');
+          }
+        }
+
+        // Phase 2: Relationships
+        if (p.phase_2) {
+          const p2 = p.phase_2;
+          const p2Bar = document.getElementById('phase2-progress-bar');
+
+          if (p.phase === 2 && p2.total > 0) {
+            // Phase 2 is active
+            p2Bar.style.width = `${p2.percent}%`;
+            p2Bar.textContent = `${p2.percent}%`;
+            p2Bar.classList.add('progress-bar-animated', 'progress-bar-striped', 'bg-info');
+            document.getElementById('phase2-status').textContent =
+              `${(p2.completed || 0).toLocaleString()}/${(p2.total || 0).toLocaleString()}`;
+
+            // Mark Phase 2 complete
+            if (p2.percent === 100) {
+              p2Bar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+              p2Bar.classList.add('bg-success');
+            }
+          } else if (p.phase === 1) {
+            // Phase 2 waiting
+            p2Bar.style.width = '0%';
+            p2Bar.textContent = '0%';
+            document.getElementById('phase2-status').textContent = 'Waiting...';
+          }
+        }
+
+        // Calculate ETA and speed
+        if (p.phase === 1 && p.phase_1 && p.phase_1.completed > 0) {
+          // Phase 1: Node transfer
+          const speed = p.phase_1.completed / elapsed;
+          const remaining = p.phase_1.total - p.phase_1.completed;
+          const eta = remaining > 0 ? Math.ceil(remaining / speed) : 0;
+          document.getElementById('transfer-speed').textContent =
+            `${Math.round(speed)} nodes/s`;
+          document.getElementById('eta-time').textContent = eta > 0 ? formatTime(eta) : 'Complete';
+        } else if (p.phase === 2 && p.phase_2 && p.phase_2.completed > 0 && p.phase_2_start) {
+          // Phase 2: Relationship transfer
+          const phase2Elapsed = Math.floor((Date.now() / 1000) - p.phase_2_start);
+          if (phase2Elapsed > 0) {
+            const speed = p.phase_2.completed / phase2Elapsed;
+            const remaining = p.phase_2.total - p.phase_2.completed;
+            const eta = remaining > 0 ? Math.ceil(remaining / speed) : 0;
+            document.getElementById('transfer-speed').textContent =
+              `${Math.round(speed)} rels/s`;
+            document.getElementById('eta-time').textContent = eta > 0 ? formatTime(eta) : 'Complete';
+          }
+        }
+      }
+    } catch (e) {
+      // Ignore polling errors
+    }
+  }, 1000); // Poll every second
+
+  try {
+    const response = await fetch(window.SCIDK_BASE + `/api/labels/${encodeURIComponent(currentLabel.name)}/transfer-to-primary?batch_size=${batchSize}&mode=${mode}&create_missing_targets=${createPlaceholders}`, {
+      method: 'POST'
+    });
+
+    const data = await response.json();
+
+    // Stop polling
+    clearInterval(pollInterval);
+
+    if (data.status === 'success') {
+      // Show results
+      document.getElementById('transfer-progress').style.display = 'none';
+      document.getElementById('transfer-result').style.display = 'block';
+      document.getElementById('nodes-transferred-count').textContent = data.nodes_transferred || 0;
+      document.getElementById('rels-transferred-count').textContent = data.relationships_transferred || 0;
+      document.getElementById('transfer-mode-used').textContent = data.mode || mode;
+      document.getElementById('matching-keys-used').textContent = JSON.stringify(data.matching_keys || {});
+
+      // Update cancel button to close
+      document.getElementById('transfer-cancel-btn').textContent = 'Close';
+
+      showToast(`Transfer complete: ${data.nodes_transferred} nodes, ${data.relationships_transferred} relationships`, 'success');
+    } else if (data.status === 'cancelled') {
+      // Show cancellation
+      document.getElementById('transfer-progress').style.display = 'none';
+      document.getElementById('transfer-error').style.display = 'block';
+      document.getElementById('transfer-error-text').textContent = data.message || 'Transfer cancelled by user';
+      document.getElementById('transfer-confirm-btn').style.display = 'inline-block';
+
+      showToast(`Transfer cancelled: ${data.nodes_transferred || 0} nodes transferred before cancellation`, 'warning');
+    } else {
+      // Show error
+      document.getElementById('transfer-progress').style.display = 'none';
+      document.getElementById('transfer-error').style.display = 'block';
+      document.getElementById('transfer-error-text').textContent = data.error || 'Unknown error';
+      document.getElementById('transfer-confirm-btn').style.display = 'inline-block';
+
+      showToast(`Transfer failed: ${data.error}`, 'error');
+    }
+  } catch (error) {
+    // Stop polling
+    clearInterval(pollInterval);
+
+    // Show error
+    document.getElementById('transfer-progress').style.display = 'none';
+    document.getElementById('transfer-error').style.display = 'block';
+    document.getElementById('transfer-error-text').textContent = error.message || 'Network error';
+    document.getElementById('transfer-confirm-btn').style.display = 'inline-block';
+
+    showToast(`Transfer failed: ${error.message}`, 'error');
+  }
+}
+
+async function getInstanceCount(labelName) {
+  try {
+    const response = await fetch(window.SCIDK_BASE + `/api/labels/${labelName}/instance-count`);
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    return { status: 'error', error: error.message };
+  }
+}
+
+function pullFromNeo4j() {
+  if (!currentLabel) return;
+
+  const modalElements = showConfirmModal(
+    `Pull "${currentLabel.name}" from Neo4j?`,
+    'This will sync the schema with Neo4j and add any missing properties or relationships.',
+    [
+      'Pull schema properties from Neo4j',
+      'Pull relationship definitions from Neo4j',
+      'Merge with existing local schema'
+    ],
+    () => {
+      showToast('Pulling from Neo4j...', 'info');
+      fetch(window.SCIDK_BASE + `/api/labels/${currentLabel.name}/pull`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+          if (data.status === 'success') {
+            const propCount = data.new_properties_count || 0;
+            const relCount = data.new_relationships_count || 0;
+            const total = propCount + relCount;
+
+            let msg = '';
+            if (total === 0) {
+              msg = 'No new schema found in Neo4j';
+            } else {
+              const parts = [];
+              if (propCount > 0) parts.push(`${propCount} property${propCount > 1 ? 'ies' : ''}`);
+              if (relCount > 0) parts.push(`${relCount} relationship${relCount > 1 ? 's' : ''}`);
+              msg = `Added ${parts.join(' and ')} from Neo4j`;
+            }
+
+            showToast(msg, 'success');
+            loadLabel(currentLabel.name);
+          } else {
+            showToast('Error pulling from Neo4j: ' + (data.error || 'Unknown error'), 'error');
+          }
+        })
+        .catch(err => showToast('Network error: ' + err.message, 'error'));
+    }
+  );
+
+  // Fetch instance count
+  getInstanceCount(currentLabel.name).then(data => {
+    modalElements.loadingEl.style.display = 'none';
+    modalElements.detailsEl.style.display = 'block';
+
+    if (data.status === 'success') {
+      const count = data.count || 0;
+      modalElements.countEl.innerHTML = `<strong>Instances in Neo4j:</strong> ${count}`;
+    } else {
+      modalElements.errorEl.style.display = 'block';
+      document.getElementById('confirm-modal-error-text').textContent = data.error || 'Could not fetch instance count';
+    }
+  });
+}
+
+function pullAllFromNeo4j() {
+  if (!confirm('Pull all labels from all configured Neo4j connections? This will import all labels and may overwrite local definitions.')) return;
+
+  showToast('Pulling all labels from Neo4j...', 'info');
+
+  fetch(window.SCIDK_BASE + '/api/labels/pull', { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'success') {
+        showToast(`Imported ${data.count} labels from Neo4j`, 'success');
+        loadLabels();
+      } else {
+        showToast('Error pulling from Neo4j: ' + (data.error || 'Unknown error'), 'error');
+      }
+    })
+    .catch(err => showToast('Network error: ' + err.message, 'error'));
+}
+
+function pullFromConnection(profileName) {
+  if (!confirm(`Pull all labels from ${profileName}? This will import all labels and may overwrite local definitions.`)) return;
+
+  showToast(`Pulling labels from ${profileName}...`, 'info');
+
+  fetch(window.SCIDK_BASE + `/api/labels/pull?connection=${encodeURIComponent(profileName)}`, { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'success') {
+        showToast(`Imported ${data.count} labels from ${profileName}`, 'success');
+        loadLabels();
+      } else {
+        showToast(`Error pulling from ${profileName}: ` + (data.error || 'Unknown error'), 'error');
+      }
+    })
+    .catch(err => showToast('Network error: ' + err.message, 'error'));
+}
+
+async function loadPullDropdown() {
+  const dropdown = document.getElementById('pull-dropdown-menu');
+  if (!dropdown) return;
+
+  try {
+    // Load available Neo4j profiles
+    const r = await fetch(window.SCIDK_BASE + '/api/settings/neo4j/profiles');
+    const j = await r.json();
+    const profiles = j.profiles || [];
+
+    const roleLabels = {
+      'primary': 'Primary',
+      'labels_source': 'Labels Source',
+      'readonly': 'Read-only',
+      'ingestion_target': 'Ingestion Target'
+    };
+
+    dropdown.innerHTML = '';
+
+    if (profiles.length === 0) {
+      dropdown.innerHTML = '<div style="padding: 0.5rem; color: #666; font-size: 0.85rem;">No connections configured</div>';
+      return;
+    }
+
+    // Add option for each profile
+    profiles.forEach(profile => {
+      const roleLabel = roleLabels[profile.role] || profile.role;
+      const item = document.createElement('div');
+      item.style.padding = '0.5rem';
+      item.style.cursor = 'pointer';
+      item.style.fontSize = '0.85rem';
+      item.style.borderBottom = '1px solid #f0f0f0';
+      item.innerHTML = `<strong>${profile.name}</strong><br><span style="color: #666; font-size: 0.75rem;">${roleLabel}</span>`;
+      item.onmouseover = () => item.style.background = '#f0f0f0';
+      item.onmouseout = () => item.style.background = 'white';
+      item.onclick = () => {
+        dropdown.style.display = 'none';
+        pullFromConnection(profile.name);
+      };
+      dropdown.appendChild(item);
+    });
+  } catch (e) {
+    dropdown.innerHTML = '<div style="padding: 0.5rem; color: #dc3545; font-size: 0.85rem;">Failed to load connections</div>';
+  }
+}
+
+function previewArrowsImport() {
+  const input = document.getElementById('arrows-json-input').value.trim();
+  if (!input) {
+    document.getElementById('import-preview').style.display = 'none';
+    return;
+  }
+
+  try {
+    const arrowsJson = JSON.parse(input);
+    const nodeCount = arrowsJson.nodes?.length || 0;
+    const relCount = arrowsJson.relationships?.length || 0;
+
+    document.getElementById('preview-label-count').textContent = nodeCount;
+    document.getElementById('preview-rel-count').textContent = relCount;
+    document.getElementById('import-preview').style.display = 'block';
+  } catch (e) {
+    document.getElementById('import-preview').style.display = 'none';
+  }
+}
+
+async function importFromArrows() {
+  const input = document.getElementById('arrows-json-input').value.trim();
+  if (!input) {
+    showToast('Please paste Arrows.app JSON', 'warning');
+    return;
+  }
+
+  try {
+    const arrowsJson = JSON.parse(input);
+    showToast('Importing schema...', 'info');
+
+    const resp = await fetch(window.SCIDK_BASE + '/api/labels/import/arrows', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({arrows_json: arrowsJson, mode: 'merge'})
+    });
+
+    const result = await resp.json();
+    console.log('Import result:', result);
+
+    if (result.status === 'success') {
+      const msg = `Imported ${result.imported.labels} labels, ${result.imported.relationships} relationships`;
+      showToast(msg, 'success');
+
+      // Close modal
+      closeImportModal();
+
+      // Reload labels
+      loadLabels();
+    } else {
+      showToast('Import failed: ' + result.error, 'error');
+    }
+  } catch (e) {
+    console.error('Import error:', e);
+    showToast('Import error: ' + e.message, 'error');
+  }
+}
+
+async function exportToArrows() {
+  try {
+    showToast('Exporting schema...', 'info');
+    window.location = window.SCIDK_BASE + '/api/labels/export/arrows';
+    setTimeout(() => showToast('Schema exported successfully', 'success'), 500);
+  } catch (e) {
+    showToast('Export error: ' + e.message, 'error');
+  }
+}
+
+async function exportSchemaLayer() {
+  try {
+    showToast('Exporting schema intelligence layer...', 'info');
+    window.location = window.SCIDK_BASE + '/api/chat/schema/export';
+    setTimeout(() => showToast('Schema layer exported successfully', 'success'), 500);
+  } catch (e) {
+    showToast('Export error: ' + e.message, 'error');
+  }
+}
+
+// Batch operations
+async function batchPull() {
+  if (selectedLabels.size === 0) return;
+
+  const labelNames = Array.from(selectedLabels);
+  if (!confirm(`Pull schema for ${labelNames.length} selected labels from Neo4j?`)) return;
+
+  showToast(`Pulling schema for ${labelNames.length} labels...`, 'info');
+
+  try {
+    const resp = await fetch(window.SCIDK_BASE + '/api/labels/batch/pull', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ label_names: labelNames })
+    });
+
+    const result = await resp.json();
+
+    if (result.status === 'success') {
+      const totalProps = result.total_new_properties || 0;
+      const totalRels = result.total_new_relationships || 0;
+      const msg = `Batch pull complete: ${totalProps} properties, ${totalRels} relationships added`;
+      showToast(msg, 'success');
+      clearSelection();
+      loadLabels();
+    } else {
+      showToast('Batch pull error: ' + (result.error || 'Unknown error'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+async function batchDelete() {
+  if (selectedLabels.size === 0) return;
+
+  const labelNames = Array.from(selectedLabels);
+  if (!confirm(`Delete ${labelNames.length} selected labels?\n\n${labelNames.join(', ')}\n\nThis cannot be undone.`)) return;
+
+  showToast(`Deleting ${labelNames.length} labels...`, 'info');
+
+  try {
+    const resp = await fetch(window.SCIDK_BASE + '/api/labels/batch/delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-SciDK-Confirm': 'destructive-shared-change'},
+      body: JSON.stringify({ label_names: labelNames })
+    });
+
+    const result = await resp.json();
+
+    if (result.status === 'success') {
+      showToast(`Deleted ${result.deleted_count} labels`, 'success');
+      clearSelection();
+      currentLabel = null;
+      document.getElementById('label-editor').style.display = 'none';
+      document.getElementById('labels-statistics').style.display = 'none';
+      loadLabels();
+    } else {
+      showToast('Batch delete error: ' + (result.error || 'Unknown error'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+function populateStatistics(label) {
+  const container = document.getElementById('statistics-content');
+
+  // Calculate statistics
+  const propertyCount = label.properties.length;
+  const requiredCount = label.properties.filter(p => p.required).length;
+  const optionalCount = propertyCount - requiredCount;
+  const outgoingRels = label.relationships.length;
+  const incomingRels = (label.incoming_relationships || []).length;
+  const totalRels = outgoingRels + incomingRels;
+
+  // Property type distribution
+  const typeDistribution = {};
+  label.properties.forEach(prop => {
+    typeDistribution[prop.type] = (typeDistribution[prop.type] || 0) + 1;
+  });
+
+  const typeDistHtml = Object.entries(typeDistribution).map(([type, count]) =>
+    `<div class="small" style="margin-left: 1rem;">• ${type}: ${count}</div>`
+  ).join('');
+
+  // Relationship details
+  const outgoingRelsHtml = label.relationships.map(rel =>
+    `<div class="small" style="margin-left: 1rem;">• [${rel.type}] → ${rel.target_label}</div>`
+  ).join('') || '<div class="small" style="margin-left: 1rem; color: #999;">None</div>';
+
+  const incomingRelsHtml = (label.incoming_relationships || []).map(rel =>
+    `<div class="small" style="margin-left: 1rem;">• ${rel.source_label} → [${rel.type}]</div>`
+  ).join('') || '<div class="small" style="margin-left: 1rem; color: #999;">None</div>';
+
+  container.innerHTML = `
+    <div style="margin-bottom: 1.5rem;">
+      <h4 class="small" style="font-weight: bold; margin-bottom: 0.5rem;">Properties</h4>
+      <div class="small">Total: <strong>${propertyCount}</strong></div>
+      <div class="small">Required: <strong>${requiredCount}</strong></div>
+      <div class="small">Optional: <strong>${optionalCount}</strong></div>
+      ${typeDistHtml ? '<div class="small" style="margin-top: 0.5rem; font-weight: bold;">Type Distribution:</div>' + typeDistHtml : ''}
+    </div>
+
+    <div style="margin-bottom: 1.5rem;">
+      <h4 class="small" style="font-weight: bold; margin-bottom: 0.5rem;">Relationships</h4>
+      <div class="small">Total: <strong>${totalRels}</strong></div>
+      <div class="small">Outgoing: <strong>${outgoingRels}</strong></div>
+      ${outgoingRelsHtml}
+      <div class="small" style="margin-top: 0.5rem;">Incoming: <strong>${incomingRels}</strong></div>
+      ${incomingRelsHtml}
+    </div>
+
+    <div style="margin-bottom: 1.5rem;">
+      <h4 class="small" style="font-weight: bold; margin-bottom: 0.5rem;">Instances</h4>
+      <div class="small" style="margin-top: 0.5rem;">
+        <button class="btn btn-sm btn-outline-primary" onclick="loadInstanceCount('${label.name}')" style="font-size: 0.75rem;">
+          Check Neo4j
+        </button>
+      </div>
+      <div id="instance-count-${label.name}" style="margin-top: 0.5rem;"></div>
+    </div>
+  `;
+  loadInstanceCount(label.name);
+}
+
+async function loadInstanceCount(labelName) {
+  const countDiv = document.getElementById(`instance-count-${labelName}`);
+  countDiv.innerHTML = '<div class="small" style="color: #666;">Loading...</div>';
+
+  try {
+    const resp = await fetch(window.SCIDK_BASE + `/api/labels/${labelName}/instance-count`);
+    const result = await resp.json();
+
+    if (result.status === 'success') {
+      const count = result.count || 0;
+      const sourceProfile = result.source_profile;
+      const sourceText = sourceProfile ? ` in ${sourceProfile}` : ' in Neo4j';
+      countDiv.innerHTML = `<div class="small"><strong>${count}</strong> instance${count !== 1 ? 's' : ''}${sourceText}</div>`;
+    } else {
+      countDiv.innerHTML = `<div class="small" style="color: #b00020;">${result.error || 'Error loading count'}</div>`;
+    }
+  } catch (e) {
+    countDiv.innerHTML = `<div class="small" style="color: #b00020;">Error: ${e.message}</div>`;
+  }
+}
+
+// Instance browser functions
+let instanceData = [];
+let instancePage = 0;
+let instanceLimit = 50;
+let instanceTotal = 0;
+let instanceChanges = {};
+
+async function pullInstances() {
+  if (!currentLabel) return;
+
+  const sourceProfile = currentLabel.neo4j_source_profile;
+  const sourceText = sourceProfile ? ` from ${sourceProfile}` : '';
+  showToast(`Pulling instances${sourceText}...`, 'info');
+
+  // Check if "with relationships" toggle is enabled
+  const withRelationships = document.getElementById('toggle-with-relationships').checked;
+
+  try {
+    const resp = await fetch(window.SCIDK_BASE + `/api/labels/${currentLabel.name}/instances?limit=${instanceLimit}&offset=${instancePage * instanceLimit}&with_relationships=${withRelationships}`);
+    const result = await resp.json();
+
+    if (result.status === 'success') {
+      instanceData = result.instances || [];
+      instanceTotal = result.total || 0;
+      instanceChanges = {};
+      renderInstanceTable();
+      showToast(`Loaded ${instanceData.length} of ${instanceTotal} instances`, 'success');
+      document.getElementById('btn-push-instances').style.display = 'none';
+
+      // Show download CSV button if there are instances
+      document.getElementById('btn-download-csv').style.display = instanceData.length > 0 ? 'inline-block' : 'none';
+    } else {
+      showToast('Error loading instances: ' + (result.error || 'Unknown error'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+async function pushInstances(mode = 'merge') {
+  if (!currentLabel) return;
+
+  const changeCount = Object.keys(instanceChanges).length;
+  if (changeCount === 0) {
+    showToast('No changes to push', 'info');
+    return;
+  }
+
+  closeConfirmModal();
+  showToast(`Pushing ${changeCount} changes (${mode} mode)...`, 'info');
+
+  let successCount = 0;
+  let errorCount = 0;
+
+  // In overwrite mode, we need to send all properties from the schema
+  if (mode === 'overwrite') {
+    // Build complete property sets for each changed instance
+    for (const [instanceId, changes] of Object.entries(instanceChanges)) {
+      const instance = instanceData.find(i => i.id === instanceId);
+      if (!instance) continue;
+
+      // Merge original properties with changes, but only include schema properties
+      const completeProperties = {};
+      currentLabel.properties.forEach(prop => {
+        const propName = prop.name;
+        if (changes[propName] !== undefined) {
+          completeProperties[propName] = changes[propName];
+        } else if (instance.properties[propName] !== undefined) {
+          completeProperties[propName] = instance.properties[propName];
+        }
+      });
+
+      try {
+        const resp = await fetch(window.SCIDK_BASE + `/api/labels/${currentLabel.name}/instances/${instanceId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ properties: completeProperties, mode: 'overwrite' })
+        });
+
+          const result = await resp.json();
+
+        if (result.status === 'success') {
+          successCount++;
+          // Update instanceData with complete properties
+          if (instance) {
+            instance.properties = completeProperties;
+          }
+        } else {
+          errorCount++;
+          console.error('Error updating instance:', result.error);
+        }
+      } catch (e) {
+        errorCount++;
+        console.error('Network error updating instance:', e);
+      }
+    }
+  } else {
+    // Merge mode - only update changed properties
+    for (const [instanceId, changes] of Object.entries(instanceChanges)) {
+      for (const [prop, value] of Object.entries(changes)) {
+        try {
+          const resp = await fetch(window.SCIDK_BASE + `/api/labels/${currentLabel.name}/instances/${instanceId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ property: prop, value: value })
+          });
+
+          const result = await resp.json();
+
+          if (result.status === 'success') {
+            successCount++;
+            // Update instanceData with new value
+            const instance = instanceData.find(i => i.id === instanceId);
+            if (instance) {
+              instance.properties[prop] = value;
+            }
+          } else {
+            errorCount++;
+            console.error('Error updating instance:', result.error);
+          }
+        } catch (e) {
+          errorCount++;
+          console.error('Network error updating instance:', e);
+        }
+      }
+    }
+  }
+
+  // Clear changes and re-render
+  instanceChanges = {};
+  renderInstanceTable();
+  document.getElementById('btn-push-instances').style.display = 'none';
+
+  if (errorCount === 0) {
+    showToast(`Successfully pushed ${successCount} changes`, 'success');
+  } else {
+    showToast(`Pushed ${successCount} changes, ${errorCount} failed`, 'error');
+  }
+}
+
+async function refreshInstances() {
+  instancePage = 0;
+  await pullInstances();
+}
+
+function navigateInstances(delta) {
+  instancePage = Math.max(0, instancePage + delta);
+  pullInstances();
+}
+
+// Copy/Paste handler for Excel-like multi-cell paste
+function handleCellPaste(startCell, pastedText) {
+  const instanceId = startCell.dataset.id;
+  const startProp = startCell.dataset.prop;
+
+  // Split by lines (rows) and tabs (columns)
+  const rows = pastedText.split('\n').filter(r => r.trim());
+
+  if (rows.length === 0) return;
+
+  // Parse first row to see if it's multi-column
+  const firstRowCells = rows[0].split('\t');
+
+  if (rows.length === 1 && firstRowCells.length === 1) {
+    // Single cell paste
+    startCell.textContent = firstRowCells[0].trim();
+    startCell.dispatchEvent(new Event('blur'));
+    return;
+  }
+
+  // Multi-cell paste
+  const properties = currentLabel.properties.map(p => p.name);
+  const startPropIndex = properties.indexOf(startProp);
+
+  if (startPropIndex === -1) return;
+
+  // Get current instance and subsequent instances
+  const startInstanceIndex = instanceData.findIndex(i => i.id === instanceId);
+  if (startInstanceIndex === -1) return;
+
+  let changesCount = 0;
+
+  rows.forEach((row, rowOffset) => {
+    const targetInstanceIndex = startInstanceIndex + rowOffset;
+    if (targetInstanceIndex >= instanceData.length) return;
+
+    const targetInstance = instanceData[targetInstanceIndex];
+    const cells = row.split('\t');
+
+    cells.forEach((cellValue, colOffset) => {
+      const targetPropIndex = startPropIndex + colOffset;
+      if (targetPropIndex >= properties.length) return;
+
+      const targetProp = properties[targetPropIndex];
+      const trimmedValue = cellValue.trim();
+
+      // Record change
+      if (!instanceChanges[targetInstance.id]) {
+        instanceChanges[targetInstance.id] = {};
+      }
+      instanceChanges[targetInstance.id][targetProp] = trimmedValue;
+      changesCount++;
+    });
+  });
+
+  // Re-render table to show changes
+  renderInstanceTable();
+
+  // Show push button
+  if (Object.keys(instanceChanges).length > 0) {
+    document.getElementById('btn-push-instances').style.display = 'inline-block';
+  }
+
+  showToast(`Pasted ${changesCount} cell(s)`, 'success', 1500);
+}
+
+// CSV Export/Import functions
+function downloadInstancesCSV() {
+  if (!currentLabel || instanceData.length === 0) {
+    showToast('No instances to download', 'info');
+    return;
+  }
+
+  // Get property names
+  const properties = currentLabel.properties.map(p => p.name);
+
+  // Build CSV content
+  let csv = 'neo4j_id,' + properties.join(',') + '\n';
+
+  instanceData.forEach(instance => {
+    const row = [instance.id];
+    properties.forEach(prop => {
+      let value = instance.properties[prop] || '';
+      // Escape commas and quotes
+      if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
+        value = '"' + value.replace(/"/g, '""') + '"';
+      }
+      row.push(value);
+    });
+    csv += row.join(',') + '\n';
+  });
+
+  // Create download
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  const date = new Date().toISOString().split('T')[0];
+  link.setAttribute('href', url);
+  link.setAttribute('download', `${currentLabel.name}_instances_${date}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  showToast(`Downloaded ${instanceData.length} instances as CSV`, 'success');
+}
+
+function handleCSVUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  if (!currentLabel) {
+    showToast('Please select a label first', 'error');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const csv = e.target.result;
+      const lines = csv.split('\n').filter(line => line.trim());
+
+      if (lines.length < 2) {
+        showToast('CSV file is empty', 'error');
+        return;
+      }
+
+      // Parse header
+      const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+      const idIndex = headers.indexOf('neo4j_id');
+
+      if (idIndex === -1) {
+        showToast('CSV must have a "neo4j_id" column', 'error');
+        return;
+      }
+
+      // Parse rows
+      const newInstances = [];
+      const changes = {};
+
+      for (let i = 1; i < lines.length; i++) {
+        const values = parseCSVLine(lines[i]);
+        if (values.length !== headers.length) continue;
+
+        const id = values[idIndex];
+        if (!id) continue;
+
+        const properties = {};
+        headers.forEach((header, idx) => {
+          if (header !== 'neo4j_id') {
+            properties[header] = values[idx];
+          }
+        });
+
+        newInstances.push({ id, properties });
+
+        // Mark all as changed for push
+        const existingInstance = instanceData.find(inst => inst.id === id);
+        if (existingInstance) {
+          // Track changes for existing instances
+          changes[id] = {};
+          Object.entries(properties).forEach(([prop, value]) => {
+            if (existingInstance.properties[prop] !== value) {
+              changes[id][prop] = value;
+            }
+          });
+        } else {
+          // New instance - mark all properties as changed
+          changes[id] = properties;
+        }
+      }
+
+      if (newInstances.length === 0) {
+        showToast('No valid instances found in CSV', 'error');
+        return;
+      }
+
+      // Merge with existing data
+      newInstances.forEach(newInst => {
+        const existingIdx = instanceData.findIndex(inst => inst.id === newInst.id);
+        if (existingIdx >= 0) {
+          // Update existing
+          instanceData[existingIdx] = newInst;
+        } else {
+          // Add new
+          instanceData.push(newInst);
+        }
+      });
+
+      instanceChanges = changes;
+      renderInstanceTable();
+
+      // Show push button if there are changes
+      const changeCount = Object.keys(instanceChanges).length;
+      if (changeCount > 0) {
+        document.getElementById('btn-push-instances').style.display = 'inline-block';
+      }
+
+      showToast(`Loaded ${newInstances.length} instances from CSV (${changeCount} with changes)`, 'success');
+
+      // Clear file input
+      event.target.value = '';
+    } catch (error) {
+      showToast('Error parsing CSV: ' + error.message, 'error');
+      console.error('CSV parse error:', error);
+    }
+  };
+
+  reader.readAsText(file);
+}
+
+function parseCSVLine(line) {
+  const values = [];
+  let currentValue = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        currentValue += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      values.push(currentValue.trim());
+      currentValue = '';
+    } else {
+      currentValue += char;
+    }
+  }
+
+  values.push(currentValue.trim());
+  return values;
+}
+
+function pushInstancesWithPreview() {
+  if (!currentLabel) return;
+
+  const changeCount = Object.keys(instanceChanges).length;
+  if (changeCount === 0) {
+    showToast('No changes to push', 'info');
+    return;
+  }
+
+  // Count updates vs creates
+  let updateCount = 0;
+  let createCount = 0;
+
+  Object.keys(instanceChanges).forEach(instanceId => {
+    const existingInstance = instanceData.find(i => i.id === instanceId);
+    if (existingInstance && existingInstance.properties) {
+      updateCount++;
+    } else {
+      createCount++;
+    }
+  });
+
+  const modalElements = showConfirmModal(
+    `Push changes to "${currentLabel.name}"?`,
+    `You have ${changeCount} instance(s) with changes.`,
+    [
+      `Update ${updateCount} existing instance(s)`,
+      createCount > 0 ? `Create ${createCount} new instance(s)` : null,
+      '<strong>Push Mode:</strong>',
+      '<label style="display: block; margin-left: 1rem; cursor: pointer;"><input type="radio" name="push-mode" value="merge" checked style="margin-right: 0.5rem;">Merge (update only changed properties)</label>',
+      '<label style="display: block; margin-left: 1rem; cursor: pointer;"><input type="radio" name="push-mode" value="overwrite" style="margin-right: 0.5rem;">Overwrite (remove properties not in schema)</label>',
+      '<div style="margin-left: 2rem; margin-top: 0.5rem; font-size: 0.85rem; color: #666;">⚠️ Overwrite mode will delete any properties from Neo4j nodes that are not defined in the label schema</div>'
+    ].filter(Boolean),
+    () => {
+      const selectedMode = document.querySelector('input[name="push-mode"]:checked')?.value || 'merge';
+      pushInstances(selectedMode);
+    }
+  );
+
+  // Show change details immediately
+  modalElements.loadingEl.style.display = 'none';
+  modalElements.detailsEl.style.display = 'block';
+  modalElements.countEl.innerHTML = `<strong>Total changes:</strong> ${changeCount} instance(s)`;
+}
+
+async function openRelatedInstance(label, id) {
+  await loadLabel(label);
+  if (!currentLabel || currentLabel.name !== label) return;
+  const response = await fetch(window.SCIDK_BASE + `/api/labels/${encodeURIComponent(label)}/instances?with_relationships=true&instance_id=${encodeURIComponent(id)}&limit=1`);
+  const result = await response.json();
+  if (!response.ok || result.status !== 'success') { showToast('Related entity is unavailable under current management authority.', 'error'); return; }
+  instanceData = result.instances; instanceTotal = result.total; instanceChanges = {};
+  renderInstanceTable();
+  document.getElementById('instance-table-container').scrollIntoView({block: 'nearest'});
+}
+
+const managementSelection = new URLSearchParams(location.search);
+if (managementSelection.get('management_label') && managementSelection.get('management_id')) {
+  openRelatedInstance(managementSelection.get('management_label'), managementSelection.get('management_id'));
+}
+
+function renderInstanceTable() {
+  const container = document.getElementById('instance-table-container');
+
+  if (instanceData.length === 0) {
+    container.innerHTML = '<div class="empty-state small">No instances found</div>';
+    document.getElementById('instance-pagination').style.display = 'none';
+    return;
+  }
+
+  // Get property names from current label
+  const properties = currentLabel.properties.map(p => p.name);
+
+  // Check if any instance has relationships
+  const hasRelationships = instanceData.some(i => i.relatedTo && i.relatedTo.length > 0);
+  const showRelatedColumn = hasRelationships;
+
+  // Build table
+  let html = '<table class="instance-table"><thead><tr>';
+  html += '<th><span style="position:absolute;left:-9999px">Select</span></th><th>ID</th>';
+  properties.forEach(prop => {
+    html += `<th>${prop}</th>`;
+  });
+  if (showRelatedColumn) {
+    html += '<th>Related To</th>';
+  }
+  html += '</tr></thead><tbody>';
+
+  instanceData.forEach(instance => {
+    html += '<tr>';
+    const instanceName = instance.properties.name || instance.properties.filename || currentLabel.name;
+    html += `<td><input type="checkbox" class="instance-pick" data-id="${escapeHtml(instance.id)}" aria-label="Select for collection"></td>`;
+    html += `<td><strong>${escapeHtml(String(instanceName))}</strong><br><a href="${window.SCIDK_BASE}/map?management_label=${encodeURIComponent(currentLabel.name)}&management_id=${encodeURIComponent(instance.id)}&management_name=${encodeURIComponent(instanceName)}">Open in Graph</a></td>`;
+    properties.forEach(prop => {
+      const value = instance.properties[prop] || '';
+      const hasChange = instanceChanges[instance.id] && instanceChanges[instance.id][prop] !== undefined;
+      const displayValue = hasChange ? instanceChanges[instance.id][prop] : value;
+      const changeClass = hasChange ? ' instance-cell-changed' : '';
+      html += `<td><div class="instance-cell-editable${changeClass}" data-id="${escapeHtml(instance.id)}" data-prop="${escapeHtml(prop)}" contenteditable="true">${escapeHtml(String(displayValue))}</div></td>`;
+    });
+
+    // Add related-to column
+    if (showRelatedColumn) {
+      const relatedTo = instance.relatedTo || [];
+      if (relatedTo.length === 0) {
+        html += '<td></td>';
+      } else {
+        const relId = `rel-${instance.id.replace(/[^a-zA-Z0-9]/g, '')}`;
+        html += `<td>
+          <div style="cursor: pointer; color: #2196f3; font-size: 0.85em;" onclick="toggleRelationships('${relId}')">
+            <span id="${relId}-badge">${relatedTo.length} relationship${relatedTo.length !== 1 ? 's' : ''} ▼</span>
+          </div>
+          <div id="${relId}" style="display: none; margin-top: 0.5rem; font-size: 0.85em; color: #666; max-height: 200px; overflow-y: auto;">
+            ${relatedTo.map(rel => {
+              const dirArrow = rel.direction === 'out' ? '→' : '←';
+              const neighborLabel = (rel.neighbor_labels || []).find(name => labels.some(label => label.name === name)) || (rel.neighbor_labels || [])[0] || 'Node';
+              return `<div style="padding: 0.25rem 0; border-bottom: 1px solid #eee;">
+                <strong>${escapeHtml(rel.rel_type)}</strong> ${dirArrow}
+                <button class="related-instance btn btn-sm" data-label="${escapeAttribute(neighborLabel)}" data-id="${escapeAttribute(rel.neighbor_id)}">${escapeHtml(String(rel.neighbor_name || neighborLabel))}</button>
+              </div>`;
+            }).join('')}
+          </div>
+        </td>`;
+      }
+    }
+
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  container.innerHTML = html;
+  container.querySelectorAll('.related-instance').forEach(button => {
+    button.onclick = () => openRelatedInstance(button.dataset.label, button.dataset.id);
+  });
+
+  // The shared selection bar follows the checked rows; the table is rebuilt on every render.
+  const actionsHost = document.getElementById('entities-selection-actions');
+  if (actionsHost && window.SelectionActions) {
+    const bar = window.SelectionActions.mount(actionsHost, {
+      surface: 'entities', ids: {add: 'btn-add-to-collection'}, watch: container,
+      getItems: () => Array.from(container.querySelectorAll('.instance-pick:checked')).map(box => {
+        const id = box.dataset.id, label = currentLabel.name;
+        const inst = instanceData.find(i => i.id === id);
+        const handle = inst ? (inst.properties.name || inst.properties.uid || inst.properties.id || '') : '';
+        const text = label + (handle ? ' ' + String(handle).slice(0, 40) : '');
+        return {kind: 'context', key: 'context|' + id, label: text,
+                basketItem: {key: 'context|' + id, kind: 'context', label: text, tag: label, p: {label, id}}};
+      }),
+      afterAdd: () => { container.querySelectorAll('.instance-pick:checked').forEach(box => { box.checked = false; }); },
+    });
+    const addBtn = document.getElementById('btn-add-to-collection');
+    if (addBtn) addBtn.setAttribute('data-testid', 'add-to-collection-btn');
+    if (bar) bar.refresh();
+  }
+
+  // Show pagination
+  document.getElementById('instance-pagination').style.display = 'flex';
+  const totalPages = Math.ceil(instanceTotal / instanceLimit);
+  document.getElementById('instance-page-info').textContent = `Page ${instancePage + 1} of ${totalPages} (${instanceTotal} total instances, showing ${instanceData.length})`;
+
+  // Enable/disable pagination buttons
+  document.getElementById('btn-instance-prev').disabled = instancePage === 0;
+  document.getElementById('btn-instance-next').disabled = instancePage >= totalPages - 1;
+
+  // Attach cell editing listeners
+  document.querySelectorAll('.instance-cell-editable').forEach(cell => {
+    cell.addEventListener('focus', (e) => {
+      e.target.classList.add('instance-cell-editing');
+    });
+
+    cell.addEventListener('blur', (e) => {
+      e.target.classList.remove('instance-cell-editing');
+      const instanceId = e.target.dataset.id;
+      const prop = e.target.dataset.prop;
+      const newValue = e.target.textContent.trim();
+
+      // Find original value
+      const instance = instanceData.find(i => i.id === instanceId);
+      const originalValue = instance ? instance.properties[prop] || '' : '';
+
+      // Track change if different
+      if (newValue !== originalValue) {
+        if (!instanceChanges[instanceId]) {
+          instanceChanges[instanceId] = {};
+        }
+        instanceChanges[instanceId][prop] = newValue;
+        e.target.classList.add('instance-cell-changed');
+
+        // Show push button if there are changes
+        if (Object.keys(instanceChanges).length > 0) {
+          document.getElementById('btn-push-instances').style.display = 'inline-block';
+        }
+      } else {
+        // Remove change if reverted to original
+        if (instanceChanges[instanceId]) {
+          delete instanceChanges[instanceId][prop];
+          if (Object.keys(instanceChanges[instanceId]).length === 0) {
+            delete instanceChanges[instanceId];
+          }
+        }
+        e.target.classList.remove('instance-cell-changed');
+
+        // Hide push button if no changes
+        if (Object.keys(instanceChanges).length === 0) {
+          document.getElementById('btn-push-instances').style.display = 'none';
+        }
+      }
+    });
+
+    cell.addEventListener('keydown', (e) => {
+      // Copy (Ctrl+C or Cmd+C)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && !e.target.classList.contains('instance-cell-editing')) {
+        e.preventDefault();
+        const text = e.target.textContent;
+        navigator.clipboard.writeText(text).then(() => {
+          showToast('Copied to clipboard', 'success', 1000);
+        }).catch(err => {
+          console.error('Copy failed:', err);
+        });
+        return;
+      }
+
+      // Paste (Ctrl+V or Cmd+V)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        e.preventDefault();
+        navigator.clipboard.readText().then(text => {
+          handleCellPaste(e.target, text);
+        }).catch(err => {
+          console.error('Paste failed:', err);
+          showToast('Paste failed - clipboard access denied', 'error');
+        });
+        return;
+      }
+
+      // Save on Enter
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        e.target.blur();
+        return;
+      }
+
+      // Cancel on Escape
+      if (e.key === 'Escape') {
+        const instanceId = e.target.dataset.id;
+        const prop = e.target.dataset.prop;
+        const instance = instanceData.find(i => i.id === instanceId);
+        const originalValue = instance ? instance.properties[prop] || '' : '';
+        e.target.textContent = originalValue;
+        e.target.blur();
+        return;
+      }
+
+      // Arrow key navigation
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        // Only navigate if not editing
+        if (document.activeElement !== e.target) return;
+
+        e.preventDefault();
+        const currentCell = e.target;
+        const currentRow = currentCell.closest('tr');
+        const cells = Array.from(currentRow.querySelectorAll('.instance-cell-editable'));
+        const currentIndex = cells.indexOf(currentCell);
+
+        let targetCell = null;
+
+        if (e.key === 'ArrowLeft' && currentIndex > 0) {
+          targetCell = cells[currentIndex - 1];
+        } else if (e.key === 'ArrowRight' && currentIndex < cells.length - 1) {
+          targetCell = cells[currentIndex + 1];
+        } else if (e.key === 'ArrowUp') {
+          const prevRow = currentRow.previousElementSibling;
+          if (prevRow) {
+            const prevCells = Array.from(prevRow.querySelectorAll('.instance-cell-editable'));
+            targetCell = prevCells[currentIndex];
+          }
+        } else if (e.key === 'ArrowDown') {
+          const nextRow = currentRow.nextElementSibling;
+          if (nextRow) {
+            const nextCells = Array.from(nextRow.querySelectorAll('.instance-cell-editable'));
+            targetCell = nextCells[currentIndex];
+          }
+        }
+
+        if (targetCell) {
+          targetCell.focus();
+        }
+      }
+    });
+  });
+}
+
+function toggleRelationships(relId) {
+  const relDiv = document.getElementById(relId);
+  const badge = document.getElementById(`${relId}-badge`);
+
+  if (relDiv.style.display === 'none') {
+    relDiv.style.display = 'block';
+    badge.textContent = badge.textContent.replace('▼', '▲');
+  } else {
+    relDiv.style.display = 'none';
+    badge.textContent = badge.textContent.replace('▲', '▼');
+  }
+}
+</script>

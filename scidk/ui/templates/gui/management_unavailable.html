@@ -2,7 +2,7 @@
 {% block title %}SciDK — Research management{% endblock %}
 {% block content %}
 <h1>Research graph management</h1>
-{% include '_knowledge_management_nav.html' %}
+{% if request.path == '/knowledge' %}{% include '_knowledge_tabs.html' %}{% else %}{% include '_knowledge_management_nav.html' %}{% endif %}
 <section class="card"><h2>Management access unavailable</h2>
 <p>A named, unlocked session and an explicit graph_management_read grant for the configured development connection are required. Ask an administrator to check the connection binding and management permissions.</p>
 <p>Administrator role and governed Research access do not grant graph-management authority.</p></section>

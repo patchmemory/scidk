@@ -108,10 +108,36 @@ def operation_permission():
     return 'graph_schema_write'
 
 
+KNOWLEDGE_VIEWS = ('entities', 'maps', 'sketch')
+
+
+def knowledge_view(args):
+    """Resolve /knowledge's ``view``: entities | maps | sketch | governed.
+
+    ``graph`` is a compatibility alias for ``maps``. ``governed`` (``view=governed`` or ``governed=1``,
+    or a bare ``domain``/``id`` deep link from Overview/Review) keeps the governed-projection workspace
+    reachable.
+    """
+    view = (args.get('view') or '').strip().lower()
+    if view == 'graph':
+        view = 'maps'
+    if (view == 'governed' or args.get('governed') == '1'
+            or (not view and (args.get('domain') or args.get('id')))):
+        return 'governed'
+    return view if view in KNOWLEDGE_VIEWS else 'entities'
+
+
+def management_page():
+    """Pages that host the legacy Labels/Maps applications (gated like their direct routes)."""
+    if request.path in {'/entities', '/labels', '/links', '/map'}:
+        return True
+    return request.path == '/knowledge' and knowledge_view(request.args) in {'entities', 'maps'}
+
+
 def protected_path():
     return (request.path.startswith(('/api/labels', '/api/links', '/api/v2/links',
                 '/api/neo4j/', '/api/canvas/', '/api/maps/', '/api/queries', '/api/graph/', '/api/schema/'))
-            or request.path in {'/entities', '/labels', '/links', '/map'})
+            or management_page())
 
 
 def enforce():
@@ -220,7 +246,7 @@ def enforce():
                 for key in body.get('properties', {}):
                     identifier(key)
     except Exception:
-        if request.path in {'/entities', '/labels', '/links', '/map'}:
+        if management_page():
             from flask import render_template
             return render_template('gui/management_unavailable.html'), 403, {'Cache-Control': 'no-store'}
         return jsonify(REFUSAL), 403, {'Cache-Control': 'no-store'}
