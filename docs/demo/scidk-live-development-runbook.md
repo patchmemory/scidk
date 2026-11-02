@@ -84,7 +84,7 @@ Private startup diagnostics are in `.scidk-live-development/server.log`.
 
 ## Browse the actual development graph
 
-1. Open Knowledge → **Entities & Labels**. The local schema catalog was imported
+1. Open Knowledge → **Entities** (`/knowledge?view=entities`; the same browser is still at `/entities`). The local schema catalog was imported
    read-only from the existing localhost:7687 development graph, not a fixture.
 2. Select **Sample** or **SampleType** to see property types and relationships.
    Existing imported Samples have `uuid` / `_imported_stub` metadata; their
@@ -94,10 +94,10 @@ Private startup diagnostics are in `.scidk-live-development/server.log`.
    browser uses the current authorized graph client. Expand a relationship badge
    and select a related entity. Incoming/outgoing edges depend on the chosen
    existing record; first-page order does not guarantee both directions.
-4. Select **Open in Graph**. Maps identifies the **configured development primary**
+4. Select **Open in Graph**; it opens Knowledge → **Maps** (the old `/map` URL and `view=graph` still work). Maps identifies the **configured development primary**
    using the same fingerprint, database and backend as Entities. Use **Return to
    entity inspector** to return to that selected record.
-5. Saved Maps support Save and Load in this separate private settings store.
+5. Saved Maps support Save and Load in this separate private settings store (Knowledge → Maps). Knowledge → **Sketch** is a private draft canvas; its Save/Reopen need a governed draft store, which this profile does not attach. The governed projection remains at `/knowledge?governed=1`.
    Loading saved query text does not execute it. Raw Run remains disabled.
 
 The acceptance trace uses one bounded existing Sample with incoming and outgoing
