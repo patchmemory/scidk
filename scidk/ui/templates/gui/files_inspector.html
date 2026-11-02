@@ -15,7 +15,7 @@
 <p id="scans-note" role="status"></p>
 <label class="scans-toggle"><input type="checkbox" id="scans-system"> show system files</label>
 <table id="scans-table"><colgroup><col class="c-pick"><col><col class="c-type"><col class="c-size"><col class="c-mod"><col class="c-ext"></colgroup><thead><tr><th scope="col" class="c-pick"><span class="sr-only">Select</span></th><th scope="col" aria-sort="none"><button type="button" data-sort="name">Name</button></th><th scope="col">Type</th><th scope="col" aria-sort="none"><button type="button" data-sort="size">Size</button></th><th scope="col" aria-sort="none"><button type="button" data-sort="modified">Modified</button></th><th scope="col">Ext</th></tr></thead><tbody id="scans-rows"></tbody></table>
-<button id="scans-add" type="button" title="Add the checked rows and datasets to the collection">Add to collection</button> <button id="scans-more" hidden>Load more</button></div>
+<span id="scans-selection-actions" data-testid="scans-selection-actions"></span> <button id="scans-more" hidden>Load more</button></div>
 <aside aria-label="Recognized datasets in this folder"><h3>Recognized datasets here</h3>
 <label class="scans-toggle"><input type="checkbox" id="scans-workspace"> show workspace candidates</label>
 <div id="scans-datasets">Select a scan.</div></aside>
@@ -30,8 +30,17 @@
 </section>
 <aside id="shared-inspector" aria-label="Selected object inspector" hidden>
 <h2 id="inspector-title"></h2><button id="inspector-close">Close inspector</button><button id="inspector-expand" aria-expanded="false">Expand</button>
-<div role="tablist" aria-label="Inspector">{% for tab in ['Metadata','Annotations','Provenance'] %}<button role="tab" id="inspector-tab-{{ tab|lower }}" aria-controls="inspector-content" tabindex="{{ 0 if loop.first else -1 }}" data-inspector-tab="{{ tab }}" aria-selected="{{ 'true' if loop.first else 'false' }}">{{ tab }}</button>{% endfor %}</div>
+<div role="tablist" aria-label="Inspector">{% for tab in ['Metadata','Annotations','Interpret','Provenance'] %}<button role="tab" id="inspector-tab-{{ tab|lower }}" aria-controls="inspector-content" tabindex="{{ 0 if loop.first else -1 }}" data-inspector-tab="{{ tab }}" aria-selected="{{ 'true' if loop.first else 'false' }}">{{ tab }}</button>{% endfor %}</div>
 <div id="inspector-content" role="tabpanel" aria-labelledby="inspector-tab-metadata" aria-live="polite"></div>
+<details id="inspector-more-options" data-testid="inspector-more-options" hidden>
+<summary>More options</summary>
+{% if legacy_annotate %}
+<p>Advanced Attribute controls (anchor label, property filters, target conditions, relationship type) are in the classic Annotate drawer.</p>
+<button type="button" id="inspector-open-annotate" data-annotate-open-legacy>Open the classic Annotate drawer</button>
+{% else %}
+<div id="inspector-attribute-controls" data-testid="inspector-attribute-controls">{% include 'files/_attribute_controls.html' %}</div>
+{% endif %}
+</details>
 <div id="dataset-sharing" hidden>
 <a id="dataset-knowledge" hidden>Open corresponding Research knowledge</a>
 <a id="dataset-review" hidden>Review corresponding assertions</a>
@@ -54,4 +63,5 @@
 </div>
 </aside></section>
 <script defer src="{{ url_for('static', filename='js/gui_slice.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/inspector_actions.js') }}"></script>
 <script defer src="{{ url_for('static', filename='js/external_index.js') }}"></script>

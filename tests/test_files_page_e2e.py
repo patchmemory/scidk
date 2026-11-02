@@ -64,7 +64,11 @@ def test_files_page_is_modular():
     assert 'js/collection_basket.js' in html          # loaded by base.html
     assert 'class="file-table sel-mode" id="file-table"' in html   # checkboxes visible by default
     assert 'id="toggle-sel-btn" hidden' in html
-    assert 'id="create-dataset-btn"' in html and 'id="add-to-coll-btn"' in html
+    # The Add to collection / Create dataset buttons are the shared selection bar's: it mounts into
+    # #files-selection-actions and gives those two buttons their long-standing ids.
+    assert 'id="files-selection-actions"' in html and 'js/selection_actions.js' in html
+    bar = Path('scidk/ui/static/js/selection_actions.js').read_text()
+    assert "add: 'add-to-coll-btn'" in bar and "dataset: 'create-dataset-btn'" in bar
 
     # The Attribute tab replaced the standalone attribution panel; including
     # both would duplicate every attr-* id.

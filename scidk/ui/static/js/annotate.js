@@ -11,6 +11,8 @@
  *   .setCollectSource(src)     — 'selection' | 'collection'
  *   .createDataset()           — POST /api/datasets/collections
  *   .runInterpreters(mode)     — POST /api/interpreters/run
+ *   .interpretStatus / .startInterpretRun — the same calls for any list of paths (inspector)
+ *   .openAttribution()         — load the Attribute controls (drawer tab or inspector)
  *   .apply()                   — run the active tab's primary action
  *
  * That object is the module's entire surface. Every other function here is
@@ -692,7 +694,9 @@
     }
   }
 
-  // ── Interpret tab ──────────────────────────────────────────────────────
+  // ── Interpret ──────────────────────────────────────────────────────────
+  // The status / run / poll calls are shared: the legacy drawer's Interpret tab and
+  // the inspector's Interpret action (inspector_actions.js) both go through them.
 
   // Full paths, because that is what the status and run routes resolve against.
   function _interpretPaths() {
@@ -700,6 +704,31 @@
     if (sel && sel.size) return [...sel];
     const items = global.CollectionBasket ? global.CollectionBasket.items() : [];
     return items.filter(x => x.kind === 'file' && x.p && x.p.path).map(x => x.p.path);
+  }
+
+  // GET /api/interpreters/status → {ok, error, interpreters, unknown}.
+  async function interpretStatus(paths) {
+    const qs = new URLSearchParams();
+    paths.forEach(p => qs.append('paths[]', p));
+    const r = await fetch(BASE() + '/api/interpreters/status?' + qs.toString());
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return {ok: false, error: d.error || `Error ${r.status}`, interpreters: [], unknown: []};
+    return {ok: true, error: '', interpreters: d.interpreters || [], unknown: d.unknown_paths || []};
+  }
+
+  function _interpretStatusHtml(interpreters) {
+    return interpreters.map(it => {
+      const files = it.files || {};
+      const names = Object.keys(files);
+      const ok = names.filter(n => files[n].status === 'ok').length;
+      return `<div class="drawer-mi">
+          <div class="drawer-mi-label">${_attrEsc(it.name)}${it.version ? ' <span class="text-muted">v' + _attrEsc(it.version) + '</span>' : ''}</div>
+          <div class="drawer-mi-detail">${ok}/${names.length} interpreted${
+            names.filter(n => files[n].status !== 'ok').length
+              ? ' · missing: ' + names.filter(n => files[n].status !== 'ok').map(_attrEsc).join(', ')
+              : ''}</div>
+        </div>`;
+    }).join('');
   }
 
   async function loadInterpreterStatus() {
@@ -714,33 +743,18 @@
     }
     list.innerHTML = '<div class="small text-muted">Loading…</div>';
     try {
-      const qs = new URLSearchParams();
-      paths.forEach(p => qs.append('paths[]', p));
-      const r = await fetch(BASE() + '/api/interpreters/status?' + qs.toString());
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        list.innerHTML = `<div class="small text-danger">${_attrEsc(d.error || `Error ${r.status}`)}</div>`;
+      const st = await interpretStatus(paths);
+      if (!st.ok) {
+        list.innerHTML = `<div class="small text-danger">${_attrEsc(st.error)}</div>`;
         if (actions) actions.style.display = 'none';
         return;
       }
-      const interpreters = d.interpreters || [];
-      if (!interpreters.length) {
+      if (!st.interpreters.length) {
         list.innerHTML = '<div class="small text-muted">No interpreter handles the selected files.</div>';
         if (actions) actions.style.display = 'none';
         return;
       }
-      list.innerHTML = interpreters.map(it => {
-        const files = it.files || {};
-        const names = Object.keys(files);
-        const ok = names.filter(n => files[n].status === 'ok').length;
-        return `<div class="drawer-mi">
-          <div class="drawer-mi-label">${_attrEsc(it.name)}${it.version ? ' <span class="text-muted">v' + _attrEsc(it.version) + '</span>' : ''}</div>
-          <div class="drawer-mi-detail">${ok}/${names.length} interpreted${
-            names.filter(n => files[n].status !== 'ok').length
-              ? ' · missing: ' + names.filter(n => files[n].status !== 'ok').map(_attrEsc).join(', ')
-              : ''}</div>
-        </div>`;
-      }).join('');
+      list.innerHTML = _interpretStatusHtml(st.interpreters);
       // The panel markup hard-hides this row with !important, so removing the
       // inline rule is not enough — set the property with the same priority.
       if (actions) actions.style.setProperty('display', 'flex', 'important');
@@ -750,14 +764,11 @@
     }
   }
 
-  async function runInterpreters(mode) {
-    const el = document.getElementById('interp-run-status');
-    const paths = _interpretPaths();
-    if (!paths.length) {
-      if (el) el.innerHTML = '<span class="text-danger">No files selected.</span>';
-      return;
-    }
-    if (el) el.innerHTML = '<span class="text-muted">Starting…</span>';
+  // POST /api/interpreters/run, then follow the task. `say(html)` receives the progress
+  // line; `done()` runs when the task ends. Returns the task id, or null on failure.
+  async function startInterpretRun(paths, mode, say, done) {
+    if (!paths.length) { say('<span class="text-danger">No files selected.</span>'); return null; }
+    say('<span class="text-muted">Starting…</span>');
     try {
       const r = await fetch(BASE() + '/api/interpreters/run', {
         method: 'POST',
@@ -766,23 +777,30 @@
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) {
-        if (el) el.innerHTML = `<span class="text-danger">${_attrEsc(d.error || `Error ${r.status}`)}</span>`;
-        return;
+        say(`<span class="text-danger">${_attrEsc(d.error || `Error ${r.status}`)}</span>`);
+        return null;
       }
-      if (el) el.innerHTML = `<span class="text-muted">Running — task ${_attrEsc(d.task_id || '')}…</span>`;
+      say(`<span class="text-muted">Running — task ${_attrEsc(d.task_id || '')}…</span>`);
       if (typeof global.startTaskPoll === 'function') global.startTaskPoll();
-      if (d.task_id) _pollInterpretTask(d.task_id);
+      if (d.task_id) _pollInterpretTask(d.task_id, say, done);
+      return d.task_id || null;
     } catch (e) {
-      if (el) el.innerHTML = `<span class="text-danger">${_attrEsc(e.message)}</span>`;
+      say(`<span class="text-danger">${_attrEsc(e.message)}</span>`);
+      return null;
     }
   }
 
-  // Follows the run to the end, then reloads the status above it; without this
-  // the tab kept showing the pre-run state until it was reopened.
-  let _interpPoll = null;
-  function _pollInterpretTask(taskId) {
-    clearTimeout(_interpPoll);
+  function runInterpreters(mode) {
     const el = document.getElementById('interp-run-status');
+    return startInterpretRun(_interpretPaths(), mode, html => { if (el) el.innerHTML = html; },
+      () => { if (_activeTab() === 'interpret') loadInterpreterStatus(); });
+  }
+
+  // Follows the run to the end, then calls done(); without this the status kept
+  // showing the pre-run state until it was reopened.
+  const _interpPolls = new Map();
+  function _pollInterpretTask(taskId, say, done) {
+    clearTimeout(_interpPolls.get(say));
     const tick = async () => {
       let t = {};
       try {
@@ -790,20 +808,20 @@
         t = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(t.error || `HTTP ${r.status}`);
       } catch (e) {
-        if (el) el.innerHTML = `<span class="text-danger">Lost track of the task: ${_attrEsc(e.message)}</span>`;
+        say(`<span class="text-danger">Lost track of the task: ${_attrEsc(e.message)}</span>`);
         return;
       }
       if (t.status === 'completed') {
-        if (el) el.innerHTML = '<span class="text-success">Done.</span>';
+        say('<span class="text-success">Done.</span>');
       } else if (t.status === 'error' || t.status === 'canceled') {
-        if (el) el.innerHTML = `<span class="text-danger">${t.status === 'error' ? 'Failed' : 'Canceled'}${t.error ? ': ' + _attrEsc(t.error) : ''}</span>`;
+        say(`<span class="text-danger">${t.status === 'error' ? 'Failed' : 'Canceled'}${t.error ? ': ' + _attrEsc(t.error) : ''}</span>`);
       } else {
-        _interpPoll = setTimeout(tick, 1500);
+        _interpPolls.set(say, setTimeout(tick, 1500));
         return;
       }
-      if (_activeTab() === 'interpret') loadInterpreterStatus();
+      if (done) done();
     };
-    _interpPoll = setTimeout(tick, 1000);
+    _interpPolls.set(say, setTimeout(tick, 1000));
   }
 
   // ── Drawer plumbing ────────────────────────────────────────────────────
@@ -848,6 +866,8 @@
   document.addEventListener('scidk:collectionbasket', _onScopeChange);
 
   function open(tab) {
+    // The drawer is only rendered while the legacy flag is on (or there is no inspector).
+    if (!document.getElementById('annotate-drawer')) return;
     _updateScopeLabel();
     if (global.Drawers) global.Drawers.open('annotate-drawer');
     setTab(tab || _activeTab());
@@ -938,6 +958,10 @@
   global.Annotate = {
     open, setTab, setCollectSource, createDataset, runInterpreters, apply,
     loadInterpreterStatus,
+    // Shared with the inspector (inspector_actions.js): the same status / run calls, no drawer needed.
+    interpretStatus, startInterpretRun, interpretStatusHtml: _interpretStatusHtml,
+    // The Attribute controls, wherever they are mounted (drawer tab or inspector "More options").
+    openAttribution: openAttributionPanel,
   };
 
 })(window);

@@ -7,7 +7,7 @@
 #inspector-content pre {white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
 #dataset-results button,#indexed-datasets button {display:block;text-align:left}
 
-.files-page.with-inspector, #gui-datasets.with-inspector {margin-right:440px}
+.files-page.with-inspector, #gui-datasets.with-inspector, #gui-scans.with-inspector {margin-right:440px}
 @media(max-width:900px) {.files-page.with-inspector {margin-right:0}}
 
 #gui-files :focus-visible, #gui-files-panel tr:focus-visible {outline:3px solid #165dba;outline-offset:2px}

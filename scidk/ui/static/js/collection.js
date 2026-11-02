@@ -3,7 +3,8 @@
  *
  * There is exactly one collection UI: window.CollectionBasket (collection_basket.js,
  * loaded by base.html), mounted in the Files toolbar at #files-collection-slot.
- * This module keeps no list of its own. It does two things for the Files table:
+ * This module keeps no list of its own. It does two things for the Files table (the buttons that
+ * trigger them are the shared selection bar, selection_actions.js):
  *
  *   1. "Add to collection"            — selected rows → shared basket entries
  *                                       (path + provider/root/scan identity; folders stay
@@ -114,13 +115,19 @@
   // ── Create dataset from selection… ──
   function _closeDialog() { document.getElementById('manual-ds-overlay')?.remove(); }
 
-  function openManualDatasetDialog() {
+  // `given` (optional): member records [{kind, path, name, provider_id, root_id, scan_id, size}] from the
+  // shared selection bar; without it the checked Files rows are used.
+  function openManualDatasetDialog(given) {
     const ids = _selectedIds();
-    if (!ids.length) { _say('No files selected'); return; }
-    const members = ids.map(id => {
-      const it = basket().fileItemFromId(id, _rowSize(id));
-      return Object.assign({kind: it.kind}, it.p);
-    });
+    let members = Array.isArray(given) ? given : null;
+    if (!members) {
+      if (!ids.length) { _say('No files selected'); return; }
+      members = ids.map(id => {
+        const it = basket().fileItemFromId(id, _rowSize(id));
+        return Object.assign({kind: it.kind}, it.p);
+      });
+    }
+    if (!members.length) { _say('No files selected'); return; }
     const nFolders = members.filter(m => m.kind === 'folder').length;
     const nFiles = members.length - nFolders;
     _closeDialog();
@@ -192,8 +199,8 @@
 
   // ── DOM wiring ──
   function _wire() {
-    document.getElementById('add-to-coll-btn')?.addEventListener('click', addSelectionToCollection);
-    document.getElementById('create-dataset-btn')?.addEventListener('click', openManualDatasetDialog);
+    // The Add to collection / Create dataset buttons belong to the shared selection bar
+    // (selection_actions.js), which calls addSelectionToCollection / openManualDatasetDialog below.
     document.addEventListener('scidk:collectionbasket', _updateHighlights);
     document.addEventListener('keydown', e => {
       const a = document.activeElement;
@@ -211,6 +218,7 @@
   // Compatibility adapter only: no list of its own.
   global.Collection = {
     items, count, add, remove, clear, entryFromId, payload, _updateHighlights,
+    addSelectionToCollection, openManualDatasetDialog,
     open: () => basket().open(), close: () => basket().close(), toggle: () => basket().toggle(),
   };
 

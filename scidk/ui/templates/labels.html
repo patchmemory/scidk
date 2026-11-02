@@ -981,7 +981,8 @@
           <button id="btn-push-instances" class="btn btn-sm btn-success" data-testid="push-instances-btn" style="display: none;">Push Changes</button>
           <button id="btn-download-csv" class="btn btn-sm btn-outline-secondary" data-testid="download-csv-btn" style="display: none;">Download CSV</button>
           <button id="btn-upload-csv" class="btn btn-sm btn-outline-secondary" data-testid="upload-csv-btn">Upload CSV</button>
-          <button id="btn-add-to-collection" class="btn btn-sm btn-outline-success" data-testid="add-to-collection-btn" title="Add the checked rows to the collection (context such as a Request, Study or Sample)">Add to collection</button>
+          {# Add to collection · Ask about this — the shared selection bar (selection_actions.js) mounts here. #}
+          <span id="entities-selection-actions" data-testid="entities-selection-actions"></span>
           <button id="btn-refresh-instances" class="btn btn-sm btn-outline-secondary" data-testid="refresh-instances-btn">Refresh</button>
         </div>
       </div>
@@ -4569,23 +4570,24 @@ function renderInstanceTable() {
     button.onclick = () => openRelatedInstance(button.dataset.label, button.dataset.id);
   });
 
-  const addToCollection = document.getElementById('btn-add-to-collection');
-  if (addToCollection) {
-    addToCollection.onclick = () => {
-      const picked = Array.from(container.querySelectorAll('.instance-pick:checked')).map(box => box.dataset.id);
-      const label = currentLabel.name;
-      const items = picked.map(id => {
+  // The shared selection bar follows the checked rows; the table is rebuilt on every render.
+  const actionsHost = document.getElementById('entities-selection-actions');
+  if (actionsHost && window.SelectionActions) {
+    const bar = window.SelectionActions.mount(actionsHost, {
+      surface: 'entities', ids: {add: 'btn-add-to-collection'}, watch: container,
+      getItems: () => Array.from(container.querySelectorAll('.instance-pick:checked')).map(box => {
+        const id = box.dataset.id, label = currentLabel.name;
         const inst = instanceData.find(i => i.id === id);
         const handle = inst ? (inst.properties.name || inst.properties.uid || inst.properties.id || '') : '';
-        return {key: 'context|' + id, kind: 'context', label: label + (handle ? ' ' + String(handle).slice(0, 40) : ''), tag: label,
-                p: {label, id}};
-      });
-      if (!window.CollectionBasket) return;
-      const added = window.CollectionBasket.add(items);
-      container.querySelectorAll('.instance-pick:checked').forEach(box => { box.checked = false; });
-      window.CollectionBasket.open();
-      showToast(added ? `${added} ${label} record(s) added to the collection` : 'Check rows first (or already in the collection)', 'info');
-    };
+        const text = label + (handle ? ' ' + String(handle).slice(0, 40) : '');
+        return {kind: 'context', key: 'context|' + id, label: text,
+                basketItem: {key: 'context|' + id, kind: 'context', label: text, tag: label, p: {label, id}}};
+      }),
+      afterAdd: () => { container.querySelectorAll('.instance-pick:checked').forEach(box => { box.checked = false; }); },
+    });
+    const addBtn = document.getElementById('btn-add-to-collection');
+    if (addBtn) addBtn.setAttribute('data-testid', 'add-to-collection-btn');
+    if (bar) bar.refresh();
   }
 
   // Show pagination

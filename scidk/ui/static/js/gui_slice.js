@@ -27,12 +27,15 @@
     $('shared-inspector').hidden = !selection || closed;
     browser.classList.toggle('with-inspector', !!selection && !closed);
     $('gui-datasets').classList.toggle('with-inspector', !!selection && !closed);
+    $('gui-scans').classList.toggle('with-inspector', !!selection && !closed);
     if (!selection) return;
     $('shared-inspector').classList.toggle('expanded', state.expanded);
     $('inspector-expand').textContent = state.expanded ? 'Restore docked inspector' : 'Expand';
     $('inspector-expand').setAttribute('aria-expanded', String(state.expanded));
     const record = selection.record;
-    $('inspector-title').textContent = (selection.kind === 'dataset' ? 'Dataset: ' : 'File / folder: ') + (record.name || record.path || selection.key);
+    const isDataset = selection.kind === 'dataset' || selection.kind === 'scan-dataset';
+    $('inspector-title').textContent = (isDataset ? 'Dataset: ' : 'File / folder: ') + (record.name || record.path || selection.key)
+      + (selection.scope && selection.scope.count > 1 ? ' (+' + (selection.scope.count - 1) + ' more selected)' : '');
     $('dataset-sharing').hidden = selection.kind !== 'dataset';
     const knowledge = $('dataset-knowledge');
     if (knowledge) {
@@ -59,22 +62,31 @@
         provenance: record.provenance, evidence: record.evidence}, content);
       const p = document.createElement('p'); p.textContent = 'Only stored provenance is shown. Acceptance and current support have not been established for this browser record.'; content.append(p);
     }
+    const more = $('inspector-more-options');
+    if (more) more.hidden = state.inspectorTab !== 'Annotations';
     if (state.inspectorTab === 'Annotations') {
       content.textContent = 'Loading annotations…';
       try {
         // Never issue an unfiltered annotations request when no stable identity exists.
         if (!selection.key) throw new Error('No annotation identity available');
-        const data = await json('/api/annotations?file_id=' + encodeURIComponent(selection.key) + '&limit=100');
+        const data = selection.kind === 'scan-dataset' ? {items: []} : await json('/api/annotations?file_id=' + encodeURIComponent(selection.key) + '&limit=100');
         if (version !== state.version) return;
-        content.replaceChildren(); raw(data.items, content);
-        const p = document.createElement('p'); p.textContent = 'Annotations use the stored object identity. The existing Annotate drawer uses the checked Files selection for attribution, collection and interpretation. Inspecting an object does not select files.'; content.append(p);
-        const open = document.createElement('button'); open.textContent = 'Open Annotate for checked Files';
-        open.onclick = () => window.Annotate?.open(); content.append(open);
+        content.replaceChildren();
+        // The ordinary entry point: who / which project is this? Stored annotations follow it.
+        if (window.InspectorActions) window.InspectorActions.who(content, selection, version, () => version === state.version);
+        const stored = document.createElement('h3'); stored.textContent = 'Recorded annotations'; content.append(stored);
+        raw(data.items, content);
+        const p = document.createElement('p'); p.textContent = 'Annotations use the stored object identity. Inspecting an object does not select files.'; content.append(p);
       } catch (error) { if (version === state.version) content.textContent = error.message; }
+    }
+    if (state.inspectorTab === 'Interpret') {
+      if (window.InspectorActions) window.InspectorActions.interpret(content, selection, () => version === state.version);
+      else content.textContent = 'Interpret is unavailable.';
     }
   }
   function select(selection) {
     returnFocus = document.activeElement; closed = false; state.selected[state.tab] = selection;
+    if (selection.tab) state.inspectorTab = selection.tab;
     if ($('sharing-guide')) {
       $('sharing-guide').hidden = true; $('sharing-draft').textContent = '';
       $('sharing-status').textContent = ''; $('sharing-download').disabled = true;
@@ -116,7 +128,8 @@
   }
   keyboardTabs([$('gui-files-tab'), $('gui-datasets-tab'), $('gui-scans-tab')]);
   keyboardTabs([...document.querySelectorAll('[data-inspector-tab]')]);
-  document.addEventListener('scidk:inspect', event => { if (state.tab === 'Files') select(event.detail); });
+  // Files rows, and (from the selection bar) Files or Scans selections. Row checkboxes never dispatch this.
+  document.addEventListener('scidk:inspect', event => { if (state.tab === 'Files' || state.tab === 'Scans') select(event.detail); });
   function items(records, parent, graph) {
     parent.replaceChildren();
     if (!records.length) { parent.textContent = 'No records found.'; return; }

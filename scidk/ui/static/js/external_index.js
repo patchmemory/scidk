@@ -210,11 +210,7 @@
         (r.scope === 'subtree' ? 'this folder and subfolders' : 'this folder') + (r.has_more ? ' (more available)' : ''));
     } catch (error) { if (version === st.version) $('scans-note').textContent = error.message; }
   }
-  $('scans-add').onclick = () => {
-    if (!window.CollectionBasket) return;
-    const added = window.CollectionBasket.addChecked($('gui-scans'));
-    $('scans-note').textContent = added ? added + ' added to the collection.' : 'Check rows or datasets first (or they are already in the collection).';
-  };
+  // Add to collection / Interpret / Ask about this: the shared selection bar (selection_actions.js) in #scans-selection-actions.
   $('scans-search').onsubmit = ev => { ev.preventDefault(); runSearch(false); };
   $('scans-clear').onclick = () => { $('scans-q').value = ''; if (st.scan) open(st.scan, st.path); };
 

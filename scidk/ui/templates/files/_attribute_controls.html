@@ -1,0 +1,97 @@
+{# Attribute controls (anchor → target edges). One copy per page: the legacy Annotate drawer includes it
+   when the legacy flag is on; otherwise the inspector includes it under "More options". Ids are shared with annotate.js. #}
+    <p class="drawer-hint" style="margin-bottom:12px;">
+      Find folders whose names match an anchor node (a person, lab or project), then write
+      ownership or provenance edges to the ones you confirm. Searches the whole graph, not just the selection.
+    </p>
+    <div class="drawer-field">
+      <label>Anchor label</label>
+      <select id="attr-anchor-label-sel" class="form-select form-select-sm"
+              data-annotate-change="anchor-label">
+        <option value="Investigator">Investigator</option>
+      </select>
+    </div>
+    <div class="drawer-field">
+      <label>Filter by property</label>
+      <div class="d-flex gap-1">
+        <select id="attr-filter-prop-sel" class="form-select form-select-sm"
+                data-annotate-change="filter-property">
+          <option value="">Property…</option>
+        </select>
+        <select id="attr-filter-val-sel" class="form-select form-select-sm"
+                data-annotate-change="filter-value" disabled>
+          <option value="">Value…</option>
+        </select>
+        <button class="btn btn-sm btn-outline-secondary" data-annotate-action="clear-filter">Clear</button>
+      </div>
+    </div>
+    <div class="drawer-field">
+      <label>Anchor</label>
+      <input id="attr-search" type="text" class="form-control form-control-sm"
+             placeholder="Search by name…" data-annotate-input="anchor-search">
+      <select id="attr-anchor-sel" size="4" class="form-select form-select-sm mt-1"
+              data-annotate-change="anchor"></select>
+      <span id="attr-anchor-label" class="fw-semibold small d-block mt-1"></span>
+    </div>
+    <div class="drawer-field">
+      <label>Target label</label>
+      <select id="attr-target-label-sel" class="form-select form-select-sm"
+              data-annotate-change="target-label">
+        <option value="Folder">Folder</option>
+      </select>
+    </div>
+    <div class="drawer-field">
+      <label>Target conditions</label>
+      <div id="attr-target-fb-container" class="mt-1 attr-fb-scope"></div>
+    </div>
+    <div class="drawer-field">
+      <label>Relationship</label>
+      <div class="d-flex gap-1 align-items-center">
+        <select id="attr-rel-select" class="form-select form-select-sm">
+          <option value="OWNS">OWNS</option>
+        </select>
+        <a href="#" id="attr-rel-toggle"
+           data-annotate-action="toggle-custom-rel" class="small">or type custom</a>
+        <input id="attr-rel-custom" type="text" placeholder="E.G. FUNDED_BY"
+               class="form-control form-control-sm"
+               style="display:none;font-family:monospace;">
+      </div>
+    </div>
+    <div class="form-check mb-3">
+      <input type="checkbox" class="form-check-input" id="attr-labmates" checked>
+      <label class="form-check-label small" for="attr-labmates">Include labmates</label>
+    </div>
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <button class="btn btn-sm btn-primary" id="attr-find-btn" data-annotate-action="find-candidates">
+        Find Candidates
+      </button>
+      <span id="attr-status" class="small text-muted"></span>
+    </div>
+    <div id="attr-results" style="display:none;">
+      <div class="d-flex gap-1 align-items-center mb-2 flex-wrap">
+        <button class="btn btn-sm btn-outline-secondary" data-annotate-action="select-conf" data-annotate-arg="HIGH">✓ HIGH</button>
+        <button class="btn btn-sm btn-outline-secondary" data-annotate-action="select-conf" data-annotate-arg="MED">✓ MED</button>
+        <button class="btn btn-sm btn-outline-secondary" data-annotate-action="select-conf" data-annotate-arg="LOW">✓ LOW</button>
+        <button class="btn btn-sm btn-outline-secondary" data-annotate-action="select-conf" data-annotate-arg="ALL">✓ All</button>
+        <button class="btn btn-sm btn-outline-secondary" data-annotate-action="clear-candidates">Clear</button>
+        <button class="btn btn-sm btn-primary ms-auto" id="attr-confirm-btn" data-annotate-action="confirm">
+          Write to graph
+        </button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:.82em;">
+          <thead>
+            <tr style="border-bottom:2px solid #dee2e6;">
+              <th style="width:24px;"></th>
+              <th style="width:56px;">Conf.</th>
+              <th>Path</th>
+              <th style="width:100px;">Source</th>
+              <th style="width:44px;">Depth</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody id="attr-tbody"></tbody>
+        </table>
+      </div>
+      <div id="attr-confirm-msg" class="small fw-semibold mt-2"></div>
+    </div>

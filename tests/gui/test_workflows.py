@@ -49,7 +49,9 @@ def test_navigation_and_placeholders(gui_page):
 
 
 def test_selection_inspector_and_annotations(gui_page):
-    page, origin, _ = gui_page
+    page, origin, app = gui_page
+    # The classic Annotate drawer is the legacy path: it stays reachable behind its flag.
+    app.config['SCIDK_LEGACY_ANNOTATE_ENABLED'] = True
     open_files(page, origin)
     select_file(page)
     expect(page.locator('#inspector-content')).to_contain_text('Ultrasound')
@@ -185,6 +187,7 @@ def test_folder_mouse_inspection_timer(gui_page):
 def test_existing_annotations_adapter_and_resources(gui_page, gui_artifacts):
     page, origin, app = gui_page
     # Display-only legacy attribution responses; no graph write is exercised.
+    app.config['SCIDK_LEGACY_ANNOTATE_ENABLED'] = True   # the classic drawer is behind its legacy flag
     page.route('**/api/schema/labels', lambda route: route.fulfill(json={'labels': []}))
     page.route('**/api/schema/relationship-types', lambda route: route.fulfill(json={'types': []}))
     page.route('**/api/schema/property-types?*', lambda route: route.fulfill(json={'properties': []}))

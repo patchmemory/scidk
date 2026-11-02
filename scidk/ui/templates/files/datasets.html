@@ -166,9 +166,11 @@ main { max-width:100% !important; padding:0 !important; }
       {# The one Collection control: collection_basket.js (loaded by base.html) mounts here. #}
       <span id="files-collection-slot" data-testid="files-collection-slot"></span>
 
+      {% if legacy_annotate %}
       <button class="btn btn-sm btn-outline-secondary" id="annotate-btn"
               title="Annotate — Attribute, Collect, Interpret"
               onclick="Annotate.open()">🏷 Annotate</button>
+      {% endif %}
       <button class="btn btn-sm btn-outline-secondary" id="scan-drawer-btn"
               title="Scan controls and history"
               onclick="ScanPanel.open()">🔍 Scan</button>
@@ -202,9 +204,8 @@ main { max-width:100% !important; padding:0 !important; }
       </button>
       <button class="btn btn-sm btn-outline-secondary" id="clear-sel-btn">Clear</button>
       <button class="btn btn-sm btn-primary" id="scan-selected-btn" hidden>🔍 Scan selected</button>{# hidden: scans the whole folder (FILES_PAGE_REVIEW 3c) #}
-      <button class="btn btn-sm btn-outline-success" id="add-to-coll-btn">Add to collection</button>
-      <button class="btn btn-sm btn-outline-primary" id="create-dataset-btn"
-              title="Create a new manual Dataset (not a Collection) from the selected files and folders">Create dataset from selection…</button>
+      {# Add to collection · Create dataset · Interpret · Ask about this — selection_actions.js (base.html) mounts here. #}
+      <span id="files-selection-actions" data-testid="files-selection-actions"></span>
     </div>
 
     <div class="file-table-wrap" id="file-table-wrap">
@@ -244,7 +245,7 @@ main { max-width:100% !important; padding:0 !important; }
 
 <div class="drawer-backdrop" id="drawer-backdrop"></div>
 
-{% include 'files/_annotate_panel.html' %}
+{% if legacy_annotate %}{% include 'files/_annotate_panel.html' %}{% endif %}
 {% include 'files/_scan_panel.html' %}
 {% include 'files/_share_panel.html' %}
 {% include 'files/_add_drive_panel.html' %}

@@ -34,7 +34,13 @@ def _get_ext():
 # Experimental shell is opt-in; reading pages never initializes policy/storage.
 @bp.app_context_processor
 def gui_context():
-    return {'gui_v3': current_app.config.get('SCIDK_GUI_V3_ENABLED') is True,
+    gui_v3 = current_app.config.get('SCIDK_GUI_V3_ENABLED') is True
+    # The legacy Annotate drawer stays available until the selection bar + inspector pass equivalent
+    # browser tests: it is shown when its flag is on, and always where there is no inspector to replace it.
+    legacy_flag = (current_app.config.get('SCIDK_LEGACY_ANNOTATE_ENABLED') is True
+                   or os.environ.get('SCIDK_LEGACY_ANNOTATE_ENABLED') == '1')
+    return {'gui_v3': gui_v3,
+            'legacy_annotate': legacy_flag or not gui_v3,
             'overview_chat_enabled': current_app.config.get('SCIDK_OVERVIEW_CHAT_ENABLED') is True,
             'dataset_sharing_enabled': current_app.config.get('SCIDK_DATASET_SHARING_ENABLED') is True,
             'chat_readiness_enabled': current_app.config.get('SCIDK_CHAT_READINESS_ENABLED') is True,
