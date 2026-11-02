@@ -4516,7 +4516,7 @@ function renderInstanceTable() {
     html += '<tr>';
     const instanceName = instance.properties.name || instance.properties.filename || currentLabel.name;
     html += `<td><input type="checkbox" class="instance-pick" data-id="${escapeHtml(instance.id)}" aria-label="Select for collection"></td>`;
-    html += `<td><strong>${escapeHtml(String(instanceName))}</strong><br><a href="${window.SCIDK_BASE}/map?management_label=${encodeURIComponent(currentLabel.name)}&management_id=${encodeURIComponent(instance.id)}&management_name=${encodeURIComponent(instanceName)}">Open in Graph</a></td>`;
+    html += `<td><strong>${escapeHtml(String(instanceName))}</strong><br><a href="${window.SCIDK_BASE}{{ ('/knowledge?view=maps&' if request.path == '/knowledge' else '/map?')|safe }}management_label=${encodeURIComponent(currentLabel.name)}&management_id=${encodeURIComponent(instance.id)}&management_name=${encodeURIComponent(instanceName)}">Open in Graph</a></td>`;
     properties.forEach(prop => {
       const value = instance.properties[prop] || '';
       const hasChange = instanceChanges[instance.id] && instanceChanges[instance.id][prop] !== undefined;

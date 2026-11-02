@@ -142,3 +142,13 @@ def test_policy_gates_embedded_views_like_direct_pages():
                           ('/knowledge?view=governed', False), ('/overview', False)):
         with app.test_request_context(url):
             assert management_page() is expected, url
+
+
+def test_cross_links_stay_inside_knowledge_and_legacy_links_are_unchanged(client):
+    """Open in Graph / Return to entity inspector keep the user in Knowledge; /entities and /map are as before."""
+    k_entities, k_maps = page(client, '/knowledge?view=entities'), page(client, '/knowledge?view=maps')
+    assert '/knowledge?view=maps&management_label=' in k_entities
+    assert '/knowledge?view=entities&management_label=' in k_maps
+    assert '/map?management_label=' in page(client, '/entities')
+    assert '/entities?tab=entities&management_label=' in page(client, '/map')
+    assert '/map?management_label=' not in k_entities
