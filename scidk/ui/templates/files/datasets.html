@@ -127,7 +127,7 @@ main { max-width:100% !important; padding:0 !important; }
       <div class="sidebar-scroll">
         <div class="sidebar-section">
           <div class="sidebar-section-header">
-            <span id="servers-header">DRIVES</span>
+            <span id="servers-header">{% if ws_view %}LOCATIONS{% else %}DRIVES{% endif %}</span>
             <div style="display:flex;gap:2px;">
               <button id="new-snapshot-btn" title="New snapshot" style="display:none;" hidden>+</button>{# hidden: browses from / and "Create and scan now" would scan it (FILES_PAGE_REVIEW 3g) #}
               <button id="history-btn" title="Scan history">
@@ -136,11 +136,44 @@ main { max-width:100% !important; padding:0 !important; }
             </div>
           </div>
           <div id="servers-tree"><div class="tree-loading">Loading…</div></div>
+{% if ws_view %}
+          <div id="saved-locations" data-testid="saved-locations" hidden>
+            <div class="sidebar-section-header"><span>MY LOCATIONS</span></div>
+            <div id="saved-locations-list"></div>
+          </div>
+          <div id="scanned-locations" data-testid="scanned-locations">
+            <div class="sidebar-section-header"><span>SCANNED LOCATIONS</span></div>
+            <div id="scanned-locations-list"><div class="tree-loading">Loading…</div></div>
+          </div>
+          <button id="add-location-btn" type="button" aria-haspopup="true" aria-expanded="false" data-testid="add-location-btn"
+                  style="width:100%;margin-top:4px;padding:4px 8px;font-size:11px;color:#6c757d;background:none;border:1px dashed #ced4da;border-radius:5px;cursor:pointer;text-align:left;display:flex;align-items:center;gap:5px;"
+                  title="Add a local drive or folder, or use an existing scan root as a shortcut">
+            <i class="ti ti-plus" aria-hidden="true" style="font-size:11px;"></i> + Add drive or location
+          </button>
+          <div id="add-location-menu" data-testid="add-location-menu" hidden style="margin-top:4px;padding:6px;border:1px solid #dee2e6;border-radius:5px;background:#fff;font-size:11px;">
+            <button type="button" id="add-location-local" class="btn btn-sm btn-outline-secondary w-100 mb-1" style="font-size:11px;text-align:left;">Local folder / mounted path…</button>
+            <button type="button" id="add-location-scan" class="btn btn-sm btn-outline-secondary w-100" style="font-size:11px;text-align:left;">Folder from an existing Scan</button>
+          </div>
+          <div id="add-location-scan-panel" data-testid="add-location-scan-panel" hidden style="margin-top:4px;padding:6px;border:1px solid #dee2e6;border-radius:5px;background:#fff;font-size:11px;">
+            <label for="loc-scan-select" class="fw-semibold">Scan</label>
+            <select id="loc-scan-select" class="form-select form-select-sm mb-1" style="font-size:11px;"></select>
+            <div class="fw-semibold">Folder</div>
+            <div id="loc-folder-crumbs" data-testid="loc-folder-crumbs" style="word-break:break-all;"></div>
+            <div id="loc-folder-list" data-testid="loc-folder-list" style="max-height:140px;overflow:auto;margin:3px 0;"></div>
+            <div class="text-muted">Chosen: <span id="loc-chosen" style="word-break:break-all;"></span></div>
+            <label for="loc-label" class="fw-semibold mt-1">Display label</label>
+            <input id="loc-label" type="text" class="form-control form-control-sm" maxlength="120" style="font-size:11px;">
+            <div class="mt-1"><button type="button" id="loc-save" class="btn btn-sm btn-primary" style="font-size:11px;">Add location</button> <button type="button" id="loc-cancel" class="btn btn-sm btn-outline-secondary" style="font-size:11px;">Cancel</button></div>
+            <div class="text-muted mt-1">Saved in this browser only. Indexed locations browse the scan index; raw files cannot be opened.</div>
+            <div id="loc-status" class="text-muted" role="status"></div>
+          </div>
+{% else %}
           <button id="add-drive-btn"
                   style="width:100%;margin-top:4px;padding:4px 8px;font-size:11px;color:#6c757d;background:none;border:1px dashed #ced4da;border-radius:5px;cursor:pointer;text-align:left;display:flex;align-items:center;gap:5px;"
                   title="Add a new drive or rclone remote">
             <i class="ti ti-plus" aria-hidden="true" style="font-size:11px;"></i> Add Drive
           </button>
+{% endif %}
         </div>
         <div class="sidebar-section" id="activity-section" style="display:none;">
           <div class="sidebar-section-header"><span>ACTIVITY</span></div>
@@ -197,6 +230,10 @@ main { max-width:100% !important; padding:0 !important; }
       </div>
     </div>
 
+{% if ws_view %}
+    <div id="indexed-banner" data-testid="indexed-banner" hidden style="padding:4px 10px;background:#eef5ff;border-bottom:1px solid #b6d4fe;font-size:12px;"><span class="loc-badge loc-indexed" data-testid="indexed-banner-badge">Indexed</span> <span id="indexed-banner-text"></span></div>
+    <div id="indexed-datasets" data-testid="indexed-datasets" hidden style="padding:4px 10px;border-bottom:1px solid #dee2e6;font-size:12px;"></div>
+{% endif %}
     <div class="selection-bar" id="selection-bar">
       <button class="sel-badge" id="sel-badge-btn">
         <span id="sel-badge-count">0 selected</span>
@@ -359,6 +396,7 @@ function fmtAgo(ts){if(!ts)return null;const d=Math.floor((Date.now()/1000-ts)/8
 function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function setStatus(msg,cls=''){const el=document.getElementById('browser-status');if(!el)return;el.textContent=msg;el.className='browser-status'+(cls?' text-'+cls:'');if(msg&&cls!=='danger')setTimeout(()=>{if(el.textContent===msg)el.textContent='';},5000);}
 
+const LOC_HEADER={% if ws_view %}'LOCATIONS'{% else %}'DRIVES'{% endif %};
 // State
 let mode='live',currentServer=null,currentRoot=null,currentPath='';
 let activeScanId=null,selMode=true,selItems=new Set(),lastSelIndex=-1;
@@ -370,6 +408,7 @@ let _sortField='name',_sortAsc=true;
 // null — publishCursor() runs at every site that moves the cursor instead.
 // selItems is a Set, mutated in place, so it only needs publishing once, but it
 // goes through the same call for one place to look.
+function leaveIndexed(to){if(mode==='indexed'&&to){mode=to;const r=document.getElementById(to==='live'?'mode-live':'mode-snapshot');if(r)r.checked=true;}window.indexedContext=null;const b=document.getElementById('indexed-banner');if(b)b.hidden=true;const d=document.getElementById('indexed-datasets');if(d){d.hidden=true;d.replaceChildren();}const sf=document.getElementById('scan-folder-btn');if(sf&&mode==='live')sf.style.display='';}
 function publishCursor(){window.mode=mode;window.currentServer=currentServer;window.currentRoot=currentRoot;window.currentPath=currentPath;window.activeScanId=activeScanId;window.selItems=selItems;window.itemTypes=itemTypes;}
 publishCursor();
 
@@ -402,8 +441,8 @@ function sortTableRows(){const tbody=document.getElementById('file-list');if(!tb
 document.addEventListener('click',e=>{const th=e.target.closest('.sort-header');if(!th)return;const field=th.dataset.sort;if(_sortField===field)_sortAsc=!_sortAsc;else{_sortField=field;_sortAsc=true;}sortTableRows();});
 
 // Mode toggle
-document.getElementById('mode-live').addEventListener('change',()=>{mode='live';publishCursor();document.getElementById('servers-header').textContent='DRIVES';document.getElementById('scan-folder-btn').style.display='';document.getElementById('commit-scan-btn').style.display='none';document.getElementById('new-snapshot-btn').style.display='none';clearBrowser();loadServers();});
-document.getElementById('mode-snapshot').addEventListener('change',()=>{mode='snapshot';publishCursor();document.getElementById('servers-header').textContent='DRIVES';document.getElementById('scan-folder-btn').style.display='none';document.getElementById('new-snapshot-btn').style.display='';clearBrowser();loadSnapshotsAsTree();});
+document.getElementById('mode-live').addEventListener('change',()=>{mode='live';leaveIndexed();publishCursor();document.getElementById('servers-header').textContent=LOC_HEADER;document.getElementById('scan-folder-btn').style.display='';document.getElementById('commit-scan-btn').style.display='none';document.getElementById('new-snapshot-btn').style.display='none';clearBrowser();loadServers();});
+document.getElementById('mode-snapshot').addEventListener('change',()=>{mode='snapshot';leaveIndexed();publishCursor();document.getElementById('servers-header').textContent=LOC_HEADER;document.getElementById('scan-folder-btn').style.display='none';document.getElementById('new-snapshot-btn').style.display='';clearBrowser();loadSnapshotsAsTree();});
 function clearBrowser(){document.getElementById('file-list').innerHTML='<tr class="empty-row"><td colspan="7">Select a drive to browse</td></tr>';document.getElementById('breadcrumb-nav').innerHTML='<span class="text-muted" style="font-size:12px;">Select a drive</span>';}
 
 // Drive helpers
@@ -417,20 +456,185 @@ async function loadSnapshotsAsTree(){const tree=document.getElementById('servers
 
 function selectSnapshot(scanId){activeScanId=scanId;currentPath='';publishCursor();document.getElementById('commit-scan-btn').style.display='';browseSnapshot(scanId,'');}
 
+
+{% if ws_view %}
+// ── Locations ────────────────────────────────────────────────────────────────
+// Local drives (above) browse live. Scanned locations and saved shortcuts are indexed: they open the scan-index
+// browser *inside this page's file table* (GET /api/external-index/browse, read-only), never the local filesystem.
+// A shortcut is a logical drive { label, scan_id, root_path, access_mode: 'indexed' } kept in this browser's
+// localStorage. Nothing is written to the scan index, files.db or the graph, and no host is contacted.
+const LOC_KEY='scidk.browse.locations.v1';
+const ACCESS_LABEL={mounted:'Mounted',indexed:'Indexed',unavailable:'Unavailable'};
+const ACCESS_TITLE={mounted:'This folder is readable on this machine; it opens in the local browser.',indexed:'Known from a scan only. It opens in the scan-index browser; raw files cannot be opened from here.',unavailable:'This shortcut no longer resolves to any scan evidence.'};
+const $id=id=>document.getElementById(id);
+let _scanMap=null;
+async function getScans(){if(_scanMap)return _scanMap;const r=await fetch(SCIDK_BASE+'/api/external-index/scans');const j=await r.json();if(!r.ok)throw new Error(j.error||('HTTP '+r.status));_scanMap=new Map((j.scans||[]).map(s=>[s.id,s]));return _scanMap;}
+function savedLocations(){try{const v=JSON.parse(localStorage.getItem(LOC_KEY)||'[]');return Array.isArray(v)?v.filter(x=>x&&x.scan_id&&x.root_path):[];}catch(e){return [];}}
+function storeLocations(list){localStorage.setItem(LOC_KEY,JSON.stringify(list));}
+const baseOf=p=>(p||'').replace(/\/+$/,'').split('/').pop()||p||'';
+
+// Indexed browsing in the main file table.
+let _ix={loc:null,path:'',entries:[],next:0};
+function showIndexedBanner(loc){const b=$id('indexed-banner');b.hidden=false;$id('indexed-banner-text').textContent='Browsing the scan index for “'+(loc.label||loc.root_path)+'” (scan '+String(loc.scan.id).slice(0,8)+(loc.scan.date?', '+loc.scan.date:'')+'). Read-only: raw files cannot be opened from here.';}
+async function openIndexed(loc,path){
+  let scan;try{scan=(await getScans()).get(loc.scan_id);}catch(e){setStatus('The scan index is unavailable: '+e.message,'danger');return;}
+  if(!scan){setStatus('Unavailable: this location no longer resolves to any scan in the index.','danger');return;}
+  mode='indexed';document.getElementById('mode-live').checked=false;document.getElementById('mode-snapshot').checked=false;
+  currentServer=null;currentRoot=null;activeScanId=scan.id;
+  window.indexedContext={scan_id:scan.id,host:scan.host||scan.share||scan.id};
+  document.getElementById('scan-folder-btn').disabled=true;document.getElementById('scan-folder-btn').style.display='none';document.getElementById('commit-scan-btn').style.display='none';
+  browseIndexed(Object.assign({},loc,{scan}),path||loc.root_path);
+}
+async function browseIndexed(loc,path,more){
+  if(!more){setTableLoading();_ix={loc,path,entries:[],next:0};}
+  const gen=_ix;const qs=new URLSearchParams({scan_id:loc.scan.id,path});if(more)qs.set('offset',String(gen.next));
+  try{
+    const r=await fetch(SCIDK_BASE+'/api/external-index/browse?'+qs);const j=await r.json();if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
+    if(_ix!==gen)return;
+    gen.entries=gen.entries.concat((j.entries||[]).map(e=>Object.assign({id:e.path},e)));gen.next=j.next_offset||0;
+    if(!more){currentPath=path;publishCursor();renderIndexedCrumbs(loc,path);showIndexedBanner(loc);loadIndexedDatasets(loc,path);}
+    renderFileList(gen.entries,{mode:'indexed',scanId:loc.scan.id,loc});
+    if(j.has_more)appendIndexedMore(gen);
+  }catch(e){if(_ix!==gen)return;document.getElementById('file-list').innerHTML=`<tr class="empty-row"><td colspan="7" class="text-danger">Browse failed: ${esc(e.message)}</td></tr>`;}
+}
+function appendIndexedMore(gen){const tbody=document.getElementById('file-list');const tr=document.createElement('tr');tr.className='empty-row';tr.innerHTML=`<td colspan="7"><button class="btn btn-sm btn-outline-secondary" id="indexed-more-btn">Showing ${gen.entries.length.toLocaleString()} — load more</button></td>`;tbody.appendChild(tr);tr.querySelector('button').addEventListener('click',e=>{e.target.disabled=true;e.target.textContent='Loading…';browseIndexed(gen.loc,gen.path,true);});}
+function renderIndexedCrumbs(loc,path){
+  const nav=document.getElementById('breadcrumb-nav');nav.replaceChildren();
+  const root=(loc.root_path||'').replace(/\/+$/,'')||'/';
+  const rel=path.startsWith(root)?path.slice(root.length).replace(/^\/+/,''):'';
+  const parts=[{name:loc.label||root,path:loc.root_path}];let acc=root==='/'?'':root;
+  rel.split('/').filter(Boolean).forEach(seg=>{acc+='/'+seg;parts.push({name:seg,path:acc});});
+  parts.forEach((p,i)=>{
+    if(i===parts.length-1){const s=document.createElement('span');s.className='bc-current';s.textContent=p.name;nav.append(s);return;}
+    const a=document.createElement('a');a.href='#';a.textContent=p.name;a.addEventListener('click',e=>{e.preventDefault();browseIndexed(loc,p.path);});
+    const sep=document.createElement('span');sep.className='bc-sep';sep.textContent='/';nav.append(a,sep);
+  });
+}
+// Recognized datasets in the folder being browsed (the same read-only reader the Scans view uses).
+async function loadIndexedDatasets(loc,path){
+  const box=$id('indexed-datasets');box.replaceChildren();box.hidden=true;
+  try{
+    const qs=new URLSearchParams({scan_id:loc.scan.id,path,workspace:'0'});
+    const r=await fetch(SCIDK_BASE+'/api/external-index/datasets?'+qs);const j=await r.json();if(!r.ok)throw new Error(j.error||'unavailable');
+    if(_ix.loc!==loc||_ix.path!==path)return;
+    const list=j.datasets||[];if(!list.length)return;
+    box.hidden=false;
+    const h=document.createElement('div');h.className='fw-semibold';h.textContent='Recognized datasets in this folder ('+list.length+(j.has_more?'+':'')+')';box.append(h);
+    list.forEach(d=>{
+      const name=baseOf(d.root_path);
+      const item={key:'dataset|'+loc.scan.id+'|'+d.root_path,kind:'dataset',label:name,title:d.root_path,size:d.total_bytes,files:d.file_count,tag:d.pattern_name,
+        p:{scan_id:loc.scan.id,root_path:d.root_path,profile:d.pattern_name,file_count:d.file_count,bytes:d.total_bytes}};
+      const line=document.createElement('div');line.className='indexed-dataset';line.dataset.root=d.root_path;
+      if(window.CollectionBasket){const cb=window.CollectionBasket.checkbox(()=>item,'Select dataset '+name+' for the collection');if(cb)line.append(cb);}
+      const b=document.createElement('button');b.type='button';b.className='btn btn-sm btn-link p-0';b.textContent=name;b.title='Open details: '+d.root_path;
+      b.addEventListener('click',()=>document.dispatchEvent(new CustomEvent('scidk:inspect',{detail:{kind:'scan-dataset',key:item.key,record:{state:'candidate',name,scan_id:loc.scan.id,root_path:d.root_path,observed_profile:d.pattern_name,profile:d.pattern_name,file_count:d.file_count,total_bytes:d.total_bytes,host:loc.scan.host,share:loc.scan.share,scan_date:loc.scan.date}}})));
+      const meta=document.createElement('span');meta.className='ds-meta';meta.textContent=' '+[d.pattern_name,d.file_count!=null?d.file_count.toLocaleString()+' files':null].filter(Boolean).join(' · ');
+      const open=document.createElement('button');open.type='button';open.className='btn btn-sm btn-link p-0 ms-2';open.textContent='open folder';open.addEventListener('click',()=>browseIndexed(loc,d.root_path));
+      line.append(b,meta,open);box.append(line);
+    });
+    const add=document.createElement('button');add.type='button';add.className='btn btn-sm btn-outline-secondary mt-1';add.id='indexed-add-datasets';add.textContent='Add checked datasets to collection';
+    add.addEventListener('click',()=>{const n=window.CollectionBasket?window.CollectionBasket.addChecked(box):0;setStatus(n?n+' dataset'+(n===1?'':'s')+' added to the collection.':'Tick a dataset first.');});
+    box.append(add);
+  }catch(e){/* recognition is optional here; the folder listing stays usable */}
+}
+
+// Sidebar: saved shortcuts and discovered scanned locations.
+function locNode(l,opts){opts=opts||{};
+  const n=document.createElement('div');n.className='tree-node ps-2 loc-node';n.dataset.scan=l.scan_id||'';n.dataset.access=l.access;n.dataset.root=l.root||l.root_path||'';n.tabIndex=0;n.setAttribute('role','button');n.title=(n.dataset.root||'')+' — '+ACCESS_TITLE[l.access];
+  const ic=document.createElement('i');ic.className='ti '+(l.access==='mounted'?'ti-plug':l.access==='unavailable'?'ti-alert-triangle':'ti-archive');ic.setAttribute('aria-hidden','true');ic.style.cssText='font-size:12px;color:#6c757d;';
+  const lab=document.createElement('span');lab.className='tn-label';lab.textContent=l.label||l.root;
+  const bd=document.createElement('span');bd.className='loc-badge loc-'+l.access;bd.textContent=ACCESS_LABEL[l.access];bd.setAttribute('data-testid','location-badge');
+  const mt=document.createElement('span');mt.className='tn-meta';mt.textContent=l.files?l.files.toLocaleString()+' files':'';
+  n.append(ic,lab,bd,mt);
+  const go=()=>{
+    if(l.access==='unavailable'){setStatus('Unavailable: this shortcut no longer resolves to any scan in the index.','danger');return;}
+    document.querySelectorAll('#servers-tree .tree-node,#scanned-locations .tree-node').forEach(x=>x.classList.remove('selected'));n.classList.add('selected');
+    if(l.access==='mounted'){mode='live';document.getElementById('mode-live').checked=true;currentServer='local_fs';currentRoot='/';currentPath=l.root;publishCursor();browseLive('local_fs','/',l.root);document.getElementById('scan-folder-btn').disabled=false;}
+    else openIndexed({label:l.label,scan_id:l.scan_id,root_path:l.root||l.root_path});
+  };
+  n.addEventListener('click',go);n.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();go();}});return n;}
+async function loadLocations(){
+  const box=$id('scanned-locations-list'),mine=$id('saved-locations-list'),saved=savedLocations();
+  try{
+    const qs=new URLSearchParams({shortcuts:saved.map(x=>x.scan_id).join(',')});
+    const r=await fetch(SCIDK_BASE+'/api/external-index/locations?'+qs);const j=await r.json();if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
+    const gone=new Set((j.unavailable||[]).map(x=>x.scan_id));
+    mine.replaceChildren();
+    saved.forEach((s,i)=>{const node=locNode({label:s.label,scan_id:s.scan_id,root_path:s.root_path,access:gone.has(s.scan_id)?'unavailable':'indexed'});node.dataset.shortcut=String(i);mine.append(node);});
+    $id('saved-locations').hidden=!saved.length;
+    box.replaceChildren();const all=j.locations||[];
+    if(!all.length){box.innerHTML='<div class="tree-loading text-muted">No scanned locations</div>';return;}
+    all.filter(l=>l.role==='primary').forEach(l=>box.append(locNode(l)));
+    const rest=all.filter(l=>l.role!=='primary');
+    if(rest.length){const d=document.createElement('details');d.id='scanned-locations-other';const sm=document.createElement('summary');sm.textContent='Other scans ('+rest.length+')';sm.style.cssText='font-size:11px;color:#6c757d;cursor:pointer;';d.append(sm);rest.forEach(l=>d.append(locNode(l)));box.append(d);}
+  }catch(e){box.innerHTML='<div class="tree-loading text-muted">Scanned locations unavailable: '+esc(e.message)+'</div>';}
+}
+
+// + Add drive or location
+const addBtn=$id('add-location-btn'),addMenu=$id('add-location-menu'),pick=$id('add-location-scan-panel');
+const closeMenu=()=>{addMenu.hidden=true;addBtn.setAttribute('aria-expanded','false');};
+addBtn.addEventListener('click',e=>{e.stopPropagation();const open=addMenu.hidden;addMenu.hidden=!open;addBtn.setAttribute('aria-expanded',String(open));if(open)pick.hidden=true;});
+$id('add-location-local').addEventListener('click',()=>{closeMenu();if(window.AddDrive)AddDrive.open();});
+const P={scan:null,path:'',labelEdited:false};
+function pickerChosen(){return {scan:P.scan,path:P.path};}
+async function pickerList(){
+  const list=$id('loc-folder-list'),crumbs=$id('loc-folder-crumbs');list.replaceChildren();crumbs.replaceChildren();
+  if(!P.scan)return;
+  const root=P.scan.root.replace(/\/+$/,'')||'/';
+  const rel=P.path.startsWith(root)?P.path.slice(root.length).replace(/^\/+/,''):'';
+  const parts=[{name:root,path:P.scan.root}];let acc=root==='/'?'':root;rel.split('/').filter(Boolean).forEach(s=>{acc+='/'+s;parts.push({name:s,path:acc});});
+  parts.forEach((p,i)=>{const b=document.createElement('button');b.type='button';b.className='btn btn-sm btn-link p-0';b.textContent=(i?' / ':'')+p.name;b.addEventListener('click',()=>pickFolder(p.path));crumbs.append(b);});
+  $id('loc-chosen').textContent=P.path;
+  if(!P.labelEdited)$id('loc-label').value=baseOf(P.path)||P.scan.share||'';
+  try{
+    const r=await fetch(SCIDK_BASE+'/api/external-index/browse?'+new URLSearchParams({scan_id:P.scan.id,path:P.path}));const j=await r.json();if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
+    if(pickerChosen().path!==P.path)return;
+    const dirs=(j.entries||[]).filter(e=>e.type==='folder');
+    if(!dirs.length){list.textContent='No subfolders here.';return;}
+    dirs.forEach(e=>{const b=document.createElement('button');b.type='button';b.className='btn btn-sm btn-outline-secondary d-block w-100 text-start mb-1';b.textContent='📁 '+e.name;b.title=e.path;b.dataset.path=e.path;b.addEventListener('click',()=>pickFolder(e.path));list.append(b);});
+    if(j.has_more)list.append(Object.assign(document.createElement('div'),{className:'text-muted',textContent:'More folders exist; the first '+dirs.length+' are shown.'}));
+  }catch(e){list.textContent='Folders unavailable: '+e.message;}
+}
+function pickFolder(path){P.path=path;P.labelEdited=false;pickerList();}
+$id('add-location-scan').addEventListener('click',async()=>{
+  closeMenu();pick.hidden=false;$id('loc-status').textContent='Loading scans…';
+  try{
+    const scans=[...(await getScans()).values()].filter(s=>s.files&&s.complete);
+    const sel=$id('loc-scan-select');sel.replaceChildren();
+    scans.forEach(s=>{const o=document.createElement('option');o.value=s.id;o.textContent=[s.host,s.share].filter(Boolean).join(' / ')+' — '+s.root+(s.date?' ('+s.date+')':'');sel.append(o);});
+    $id('loc-status').textContent=scans.length?'':'No scans with files are available.';
+    if(scans.length){P.scan=scans[0];P.path=scans[0].root;P.labelEdited=false;pickerList();}
+  }catch(e){$id('loc-status').textContent='The scan index is unavailable: '+e.message;}
+});
+$id('loc-scan-select').addEventListener('change',async e=>{const s=(await getScans()).get(e.target.value);if(s){P.scan=s;P.path=s.root;P.labelEdited=false;pickerList();}});
+$id('loc-label').addEventListener('input',()=>{P.labelEdited=true;});
+$id('loc-cancel').addEventListener('click',()=>{pick.hidden=true;});
+$id('loc-save').addEventListener('click',()=>{
+  if(!P.scan)return;
+  const label=$id('loc-label').value.trim()||baseOf(P.path)||P.scan.share;
+  const list=savedLocations();
+  if(list.some(x=>x.scan_id===P.scan.id&&x.root_path===P.path)){$id('loc-status').textContent='This folder is already a location.';return;}
+  list.push({label,scan_id:P.scan.id,root_path:P.path,access_mode:'indexed'});storeLocations(list);
+  pick.hidden=true;$id('loc-status').textContent='';
+  setStatus('Added location “'+label+'” (indexed). It is saved in this browser only.');
+  loadLocations();
+});
+loadLocations();
+{% endif %}
 // History drawer
 document.getElementById('history-btn')?.addEventListener('click',()=>{if(typeof ScanPanel!=='undefined')ScanPanel.openHistory(currentPath);});
 document.getElementById('new-snapshot-btn')?.addEventListener('click',()=>openSnapshotModal('new'));
 
 // History drawer load
-async function loadHistoryDrawer(){const list=document.getElementById('history-list');if(!list)return;list.innerHTML='<div class="tree-loading">Loading…</div>';try{const r=await fetch(SCIDK_BASE+'/api/scans');const scans=await r.json();if(!Array.isArray(scans)||!scans.length){list.innerHTML='<div class="tree-loading text-muted">No scan history yet.</div>';return;}list.innerHTML=scans.map(s=>{const ts=s.ended||s.started,pid=s.provider_id||'local';return`<div class="snap-item" style="border:1px solid #dee2e6;border-radius:4px;margin-bottom:4px;background:#fff;padding:6px 8px;font-size:11px;cursor:pointer;" data-scan-id="${esc(s.id)}"><div style="display:flex;align-items:center;justify-content:space-between;"><span class="fw-semibold">${esc(pid)}</span><div style="display:flex;gap:4px;"><button class="btn btn-sm" style="padding:1px 5px;font-size:10px;" data-snap-browse="${esc(s.id)}">📂</button><button class="btn btn-sm" style="padding:1px 5px;font-size:10px;" data-snap-rescan="${esc(s.id)}">⟳</button></div></div><div class="text-muted" style="font-size:10px;">${ts?fmtAgo(ts):''}${s.file_count?' · '+s.file_count.toLocaleString()+' files':''}</div></div>`;}).join('');list.querySelectorAll('[data-snap-browse]').forEach(btn=>{btn.addEventListener('click',e=>{e.stopPropagation();Drawers.close();document.getElementById('mode-snapshot').checked=true;mode='snapshot';publishCursor();document.getElementById('servers-header').textContent='DRIVES';document.getElementById('scan-folder-btn').style.display='none';document.getElementById('new-snapshot-btn').style.display='';selectSnapshot(btn.dataset.snapBrowse);loadSnapshotsAsTree();});});list.querySelectorAll('[data-snap-rescan]').forEach(btn=>{btn.addEventListener('click',async e=>{e.stopPropagation();if(!confirm('Rescan with same config?'))return;btn.disabled=true;try{const r=await fetch(SCIDK_BASE+`/api/scans/${btn.dataset.snapRescan}/rescan`,{method:'POST',headers:{'Content-Type':'application/json'}});if(r.ok){setStatus('Rescan started','success');startTaskPoll();}else setStatus('Rescan failed','danger');}catch{setStatus('Rescan failed','danger');}finally{btn.disabled=false;}});});}catch(e){list.innerHTML=`<div class="tree-loading text-danger">Failed: ${esc(e.message)}</div>`;}}
+async function loadHistoryDrawer(){const list=document.getElementById('history-list');if(!list)return;list.innerHTML='<div class="tree-loading">Loading…</div>';try{const r=await fetch(SCIDK_BASE+'/api/scans');const scans=await r.json();if(!Array.isArray(scans)||!scans.length){list.innerHTML='<div class="tree-loading text-muted">No scan history yet.</div>';return;}list.innerHTML=scans.map(s=>{const ts=s.ended||s.started,pid=s.provider_id||'local';return`<div class="snap-item" style="border:1px solid #dee2e6;border-radius:4px;margin-bottom:4px;background:#fff;padding:6px 8px;font-size:11px;cursor:pointer;" data-scan-id="${esc(s.id)}"><div style="display:flex;align-items:center;justify-content:space-between;"><span class="fw-semibold">${esc(pid)}</span><div style="display:flex;gap:4px;"><button class="btn btn-sm" style="padding:1px 5px;font-size:10px;" data-snap-browse="${esc(s.id)}">📂</button><button class="btn btn-sm" style="padding:1px 5px;font-size:10px;" data-snap-rescan="${esc(s.id)}">⟳</button></div></div><div class="text-muted" style="font-size:10px;">${ts?fmtAgo(ts):''}${s.file_count?' · '+s.file_count.toLocaleString()+' files':''}</div></div>`;}).join('');list.querySelectorAll('[data-snap-browse]').forEach(btn=>{btn.addEventListener('click',e=>{e.stopPropagation();Drawers.close();document.getElementById('mode-snapshot').checked=true;mode='snapshot';publishCursor();document.getElementById('servers-header').textContent=LOC_HEADER;document.getElementById('scan-folder-btn').style.display='none';document.getElementById('new-snapshot-btn').style.display='';selectSnapshot(btn.dataset.snapBrowse);loadSnapshotsAsTree();});});list.querySelectorAll('[data-snap-rescan]').forEach(btn=>{btn.addEventListener('click',async e=>{e.stopPropagation();if(!confirm('Rescan with same config?'))return;btn.disabled=true;try{const r=await fetch(SCIDK_BASE+`/api/scans/${btn.dataset.snapRescan}/rescan`,{method:'POST',headers:{'Content-Type':'application/json'}});if(r.ok){setStatus('Rescan started','success');startTaskPoll();}else setStatus('Rescan failed','danger');}catch{setStatus('Rescan failed','danger');}finally{btn.disabled=false;}});});}catch(e){list.innerHTML=`<div class="tree-loading text-danger">Failed: ${esc(e.message)}</div>`;}}
 
 // Browse
 function composePath(prov,rootId,path){if(prov==='rclone'){const remote=(rootId||'').endsWith(':')?(rootId||''):(rootId||'')+':';let rel=(path||'').replace(/^\/+/,'');if(rel.startsWith(remote))rel=rel.slice(remote.length);const ci=rel.indexOf(':');if(ci>0)rel=rel.slice(ci+1).replace(/^\/+/,'');return rel?remote+rel:remote;}return path||rootId||'/';}
-async function browseLive(prov,rootId,path){setTableLoading();const fullPath=composePath(prov,rootId,path);const qs=new URLSearchParams({provider_id:prov,root_id:rootId,path:fullPath});try{const r=await fetch(SCIDK_BASE+'/api/browse?'+qs);if(!r.ok)throw new Error(`HTTP ${r.status}`);const j=await r.json();if(j.error)throw new Error(j.error);currentPath=path;publishCursor();renderBreadcrumb(fullPath,prov);renderFileList(j.entries||[],{mode:'live',providerId:prov});}catch(e){document.getElementById('file-list').innerHTML=`<tr class="empty-row"><td colspan="7" class="text-danger">Browse failed: ${esc(e.message)}</td></tr>`;}}
+async function browseLive(prov,rootId,path){leaveIndexed('live');setTableLoading();const fullPath=composePath(prov,rootId,path);const qs=new URLSearchParams({provider_id:prov,root_id:rootId,path:fullPath});try{const r=await fetch(SCIDK_BASE+'/api/browse?'+qs);if(!r.ok)throw new Error(`HTTP ${r.status}`);const j=await r.json();if(j.error)throw new Error(j.error);currentPath=path;publishCursor();renderBreadcrumb(fullPath,prov);renderFileList(j.entries||[],{mode:'live',providerId:prov});}catch(e){document.getElementById('file-list').innerHTML=`<tr class="empty-row"><td colspan="7" class="text-danger">Browse failed: ${esc(e.message)}</td></tr>`;}}
 // Index view pages through the folder: it used to stop at the first 200 rows with no notice.
 // _snap is replaced on each navigation, so a "load more" answer for a folder you've left is dropped.
 let _snap={scanId:null,path:'',entries:[],token:null};
-async function browseSnapshot(scanId,path='',more=false){if(!more){setTableLoading();_snap={scanId,path,entries:[],token:null};}const gen=_snap;const qs=new URLSearchParams({page_size:'500'});if(path)qs.set('path',path);if(more&&gen.token)qs.set('next_page_token',gen.token);try{const r=await fetch(SCIDK_BASE+`/api/scans/${encodeURIComponent(scanId)}/browse?`+qs);if(!r.ok)throw new Error(`HTTP ${r.status}`);const j=await r.json();if(_snap!==gen)return;if(!more){currentPath=path;publishCursor();renderBreadcrumb(path||'/',null);}gen.entries=gen.entries.concat(j.entries||[]);gen.token=j.next_page_token||null;renderFileList(gen.entries,{mode:'snapshot',scanId});if(gen.token)appendLoadMore(gen);}catch(e){if(_snap!==gen)return;document.getElementById('file-list').innerHTML=`<tr class="empty-row"><td colspan="7" class="text-danger">Browse failed: ${esc(e.message)}</td></tr>`;}}
+async function browseSnapshot(scanId,path='',more=false){if(!more){leaveIndexed('snapshot');setTableLoading();_snap={scanId,path,entries:[],token:null};}const gen=_snap;const qs=new URLSearchParams({page_size:'500'});if(path)qs.set('path',path);if(more&&gen.token)qs.set('next_page_token',gen.token);try{const r=await fetch(SCIDK_BASE+`/api/scans/${encodeURIComponent(scanId)}/browse?`+qs);if(!r.ok)throw new Error(`HTTP ${r.status}`);const j=await r.json();if(_snap!==gen)return;if(!more){currentPath=path;publishCursor();renderBreadcrumb(path||'/',null);}gen.entries=gen.entries.concat(j.entries||[]);gen.token=j.next_page_token||null;renderFileList(gen.entries,{mode:'snapshot',scanId});if(gen.token)appendLoadMore(gen);}catch(e){if(_snap!==gen)return;document.getElementById('file-list').innerHTML=`<tr class="empty-row"><td colspan="7" class="text-danger">Browse failed: ${esc(e.message)}</td></tr>`;}}
 function appendLoadMore(gen){const tbody=document.getElementById('file-list');const tr=document.createElement('tr');tr.className='empty-row';tr.innerHTML=`<td colspan="7"><button class="btn btn-sm btn-outline-secondary" id="snap-more-btn">Showing ${gen.entries.length.toLocaleString()} — load more</button></td>`;tbody.appendChild(tr);tr.querySelector('button').addEventListener('click',e=>{e.target.disabled=true;e.target.textContent='Loading…';browseSnapshot(gen.scanId,gen.path,true);});}
 function setTableLoading(){const s=()=>`<tr class="shimmer-row">${Array(7).fill(0).map(()=>`<td><div class="shimmer" style="width:${60+Math.random()*30}%"></div></td>`).join('')}</tr>`;document.getElementById('file-list').innerHTML=Array(5).fill(0).map(()=>s()).join('');}
 
@@ -450,7 +654,7 @@ tr.addEventListener('click',event=>{
   if(type==='folder' && event.detail>0) fileInspectTimer=setTimeout(inspectRow,400);
   else inspectRow();
   {% else %}inspectRow();{% endif %}
-});tr.addEventListener('dblclick',()=>{clearTimeout(fileInspectTimer);if(type!=='folder')return;if(ctx.mode==='live')browseLive(ctx.providerId,currentRoot,id);else if(ctx.mode==='snapshot')browseSnapshot(ctx.scanId,id);});});
+});tr.addEventListener('dblclick',()=>{clearTimeout(fileInspectTimer);if(type!=='folder')return;if(ctx.mode==='live')browseLive(ctx.providerId,currentRoot,id);else if(ctx.mode==='snapshot')browseSnapshot(ctx.scanId,id);else if(ctx.mode==='indexed')browseIndexed(ctx.loc,id);});});
 tbody.addEventListener('change',e=>{const cb=e.target.closest('.row-cb');if(!cb)return;const id=cb.dataset.id,idx=+cb.dataset.idx;if(e.shiftKey&&lastSelIndex>=0){const all=[...tbody.querySelectorAll('.row-cb')];const lo=Math.min(lastSelIndex,idx),hi=Math.max(lastSelIndex,idx);for(let i=lo;i<=hi;i++){const c=all[i];if(!c)continue;if(cb.checked)selItems.add(c.dataset.id);else selItems.delete(c.dataset.id);c.checked=cb.checked;}}else{if(cb.checked)selItems.add(id);else selItems.delete(id);}lastSelIndex=idx;updateSelUI();},true);}
 
 // Selection

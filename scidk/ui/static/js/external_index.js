@@ -241,7 +241,22 @@
       const data = await get('/api/external-index/scans');
       st.scans = data.scans; st.shares = data.shares;
       renderScans(); status('Read-only index · choose a share.');
+      deepLink();
     } catch (error) { status(error.message); }
+  }
+  // A Browse > Scanned locations shortcut arrives as ?scan_id=…[&path=…]: open that scan in index-backed browsing.
+  function deepLink() {
+    const params = new URLSearchParams(location.search), id = params.get('scan_id');
+    const badge = $('scans-access');
+    if (!id) return;
+    const scan = st.scans.find(s => s.id === id);
+    if (!scan) {
+      if (badge) { badge.textContent = 'Unavailable'; badge.className = 'loc-badge loc-unavailable'; badge.hidden = false; }
+      status('Unavailable: this location shortcut no longer resolves to any scan in the index.');
+      return;
+    }
+    if (badge) { badge.textContent = 'Indexed'; badge.className = 'loc-badge loc-indexed'; badge.hidden = false; badge.title = 'Browsing the scan index. Raw files cannot be opened from here.'; }
+    open(scan, params.get('path') || scan.root);
   }
   // In the legacy Files page Scans is an in-page tab; in the Datasets workspace it is its own view.
   if ($('gui-scans-tab')) $('gui-scans-tab').addEventListener('click', loadScans);

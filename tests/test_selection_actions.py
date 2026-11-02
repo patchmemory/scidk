@@ -165,7 +165,7 @@ class Api:
         elif path == '/api/tasks/task1':
             data = {'id': 'task1', 'status': 'completed'}
         elif path == '/api/external-index/scans':
-            data = {'scans': [{'id': 's1', 'root': SCAN_ROOT, 'share': 'synthetic-share', 'date': '2026-01-01', 'files': 10, 'bytes': 1000, 'status': 'complete'}],
+            data = {'scans': [{'id': 's1', 'root': SCAN_ROOT, 'host': 'synthetic-host', 'share': 'synthetic-share', 'date': '2026-01-01', 'files': 10, 'bytes': 1000, 'status': 'complete', 'complete': True}],
                     'shares': [{'share': 'synthetic-share', 'files': 10, 'date': '2026-01-01', 'primary_id': 's1', 'primary_is_full_root': True, 'older_ids': []}]}
         elif path == '/api/external-index/browse':
             data = {'entries': [{'name': 'raw', 'path': SCAN_ROOT + '/raw', 'type': 'folder'},

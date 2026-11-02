@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sqlite3
+import threading
 import time
 from datetime import datetime, timezone
 from urllib.parse import quote
@@ -178,9 +179,8 @@ def _group_shares(out):
     return shares
 
 
-@bp.get('/scans')
-@_guard
-def scans(conn):
+def scan_summaries(conn):
+    """(scans, shares) exactly as GET /scans returns them. Read-only; shared with the Locations list."""
     progress = {}
     for row in conn.execute("SELECT scan_id, metric, value FROM scan_progress "
                             "WHERE metric IN ('files_scanned','bytes_scanned','dirs_scanned')"):
@@ -206,7 +206,96 @@ def scans(conn):
     shares = _group_shares(out)
     for s in out:
         s.pop('started_ts'), s.pop('completed_ts'), s.pop('depth')
+    return out, shares
+
+
+@bp.get('/scans')
+@_guard
+def scans(conn):
+    out, shares, _ = _scan_snapshot(conn)
     return {'status': 'success', 'read_only': True, 'scans': out, 'shares': shares}
+
+
+_LOCAL_PROVIDERS = ('', 'local', 'local_fs', 'localfs', 'file')
+
+
+def local_access(root, extra=None):
+    """True only when this scan root is demonstrably reachable by the local file browser on this machine.
+
+    Purely local and conservative: an absolute path that is a readable directory *here*, and a scan whose recorded
+    provider (when it records one) is local. No host is contacted, and a remote path is never matched to a local mount
+    by name or alias: an SSH/remote scan that merely shares a path string stays Indexed unless it records a local
+    provider."""
+    root = root or ''
+    if not root.startswith('/') or ':' in root.split('/', 1)[0]:
+        return False
+    provider = ''
+    if isinstance(extra, dict):
+        provider = str(extra.get('provider_id') or extra.get('provider') or '').strip().lower()
+    if provider not in _LOCAL_PROVIDERS:
+        return False
+    try:
+        return os.path.isdir(root) and os.access(root, os.R_OK | os.X_OK)
+    except OSError:
+        return False
+
+
+_SNAP = {}   # (index path, file signature) -> (loaded at, (scans, shares, extras))
+
+
+def _scan_snapshot(conn):
+    """Scan summaries plus each scan's extra_json, cached like the candidate list (index signature, CAT_TTL_S)."""
+    path = (os.environ.get('SCIDK_EXTERNAL_INDEX_DB') or '').strip()
+    key = (os.path.abspath(path), _signature(path)) if path else None
+    with _CAT_LOCK:
+        hit = _SNAP.get(key) if key else None
+        if hit and time.monotonic() - hit[0] < CAT_TTL_S:
+            return hit[1]
+    out, shares = scan_summaries(conn)
+    extras = {}
+    for row in conn.execute('SELECT id, extra_json FROM scans'):
+        try:
+            extra = json.loads(row['extra_json']) if row['extra_json'] else {}
+        except ValueError:
+            extra = {}
+        extras[row['id']] = extra if isinstance(extra, dict) else {}
+    value = (out, shares, extras)
+    if key:
+        with _CAT_LOCK:
+            _SNAP.clear()
+            _SNAP[key] = (time.monotonic(), value)
+    return value
+
+
+def scan_locations(conn, shortcuts=()):
+    """Scanned locations for the Browse sidebar: one per scan with files, newest share primary first.
+
+    Each is ``{scan_id, host, share, root, label, files, bytes, date, access, role}`` with access ``mounted`` (the
+    root is a readable local folder), else ``indexed`` (scan-index browsing only). ``shortcuts`` are scan ids a user
+    kept as shortcuts: any that no longer resolve to scan evidence come back as ``unavailable``."""
+    out, shares, extras = _scan_snapshot(conn)
+    by_id = {s['id']: s for s in out}
+    primary = {sh['primary_id'] for sh in shares if sh.get('primary_id')}
+    listed = []
+    for s in out:
+        if not s['files'] or not s['complete']:
+            continue
+        listed.append({'scan_id': s['id'], 'host': s['host'], 'share': s['share'], 'root': s['root'],
+                       'label': ('%s · %s' % (s['host'], s['share'])) if s['host'] and s['host'] != s['share'] else s['share'],
+                       'files': s['files'], 'bytes': s['bytes'], 'date': s['date'], 'role': 'primary' if s['id'] in primary else 'other',
+                       'access': 'mounted' if local_access(s['root'], extras.get(s['id'])) else 'indexed'})
+    listed.sort(key=lambda x: (x['role'] != 'primary', (x['label'] or '').casefold(), x['root'] or ''))
+    missing = [{'scan_id': i, 'access': 'unavailable', 'label': 'Unavailable', 'root': None}
+               for i in shortcuts if i and i not in by_id]
+    return listed, missing
+
+
+@bp.get('/locations')
+@_guard
+def locations(conn):
+    wanted = [x.strip() for x in (request.args.get('shortcuts') or '').split(',') if x.strip()]
+    listed, missing = scan_locations(conn, wanted)
+    return {'status': 'success', 'read_only': True, 'locations': listed, 'unavailable': missing}
 
 
 def _scan_root(conn, scan_id):
@@ -325,46 +414,167 @@ def search(conn):
 
 
 COUNT_PROBE = 5000  # object_members rows read at most, per dataset, to fill a missing file count
-ALL_LIMIT = 1000  # recognized datasets read across all scans, at most
+CATALOG_PAGE = 50   # default page size of the paginated Dataset lists
+CATALOG_PAGE_MAX = 200
 
 
 def _display_name(root_path):
     return (root_path or '').rstrip('/').rsplit('/', 1)[-1] or (root_path or '')
 
 
-@bp.get('/datasets/all')
-@_guard
-def datasets_all(conn):
-    """Recognized Datasets across every scan, alphabetical by display name (the root's last segment).
+def scan_provenance(conn):
+    """{scan_id: scan root, host, share, date} from `scans` (a small table), read-only."""
+    out = {}
+    for r in conn.execute('SELECT id, root, started, completed FROM scans'):
+        host, share, _ = _classify(r['root'])
+        stamp = _iso(r['completed'] or r['started'])
+        out[r['id']] = {'scan_root': r['root'], 'host': host, 'share': share, 'scan_date': stamp[:10] if stamp else None}
+    return out
 
-    Read-only references keyed by (scan_id, root_path); counts come from the stored data_objects row, with no
-    object_members probing. Provenance (scan root/host/share/date) is joined from `scans`. At most ALL_LIMIT rows."""
+
+_CAT_LOCK = threading.Lock()
+_CAT = {}          # (index path, workspace flag, file signature) -> (loaded at, CandidateSet); at most two kept
+CAT_TTL_S = 120    # a cached candidate list is never older than this, whatever the file signature says
+
+
+def _signature(path):
+    """Size and mtime of the index file and its WAL side file: changes whenever the scanner writes."""
+    out = []
+    for p in (path, path + '-wal'):
+        try:
+            st = os.stat(p)
+            out.append((st.st_size, st.st_mtime_ns))
+        except OSError:
+            out.append(None)
+    return tuple(out)
+
+
+def candidate_set(workspace=False):
+    """The sorted candidate list for the whole index, read once through the read-only opener and then reused.
+
+    The cache is refreshed when the index file or its WAL changes, or after CAT_TTL_S. A refresh is one read of
+    `data_objects` and `scans`; nothing is written. Raises IndexUnavailable when no index can be opened."""
+    from ...services.dataset_catalog import CandidateSet
+    path = (os.environ.get('SCIDK_EXTERNAL_INDEX_DB') or '').strip()
+    key = (os.path.abspath(path) if path else '', bool(workspace), _signature(path) if path else None)
+    with _CAT_LOCK:
+        hit = _CAT.get(key)
+        if hit and time.monotonic() - hit[0] < CAT_TTL_S:
+            return hit[1]
+        conn = _open()
+        try:
+            prov = scan_provenance(conn)
+            rows = candidate_tuples(conn, workspace=workspace)
+        finally:
+            conn.close()
+        found = CandidateSet(rows, prov, candidate_entry)
+        _CAT[key] = (time.monotonic(), found)
+        while len(_CAT) > 2:
+            _CAT.pop(min(_CAT, key=lambda k: _CAT[k][0]))
+        return found
+
+
+def candidate_tuples(conn, scan_id='', system=False, workspace=False):
+    """Like candidate_rows, but as plain tuples in CANDIDATE_FIELDS order (compact enough for ~10^6 rows)."""
     where, args = ['1=1'], []
-    scan_id = (request.args.get('scan_id') or '').strip()
     if scan_id:
         where.append('o.scan_id=?')
         args.append(scan_id)
-    if not _flag('system'):
+    if not system:
         clause, extra = _path_noise_sql('o.root_path')
         where.append(clause)
         args += extra
-    if not _flag('workspace'):
+    if not workspace:
         where.append("NOT (o.pattern_name LIKE '%workspace%' AND o.confidence<=0.5)")
-    rows = conn.execute(
-        'SELECT o.id, o.scan_id, o.pattern_name, o.root_path, o.file_count, o.total_bytes, o.confidence, o.status, '
-        's.root AS scan_root, s.started AS scan_started, s.completed AS scan_completed '
-        'FROM data_objects o LEFT JOIN scans s ON s.id=o.scan_id WHERE ' + ' AND '.join(where) +
-        ' ORDER BY o.root_path LIMIT ?', args + [ALL_LIMIT + 1]).fetchall()
-    out = []
-    for r in rows[:ALL_LIMIT]:
-        host, share, _ = _classify(r['scan_root'])
-        stamp = _iso(r['scan_completed'] or r['scan_started'])
-        out.append({'id': r['id'], 'scan_id': r['scan_id'], 'name': _display_name(r['root_path']),
-                    'pattern_name': r['pattern_name'], 'root_path': r['root_path'], 'file_count': r['file_count'],
-                    'total_bytes': r['total_bytes'], 'confidence': r['confidence'], 'status': r['status'],
-                    'scan_root': r['scan_root'], 'host': host, 'share': share, 'scan_date': stamp[:10] if stamp else None})
-    out.sort(key=lambda d: ((d['name'] or '').lower(), d['root_path'] or '', d['scan_id'] or ''))
-    return {'status': 'success', 'read_only': True, 'capped': len(rows) > ALL_LIMIT, 'datasets': out}
+    return [tuple(r) for r in conn.execute(
+        'SELECT o.id, o.scan_id, o.pattern_name, o.root_path, o.file_count, o.total_bytes, o.confidence, o.status '
+        'FROM data_objects o WHERE ' + ' AND '.join(where), args)]
+
+
+def candidate_rows(conn, scan_id='', system=False, workspace=False):
+    """Every recognized Dataset in the index as lean dicts (no row cap, no sorting here).
+
+    Read-only: one SELECT over `data_objects`, keeping only the lean columns. Callers filter, sort globally and
+    page; nothing is truncated before sorting. Counts come from the stored row."""
+    where, args = ['1=1'], []
+    if scan_id:
+        where.append('o.scan_id=?')
+        args.append(scan_id)
+    if not system:
+        clause, extra = _path_noise_sql('o.root_path')
+        where.append(clause)
+        args += extra
+    if not workspace:
+        where.append("NOT (o.pattern_name LIKE '%workspace%' AND o.confidence<=0.5)")
+    cursor = conn.execute(
+        'SELECT o.id, o.scan_id, o.pattern_name, o.root_path, o.file_count, o.total_bytes, o.confidence, o.status '
+        'FROM data_objects o WHERE ' + ' AND '.join(where), args)
+    return [{'id': r[0], 'scan_id': r[1], 'pattern_name': r[2], 'root_path': r[3], 'file_count': r[4],
+             'total_bytes': r[5], 'confidence': r[6], 'status': r[7]} for r in cursor]
+
+
+def candidate_entry(row, prov):
+    """One candidate as the API returns it: the observed row plus its scan provenance."""
+    p = prov.get(row['scan_id']) or {}
+    return {'id': row['id'], 'scan_id': row['scan_id'], 'name': _display_name(row['root_path']),
+            'pattern_name': row['pattern_name'], 'root_path': row['root_path'], 'file_count': row['file_count'],
+            'total_bytes': row['total_bytes'], 'confidence': row['confidence'], 'status': row['status'],
+            'scan_root': p.get('scan_root'), 'host': p.get('host'), 'share': p.get('share'),
+            'scan_date': p.get('scan_date')}
+
+
+def read_candidate(conn, scan_id, root_path):
+    """The observed row for one (scan_id, root_path), or None. Read-only point lookup."""
+    row = conn.execute(
+        'SELECT id, scan_id, pattern_name, root_path, file_count, total_bytes, confidence, status FROM data_objects '
+        'WHERE scan_id=? AND root_path=? LIMIT 1', (scan_id, root_path)).fetchone()
+    if row is None:
+        return None
+    return candidate_entry({'id': row[0], 'scan_id': row[1], 'pattern_name': row[2], 'root_path': row[3],
+                            'file_count': row[4], 'total_bytes': row[5], 'confidence': row[6], 'status': row[7]},
+                           scan_provenance(conn))
+
+
+def page_args(args=None):
+    args = args if args is not None else request.args
+    try:
+        limit = max(1, min(CATALOG_PAGE_MAX, int(args.get('limit') or CATALOG_PAGE)))
+    except (TypeError, ValueError):
+        limit = CATALOG_PAGE
+    try:
+        offset = max(0, int(args.get('offset') or 0))
+    except (TypeError, ValueError):
+        offset = 0
+    return limit, offset
+
+
+@bp.get('/datasets/all')
+@_guard
+def datasets_all(conn):
+    """Recognized Datasets across every scan, globally alphabetical by display name, paged.
+
+    Read-only references keyed by (scan_id, root_path). Nothing is truncated before sorting: every candidate is read,
+    sorted by (name, root, scan) and only then sliced by ?limit= (default 50, max 200) and ?offset=. Optional ?q=
+    matches the name, root, profile, host, share and scan root. Provenance is joined from `scans`."""
+    from ...services import dataset_catalog as dc
+    limit, offset = page_args()
+    q = (request.args.get('q') or '').strip()
+    scan_id = (request.args.get('scan_id') or '').strip()
+    if not scan_id and not _flag('system'):
+        found = candidate_set(workspace=_flag('workspace'))
+        idx = found.match(q)
+        chunk = [found.entry(i) for i in idx[offset:offset + limit]]
+        total = len(idx)
+    else:
+        prov = scan_provenance(conn)
+        rows = [candidate_entry(r, prov) for r in candidate_rows(conn, scan_id=scan_id, system=_flag('system'), workspace=_flag('workspace'))]
+        rows = [d for d in rows if dc.matches(q, d.get('name'), d.get('root_path'), d.get('pattern_name'), d.get('host'),
+                                              d.get('share'), d.get('scan_root'))]
+        rows.sort(key=dc.sort_key)
+        chunk, total = rows[offset:offset + limit], len(rows)
+    more = offset + limit < total
+    return {'status': 'success', 'read_only': True, 'total': total, 'offset': offset, 'limit': limit,
+            'has_more': more, 'next_offset': offset + limit if more else None, 'datasets': chunk}
 
 
 @bp.get('/datasets')

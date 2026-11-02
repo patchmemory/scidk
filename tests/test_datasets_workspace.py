@@ -7,6 +7,8 @@ synthetic. Browser tests skip when no local Chromium is available.
 import hashlib
 import json
 import re
+import sqlite3
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -273,16 +275,66 @@ GRAPH = [
      'profile': 'synthetic_pattern', 'file_count': 3, 'dataset_bytes': 300, 'members': 0, 'folders': 0, 'files': 0, 'bytes': 0}]
 
 
+LOCATIONS = [
+    {'scan_id': 'loc-mounted', 'host': 'synthetic-host', 'share': 'mounted-share', 'root': '/synthetic/mounted', 'label': 'synthetic-host · mounted-share',
+     'files': 5, 'bytes': 50, 'date': '2026-01-01', 'role': 'primary', 'access': 'mounted'},
+    {'scan_id': 's1', 'host': 'synthetic-host', 'share': 'indexed-share', 'root': SCAN_ROOT, 'label': 'synthetic-host · indexed-share',
+     'files': 12, 'bytes': 3000, 'date': '2026-01-01', 'role': 'primary', 'access': 'indexed'}]
+
+
 class WsApi(Api):
+    """Catalog answers come from the real merge/paging code over synthetic rows; confirm and edit change a private copy."""
+
+    def __init__(self):
+        super().__init__()
+        import copy
+        self.graph = copy.deepcopy(GRAPH)
+        self.candidates = list(RECOGNIZED)
+
+    def catalog(self, query):
+        from scidk.services import dataset_catalog as dc
+        one = lambda k, d='': (query.get(k) or [d])[0]  # noqa: E731
+        page = dc.catalog_page(dc.build_items(self.candidates, self.graph), q=one('q'), state=one('state', 'all'),
+                               limit=int(one('limit', '50')), offset=int(one('offset', '0')))
+        return dict(page, status='success', read_only=True, notes=[])
+
+    def write(self, path, body):
+        if path == '/api/datasets/confirm':
+            row = next(r for r in RECOGNIZED if r['scan_id'] == body['scan_id'] and r['root_path'] == body['root_path'])
+            if not any(g.get('scan_id') == row['scan_id'] and g.get('root_path') == row['root_path'] for g in self.graph):
+                self.graph.append({'id': None, 'name': row['name'], 'name_source': 'observed', 'source': 'files.db', 'scan_id': row['scan_id'],
+                                   'root_path': row['root_path'], 'profile': row['pattern_name'], 'file_count': row['file_count'],
+                                   'dataset_bytes': row['total_bytes'], 'confirmed_at': 1700000000000, 'confirmed_by': 'synthetic'})
+            g = next(g for g in self.graph if g.get('scan_id') == row['scan_id'] and g.get('root_path') == row['root_path'])
+            return {'status': 'ok', 'state': 'confirmed', 'name': g['name'], 'description': g.get('description'),
+                    'human_profile': g.get('human_profile'), 'observed_profile': row['pattern_name']}
+        g = next(g for g in self.graph if (body.get('dataset_id') and g.get('id') == body['dataset_id'])
+                 or (body.get('scan_id') and g.get('scan_id') == body['scan_id'] and g.get('root_path') == body['root_path']))
+        for key in ('name', 'description', 'human_profile'):
+            if key in body:
+                g[key] = body[key]
+                if key == 'name':
+                    g['name_source'] = 'human'
+        return {'status': 'ok', 'name': g.get('name'), 'description': g.get('description'),
+                'human_profile': g.get('human_profile'), 'observed_profile': g.get('profile')}
+
     def __call__(self, route):
         req = route.request
-        path = req.url.split('?')[0].split('//', 1)[-1]
-        path = path[path.index('/'):]
+        split = urlsplit(req.url)
+        path = split.path
         data = None
-        if path == '/api/external-index/datasets/all':
-            data = {'status': 'success', 'datasets': RECOGNIZED, 'capped': False}
-        elif path == '/api/datasets/graph':
-            data = {'datasets': GRAPH}
+        if path == '/api/datasets/catalog':
+            self.queries.append((path, parse_qs(split.query)))
+            data = self.catalog(parse_qs(split.query))
+        elif path in ('/api/datasets/confirm', '/api/datasets/metadata') and req.method == 'POST':
+            body = json.loads(req.post_data or '{}')
+            self.posts.append((path, body))
+            data = self.write(path, body)
+        elif path == '/api/external-index/locations':
+            wanted = [x for x in (parse_qs(split.query).get('shortcuts') or [''])[0].split(',') if x]
+            known = {x['scan_id'] for x in LOCATIONS}
+            data = {'status': 'success', 'read_only': True, 'locations': LOCATIONS,
+                    'unavailable': [{'scan_id': x, 'access': 'unavailable', 'label': 'Unavailable', 'root': None} for x in wanted if x not in known]}
         elif path == '/api/collections' and req.method == 'GET':
             data = {'collections': COLLECTIONS}
         elif path == '/api/collections/c-a':
@@ -334,10 +386,11 @@ def test_datasets_view_merges_candidate_confirmed_and_manual_and_adds_each_to_th
     expect(cards.nth(0)).to_contain_text('synthetic_pattern')
     expect(cards.nth(0)).to_contain_text('3 files · 300 B')
     expect(cards.nth(0)).to_contain_text('synthetic-host / synthetic-share')
-    expect(cards.nth(0)).to_contain_text('reference to scan s1')
+    expect(cards.nth(0)).to_contain_text('Provenance: scan s1')
     expect(cards.nth(2)).to_contain_text('2 files · 1 folders')
     expect(cards.nth(2)).to_contain_text('not a scan reference')
-    expect(page.locator('#datasets-count')).to_contain_text('3 Datasets (1 candidate, 1 confirmed, 1 manual)')
+    expect(page.locator('#datasets-count')).to_contain_text('3 Datasets — in this search: 3 all, 1 candidate, 1 confirmed, 1 manual')
+    expect(page.locator('#datasets-range')).to_have_text('Showing 1–3 of 3')
     expect(page.locator('[data-testid="datasets-tab-datasets"]')).to_have_attribute('aria-current', 'page')
 
     # Open one in the inspector, then add it from there.

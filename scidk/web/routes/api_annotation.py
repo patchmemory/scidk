@@ -393,6 +393,167 @@ def api_datasets_graph_list():
             pass
 
 
+def _close(client) -> None:
+    try:
+        client.close()
+    except Exception:
+        pass
+
+
+def _open_index():
+    """The external scan index through the one existing read-only opener, or (None, note)."""
+    from .api_external_index import IndexUnavailable, _open
+    try:
+        return _open(), None
+    except IndexUnavailable as e:
+        return None, str(e)
+
+
+@bp.get('/datasets/catalog')
+@require_role(*_READ_ROLES)
+def api_datasets_catalog():
+    """The Dataset catalog: candidate, confirmed and manual Datasets in one globally alphabetical, paged list.
+
+    Query: ``q`` (name, root, profile, host/share, scan root), ``state`` (all|candidate|confirmed|manual),
+    ``limit`` (default 50, max 200), ``offset``, ``workspace=1`` to include workspace candidates. Every scan
+    candidate is read and every graph Dataset is listed before sorting, so nothing is truncated first. Read-only:
+    the scan index is opened ``mode=ro`` and the graph is only read. When one source is down the other still lists,
+    and ``notes`` says so."""
+    from ...services import collection_service as cs, dataset_catalog as dc
+    from .api_external_index import IndexUnavailable, candidate_set, page_args
+
+    limit, offset = page_args()
+    q = (request.args.get('q') or '').strip()[:200]
+    state = (request.args.get('state') or 'all').strip().lower()
+    workspace = (request.args.get('workspace') or '').strip().lower() in ('1', 'true', 'yes', 'on')
+    notes: List[str] = []
+    cands = None
+    try:
+        cands = candidate_set(workspace=workspace)
+    except IndexUnavailable as e:
+        notes.append('Scan-index candidates are unavailable: ' + str(e))
+    except Exception as e:  # noqa: BLE001
+        notes.append('Scan-index candidates are unavailable: ' + type(e).__name__)
+    graph_rows: List[Dict[str, Any]] = []
+    try:
+        client = _neo4j_client()
+    except Neo4jUnavailable as e:
+        notes.append('Confirmed and manual Datasets are unavailable: ' + str(e))
+    else:
+        try:
+            graph_rows = cs.list_graph_datasets(client, limit=None)
+        except Exception as e:  # noqa: BLE001
+            notes.append('Confirmed and manual Datasets are unavailable: ' + type(e).__name__)
+        finally:
+            _close(client)
+    if cands is not None:
+        page = dc.cached_page(cands, graph_rows, q=q, state=state, limit=limit, offset=offset)
+    else:
+        page = dc.catalog_page(dc.build_items([], graph_rows), q=q, state=state, limit=limit, offset=offset)
+    page.update(status='success', read_only=True, notes=notes)
+    return jsonify(page), 200, {'Cache-Control': 'no-store'}
+
+
+def _dataset_ref(body: Dict[str, Any]) -> Dict[str, str]:
+    scan_id, root = str(body.get('scan_id') or '').strip(), str(body.get('root_path') or '').strip()
+    if scan_id and root:
+        return {'scan_id': scan_id, 'root_path': root}
+    did = str(body.get('dataset_id') or '').strip()
+    return {'dataset_id': did} if did else {}
+
+
+@bp.post('/datasets/confirm')
+@require_role(*_WRITE_ROLES)
+def api_datasets_confirm():
+    """Confirm a candidate Dataset: MERGE ``(:Dataset {scan_id, root_path})`` and nothing else.
+
+    Body: ``{scan_id, root_path}``. The observed row is re-read from the external scan index (read-only) so the
+    browser cannot supply evidence; the scan record is never changed. Existing human name, description and profile
+    override are kept (see :func:`collection_service.confirm_dataset`). Idempotent. No gate, no delete."""
+    from ...services import collection_service as cs
+
+    body = request.get_json(silent=True) or {}
+    ref = _dataset_ref(body)
+    if 'scan_id' not in ref:
+        return jsonify({'error': 'scan_id and root_path are required'}), 400
+    conn, note = _open_index()
+    if conn is None:
+        return jsonify({'error': 'The scan evidence for this Dataset cannot be read: ' + str(note)}), 503
+    try:
+        from .api_external_index import read_candidate
+        evidence = read_candidate(conn, ref['scan_id'], ref['root_path'])
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'error': 'The scan index query failed (%s).' % type(e).__name__}), 503
+    finally:
+        conn.close()
+    if evidence is None:
+        return jsonify({'error': 'No recognized Dataset with this scan and root exists in the scan index.'}), 404
+    try:
+        client = _neo4j_client()
+    except Neo4jUnavailable as e:
+        return jsonify({'error': str(e)}), 503
+    try:
+        rows = cs.confirm_dataset(
+            client, scan_id=ref['scan_id'], root_path=ref['root_path'], name=evidence['name'],
+            profile=evidence.get('pattern_name'), file_count=evidence.get('file_count'),
+            total_bytes=evidence.get('total_bytes'), by=_created_by())
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'error': f'{type(e).__name__}: {e}'}), 502
+    finally:
+        _close(client)
+    row = dict(rows[0]) if rows else {}
+    return jsonify({'status': 'ok', 'state': 'confirmed', 'scan_id': ref['scan_id'], 'root_path': ref['root_path'],
+                    'name': row.get('name') or evidence['name'], 'description': row.get('description'),
+                    'human_profile': row.get('human_profile'), 'observed_profile': evidence.get('pattern_name')}), 200
+
+
+@bp.post('/datasets/metadata')
+@require_role(*_WRITE_ROLES)
+def api_datasets_metadata():
+    """Set human metadata (display name, description, profile override) on a confirmed or manual Dataset.
+
+    Body: ``{scan_id, root_path}`` or ``{dataset_id}``, plus any of ``name``, ``description``, ``human_profile``
+    (only the keys sent are written; an empty ``human_profile`` clears the override, an empty ``name`` is refused).
+    A property update on an existing node: nothing is created, deleted or detached, and the observed profile,
+    counts and bytes are never written. A candidate that is not in the graph yet answers 404: confirm it first."""
+    from ...services import collection_service as cs
+
+    body = request.get_json(silent=True) or {}
+    ref = _dataset_ref(body)
+    if not ref:
+        return jsonify({'error': 'scan_id and root_path, or dataset_id, are required'}), 400
+    fields: Dict[str, str] = {}
+    for key in cs.EDITABLE_FIELDS:
+        if key in body:
+            value = body[key]
+            if value is not None and not isinstance(value, str):
+                return jsonify({'error': f'{key} must be text'}), 400
+            fields[key] = (value or '').strip()
+    if not fields:
+        return jsonify({'error': 'Send at least one of name, description, human_profile.'}), 400
+    if 'name' in fields and not fields['name']:
+        return jsonify({'error': 'name cannot be empty'}), 400
+    limits = {'name': 200, 'description': 4000, 'human_profile': 200}
+    for key, value in fields.items():
+        if len(value) > limits[key]:
+            return jsonify({'error': f'{key} is too long (maximum {limits[key]} characters)'}), 400
+    try:
+        client = _neo4j_client()
+    except Neo4jUnavailable as e:
+        return jsonify({'error': str(e)}), 503
+    try:
+        rows = cs.update_dataset_metadata(client, ref=ref, fields=fields, by=_created_by())
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'error': f'{type(e).__name__}: {e}'}), 502
+    finally:
+        _close(client)
+    if not rows:
+        return jsonify({'error': 'This Dataset is not in the graph yet. Confirm it first, then edit it.'}), 404
+    row = dict(rows[0])
+    return jsonify({'status': 'ok', 'name': row.get('name'), 'description': row.get('description'),
+                    'human_profile': row.get('human_profile'), 'observed_profile': row.get('profile')}), 200
+
+
 @bp.get('/collections/<collection_id>')
 @require_role(*_READ_ROLES)
 def api_collection_get(collection_id):

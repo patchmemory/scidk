@@ -22,3 +22,23 @@
 #collection-plan-panel { position: fixed; right: 12px; top: 120px; bottom: 20px; width: min(520px, 95vw); z-index: 1300; background: #fff; border: 1px solid #adb5bd; border-radius: 10px; padding: 14px; overflow: auto; box-shadow: 0 8px 30px #0003; }
 #collection-plan-panel[hidden] { display: none; }
 #collection-plan-panel button { padding: 3px 10px; margin-right: 6px; border: 1px solid #adb5bd; border-radius: 4px; background: #fff; cursor: pointer; }
+.ds-filter { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 4px 0; }
+.ds-filter input[type=search] { min-width: 260px; padding: 3px 8px; border: 1px solid #adb5bd; border-radius: 4px; }
+.ds-filter select, .ds-filter button, .ds-pager button { padding: 3px 10px; border: 1px solid #adb5bd; border-radius: 4px; background: #fff; font-size: 12px; cursor: pointer; }
+.ds-pager { display: flex; gap: 10px; align-items: center; margin: 4px 0; }
+.ds-pager button:disabled { opacity: .45; cursor: default; }
+.ds-evidence { border-left: 3px solid #adb5bd; padding: 2px 8px; margin: 6px 0; font-size: 12px; }
+.ds-human { border-left: 3px solid #198754; padding: 2px 8px; margin: 6px 0; font-size: 12px; }
+#inspector-dataset-panel { padding: 6px 0; font-size: 13px; }
+#inspector-dataset-panel h3 { margin: 6px 0 2px; font-size: 13px; }
+#inspector-dataset-panel label { display: block; margin-top: 6px; font-size: 12px; font-weight: 600; }
+#inspector-dataset-panel input[type=text], #inspector-dataset-panel textarea { width: 100%; box-sizing: border-box; padding: 3px 6px; border: 1px solid #adb5bd; border-radius: 4px; }
+#inspector-dataset-panel button { padding: 3px 10px; margin-top: 6px; border: 1px solid #adb5bd; border-radius: 4px; background: #fff; cursor: pointer; }
+.loc-badge { font-size: 10px; padding: 0 6px; border-radius: 8px; margin-left: 4px; }
+.loc-mounted { background: #d9f2e3; color: #0b5a2b; }
+.loc-indexed { background: #dcebf9; color: #0a3a7a; }
+.loc-unavailable { background: #f8d7da; color: #842029; }
+/* Indexed Browse locations: the banner and the recognized-datasets strip never squeeze the file table. */
+#indexed-banner { flex-shrink: 0; }
+#indexed-datasets { flex-shrink: 0; max-height: 150px; overflow: auto; }
+.browser .file-table-wrap { min-height: 160px; }

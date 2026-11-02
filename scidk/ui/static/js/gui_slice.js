@@ -208,10 +208,11 @@
       const name = r.name || (ref ? r.root_path.replace(/\/+$/, '').split('/').pop() : '') || r.root_path || r.dataset_id;
       const added = window.CollectionBasket.add([ref ? {
         key: 'dataset|' + r.scan_id + '|' + r.root_path, kind: 'dataset', label: name, title: r.root_path,
-        size: r.total_bytes != null ? r.total_bytes : r.bytes, files: r.file_count, tag: r.pattern_name || r.profile,
-        p: {scan_id: r.scan_id, root_path: r.root_path, profile: r.pattern_name || r.profile, file_count: r.file_count, bytes: r.total_bytes != null ? r.total_bytes : r.bytes},
+        size: r.total_bytes != null ? r.total_bytes : r.bytes, files: r.file_count, tag: r.profile || r.observed_profile || r.pattern_name,
+        // Only the observed (scanner) profile is sent by reference; a human override is never written into it.
+        p: {scan_id: r.scan_id, root_path: r.root_path, profile: r.observed_profile || r.pattern_name || (r.human_profile ? undefined : r.profile), file_count: r.file_count, bytes: r.total_bytes != null ? r.total_bytes : r.bytes},
       } : {
-        key: 'dataset|manual|' + r.dataset_id, kind: 'dataset', label: name, title: 'Manual dataset', size: r.bytes || null, files: r.files,
+        key: 'dataset|manual|' + r.dataset_id, kind: 'dataset', label: name, title: 'Manual dataset', size: r.total_bytes || r.bytes || null, files: r.file_count != null ? r.file_count : r.files,
         tag: 'manual', p: {dataset_id: r.dataset_id, name},
       }]);
       window.CollectionBasket.open();

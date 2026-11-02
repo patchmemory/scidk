@@ -105,6 +105,13 @@
     const scan_id = global.mode === 'snapshot' ? (global.activeScanId || '') : '';
     const isDir = ((types && types.get && types.get(s)) || 'file') === 'folder';
     const sz = (isDir || size == null || size === '' || isNaN(size)) ? null : Number(size);
+    const ix = global.indexedContext;
+    if (ix && ix.scan_id) {
+      // An indexed (scan-backed) Browse location: the same member shape the Scans view collects, host label included.
+      const host = 'files.db:' + ix.host;
+      return {key: (isDir ? 'folder|' : 'file|') + host + '|' + s, kind: isDir ? 'folder' : 'file', label: name, title: s, size: sz,
+              p: {path: s, name, host, scan_id: ix.scan_id, size: sz}};
+    }
     return {
       key: (isDir ? 'folder|' : 'file|') + provider_id + '|' + root_id + '|' + scan_id + '|' + s,
       kind: isDir ? 'folder' : 'file', label: name, title: s, size: sz,

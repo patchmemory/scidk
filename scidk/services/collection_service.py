@@ -300,23 +300,26 @@ def list_collections(client) -> List[Dict[str, Any]]:
     return out
 
 
-def list_graph_datasets(client, source: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Editable ``:Dataset`` objects already in the graph, read-only and bounded.
+def list_graph_datasets(client, source: Optional[str] = None, limit: Optional[int] = 1000) -> List[Dict[str, Any]]:
+    """Editable ``:Dataset`` objects already in the graph, read-only.
 
     Two shapes share the label: manual Datasets (``source='manual'``, keyed by ``id``, with ``CONTAINS``
-    members) and recognized Datasets that a Collection has referenced (keyed by ``scan_id`` + ``root_path``,
-    ``source='files.db'``). Nothing is copied from the scan index and nothing is written.
-    """
+    members) and recognized Datasets that a person confirmed or a Collection referenced (keyed by ``scan_id`` +
+    ``root_path``). Observed facts are ``profile`` / ``file_count`` / ``bytes``; human metadata is ``name`` (human when
+    ``name_source = 'human'``), ``description`` and ``human_profile``. Nothing is copied from the scan index and
+    nothing is written. ``limit=None`` returns every Dataset (the catalog needs a complete list before it sorts)."""
     where = "d.source = $source" if source else "(d.source = 'manual' OR (d.scan_id IS NOT NULL AND d.root_path IS NOT NULL))"
     rows = client.execute_read(
         "MATCH (d:Dataset) WHERE " + where + " OPTIONAL MATCH (d)-[:CONTAINS]->(m) "
         "RETURN d.id AS id, d.name AS name, d.description AS description, d.source AS source, "
         "d.scan_id AS scan_id, d.root_path AS root_path, d.profile AS profile, d.file_count AS file_count, "
-        "d.bytes AS dataset_bytes, d.created_at AS created_at, d.updated_at AS updated_at, count(m) AS members, "
+        "d.bytes AS dataset_bytes, d.created_at AS created_at, d.updated_at AS updated_at, "
+        "d.name_source AS name_source, d.human_profile AS human_profile, d.confirmed_at AS confirmed_at, "
+        "d.confirmed_by AS confirmed_by, d.human_edited_at AS human_edited_at, count(m) AS members, "
         "sum(CASE WHEN m:Folder THEN 1 ELSE 0 END) AS folders, "
         "sum(CASE WHEN m:File THEN 1 ELSE 0 END) AS files, "
         "sum(CASE WHEN m:File THEN coalesce(m.size_bytes, 0) ELSE 0 END) AS bytes "
-        "ORDER BY toLower(coalesce(d.name, '')) LIMIT 1000",
+        "ORDER BY toLower(coalesce(d.name, ''))" + (" LIMIT %d" % int(limit) if limit else ""),
         {'source': source} if source else {},
     )
     out = []
@@ -326,6 +329,61 @@ def list_graph_datasets(client, source: Optional[str] = None) -> List[Dict[str, 
             r[key] = int(r.get(key) or 0)
         out.append(r)
     return out
+
+
+def confirm_dataset(client, *, scan_id: str, root_path: str, name: str, profile: Optional[str],
+                    file_count: Optional[int], total_bytes: Optional[int], by: str) -> List[Dict[str, Any]]:
+    """MERGE the confirmed ``:Dataset`` keyed by ``(scan_id, root_path)``; the scan record is never touched.
+
+    Observed scanner facts (``profile``, ``file_count``, ``bytes``) are refreshed as observations. Human-entered
+    ``name``, ``description`` and ``human_profile`` are never written here: ``name`` is only set ON CREATE (as an
+    observed default, ``name_source = 'observed'``), so confirming an existing Dataset keeps its human fields."""
+    return client.execute_write(
+        "MERGE (d:Dataset {scan_id: $scan_id, root_path: $root_path}) "
+        "ON CREATE SET d.name = $name, d.name_source = 'observed', d.source = 'files.db', "
+        "d.created_by = $by, d.created_at = timestamp() "
+        "SET d.profile = coalesce($profile, d.profile), d.file_count = coalesce($file_count, d.file_count), "
+        "d.bytes = coalesce($bytes, d.bytes), d.observed_at = timestamp(), d.confirmed = true, "
+        "d.confirmed_at = coalesce(d.confirmed_at, timestamp()), d.confirmed_by = coalesce(d.confirmed_by, $by), "
+        "d.updated_at = timestamp() "
+        "RETURN d.name AS name, d.description AS description, d.human_profile AS human_profile, "
+        "d.name_source AS name_source, d.profile AS profile, d.confirmed_at AS confirmed_at",
+        {'scan_id': scan_id, 'root_path': root_path, 'name': name, 'profile': profile, 'file_count': file_count,
+         'bytes': total_bytes, 'by': by},
+    )
+
+
+#: Human metadata a person may set on a confirmed or manual Dataset. Observed facts are not in this list.
+EDITABLE_FIELDS = ('name', 'description', 'human_profile')
+
+
+def update_dataset_metadata(client, *, ref: Dict[str, str], fields: Dict[str, str], by: str) -> List[Dict[str, Any]]:
+    """Set human metadata on an existing ``:Dataset`` (property upsert; no node or relationship is created or removed).
+
+    ``ref`` is ``{scan_id, root_path}`` (a confirmed Dataset) or ``{dataset_id}`` (a manual one). Only the keys in
+    ``fields`` are written; ``profile``, ``file_count`` and ``bytes`` (observed evidence) are never in this statement.
+    Returns no rows when the Dataset is not in the graph: a candidate must be confirmed first."""
+    params: Dict[str, Any] = {'by': by}
+    if ref.get('dataset_id'):
+        match = "MATCH (d:Dataset {id: $dataset_id}) "
+        params['dataset_id'] = ref['dataset_id']
+    else:
+        match = "MATCH (d:Dataset {scan_id: $scan_id, root_path: $root_path}) "
+        params.update(scan_id=ref['scan_id'], root_path=ref['root_path'])
+    sets = ["d.updated_at = timestamp()", "d.updated_by = $by", "d.human_edited_at = timestamp()",
+            "d.human_edited_by = $by"]
+    if 'name' in fields:
+        sets += ["d.name = $name", "d.name_source = 'human'"]
+        params['name'] = fields['name']
+    if 'description' in fields:
+        sets.append("d.description = $description")
+        params['description'] = fields['description']
+    if 'human_profile' in fields:
+        sets.append("d.human_profile = $human_profile")
+        params['human_profile'] = fields['human_profile']
+    return client.execute_write(
+        match + "SET " + ", ".join(sets) + " RETURN d.name AS name, d.description AS description, "
+        "d.human_profile AS human_profile, d.profile AS profile, d.name_source AS name_source", params)
 
 
 def list_manual_datasets(client) -> List[Dict[str, Any]]:

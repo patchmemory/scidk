@@ -1,10 +1,10 @@
 /* Datasets workspace: the Datasets list and the Collections page.
  *
- * Datasets     recognized datasets (GET /api/external-index/datasets/all, read-only references keyed by
- *              scan_id + root_path) and manual datasets (GET /api/datasets/manual).
+ * Datasets     the paged, searchable Dataset catalog (GET /api/datasets/catalog); Confirm and Edit write through
+ *              POST /api/datasets/confirm and /api/datasets/metadata (graph MERGE / property updates only).
  * Collections  the saved :Collection list (GET /api/collections), one Collection's grouped members
  *              (GET /api/collections/<id>) and its sharing-plan draft (the existing nih_dms route).
- * Everything is read-only here except what the shared basket already does (one POST /api/collections).
+ * Writes: the shared basket (one POST /api/collections) and the two Dataset routes above.
  * No delete / remove / dissolve controls exist: graph writes are MERGE only.
  */
 (function () {
@@ -35,54 +35,40 @@
   const say = (id, text) => { if ($(id)) $(id).textContent = text || ''; };
 
   /* ===================== Datasets ===================== */
-  /* One alphabetical list merging three sources, each row labelled candidate | confirmed | manual:
-   *   scan index  GET /api/external-index/datasets/all   observed, profile-recognized candidates (read-only reference)
-   *   graph       GET /api/datasets/graph                editable :Dataset objects (confirmed references and manual)
-   * A candidate becomes confirmed when the graph already holds the Dataset keyed to the same (scan_id, root_path).
+  /* One catalog, served a page at a time by GET /api/datasets/catalog: scan candidates (read-only evidence),
+   * confirmed Datasets (graph :Dataset keyed by scan_id + root_path) and manual Datasets, already merged, searched,
+   * filtered by state and sorted globally by displayed name on the server. Nothing is merged or sorted here.
+   * Writes: POST /api/datasets/confirm (MERGE) and POST /api/datasets/metadata (name / description / profile override).
    * Every kind joins a Collection through the same :Dataset INCLUDES member shape. */
   const inspect = (key, record) => document.dispatchEvent(new CustomEvent('scidk:inspect', {detail: {kind: 'scan-dataset', key, record}}));
+  const PAGE_SIZE = 50;
+  const ds = {q: '', state: 'all', offset: 0, version: 0, page: [], timer: null, flash: ''};
+  const JSON_HEADERS = {'Content-Type': 'application/json'};
 
   function datasetItem(d) {
     if (d.state === 'manual') {
-      return {key: 'dataset|manual|' + d.dataset_id, kind: 'dataset', label: d.name, title: 'Manual dataset', size: d.bytes || null,
-              files: d.files, tag: 'manual', p: {dataset_id: d.dataset_id, name: d.name}};
+      return {key: 'dataset|manual|' + d.dataset_id, kind: 'dataset', label: d.name, title: 'Manual dataset', size: d.total_bytes || null,
+              files: d.file_count, tag: 'manual', p: {dataset_id: d.dataset_id, name: d.name}};
     }
+    // By reference: the observed profile travels, never the human override.
     return {
       key: 'dataset|' + d.scan_id + '|' + d.root_path, kind: 'dataset', label: d.name, title: d.root_path,
-      size: d.total_bytes, files: d.file_count, tag: d.pattern_name,
-      p: {scan_id: d.scan_id, root_path: d.root_path, profile: d.pattern_name, file_count: d.file_count, bytes: d.total_bytes},
+      size: d.total_bytes, files: d.file_count, tag: d.profile || d.observed_profile,
+      p: {scan_id: d.scan_id, root_path: d.root_path, profile: d.observed_profile, file_count: d.file_count, bytes: d.total_bytes},
     };
-  }
-  const baseName = path => (path || '').replace(/\/+$/, '').split('/').pop() || path || '';
-  function merge(rec, graph) {
-    const out = [], seen = new Set();
-    const graphRef = new Map();
-    graph.forEach(g => { if (g.scan_id && g.root_path) graphRef.set(g.scan_id + '|' + g.root_path, g); });
-    rec.forEach(r => {
-      const key = r.scan_id + '|' + r.root_path, g = graphRef.get(key);
-      seen.add(key);
-      out.push(Object.assign({}, r, {state: g ? 'confirmed' : 'candidate', name: (g && g.name) || r.name, dataset_id: g && g.id,
-                                    description: g && g.description, key}));
-    });
-    graph.forEach(g => {
-      if (g.source === 'manual' || !(g.scan_id && g.root_path)) {
-        if (g.source !== 'manual') return;
-        out.push({state: 'manual', dataset_id: g.id, name: g.name || '(unnamed)', description: g.description, files: g.files, folders: g.folders,
-                  bytes: g.bytes, created_at: g.created_at, key: 'manual|' + g.id});
-      } else if (!seen.has(g.scan_id + '|' + g.root_path)) {
-        out.push({state: 'confirmed', dataset_id: g.id, scan_id: g.scan_id, root_path: g.root_path, name: g.name || baseName(g.root_path),
-                  pattern_name: g.profile, file_count: g.file_count, total_bytes: g.dataset_bytes, description: g.description,
-                  key: g.scan_id + '|' + g.root_path, not_in_index: true});
-      }
-    });
-    return out.sort(byName);
   }
 
   const STATE_TITLE = {
-    candidate: 'Recognized in a scan; not yet in the graph',
-    confirmed: 'A Dataset in the graph, keyed to its scan and root',
+    candidate: 'Recognized in a scan; not yet confirmed as a Dataset in the graph',
+    confirmed: 'Confirmed: a Dataset in the graph, keyed to its scan and root',
     manual: 'Created by hand from files and folders',
   };
+
+  function profileBadge(d) {
+    if (d.state === 'manual') return d.human_profile ? 'profile: ' + d.human_profile + ' (human)' : 'manual';
+    if (d.human_profile) return 'profile: ' + d.human_profile + ' (human) · observed ' + (d.observed_profile || 'none');
+    return d.observed_profile ? 'observed profile: ' + d.observed_profile : 'no recognized profile';
+  }
 
   function datasetCard(d) {
     const card = el('article', null, {className: 'ds-card', tabIndex: -1});
@@ -93,20 +79,27 @@
     const open = el('button', d.name, {type: 'button', className: 'ds-name', title: 'Open details' + (d.root_path ? ': ' + d.root_path : '')});
     open.onclick = () => inspect(d.key, d);
     head.append(open, el('span', d.state, {className: 'ds-badge ds-state-' + d.state, title: STATE_TITLE[d.state]}));
-    head.append(el('span', d.state === 'manual' ? 'manual' : (d.pattern_name || 'no recognized profile'), {className: 'ds-badge', title: 'Profile'}));
+    head.append(el('span', profileBadge(d), {className: 'ds-badge', title: 'Profile'}));
     card.append(head);
     if (d.description) card.append(el('div', d.description, {className: 'ds-meta'}));
     if (d.state === 'manual') {
-      card.append(el('div', [num(d.files || 0) + ' files', num(d.folders || 0) + ' folders', d.bytes ? fmt(d.bytes) : 'size not recorded'].join(' · '), {className: 'ds-meta'}));
+      card.append(el('div', [num(d.file_count || 0) + ' files', num(d.folders || 0) + ' folders', d.total_bytes ? fmt(d.total_bytes) : 'size not recorded'].join(' · '), {className: 'ds-meta'}));
       card.append(el('div', 'Source: knowledge graph (manual Dataset); its files and folders stay where they are', {className: 'ds-meta ds-where'}));
       card.append(el('div', 'Provenance: created by hand' + (d.created_at ? ' · ' + stamp(d.created_at) : '') + ' · not a scan reference', {className: 'ds-meta ds-prov'}));
     } else {
       card.append(el('div', [d.file_count != null ? num(d.file_count) + ' files' : 'file count pending', d.total_bytes != null ? fmt(d.total_bytes) : 'size pending'].join(' · '), {className: 'ds-meta'}));
       card.append(el('div', 'Source: ' + ([d.host, d.share].filter(Boolean).join(' / ') || 'scan index') + ' · ' + d.root_path, {className: 'ds-meta ds-where'}));
-      card.append(el('div', 'Provenance: reference to scan ' + String(d.scan_id).slice(0, 8) + (d.scan_date ? ' (' + d.scan_date + ')' : '')
-        + (d.not_in_index ? ' · not in the connected scan index' : ' · profile ' + (d.pattern_name || 'none')) + ' · file rows stay in the scan index', {className: 'ds-meta ds-prov'}));
+      card.append(el('div', 'Provenance: scan ' + String(d.scan_id).slice(0, 8) + (d.scan_date ? ' (' + d.scan_date + ')' : '')
+        + (d.in_index ? '' : ' · not in the connected scan index (or hidden by the workspace filter)')
+        + ' · file rows stay in the scan index', {className: 'ds-meta ds-prov'}));
     }
     const act = el('div', null, {className: 'ds-actions'});
+    if (d.state === 'candidate') {
+      const confirm = el('button', 'Confirm dataset', {type: 'button', title: 'Add this Dataset to the graph so it can be named and described. The scan record is not changed.'});
+      confirm.setAttribute('data-action', 'confirm-dataset');
+      confirm.onclick = () => confirmDataset(d, confirm);
+      act.append(confirm);
+    }
     const add = el('button', 'Add to collection', {type: 'button', title: 'Add this Dataset to the Collection basket'});
     add.setAttribute('data-action', 'add-dataset');
     add.onclick = () => { const n = basket() && basket().add([datasetItem(d)]); basket() && basket().open(); say('datasets-status', n ? 'Added ' + d.name + ' to the Collection basket.' : d.name + ' is already in the Collection basket.'); };
@@ -115,24 +108,147 @@
     return card;
   }
 
+  function syncUrl() {
+    const params = new URLSearchParams({view: 'datasets'});
+    if (ds.q) params.set('q', ds.q);
+    if (ds.state !== 'all') params.set('state', ds.state);
+    if (ds.offset) params.set('offset', String(ds.offset));
+    history.replaceState(null, '', base + '/datasets?' + params);
+  }
+
+  function setPager(r) {
+    const prev = r && r.prev_offset != null, next = r && r.next_offset != null;
+    ['datasets-prev', 'datasets-prev-bottom'].forEach(id => { $(id).disabled = !prev; });
+    ['datasets-next', 'datasets-next-bottom'].forEach(id => { $(id).disabled = !next; });
+  }
+
   async function loadDatasets() {
-    const params = new URLSearchParams({workspace: $('datasets-workspace-toggle').checked ? '1' : '0'});
-    const [rec, graph] = await Promise.all([api('/api/external-index/datasets/all?' + params), api('/api/datasets/graph')]);
+    const version = ++ds.version;
+    const params = new URLSearchParams({q: ds.q, state: ds.state, offset: String(ds.offset), limit: String(PAGE_SIZE),
+                                        workspace: $('datasets-workspace-toggle').checked ? '1' : '0'});
+    const r = await api('/api/datasets/catalog?' + params);
+    if (version !== ds.version) return;     // a newer search superseded this answer
     const box = $('datasets-list'); box.replaceChildren();
-    const notes = [];
-    if (!rec.ok) notes.push('Scan-index candidates are unavailable: ' + ((rec.data && rec.data.error) || rec.status));
-    if (!graph.ok) notes.push('Graph and manual Datasets are unavailable: ' + ((graph.data && graph.data.error) || graph.status));
-    const list = merge(rec.ok ? (rec.data.datasets || []) : [], graph.ok ? (graph.data.datasets || []) : []);
-    say('datasets-status', notes.join(' '));
-    const counts = ['candidate', 'confirmed', 'manual'].map(k => num(list.filter(d => d.state === k).length) + ' ' + k);
-    say('datasets-count', list.length ? num(list.length) + ' Datasets (' + counts.join(', ') + ')' + (rec.ok && rec.data.capped ? ' — the scan list is capped' : '') + '.' : '');
-    if (!list.length && !notes.length) box.textContent = 'No Datasets yet. Run a scan, or select files and folders in Browse and choose Create dataset.';
-    list.forEach(d => box.append(datasetCard(d)));
+    syncUrl();
+    $('datasets-reset').hidden = !(ds.q || ds.state !== 'all');
+    if (!r.ok) {
+      say('datasets-status', (r.data && r.data.error) || ('The Dataset catalog is unavailable (' + r.status + ').'));
+      say('datasets-count', ''); say('datasets-range', ''); setPager(null); ds.page = [];
+      return;
+    }
+    const data = r.data;
+    ds.page = data.datasets || [];
+    say('datasets-status', [ds.flash].concat(data.notes || []).filter(Boolean).join(' '));
+    const c = data.counts || {};
+    say('datasets-count', num(data.total) + (data.total === 1 ? ' Dataset' : ' Datasets') + (ds.q ? ' matching “' + ds.q + '”' : '')
+      + (ds.state !== 'all' ? ' · ' + ds.state : '') + ' — in this search: ' + num(c.all || 0) + ' all, ' + num(c.candidate || 0) + ' candidate, '
+      + num(c.confirmed || 0) + ' confirmed, ' + num(c.manual || 0) + ' manual.');
+    say('datasets-range', data.total ? 'Showing ' + num(data.first) + '–' + num(data.last) + ' of ' + num(data.total) : 'Showing 0');
+    setPager(data);
+    if (!ds.page.length && !(data.notes || []).length) {
+      box.textContent = ds.q || ds.state !== 'all' ? 'No Datasets match this search and filter.'
+        : 'No Datasets yet. Run a scan, or select files and folders in Browse and choose Create dataset.';
+    }
+    ds.page.forEach(d => box.append(datasetCard(d)));
     const want = new URLSearchParams(location.search).get('highlight');
     if (want) {
-      const card = Array.from(box.querySelectorAll('.ds-card')).find(c => c.dataset.key === want);
+      const card = Array.from(box.querySelectorAll('.ds-card')).find(x => x.dataset.key === want);
       if (card) { card.classList.add('ds-highlight'); card.scrollIntoView({block: 'center'}); card.focus(); }
     }
+  }
+
+  const search = (patch) => { Object.assign(ds, patch, {flash: ''}); loadDatasets(); };
+
+  /* ---- confirm and edit ---- */
+  async function confirmDataset(d, button) {
+    if (button) button.disabled = true;
+    say('datasets-status', 'Confirming…');
+    const r = await api('/api/datasets/confirm', {method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({scan_id: d.scan_id, root_path: d.root_path})});
+    if (button) button.disabled = false;
+    if (!r.ok) { const msg = (r.data && r.data.error) || ('Could not confirm (' + r.status + ').'); say('datasets-status', msg); say('ds-edit-status', msg); return; }
+    const out = r.data;
+    const fresh = Object.assign({}, d, {state: 'confirmed', name: out.name || d.name, description: out.description || d.description,
+      human_profile: out.human_profile || d.human_profile, profile: out.human_profile || d.observed_profile});
+    ds.flash = 'Confirmed ' + fresh.name + '. It is now a Dataset in the graph; you can edit its name and description.';
+    say('datasets-status', ds.flash);
+    inspect(fresh.key, fresh);
+    loadDatasets();
+  }
+
+  async function saveMetadata(d, fields, button) {
+    const body = Object.assign(d.state === 'manual' ? {dataset_id: d.dataset_id} : {scan_id: d.scan_id, root_path: d.root_path}, fields);
+    button.disabled = true; say('ds-edit-status', 'Saving…');
+    const r = await api('/api/datasets/metadata', {method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body)});
+    button.disabled = false;
+    if (!r.ok) { say('ds-edit-status', (r.data && r.data.error) || ('Could not save (' + r.status + ').')); return; }
+    const out = r.data;
+    const fresh = Object.assign({}, d, {name: out.name || d.name, description: out.description, human_profile: out.human_profile,
+      profile: out.human_profile || d.observed_profile, name_is_human: d.name_is_human || 'name' in fields});
+    ds.flash = 'Saved ' + fresh.name + '.';
+    say('datasets-status', ds.flash);
+    inspect(fresh.key, fresh);
+    loadDatasets();
+  }
+
+  const row = (box, label, value) => { if (value != null && value !== '') { const p = el('div'); p.append(el('strong', label + ': '), document.createTextNode(String(value))); box.append(p); } };
+
+  function renderPanel(d) {
+    const box = $('inspector-dataset-panel');
+    if (!box) return;
+    box.replaceChildren(); box.hidden = false; box.dataset.key = d.key; box.dataset.state = d.state;
+    const state = el('p'); state.append(el('span', d.state, {className: 'ds-badge ds-state-' + d.state}), document.createTextNode(' ' + STATE_TITLE[d.state]));
+    box.append(state);
+    if (d.state !== 'manual') {
+      const ev = el('div', null, {className: 'ds-evidence', id: 'ds-evidence'});
+      ev.append(el('h3', 'Observed in the scan (read-only evidence)'));
+      row(ev, 'Observed profile', d.observed_profile || 'none recognized');
+      row(ev, 'Files', d.file_count != null ? num(d.file_count) : 'count pending');
+      row(ev, 'Size', d.total_bytes != null ? fmt(d.total_bytes) : 'size pending');
+      row(ev, 'Folder', d.root_path);
+      row(ev, 'Source', [d.host, d.share].filter(Boolean).join(' / ') || 'scan index');
+      row(ev, 'Scan', String(d.scan_id).slice(0, 8) + (d.scan_date ? ' · ' + d.scan_date : ''));
+      ev.append(el('div', 'Scan records are never changed from here.', {className: 'ds-meta'}));
+      box.append(ev);
+    }
+    const human = el('div', null, {className: 'ds-human', id: 'ds-human'});
+    human.append(el('h3', d.state === 'candidate' ? 'Human metadata' : 'Human-confirmed metadata'));
+    if (d.state === 'candidate') {
+      human.append(el('p', 'Confirm this Dataset to add it to the graph. Then you can give it a name, a description and a corrected profile. Confirming keeps the scan evidence as it is.'));
+      const confirm = el('button', 'Confirm dataset', {type: 'button', id: 'inspector-confirm-dataset'});
+      confirm.setAttribute('data-action', 'confirm-dataset');
+      confirm.onclick = () => confirmDataset(d, confirm);
+      human.append(confirm);
+    } else {
+      const orig = {name: d.name || '', description: d.description || '', human_profile: d.human_profile || ''};
+      const field = (id, label, tag, value, hint) => {
+        const l = el('label', label, {htmlFor: id});
+        const i = el(tag, null, {id, value: value});
+        if (tag === 'textarea') i.rows = 3; else i.type = 'text';
+        i.maxLength = tag === 'textarea' ? 4000 : 200;
+        if (hint) i.placeholder = hint;
+        human.append(l, i); return i;
+      };
+      const name = field('ds-edit-name', 'Display name', 'input', orig.name);
+      const desc = field('ds-edit-description', 'Description', 'textarea', orig.description);
+      const prof = field('ds-edit-profile', 'Profile / type (human override)', 'input', orig.human_profile,
+        d.observed_profile ? 'Observed: ' + d.observed_profile : 'Optional');
+      human.append(el('div', d.state === 'manual' ? 'A profile here is a human label; manual Datasets have no scan evidence.'
+        : 'Leave the profile blank to keep the observed profile. A value here is a human override and never replaces the observed profile above.', {className: 'ds-meta'}));
+      const save = el('button', 'Save changes', {type: 'button', id: 'ds-edit-save'});
+      save.setAttribute('data-action', 'save-dataset');
+      save.onclick = () => {
+        const fields = {};
+        if (name.value.trim() !== orig.name) fields.name = name.value;
+        if (desc.value.trim() !== orig.description) fields.description = desc.value;
+        if (prof.value.trim() !== orig.human_profile) fields.human_profile = prof.value;
+        if (!Object.keys(fields).length) { say('ds-edit-status', 'Nothing changed.'); return; }
+        saveMetadata(d, fields, save);
+      };
+      human.append(save, el('div', '', {id: 'ds-edit-status', className: 'ds-meta', role: 'status'}));
+    }
+    if (d.confirmed_at) human.append(el('div', 'Confirmed ' + stamp(d.confirmed_at) + (d.confirmed_by ? ' by ' + d.confirmed_by : ''), {className: 'ds-meta'}));
+    if (d.human_edited_at) human.append(el('div', 'Last human edit ' + stamp(d.human_edited_at), {className: 'ds-meta'}));
+    box.append(human);
   }
 
   function mountDatasets() {
@@ -145,7 +261,24 @@
     };
     bar.append(add);
     $('datasets-selection-actions').append(bar);
-    $('datasets-workspace-toggle').onchange = loadDatasets;
+    const url = new URLSearchParams(location.search);
+    const want = url.get('highlight');
+    ds.q = url.get('q') || (want ? want.split('|').slice(1).join('|') : '');
+    ds.state = ['candidate', 'confirmed', 'manual'].includes(url.get('state')) ? url.get('state') : 'all';
+    ds.offset = Math.max(0, parseInt(url.get('offset') || '0', 10) || 0);
+    $('datasets-q').value = ds.q; $('datasets-state').value = ds.state;
+    $('datasets-filter').onsubmit = e => { e.preventDefault(); search({q: $('datasets-q').value.trim(), offset: 0}); };
+    $('datasets-q').oninput = () => { clearTimeout(ds.timer); ds.timer = setTimeout(() => search({q: $('datasets-q').value.trim(), offset: 0}), 350); };
+    $('datasets-state').onchange = () => search({state: $('datasets-state').value, offset: 0});
+    $('datasets-reset').onclick = () => { $('datasets-q').value = ''; $('datasets-state').value = 'all'; search({q: '', state: 'all', offset: 0}); };
+    $('datasets-workspace-toggle').onchange = () => search({offset: 0});
+    ['datasets-prev', 'datasets-prev-bottom'].forEach(id => { $(id).onclick = () => search({offset: Math.max(0, ds.offset - PAGE_SIZE)}); });
+    ['datasets-next', 'datasets-next-bottom'].forEach(id => { $(id).onclick = () => search({offset: ds.offset + PAGE_SIZE}); });
+    document.addEventListener('scidk:inspect', event => {
+      const d = event.detail;
+      if (d && d.kind === 'scan-dataset' && d.record && d.record.state) renderPanel(d.record);
+      else if ($('inspector-dataset-panel')) $('inspector-dataset-panel').hidden = true;
+    });
     loadDatasets();
   }
 

@@ -199,7 +199,15 @@
     mount(host, {
       surface: 'files', count: false, getItems: _filesItems,
       ids: {add: 'add-to-coll-btn', dataset: 'create-dataset-btn'},
-      onAdd: () => { if (global.Collection) global.Collection.addSelectionToCollection(); },
+      onAdd: items => {
+        if (global.indexedContext) {   // an indexed Browse location: members already carry their scan reference
+          const n = basket().add(items.map(i => i.basketItem));
+          basket().open();
+          host._saMounted && host._saMounted.say(n ? n + ' added to the collection' : 'Already in the collection');
+          return;
+        }
+        if (global.Collection) global.Collection.addSelectionToCollection();
+      },
       onDataset: items => {
         if (global.Collection) global.Collection.openManualDatasetDialog(items.map(i => Object.assign({kind: i.kind}, i.basketItem.p)));
       },
