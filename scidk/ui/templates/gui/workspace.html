@@ -26,6 +26,6 @@
 {% else %}
 <p>Review workspace unavailable in this slice. Human review remains subject to explicit reviewer grants and the curation feature flag. No review, acceptance or materialization is performed here.</p>
 {% endif %}
-{% if page == 'Overview' %}<p><a href="{{ request.script_root }}/datasets">Browse Files &amp; Datasets</a> · <a href="{{ request.script_root }}/pipeline/sources">Manage Resources</a></p>{% endif %}
+{% if page == 'Overview' %}<p><a href="{{ request.script_root }}/datasets?view=browse">Browse Datasets</a> · <a href="{{ request.script_root }}/pipeline/sources">Manage Resources</a></p>{% endif %}
 </section>
 {% endblock %}

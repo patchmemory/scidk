@@ -1,0 +1,12 @@
+{# The Datasets local tabs: exactly Browse, Datasets, Collections, Scans (`ws_view` = the active one). #}
+<style>
+  .datasets-tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid #e0e0e0; padding: 0 0.5rem; }
+  .datasets-tabs a { padding: 0.5rem 1rem; text-decoration: none; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; font-size: 0.95em; }
+  .datasets-tabs a:hover { color: var(--fg); }
+  .datasets-tabs a[aria-current="page"] { color: var(--fg); font-weight: 600; border-bottom-color: var(--accent); }
+</style>
+<nav class="datasets-tabs" aria-label="Datasets views" data-testid="datasets-tabs">
+  {% for key, label in [('browse', 'Browse'), ('datasets', 'Datasets'), ('collections', 'Collections'), ('scans', 'Scans')] %}
+  <a href="{{ request.script_root }}/datasets?view={{ key }}" data-testid="datasets-tab-{{ key }}"{% if ws_view == key %} aria-current="page"{% endif %}>{{ label }}</a>
+  {% endfor %}
+</nav>

@@ -1,0 +1,24 @@
+/* Datasets workspace: Datasets list and Collections page. */
+#datasets-workspace main, #datasets-workspace { max-width: 100%; }
+#gui-datasets, #gui-collections { padding: 0.5rem 0.75rem; }
+#gui-files > h1 { margin: 0.25rem 0.5rem; font-size: 1.3rem; }
+.ds-toolbar { margin: 0.25rem 0 0.5rem; }
+.ds-card { border: 1px solid #dce4ed; border-radius: 8px; background: #fff; padding: 8px 12px; margin: 6px 0; max-width: 900px; }
+.ds-card.ds-highlight { border-color: #165dba; box-shadow: 0 0 0 2px #dcebf9; }
+.ds-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ds-head .ds-name { border: none; background: none; padding: 0; margin: 0; font-weight: 600; font-size: 14px; color: #0a58ca; cursor: pointer; text-align: left; }
+.ds-head .ds-name:hover { text-decoration: underline; }
+.ds-badge { font-size: 11px; padding: 1px 8px; border-radius: 10px; background: #dcebf9; color: #0a3a7a; }
+.ds-state-manual { background: #efe7fb; color: #4b2a85; }
+.ds-state-confirmed { background: #d9f2e3; color: #0b5a2b; }
+.ds-state-candidate { background: #fff3cd; color: #664d03; }
+.ds-meta { font-size: 12px; color: #52606d; overflow-wrap: anywhere; }
+.ds-actions { margin-top: 4px; }
+.ds-actions button, .ds-toolbar button, #collection-back { padding: 3px 10px; border: 1px solid #adb5bd; border-radius: 4px; background: #fff; cursor: pointer; font-size: 12px; margin-right: 6px; }
+.ds-actions button:hover, .ds-toolbar button:hover { background: #e9ecef; }
+#collection-detail .cd-group { margin: 10px 0; }
+#collection-detail .cd-group h4 { margin: 0 0 2px; font-size: 13px; }
+#collection-detail ul { margin: 2px 0; padding-left: 20px; font-size: 13px; }
+#collection-plan-panel { position: fixed; right: 12px; top: 120px; bottom: 20px; width: min(520px, 95vw); z-index: 1300; background: #fff; border: 1px solid #adb5bd; border-radius: 10px; padding: 14px; overflow: auto; box-shadow: 0 8px 30px #0003; }
+#collection-plan-panel[hidden] { display: none; }
+#collection-plan-panel button { padding: 3px 10px; margin-right: 6px; border: 1px solid #adb5bd; border-radius: 4px; background: #fff; cursor: pointer; }

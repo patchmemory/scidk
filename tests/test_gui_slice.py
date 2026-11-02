@@ -19,7 +19,7 @@ def test_shell_opt_in_and_legacy_routes(gui_app):
         response = client.get(path)
         assert response.status_code == 200, path
     page = client.get('/overview?profile=review').data
-    for name in [b'Overview', b'Files &amp; Datasets', b'Resources', b'Knowledge', b'Review', b'Settings']:
+    for name in [b'Overview', b'Datasets', b'Resources', b'Knowledge', b'Review', b'Settings']:
         assert name in page
     assert b'<textarea id="overview-question" disabled' in page
     assert b'<button disabled>Send</button>' in page

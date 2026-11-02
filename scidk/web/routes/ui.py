@@ -289,9 +289,30 @@ def scripts_page():
     return render_template('scripts.html')
 
 
+WORKSPACE_VIEWS = ('browse', 'datasets', 'collections', 'scans')
+
+
+def datasets_workspace_view(args):
+    """The Datasets workspace tab asked for by ``?view=``, or None for the legacy Files page.
+
+    Only the presence of ``view`` selects the workspace, so a bare ``/datasets`` (and ``?scan_id=``,
+    ``?panel=``, ``?files_viewer=``) keeps serving the page it always did. ``files`` is an alias for Browse.
+    """
+    raw = args.get('view')
+    if raw is None:
+        return None
+    view = raw.strip().lower()
+    if view == 'files':
+        view = 'browse'
+    return view if view in WORKSPACE_VIEWS else 'browse'
+
+
 @bp.get('/datasets')
 def datasets():
     """List all datasets (files), optionally filtered by scan."""
+    ws_view = datasets_workspace_view(request.args) if current_app.config.get('SCIDK_GUI_V3_ENABLED') is True else None
+    if ws_view and ws_view != 'browse':
+        return render_template('gui/datasets_workspace.html', ws_view=ws_view)
     ext = _get_ext()
     all_datasets = ext['graph'].list_datasets()
     scan_id = (request.args.get('scan_id') or '').strip()
@@ -315,7 +336,7 @@ def datasets():
     # files/datasets.html is the modular Files page: a lean shell plus one
     # {% include %} per drawer. The 4,200-line monolith it replaced is kept at
     # _archive/datasets_monolith.html for reference only — nothing renders it.
-    return render_template('files/datasets.html', datasets=datasets, directories=directories, recent_scans=recent_scans, selected_scan=selected_scan, files_viewer=files_viewer)
+    return render_template('files/datasets.html', datasets=datasets, directories=directories, recent_scans=recent_scans, selected_scan=selected_scan, files_viewer=files_viewer, ws_view=ws_view)
 
 
 @bp.get('/datasets/<dataset_id>')

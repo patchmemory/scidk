@@ -1,0 +1,19 @@
+{#
+  Datasets workspace: Browse | Datasets | Collections | Scans.
+
+    Browse       the working Files/drive browser (files/datasets.html with ws_view='browse')
+    Datasets     recognized (scan-index references) and manual Dataset objects
+    Collections  saved :Collection list and detail, and the sharing-plan draft
+    Scans        the read-only external scan index browser (external_index.js)
+
+  This page hosts the three non-browser views over the shared inspector partial; the shared Collection
+  basket (collection_basket.js, base.html) is the same control as on Files. `/datasets` without ?view= is
+  the unchanged legacy Files page.
+#}
+{% extends 'base.html' %}
+{% block title %}SciDK — Datasets{% endblock %}
+{% block content %}
+<div id="datasets-workspace" data-view="{{ ws_view }}">
+{% include 'gui/files_inspector.html' %}
+</div>
+{% endblock %}

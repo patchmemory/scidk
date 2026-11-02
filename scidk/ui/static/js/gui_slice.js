@@ -5,7 +5,7 @@
   if (!$('gui-files')) return;
   const base = window.SCIDK_BASE || '';
   const state = {tab: 'Files', inspectorTab: 'Metadata', selected: {}, expanded: false, version: 0};
-  const browser = document.querySelector('.files-page');
+  const browser = document.querySelector('.files-page') || document.createElement('div');  // no Files browser in the Datasets / Collections / Scans views
   let closed = false;
   let returnFocus;
   function raw(value, parent) {
@@ -26,8 +26,7 @@
     const selection = state.selected[state.tab];
     $('shared-inspector').hidden = !selection || closed;
     browser.classList.toggle('with-inspector', !!selection && !closed);
-    $('gui-datasets').classList.toggle('with-inspector', !!selection && !closed);
-    $('gui-scans').classList.toggle('with-inspector', !!selection && !closed);
+    ['gui-datasets', 'gui-scans'].forEach(id => $(id) && $(id).classList.toggle('with-inspector', !!selection && !closed));
     if (!selection) return;
     $('shared-inspector').classList.toggle('expanded', state.expanded);
     $('inspector-expand').textContent = state.expanded ? 'Restore docked inspector' : 'Expand';
@@ -37,6 +36,8 @@
     $('inspector-title').textContent = (isDataset ? 'Dataset: ' : 'File / folder: ') + (record.name || record.path || selection.key)
       + (selection.scope && selection.scope.count > 1 ? ' (+' + (selection.scope.count - 1) + ' more selected)' : '');
     $('dataset-sharing').hidden = selection.kind !== 'dataset';
+    const addBox = $('inspector-collection-actions');
+    if (addBox) { addBox.hidden = !(isDataset && ((record.scan_id && record.root_path) || record.dataset_id)); $('inspector-collection-status').textContent = ''; }
     const knowledge = $('dataset-knowledge');
     if (knowledge) {
       knowledge.hidden = selection.kind !== 'dataset' || !record.entity_ref;
@@ -96,17 +97,19 @@
   }
   function tab(name) {
     closed = false; state.tab = name;
-    browser.hidden = name !== 'Files'; $('gui-datasets').hidden = name !== 'Datasets'; $('gui-scans').hidden = name !== 'Scans';
-    $('gui-scans-tab').setAttribute('aria-selected', String(name === 'Scans'));
-    $('gui-scans-tab').setAttribute('tabindex', name === 'Scans' ? '0' : '-1');
-    $('gui-files-tab').setAttribute('aria-selected', String(name === 'Files'));
-    $('gui-datasets-tab').setAttribute('aria-selected', String(name === 'Datasets'));
-    $('gui-files-tab').setAttribute('tabindex', name === 'Files' ? '0' : '-1');
-    $('gui-datasets-tab').setAttribute('tabindex', name === 'Datasets' ? '0' : '-1'); render();
+    browser.hidden = name !== 'Files';
+    [['gui-datasets', 'Datasets'], ['gui-scans', 'Scans'], ['gui-collections', 'Collections']].forEach(([id, n]) => { if ($(id)) $(id).hidden = name !== n; });
+    [['gui-files-tab', 'Files'], ['gui-datasets-tab', 'Datasets'], ['gui-scans-tab', 'Scans']].forEach(([id, n]) => {
+      if (!$(id)) return;
+      $(id).setAttribute('aria-selected', String(name === n)); $(id).setAttribute('tabindex', name === n ? '0' : '-1');
+    });
+    render();
   }
-  $('gui-files-tab').onclick = () => tab('Files');
-  $('gui-datasets-tab').onclick = () => tab('Datasets');
-  $('gui-scans-tab').onclick = () => tab('Scans');
+  if ($('gui-files-tab')) {  // the legacy in-page tabs; the Datasets workspace navigates between views instead
+    $('gui-files-tab').onclick = () => tab('Files');
+    $('gui-datasets-tab').onclick = () => tab('Datasets');
+    $('gui-scans-tab').onclick = () => tab('Scans');
+  }
   function closeInspector() { closed = true; render(); returnFocus?.focus(); }
   $('inspector-close').onclick = closeInspector;
   document.addEventListener('keydown', event => {
@@ -126,10 +129,10 @@
       if (next !== undefined) { event.preventDefault(); buttons[next].focus(); buttons[next].click(); }
     }; });
   }
-  keyboardTabs([$('gui-files-tab'), $('gui-datasets-tab'), $('gui-scans-tab')]);
+  if ($('gui-files-tab')) keyboardTabs([$('gui-files-tab'), $('gui-datasets-tab'), $('gui-scans-tab')]);
   keyboardTabs([...document.querySelectorAll('[data-inspector-tab]')]);
   // Files rows, and (from the selection bar) Files or Scans selections. Row checkboxes never dispatch this.
-  document.addEventListener('scidk:inspect', event => { if (state.tab === 'Files' || state.tab === 'Scans') select(event.detail); });
+  document.addEventListener('scidk:inspect', event => { if (state.tab === 'Files' || state.tab === 'Scans' || state.tab === 'Datasets') select(event.detail); });
   function items(records, parent, graph) {
     parent.replaceChildren();
     if (!records.length) { parent.textContent = 'No records found.'; return; }
@@ -141,14 +144,14 @@
     });
   }
   let searchVersion = 0;
-  $('dataset-search').onsubmit = async event => {
+  if ($('dataset-search')) $('dataset-search').onsubmit = async event => {
     event.preventDefault(); const version = ++searchVersion; $('dataset-results').textContent = 'Searching…';
     try {
       const data = await json('/api/canvas/nodes/search?label=Dataset&limit=100&q=' + encodeURIComponent($('dataset-query').value));
       if (version === searchVersion) items(data.results, $('dataset-results'), true);
     } catch (error) { if (version === searchVersion) $('dataset-results').textContent = error.message; }
   };
-  json('/api/datasets').then(data => items(data, $('indexed-datasets'), false)).catch(error => { $('indexed-datasets').textContent = error.message; });
+  if ($('indexed-datasets')) json('/api/datasets').then(data => items(data, $('indexed-datasets'), false)).catch(error => { $('indexed-datasets').textContent = error.message; });
   if ($('sharing-start')) {
     let sharingVersion = 0;
     $('sharing-start').onclick = () => { $('sharing-guide').hidden = false; };
@@ -195,4 +198,27 @@
     $('sharing-preview').onclick = () => prepare(false);
     $('sharing-download').onclick = () => prepare(true);
   }
+
+  if ($('inspector-add-to-collection')) {
+    $('inspector-add-to-collection').onclick = () => {
+      const selection = state.selected[state.tab], r = selection && selection.record;
+      if (!r || !window.CollectionBasket) return;
+      const ref = r.scan_id && r.root_path;
+      if (!ref && !r.dataset_id) return;
+      const name = r.name || (ref ? r.root_path.replace(/\/+$/, '').split('/').pop() : '') || r.root_path || r.dataset_id;
+      const added = window.CollectionBasket.add([ref ? {
+        key: 'dataset|' + r.scan_id + '|' + r.root_path, kind: 'dataset', label: name, title: r.root_path,
+        size: r.total_bytes != null ? r.total_bytes : r.bytes, files: r.file_count, tag: r.pattern_name || r.profile,
+        p: {scan_id: r.scan_id, root_path: r.root_path, profile: r.pattern_name || r.profile, file_count: r.file_count, bytes: r.total_bytes != null ? r.total_bytes : r.bytes},
+      } : {
+        key: 'dataset|manual|' + r.dataset_id, kind: 'dataset', label: name, title: 'Manual dataset', size: r.bytes || null, files: r.files,
+        tag: 'manual', p: {dataset_id: r.dataset_id, name},
+      }]);
+      window.CollectionBasket.open();
+      $('inspector-collection-status').textContent = added ? 'Added to the Collection basket.' : 'Already in the Collection basket.';
+    };
+  }
+  // The Datasets workspace opens the tab its ?view= asked for (Browse is the Files browser itself).
+  const wsView = $('gui-files') && $('gui-files').dataset && $('gui-files').dataset.wsView;
+  if (wsView) tab({browse: 'Files', datasets: 'Datasets', collections: 'Collections', scans: 'Scans'}[wsView] || 'Files');
 })();

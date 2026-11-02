@@ -325,6 +325,46 @@ def search(conn):
 
 
 COUNT_PROBE = 5000  # object_members rows read at most, per dataset, to fill a missing file count
+ALL_LIMIT = 1000  # recognized datasets read across all scans, at most
+
+
+def _display_name(root_path):
+    return (root_path or '').rstrip('/').rsplit('/', 1)[-1] or (root_path or '')
+
+
+@bp.get('/datasets/all')
+@_guard
+def datasets_all(conn):
+    """Recognized Datasets across every scan, alphabetical by display name (the root's last segment).
+
+    Read-only references keyed by (scan_id, root_path); counts come from the stored data_objects row, with no
+    object_members probing. Provenance (scan root/host/share/date) is joined from `scans`. At most ALL_LIMIT rows."""
+    where, args = ['1=1'], []
+    scan_id = (request.args.get('scan_id') or '').strip()
+    if scan_id:
+        where.append('o.scan_id=?')
+        args.append(scan_id)
+    if not _flag('system'):
+        clause, extra = _path_noise_sql('o.root_path')
+        where.append(clause)
+        args += extra
+    if not _flag('workspace'):
+        where.append("NOT (o.pattern_name LIKE '%workspace%' AND o.confidence<=0.5)")
+    rows = conn.execute(
+        'SELECT o.id, o.scan_id, o.pattern_name, o.root_path, o.file_count, o.total_bytes, o.confidence, o.status, '
+        's.root AS scan_root, s.started AS scan_started, s.completed AS scan_completed '
+        'FROM data_objects o LEFT JOIN scans s ON s.id=o.scan_id WHERE ' + ' AND '.join(where) +
+        ' ORDER BY o.root_path LIMIT ?', args + [ALL_LIMIT + 1]).fetchall()
+    out = []
+    for r in rows[:ALL_LIMIT]:
+        host, share, _ = _classify(r['scan_root'])
+        stamp = _iso(r['scan_completed'] or r['scan_started'])
+        out.append({'id': r['id'], 'scan_id': r['scan_id'], 'name': _display_name(r['root_path']),
+                    'pattern_name': r['pattern_name'], 'root_path': r['root_path'], 'file_count': r['file_count'],
+                    'total_bytes': r['total_bytes'], 'confidence': r['confidence'], 'status': r['status'],
+                    'scan_root': r['scan_root'], 'host': host, 'share': share, 'scan_date': stamp[:10] if stamp else None})
+    out.sort(key=lambda d: ((d['name'] or '').lower(), d['root_path'] or '', d['scan_id'] or ''))
+    return {'status': 'success', 'read_only': True, 'capped': len(rows) > ALL_LIMIT, 'datasets': out}
 
 
 @bp.get('/datasets')

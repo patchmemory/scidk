@@ -1,7 +1,13 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/gui_slice.css') }}">
-<section id="gui-files">
+<section id="gui-files"{% if ws_view %} data-ws-view="{{ ws_view }}"{% endif %}>
+{% if ws_view %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/datasets_workspace.css') }}">
+<h1>Datasets</h1>
+{% include '_datasets_tabs.html' %}
+{% else %}
 <h1>Files &amp; Datasets</h1>
 <div role="tablist" aria-label="Files and datasets"><button id="gui-files-tab" aria-controls="gui-files-panel" tabindex="0" role="tab" aria-selected="true">Files</button><button id="gui-datasets-tab" aria-controls="gui-datasets" tabindex="-1" role="tab" aria-selected="false">Datasets</button><button id="gui-scans-tab" aria-controls="gui-scans" tabindex="-1" role="tab" aria-selected="false">Scans</button></div>
+{% endif %}
 <section id="gui-scans" hidden role="tabpanel" aria-labelledby="gui-scans-tab">
 <h2>Scans <small>Read-only index</small></h2>
 <p id="scans-status" role="status">Browse an external scan index. Nothing here scans, annotates, shares or writes.</p>
@@ -21,6 +27,31 @@
 <div id="scans-datasets">Select a scan.</div></aside>
 </div>
 </section>
+{% if ws_view %}
+<section id="gui-datasets" hidden role="tabpanel" aria-label="Datasets" data-testid="datasets-list-panel">
+<h2>Datasets</h2>
+<p class="small">One list of Dataset objects, alphabetical: recognized candidates from scans (read by reference, never copied), Datasets already in the graph, and manual Datasets. Open one to inspect it; tick it or use <strong>Add to collection</strong>. All kinds join a Collection the same way.</p>
+<div id="datasets-selection-actions" data-testid="datasets-selection-actions"></div>
+<p id="datasets-status" role="status" class="small"></p>
+<label class="scans-toggle"><input type="checkbox" id="datasets-workspace-toggle"> show workspace candidates</label>
+<div id="datasets-list" data-testid="datasets-list" aria-live="polite">Loading…</div>
+<p class="small"><span id="datasets-count"></span> <strong>Candidate</strong>: recognized in a scan, not yet in the graph. <strong>Confirmed</strong>: a Dataset in the graph keyed to its scan and root. <strong>Manual</strong>: made by hand from files and folders. No file rows are copied from the scan index.</p>
+</section>
+<section id="gui-collections" hidden role="tabpanel" aria-label="Collections" data-testid="collections-panel">
+<h2>Collections</h2>
+<p class="small">Saved Collections group Datasets, Folders, Files and Context for one purpose. Open one to see its members and to draft a sharing plan. The shared Collection basket (lower right) holds your current, unsaved picks.</p>
+<p id="collections-status" role="status" class="small"></p>
+<div id="collections-list" data-testid="collections-list" aria-live="polite">Loading…</div>
+<div id="collection-detail" data-testid="collection-detail" hidden></div>
+<div id="collection-plan-panel" data-testid="sharing-plan-panel" role="dialog" aria-modal="false" aria-labelledby="collection-plan-title" hidden>
+<h3 id="collection-plan-title">Sharing plan draft</h3>
+<p class="small">Investigator review required; not a compliance determination. Covers this Collection only.</p>
+<div><button type="button" id="collection-plan-copy">Copy draft</button><button type="button" id="collection-plan-close" data-testid="sharing-plan-close">Close</button></div>
+<p id="collection-plan-status" role="status" class="small"></p>
+<pre id="collection-plan-out" style="white-space:pre-wrap"></pre>
+</div>
+</section>
+{% else %}
 <section id="gui-datasets" hidden role="tabpanel" aria-labelledby="gui-datasets-tab">
 <h2>Recognized datasets</h2>
 <form id="dataset-search"><label for="dataset-query">Search Dataset nodes by name or path</label> <input id="dataset-query" required><button>Search</button></form>
@@ -28,10 +59,12 @@
 <div id="dataset-results" aria-live="polite"></div>
 <details><summary>Legacy file interpretation index</summary><p>Indexed files are distinct from recognized scientific collections.</p><div id="indexed-datasets"></div></details>
 </section>
+{% endif %}
 <aside id="shared-inspector" aria-label="Selected object inspector" hidden>
 <h2 id="inspector-title"></h2><button id="inspector-close">Close inspector</button><button id="inspector-expand" aria-expanded="false">Expand</button>
 <div role="tablist" aria-label="Inspector">{% for tab in ['Metadata','Annotations','Interpret','Provenance'] %}<button role="tab" id="inspector-tab-{{ tab|lower }}" aria-controls="inspector-content" tabindex="{{ 0 if loop.first else -1 }}" data-inspector-tab="{{ tab }}" aria-selected="{{ 'true' if loop.first else 'false' }}">{{ tab }}</button>{% endfor %}</div>
 <div id="inspector-content" role="tabpanel" aria-labelledby="inspector-tab-metadata" aria-live="polite"></div>
+<div id="inspector-collection-actions" data-testid="inspector-collection-actions" hidden><button type="button" id="inspector-add-to-collection">Add this Dataset to the Collection</button> <span id="inspector-collection-status" role="status" class="small"></span></div>
 <details id="inspector-more-options" data-testid="inspector-more-options" hidden>
 <summary>More options</summary>
 {% if legacy_annotate %}
@@ -65,3 +98,4 @@
 <script defer src="{{ url_for('static', filename='js/gui_slice.js') }}"></script>
 <script defer src="{{ url_for('static', filename='js/inspector_actions.js') }}"></script>
 <script defer src="{{ url_for('static', filename='js/external_index.js') }}"></script>
+{% if ws_view %}<script defer src="{{ url_for('static', filename='js/datasets_workspace.js') }}"></script>{% endif %}

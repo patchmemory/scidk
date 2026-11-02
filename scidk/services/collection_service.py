@@ -60,7 +60,15 @@ def normalise_members(raw: Any, host_for) -> Tuple[Dict[str, List[Dict[str, Any]
             problems.append(f'members[{i}] is not an object')
             continue
         kind = _text(entry.get('kind')).lower()
-        if kind == 'dataset':
+        if kind == 'dataset' and _text(entry.get('dataset_id')) and not _text(entry.get('scan_id')):
+            # An editable Dataset already in the graph (a manual Dataset), joined by its own id.
+            did = _text(entry.get('dataset_id'))
+            key = (kind, 'id', did)
+            if key in seen:
+                continue
+            seen.add(key)
+            out['dataset'].append({'dataset_id': did, 'name': _text(entry.get('name')) or did})
+        elif kind == 'dataset':
             scan_id, root = _text(entry.get('scan_id')), _text(entry.get('root_path'))
             if not scan_id or not root:
                 problems.append(f'members[{i}] (dataset) needs scan_id and root_path')
@@ -133,7 +141,9 @@ def save_collection(client, *, name: str, description: Optional[str], created_by
         {'id': cid, 'name': name, 'created_by': created_by, 'description': description or None},
     )
     linked: Dict[str, int] = {k: 0 for k in KINDS}
-    if members['dataset']:
+    by_reference = [d for d in members['dataset'] if d.get('scan_id')]
+    by_id = [d for d in members['dataset'] if d.get('dataset_id')]
+    if by_reference:
         # By reference: the (scan_id, root_path) Dataset carries the summary; no file rows.
         rows = client.execute_write(
             "MATCH (c:Collection {id: $id}) UNWIND $rows AS row "
@@ -143,9 +153,18 @@ def save_collection(client, *, name: str, description: Optional[str], created_by
             "    d.file_count = coalesce(row.file_count, d.file_count), "
             "    d.bytes = coalesce(row.bytes, d.bytes), d.source = 'files.db' "
             "MERGE (c)-[:INCLUDES]->(d) RETURN count(d) AS linked",
-            {'id': cid, 'rows': members['dataset']},
+            {'id': cid, 'rows': by_reference},
         )
-        linked['dataset'] = int((rows[0].get('linked') if rows else 0) or 0)
+        linked['dataset'] += int((rows[0].get('linked') if rows else 0) or 0)
+    if by_id:
+        # An existing editable Dataset (e.g. manual), matched by its own id and only linked: never created here.
+        rows = client.execute_write(
+            "MATCH (c:Collection {id: $id}) UNWIND $rows AS row "
+            "MATCH (d:Dataset {id: row.dataset_id}) "
+            "MERGE (c)-[:INCLUDES]->(d) RETURN count(d) AS linked",
+            {'id': cid, 'rows': by_id},
+        )
+        linked['dataset'] += int((rows[0].get('linked') if rows else 0) or 0)
     if members['folder']:
         rows = client.execute_write(
             "MATCH (c:Collection {id: $id}) UNWIND $rows AS row "
@@ -239,6 +258,7 @@ def get_collection(client, collection_id: str) -> Dict[str, Any]:
         labels, p = row.get('labels') or [], row.get('p') or {}
         if 'Dataset' in labels:
             members['dataset'].append({
+                'dataset_id': p.get('id'), 'source': p.get('source'),
                 'scan_id': p.get('scan_id'), 'root_path': p.get('root_path'), 'name': p.get('name'),
                 'profile': p.get('profile'), 'file_count': p.get('file_count'), 'bytes': p.get('bytes')})
         elif 'Folder' in labels:
@@ -262,20 +282,55 @@ def list_collections(client) -> List[Dict[str, Any]]:
     rows = client.execute_read(
         "MATCH (c:Collection) OPTIONAL MATCH (c)-[:INCLUDES]->(m) "
         "RETURN c.id AS id, c.name AS name, c.description AS description, c.created_by AS created_by, "
-        "c.created_at AS created_at, count(m) AS members, "
+        "c.created_at AS created_at, c.updated_at AS updated_at, count(m) AS members, "
         "sum(CASE WHEN m:Dataset THEN 1 ELSE 0 END) AS datasets, "
         "sum(CASE WHEN m:Folder THEN 1 ELSE 0 END) AS folders, "
-        "sum(CASE WHEN m:File THEN 1 ELSE 0 END) AS files "
+        "sum(CASE WHEN m:File THEN 1 ELSE 0 END) AS files, "
+        "sum(CASE WHEN m:Dataset THEN coalesce(m.bytes, 0) WHEN m:File THEN coalesce(m.size_bytes, 0) ELSE 0 END) AS bytes "
         "ORDER BY c.created_at DESC LIMIT 200",
     )
     out = []
     for r in rows:
         r = dict(r)
+        r['bytes'] = int(r.get('bytes') or 0)
         for key in ('datasets', 'folders', 'files'):
             r[key] = int(r.get(key) or 0)
         r['context_members'] = max(0, int(r.get('members') or 0) - r['datasets'] - r['folders'] - r['files'])
         out.append(r)
     return out
+
+
+def list_graph_datasets(client, source: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Editable ``:Dataset`` objects already in the graph, read-only and bounded.
+
+    Two shapes share the label: manual Datasets (``source='manual'``, keyed by ``id``, with ``CONTAINS``
+    members) and recognized Datasets that a Collection has referenced (keyed by ``scan_id`` + ``root_path``,
+    ``source='files.db'``). Nothing is copied from the scan index and nothing is written.
+    """
+    where = "d.source = $source" if source else "(d.source = 'manual' OR (d.scan_id IS NOT NULL AND d.root_path IS NOT NULL))"
+    rows = client.execute_read(
+        "MATCH (d:Dataset) WHERE " + where + " OPTIONAL MATCH (d)-[:CONTAINS]->(m) "
+        "RETURN d.id AS id, d.name AS name, d.description AS description, d.source AS source, "
+        "d.scan_id AS scan_id, d.root_path AS root_path, d.profile AS profile, d.file_count AS file_count, "
+        "d.bytes AS dataset_bytes, d.created_at AS created_at, d.updated_at AS updated_at, count(m) AS members, "
+        "sum(CASE WHEN m:Folder THEN 1 ELSE 0 END) AS folders, "
+        "sum(CASE WHEN m:File THEN 1 ELSE 0 END) AS files, "
+        "sum(CASE WHEN m:File THEN coalesce(m.size_bytes, 0) ELSE 0 END) AS bytes "
+        "ORDER BY toLower(coalesce(d.name, '')) LIMIT 1000",
+        {'source': source} if source else {},
+    )
+    out = []
+    for r in rows:
+        r = dict(r)
+        for key in ('members', 'folders', 'files', 'bytes'):
+            r[key] = int(r.get(key) or 0)
+        out.append(r)
+    return out
+
+
+def list_manual_datasets(client) -> List[Dict[str, Any]]:
+    """Manual ``:Dataset`` objects with member counts and known size. Read-only, bounded."""
+    return list_graph_datasets(client, source='manual')
 
 
 # ── sharing plan ────────────────────────────────────────────────────────────

@@ -234,7 +234,7 @@
     } catch (error) { $('scans-datasets').textContent = error.message; }
   }
 
-  $('gui-scans-tab').addEventListener('click', async () => {
+  async function loadScans() {
     if (st.scans) return;
     status('Loading scans…');
     try {
@@ -242,5 +242,8 @@
       st.scans = data.scans; st.shares = data.shares;
       renderScans(); status('Read-only index · choose a share.');
     } catch (error) { status(error.message); }
-  });
+  }
+  // In the legacy Files page Scans is an in-page tab; in the Datasets workspace it is its own view.
+  if ($('gui-scans-tab')) $('gui-scans-tab').addEventListener('click', loadScans);
+  if (document.getElementById('gui-files') && document.getElementById('gui-files').dataset.wsView === 'scans') loadScans();
 })();

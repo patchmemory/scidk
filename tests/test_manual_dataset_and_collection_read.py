@@ -87,8 +87,9 @@ def test_get_collection_returns_typed_grouped_members(client, fake_graph, monkey
     assert d['collection'] == {'id': 'cid', 'name': 'Synthetic collection', 'description': 'for sharing',
                                'created_by': 'tester', 'created_at': 5, 'updated_at': 6}
     assert set(d['members']) == {'dataset', 'folder', 'file', 'context'}
-    assert d['members']['dataset'] == [{'scan_id': 's1', 'root_path': '/net/hostx/data/sharea/runA', 'name': 'runA',
-                                         'profile': 'Vevo', 'file_count': 12, 'bytes': 3400}]
+    # dataset_id / source identify an editable (manual) Dataset member; a by-reference member has neither.
+    assert d['members']['dataset'] == [{'dataset_id': None, 'source': 'files.db', 'scan_id': 's1', 'root_path': '/net/hostx/data/sharea/runA',
+                                         'name': 'runA', 'profile': 'Vevo', 'file_count': 12, 'bytes': 3400}]
     assert d['members']['folder'] == [{'path': '/p/notes', 'host': 'files.db:hostx', 'name': 'notes'}]
     assert d['members']['file'] == [{'path': '/p/notes/a.csv', 'host': 'files.db:hostx', 'filename': 'a.csv', 'size_bytes': 12}]
     assert d['members']['context'] == [{'id': 'e4', 'label': 'Sample', 'display': 'S-1'}]

@@ -34,9 +34,11 @@ from ..decorators import require_role
 
 bp = Blueprint('annotation', __name__, url_prefix='/api')
 
-#: Writing a Dataset creates graph nodes and edges; reading the sweep does not.
-_WRITE_ROLES = ('admin',)
+#: Creating a Collection or a manual Dataset is open to the same signed-in audience as browsing and
+#: collecting (the development-mode behaviour manual Dataset creation already had). No new role model is
+#: introduced; which roles may write in production remains the separate, deferred authorization question.
 _READ_ROLES = ('admin', 'user')
+_WRITE_ROLES = _READ_ROLES
 
 #: One collection, one round trip. Past this the UNWIND parameter stops being a
 #: reasonable request body.
@@ -349,6 +351,46 @@ def api_datasets_manual():
     if problems:
         out['problems'] = problems
     return jsonify(out), 200
+
+
+@bp.get('/datasets/manual')
+@require_role(*_READ_ROLES)
+def api_datasets_manual_list():
+    """Manual ``:Dataset`` objects (read-only): id, name, description, member counts and known size."""
+    from ...services import collection_service as cs
+    try:
+        client = _neo4j_client()
+    except Neo4jUnavailable as e:
+        return jsonify({'error': str(e), 'datasets': []}), 503
+    try:
+        return jsonify({'datasets': cs.list_manual_datasets(client)}), 200
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'error': f'{type(e).__name__}: {e}', 'datasets': []}), 502
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+
+@bp.get('/datasets/graph')
+@require_role(*_READ_ROLES)
+def api_datasets_graph_list():
+    """Editable ``:Dataset`` objects in the graph (manual, and recognized ones a Collection has referenced). Read-only."""
+    from ...services import collection_service as cs
+    try:
+        client = _neo4j_client()
+    except Neo4jUnavailable as e:
+        return jsonify({'error': str(e), 'datasets': []}), 503
+    try:
+        return jsonify({'datasets': cs.list_graph_datasets(client)}), 200
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'error': f'{type(e).__name__}: {e}', 'datasets': []}), 502
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
 
 
 @bp.get('/collections/<collection_id>')

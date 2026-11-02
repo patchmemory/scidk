@@ -95,7 +95,7 @@ def test_sketch_keeps_the_canvas_and_drops_governance_copy(client):
 def test_annotations_deep_link_falls_back_visibly(client):
     html = page(client, '/knowledge?view=entities&panel=annotations')
     assert 'data-testid="annotations-fallback"' in html
-    assert '/datasets?panel=annotations' in html
+    assert '/datasets?view=browse&amp;panel=annotations' in html
     assert 'annotations-fallback' not in page(client, '/knowledge?view=entities')
 
 

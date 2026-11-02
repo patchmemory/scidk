@@ -31,7 +31,7 @@ def test_navigation_and_placeholders(gui_page):
     page.goto(origin+'/overview?profile=review')
     expect(page.get_by_label('Your question')).to_be_disabled()
     expect(page.get_by_role('button', name='Ask SciDK', exact=True)).to_be_disabled()
-    for name, path in [('Files & Datasets','/datasets'), ('Resources','/pipeline/sources'),
+    for name, path in [('Datasets','/datasets?view=browse'), ('Resources','/pipeline/sources'),
                        ('Knowledge','/knowledge'), ('Review','/review'), ('Overview','/overview')]:
         page.locator('header nav').get_by_role('link', name=name, exact=True).click()
         expect(page).to_have_url(origin+path)
