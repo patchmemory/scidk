@@ -25,6 +25,7 @@
 <section id="knowledge-workspace" data-view="{{ view }}" {% if view == 'sketch' %}data-kw-mode="sketch"{% endif %}>
 <h1 style="margin:0.25rem 0.5rem;font-size:1.3rem">Knowledge</h1>
 {% include '_knowledge_tabs.html' %}
+<div id="knowledge-return-slot" class="small" style="margin:0.25rem 0.5rem"></div>
 {% if request.args.get('panel') == 'annotations' %}
 <p class="knowledge-notice small" role="status" data-testid="annotations-fallback">Annotations are attached to files and datasets. Open <a href="{{ request.script_root }}/datasets?panel=annotations">Files &amp; Datasets → Annotations</a> to work with them; select a record here to inspect it.</p>
 {% endif %}

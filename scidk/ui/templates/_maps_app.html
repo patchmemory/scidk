@@ -3381,7 +3381,8 @@
         const link = document.createElement('a');
         link.textContent = 'Return to entity inspector';
         link.href = window.SCIDK_BASE + `{{ ('/knowledge?view=entities' if request.path == '/knowledge' else '/entities?tab=entities')|safe }}&management_label=${encodeURIComponent(managementLabel)}&management_id=${encodeURIComponent(managementId)}`;
-        document.querySelector('nav[aria-label="Research tools"]').append(link);
+        // Legacy /map has the "Research tools" bar; Knowledge → Maps has its own slot under the tabs.
+        (document.getElementById('knowledge-return-slot') || document.querySelector('nav[aria-label="Research tools"]')).append(link);
       }).catch(() => { /* refused selection never reuses cached metadata */ });
   }
 })();

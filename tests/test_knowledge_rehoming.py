@@ -152,3 +152,12 @@ def test_cross_links_stay_inside_knowledge_and_legacy_links_are_unchanged(client
     assert '/map?management_label=' in page(client, '/entities')
     assert '/entities?tab=entities&management_label=' in page(client, '/map')
     assert '/map?management_label=' not in k_entities
+
+
+def test_return_to_inspector_link_has_a_host_in_knowledge_and_legacy_maps(client):
+    """The Maps script appends the return link to a host element; each page must provide one."""
+    k_maps, legacy_map = page(client, '/knowledge?view=maps'), page(client, '/map')
+    assert 'id="knowledge-return-slot"' in k_maps and "getElementById('knowledge-return-slot')" in k_maps
+    assert '<nav class="kw-toolbar" aria-label="Research tools"' in legacy_map
+    assert '<nav class="kw-toolbar" aria-label="Research tools"' not in k_maps
+    assert tabs(k_maps) == ['Entities', 'Maps', 'Sketch']
