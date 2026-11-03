@@ -54,6 +54,8 @@
 <!-- Canvas mode (Push 5): undo/redo. Loads after cytoscape (and lodash, kept
      before it for edgehandles); it auto-registers cy.undoRedo() on the global. -->
 <script src="{{ url_for('static', filename='vendor/management/undo-redo.js') }}"></script>
+<!-- Authoritative per-tab canvas state + render generation (defines window.mapTabStore) -->
+<script src="{{ url_for('static', filename='js/map_tab_state.js') }}"></script>
 
 <!-- CodeMirror 5 with Cypher mode -->
 <script src="{{ url_for('static', filename='vendor/management/codemirror.min.js') }}"></script>
@@ -1867,17 +1869,25 @@
   async function loadCanvasSession(tabId) {
     if (_sessionLoaded[tabId]) return;  // only restore once per tab per page load
     _sessionLoaded[tabId] = true;
+    // Background restore: it may only fill a tab that is still pristine when the
+    // response arrives. Anything the user rendered meanwhile (saved map, query,
+    // layer) bumped the generation and wins.
+    const store = window.mapTabStore;
+    const generation = store.get(tabId).generation;
     try {
       const resp = await fetch(window.SCIDK_BASE + '/api/canvas/session');
       const data = await resp.json();
       if (data.status === 'ok' && data.canvas && (data.canvas.nodes || []).length) {
         const cy = getCy(tabId);
         if (!cy) return;
+        if (!store.isCurrent(tabId, generation) || store.get(tabId).hasRender) return;
         // Only restore into an empty canvas so we don't clobber query results.
         if (cy.nodes().length === 0) {
           window.__canvasRestoring = true;
           restoreCanvas(tabId, data.canvas);
           window.__canvasRestoring = false;
+          store.commit(tabId, generation, { renderKind: 'canvas', hasRender: true, renderedMode: 'instance' });
+          if (window.syncMapModeControl) window.syncMapModeControl(tabId);
         }
       }
     } catch (e) { /* no session yet */ }
@@ -1932,15 +1942,22 @@
   }
 
   async function loadCanvasLayer(tabId, layerId) {
+    // Loading a layer is a user-initiated replacement of this tab's canvas.
+    const store = window.mapTabStore;
+    const generation = store.begin(tabId, {});
     try {
       const resp = await fetch(window.SCIDK_BASE + `/api/canvas/layers/${encodeURIComponent(layerId)}`);
       const data = await resp.json();
       if (data.status !== 'ok') { alert('Load failed: ' + (data.error || 'unknown')); return; }
       const snap = data.layer && data.layer.snapshot_json;
       if (!snap) { alert('This layer has no saved canvas snapshot.'); return; }
+      if (!store.isCurrent(tabId, generation)) return;  // superseded while loading
       window.__canvasRestoring = true;
       restoreCanvas(tabId, snap);
       window.__canvasRestoring = false;
+      store.commit(tabId, generation, { renderKind: 'canvas', hasRender: true,
+        renderedMode: data.layer.display_mode === 'schema' ? 'schema' : 'instance' });
+      if (window.syncMapModeControl) window.syncMapModeControl(tabId);
       if (!window.canvasLayerId) window.canvasLayerId = {};
       window.canvasLayerId[tabId] = layerId;
       scheduleSessionSave(tabId);
@@ -2244,12 +2261,26 @@
     tryInit();
   }
 
-  // Render schema visualization (aggregated label triples)
-  async function renderSchemaVisualization(tabId) {
+  // Render schema visualization (aggregated label triples).
+  //
+  // `generation` is the render generation the caller owns (from mapTabStore.begin).
+  // The fetch below can take seconds; if the tab has been replaced meanwhile (a
+  // saved map loaded, a query run, another mode chosen) the response is stale and
+  // is discarded, never drawn. Callers without a generation (legacy/background
+  // callers) may render only into a genuinely new, never-rendered tab.
+  async function renderSchemaVisualization(tabId, generation) {
     const cy = window.cytoscapeInstances && window.cytoscapeInstances[tabId];
     if (!cy) {
       console.error('Cytoscape instance not found for renderSchema:', tabId);
-      return;
+      return false;
+    }
+    const store = window.mapTabStore;
+    if (generation === undefined) {
+      if (!store.mayRenderDefault(tabId)) {
+        console.log('Default schema render refused: tab already has content', tabId);
+        return false;
+      }
+      generation = store.begin(tabId, { renderKind: 'default-schema', renderedMode: 'schema' });
     }
 
     try {
@@ -2258,6 +2289,11 @@
       const url = window.SCIDK_BASE + `/api/graph/schema/combined?source=${source}`;
       const response = await fetch(url);
       const data = await response.json();
+
+      if (!store.isCurrent(tabId, generation)) {
+        console.log('Discarding stale schema response for', tabId);
+        return false;
+      }
 
       console.log('Schema data fetched:', data);
 
@@ -2315,6 +2351,11 @@
       // Clear and render
       cy.elements().remove();
       cy.add(elements);
+      store.commit(tabId, generation, {
+        renderKind: 'default-schema', renderedMode: 'schema', renderedData: data,
+        hasRender: true, savedMapId: null, queryText: null
+      });
+      if (window.syncMapModeControl) window.syncMapModeControl(tabId);
 
       // Apply layout (only if elements exist)
       if (elements.length > 0) {
@@ -2326,9 +2367,11 @@
           idealEdgeLength: 100
         }).run();
       }
+      return true;
 
     } catch (error) {
       console.error('Error rendering schema:', error);
+      return false;
     }
   }
   window.renderSchemaVisualization = renderSchemaVisualization;
@@ -2579,11 +2622,31 @@
     }
 
     // Function to visualize query results in graph
-    window.visualizeQueryResults = function(results, tabId) {
+    // `generation` is the render generation owned by the caller (a Run click or a
+    // saved-map load). A stale generation means the user has since replaced this
+    // tab, so the result is discarded. Calls without one (re-applying display
+    // settings to the current results) are themselves a deliberate replacement.
+    window.visualizeQueryResults = function(results, tabId, generation) {
       if (!window.cytoscapeInstances || !window.cytoscapeInstances[tabId]) {
         console.error('Cytoscape instance not found for tab', tabId);
         return;
       }
+      const store = window.mapTabStore;
+      if (generation === undefined) {
+        generation = store.begin(tabId, {});
+      } else if (!store.isCurrent(tabId, generation)) {
+        console.log('Discarding stale query result for', tabId);
+        return;
+      }
+      const recordResult = (mode) => {
+        const editor = window.tabEditors && window.tabEditors[tabId];
+        store.commit(tabId, generation, {
+          renderKind: 'query-result', renderedMode: mode, renderedData: results,
+          hasRender: true, queryText: editor ? editor.getValue() : null,
+          connection: window.getSelectedNeo4jConnection ? window.getSelectedNeo4jConnection() : null
+        });
+        if (window.syncMapModeControl) window.syncMapModeControl(tabId);
+      };
 
       // Store results for schema display property re-application
       window.lastQueryResults = { results, tabId };
@@ -2619,6 +2682,7 @@
       if (currentMode === 'schema') {
         // Extract schema (unique label triples) from query results
         console.log('📊 Extracting schema from query results');
+        recordResult('schema');
         visualizeSchemaFromResults(results, tabId);
         return;
       } else if (currentMode === 'hybrid') {
@@ -2629,6 +2693,7 @@
 
       // Instance mode: visualize individual nodes and relationships
       console.log('📍 Visualizing instances from query results');
+      recordResult('instance');
       const nodes = new Map();
       const edges = [];
 
@@ -2793,6 +2858,27 @@
         statusEl.textContent = 'Running query...';
         statusEl.style.color = '#666';
 
+        // Running a query is a user-initiated replacement: it owns the canvas from
+        // here on, and any older in-flight default/schema/query render is stale.
+        // (Runs launched by a saved-map load carry that load's generation.)
+        const store = window.mapTabStore;
+        let runGeneration;
+        if (runBtn.dataset.loadGeneration !== undefined && runBtn.dataset.loadGeneration !== '') {
+          runGeneration = Number(runBtn.dataset.loadGeneration);
+          delete runBtn.dataset.loadGeneration;
+          if (!store.isCurrent(tabId, runGeneration)) {
+            // The map load that scheduled this run was itself superseded.
+            isRunning = false;
+            runBtn.innerHTML = '▶ Run';
+            runBtn.classList.remove('btn-danger');
+            runBtn.classList.add('btn-success');
+            statusEl.textContent = '';
+            return;
+          }
+        } else {
+          runGeneration = store.begin(tabId, {});
+        }
+
         try {
           // The server runs this against the authorized management connection
           // (read transaction); the connection id is not a saved profile name.
@@ -2806,13 +2892,21 @@
           });
           const data = await resp.json();
 
+          if (!store.isCurrent(tabId, runGeneration)) {
+            // A newer query, map load or mode change replaced this tab while the
+            // request was in flight; this response must not touch canvas or state.
+            console.log('Discarding stale query response for', tabId);
+            statusEl.textContent = '';
+            return;
+          }
+
           if (resp.ok && data.status === 'ok') {
             statusEl.textContent = `✓ Query executed - ${data.result_count || 0} results in ${data.execution_time_ms || 0}ms`;
             statusEl.style.color = '#28a745';
 
             // VISUALIZE RESULTS IN GRAPH
             if (data.results && data.results.length > 0) {
-              visualizeQueryResults(data.results, tabId);
+              visualizeQueryResults(data.results, tabId, runGeneration);
             }
 
             // Display results in Table view
@@ -3245,6 +3339,19 @@
   function switchToTab(tabId) {
     if (!tabs.find(t => t.id === tabId)) return;
 
+    // Leaving a tab: record what its canvas shows (elements + layout positions)
+    // in its authoritative state, so returning restores it rather than
+    // reinitialising it.
+    if (activeTabId && activeTabId !== tabId) {
+      const prevCy = window.cytoscapeInstances && window.cytoscapeInstances[activeTabId];
+      const prev = window.mapTabStore.get(activeTabId);
+      if (prevCy && prev.hasRender && prevCy.elements().length) {
+        prev.elements = prevCy.elements().jsons();
+        prev.positions = {};
+        prevCy.nodes().forEach(n => { prev.positions[n.id()] = { x: n.position('x'), y: n.position('y') }; });
+      }
+    }
+
     // Update active state
     activeTabId = tabId;
 
@@ -3276,20 +3383,22 @@
       if (cy) cy.resize();
     }, 150);
 
-    // Sync visualization mode radio buttons with this tab's mode
-    if (window.tabVisualizationModes && window.tabVisualizationModes[tabId]) {
-      const tabMode = window.tabVisualizationModes[tabId];
-      const modeRadio = document.querySelector(`input[name="viz-mode"][value="${tabMode}"]`);
-      if (modeRadio) {
-        modeRadio.checked = true;
-        // Show/hide mode-specific settings
-        const instanceSettings = document.getElementById('instance-settings');
-        const hybridSettings = document.getElementById('hybrid-settings');
-        if (instanceSettings) instanceSettings.style.display = tabMode === 'instance' ? 'block' : 'none';
-        if (hybridSettings) hybridSettings.style.display = tabMode === 'hybrid' ? 'block' : 'none';
-        console.log(`Synced radio buttons to tab ${tabId} mode: ${tabMode}`);
+    // Returning to a tab restores its existing state; it never re-initialises or
+    // re-renders it. The shared mode control is made to reflect this tab's
+    // authoritative rendered mode (no change event, no redraw).
+    if (window.syncMapModeControl) window.syncMapModeControl(tabId);
+
+    // Defensive restore: if the tab's canvas lost its elements but its stored
+    // state holds a render, put the stored elements back (never touches a
+    // canvas that still has content).
+    setTimeout(() => {
+      const st = window.mapTabStore.get(tabId);
+      const cy = window.cytoscapeInstances && window.cytoscapeInstances[tabId];
+      if (cy && st.hasRender && st.elements && st.elements.length && cy.elements().length === 0) {
+        cy.add(st.elements);
+        if (st.positions) cy.nodes().forEach(n => { const p = st.positions[n.id()]; if (p) n.position(p); });
       }
-    }
+    }, 200);
 
     // Push 6: the selection inspector is shared DOM — refresh it for whichever
     // tab is now active (shows the new tab's selection, or hides if not canvas).
@@ -3318,6 +3427,7 @@
 
     if (tabEl) tabEl.remove();
     if (contentEl) contentEl.remove();
+    window.mapTabStore.drop(tabId);  // closing a tab discards its state; in-flight work goes stale
 
     // If closing active tab, switch to another
     if (activeTabId === tabId) {
@@ -3486,13 +3596,29 @@
 
   // Load a map
   async function loadMap(mapId) {
+    // Loading a saved map is a user-initiated replacement of the active tab's
+    // canvas. Claim it now: any default-schema, query or earlier load still in
+    // flight for this tab becomes stale and will discard its result.
+    const loadTabId = document.querySelector('.map-tab.active')?.dataset.tabId || Object.keys(window.tabEditors || {})[0];
+    const store = window.mapTabStore;
+    const generation = store.begin(loadTabId, {});
     try {
       const response = await fetch(window.SCIDK_BASE + `/api/maps/saved/${mapId}`);
       const data = await response.json();
 
+      if (!store.isCurrent(loadTabId, generation)) {
+        console.log('Saved-map load superseded; discarding', mapId);
+        return;
+      }
+
       if (data.status === 'ok' && data.map) {
         const map = data.map;
         currentMapId = mapId;
+        store.commit(loadTabId, generation, {
+          savedMapId: mapId, savedMapName: map.name, queryText: map.query || null,
+          queryId: null, renderKind: 'saved-map', renderedData: null,
+          connection: window.getSelectedNeo4jConnection ? window.getSelectedNeo4jConnection() : null
+        });
 
         console.log('📦 Loaded map data:', map);
         console.log('📦 Visualization config:', map.visualization);
@@ -3524,13 +3650,12 @@
         if (map.visualization) {
           const viz = map.visualization;
 
-          // Apply visualization mode
-          if (viz.mode) {
-            const modeRadio = document.querySelector(`input[name="viz-mode"][value="${viz.mode}"]`);
-            if (modeRadio) {
-              modeRadio.checked = true;
-              modeRadio.dispatchEvent(new Event('change'));
-            }
+          // Apply visualization mode. This only sets the tab's intended mode and
+          // the control; it must NOT dispatch a change event, because the mode
+          // handler's Schema branch starts a slow default-schema fetch that would
+          // land after (and overwrite) this map's own result.
+          if (viz.mode && window.MapTabState.MODES.includes(viz.mode)) {
+            window.setMapTabMode(loadTabId, viz.mode);
           }
 
           // Apply connection selection (validate connection exists)
@@ -3639,9 +3764,8 @@
 
         // Load query AFTER visualization settings are applied
         if (map.query && window.tabEditors) {
-          const activeTabId = Object.keys(window.tabEditors)[0];
-          if (activeTabId && window.tabEditors[activeTabId]) {
-            window.tabEditors[activeTabId].setValue(map.query);
+          if (loadTabId && window.tabEditors[loadTabId]) {
+            window.tabEditors[loadTabId].setValue(map.query);
           }
         }
 
@@ -3651,19 +3775,38 @@
         // Auto-run the query after loading the map (with delay to ensure connection is set)
         if (map.query) {
           setTimeout(() => {
-            // Find the active tab's run button
-            const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
-            const runBtn = activeTabId ? document.querySelector(`.run-query-${activeTabId}`) : null;
+            // The load that scheduled this run may have been superseded (another
+            // map, query or mode change in the 800 ms window): then do nothing.
+            if (!store.isCurrent(loadTabId, generation)) {
+              console.log('Auto-run cancelled: tab was replaced after the map loaded');
+              return;
+            }
+            const runBtn = loadTabId ? document.querySelector(`.run-query-${loadTabId}`) : null;
             if (runBtn) {
-              console.log(`Auto-running query for loaded map on tab ${activeTabId}...`);
+              console.log(`Auto-running query for loaded map on tab ${loadTabId}...`);
+              // The run owns this load's generation; consumed synchronously by the click.
+              runBtn.dataset.loadGeneration = String(generation);
               runBtn.click();
+              delete runBtn.dataset.loadGeneration;
             } else {
-              console.error(`Run button not found for tab ${activeTabId} - query will need to be run manually`);
+              console.error(`Run button not found for tab ${loadTabId} - query will need to be run manually`);
             }
           }, 800); // Delay to ensure connection and editor are ready
 
           alert(`Loaded map: ${map.name}\nQuery will run automatically...`);
         } else {
+          // No query to run: the map's own content is its saved mode. Render it
+          // directly under this load's generation (no synthetic events involved).
+          const mapMode = window.mapTabStore.get(loadTabId).renderedMode;
+          if (mapMode === 'schema' && typeof window.renderSchemaVisualization === 'function') {
+            window.renderSchemaVisualization(loadTabId, generation);
+          } else if (mapMode === 'instance') {
+            const cy = window.cytoscapeInstances && window.cytoscapeInstances[loadTabId];
+            if (cy) {
+              cy.elements().remove();
+              store.commit(loadTabId, generation, { renderKind: 'saved-map', hasRender: true });
+            }
+          }
           alert(`Loaded map: ${map.name}`);
         }
       }
@@ -3830,6 +3973,32 @@ window.applySchemaSettingsMode = function(mode) {
   // user color individual instance nodes distinctly rather than by shared label.
 };
 
+// === CONTROL <-> CANVAS STATE SYNC ===
+// The Schema/Instance radios are one shared control for all tabs. These helpers
+// make the control a *reflection* of the active tab's authoritative state
+// (window.mapTabStore); they never redraw and never fire a change event.
+window.syncMapModeControl = function(tabId) {
+  const state = window.mapTabStore.get(tabId);
+  const mode = state.renderedMode;
+  if (!window.tabVisualizationModes) window.tabVisualizationModes = {};
+  window.tabVisualizationModes[tabId] = mode;
+  const activeTabId = document.querySelector('.map-tab.active')?.dataset.tabId;
+  if (activeTabId && activeTabId !== tabId) return;  // another tab owns the control now
+  const radio = document.querySelector(`input[name="viz-mode"][value="${mode}"]`);
+  if (radio) radio.checked = true;
+  const instanceSettings = document.getElementById('instance-settings');
+  const hybridSettings = document.getElementById('hybrid-settings');
+  if (instanceSettings) instanceSettings.style.display = mode === 'instance' ? 'block' : 'none';
+  if (hybridSettings) hybridSettings.style.display = mode === 'hybrid' ? 'block' : 'none';
+  if (window.applySchemaSettingsMode) window.applySchemaSettingsMode(mode);
+};
+
+// Set a tab's intended mode (e.g. from a loaded map) without rendering anything.
+window.setMapTabMode = function(tabId, mode) {
+  window.mapTabStore.get(tabId).renderedMode = mode;
+  window.syncMapModeControl(tabId);
+};
+
 // === VISUALIZATION MODE SWITCHING ===
 (function() {
   // Wait for DOM to be ready
@@ -3847,6 +4016,16 @@ window.applySchemaSettingsMode = function(mode) {
     modeRadios.forEach(radio => {
     radio.addEventListener('change', async (e) => {
       const newMode = e.target.value;
+
+      // Only a deliberate user change of the control replaces the canvas. A
+      // synthetic (script-dispatched) change event is a control synchronisation:
+      // it must never trigger a render, so background code cannot overwrite a
+      // loaded map or query result by poking the radios.
+      if (e.isTrusted === false) {
+        const syncTab = document.querySelector('.map-tab.active')?.dataset.tabId;
+        if (syncTab) window.setMapTabMode(syncTab, newMode);
+        return;
+      }
 
       console.log('=== MODE SWITCH DEBUG ===');
       console.log('Radio button changed to:', newMode);
@@ -3875,17 +4054,26 @@ window.applySchemaSettingsMode = function(mode) {
       console.log(`✓ Switched tab ${activeTabId} to ${newMode} mode`);
       console.log('========================');
 
+      // A deliberate mode change is a user-initiated replacement: new generation,
+      // so every earlier in-flight render for this tab becomes stale.
+      const store = window.mapTabStore;
+      const generation = store.begin(activeTabId, { renderedMode: newMode });
+
       // Re-render based on mode
       if (newMode === 'schema') {
         // Show the full schema (combined labels + graph) when switching to Schema mode.
         if (typeof window.renderSchemaVisualization === 'function') {
-          await window.renderSchemaVisualization(activeTabId);
+          await window.renderSchemaVisualization(activeTabId, generation);
         }
       } else if (newMode === 'instance') {
         // Clear graph and show message to run query
         const cy = window.cytoscapeInstances && window.cytoscapeInstances[activeTabId];
         if (cy) {
           cy.elements().remove();
+          store.commit(activeTabId, generation, {
+            renderKind: 'empty', renderedData: null, hasRender: true,
+            savedMapId: null, queryText: null
+          });
           console.log('Instance mode: Run a query to visualize results');
         }
       } else if (newMode === 'hybrid') {
@@ -5312,6 +5500,11 @@ window.populateInstancesTable = async function(results, tabId) {
       <button id="export-json" class="btn btn-sm btn-outline-primary w-100" data-testid="export-json" style="margin-bottom:0.5rem">📄 Export JSON</button>
       <button id="export-cypher" class="btn btn-sm btn-outline-primary w-100" data-testid="export-cypher" style="margin-bottom:0.5rem">🔷 Export Cypher</button>
       <button id="download-csv" class="btn btn-sm btn-outline-secondary w-100">📊 Download CSV</button>
+    </div>
+  </div>
+
+</div> <!-- END: maps-container -->
+0">📊 Download CSV</button>
     </div>
   </div>
 
