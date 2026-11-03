@@ -7,8 +7,11 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/drawers.css') }}">
 <style>
 /* ── Page layout ─────────────────────────────────────────────────────── */
-main { max-width:100% !important; padding:0 !important; }
-.files-page { display:flex; height:calc(100vh - {{ 170 if ws_view else 56 }}px); overflow:hidden; font-size:13px; }
+{% if ws_view %}/* Datasets workspace: Browse keeps the shell's page padding and card frame, like Datasets, Collections and Scans. */
+.files-page { display:flex; height:calc(100vh - 290px); min-height:460px; overflow:hidden; font-size:13px; }
+{% else %}main { max-width:100% !important; padding:0 !important; }
+.files-page { display:flex; height:calc(100vh - 56px); overflow:hidden; font-size:13px; }
+{% endif %}
 
 /* ── Sidebar ─────────────────────────────────────────────────────────── */
 .sidebar { width:240px; min-width:180px; flex-shrink:0; display:flex; flex-direction:column; border-right:1px solid #dee2e6; background:#f8f9fa; overflow:hidden; transition:width 0.2s ease; }
@@ -620,6 +623,10 @@ $id('loc-save').addEventListener('click',()=>{
   loadLocations();
 });
 loadLocations();
+// The Add Drive drawer's "From Scan" tab saves a shortcut itself, then asks Browse to show it and open it in place.
+window.BrowseLocations={opened(loc){loadLocations();openIndexed({label:loc.label,scan_id:loc.scan_id,root_path:loc.root_path});}};
+// A saved Drive created from another page arrives as ?open_scan=…&open_path=… and opens here, indexed.
+{const q=new URLSearchParams(location.search),sid=q.get('open_scan');if(sid){const p=q.get('open_path')||'';const l=savedLocations().find(x=>x.scan_id===sid&&x.root_path===p);if(p)openIndexed({label:l?l.label:'',scan_id:sid,root_path:p});}}
 {% endif %}
 // History drawer
 document.getElementById('history-btn')?.addEventListener('click',()=>{if(typeof ScanPanel!=='undefined')ScanPanel.openHistory(currentPath);});

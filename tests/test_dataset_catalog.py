@@ -560,6 +560,119 @@ def test_legacy_files_page_keeps_its_drives_sidebar(monkeypatch, tmp_path):
     assert '+ Add drive or location' in browse
 
 
+# ── Browse polish: Add Drive "From Scan" tab, basket layering, page frame ─────
+
+def test_add_drive_drawer_has_a_third_scan_tab_and_keeps_local_and_rclone(monkeypatch, tmp_path):
+    from tests.test_selection_actions import _app
+    client = _app(monkeypatch, tmp_path, SCIDK_GUI_V3_ENABLED=True).test_client()
+    for url in ('/datasets?view=browse', '/datasets'):
+        html = client.get(url).get_data(as_text=True)
+        tabs = [t for t in ('local', 'rclone', 'scan') if f'data-drive-tab="{t}"' in html]
+        assert tabs == ['local', 'rclone', 'scan'], url
+        assert 'id="drive-tab-local"' in html and 'id="drive-tab-rclone"' in html and 'id="drive-tab-scan"' in html
+        assert 'Local / Mounted</button>' in html and 'Rclone Remote</button>' in html and 'From Scan</button>' in html
+    js = client.get('/static/js/add_drive.js').get_data(as_text=True)
+    assert "access_mode: 'indexed'" in js and 'scidk.browse.locations.v1' in js
+
+
+def test_browse_has_the_page_frame_and_legacy_files_keeps_its_full_bleed_layout(monkeypatch, tmp_path):
+    from tests.test_selection_actions import _app
+    client = _app(monkeypatch, tmp_path, SCIDK_GUI_V3_ENABLED=True).test_client()
+    browse = client.get('/datasets?view=browse').get_data(as_text=True)
+    legacy = client.get('/datasets').get_data(as_text=True)
+    assert 'main { max-width:100% !important; padding:0 !important; }' not in browse     # shell padding and card frame kept
+    assert 'main { max-width:100% !important; padding:0 !important; }' in legacy          # legacy page unchanged
+
+
+def test_browser_add_drive_from_scan_tab_saves_an_indexed_drive_and_opens_it_in_browse(serve, ws_page):
+    from playwright.sync_api import expect
+    page, api, errors = ws_page
+    base = serve()
+    page.goto(base + '/datasets?view=browse')
+    page.locator('[data-testid="add-location-btn"]').click()
+    page.locator('#add-location-local').click()                                            # the drawer: Local tab first
+    drawer = page.locator('#add-drive-drawer')
+    expect(drawer.locator('[data-drive-tab]')).to_have_text(['Local / Mounted', 'Rclone Remote', 'From Scan'])
+    expect(drawer.locator('#drive-tab-local')).to_be_visible()
+    drawer.locator('[data-drive-tab="rclone"]').click()
+    expect(drawer.locator('#drive-tab-rclone')).to_be_visible()                           # unchanged
+    drawer.locator('[data-drive-tab="scan"]').click()
+    expect(drawer.locator('#drive-tab-scan')).to_be_visible()
+    expect(drawer.locator('#drv-scan-select option')).to_have_count(1)                     # select scan
+    expect(drawer.locator('#drv-scan-chosen')).to_have_text(SCAN_ROOT)                     # scan root by default
+    expect(drawer.locator('#drv-scan-label')).to_have_value('share')
+    drawer.locator('#drv-scan-folders button', has_text='raw').click()                     # or an indexed descendant
+    expect(drawer.locator('#drv-scan-chosen')).to_have_text(SCAN_ROOT + '/raw')
+    drawer.locator('#drv-scan-label').fill('Synthetic drawer drive')                      # editable label
+    drawer.locator('#drv-scan-save').click()
+    assert json.loads(page.evaluate(f"localStorage.getItem('{LOC_KEY}')")) == [
+        {'label': 'Synthetic drawer drive', 'scan_id': 's1', 'root_path': SCAN_ROOT + '/raw', 'access_mode': 'indexed'}]
+    assert not [p for p, _ in api.posts if p.startswith('/api/')], api.posts               # nothing written server-side
+    expect(drawer).not_to_have_class(__import__('re').compile('open'))                      # drawer closed
+    assert 'view=browse' in page.url and 'view=scans' not in page.url
+    banner = page.locator('[data-testid="indexed-banner"]')
+    expect(banner).to_be_visible()
+    expect(banner).to_contain_text('raw files cannot be opened from here')
+    expect(page.locator('#breadcrumb-nav')).to_contain_text('Synthetic drawer drive')
+    expect(page.locator('[data-testid="saved-locations"] .loc-node [data-testid="location-badge"]')).to_have_text('Indexed')
+    expect(page.locator('#file-list tr[data-id]')).to_have_count(2)
+    page.locator(f'.row-cb[data-id="{SCAN_ROOT}/a.csv"]').check()                          # standard selection + collection
+    page.locator('#add-to-coll-btn').click()
+    expect(page.locator('#cb-pill')).to_have_text('Collection · 1 pick')
+    # A drive created from another page lands in Browse through ?open_scan=&open_path=.
+    page.goto(base + '/datasets?view=browse&open_scan=s1&open_path=' + SCAN_ROOT + '/raw')
+    expect(banner).to_be_visible()
+    assert not errors, errors
+
+
+def test_browser_the_collection_bubble_never_sits_above_an_open_overlay_and_returns_after(serve, ws_page):
+    from playwright.sync_api import expect
+    page, _, errors = ws_page
+    page.goto(serve() + '/datasets?view=browse')
+    pill = page.locator('#cb-pill')
+    visibility = lambda sel: page.evaluate("(s) => getComputedStyle(document.querySelector(s)).visibility", sel)  # noqa: E731
+    expect(pill).to_be_visible()
+    page.locator('#cb-pill').click()                                                       # basket panel open: still shown
+    assert visibility('#cb-panel') == 'visible'
+    page.locator('[data-testid="add-location-btn"]').click()
+    page.locator('#add-location-local').click()                                            # Add Drive drawer opens
+    expect(page.locator('#add-drive-drawer')).to_have_class(__import__('re').compile('open'))
+    assert visibility('#cb-pill') == 'hidden' and visibility('#cb-panel') == 'hidden'
+    page.locator('#add-drive-drawer [data-close-drawer]').first.click()
+    expect(pill).to_be_visible()                                                           # available again
+    assert visibility('#cb-panel') == 'visible'
+    # Any other modal, plan panel or dialog hides it the same way.
+    for markup in ('<div id="t-modal" aria-modal="true" role="dialog">x</div>', '<div class="modal show" id="t-modal">x</div>'):
+        page.evaluate("(h) => document.body.insertAdjacentHTML('beforeend', h)", markup)
+        assert visibility('#cb-pill') == 'hidden', markup
+        page.evaluate("document.getElementById('t-modal').remove()")
+        assert visibility('#cb-pill') == 'visible'
+    page.evaluate("document.getElementById('collection-plan-panel').hidden = false")      # the plan panel (a page element) opens
+    assert visibility('#cb-pill') == 'hidden'
+    page.evaluate("document.getElementById('collection-plan-panel').hidden = true")
+    assert visibility('#cb-pill') == 'visible'
+    assert not errors, errors
+
+
+def test_browser_browse_is_framed_like_the_other_datasets_views(serve, ws_page):
+    page, _, errors = ws_page
+    base = serve()
+    page.set_viewport_size({'width': 1400, 'height': 900})
+    frame = """() => { const m = document.querySelector('main'); const f = document.querySelector('.files-page'); const r = f.getBoundingClientRect(), cs = getComputedStyle(f);
+        return {pad: parseFloat(getComputedStyle(m).paddingLeft), left: r.left, radius: parseFloat(cs.borderTopLeftRadius), border: parseFloat(cs.borderTopWidth),
+                shell: getComputedStyle(document.body).backgroundColor, card: cs.backgroundColor, bottom: r.bottom, vh: innerHeight, table: !!document.querySelector('.files-page .file-table')}; }"""
+    page.goto(base + '/datasets?view=browse')
+    page.wait_for_selector('.files-page .file-table')
+    got = page.evaluate(frame)
+    assert got['pad'] >= 20 and got['left'] > 190 + got['pad'] - 1          # page padding beside the 190px shell nav
+    assert got['radius'] >= 10 and got['border'] >= 1                        # rounded, bordered workspace container
+    assert got['card'] != got['shell'] and got['table']                      # separated from the shell; dense table inside
+    assert got['bottom'] < got['vh'] - 8                                     # a visible buffer below
+    page.goto(base + '/datasets?view=datasets')
+    assert page.evaluate("parseFloat(getComputedStyle(document.querySelector('main')).paddingLeft)") == got['pad']   # same padding as Datasets
+    assert not errors, errors
+
+
 # ── the cached candidate list gives the same pages as the plain merge, and refreshes when the index changes ──
 
 def test_cached_pages_match_the_plain_catalog_and_refresh_when_the_index_changes(signed_in):

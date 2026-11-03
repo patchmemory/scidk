@@ -1,4 +1,4 @@
-{# Add Drive drawer — Local / Mounted and Rclone Remote tabs
+{# Add Drive drawer — Local / Mounted, Rclone Remote and Scan (indexed) tabs
    Requires: drawers.css, drawers.js, add_drive.js
    Open with: window.Drawers.open('add-drive-drawer')
               window.AddDrive.open()
@@ -16,6 +16,7 @@
   <div class="sharing-tabs" role="tablist">
     <button class="sharing-tab active" data-drive-tab="local"  role="tab">Local / Mounted</button>
     <button class="sharing-tab"        data-drive-tab="rclone" role="tab">Rclone Remote</button>
+    <button class="sharing-tab"        data-drive-tab="scan"   role="tab" data-testid="drive-tab-scan-btn">From Scan</button>
   </div>
 
   <!-- ── Local / Mounted tab ── -->
@@ -135,6 +136,36 @@
            style="letter-spacing:.06em;">Existing rclone remotes</div>
       <div id="rclone-existing" class="small text-muted">Loading…</div>
     </div>
+  </div>
+
+  <!-- ── From Scan tab: a logical, index-backed Drive ── -->
+  <div class="sharing-tab-panel" id="drive-tab-scan" data-testid="drive-tab-scan">
+    <p class="drawer-hint" style="margin-bottom:12px;">
+      Add a logical Drive whose root is a folder in an existing Scan. It is browsed from the
+      read-only scan index (<strong>Indexed</strong>): raw files cannot be opened from here.
+    </p>
+    <div class="drawer-field">
+      <label for="drv-scan-select">Scan</label>
+      <select id="drv-scan-select" class="form-select form-select-sm" style="font-size:12px;"></select>
+    </div>
+    <div class="drawer-field">
+      <label>Scan root or indexed folder</label>
+      <div id="drv-scan-crumbs" data-testid="drv-scan-crumbs" class="small" style="word-break:break-all;"></div>
+      <div id="drv-scan-folders" data-testid="drv-scan-folders"
+           style="border:1px solid #dee2e6;border-radius:6px;max-height:180px;overflow-y:auto;margin:4px 0;padding:4px;"></div>
+      <div class="drawer-hint">Chosen: <span id="drv-scan-chosen" style="word-break:break-all;"></span></div>
+    </div>
+    <div class="drawer-field">
+      <label for="drv-scan-label">Display label</label>
+      <input type="text" id="drv-scan-label" class="form-control form-control-sm" maxlength="120"
+             placeholder="e.g. Imaging core, Cohort A">
+    </div>
+    <div class="d-flex gap-2">
+      <button class="btn btn-sm btn-primary" id="drv-scan-save" onclick="AddDrive.addFromScan()">Add Drive</button>
+      <button class="btn btn-sm btn-outline-secondary" data-close-drawer>Cancel</button>
+    </div>
+    <div class="drawer-hint mt-2">Saved in this browser only; nothing is written to the scan index or the graph.</div>
+    <div id="drv-scan-status" class="small mt-2" role="status"></div>
   </div>
 
 </div>

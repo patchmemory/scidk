@@ -1,5 +1,5 @@
 /**
- * add_drive.js — Add Drive drawer (Local / Rclone tabs)
+ * add_drive.js — Add Drive drawer (Local / Rclone / From Scan tabs)
  * Exposes: window.AddDrive
  *   .open()             — open the drawer and load existing remotes
  *   .pickLocalPath(p)   — fill local path input
@@ -8,6 +8,7 @@
  *   .onTypeChange()     — show/hide type-specific fields
  *   .authorize()        — OAuth flow
  *   .testConnection()   — test a named remote
+ *   .addFromScan()      — save an indexed logical Drive {label, scan_id, root_path, access_mode} locally and open it in Browse
  */
 ;(function(global) {
   'use strict';
@@ -205,6 +206,100 @@
     } catch { el.textContent = 'Could not load existing remotes.'; }
   }
 
+  // ── From Scan tab: a logical Drive rooted at a folder of an existing Scan ──────────────────────────
+  // Saved as { label, scan_id, root_path, access_mode: 'indexed' } in this browser's localStorage (the same
+  // list Browse > Locations reads). Nothing is written to the scan index, files.db or the graph.
+  const LOC_KEY = 'scidk.browse.locations.v1';
+  const S = { scans: null, scan: null, path: '', labelEdited: false, loading: false };
+  const baseName = p => (p || '').replace(/\/+$/, '').split('/').pop() || p || '';
+  function savedLocations() {
+    try { const v = JSON.parse(localStorage.getItem(LOC_KEY) || '[]'); return Array.isArray(v) ? v.filter(x => x && x.scan_id && x.root_path) : []; }
+    catch { return []; }
+  }
+
+  async function loadScanFolders() {
+    const list = document.getElementById('drv-scan-folders'), crumbs = document.getElementById('drv-scan-crumbs');
+    if (!list || !crumbs) return;
+    list.replaceChildren(); crumbs.replaceChildren();
+    if (!S.scan) return;
+    const root = S.scan.root.replace(/\/+$/, '') || '/';
+    const rel = S.path.startsWith(root) ? S.path.slice(root.length).replace(/^\/+/, '') : '';
+    const parts = [{ name: root, path: S.scan.root }];
+    let acc = root === '/' ? '' : root;
+    rel.split('/').filter(Boolean).forEach(seg => { acc += '/' + seg; parts.push({ name: seg, path: acc }); });
+    parts.forEach((p, i) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'btn btn-sm btn-link p-0'; b.textContent = (i ? ' / ' : '') + p.name;
+      b.addEventListener('click', () => pickScanFolder(p.path));
+      crumbs.append(b);
+    });
+    document.getElementById('drv-scan-chosen').textContent = S.path;
+    const lbl = document.getElementById('drv-scan-label');
+    if (lbl && !S.labelEdited) lbl.value = baseName(S.path) || S.scan.share || '';
+    const want = S.path;
+    try {
+      const r = await fetch(BASE() + '/api/external-index/browse?' + new URLSearchParams({ scan_id: S.scan.id, path: S.path }));
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+      if (S.path !== want) return;
+      const dirs = (j.entries || []).filter(e => e.type === 'folder');
+      if (!dirs.length) { list.innerHTML = '<div class="small text-muted p-1">No subfolders here.</div>'; return; }
+      dirs.forEach(e => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'btn btn-sm btn-outline-secondary d-block w-100 text-start mb-1';
+        b.style.fontSize = '12px'; b.textContent = '\u{1F4C1} ' + e.name; b.title = e.path; b.dataset.path = e.path;
+        b.addEventListener('click', () => pickScanFolder(e.path));
+        list.append(b);
+      });
+      if (j.has_more) list.insertAdjacentHTML('beforeend', `<div class="small text-muted">More folders exist; the first ${dirs.length} are shown.</div>`);
+    } catch (e) { list.innerHTML = `<div class="small text-danger p-1">Folders unavailable: ${esc(e.message)}</div>`; }
+  }
+  function pickScanFolder(path) { S.path = path; S.labelEdited = false; loadScanFolders(); }
+  function chooseScan(id) {
+    const s = S.scans && S.scans.find(x => x.id === id);
+    if (!s) return;
+    S.scan = s; S.path = s.root; S.labelEdited = false; loadScanFolders();
+  }
+
+  async function loadScanTab() {
+    const sel = document.getElementById('drv-scan-select');
+    if (!sel || S.loading) return;
+    if (S.scans) return;            // already loaded for this page view
+    S.loading = true; setStatus('drv-scan-status', 'Loading scans…');
+    try {
+      const r = await fetch(BASE() + '/api/external-index/scans');
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+      S.scans = (j.scans || []).filter(s => s.files && s.complete);
+      sel.replaceChildren();
+      S.scans.forEach(s => {
+        const o = document.createElement('option');
+        o.value = s.id;
+        o.textContent = [s.host, s.share].filter(Boolean).join(' / ') + ' — ' + s.root + (s.date ? ' (' + s.date + ')' : '');
+        sel.append(o);
+      });
+      setStatus('drv-scan-status', S.scans.length ? '' : 'No scans with files are available.');
+      if (S.scans.length) chooseScan(S.scans[0].id);
+    } catch (e) { setStatus('drv-scan-status', 'The scan index is unavailable: ' + e.message, false); }
+    finally { S.loading = false; }
+  }
+  document.getElementById('drv-scan-select')?.addEventListener('change', e => chooseScan(e.target.value));
+  document.getElementById('drv-scan-label')?.addEventListener('input', () => { S.labelEdited = true; });
+
+  // Save the shortcut, close the drawer and open it in Datasets > Browse (index-backed).
+  function addFromScan() {
+    if (!S.scan) { setStatus('drv-scan-status', 'Choose a scan first', false); return; }
+    const label = (document.getElementById('drv-scan-label')?.value || '').trim() || baseName(S.path) || S.scan.share || S.path;
+    const loc = { label, scan_id: S.scan.id, root_path: S.path, access_mode: 'indexed' };
+    const list = savedLocations();
+    const dupe = list.some(x => x.scan_id === loc.scan_id && x.root_path === loc.root_path);
+    if (!dupe) { list.push(loc); localStorage.setItem(LOC_KEY, JSON.stringify(list)); }
+    setStatus('drv-scan-status', dupe ? 'This folder is already a Drive — opening it.' : `✓ Drive added — ${label} (Indexed)`, true);
+    window.Drawers.close();
+    if (global.BrowseLocations) global.BrowseLocations.opened(loc);
+    else location.href = BASE() + '/datasets?' + new URLSearchParams({ view: 'browse', open_scan: loc.scan_id, open_path: loc.root_path });
+  }
+
   // Tab switching
   document.addEventListener('click', e => {
     const tab = e.target.closest('[data-drive-tab]');
@@ -213,11 +308,12 @@
     document.querySelectorAll('#add-drive-drawer .sharing-tab-panel').forEach(p =>
       p.classList.toggle('active', p.id === `drive-tab-${tab.dataset.driveTab}`)
     );
+    if (tab.dataset.driveTab === 'scan') loadScanTab();
   });
 
   // Add drive button in sidebar
   document.getElementById('add-drive-btn')?.addEventListener('click', open);
 
-  global.AddDrive = { open, pickLocalPath, addLocal, onTypeChange, authorize, addRclone, testConnection };
+  global.AddDrive = { open, pickLocalPath, addLocal, onTypeChange, authorize, addRclone, testConnection, addFromScan };
 
 })(window);

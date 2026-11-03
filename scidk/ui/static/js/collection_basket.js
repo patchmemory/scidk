@@ -159,7 +159,13 @@
 #cb-panel .cb-card{border:1px solid #dee2e6;border-radius:6px;padding:6px 8px;margin-top:6px}
 #cb-panel .cb-card.is-open{border-color:#0a58ca;background:#f1f6ff}
 #cb-panel .cb-card .cb-name{font-weight:600;font-size:12px}
-.coll-add-cb{margin-right:6px}`);
+.coll-add-cb{margin-right:6px}
+/* The basket never sits above an open drawer, modal or plan panel: it is hidden while one is open and returns when it closes. */
+body:has(.side-drawer.open) #cb-pill,body:has(.side-drawer.open) #cb-panel,
+body:has(.modal.show) #cb-pill,body:has(.modal.show) #cb-panel,
+body:has(dialog[open]) #cb-pill,body:has(dialog[open]) #cb-panel,
+body:has([aria-modal="true"]:not(.side-drawer):not([hidden])) #cb-pill,body:has([aria-modal="true"]:not(.side-drawer):not([hidden])) #cb-panel,
+body:has(#collection-plan-panel:not([hidden])) #cb-pill,body:has(#collection-plan-panel:not([hidden])) #cb-panel{visibility:hidden;pointer-events:none}`);
     document.head.appendChild(style);
     const pill = el('button', '', {id: 'cb-pill', type: 'button', title: 'Collection panel'});
     pill.setAttribute('data-testid', 'collection-basket-pill');
