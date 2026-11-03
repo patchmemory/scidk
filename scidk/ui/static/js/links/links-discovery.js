@@ -30,6 +30,87 @@ function krNavLinks() {
     <a href="${base}/knowledge?view=maps" data-testid="relationships-to-maps">Open Maps to see them on the graph</a></p>`;
 }
 
+// ----- Catalog data: one narrow primary-graph summary, cached per session and refreshed quietly -----
+const KR_SUMMARY_CACHE_MAX_AGE_MS = 10 * 60 * 1000; // a stale-but-recent copy is shown at once while a fresh one loads
+let krSummaryFingerprint = null;
+
+function krCacheKey() { return 'scidk.relationships.summary:' + krBase(); }
+
+function krReadSessionCache() {
+  try {
+    const stored = JSON.parse(window.sessionStorage.getItem(krCacheKey()) || 'null');
+    if (stored && Array.isArray(stored.types) && Date.now() - Number(stored.saved_at || 0) <= KR_SUMMARY_CACHE_MAX_AGE_MS) return stored;
+  } catch (e) { /* storage unavailable or corrupt: behave as if there is no cache */ }
+  return null;
+}
+
+function krWriteSessionCache(summary) {
+  try { window.sessionStorage.setItem(krCacheKey(), JSON.stringify({types: summary.types, generated_at: summary.generated_at, saved_at: Date.now()})); } catch (e) { /* ignore */ }
+}
+
+// The catalog rows the list renderer already understands: one row per source -> relationship -> target pattern.
+function krRowsFromSummary(summary) {
+  const rows = [];
+  (summary.types || []).forEach(t => (t.patterns || []).forEach(p => rows.push({
+    source_label: p.source_label, rel_type: t.rel_type, target_label: p.target_label,
+    triple_count: Number(p.edge_count || 0), database: 'PRIMARY'
+  })));
+  return rows;
+}
+
+function krSetFreshness(text) {
+  const el = document.getElementById('kr-freshness');
+  if (el) el.textContent = text || '';
+}
+
+function krClock(epochSeconds) {
+  const d = epochSeconds ? new Date(epochSeconds * 1000) : new Date();
+  return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+}
+
+function krApplySummary(summary, quiet) {
+  const rows = krRowsFromSummary(summary);
+  const fingerprint = JSON.stringify(rows);
+  const unchanged = discoveryState === 'ready' && fingerprint === krSummaryFingerprint;
+  krSummaryFingerprint = fingerprint;
+  discoveredRelationships = rows;
+  discoveryState = 'ready';
+  if (quiet && unchanged) return; // nothing new to draw; leave the list, scroll position and selection alone
+  populateFilterDropdowns();
+  renderLinkList();
+}
+
+// Load the Knowledge catalog. `refresh` (the Refresh button) forces a new query; otherwise a recent copy in this
+// browser session is drawn immediately and then re-checked quietly in the background.
+function loadKnowledgeSummary(refresh) {
+  const cached = refresh ? null : krReadSessionCache();
+  if (cached) {
+    krApplySummary(cached, false);
+    krSetFreshness('Showing the last result \u2014 updating\u2026');
+  } else {
+    discoveryState = 'loading';
+    krSummaryFingerprint = null;
+    krSetFreshness('');
+    renderLinkList();
+  }
+  return fetch(krBase() + '/api/links/graph-summary' + (refresh ? '?refresh=1' : ''))
+    .then(r => r.json().then(data => ({ok: r.ok, data})))
+    .then(({ok, data}) => {
+      if (!ok || data.status !== 'success') throw new Error(data.error || 'Summary failed');
+      krWriteSessionCache(data);
+      krApplySummary(data, !!cached);
+      krSetFreshness(`Updated ${krClock(data.generated_at)}${data.cached ? ` (cached ${Math.round(data.age_seconds)}s ago)` : ''}`);
+    })
+    .catch(err => {
+      console.warn('Failed to load relationship summary:', err);
+      if (cached) { krSetFreshness('Showing the last result \u2014 could not update. Use Refresh to retry.'); return; }
+      discoveredRelationships = [];
+      discoveryState = 'error';
+      populateFilterDropdowns();
+      renderLinkList();
+    });
+}
+
 // Shown whenever nothing is selected, so the right side is never an unexplained blank area.
 function renderKnowledgeOverview() {
   const types = graphRelationshipTypes().slice().sort((a, b) => b.edge_count - a.edge_count);

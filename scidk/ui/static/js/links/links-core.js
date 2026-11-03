@@ -375,7 +375,7 @@ function initializeEventListeners() {
       }
 
       // Step 2: Rescan external graphs for available relationships
-      await loadDiscoveredRelationships();
+      await loadDiscoveredRelationships(true);
 
       // Step 3: Reload all link definitions (promotion happens server-side)
       if (!isKnowledgeMode()) await loadLinkDefinitions();
@@ -523,7 +523,9 @@ function loadLinkDefinitions() {
     .catch(err => showToast('Failed to load link definitions', 'error'));
 }
 
-function loadDiscoveredRelationships() {
+function loadDiscoveredRelationships(refresh) {
+  // Knowledge reads a narrow primary-graph summary (cached; Refresh bypasses it) instead of scanning every profile
+  if (isKnowledgeMode()) return loadKnowledgeSummary(!!refresh);
   discoveryState = 'loading';
   renderLinkList();
   return fetch(window.SCIDK_BASE + '/api/links/discovered')

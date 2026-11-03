@@ -494,6 +494,43 @@ def verify_active_links():
         }), 500
 
 
+@bp.after_request
+def _invalidate_relationship_summary_after_write(response):
+    """A successful write through the links API makes the cached relationship summary stale."""
+    try:
+        if request.method not in ('GET', 'HEAD', 'OPTIONS') and response.status_code < 400:
+            from ...services import relationship_summary
+            relationship_summary.invalidate()
+    except Exception:
+        logger.debug("Could not invalidate relationship summary cache", exc_info=True)
+    return response
+
+
+@bp.route('/links/graph-summary', methods=['GET'])
+def graph_relationship_summary():
+    """
+    Read-only catalog of the relationships in the PRIMARY graph (Knowledge -> Relationships).
+
+    Query params:
+    - refresh: truthy (1/true/yes) bypasses the short-lived cache and re-queries the graph.
+
+    Returns, per relationship type: edge count, observed source/target labels and source->target
+    pattern counts. No external profiles are queried and no per-edge detail is returned; examples are
+    fetched on demand when a relationship is opened.
+    """
+    try:
+        from ...services import relationship_summary
+        refresh = (request.args.get('refresh') or '').strip().lower() in ('1', 'true', 'yes')
+        summary = relationship_summary.get_summary(app=current_app, refresh=refresh)
+        return jsonify(dict(summary, status='success')), 200
+    except Exception as e:
+        logger.exception("Failed to summarize relationships")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
 @bp.route('/links/discovered', methods=['GET'])
 def discover_relationships():
     """
