@@ -94,7 +94,7 @@ def test_settings_keeps_the_shared_blue_left_bracket_when_open(gui_page):
 def test_guidance_shell_sends_nothing_and_fabricates_no_answer(gui_page):
     page, origin, app = gui_page
     page.goto(origin + '/review?view=guidance')       # the full-page Chat route (deep link); the dialog is covered in test_chat_workbench_browser
-    expect(page.get_by_test_id('guidance-provider-status')).to_contain_text('AI provider not configured')
+    expect(page.get_by_test_id('guidance-provider-status')).to_contain_text('Chat is unavailable')
     page.wait_for_load_state('networkidle')
     network = []
     page.on('request', lambda request: network.append(request.url))
@@ -211,7 +211,7 @@ def test_chat_labels_and_legacy_guidance_urls_make_no_provider_calls(gui_page):
     for url in ('/review?view=guidance', '/review/guidance'):
         page.goto(origin + url)
         expect(page.locator('#guidance-shell h1')).to_have_text('Chat')
-        expect(page.get_by_test_id('guidance-provider-status')).to_contain_text('AI provider not configured')
+        expect(page.get_by_test_id('guidance-provider-status')).to_contain_text('Chat is unavailable')
         assert 'Guidance' not in page.locator('#guidance-shell').inner_text()
     page.wait_for_load_state('networkidle')
     network, before = [], len(app.extensions['gui_test_requests'])

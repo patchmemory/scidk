@@ -146,7 +146,7 @@ def test_review_card_links_to_guidance_and_legacy_assertions_route_is_kept(clien
 @pytest.mark.parametrize('url', ['/review?view=guidance', '/review/guidance'])
 def test_guidance_shell_markup_is_static_and_honest(client, url):
     html = page(client, url)
-    assert 'data-provider-state="not-configured"' in html and 'AI provider not configured' in html
+    assert 'data-provider-state="not-configured"' in html and 'Chat is unavailable' in html
     assert 'data-testid="guidance-messages"' in html and 'data-testid="guidance-input"' in html
     assert 'guidance-back' not in html and 'Back to Review' not in html
     assert 'href="/overview" data-testid="chat-link-overview"' in html and 'href="/review" data-testid="chat-link-review"' in html
@@ -171,7 +171,7 @@ def test_review_shows_chat_and_keeps_both_legacy_guidance_urls(client):
         assert '<h1 class="ws-title">Chat</h1>' in html and '<title>SciDK \u2014 Review \u00b7 Chat</title>' in html
         assert 'Guidance' not in visible_text(html), url           # visible copy says Chat
         assert 'data-testid="guidance-shell"' in html               # compatibility ids are unchanged
-        assert 'data-provider-state="not-configured"' in html and 'AI provider not configured' in html
+        assert 'data-provider-state="not-configured"' in html and 'Chat is unavailable' in html
 
 
 # ------------------------------------------------ sidebar alignment, Sources layout, technical disclosure

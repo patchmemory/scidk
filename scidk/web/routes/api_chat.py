@@ -3221,3 +3221,23 @@ def api_overview_chat():
         result = overview_turn(ctx, body)
     status = {'success': 200, 'empty': 200, 'unavailable': 503, 'bounded': 422}.get(result['status'], 403)
     return jsonify(result), status, {'Cache-Control': 'no-store'}
+
+
+@bp.post('/chat/workbench')
+def api_chat_workbench():
+    """The one send path of the shared Chat workbench (inset dialog and full page).
+
+    Read-only general chat: only {message, send_question: true}; named same-origin session; refused under full_access;
+    approved destination required; no tools, context, history or writes (see services/workbench_chat.py)."""
+    from ..named_session import named_session
+    from ...agent_tools.context import context_from_app
+    from ...services import workbench_chat
+    headers = {'Cache-Control': 'no-store'}
+    try:
+        named_session()
+    except Exception:
+        return jsonify(status='unavailable', reason='session', error=workbench_chat.MESSAGES['session']), 401, headers
+    identity = context_from_app(current_app, channel='chat').identity
+    result = workbench_chat.turn(current_app, identity, request.get_json(silent=True))
+    code = {'success': 200, 'invalid': 400, 'rate_limited': 429, 'refused': 200, 'unavailable': 503}.get(result['status'], 503)
+    return jsonify(result), code, headers

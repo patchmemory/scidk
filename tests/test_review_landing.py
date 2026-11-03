@@ -251,7 +251,7 @@ def test_chat_without_prefill_is_empty_honest_and_makes_no_provider_call(app, mo
     page = html(app, path)
     assert requests == [path.split('?')[0]]
     assert 'data-testid="guidance-shell"' in page and 'data-provider-state="not-configured"' in page
-    assert 'AI provider not configured' in page and 'data-testid="guidance-input"' in page
+    assert 'Chat is unavailable' in page and 'data-testid="guidance-input"' in page
     assert '<h1 class="ws-title">Chat</h1>' in page and 'guidance-back' not in page and 'Back to Review' not in page
     assert re.search(r'<textarea id="guidance-input"[^>]*></textarea>', page) and 'data-prefilled="true"' not in page
     for banned in BANNED_SCRIPT:
@@ -271,7 +271,7 @@ def test_prefill_fills_only_the_input_escaped_and_never_submits(app, monkeypatch
     assert 'data-prefilled="true"' in page
     messages = page[page.index('id="guidance-messages"'):page.index('id="guidance-form"')]
     assert 'gd-msg user' not in messages and 'gd-msg notice' not in messages
-    assert 'AI provider not configured' in page
+    assert 'Chat is unavailable' in page
 
 
 def test_prefill_is_bounded_and_whitespace_trimmed(app):
@@ -433,7 +433,7 @@ def test_overview_and_review_open_the_same_shared_chat_workbench_dialog(app, pat
     assert re.search(r'<button type="button" class="cw-close"[^>]*aria-label="Close Chat"', dialog)
     assert not re.search(r'<dialog[^>]*\bopen\b', dialog)                                    # closed on arrival
     assert not re.search(r'<details class="gd-advanced"[^>]*\bopen\b', dialog)               # Advanced collapsed
-    assert 'AI provider not configured' in dialog and 'data-provider-state="not-configured"' in dialog
+    assert 'Chat is unavailable' in dialog and 'data-provider-state="not-configured"' in dialog
     assert 'guidance-input' not in dialog[dialog.index('<details class="gd-advanced"'):dialog.index('</details>')]
 
 

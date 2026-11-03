@@ -26,7 +26,7 @@ def test_overview_launcher_opens_and_closes_the_workbench_without_navigation(gui
     expect(page.get_by_test_id('guidance-input')).to_be_focused()
     expect(page.get_by_test_id('guidance-user-message')).to_have_count(0)
     expect(page.get_by_test_id('chat-history-empty')).to_contain_text('No conversations available yet')
-    expect(page.get_by_test_id('guidance-provider-status')).to_contain_text('AI provider not configured')
+    expect(page.get_by_test_id('guidance-provider-status')).to_contain_text('Chat is unavailable')
     summary = page.locator('#chat-workbench #advanced-query > summary')
     summary.click()
     expect(page.locator('#chat-workbench #overview-question')).to_be_visible()

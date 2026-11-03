@@ -4,10 +4,14 @@
     cw_mode == 'dialog'  an inset modal (<dialog id="chat-workbench">) that Overview and Review open over themselves.
 
   Honest by construction, in both modes:
-    * no fetch / XHR / WebSocket / beacon, no form submission, no storage, no cookie: the draft lives only in this
-      page's DOM, so it survives interactions inside the workbench (Advanced toggling) and is gone when the page is left;
-    * no fabricated answer or conversation: sending shows the person's own message and a plain "not sent" notice;
-    * the provider state is explicit (`data-provider-state`, "AI provider not configured");
+    * the ONLY network call is one POST to /api/chat/workbench (js/workbench_chat.js, loaded only when the server derived
+      `ready` for this user), made only when the person presses Ask (fail closed otherwise: nothing is sent, and this
+      inline script has no network code at all). No storage, no cookie, no history:
+      the draft and the answers live only in this page's DOM and are gone when the page is left;
+    * no fabricated answer or conversation: an unavailable state shows the person's own message and the server's coarse reason;
+      a ready state shows only what the governed provider returned, as text;
+    * the provider state is explicit (`data-provider-state`: configured / not-configured) and comes from the server
+      (`chat_workbench_state()`), never from the browser;
     * history: `chat_history` is only ever filled from real, configured conversation infrastructure. Today it is empty,
       so the rail shows a plain empty state. Nothing here invents a sample conversation.
   Launchers on the host page remain ordinary links / GET forms to the full-page route (they work without script); the
@@ -18,8 +22,10 @@
   It does nothing until the person ticks the consent box and submits.
 #}
 {% set cw_dialog = (cw_mode == 'dialog') %}
+{% set cw_state = chat_workbench_state() if chat_workbench_state is defined else {'ready': False, 'reason': '', 'message': ''} %}
+{% set provider_configured = cw_state.ready %}
 {% if cw_dialog %}<dialog class="cw-dialog" id="chat-workbench" data-testid="chat-workbench" aria-labelledby="cw-title">{% endif %}
-<section class="guidance-shell cw-shell{% if cw_dialog %} cw-in-dialog{% endif %}" id="guidance-shell" data-testid="guidance-shell" data-provider-state="{{ 'configured' if provider_configured else 'not-configured' }}">
+<section class="guidance-shell cw-shell{% if cw_dialog %} cw-in-dialog{% endif %}" id="guidance-shell" data-testid="guidance-shell" data-provider-state="{{ 'configured' if provider_configured else 'not-configured' }}" data-send-url="{{ request.script_root }}/api/chat/workbench">
 <div class="gd-head">
 {% if cw_dialog %}<h2 class="ws-title" id="cw-title">Chat</h2>
 <div class="cw-actions"><a class="cw-full" href="{{ request.script_root }}/review?view=guidance" data-testid="chat-open-full">Open full page</a><button type="button" class="cw-close" id="chat-workbench-close" data-testid="chat-workbench-close" aria-label="Close Chat">Close <span aria-hidden="true">&times;</span></button></div>
@@ -27,27 +33,40 @@
 <nav class="gd-links" aria-label="Go to" data-testid="chat-links"><a href="{{ request.script_root }}/overview" data-testid="chat-link-overview">Overview</a><a href="{{ request.script_root }}/review" data-testid="chat-link-review">Review workspace</a></nav>
 {% endif %}
 </div>
+{% if provider_configured %}
+<p class="ws-lede" id="guidance-welcome" data-testid="guidance-welcome">Ask a general question about research data management, such as how to organize files or prepare metadata. In this version Chat does not read your SciDK data and does not keep a history.</p>
+{% else %}
 <p class="ws-lede" id="guidance-welcome" data-testid="guidance-welcome">Ask about your science data: how things relate, what to organize next, or how to prepare metadata. Chat will draw on the sources you are allowed to use, and it will say where each answer came from.</p>
+{% endif %}
 
 <div class="cw-body">
 <div class="cw-main">
 <div class="gd-window" role="group" aria-labelledby="gd-window-title">
   <h2 id="gd-window-title" class="sr-only" style="position:absolute;left:-9999px">Chat conversation</h2>
   <div class="gd-status" id="guidance-provider-status" data-testid="guidance-provider-status" role="status">
+{% if provider_configured %}
+    <i class="ti ti-plug" aria-hidden="true"></i>
+    <div><strong>Chat is connected to your approved AI provider.</strong> Your message is sent only when you press Ask. Nothing from SciDK is added to it, and nothing is saved.</div>
+{% else %}
     <i class="ti ti-plug-off" aria-hidden="true"></i>
-    <div><strong>AI provider not configured.</strong> Chat cannot answer yet. Nothing you type here is sent anywhere, and no answers are generated or stored.</div>
+    <div><strong>Chat is unavailable.</strong> {{ cw_state.message or 'The AI provider is not configured.' }} Nothing you type here is sent anywhere, and no answers are generated or stored.</div>
+{% endif %}
   </div>
   <div class="gd-messages" id="guidance-messages" data-testid="guidance-messages" role="log" aria-live="polite" aria-label="Chat messages">
+{% if provider_configured %}
+    <div class="gd-msg system" data-testid="guidance-welcome-message">Hello. Ask a general question. Chat sees only what you type: it does not read your datasets, collections or graph, and it cannot change anything.</div>
+{% else %}
     <div class="gd-msg system" data-testid="guidance-welcome-message">Hello. Once an AI provider is connected, you can ask questions here about the datasets, collections and graph you have access to. For now this window shows what the conversation will look like.</div>
+{% endif %}
   </div>
   <form class="gd-form" id="guidance-form" data-testid="guidance-form" autocomplete="off" onsubmit="return false">
-    <label for="guidance-input">Your message (a draft: nothing is sent)</label>
+    <label for="guidance-input">{% if provider_configured %}Your message (sent only when you press Ask){% else %}Your message (a draft: nothing is sent){% endif %}</label>
     <textarea id="guidance-input" data-testid="guidance-input" rows="2" maxlength="4000" placeholder="Ask a question about your data…" aria-describedby="guidance-provider-status"{% if prefill %} autofocus data-prefilled="true"{% endif %}>{{ prefill }}</textarea>
     <button type="submit" class="primary" id="guidance-send" data-testid="guidance-send">Ask</button>
   </form>
 </div>
 
-{% if not cw_dialog %}
+{% if not cw_dialog and not provider_configured %}
 <div class="gd-hints" data-testid="guidance-hints">
   <strong>What you will be able to ask</strong>
   <ul>
@@ -82,7 +101,7 @@
 {% if chat_history %}
 <ul class="cw-rail-list" data-testid="chat-history-list">{% for item in chat_history %}<li><a href="{{ request.script_root }}{{ item.href }}">{{ item.title }}</a></li>{% endfor %}</ul>
 {% else %}
-<p class="cw-rail-empty" data-testid="chat-history-empty">No conversations available yet. Conversation history will appear when Chat is configured.</p>
+<p class="cw-rail-empty" data-testid="chat-history-empty">{% if provider_configured %}No conversations available yet. Chat does not keep a history: messages are not saved.{% else %}No conversations available yet. Conversation history will appear when Chat is configured.{% endif %}</p>
 {% endif %}
 </aside>
 </div>
@@ -90,8 +109,10 @@
 {% if cw_dialog %}</dialog>{% endif %}
 <script>
 (function () {
-  // In-page only: reads the draft box and appends to the message list. No network request, nothing written to storage;
-  // the state notice is the only "reply". Launcher text only ever fills the draft: it is never sent.
+  // In-page only: reads the draft box and appends to the message list. No network code lives here; when the server says
+  // Chat is ready the explicit Ask is handed (cw:ask) to js/workbench_chat.js, which is loaded only in that state.
+  // Otherwise the state notice is the only "reply". Nothing is written to storage.
+  // Launcher text only ever fills the draft: it is never sent.
   var form = document.getElementById('guidance-form');
   var input = document.getElementById('guidance-input');
   var list = document.getElementById('guidance-messages');
@@ -108,11 +129,15 @@
   }
   function send() {
     var text = (input.value || '').trim();
-    if (!text) { input.focus(); return; }
+    if (!text || shell.getAttribute('data-busy') === 'true') { input.focus(); return; }
     add('user', text, 'guidance-user-message');
     input.value = '';
     if (shell.getAttribute('data-provider-state') !== 'configured') {
-      add('notice', 'AI provider not configured. Your question was not sent anywhere and no answer was generated.', 'guidance-not-configured-notice');
+      add('notice', 'Chat is unavailable. Your question was not sent anywhere and no answer was generated.', 'guidance-not-configured-notice');
+    } else if (shell.dispatchEvent(new CustomEvent('cw:ask', {cancelable: true, detail: {text: text}}))) {
+      // Nobody claimed the event (the ask script is missing): nothing was sent.
+      add('notice', 'Chat could not send your message. Reload the page and try again.', 'guidance-error-notice');
+      input.value = text;
     }
     input.focus();
   }
@@ -156,4 +181,5 @@
   });
 })();
 </script>
-<script defer src="{{ url_for('static', filename='js/overview_chat.js') }}"></script>
+{% if provider_configured %}<script defer src="{{ url_for('static', filename='js/workbench_chat.js') }}"></script>
+{% endif %}<script defer src="{{ url_for('static', filename='js/overview_chat.js') }}"></script>

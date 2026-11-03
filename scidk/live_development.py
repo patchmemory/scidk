@@ -80,6 +80,8 @@ def read_only_request():
     safe = ('/api/auth/', '/api/knowledge/', '/api/maps/saved', '/api/queries')
     if (request.path.startswith(safe) or request.path in {
             '/api/development/readiness', '/api/canvas/session', '/api/chat/overview',
+            # Shared Chat workbench: read-only, refused under full_access, fails closed (services/workbench_chat.py).
+            '/api/chat/workbench',
             '/api/graph/query', '/api/canvas/nodes/expand', '/api/canvas/nodes/verify',
             '/admin/chat-readiness',
             # Chat setup: save the caller's own provider setting and test it. The

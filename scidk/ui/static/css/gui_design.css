@@ -171,6 +171,7 @@
 .gui-v3 .gd-msg {max-width:80%;padding:10px 14px;border-radius:14px;font-size:14px;overflow-wrap:anywhere}
 .gui-v3 .gd-msg.system {background:#fff;border:1px solid var(--border);color:var(--fg)}
 .gui-v3 .gd-msg.user {align-self:flex-end;background:#245c8b;color:#fff}
+.gui-v3 .gd-msg.assistant {align-self:flex-start;background:#fff;border:1px solid var(--border);color:var(--fg);white-space:pre-wrap}
 .gui-v3 .gd-msg.notice {align-self:center;background:#fff7e6;border:1px solid #f1d9a6;color:#6a4b00;font-size:13px;max-width:90%}
 .gui-v3 .gd-form {display:flex;gap:10px;align-items:flex-end;padding:14px 18px;border-top:1px solid var(--border);background:var(--surface)}
 .gui-v3 .gd-form label {position:absolute;left:-9999px}

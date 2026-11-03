@@ -44,7 +44,19 @@ def gui_context():
             'overview_chat_enabled': current_app.config.get('SCIDK_OVERVIEW_CHAT_ENABLED') is True,
             'dataset_sharing_enabled': current_app.config.get('SCIDK_DATASET_SHARING_ENABLED') is True,
             'chat_readiness_enabled': current_app.config.get('SCIDK_CHAT_READINESS_ENABLED') is True,
-            'development_runtime_enabled': bool(current_app.extensions.get('development_runtime'))}
+            'development_runtime_enabled': bool(current_app.extensions.get('development_runtime')),
+            # Evaluated only by templates that render the Chat workbench; booleans and a coarse reason, never policy or keys.
+            'chat_workbench_state': _chat_workbench_state}
+
+
+def _chat_workbench_state():
+    from ...agent_tools.context import context_from_app
+    from ...services import workbench_chat
+    try:
+        identity = context_from_app(current_app, channel='chat').identity
+    except Exception:
+        identity = None
+    return workbench_chat.state(current_app, identity)
 
 
 @bp.get('/api/graph/management-connection')
@@ -84,8 +96,9 @@ def _gui_page(page):
         from ...services.review_landing import review_actions
         if (request.view_args or {}).get('guidance') or (
                 request.args.get('view') == 'guidance' and not request.args.get('domain') and not request.args.get('id')):
-            # The Chat shell (Guidance is the compatibility URL): a static page. No provider is configured, and nothing is
-            # called or stored. ``prefill`` only fills the input (escaped by the template); it is never submitted or kept.
+            # The Chat shell (Guidance is the compatibility URL). Provider readiness is derived on the server by the
+            # chat_workbench_state template function. ``prefill`` only fills the input (escaped by the template); it is
+            # never submitted or kept.
             from ...services.review_landing import PREFILL_MAX
             prefill = (request.args.get('prefill') or '').strip()[:PREFILL_MAX]
             if 'prefill' in request.args and not prefill:
@@ -93,7 +106,7 @@ def _gui_page(page):
                 from urllib.parse import urlencode
                 rest = [(k, v) for k, v in request.args.items(multi=True) if k != 'prefill']
                 return redirect(request.script_root + request.path + ('?' + urlencode(rest) if rest else ''))
-            return render_template('gui/review_guidance.html', provider_configured=False, prefill=prefill)
+            return render_template('gui/review_guidance.html', prefill=prefill)
         assertions_enabled = current_app.config.get('SCIDK_REVIEW_WORKSPACE_ENABLED') is True
         # Plain /review is the landing. The assertion-review workspace keeps its own URL (/review?view=assertions,
         # /review/assertions) and every legacy context deep link (/review?domain=...&id=...).
