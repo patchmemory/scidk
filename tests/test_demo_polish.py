@@ -165,7 +165,7 @@ def visible_text(html):
 def test_review_shows_chat_and_keeps_both_legacy_guidance_urls(client):
     landing = page(client, '/review')
     assert 'Open Chat' in visible_text(landing) and 'Get guidance' not in landing and 'Open Guidance' not in landing
-    assert 'Discuss in Chat' in visible_text(landing)
+    assert 'Ask Chat' in visible_text(landing)
     for url in ('/review?view=guidance', '/review/guidance'):
         html = page(client, url)
         assert '<h1 class="ws-title">Chat</h1>' in html and '<title>SciDK \u2014 Review \u00b7 Chat</title>' in html

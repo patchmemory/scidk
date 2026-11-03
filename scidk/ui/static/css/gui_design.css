@@ -105,23 +105,13 @@
 .gui-v3 button[aria-selected=true]:hover:not(:disabled) {background:#1b4b75;color:white;border-color:#1b4b75}
 
 /* Review landing: friendly launcher cards (catalogue in scidk/services/review_landing.py) */
-.gui-v3 .rl-prompt {font-size:24px;letter-spacing:-.025em;margin:26px 0 6px;color:var(--fg)}
-.gui-v3 .rl-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:22px}
-.gui-v3 .rl-card {display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:24px;box-shadow:var(--shadow);transition:border-color .12s,transform .12s}
-.gui-v3 .rl-card:hover {border-color:#91afcc;transform:translateY(-1px)}
-.gui-v3 .rl-card h3 {font-size:18px;margin:0 0 8px;letter-spacing:-.01em}
-.gui-v3 .rl-card>p {margin:0 0 16px;flex:1}
-.gui-v3 .rl-card p.rl-actions {display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin:0;flex:0}
+.gui-v3 .rl-prompt {font-size:20px;letter-spacing:-.02em;margin:18px 0 6px;color:var(--fg);font-weight:600}
 .gui-v3 .rl-primary {display:inline-block;padding:8px 14px;border-radius:9px;background:#245c8b;color:#fff;font-weight:600;text-decoration:none}
 .gui-v3 .rl-primary:hover {background:#1d4c73}
 .gui-v3 .rl-secondary {font-size:13px;font-weight:500}
-.gui-v3 .rl-future,.gui-v3 .rl-unavailable {background:#f7f9fb;border-style:dashed;box-shadow:none}
-.gui-v3 .rl-future:hover,.gui-v3 .rl-unavailable:hover {border-color:var(--border);transform:none}
 .gui-v3 .rl-note {font-size:13px;font-style:italic;margin:0;flex:0}
 .gui-v3 .rl-badge {display:inline-block;vertical-align:middle;margin-left:6px;padding:2px 9px;border-radius:20px;background:#e5ebf1;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
 .gui-v3 .rl-advanced {margin-top:28px;max-width:700px}
-@media(max-width:1100px) {.gui-v3 .rl-grid {grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:700px) {.gui-v3 .rl-grid {grid-template-columns:1fr}}
 
 /* ── Shared workspace chrome (one content column, one tab strip, one title scale) ─────────────────── */
 .gui-v3 {--col-max:1440px;--gap:18px;--tab-h:42px}
@@ -204,7 +194,6 @@
 .gui-v3 .chat-launcher input[type=text]:focus-visible {outline:3px solid #2882c9;outline-offset:2px}
 .gui-v3 .chat-launcher:focus-within {border-color:#91afcc}
 .gui-v3 .chat-launcher button {white-space:nowrap}
-.gui-v3 .home-cards {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:6px}
 .gui-v3 .ws-status {margin:26px 0 0;padding:14px 18px;border:1px solid var(--border);border-radius:var(--radius);background:#f8fafc}
 .gui-v3 .ws-status h2 {font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
 .gui-v3 .ws-status ul {list-style:none;display:flex;flex-wrap:wrap;gap:6px 28px;margin:0;padding:0}
@@ -213,24 +202,15 @@
 .gui-v3 .ws-status-value {font-weight:600}
 .gui-v3 .ws-status li[data-state=unknown] .ws-status-value {font-style:italic;font-weight:500}
 .gui-v3 .ws-status-note {margin:10px 0 0;font-size:12px}
-.gui-v3 .rl-chat {margin:10px 0 6px;padding:18px 20px;max-width:900px;background:var(--surface);border:1px solid #91afcc;border-radius:18px;box-shadow:var(--shadow)}
-.gui-v3 .rl-chat h3 {font-size:16px;margin:0 0 10px}
+.gui-v3 .rl-chat {margin:6px 0 4px;padding:14px 18px;max-width:900px;background:var(--surface);border:1px solid #91afcc;border-radius:18px;box-shadow:var(--shadow)}
+.gui-v3 .rl-chat h2 {font-size:15px;margin:0 0 8px}
 .gui-v3 .rl-chat .chat-launcher {margin:0;max-width:none;box-shadow:none;background:#f8fafc}
 .gui-v3 .rl-chat-note {margin:10px 0 0;font-size:12px}
 /* Compact Review task cards: tight body, one consistent action footer (Open … + Discuss in Chat) */
-.gui-v3 .rl-grid {gap:14px;margin-top:14px}
-.gui-v3 .rl-grid .rl-card {padding:14px 16px;border-radius:14px}
-.gui-v3 .rl-grid .rl-card h3 {font-size:16px;margin:0 0 4px}
-.gui-v3 .rl-grid .rl-card>p {margin:0 0 8px;flex:0;font-size:13px;line-height:1.4}
-.gui-v3 .rl-grid .rl-card>p.rl-related {display:flex;flex-wrap:wrap;gap:2px 12px;margin:0 0 8px;flex:1;min-height:20px;font-size:12px}
-.gui-v3 .rl-grid .rl-card>p.rl-related:empty {display:block}
-.gui-v3 .rl-foot {display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px;margin-top:auto;padding-top:8px;border-top:1px solid var(--border)}
-.gui-v3 .rl-foot .rl-primary {padding:6px 12px;font-size:13px}
 .gui-v3 .rl-discuss {font-weight:500;font-size:12px}
 .gui-v3 .gd-advanced {max-width:900px}
 .gui-v3 .gd-advanced .ask-panel {margin:12px 0;padding:20px}
-@media(max-width:1100px) {.gui-v3 .home-cards {grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:700px) {.gui-v3 .home-cards {grid-template-columns:1fr}.gui-v3 .chat-launcher {flex-direction:column;align-items:stretch}}
+@media(max-width:700px) {.gui-v3 .chat-launcher {flex-direction:column;align-items:stretch}}
 
 /* Shared Chat workbench (gui/_chat_workbench.html): full page and inset dialog share this layout */
 .gui-v3 .cw-body {display:grid;grid-template-columns:minmax(0,1fr) 230px;gap:18px;align-items:start}
@@ -264,3 +244,23 @@ body:has(dialog.cw-dialog[open]) {overflow:hidden}
 .gui-v3 .rc-steps li+li::before {content:"\2192";margin-right:8px;color:var(--muted)}
 .gui-v3 .res-import-quiet {border:0;background:none;padding:0 2px;color:var(--muted);font-size:13px}
 .gui-v3 .res-import {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border:1px solid var(--border);border-radius:12px;padding:10px 14px;background:var(--surface);margin:0 0 var(--gap);font-size:14px}
+
+/* Overview "Start elsewhere" and Review task navigators: dense rows, one Open action + one quiet Ask Chat action */
+.gui-v3 .start-nav h2,.gui-v3 .task-nav h2 {font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:22px 0 8px}
+.gui-v3 .sn-list,.gui-v3 .tn-list {list-style:none;margin:0;padding:0;max-width:900px;border:1px solid var(--border);border-radius:14px;background:var(--surface);overflow:hidden}
+.gui-v3 .sn-row,.gui-v3 .tn-row {display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px 18px;padding:10px 16px;border-top:1px solid var(--border)}
+.gui-v3 .sn-row:first-child,.gui-v3 .tn-row:first-child {border-top:0}
+.gui-v3 .sn-main h3,.gui-v3 .tn-main h3 {font-size:15px;margin:0;letter-spacing:-.01em}
+.gui-v3 .sn-main p,.gui-v3 .tn-main p {margin:2px 0 0;font-size:13px;line-height:1.4;color:var(--muted)}
+.gui-v3 .tn-main p .rl-secondary {margin-left:8px;font-size:12px}
+.gui-v3 .tn-list {counter-reset:task}
+.gui-v3 .tn-row {counter-increment:task;grid-template-columns:auto minmax(0,1fr) auto}
+.gui-v3 .tn-row::before {content:counter(task);display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:#e5ebf1;color:#245c8b;font-size:12px;font-weight:700}
+.gui-v3 .tn-sequence {margin:0 0 8px;font-size:13px;color:var(--muted);max-width:900px}
+.gui-v3 .tn-sequence span:not([aria-hidden]) {font-weight:600;color:var(--fg)}
+.gui-v3 .sn-actions,.gui-v3 .tn-actions {display:flex;align-items:center;gap:14px;white-space:nowrap}
+.gui-v3 .sn-open,.gui-v3 .tn-actions .rl-primary {display:inline-block;padding:5px 12px;border-radius:8px;font-size:13px;background:#245c8b;color:#fff;font-weight:600;text-decoration:none}
+.gui-v3 .sn-open:hover,.gui-v3 .tn-actions .rl-primary:hover {background:#1d4c73}
+.gui-v3 .sn-open:focus-visible,.gui-v3 .tn-actions .rl-primary:focus-visible,.gui-v3 .sn-chat:focus-visible,.gui-v3 .rl-discuss:focus-visible,.gui-v3 .tn-main .rl-secondary:focus-visible {outline:3px solid #2882c9;outline-offset:2px}
+.gui-v3 .sn-chat,.gui-v3 .rl-discuss {font-size:12px;font-weight:500}
+@media(max-width:760px) {.gui-v3 .sn-row {grid-template-columns:1fr}.gui-v3 .tn-row {grid-template-columns:auto minmax(0,1fr)}.gui-v3 .tn-actions {grid-column:2}.gui-v3 .sn-actions,.gui-v3 .tn-actions {white-space:normal;flex-wrap:wrap}}

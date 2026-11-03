@@ -5,23 +5,24 @@ Nothing here contacts the graph, a provider or the network; anything that cannot
 """
 from pathlib import Path
 
+from .review_landing import chat_href
+
 
 def start_cards():
+    """The "Start elsewhere" navigator: one direct destination and one fixed, unsent Chat prefill per starting point."""
+    def start(id, title, summary, primary, prompt):
+        return dict(id=id, title=title, summary=summary, primary=primary,
+                    chat=dict(label='Ask Chat', prompt=prompt, href=chat_href(prompt)))
     return [
-        dict(id='browse', title='Browse data',
-             summary='Files, scans and recognized Datasets.',
-             primary=dict(label='Open Datasets', href='/datasets?view=browse'),
-             links=[dict(label='Collections', href='/datasets?view=collections')]),
-        dict(id='explore', title='Explore knowledge',
-             summary='Entities, Relationships, Maps and Sketch.',
-             primary=dict(label='Open Relationships', href='/knowledge?view=relationships'),
-             links=[dict(label='Entities', href='/knowledge?view=entities'),
-                    dict(label='Maps', href='/knowledge?view=maps'),
-                    dict(label='Sketch', href='/knowledge?view=sketch')]),
-        dict(id='curate', title='Curate and review',
-             summary='Organize context, assess metadata and evidence, and prepare material to share.',
-             primary=dict(label='Open Review', href='/review'),
-             links=[]),
+        start('browse', 'Browse data', 'Files, scans and recognized Datasets.',
+              dict(label='Open Datasets', href='/datasets?view=browse'),
+              'Help me find the relevant data.'),
+        start('explore', 'Explore knowledge', 'Entities, Relationships, Maps and Sketch.',
+              dict(label='Open Knowledge', href='/knowledge?view=relationships'),
+              'Help me understand how these things relate.'),
+        start('curate', 'Curate and review', 'Organize context, check metadata and evidence, prepare to share.',
+              dict(label='Open Review', href='/review'),
+              'Help me decide what to do next.'),
     ]
 
 

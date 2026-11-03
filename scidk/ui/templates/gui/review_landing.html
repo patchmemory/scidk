@@ -5,9 +5,9 @@
    Chat shell: it only pre-fills Chat's input. No script, no storage, no provider or network call. #}
 <section class="workspace review-landing" id="review-landing" data-testid="review-landing">
 <h1 class="ws-title">Review</h1>
-<h2 class="rl-prompt" id="rl-prompt">What scientific work are you trying to do?</h2>
+<p class="rl-prompt" id="rl-prompt">What scientific work are you trying to do?</p>
 <section class="rl-chat" id="review-chat-launcher" data-testid="review-chat-launcher" aria-labelledby="rl-chat-title">
-<h3 id="rl-chat-title">Describe what you are working on</h3>
+<h2 id="rl-chat-title">Describe what you are working on</h2>
 <form class="chat-launcher" method="get" action="{{ request.script_root }}/review" role="search" aria-label="Open Chat">
 <input type="hidden" name="view" value="guidance">
 <label for="review-chat-input" class="sr-only">Describe what you are working on</label>
@@ -16,18 +16,19 @@
 </form>
 <p class="rl-chat-note" data-testid="review-chat-note">No AI provider is configured. Opening Chat only fills its message box; nothing is sent.</p>
 </section>
-<p class="page-lede">Or pick a task. Each opens a workspace you already have; nothing changes until you choose to act there.</p>
-<div class="rl-grid" role="list" aria-labelledby="rl-prompt">
+<nav class="task-nav" id="review-tasks" data-testid="review-tasks" aria-labelledby="rl-tasks-title">
+<h2 id="rl-tasks-title">Or pick a task</h2>
+<p class="tn-sequence" data-testid="task-sequence">Typical sequence: {% for card in actions %}<span>{{ card.title }}</span>{% if not loop.last %} <span aria-hidden="true">→</span> {% endif %}{% endfor %}. Start anywhere; each opens a workspace you already have.</p>
+<ol class="tn-list">
 {% for card in actions %}
-<article class="rl-card rl-{{ card.status }}" role="listitem" id="rl-card-{{ card.id }}" data-action="{{ card.id }}" data-status="{{ card.status }}" aria-labelledby="rl-title-{{ card.id }}">
-<h3 id="rl-title-{{ card.id }}">{{ card.title }}</h3>
-<p>{{ card.summary }}</p>
-<p class="rl-related">{% for link in card.links %}<a class="rl-secondary" href="{{ request.script_root }}{{ link.href }}" data-destination="{{ link.href }}">{{ link.label }}</a>{% endfor %}</p>
-<div class="rl-foot"><a class="rl-primary" href="{{ request.script_root }}{{ card.primary.href }}" data-destination="{{ card.primary.href }}">{{ card.primary.label }} →</a>
-<a class="rl-discuss" href="{{ request.script_root }}{{ card.chat.href }}" data-chat-prompt="{{ card.chat.prompt }}" data-testid="discuss-{{ card.id }}">Discuss in Chat</a></div>
-</article>
+<li class="tn-row rl-{{ card.status }}" id="rl-card-{{ card.id }}" data-action="{{ card.id }}" data-status="{{ card.status }}">
+<div class="tn-main"><h3 id="rl-title-{{ card.id }}">{{ card.title }}</h3><p>{{ card.summary }}{% for link in card.links %} <a class="rl-secondary" href="{{ request.script_root }}{{ link.href }}" data-destination="{{ link.href }}">{{ link.label }}</a>{% endfor %}</p></div>
+<div class="tn-actions"><a class="rl-primary" href="{{ request.script_root }}{{ card.primary.href }}" data-destination="{{ card.primary.href }}">{{ card.primary.label }} →</a>
+<a class="rl-discuss" href="{{ request.script_root }}{{ card.chat.href }}" data-chat-prompt="{{ card.chat.prompt }}" data-testid="discuss-{{ card.id }}" aria-label="Ask Chat: {{ card.title }}">Ask Chat</a></div>
+</li>
 {% endfor %}
-</div>
+</ol>
+</nav>
 {% if advanced %}
 <details class="rl-advanced"><summary>Advanced</summary>
 <ul>{% for item in advanced %}<li><a href="{{ request.script_root }}{{ item.href }}" data-destination="{{ item.href }}">{{ item.label }}</a> — {{ item.description }}</li>{% endfor %}</ul></details>

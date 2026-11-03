@@ -16,9 +16,21 @@ EXPECTED = {
     'publish': ['/datasets?view=collections'],
 }
 HOME_EXPECTED = {
-    'browse': ['/datasets?view=browse', '/datasets?view=collections'],
-    'explore': ['/knowledge?view=relationships', '/knowledge?view=entities', '/knowledge?view=maps', '/knowledge?view=sketch'],
+    'browse': ['/datasets?view=browse'],
+    'explore': ['/knowledge?view=relationships'],
     'curate': ['/review'],
+}
+HOME_PROMPTS = {
+    'browse': 'Help me find the relevant data.',
+    'explore': 'Help me understand how these things relate.',
+    'curate': 'Help me decide what to do next.',
+}
+REVIEW_PROMPTS = {
+    'curate': 'I am curating a collection of datasets. Help me think through how to group them and what provenance and context to keep.',
+    'annotate': 'I want to annotate my data. Help me decide which notes, descriptions, tags or corrections would be most useful.',
+    'evaluate': 'I am evaluating my data. Help me look for gaps in metadata, weak evidence or inconsistencies between relationships and runs.',
+    'enrich': 'I want to enrich my data. Help me plan which sources, schema and mappings to prepare first.',
+    'publish': 'I want to prepare a collection to share. Help me work out what metadata and context a sharing package needs.',
 }
 BANNED_SCRIPT = ('fetch(', 'XMLHttpRequest', 'WebSocket', 'sendBeacon', 'localStorage', 'sessionStorage', 'document.cookie', 'EventSource')
 
@@ -38,13 +50,13 @@ def html(app, path='/review'):
 
 
 def card(page, action):
-    match = re.search(r'<article class="rl-card[^>]*data-action="%s".*?</article>' % action, page, re.S)
+    match = re.search(r'<li class="tn-row[^>]*data-action="%s".*?</li>' % action, page, re.S)
     assert match, action
     return match.group(0)
 
 
 def home_card(page, name):
-    match = re.search(r'<article class="rl-card"[^>]*id="home-card-%s".*?</article>' % name, page, re.S)
+    match = re.search(r'<li class="sn-row"[^>]*id="home-card-%s".*?</li>' % name, page, re.S)
     assert match, name
     return match.group(0)
 
@@ -77,7 +89,9 @@ def test_home_is_a_compact_launcher_with_three_real_destination_cards(app, path)
     assert 'method="get"' in launcher and 'name="view" value="guidance"' in launcher and 'name="prefill"' in launcher
     assert 'Ask about your data' in launcher and 'Open Chat →' in launcher
     assert '<textarea' not in launcher and 'checkbox' not in launcher
-    assert len(re.findall(r'<article class="rl-card"', page)) == 3
+    assert len(re.findall(r'<li class="sn-row"', page)) == 3
+    assert 'class="rl-card' not in page and 'home-cards' not in page          # no grid of large generic cards
+    assert re.findall(r'<h2 id="start-elsewhere-title">([^<]+)</h2>', page) == ['Start elsewhere']
     adapter = app.url_map.bind('localhost')
     for name, destinations in HOME_EXPECTED.items():
         found = re.findall(r'data-destination="([^"]+)"', home_card(page, name))
@@ -86,6 +100,22 @@ def test_home_is_a_compact_launcher_with_three_real_destination_cards(app, path)
             assert adapter.match(urlsplit(destination).path)[0].startswith('ui.'), destination
     for title in ('Browse data', 'Explore knowledge', 'Curate and review'):
         assert '>%s</h3>' % title in page
+    assert [re.findall(r'class="sn-open"[^>]*>([^<]+)</a>', home_card(page, n))[0] for n in HOME_EXPECTED] == [
+        'Open Datasets →', 'Open Knowledge →', 'Open Review →']
+
+
+def test_home_ask_chat_actions_prefill_fixed_prompts_without_sending(app, monkeypatch):
+    requests = forbid_provider(app, monkeypatch)
+    page = html(app, '/')
+    for name, prompt in HOME_PROMPTS.items():
+        row = home_card(page, name)
+        links = re.findall(r'<a class="sn-chat" href="([^"]+)" data-chat-prompt="([^"]+)" data-testid="ask-chat-%s"[^>]*>Ask Chat</a>' % name, row)
+        assert len(links) == 1, name
+        assert htmllib.unescape(links[0][1]) == prompt
+        assert parse_qs(urlsplit(htmllib.unescape(links[0][0])).query) == {'view': ['guidance'], 'prefill': [prompt]}
+        assert row.index('class="sn-open"') < row.index('class="sn-chat"')          # primary first, Ask Chat quieter and adjacent
+    assert requests == ['/']
+    assert len(page[page.index('id="start-elsewhere"'):page.index('id="workspace-status"')]) < 2600       # compact, not a card grid
 
 
 def test_home_landing_hides_provider_consent_and_low_level_query_mechanics(app):
@@ -135,12 +165,16 @@ def test_review_has_central_chat_and_exactly_five_task_cards(app):
     page = html(app)
     assert '<h1 class="ws-title">Review</h1>' in page and PROMPT in page
     assert page.index('id="review-chat-launcher"') < page.index('id="rl-card-curate"')
-    composer = page[page.index('id="review-chat-launcher"'):page.index('class="page-lede"')]
+    composer = page[page.index('id="review-chat-launcher"'):page.index('id="review-tasks"')]
     assert 'name="prefill"' in composer and 'Open Chat →' in composer and 'name="view" value="guidance"' in composer
     assert 'No AI provider is configured' in composer and 'nothing is sent' in composer
     assert 'data-action="guidance"' not in page
     assert re.findall(r'<h3 id="rl-title-\w+">([^<]+)</h3>', page) == TASK_TITLES
-    assert len(re.findall(r'<article class="rl-card', page)) == 5
+    assert len(re.findall(r'<li class="tn-row', page)) == 5 and 'class="rl-card' not in page and 'rl-grid' not in page
+    assert re.findall(r'<h2 id="rl-tasks-title">([^<]+)</h2>', page) == ['Or pick a task']
+    sequence = re.sub(r'<[^>]+>', '', re.search(r'data-testid="task-sequence">(.*?)</p>', page, re.S).group(1))
+    assert ' '.join(sequence.split()).startswith('Typical sequence: Curate → Annotate → Evaluate → Enrich → Publish.')
+    assert '<ol class="tn-list">' in page             # an ordered list: the work sequence is also exposed to assistive tech
     for retired in ('Understand data', 'Organize context', 'Improve metadata', 'Prepare to share'):
         assert retired not in page
     assert 'id="review-workspace"' not in page
@@ -177,7 +211,7 @@ def test_every_task_has_a_discuss_in_chat_link_with_a_fixed_prompt(app):
     page = html(app)
     prompts = set()
     for action in EXPECTED:
-        links = re.findall(r'<a class="rl-discuss" href="([^"]+)" data-chat-prompt="([^"]+)" data-testid="discuss-%s">Discuss in Chat</a>' % action,
+        links = re.findall(r'<a class="rl-discuss" href="([^"]+)" data-chat-prompt="([^"]+)" data-testid="discuss-%s" aria-label="Ask Chat: \w+">Ask Chat</a>' % action,
                            card(page, action))
         assert len(links) == 1, action
         href = htmllib.unescape(links[0][0])
@@ -185,6 +219,7 @@ def test_every_task_has_a_discuss_in_chat_link_with_a_fixed_prompt(app):
         assert parts.path == '/review' and parse_qs(parts.query)['view'] == ['guidance']
         prefill = parse_qs(parts.query)['prefill'][0]
         assert prefill == htmllib.unescape(links[0][1]) and 20 < len(prefill) <= 1000
+        assert prefill == REVIEW_PROMPTS[action]
         prompts.add(prefill)
     assert len(prompts) == 5
 
@@ -348,22 +383,21 @@ def test_chat_draft_is_never_stored_and_advanced_toggle_cannot_reset_it(app):
     assert not re.search(r'<details class="gd-advanced"[^>]*\bopen\b', page)
 
 
-def test_task_cards_are_compact_with_one_consistent_action_footer(app):
+def test_task_rows_are_compact_with_one_consistent_action_area(app):
     page = html(app)
     for action, destinations in EXPECTED.items():
         body = card(page, action)
-        foot = re.findall(r'<div class="rl-foot">(.*?)</div>', body, re.S)
-        assert len(foot) == 1, action
-        assert re.findall(r'class="([\w-]+)"', foot[0]) == ['rl-primary', 'rl-discuss'], action
-        assert re.findall(r'data-destination="([^"]+)"', foot[0]) == destinations[:1], action
-        assert '>Discuss in Chat</a>' in foot[0] and 'data-testid="discuss-%s"' % action in foot[0]
-        summary = re.search(r'</h3>\s*<p>([^<]+)</p>', body).group(1)
+        actions = re.findall(r'<div class="tn-actions">(.*?)</div>', body, re.S)
+        assert len(actions) == 1, action
+        assert re.findall(r'class="([\w-]+)"', actions[0]) == ['rl-primary', 'rl-discuss'], action
+        assert re.findall(r'data-destination="([^"]+)"', actions[0]) == destinations[:1], action
+        assert '>Ask Chat</a>' in actions[0] and 'Discuss in Chat' not in body and 'data-testid="discuss-%s"' % action in actions[0]
+        assert re.findall(r'data-destination="([^"]+)"', body.replace(actions[0], '')) == destinations[1:], action
+        summary = re.search(r'</h3><p>([^<]+)', body).group(1).strip()
         assert len(summary) <= 90, (action, len(summary))
-        outside = body.replace(foot[0], '')
-        assert re.findall(r'data-destination="([^"]+)"', outside) == destinations[1:], action
-        assert 'rl-chat-link' not in body and 'rl-actions' not in body
     css = open('scidk/ui/static/css/gui_design.css').read()
-    assert '.rl-grid .rl-card {padding:14px 16px' in css and '.rl-foot {' in css
+    assert '.tn-row {' in css and '.sn-row,' in css and '.rl-grid' not in css and '.home-cards' not in css
+    assert 'focus-visible' in css[css.index('.sn-open:focus-visible'):][:300]
 
 
 def test_collection_pill_is_an_accessible_control_over_supported_infrastructure():
