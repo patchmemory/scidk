@@ -22,6 +22,7 @@
 {% block title %}SciDK — Resources{% endblock %}
 {% block content %}
 <h1 class="ws-title">Resources</h1>
+<p class="ws-lede" data-testid="resources-lede">The operating environment of your workspace: the services and storage it uses, the sources you configure, the plugins that provide capabilities, and the runs that result.</p>
 {% include '_resources_tabs.html' %}
 <div id="resources-workspace" data-view="{{ ws_view }}" data-testid="resources-workspace">
 {% if ws_view == 'ecosystem' %}
@@ -41,8 +42,8 @@
 {% else %}
 {% if request.args.get('from') == 'add-resource' %}
 <div class="res-callout" role="status" data-testid="add-resource-guidance">
-  <strong>Add resource needs a source plugin</strong>
-  A resource is created from an installed source plugin (a connector for one kind of data). Install or enable one below, then return to <a href="{{ request.script_root }}/resources?view=sources">Sources</a> and choose <em>+ Add resource</em>. The built-in schema and column-mapping tools do not need a plugin.
+  <strong>Looking to add a source?</strong>
+  You can always <a href="{{ request.script_root }}/resources?view=sources" data-testid="guidance-import-link">import a table or file</a> (CSV, TSV or Excel) on Sources. External connectors appear below only when a plugin package is actually installed.
 </div>
 {% endif %}
 {% include '_resources_plugins.html' %}
@@ -50,7 +51,9 @@
 {% elif ws_view == 'runs' %}
 {% include '_resources_runs.html' %}
 {% else %}
-<p class="ws-note" data-testid="sources-context">Sources are the configured instances you create from installed <a href="{{ request.script_root }}/resources?view=plugins">plugins</a>. Define a source's schema and column mapping under Plugins; launch and review its runs on <a href="{{ request.script_root }}/resources?view=runs">Runs</a>.</p>
+<p class="ws-note" data-testid="sources-context">Sources are explicit, configured inputs: each one can be previewed, mapped, validated and run. Start with the built-in <strong>Import a table or file</strong> (CSV, TSV or Excel), or create one from an installed <a href="{{ request.script_root }}/resources?view=plugins">plugin</a>. Define its schema and column mapping under Plugins; launch and review runs on <a href="{{ request.script_root }}/resources?view=runs">Runs</a>.</p>
+<div class="res-chain" data-testid="resources-chain" role="note"><span class="rc-label">How a source becomes data</span><ol class="rc-steps"><li>Plugin capability</li><li>Configured source</li><li>Schema &amp; mapping</li><li>FAIR / dry check</li><li>Run history</li></ol></div>
+{% if builtin_table_import %}<p class="res-import res-import-quiet" data-testid="import-table-entry"><strong>Built in:</strong> import a table or file (CSV, TSV or Excel). No plugin needed.</p>{% endif %}
 {% include '_pipeline_sources_app.html' %}
 {% endif %}
 </div>

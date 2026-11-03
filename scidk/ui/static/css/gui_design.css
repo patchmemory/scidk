@@ -168,7 +168,7 @@
 .gui-v3 .res-callout strong {display:block;margin-bottom:2px}
 
 /* Review → Chat shell (formerly Guidance; no provider call; see review_guidance.html) */
-.gui-v3 .guidance-shell {max-width:900px !important}
+.gui-v3 .guidance-shell {max-width:1040px !important}
 .gui-v3 .gd-head {display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 16px}
 .gui-v3 .gd-links {display:flex;gap:6px}
 .gui-v3 .gd-links a {font-size:13px;font-weight:500;padding:3px 10px;border:1px solid var(--border);border-radius:14px;background:var(--surface);text-decoration:none}
@@ -231,3 +231,36 @@
 .gui-v3 .gd-advanced .ask-panel {margin:12px 0;padding:20px}
 @media(max-width:1100px) {.gui-v3 .home-cards {grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px) {.gui-v3 .home-cards {grid-template-columns:1fr}.gui-v3 .chat-launcher {flex-direction:column;align-items:stretch}}
+
+/* Shared Chat workbench (gui/_chat_workbench.html): full page and inset dialog share this layout */
+.gui-v3 .cw-body {display:grid;grid-template-columns:minmax(0,1fr) 230px;gap:18px;align-items:start}
+.gui-v3 .cw-main {min-width:0}
+.gui-v3 .cw-rail {border:1px solid var(--border);border-radius:14px;background:#f8fafc;padding:14px 16px}
+.gui-v3 .cw-rail h3 {font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+.gui-v3 .cw-rail-empty {margin:0;font-size:13px;color:var(--muted)}
+.gui-v3 .cw-rail-list {list-style:none;margin:0;padding:0;font-size:13px}
+.gui-v3 .cw-actions {display:flex;align-items:center;gap:12px}
+.gui-v3 .cw-full {font-size:13px}
+.gui-v3 .cw-close {padding:5px 12px;font-size:13px;border:1px solid var(--border);border-radius:8px;background:var(--surface);cursor:pointer}
+.gui-v3 .cw-close:hover {border-color:#91afcc}
+.gui-v3 .cw-close:focus-visible, .gui-v3 .cw-full:focus-visible {outline:3px solid #2882c9;outline-offset:2px}
+.gui-v3 dialog.cw-dialog {width:min(1040px,calc(100vw - 48px));max-height:calc(100vh - 48px);padding:0;border:1px solid var(--border);border-radius:18px;box-shadow:0 24px 60px rgba(15,30,50,.28);background:#fff;color:inherit;overflow:hidden}
+.gui-v3 dialog.cw-dialog::backdrop {background:rgba(15,30,50,.45)}
+.gui-v3 .cw-in-dialog {max-width:none !important;margin:0;padding:18px 24px 22px;max-height:calc(100vh - 50px);overflow:auto;box-sizing:border-box}
+.gui-v3 .cw-in-dialog .ws-title {margin:0;font-size:22px}
+.gui-v3 .cw-in-dialog .ws-lede {margin:6px 0 12px;font-size:13px}
+.gui-v3 .cw-in-dialog .gd-window {min-height:280px}
+.gui-v3 .cw-in-dialog .gd-messages {min-height:120px;max-height:30vh}
+.gui-v3 .cw-in-dialog .gd-advanced {margin-top:12px}
+.gui-v3 .cw-in-dialog .ask-panel {margin:10px 0;padding:16px}
+body:has(dialog.cw-dialog[open]) {overflow:hidden}
+@media(max-width:860px) {.gui-v3 .cw-body {grid-template-columns:minmax(0,1fr)}}
+
+/* Resources: capability chain and the built-in import entry */
+.gui-v3 .res-chain {display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:0 0 var(--gap);font-size:13px}
+.gui-v3 .res-chain .rc-label {color:var(--muted);font-weight:600}
+.gui-v3 .rc-steps {display:flex;flex-wrap:wrap;gap:6px;list-style:none;margin:0;padding:0}
+.gui-v3 .rc-steps li {padding:2px 10px;border:1px solid var(--border);border-radius:14px;background:var(--surface)}
+.gui-v3 .rc-steps li+li::before {content:"\2192";margin-right:8px;color:var(--muted)}
+.gui-v3 .res-import-quiet {border:0;background:none;padding:0 2px;color:var(--muted);font-size:13px}
+.gui-v3 .res-import {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border:1px solid var(--border);border-radius:12px;padding:10px 14px;background:var(--surface);margin:0 0 var(--gap);font-size:14px}

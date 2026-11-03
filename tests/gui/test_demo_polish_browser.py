@@ -93,9 +93,7 @@ def test_settings_keeps_the_shared_blue_left_bracket_when_open(gui_page):
 
 def test_guidance_shell_sends_nothing_and_fabricates_no_answer(gui_page):
     page, origin, app = gui_page
-    page.goto(origin + '/review')
-    page.get_by_role('button', name='Open Chat →').click()
-    expect(page).to_have_url(origin + '/review?view=guidance')
+    page.goto(origin + '/review?view=guidance')       # the full-page Chat route (deep link); the dialog is covered in test_chat_workbench_browser
     expect(page.get_by_test_id('guidance-provider-status')).to_contain_text('AI provider not configured')
     page.wait_for_load_state('networkidle')
     network = []
@@ -114,13 +112,17 @@ def test_guidance_shell_sends_nothing_and_fabricates_no_answer(gui_page):
     expect(page).to_have_url(origin + '/review')
 
 
-def test_add_resource_without_plugins_leads_to_plugins_guidance(gui_page):
+def test_add_resource_without_plugins_opens_the_wizard_with_the_builtin_table_import(gui_page):
     page, origin, _ = gui_page
     page.goto(origin + '/resources?view=sources')
+    expect(page.get_by_test_id('add-source-btn')).to_have_text('+ Import a table or file')
+    expect(page.get_by_test_id('sources-empty')).to_have_text('No Sources are configured yet. Import a table or file to create the first one.')
     page.get_by_test_id('add-source-btn').click()
-    expect(page).to_have_url(origin + '/resources?view=plugins&from=add-resource')
-    expect(page.get_by_test_id('add-resource-guidance')).to_be_visible()
-    expect(page.get_by_test_id('resources-tabs').locator('[aria-current=page]')).to_have_text('Plugins')
+    expect(page).to_have_url(origin + '/resources?view=sources')           # no redirect to Plugins
+    expect(page.get_by_test_id('source-sheet')).to_be_visible()
+    expect(page.get_by_test_id('pane-upload')).to_be_visible()             # straight to the built-in upload step
+    expect(page.get_by_test_id('pane-remote')).to_be_hidden()
+    expect(page.get_by_test_id('resources-tabs').locator('[aria-current=page]')).to_have_text('Sources')
 
 
 def test_sidebar_labels_are_right_aligned_with_equal_padding_and_bracket(gui_page):

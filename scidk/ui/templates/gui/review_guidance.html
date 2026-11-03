@@ -2,7 +2,7 @@
 {% block title %}SciDK — Review · Chat{% endblock %}
 {% block content %}
 {#
-  Review → Chat shell (/review?view=guidance, also /review/guidance; the Guidance URLs and `guidance-*` test ids are kept as compatibility names).
+  Chat page (/review?view=guidance, also /review/guidance; the Guidance URLs and `guidance-*` test ids are kept as compatibility names).
 
   A chat-style surface that is ready for a provider integration but does nothing with a provider today:
     * no fetch / XHR / WebSocket / beacon, no form submission, no storage, no cookie: entered text lives only in
@@ -10,6 +10,8 @@
     * no fabricated answer: sending shows the person's own message and a plain "not sent" notice;
     * the provider state is explicit (`data-provider-state`, "AI provider not configured").
   Wiring a provider later replaces the notice branch in the script below; the layout, copy and test ids stay.
+
+  The page body is the shared component gui/_chat_workbench.html (the same one Overview and Review open as an inset dialog).
 
   Navigation: Chat is a shared workspace, not a child of Review. There is no back link and no origin/referrer parameter;
   the browser's own Back returns to the actual prior page. Overview and Review workspace are plain destination links.
@@ -21,92 +23,5 @@
   Advanced query: the former Overview "Ask SciDK" form lives in the collapsed section at the bottom, unchanged
   (ids, consent checkbox and /overview_chat.js behaviour). It does nothing until the person ticks the consent box and submits.
 #}
-<section class="guidance-shell" id="guidance-shell" data-testid="guidance-shell" data-provider-state="{{ 'configured' if provider_configured else 'not-configured' }}">
-<div class="gd-head">
-<h1 class="ws-title">Chat</h1>
-<nav class="gd-links" aria-label="Go to" data-testid="chat-links"><a href="{{ request.script_root }}/overview" data-testid="chat-link-overview">Overview</a><a href="{{ request.script_root }}/review" data-testid="chat-link-review">Review workspace</a></nav>
-</div>
-<p class="ws-lede" id="guidance-welcome" data-testid="guidance-welcome">Ask about your science data: how things relate, what to organize next, or how to prepare metadata. Chat will draw on the sources you are allowed to use, and it will say where each answer came from.</p>
-
-<div class="gd-window" role="group" aria-labelledby="gd-window-title">
-  <h2 id="gd-window-title" class="sr-only" style="position:absolute;left:-9999px">Chat conversation</h2>
-  <div class="gd-status" id="guidance-provider-status" data-testid="guidance-provider-status" role="status">
-    <i class="ti ti-plug-off" aria-hidden="true"></i>
-    <div><strong>AI provider not configured.</strong> Chat cannot answer yet. Nothing you type here is sent anywhere, and no answers are generated or stored.</div>
-  </div>
-  <div class="gd-messages" id="guidance-messages" data-testid="guidance-messages" role="log" aria-live="polite" aria-label="Chat messages">
-    <div class="gd-msg system" data-testid="guidance-welcome-message">Hello. Once an AI provider is connected, you can ask questions here about the datasets, collections and graph you have access to. For now this window shows what the conversation will look like.</div>
-  </div>
-  <form class="gd-form" id="guidance-form" data-testid="guidance-form" autocomplete="off" onsubmit="return false">
-    <label for="guidance-input">Your message</label>
-    <textarea id="guidance-input" data-testid="guidance-input" rows="2" maxlength="4000" placeholder="Ask a question about your data…" aria-describedby="guidance-provider-status"{% if prefill %} autofocus data-prefilled="true"{% endif %}>{{ prefill }}</textarea>
-    <button type="submit" class="primary" id="guidance-send" data-testid="guidance-send">Ask</button>
-  </form>
-</div>
-
-<div class="gd-hints" data-testid="guidance-hints">
-  <strong>What you will be able to ask</strong>
-  <ul>
-    <li>How do these datasets relate to each other?</li>
-    <li>Which collection should I group these files into?</li>
-    <li>What metadata is missing before I can share this?</li>
-  </ul>
-</div>
-
-<details class="gd-advanced" id="advanced-query" data-testid="advanced-query">
-<summary>Advanced: grounded query tools</summary>
-<section class="ask-panel" aria-labelledby="ask-heading">
-<h2 id="ask-heading">Ask SciDK (advanced)</h2><p>Look for matching knowledge you’re allowed to use. Nothing is sent until you tick the consent box and ask.</p>
-<form id="overview-chat">
-<label for="overview-question">Question for the query tools</label>
-<textarea id="overview-question" required maxlength="4000" placeholder="Find a dataset, explore an entity, or ask about a workflow…" rows="3"{% if not overview_chat_enabled %} disabled{% endif %}></textarea>
-<div class="ask-controls"><label for="overview-scope">Look in</label><select id="overview-scope"><option value="accessible">My accessible knowledge</option><option value="system">System documentation</option><option value="graph" selected>Graph (read-only tools)</option><option value="selection" disabled>Current selection</option></select><button id="overview-send" class="primary"{% if not overview_chat_enabled %} disabled{% endif %}>Ask SciDK</button></div>
-<label class="consent"><input type="checkbox" id="overview-consent" required{% if not overview_chat_enabled %} disabled{% endif %}> Send this question and its matching authorized sources to my approved provider. Earlier questions are not sent.</label>
-</form>
-<div class="suggestions" aria-label="Suggested questions"><button type="button" data-question="Find synthetic datasets">Find a dataset</button><button type="button" data-question="Find Synthetic Investigator">Explore an investigator</button><button type="button" data-question="Explain the synthetic System workflow" data-scope="system">Understand a workflow</button></div>
-<p id="overview-status" role="status">{% if overview_chat_enabled %}Search uses names and released properties. Ask about a specific entity or documentation topic.{% else %}Ask SciDK is unavailable. An administrator needs to connect Knowledge services and enable the approved assistant.{% endif %}</p>
-<div id="overview-results"><h3 id="overview-answer-heading" hidden>AI interpretation</h3><pre id="overview-answer"></pre><h3 id="overview-source-heading" hidden>Retrieved facts &amp; sources</h3><div id="overview-source-links"></div><details id="overview-source-details" hidden><summary>Inspect authorized source details</summary><pre id="overview-sources"></pre></details></div>
-</section>
-<p class="gd-advanced-links"><a href="{{ request.script_root }}/chat">Existing chat sessions &amp; GraphRAG tools</a> · <a href="{{ request.script_root }}/settings#ai-chat/llm-provider">Personal provider settings</a></p>
-<p class="small">Explicit-ID context requests remain available through the existing API. This assistant supports bounded name/property lookup, not general graph questions or unrestricted analysis.</p>
-</details>
-</section>
-<script>
-(function () {
-  // In-page only: this script reads the question box and appends to the message list. It makes no network
-  // request and writes nothing to storage; the state notice below is the only "reply".
-  var form = document.getElementById('guidance-form');
-  var input = document.getElementById('guidance-input');
-  var list = document.getElementById('guidance-messages');
-  var shell = document.getElementById('guidance-shell');
-  function add(kind, text, testid) {
-    var el = document.createElement('div');
-    el.className = 'gd-msg ' + kind;
-    if (testid) el.setAttribute('data-testid', testid);
-    el.textContent = text;
-    list.appendChild(el);
-    list.scrollTop = list.scrollHeight;
-    return el;
-  }
-  function send() {
-    var text = (input.value || '').trim();
-    if (!text) { input.focus(); return; }
-    add('user', text, 'guidance-user-message');
-    input.value = '';
-    if (shell.getAttribute('data-provider-state') !== 'configured') {
-      add('notice', 'AI provider not configured. Your question was not sent anywhere and no answer was generated.', 'guidance-not-configured-notice');
-    }
-    input.focus();
-  }
-  form.addEventListener('submit', function (event) { event.preventDefault(); send(); });
-  input.addEventListener('keydown', function (event) {
-    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); send(); }
-  });
-  // A prefilled input: put the cursor at the end, still unsent.
-  if (input.getAttribute('data-prefilled')) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
-  var advanced = document.getElementById('advanced-query');
-  if (advanced && (location.hash === '#advanced-query' || /[?&]domain=/.test(location.search))) advanced.open = true;
-})();
-</script>
-<script defer src="{{ url_for('static', filename='js/overview_chat.js') }}"></script>
+{% with cw_mode='page' %}{% include 'gui/_chat_workbench.html' %}{% endwith %}
 {% endblock %}

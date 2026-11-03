@@ -110,15 +110,18 @@ def test_ecosystem_never_writes_the_files_index():
 
 # --------------------------------------- Add Resource / Runs honesty
 
-def test_add_resource_without_plugins_routes_to_plugins_and_keeps_real_wizard():
+def test_add_resource_always_opens_the_real_wizard_with_the_builtin_table_import():
     text = (TEMPLATES / '_pipeline_sources_app.html').read_text()
-    assert "/resources?view=plugins&from=add-resource" in text
-    assert 'data-testid="add-source-btn"' in text and 'known === 0' in text and 'sheet.showModal()' in text   # real wizard retained
+    # No redirect to Plugins merely because no external plugin template is installed.
+    assert "/resources?view=plugins&from=add-resource" not in text and 'known === 0' not in text
+    assert 'data-testid="add-source-btn"' in text and 'sheet.showModal()' in text   # real wizard retained
+    assert "BUILTIN_TABLE_TYPE = {" in text and "name: 'Import a table or file'" in text
+    assert "plugin: 'file_upload'" in text and "/api/pipeline/sources/upload" in text   # the existing upload path
 
 
-def test_plugins_tab_explains_add_resource_redirect(client):
+def test_plugins_tab_old_add_resource_link_points_to_the_builtin_import(client):
     html = page(client, '/resources?view=plugins&from=add-resource')
-    assert 'data-testid="add-resource-guidance"' in html and 'Add resource needs a source plugin' in html
+    assert 'data-testid="add-resource-guidance"' in html and 'import a table or file' in html
     assert 'data-testid="add-resource-guidance"' not in page(client, '/resources?view=plugins')
 
 
@@ -190,11 +193,10 @@ def test_sources_uses_the_shared_resources_layout_without_a_duplicate_heading(cl
     assert 'class="pipeline-page res-index"' in area
     assert '<h2>Sources</h2>' in area and '<h2>Resources</h2>' not in area
     assert sources.count('<h1 class="ws-title">Resources</h1>') == 1
-    # empty state / redirect behavior is unchanged
     text = (TEMPLATES / '_pipeline_sources_app.html').read_text()
-    for kept in ('data-testid="sources-no-plugins"', 'data-testid="sources-empty"',
-                 "/resources?view=plugins&from=add-resource", 'data-testid="add-source-btn"'):
+    for kept in ('data-testid="sources-empty"', 'data-testid="add-source-btn"'):
         assert kept in text, kept
+    assert 'data-testid="sources-no-plugins"' not in text         # an empty Sources list points to the built-in import, not to Plugins
     assert '.gui-v3 #resources-workspace .pipeline-page .source-card' in CSS
 
 
@@ -280,3 +282,67 @@ def test_port_free_ignores_time_wait_leftovers():
     conn, _ = server.accept()
     conn.close(); client.close(); server.close()      # leaves the 4-tuple in TIME_WAIT
     assert port_free(port)
+
+
+# ------------------------------------------------------------------ Resources: truthful roadmap UI
+
+def test_resources_intro_and_tab_framing_use_the_operating_environment_model(client):
+    eco = page(client, '/resources?view=ecosystem')
+    assert 'data-testid="resources-lede"' in eco
+    for needle in ('services', 'storage', 'inventory', 'interpretation', 'recognised datasets',
+                   'interpreters and profilers', 'read-only', 'Settings &rarr; Connections'):
+        assert needle in eco, needle
+    runs = page(client, '/resources?view=runs')
+    assert 'Manual runs only' in runs and 'plugin capability &rarr; configured source' in runs and 'run history' in runs
+    assert 'data-testid="schedule-link"' in runs and 'const SCHEDULING = false' in runs         # no invented scheduler state
+
+
+def test_sources_promotes_the_builtin_table_import_only_to_an_existing_route(client, app):
+    sources = page(client, '/resources?view=sources')
+    assert 'explicit, configured inputs' in sources and 'previewed, mapped, validated and run' in sources
+    for step in ('Plugin capability', 'Configured source', 'Schema &amp; mapping', 'FAIR / dry check', 'Run history'):
+        assert step in sources
+    entry = sources[sources.index('data-testid="import-table-entry"'):]
+    entry = entry[:entry.index('</p>')]
+    assert 'import a table or file' in entry and 'CSV, TSV or Excel' in entry
+    assert '<a ' not in entry and '<button' not in entry and 'href=' not in entry          # quiet copy, not a second action
+    assert 'data-testid="import-table-link"' not in sources
+    button = re.search(r'<button[^>]*data-testid="add-source-btn"[^>]*>([^<]*)</button>', sources)
+    assert button and button.group(1).strip() == '+ Import a table or file' and '+ Add resource' not in sources
+    assert client.get('/resources?view=sources&import=1').status_code == 200            # the deep link still resolves
+    text = (TEMPLATES / '_pipeline_sources_app.html').read_text()
+    assert "query.get('import') === '1'" in text and "first.click()" in text and 'BUILTIN_TABLE_TYPE.name' in text and "/api/pipeline/sources/upload" in text and "accept=\".csv,.tsv,.tab,.txt,.xlsx,.xlsm\"" in text
+    # the built-in claim is verified against the real registry, not asserted
+    from scidk.pipeline.plugin_registry import is_available
+    assert is_available('file_upload') is True
+
+
+def test_plugins_distinguishes_builtin_installed_and_planned_without_fake_installs(client):
+    plugins = page(client, '/resources?view=plugins')
+    assert 'reusable capabilities used to read, interpret, enrich, transform or publish data' in plugins
+    order = [plugins.index(h) for h in ('<h3>Built-in capability</h3>', '<h3>Installed external templates</h3>', '<h3>Planned future integrations</h3>')]
+    assert order == sorted(order)
+    builtin = plugins[plugins.index('data-testid="builtin-capability"'):]
+    builtin = builtin[:builtin.index('</div>\n  {% else %}') if '{% else %}' in builtin else builtin.index('<h3>Installed')]
+    assert 'Local table and file import' in builtin and 'CSV, TSV and Excel' in builtin and 'Built in' in builtin
+    roadmap = plugins[plugins.index('data-testid="plugins-roadmap"'):]
+    roadmap = roadmap[:roadmap.index('</ul>')]
+    assert re.findall(r'<strong>([^<]+)</strong>', roadmap) == ['SharePoint', 'iLab', 'PubMed / MeSH', 'PubChem', 'EDA']
+    assert roadmap.count('Planned') == 5 and '<a ' not in roadmap and '<button' not in roadmap and 'href=' not in roadmap
+    assert 'None of these is installed, selectable as a source type, or connected' in plugins
+    # installed templates come only from the live registry endpoints; no enable/disable controls on Resources
+    assert "get('/api/plugins')" in plugins and "get('/api/plugins/templates')" in plugins
+    for forbidden in ('/enable', '/disable', 'toggle-plugin', 'type="checkbox"'):
+        assert forbidden not in plugins, forbidden
+
+
+def test_wizard_builtin_type_is_the_first_choice_and_goes_straight_to_upload():
+    text = (TEMPLATES / '_pipeline_sources_app.html').read_text()
+    assert 'types = [BUILTIN_TABLE_TYPE].concat(data.templates || [])' in text
+    assert "selectTab('upload');" in text and "$('tab-remote').hidden = true" in text
+
+
+def test_sources_empty_state_is_the_single_import_sentence():
+    text = (TEMPLATES / '_pipeline_sources_app.html').read_text()
+    assert 'No Sources are configured yet. Import a table or file to create the first one.' in text
+    assert 'Use “+ Add resource”' not in text and 'sources-to-plugins' not in text

@@ -131,7 +131,7 @@
     <h2>{% if pipeline_workspace %}Sources{% else %}Resources{% endif %}</h2>
     <span class="small">Data resources the Pipeline maps into the knowledge graph.</span>
     <button class="btn primary" id="add-source-btn" data-testid="add-source-btn"
-            style="margin-left:auto">+ Add resource</button>
+            style="margin-left:auto">+ Import a table or file</button>
   </div>
 
   <div id="sources-list" data-testid="sources-list" aria-busy="true">
@@ -633,15 +633,8 @@
       if (WORKSPACE && !sources.length && !types.length) await loadTypes();
       list.innerHTML = sources.length
         ? sources.map(card).join('')
-        : (WORKSPACE && !types.length)
-          ? `<div class="empty" data-testid="sources-no-plugins">
-               No data-resource plugins are installed, so there is nothing to create a source from yet.<br>
-               <span class="small">Open <a href="${BASE}/resources?view=plugins" data-testid="sources-to-plugins">Plugins</a>
-               to see exactly what is installed and how to add a source connector.</span>
-             </div>`
-          : `<div class="empty" data-testid="sources-empty">
-             No data resources configured yet.<br>
-             <span class="small">Use “+ Add resource” to connect one.</span>
+        : `<div class="empty" data-testid="sources-empty">
+             No Sources are configured yet. Import a table or file to create the first one.
            </div>`;
     } catch (e) {
       list.innerHTML =
@@ -800,17 +793,20 @@
     if (here) $(dots[here]).setAttribute('aria-current', 'step');
   }
 
+  const BUILTIN_TABLE_TYPE = {
+    id: 'file_upload', plugin: 'file_upload', builtin: true, icon: '📄',
+    name: 'Import a table or file',
+    description: 'CSV, TSV or Excel. Built in: upload a file, preview its columns, then map it.',
+  };
+
   async function loadTypes() {
     const box = $('type-options');
     try {
       // The route already existed; the Pipeline just asks for one category.
       const data = await api('/api/plugins/templates?category=data_import');
-      types = data.templates || [];
-      if (!types.length) {
-        box.innerHTML = '<div class="notice info">No data resource plugins are '
-                      + 'registered.</div>';
-        return 0;
-      }
+      // The built-in table/file reader (CSV, TSV, Excel; the existing /api/pipeline/sources/upload path) is always
+      // offered first. Installed plugin templates follow it, exactly as the registry reports them.
+      types = [BUILTIN_TABLE_TYPE].concat(data.templates || []);
       box.innerHTML = types.map((t, i) => `
         <button type="button" class="type-option" data-testid="type-option"
                 data-index="${i}" aria-pressed="false">
@@ -839,6 +835,7 @@
     draft.plugin_type = type.plugin || type.id;
     draft.preset = '';
     draft.preview = null;
+    $('tab-remote').hidden = false;
 
     // Presets are the second level of the picker: Table Loader -> CSV/Excel/TSV.
     const presets = type.preset_configs || {};
@@ -853,11 +850,16 @@
     } else {
       field.hidden = true;
     }
-    if (!$('source-name').value.trim()) {
+    if (!$('source-name').value.trim() && !type.builtin) {
       $('source-name').value = type.name || '';
     }
     showStep('connect');
     updateSheetFields();
+    if (type.builtin) {
+      // Built-in import: the upload tab is the whole connection step (no remote path to test).
+      selectTab('upload');
+      $('tab-remote').hidden = true;
+    }
   });
 
   $('preset-select').addEventListener('change', (event) => {
@@ -1201,6 +1203,7 @@
     $('source-sheet-name').value = '';
     $('upload-file').value = '';
     $('connect-result').innerHTML = '';
+    $('tab-remote').hidden = false;
     $('preset-field').hidden = true;
     document.querySelectorAll('.type-option')
       .forEach((o) => o.setAttribute('aria-pressed', 'false'));
@@ -1210,16 +1213,13 @@
   $('add-source-btn').addEventListener('click', async () => {
     resetSheet();
     showStep('type');
-    const known = types.length ? types.length : await loadTypes();
-{% if pipeline_workspace %}
-    // No genuine source plugin is installed: there is nothing to create a resource from, so do not open a dead
-    // wizard. Plugins is where installing/enabling one is explained (the registry itself stays honest about "none").
-    if (known === 0) {
-      window.location.href = (window.SCIDK_BASE || '') + '/resources?view=plugins&from=add-resource';
-      return;
-    }
-{% endif %}
+    // The built-in table/file import is always available, so the wizard never needs to bounce to Plugins.
+    if (!types.length) await loadTypes();
     sheet.showModal();
+    // The primary action goes straight to the built-in CSV / TSV / Excel upload step. "Back" returns to the type list,
+    // where installed external plugin templates (if any) are still offered after it.
+    const first = document.querySelector('[data-testid=type-option]');
+    if (first && first.querySelector('.t-name').textContent === BUILTIN_TABLE_TYPE.name) first.click();
   });
 
   async function openEdit(sourceId) {
@@ -1334,6 +1334,11 @@
     const query = new URLSearchParams(window.location.search);
     const sourceId = query.get('source');
     const scheduleId = query.get('schedule');
+    if (query.get('import') === '1' && !sourceId && !scheduleId) {
+      // "Import a table or file" entry: open the add flow on the built-in table/file type (the existing upload tab).
+      $('add-source-btn').click();
+      return;
+    }
     if (scheduleId) {
       if (!SCHEDULING) return;  // no scheduler is running here: a stale ?schedule= link opens nothing
       const card = document.querySelector(`[data-source-id="${CSS.escape(scheduleId)}"] [data-testid=source-card-name]`);

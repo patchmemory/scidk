@@ -1,0 +1,159 @@
+{#
+  The shared Chat workbench. ONE component, two presentations:
+    cw_mode == 'page'    the full-page Chat route (/review?view=guidance, /review/guidance): a direct/deep-link destination.
+    cw_mode == 'dialog'  an inset modal (<dialog id="chat-workbench">) that Overview and Review open over themselves.
+
+  Honest by construction, in both modes:
+    * no fetch / XHR / WebSocket / beacon, no form submission, no storage, no cookie: the draft lives only in this
+      page's DOM, so it survives interactions inside the workbench (Advanced toggling) and is gone when the page is left;
+    * no fabricated answer or conversation: sending shows the person's own message and a plain "not sent" notice;
+    * the provider state is explicit (`data-provider-state`, "AI provider not configured");
+    * history: `chat_history` is only ever filled from real, configured conversation infrastructure. Today it is empty,
+      so the rail shows a plain empty state. Nothing here invents a sample conversation.
+  Launchers on the host page remain ordinary links / GET forms to the full-page route (they work without script); the
+  script below only upgrades them to open this dialog, filling the draft with text that is never submitted.
+  Opening or closing the dialog does not touch the URL or the browser history.
+
+  Advanced: the former Overview "Ask SciDK" form (ids, consent checkbox, /overview_chat.js) is the collapsible section.
+  It does nothing until the person ticks the consent box and submits.
+#}
+{% set cw_dialog = (cw_mode == 'dialog') %}
+{% if cw_dialog %}<dialog class="cw-dialog" id="chat-workbench" data-testid="chat-workbench" aria-labelledby="cw-title">{% endif %}
+<section class="guidance-shell cw-shell{% if cw_dialog %} cw-in-dialog{% endif %}" id="guidance-shell" data-testid="guidance-shell" data-provider-state="{{ 'configured' if provider_configured else 'not-configured' }}">
+<div class="gd-head">
+{% if cw_dialog %}<h2 class="ws-title" id="cw-title">Chat</h2>
+<div class="cw-actions"><a class="cw-full" href="{{ request.script_root }}/review?view=guidance" data-testid="chat-open-full">Open full page</a><button type="button" class="cw-close" id="chat-workbench-close" data-testid="chat-workbench-close" aria-label="Close Chat">Close <span aria-hidden="true">&times;</span></button></div>
+{% else %}<h1 class="ws-title">Chat</h1>
+<nav class="gd-links" aria-label="Go to" data-testid="chat-links"><a href="{{ request.script_root }}/overview" data-testid="chat-link-overview">Overview</a><a href="{{ request.script_root }}/review" data-testid="chat-link-review">Review workspace</a></nav>
+{% endif %}
+</div>
+<p class="ws-lede" id="guidance-welcome" data-testid="guidance-welcome">Ask about your science data: how things relate, what to organize next, or how to prepare metadata. Chat will draw on the sources you are allowed to use, and it will say where each answer came from.</p>
+
+<div class="cw-body">
+<div class="cw-main">
+<div class="gd-window" role="group" aria-labelledby="gd-window-title">
+  <h2 id="gd-window-title" class="sr-only" style="position:absolute;left:-9999px">Chat conversation</h2>
+  <div class="gd-status" id="guidance-provider-status" data-testid="guidance-provider-status" role="status">
+    <i class="ti ti-plug-off" aria-hidden="true"></i>
+    <div><strong>AI provider not configured.</strong> Chat cannot answer yet. Nothing you type here is sent anywhere, and no answers are generated or stored.</div>
+  </div>
+  <div class="gd-messages" id="guidance-messages" data-testid="guidance-messages" role="log" aria-live="polite" aria-label="Chat messages">
+    <div class="gd-msg system" data-testid="guidance-welcome-message">Hello. Once an AI provider is connected, you can ask questions here about the datasets, collections and graph you have access to. For now this window shows what the conversation will look like.</div>
+  </div>
+  <form class="gd-form" id="guidance-form" data-testid="guidance-form" autocomplete="off" onsubmit="return false">
+    <label for="guidance-input">Your message (a draft: nothing is sent)</label>
+    <textarea id="guidance-input" data-testid="guidance-input" rows="2" maxlength="4000" placeholder="Ask a question about your data…" aria-describedby="guidance-provider-status"{% if prefill %} autofocus data-prefilled="true"{% endif %}>{{ prefill }}</textarea>
+    <button type="submit" class="primary" id="guidance-send" data-testid="guidance-send">Ask</button>
+  </form>
+</div>
+
+{% if not cw_dialog %}
+<div class="gd-hints" data-testid="guidance-hints">
+  <strong>What you will be able to ask</strong>
+  <ul>
+    <li>How do these datasets relate to each other?</li>
+    <li>Which collection should I group these files into?</li>
+    <li>What metadata is missing before I can share this?</li>
+  </ul>
+</div>
+{% endif %}
+
+<details class="gd-advanced" id="advanced-query" data-testid="advanced-query">
+<summary>Advanced: grounded query tools</summary>
+<section class="ask-panel" aria-labelledby="ask-heading">
+<h3 id="ask-heading">Ask SciDK (advanced)</h3><p>Look for matching knowledge you’re allowed to use. Nothing is sent until you tick the consent box and ask.</p>
+<form id="overview-chat">
+<label for="overview-question">Question for the query tools</label>
+<textarea id="overview-question" required maxlength="4000" placeholder="Find a dataset, explore an entity, or ask about a workflow…" rows="3"{% if not overview_chat_enabled %} disabled{% endif %}></textarea>
+<div class="ask-controls"><label for="overview-scope">Look in</label><select id="overview-scope"><option value="accessible">My accessible knowledge</option><option value="system">System documentation</option><option value="graph" selected>Graph (read-only tools)</option><option value="selection" disabled>Current selection</option></select><button id="overview-send" class="primary"{% if not overview_chat_enabled %} disabled{% endif %}>Ask SciDK</button></div>
+<label class="consent"><input type="checkbox" id="overview-consent" required{% if not overview_chat_enabled %} disabled{% endif %}> Send this question and its matching authorized sources to my approved provider. Earlier questions are not sent.</label>
+</form>
+<div class="suggestions" aria-label="Suggested questions"><button type="button" data-question="Find synthetic datasets">Find a dataset</button><button type="button" data-question="Find Synthetic Investigator">Explore an investigator</button><button type="button" data-question="Explain the synthetic System workflow" data-scope="system">Understand a workflow</button></div>
+<p id="overview-status" role="status">{% if overview_chat_enabled %}Search uses names and released properties. Ask about a specific entity or documentation topic.{% else %}Ask SciDK is unavailable. An administrator needs to connect Knowledge services and enable the approved assistant.{% endif %}</p>
+<div id="overview-results"><h4 id="overview-answer-heading" hidden>AI interpretation</h4><pre id="overview-answer"></pre><h4 id="overview-source-heading" hidden>Retrieved facts &amp; sources</h4><div id="overview-source-links"></div><details id="overview-source-details" hidden><summary>Inspect authorized source details</summary><pre id="overview-sources"></pre></details></div>
+</section>
+<p class="gd-advanced-links"><a href="{{ request.script_root }}/chat">Existing chat sessions &amp; GraphRAG tools</a> · <a href="{{ request.script_root }}/settings#ai-chat/llm-provider">Personal provider settings</a></p>
+<p class="small">Explicit-ID context requests remain available through the existing API. This assistant supports bounded name/property lookup, not general graph questions or unrestricted analysis.</p>
+</details>
+</div>
+
+<aside class="cw-rail" id="chat-history" data-testid="chat-history" aria-labelledby="cw-rail-title">
+<h3 id="cw-rail-title">Recent conversations</h3>
+{% if chat_history %}
+<ul class="cw-rail-list" data-testid="chat-history-list">{% for item in chat_history %}<li><a href="{{ request.script_root }}{{ item.href }}">{{ item.title }}</a></li>{% endfor %}</ul>
+{% else %}
+<p class="cw-rail-empty" data-testid="chat-history-empty">No conversations available yet. Conversation history will appear when Chat is configured.</p>
+{% endif %}
+</aside>
+</div>
+</section>
+{% if cw_dialog %}</dialog>{% endif %}
+<script>
+(function () {
+  // In-page only: reads the draft box and appends to the message list. No network request, nothing written to storage;
+  // the state notice is the only "reply". Launcher text only ever fills the draft: it is never sent.
+  var form = document.getElementById('guidance-form');
+  var input = document.getElementById('guidance-input');
+  var list = document.getElementById('guidance-messages');
+  var shell = document.getElementById('guidance-shell');
+  var dlg = document.getElementById('chat-workbench');
+  function add(kind, text, testid) {
+    var el = document.createElement('div');
+    el.className = 'gd-msg ' + kind;
+    if (testid) el.setAttribute('data-testid', testid);
+    el.textContent = text;
+    list.appendChild(el);
+    list.scrollTop = list.scrollHeight;
+    return el;
+  }
+  function send() {
+    var text = (input.value || '').trim();
+    if (!text) { input.focus(); return; }
+    add('user', text, 'guidance-user-message');
+    input.value = '';
+    if (shell.getAttribute('data-provider-state') !== 'configured') {
+      add('notice', 'AI provider not configured. Your question was not sent anywhere and no answer was generated.', 'guidance-not-configured-notice');
+    }
+    input.focus();
+  }
+  form.addEventListener('submit', function (event) { event.preventDefault(); send(); });
+  input.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); send(); }
+  });
+  function cursorToEnd() { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+  if (input.getAttribute('data-prefilled')) cursorToEnd();
+  var advanced = document.getElementById('advanced-query');
+  if (!dlg && advanced && (location.hash === '#advanced-query' || /[?&]domain=/.test(location.search))) advanced.open = true;
+
+  if (!dlg || typeof dlg.showModal !== 'function') return;
+  // Dialog presentation (Overview and Review). Launchers keep working as plain links without this script.
+  var opener = null;
+  function openWorkbench(text) {
+    opener = document.activeElement;
+    if (text) input.value = String(text).slice(0, 1000);
+    if (!dlg.open) dlg.showModal();
+    cursorToEnd();
+    return true;
+  }
+  document.addEventListener('click', function (event) {
+    var link = event.target.closest ? event.target.closest('a[data-chat-prompt]') : null;
+    if (!link || event.button || event.metaKey || event.ctrlKey || event.shiftKey) return;
+    event.preventDefault();
+    openWorkbench(link.getAttribute('data-chat-prompt'));
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('form.chat-launcher'), function (launcher) {
+    launcher.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var field = launcher.elements.prefill;
+      openWorkbench(field ? (field.value || '').trim() : '');
+    });
+  });
+  document.getElementById('chat-workbench-close').addEventListener('click', function () { dlg.close(); });
+  dlg.addEventListener('click', function (event) { if (event.target === dlg) dlg.close(); });
+  dlg.addEventListener('close', function () {
+    if (opener && opener.focus && document.contains(opener)) opener.focus();
+    opener = null;
+  });
+})();
+</script>
+<script defer src="{{ url_for('static', filename='js/overview_chat.js') }}"></script>

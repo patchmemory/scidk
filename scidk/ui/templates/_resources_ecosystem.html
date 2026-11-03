@@ -15,7 +15,7 @@
 #}
 {% set eco_embedded = true %}
 {% set rclone_mounts_feature = true %}
-<p class="ws-note" data-testid="connections-context">Where SciDK reads from and writes to. Graph backends are tested on demand. Credentials and connection profiles are edited under <a href="{{ request.script_root }}/settings#connections/overview">Settings &rarr; Connections</a>; configured data resources are on the <a href="{{ request.script_root }}/resources?view=sources">Sources</a> tab.</p>
+<p class="ws-note" data-testid="connections-context"><strong>Ecosystem</strong> is what is available to this workspace: <em>services</em> (graph backends), <em>storage</em>, <em>inventory</em> (what has been scanned) and <em>interpretation</em> (how files are understood). It is passive: storage and scan index &rarr; interpreters and profilers &rarr; recognised datasets. Connection details here are read-only; credentials and profiles are edited under <a href="{{ request.script_root }}/settings#connections/overview">Settings &rarr; Connections</a>. Configured inputs are on <a href="{{ request.script_root }}/resources?view=sources">Sources</a>.</p>
 
 <section class="eco-group" id="eco-graph-services" data-testid="eco-group-graph" aria-labelledby="eco-graph-h">
   <h2 id="eco-graph-h">Graph services</h2>

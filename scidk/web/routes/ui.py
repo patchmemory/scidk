@@ -552,6 +552,15 @@ def scheduling_available():
         return False
 
 
+def builtin_table_import_available():
+    """True when the pipeline's built-in tabular file reader (CSV, TSV, Excel; the upload path) resolves here."""
+    try:
+        from ...pipeline.plugin_registry import is_available
+        return bool(is_available('file_upload'))
+    except Exception:
+        return False
+
+
 @bp.get('/resources')
 def resources_workspace():
     """Resources workspace: Ecosystem | Sources | Plugins | Runs.
@@ -572,7 +581,8 @@ def resources_workspace():
                    else _mapping_page_context(source_id))
         context['plugin_step'] = step
     return render_template('gui/resources_workspace.html', ws_view=view, pipeline_workspace=True,
-                           scheduling_available=scheduling_available(), **context)
+                           scheduling_available=scheduling_available(),
+                           builtin_table_import=builtin_table_import_available(), **context)
 
 
 @bp.get('/interpreters')

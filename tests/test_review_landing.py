@@ -70,7 +70,8 @@ def forbid_provider(app, monkeypatch):
 def test_home_is_a_compact_launcher_with_three_real_destination_cards(app, path):
     page = html(app, path)
     assert '<h1 class="ws-title">Overview</h1>' in page
-    assert 'Your research workspace' in page and 'Where would you like to begin?' in page
+    assert 'Where would you like to begin?' in page and 'Your research workspace' not in page     # one title, one prompt
+    assert len(re.findall(r'<h1 class="ws-title"', page)) == 1
     launcher = page[page.index('id="overview-launcher"'):]
     launcher = launcher[:launcher.index('</form>')]
     assert 'method="get"' in launcher and 'name="view" value="guidance"' in launcher and 'name="prefill"' in launcher
@@ -87,12 +88,15 @@ def test_home_is_a_compact_launcher_with_three_real_destination_cards(app, path)
         assert '>%s</h3>' % title in page
 
 
-def test_home_hides_provider_consent_and_low_level_query_mechanics(app):
+def test_home_landing_hides_provider_consent_and_low_level_query_mechanics(app):
     page = html(app, '/')
+    landing = page[:page.index('<dialog')]                 # the visible landing: everything before the shared Chat dialog
     for banned in ('overview-consent', 'overview-scope', 'Look in', 'Graph (read-only tools)', 'overview_chat.js',
                    'Send this question', 'overview-question'):
-        assert banned not in page, banned
+        assert banned not in landing, banned
+        assert banned in page[page.index('<dialog'):], banned      # still reachable, inside the closed Chat workbench
     assert '<script' not in page[page.index('id="overview-launcher"'):page.index('id="workspace-status"')]
+    assert not re.search(r'<dialog[^>]*\bopen\b', page) and not re.search(r'<details class="gd-advanced"[^>]*\bopen\b', page)
 
 
 def test_home_status_strip_is_honest_and_read_only(app):
@@ -188,10 +192,11 @@ def test_every_task_has_a_discuss_in_chat_link_with_a_fixed_prompt(app):
 def test_review_landing_makes_no_ai_or_provider_calls_and_has_no_script(app, monkeypatch):
     requests = forbid_provider(app, monkeypatch)
     page = html(app)
-    section = page[page.index('id="review-landing"'):]
-    section = section[:section.index('</section>\n</main>')] if '</section>\n</main>' in section else section
-    assert '<script' not in section.split('</main>')[0] and 'fetch(' not in section.split('</main>')[0]
-    assert '/api/' not in section.split('</main>')[0]
+    landing = page[page.index('id="review-landing"'):page.index('<dialog')]       # the landing itself, before the shared dialog
+    assert '<script' not in landing and 'fetch(' not in landing and '/api/' not in landing
+    script = inline_script(page)
+    for banned in BANNED_SCRIPT:
+        assert banned not in script, banned
     assert requests == ['/review']
 
 
@@ -373,3 +378,76 @@ def test_collection_pill_is_an_accessible_control_over_supported_infrastructure(
     for forbidden in ('_json', 'fetch', 'DELETE', 'POST'):
         assert forbidden not in clear, forbidden            # clearing never touches membership or data
     assert set(re.findall(r"localStorage\.(?:set|remove)Item\((\w+)", src)) == {'KEY', 'OPEN_KEY'}   # no new persisted state
+
+
+# ------------------------------------------------------------------ Shared Chat workbench (dialog on Overview and Review, page on the Chat routes)
+
+def dialog_of(page):
+    start = page.index('<dialog')
+    return page[start:page.index('</dialog>') + len('</dialog>')]
+
+
+@pytest.mark.parametrize('path', ['/', '/overview', '/review'])
+def test_overview_and_review_open_the_same_shared_chat_workbench_dialog(app, path):
+    page = html(app, path)
+    dialog = dialog_of(page)
+    assert page.count('<dialog') == 1 and 'id="chat-workbench"' in dialog and 'aria-labelledby="cw-title"' in dialog
+    assert '<h2 class="ws-title" id="cw-title">Chat</h2>' in dialog
+    for testid in ('guidance-shell', 'guidance-messages', 'guidance-input', 'advanced-query', 'chat-history',
+                   'chat-workbench-close', 'chat-open-full'):
+        assert 'data-testid="%s"' % testid in dialog, testid
+    assert re.search(r'<button type="button" class="cw-close"[^>]*aria-label="Close Chat"', dialog)
+    assert not re.search(r'<dialog[^>]*\bopen\b', dialog)                                    # closed on arrival
+    assert not re.search(r'<details class="gd-advanced"[^>]*\bopen\b', dialog)               # Advanced collapsed
+    assert 'AI provider not configured' in dialog and 'data-provider-state="not-configured"' in dialog
+    assert 'guidance-input' not in dialog[dialog.index('<details class="gd-advanced"'):dialog.index('</details>')]
+
+
+def test_workbench_markup_is_identical_on_overview_and_review(app):
+    def normal(page):
+        return re.sub(r'\s+', ' ', dialog_of(page))
+    assert normal(html(app, '/overview')) == normal(html(app, '/review'))
+
+
+@pytest.mark.parametrize('path', ['/', '/review'])
+def test_workbench_script_is_in_page_only_and_launchers_stay_plain_links(app, path):
+    page = html(app, path)
+    script = inline_script(page)
+    for banned in BANNED_SCRIPT + ('beforeunload', 'pagehide', '.reset(', 'pushState', 'replaceState', 'location.href', 'location.assign'):
+        assert banned not in script, banned
+    assert 'showModal' in script and 'data-chat-prompt' in script and 'chat-workbench-close' in script
+    for form in re.findall(r'<form class="chat-launcher".*?</form>', page, re.S):          # no-script fallback is still a GET to Chat
+        assert 'method="get"' in form and 'name="view" value="guidance"' in form
+    assert re.search(r'(?<![\w-])data-chat-prompt', script)
+    if path == '/review':
+        for action in EXPECTED:
+            body = card(page, action)
+            assert 'href="/review?view=guidance&amp;prefill=' in body and 'data-chat-prompt="' in body
+
+
+def test_workbench_history_is_an_honest_empty_state_without_sample_conversations(app):
+    for path in ('/', '/review', '/review?view=guidance', '/review/guidance'):
+        page = html(app, path)
+        rail = page[page.index('id="chat-history"'):]
+        rail = rail[:rail.index('</aside>')]
+        assert 'Recent conversations' in rail
+        assert 'No conversations available yet. Conversation history will appear when Chat is configured.' in rail
+        assert 'data-testid="chat-history-list"' not in rail and '<li' not in rail and '<a ' not in rail
+
+
+def test_full_page_chat_remains_a_deep_link_and_reuses_the_workbench(app):
+    for path in ('/review?view=guidance', '/review/guidance'):
+        page = html(app, path)
+        assert '<dialog' not in page and '<h1 class="ws-title">Chat</h1>' in page
+        assert 'data-testid="chat-links"' in page and 'id="chat-workbench-close"' not in page
+        assert 'data-testid="chat-history"' in page and 'data-testid="advanced-query"' in page
+        assert 'data-testid="guidance-hints"' in page
+
+
+def test_chat_prefill_still_arrives_visible_unsent_and_escaped_on_the_full_page(app, monkeypatch):
+    requests = forbid_provider(app, monkeypatch)
+    page = html(app, '/review?view=guidance&prefill=' + quote('<b>x</b> & "y"'))
+    box = re.search(r'<textarea id="guidance-input"[^>]*>(.*?)</textarea>', page, re.S).group(1)
+    assert box == '&lt;b&gt;x&lt;/b&gt; &amp; &#34;y&#34;' and '<b>x</b>' not in page
+    assert 'data-testid="guidance-user-message"' not in page
+    assert requests == ['/review']

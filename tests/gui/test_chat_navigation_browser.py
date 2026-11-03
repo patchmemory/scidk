@@ -18,14 +18,17 @@ def stub_collections(page):
 def test_browser_back_returns_to_the_actual_prior_page_and_links_are_destinations(gui_page):
     page, origin, _ = gui_page
     page.goto(origin + '/review')
-    page.get_by_test_id('discuss-evaluate').click()
-    expect(page).to_have_url(__import__('re').compile(r'/review\?view=guidance&prefill='))
+    page.get_by_test_id('discuss-evaluate').click()                      # opens the inset workbench: no navigation
+    expect(page.get_by_test_id('chat-workbench')).to_be_visible()
+    expect(page).to_have_url(origin + '/review')
+    page.get_by_test_id('chat-open-full').click()                        # a deliberate move to the full page
+    expect(page).to_have_url(origin + '/review?view=guidance')
     expect(page.get_by_test_id('guidance-back')).to_have_count(0)
     page.go_back()
     expect(page).to_have_url(origin + '/review')
     page.goto(origin + '/overview')
-    page.get_by_test_id('launcher-open').click()
-    expect(page).to_have_url(origin + '/review?view=guidance')
+    page.get_by_test_id('home-advanced-link').click()
+    expect(page).to_have_url(origin + '/review/guidance#advanced-query')
     page.go_back()
     expect(page).to_have_url(origin + '/overview')
     page.go_forward()

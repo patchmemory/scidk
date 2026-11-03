@@ -102,10 +102,10 @@ def test_sources_tab_is_the_real_sources_page_shared_with_the_legacy_route(clien
     assert "{% include '_pipeline_sources_app.html' %}" in (TEMPLATES / 'gui' / 'resources_workspace.html').read_text()
 
 
-def test_sources_with_no_plugins_explains_and_links_to_plugins_only_in_the_workspace(client):
+def test_sources_explains_configured_inputs_and_offers_the_builtin_import_without_redirecting_to_plugins(client):
     workspace = page(client, '/resources?view=sources')
-    assert 'data-testid="sources-no-plugins"' in workspace and 'data-testid="sources-to-plugins"' in workspace
-    assert '/resources?view=plugins' in workspace and 'configured instances' in workspace
+    assert 'data-testid="sources-no-plugins"' not in workspace and 'data-testid="sources-to-plugins"' not in workspace
+    assert '/resources?view=plugins' in workspace and 'explicit, configured inputs' in workspace
     legacy = page(client, '/pipeline/sources')
     assert 'const WORKSPACE = false' in legacy and 'const WORKSPACE = true' in workspace
     assert 'data-testid="sources-empty"' in workspace and 'data-testid="sources-empty"' in legacy   # plugin-less legacy copy kept
@@ -115,8 +115,8 @@ def test_plugins_tab_is_a_registry_over_the_existing_plugin_apis(client):
     html = page(client, '/resources?view=plugins')
     for needle in ('data-testid="plugins-registry"', 'data-testid="plugins-installed"', 'data-testid="plugins-capabilities"',
                    "get('/api/plugins')", "get('/api/plugins/templates')", "get('/api/pipeline/sources')",
-                   'Source connectors', 'Enrichment', 'No plugins are installed', 'No data-resource plugins are installed',
-                   'docs/plugins.md', 'data-testid="plugins-source-tools"'):
+                   'Source connectors', 'Enrichment', 'No external plugin templates are installed',
+                   'No external source connectors are installed', 'data-testid="plugins-source-tools"'):
         assert needle in html, needle
     assert 'Settings &rarr; Plugins' in html
 

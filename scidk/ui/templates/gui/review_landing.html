@@ -33,4 +33,5 @@
 <ul>{% for item in advanced %}<li><a href="{{ request.script_root }}{{ item.href }}" data-destination="{{ item.href }}">{{ item.label }}</a> — {{ item.description }}</li>{% endfor %}</ul></details>
 {% endif %}
 </section>
+{% with cw_mode='dialog' %}{% include 'gui/_chat_workbench.html' %}{% endwith %}
 {% endblock %}

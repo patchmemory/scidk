@@ -16,7 +16,7 @@
 </style>
 <div class="res-runs" data-testid="runs-workspace">
   <h2 style="margin:.25rem 0; font-size:1.25rem">Runs</h2>
-  <p class="small">{% if scheduling_available %}Launch, schedule and review runs{% else %}Launch runs by hand and review their history{% endif %} for your configured <a href="{{ request.script_root }}/resources?view=sources">Sources</a>. A <strong>dry run</strong> maps and reports without writing. Check the schema and column mapping behind a result under <a href="{{ request.script_root }}/resources?view=plugins">Plugins</a>.</p>
+  <p class="small">{% if scheduling_available %}Launch, schedule and review runs{% else %}Launch runs by hand and review their history{% endif %} for your configured <a href="{{ request.script_root }}/resources?view=sources">Sources</a>. A <strong>dry run</strong> maps and reports without writing. Check the schema and column mapping behind a result under <a href="{{ request.script_root }}/resources?view=plugins">Plugins</a>. This is the last link of the chain: plugin capability &rarr; configured source &rarr; schema/mapping &rarr; FAIR/dry check &rarr; run history.</p>
   {% if not scheduling_available %}<div class="res-callout" role="note" data-testid="runs-manual-note"><strong>Manual runs only</strong>No scheduler is running in this deployment, so nothing here runs on a schedule. A run starts when you press Run or Dry run, and the history below lists the runs that have been recorded.</div>{% endif %}
 
   <h3>Launch</h3>

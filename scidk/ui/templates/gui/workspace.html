@@ -3,9 +3,8 @@
 <section class="workspace">
 <h1 class="ws-title">{{ page }}</h1>
 {% if page == 'Overview' %}
-<h2 class="home-sub" id="home-sub">Your research workspace</h2>
 <p class="page-lede">Where would you like to begin?</p>
-{# Compact Chat launcher: a plain GET form to the Chat shell. It only pre-fills Chat's input; nothing is sent, stored or submitted. #}
+{# Compact Chat launcher: a plain GET form to the full-page Chat route; script upgrades it to open the shared Chat workbench dialog below. It only pre-fills the draft; nothing is sent, stored or submitted. #}
 <form class="chat-launcher" id="overview-launcher" data-testid="overview-launcher" method="get" action="{{ request.script_root }}/review" role="search" aria-label="Open Chat">
 <input type="hidden" name="view" value="guidance">
 <label for="launcher-input" class="sr-only">Ask about your data</label>
@@ -24,8 +23,9 @@
 <section class="ws-status" id="workspace-status" data-testid="workspace-status" aria-labelledby="ws-status-title">
 <h2 id="ws-status-title">Current workspace</h2>
 <ul>{% for item in workspace_status %}<li data-status-id="{{ item.id }}" data-state="{{ item.state }}"><span class="ws-status-label">{{ item.label }}</span> <span class="ws-status-value">{{ item.value }}</span></li>{% endfor %}</ul>
-<p class="ws-status-note">Read from configuration only; nothing here probes the graph or any source. <a href="{{ request.script_root }}/review/guidance#advanced-query" data-testid="home-advanced-link">Advanced query tools</a> are under Chat.</p>
+<p class="ws-status-note"><a href="{{ request.script_root }}/review/guidance#advanced-query" data-testid="home-advanced-link">Advanced query tools</a> are in Chat.</p>
 </section>
+{% with cw_mode='dialog' %}{% include 'gui/_chat_workbench.html' %}{% endwith %}
 {% elif page == 'Knowledge' %}
 <p>The existing knowledge tools remain available while the combined workspace is prepared.</p>
 <p><a href="{{ request.script_root }}/map">Maps &amp; Canvas</a> · <a href="{{ request.script_root }}/entities">Entities</a> · <a href="{{ request.script_root }}/entities?tab=relationships">Relationships</a> · <a href="{{ request.script_root }}/results">Results</a></p>
