@@ -1,45 +1,59 @@
-"""Catalogue of the actions offered on the Review landing ("What would you like to do with your science data?").
+"""Catalogue of the scientific tasks offered on the Review landing ("What scientific work are you trying to do?").
 
-Pure data, no I/O: every card either links to an existing workspace (``status='ready'``) or is an honest
-placeholder (``status='future'`` / ``'unavailable'``) that renders no link. Later work (harmonization, enrichment,
-publication/SciDO preparation, AI-assisted reasoning, operational guidance) adds an entry to ``review_actions`` and
-nothing else; the template renders whatever the catalogue returns.
+Pure data, no I/O: every card links to an existing workspace (``status='ready'``) and carries one fixed contextual Chat
+prompt. Chat is a cross-cutting assistant surface, not a peer card: it is opened with ``chat_href`` which only pre-fills
+the Chat input (``/review?view=guidance&prefill=...``; the Guidance URL is a compatibility name). Nothing is sent.
 """
+from urllib.parse import quote
 
 LEGACY_ASSERTIONS_PATH = '/review?view=assertions'
 GUIDANCE_PATH = '/review?view=guidance'
+CHAT_PATH = GUIDANCE_PATH
+PREFILL_MAX = 1000
+
+
+def chat_href(prompt=None):
+    """App-relative URL that opens the Chat shell, optionally with ``prompt`` pre-filled (never submitted)."""
+    text = (prompt or '').strip()[:PREFILL_MAX]
+    return CHAT_PATH + ('&prefill=' + quote(text, safe='') if text else '')
 
 
 def review_actions(assertions_enabled=False):
     """Return ``(actions, advanced)`` for the landing; paths are app-relative (the template adds the script root)."""
+    def task(id, title, summary, primary, links, prompt):
+        return dict(id=id, title=title, status='ready', summary=summary, primary=primary, links=links,
+                    chat=dict(label='Discuss in Chat', prompt=prompt, href=chat_href(prompt)))
     actions = [
-        dict(id='understand', title='Understand data', status='ready',
-             summary='See how entities relate. Inspect relationships, entities, maps and the contextual graph structure around them.',
-             primary=dict(label='Open Relationships', href='/knowledge?view=relationships'),
-             links=[dict(label='Entities', href='/knowledge?view=entities'),
-                    dict(label='Maps', href='/knowledge?view=maps')]),
-        dict(id='organize', title='Organize context', status='ready',
-             summary='Group related material for a scientific purpose with Collections and Datasets.',
-             primary=dict(label='Open Collections', href='/datasets?view=collections'),
-             links=[dict(label='Datasets', href='/datasets?view=datasets')]),
-        dict(id='metadata', title='Improve metadata', status='ready',
-             summary='Prepare sources and reach the schema and column-mapping tools. Enrichment will build on these.',
-             primary=dict(label='Open Plugins & mapping', href='/resources?view=plugins'),
-             links=[dict(label='Sources', href='/resources?view=sources')]),
-        dict(id='explore', title='Explore', status='ready',
-             summary='Browse data locations and datasets, or look at graph views and saved maps.',
-             primary=dict(label='Browse data', href='/datasets?view=browse'),
-             links=[dict(label='Saved maps', href='/knowledge?view=maps')]),
+        task('curate', 'Curate',
+             'Organize Collections and Datasets, and keep their provenance and context together.',
+             dict(label='Open Collections', href='/datasets?view=collections'),
+             [dict(label='Datasets', href='/datasets?view=datasets'),
+              dict(label='Browse data', href='/datasets?view=browse')],
+             'I am curating a collection of datasets. Help me think through how to group them and what provenance and context to keep.'),
+        task('annotate', 'Annotate',
+             'Add or review scientific notes, descriptions, tags and corrections on files and datasets.',
+             dict(label='Open Browse to annotate', href='/datasets?view=browse'),
+             [],
+             'I want to annotate my data. Help me decide which notes, descriptions, tags or corrections would be most useful.'),
+        task('evaluate', 'Evaluate',
+             'Examine graph evidence, metadata completeness, mapping and run outcomes, and inconsistencies.',
+             dict(label='Open Relationships', href='/knowledge?view=relationships'),
+             [dict(label='Entities', href='/knowledge?view=entities'),
+              dict(label='Maps', href='/knowledge?view=maps'),
+              dict(label='Runs', href='/resources?view=runs')],
+             'I am evaluating my data. Help me look for gaps in metadata, weak evidence or inconsistencies between relationships and runs.'),
+        task('enrich', 'Enrich',
+             'Prepare sources, schema and mappings. Enrichment capability will build on these.',
+             dict(label='Open Plugins & mapping', href='/resources?view=plugins'),
+             [dict(label='Sources', href='/resources?view=sources')],
+             'I want to enrich my data. Help me plan which sources, schema and mappings to prepare first.'),
         # Always a launcher: the Collections destination itself reports whether sharing-plan drafting is available.
-        dict(id='share', title='Prepare to share', status='ready',
-             summary='Open a saved Collection to draft a dataset sharing plan and preview a data-management-sharing package. Nothing is uploaded.',
-             primary=dict(label='Open Collections', href='/datasets?view=collections'), links=[]),
+        task('publish', 'Publish',
+             'Prepare Collections and a sharing or package plan. Nothing is uploaded.',
+             dict(label='Open Collections', href='/datasets?view=collections'),
+             [],
+             'I want to prepare a collection to share. Help me work out what metadata and context a sharing package needs.'),
     ]
-    # Chat (formerly Guidance; ids and URLs keep the old name) is a launcher to the chat-style shell (/review?view=guidance). The shell makes no provider or network
-    # call and fabricates nothing; it states plainly that no AI provider is configured until one is wired in.
-    actions.append(dict(id='guidance', title='Chat', status='ready',
-             summary='Ask questions about your data and next steps in a chat-style workspace. The AI provider is not configured yet, so this opens the chat surface without any answers.',
-             primary=dict(label='Open Chat', href=GUIDANCE_PATH), links=[]))
     advanced = []
     if assertions_enabled:
         advanced.append(dict(label='Assertion review queue',

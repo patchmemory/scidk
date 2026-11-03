@@ -13,8 +13,8 @@ def test_enabled_overview_renders_answer_as_text(gui_page):
         route.fulfill(json={'status': 'success', 'reply': '<img src=x onerror=alert(1)>',
             'notice': 'Verify sources', 'context': {'fact': {'fact_id': 'fact:demo', 'citations': ['Synthetic']}}})
     page.route('**/api/chat/overview', answer)
-    page.goto(origin + '/overview?profile=review')
-    page.get_by_label('Your question').fill('Explain this fact')
+    page.goto(origin + '/review/guidance?profile=review#advanced-query')
+    page.locator('#overview-question').fill('Explain this fact')
     page.locator('#overview-consent').check()
     page.get_by_role('button', name='Ask SciDK', exact=True).click()
     expect(page.locator('#overview-answer')).to_have_text('<img src=x onerror=alert(1)>')

@@ -135,7 +135,8 @@ def test_runs_does_not_imply_scheduling_when_no_scheduler_runs(client):
 
 def test_review_card_links_to_guidance_and_legacy_assertions_route_is_kept(client):
     landing = page(client, '/review')
-    assert 'href="/review?view=guidance"' in landing and 'Open Chat' in landing
+    assert 'name="view" value="guidance"' in landing and 'Open Chat' in landing
+    assert 'href="/review?view=guidance&amp;prefill=' in landing
     assert 'id="review-landing"' in landing
 
 
@@ -160,7 +161,7 @@ def visible_text(html):
 def test_review_shows_chat_and_keeps_both_legacy_guidance_urls(client):
     landing = page(client, '/review')
     assert 'Open Chat' in visible_text(landing) and 'Get guidance' not in landing and 'Open Guidance' not in landing
-    assert re.search(r'<h3>\s*Chat\s*(<|\n)', landing) or '>Chat<' in landing
+    assert 'Discuss in Chat' in visible_text(landing)
     for url in ('/review?view=guidance', '/review/guidance'):
         html = page(client, url)
         assert '<h1 class="ws-title">Chat</h1>' in html and '<title>SciDK \u2014 Review \u00b7 Chat</title>' in html

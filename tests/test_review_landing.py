@@ -1,19 +1,26 @@
-"""Review landing: heading, action cards, deep links, no AI calls and legacy route compatibility."""
+"""Overview/Review entry experience: compact Chat launcher, real destination cards, five task cards with contextual Chat
+prefills, the Chat prefill contract (escaped, unsent, unstored), legacy URL compatibility and no AI/provider calls."""
+import html as htmllib
 import re
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 import pytest
 
-PROMPT = 'What would you like to do with your science data?'
-CARD_TITLES = ['Understand data', 'Organize context', 'Improve metadata', 'Explore', 'Prepare to share', 'Chat']
+PROMPT = 'What scientific work are you trying to do?'
+TASK_TITLES = ['Curate', 'Annotate', 'Evaluate', 'Enrich', 'Publish']
 EXPECTED = {
-    'understand': ['/knowledge?view=relationships', '/knowledge?view=entities', '/knowledge?view=maps'],
-    'organize': ['/datasets?view=collections', '/datasets?view=datasets'],
-    'metadata': ['/resources?view=plugins', '/resources?view=sources'],
-    'explore': ['/datasets?view=browse', '/knowledge?view=maps'],
-    'share': ['/datasets?view=collections'],
-    'guidance': ['/review?view=guidance'],
+    'curate': ['/datasets?view=collections', '/datasets?view=datasets', '/datasets?view=browse'],
+    'annotate': ['/datasets?view=browse'],
+    'evaluate': ['/knowledge?view=relationships', '/knowledge?view=entities', '/knowledge?view=maps', '/resources?view=runs'],
+    'enrich': ['/resources?view=plugins', '/resources?view=sources'],
+    'publish': ['/datasets?view=collections'],
 }
+HOME_EXPECTED = {
+    'browse': ['/datasets?view=browse', '/datasets?view=collections'],
+    'explore': ['/knowledge?view=relationships', '/knowledge?view=entities', '/knowledge?view=maps', '/knowledge?view=sketch'],
+    'curate': ['/review'],
+}
+BANNED_SCRIPT = ('fetch(', 'XMLHttpRequest', 'WebSocket', 'sendBeacon', 'localStorage', 'sessionStorage', 'document.cookie', 'EventSource')
 
 
 @pytest.fixture
@@ -36,94 +43,154 @@ def card(page, action):
     return match.group(0)
 
 
-def test_heading_prompt_and_all_cards(app):
+def home_card(page, name):
+    match = re.search(r'<article class="rl-card"[^>]*id="home-card-%s".*?</article>' % name, page, re.S)
+    assert match, name
+    return match.group(0)
+
+
+def inline_script(page):
+    script = page[page.index('<script>', page.index('id="guidance-shell"')):]
+    return script[:script.index('</script>')]
+
+
+def forbid_provider(app, monkeypatch):
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Entry pages must not call an AI provider')
+    monkeypatch.setattr('scidk.services.overview_chat.chat_completion', forbidden)
+    app.config.update(SCIDK_OVERVIEW_CHAT_ENABLED=True, SCIDK_REVIEW_CHAT_ENABLED=True)
+    requests = []
+    app.before_request(lambda: requests.append(__import__('flask').request.path))
+    return requests
+
+
+# ------------------------------------------------------------------ Overview / Home
+
+@pytest.mark.parametrize('path', ['/', '/overview'])
+def test_home_is_a_compact_launcher_with_three_real_destination_cards(app, path):
+    page = html(app, path)
+    assert '<h1 class="ws-title">Overview</h1>' in page
+    assert 'Your research workspace' in page and 'Where would you like to begin?' in page
+    launcher = page[page.index('id="overview-launcher"'):]
+    launcher = launcher[:launcher.index('</form>')]
+    assert 'method="get"' in launcher and 'name="view" value="guidance"' in launcher and 'name="prefill"' in launcher
+    assert 'Ask about your data' in launcher and 'Open Chat →' in launcher
+    assert '<textarea' not in launcher and 'checkbox' not in launcher
+    assert len(re.findall(r'<article class="rl-card"', page)) == 3
+    adapter = app.url_map.bind('localhost')
+    for name, destinations in HOME_EXPECTED.items():
+        found = re.findall(r'data-destination="([^"]+)"', home_card(page, name))
+        assert found == destinations, name
+        for destination in found:
+            assert adapter.match(urlsplit(destination).path)[0].startswith('ui.'), destination
+    for title in ('Browse data', 'Explore knowledge', 'Curate and review'):
+        assert '>%s</h3>' % title in page
+
+
+def test_home_hides_provider_consent_and_low_level_query_mechanics(app):
+    page = html(app, '/')
+    for banned in ('overview-consent', 'overview-scope', 'Look in', 'Graph (read-only tools)', 'overview_chat.js',
+                   'Send this question', 'overview-question'):
+        assert banned not in page, banned
+    assert '<script' not in page[page.index('id="overview-launcher"'):page.index('id="workspace-status"')]
+
+
+def test_home_status_strip_is_honest_and_read_only(app):
+    page = html(app, '/')
+    strip = page[page.index('id="workspace-status"'):]
+    strip = strip[:strip.index('</section>')]
+    assert 'Current workspace' in strip
+    ids = re.findall(r'data-status-id="(\w+)" data-state="(\w+)"', strip)
+    assert [i for i, _ in ids] == ['graph', 'inventory', 'plugins']
+    assert all(state in ('ok', 'off', 'unknown') for _, state in ids)
+    assert 'data-testid="home-advanced-link"' in strip and '/review/guidance#advanced-query' in strip
+
+
+def test_home_status_reports_unknown_when_a_check_fails(app, monkeypatch):
+    def broken(_app):
+        raise RuntimeError('no')
+    monkeypatch.setattr('scidk.core.neo4j_config.get_neo4j_params', broken)
+    page = html(app, '/')
+    assert re.search(r'data-status-id="graph" data-state="unknown"><span class="ws-status-label">Graph</span> '
+                     r'<span class="ws-status-value">Unknown', page)
+
+
+def test_home_makes_no_provider_call_and_keeps_old_selection_deep_links(app, monkeypatch):
+    requests = forbid_provider(app, monkeypatch)
+    page = html(app, '/overview')
+    assert requests == ['/overview']
+    assert '/api/' not in page[page.index('id="overview-launcher"'):page.index('data-testid="home-advanced-link"')]
+    response = app.test_client().get('/overview?domain=research&id=abc')
+    assert response.status_code == 302
+    assert response.headers['Location'].endswith('/review/guidance?domain=research&id=abc#advanced-query')
+
+
+# ------------------------------------------------------------------ Review
+
+def test_review_has_central_chat_and_exactly_five_task_cards(app):
     page = html(app)
-    assert '<h1 class="ws-title">Review</h1>' in page
-    assert PROMPT in page
-    for title in CARD_TITLES:
-        assert title in page
-    assert len(re.findall(r'<article class="rl-card', page)) == 6
-    assert 'review-landing' in page and 'id="review-workspace"' not in page
+    assert '<h1 class="ws-title">Review</h1>' in page and PROMPT in page
+    assert page.index('id="review-chat-launcher"') < page.index('id="rl-card-curate"')
+    composer = page[page.index('id="review-chat-launcher"'):page.index('class="page-lede"')]
+    assert 'name="prefill"' in composer and 'Open Chat →' in composer and 'name="view" value="guidance"' in composer
+    assert 'No AI provider is configured' in composer and 'nothing is sent' in composer
+    assert 'data-action="guidance"' not in page
+    assert re.findall(r'<h3 id="rl-title-\w+">([^<]+)</h3>', page) == TASK_TITLES
+    assert len(re.findall(r'<article class="rl-card', page)) == 5
+    for retired in ('Understand data', 'Organize context', 'Improve metadata', 'Prepare to share'):
+        assert retired not in page
+    assert 'id="review-workspace"' not in page
 
 
-def test_cards_deep_link_to_real_destinations(app):
+def test_task_cards_deep_link_to_real_destinations(app):
     page = html(app)
     adapter = app.url_map.bind('localhost')
     for action, destinations in EXPECTED.items():
         found = re.findall(r'data-destination="([^"]+)"', card(page, action))
         assert found == destinations, action
         for destination in found:
-            # Every destination is a registered route, and its view parameter is one that route accepts.
-            endpoint, _ = adapter.match(urlsplit(destination).path)
-            assert endpoint.startswith('ui.'), destination
-    assert 'href="/knowledge?view=relationships"' in card(page, 'understand')
-    assert 'href="/datasets?view=collections"' in card(page, 'organize')
-    assert 'href="/resources?view=plugins"' in card(page, 'metadata')
+            assert adapter.match(urlsplit(destination).path)[0].startswith('ui.'), destination
+    assert 'href="/datasets?view=collections"' in card(page, 'curate')
+    assert 'href="/datasets?view=browse"' in card(page, 'annotate')
+    assert 'href="/knowledge?view=relationships"' in card(page, 'evaluate')
+    assert 'href="/resources?view=plugins"' in card(page, 'enrich')
+    assert 'href="/datasets?view=collections"' in card(page, 'publish')
 
 
 def test_destination_views_are_known_to_their_workspaces():
     from scidk.services.graph_management_policy import KNOWLEDGE_VIEWS
     from scidk.web.routes.ui import RESOURCES_VIEWS, WORKSPACE_VIEWS
-    known = {'knowledge': KNOWLEDGE_VIEWS, 'datasets': WORKSPACE_VIEWS, 'resources': RESOURCES_VIEWS, 'review': ('guidance', 'assertions')}
-    for destinations in EXPECTED.values():
+    known = {'knowledge': KNOWLEDGE_VIEWS, 'datasets': WORKSPACE_VIEWS, 'resources': RESOURCES_VIEWS}
+    for destinations in list(EXPECTED.values()) + list(HOME_EXPECTED.values()):
         for destination in destinations:
             parts = urlsplit(destination)
-            view = parts.query.split('=')[1]
-            assert view in known[parts.path.strip('/')], destination
+            if parts.query:
+                assert parts.query.split('=')[1] in known[parts.path.strip('/')], destination
 
 
-def test_guidance_card_opens_the_shell_and_promises_no_answers(app):
-    guidance = card(html(app), 'guidance')
-    assert 'data-status="ready"' in guidance
-    assert 'href="/review?view=guidance"' in guidance
-    assert 'not configured' in guidance
-    assert '<form' not in guidance and '<script' not in guidance
+def test_every_task_has_a_discuss_in_chat_link_with_a_fixed_prompt(app):
+    page = html(app)
+    prompts = set()
+    for action in EXPECTED:
+        links = re.findall(r'<a class="rl-discuss" href="([^"]+)" data-chat-prompt="([^"]+)" data-testid="discuss-%s">Discuss in Chat</a>' % action,
+                           card(page, action))
+        assert len(links) == 1, action
+        href = htmllib.unescape(links[0][0])
+        parts = urlsplit(href)
+        assert parts.path == '/review' and parse_qs(parts.query)['view'] == ['guidance']
+        prefill = parse_qs(parts.query)['prefill'][0]
+        assert prefill == htmllib.unescape(links[0][1]) and 20 < len(prefill) <= 1000
+        prompts.add(prefill)
+    assert len(prompts) == 5
 
 
-@pytest.mark.parametrize('path', ['/review?view=guidance', '/review/guidance'])
-def test_guidance_shell_is_honest_and_makes_no_provider_or_network_call(app, monkeypatch, path):
-    def forbidden(*args, **kwargs):
-        raise AssertionError('Guidance must not call an AI provider')
-    monkeypatch.setattr('scidk.services.overview_chat.chat_completion', forbidden)
-    app.config.update(SCIDK_OVERVIEW_CHAT_ENABLED=True, SCIDK_REVIEW_CHAT_ENABLED=True)
-    requests = []
-    app.before_request(lambda: requests.append(__import__('flask').request.path))
-    page = html(app, path)
-    assert requests == [path.split('?')[0]]
-    assert 'data-testid="guidance-shell"' in page and 'data-provider-state="not-configured"' in page
-    assert 'AI provider not configured' in page and 'data-testid="guidance-input"' in page
-    assert 'href="/review" data-testid="guidance-back"' in page
-    script = page[page.index('<script>', page.index('id="guidance-shell"')):]
-    script = script[:script.index('</script>')]
-    for banned in ('fetch(', 'XMLHttpRequest', 'WebSocket', 'sendBeacon', 'localStorage', 'sessionStorage', 'document.cookie', 'EventSource'):
-        assert banned not in script, banned
-    shell = page[page.index('id="guidance-shell"'):]
-    assert 'action=' not in shell[:shell.index('</script>')]
-    assert 'data-testid="guidance-user-message"' not in page and 'guidance-assistant' not in page
-
-
-@pytest.mark.parametrize('sharing_enabled', [True, False])
-def test_share_card_always_links_to_collections_regardless_of_sharing_flag(app, sharing_enabled):
-    app.config['SCIDK_DATASET_SHARING_ENABLED'] = sharing_enabled
-    share = card(html(app), 'share')
-    assert 'data-status="ready"' in share
-    assert 'Not enabled' not in share and 'rl-note' not in share
-    assert re.findall(r'data-destination="([^"]+)"', share) == ['/datasets?view=collections']
-    assert 'href="/datasets?view=collections"' in share
-
-
-def test_landing_makes_no_ai_or_provider_calls(app, monkeypatch):
-    def forbidden(*args, **kwargs):
-        raise AssertionError('Review landing must not call an AI provider')
-    monkeypatch.setattr('scidk.services.overview_chat.chat_completion', forbidden)
-    app.config.update(SCIDK_OVERVIEW_CHAT_ENABLED=True, SCIDK_REVIEW_CHAT_ENABLED=True)
-    requests = []
-    app.before_request(lambda: requests.append(__import__('flask').request.path))
+def test_review_landing_makes_no_ai_or_provider_calls_and_has_no_script(app, monkeypatch):
+    requests = forbid_provider(app, monkeypatch)
     page = html(app)
     section = page[page.index('id="review-landing"'):]
-    section = section[:section.index('</section>')]
-    assert '<script' not in section and 'fetch(' not in section and '<form' not in section
-    assert '/api/' not in section
+    section = section[:section.index('</section>\n</main>')] if '</section>\n</main>' in section else section
+    assert '<script' not in section.split('</main>')[0] and 'fetch(' not in section.split('</main>')[0]
+    assert '/api/' not in section.split('</main>')[0]
     assert requests == ['/review']
 
 
@@ -131,10 +198,81 @@ def test_review_is_the_active_sidebar_item_and_sidebar_is_unchanged(app):
     page = html(app)
     nav = page[page.index('data-testid="nav"'):]
     nav = nav[:nav.index('</nav>')]
-    labels = re.findall(r'>([^<]+)</a>', nav)
-    assert labels == ['Datasets', 'Resources', 'Knowledge', 'Review']
+    assert re.findall(r'>([^<]+)</a>', nav) == ['Datasets', 'Resources', 'Knowledge', 'Review']
     assert 'href="/review" data-testid="nav-review" class="active" aria-current="page"' in nav
 
+
+# ------------------------------------------------------------------ Chat shell and prefill
+
+@pytest.mark.parametrize('path', ['/review?view=guidance', '/review/guidance'])
+def test_chat_without_prefill_is_empty_honest_and_makes_no_provider_call(app, monkeypatch, path):
+    requests = forbid_provider(app, monkeypatch)
+    page = html(app, path)
+    assert requests == [path.split('?')[0]]
+    assert 'data-testid="guidance-shell"' in page and 'data-provider-state="not-configured"' in page
+    assert 'AI provider not configured' in page and 'data-testid="guidance-input"' in page
+    assert '<h1 class="ws-title">Chat</h1>' in page and 'href="/review" data-testid="guidance-back"' in page
+    assert re.search(r'<textarea id="guidance-input"[^>]*></textarea>', page) and 'data-prefilled="true"' not in page
+    for banned in BANNED_SCRIPT:
+        assert banned not in inline_script(page), banned
+    assert 'class="gd-msg user"' not in page and 'guidance-assistant' not in page
+
+
+@pytest.mark.parametrize('path', ['/review?view=guidance', '/review/guidance'])
+def test_prefill_fills_only_the_input_escaped_and_never_submits(app, monkeypatch, path):
+    requests = forbid_provider(app, monkeypatch)
+    payload = '</textarea><img src=x onerror=alert(1)>&amp; "quote"'
+    page = html(app, path + ('&' if '?' in path else '?') + 'prefill=' + quote(payload))
+    assert requests == [path.split('?')[0]]
+    assert '<img src=x' not in page and '</textarea><img' not in page
+    area = re.search(r'<textarea id="guidance-input"[^>]*>(.*?)</textarea>', page, re.S)
+    assert htmllib.unescape(area.group(1)) == payload
+    assert 'data-prefilled="true"' in page
+    messages = page[page.index('id="guidance-messages"'):page.index('id="guidance-form"')]
+    assert 'gd-msg user' not in messages and 'gd-msg notice' not in messages
+    assert 'AI provider not configured' in page
+
+
+def test_prefill_is_bounded_and_whitespace_trimmed(app):
+    page = html(app, '/review?view=guidance&prefill=' + '%20' * 3 + 'a' * 5000)
+    area = re.search(r'<textarea id="guidance-input"[^>]*>(.*?)</textarea>', page, re.S).group(1)
+    assert area == 'a' * 1000
+
+
+def test_chat_script_never_reads_the_prefill_into_html_storage_or_network(app):
+    script = inline_script(html(app, '/review?view=guidance&prefill=hello'))
+    assert 'innerHTML' not in script and 'URLSearchParams' not in script and 'prefill=' not in script
+    for banned in BANNED_SCRIPT:
+        assert banned not in script, banned
+
+
+def test_visible_terminology_says_chat_not_guidance(app):
+    from tests.test_demo_polish import visible_text
+    for path in ('/', '/review', '/review?view=guidance', '/review/guidance'):
+        assert 'guidance' not in visible_text(html(app, path)).lower(), path
+    for path in ('/review?view=guidance', '/review/guidance', '/review?view=guidance&prefill=x'):
+        assert app.test_client().get(path).status_code == 200
+
+
+def test_advanced_query_tools_remain_reachable_under_chat(app):
+    page = html(app, '/review/guidance')
+    advanced = page[page.index('id="advanced-query"'):]
+    for needle in ('id="overview-chat"', 'id="overview-question"', 'id="overview-scope"', 'id="overview-consent"',
+                   'id="overview-send"', 'Graph (read-only tools)', '/chat">Existing chat sessions', 'ai-chat/llm-provider'):
+        assert needle in advanced, needle
+    assert 'js/overview_chat.js' in page
+    assert '<details class="gd-advanced" id="advanced-query"' in page
+    assert app.test_client().get('/chat').status_code == 200
+
+
+def test_advanced_query_form_is_disabled_when_the_assistant_is_not_enabled(app):
+    app.config['SCIDK_OVERVIEW_CHAT_ENABLED'] = False
+    page = html(app, '/review/guidance')
+    assert 'maxlength="4000" placeholder="Find a dataset' in page and 'rows="3" disabled></textarea>' in page
+    assert '<button id="overview-send" class="primary" disabled>' in page
+
+
+# ------------------------------------------------------------------ legacy Review URLs
 
 @pytest.mark.parametrize('path', ['/review?view=assertions', '/review/assertions',
                                   '/review?domain=research&id=assertion-1', '/review?id=assertion-1'])
@@ -155,6 +293,17 @@ def test_plain_review_with_workspace_enabled_links_to_legacy_queue(app):
     assert 'view=assertions' not in html(app)
 
 
-def test_review_remains_gated_by_the_gui_shell_flag():
+def test_review_and_overview_remain_gated_by_the_gui_shell_flag():
     from tests.gui.harness import make_gui_app
-    assert make_gui_app().test_client().get('/review').status_code == 404
+    client = make_gui_app().test_client()
+    assert client.get('/review').status_code == 404
+    assert client.get('/overview').status_code == 404
+
+
+def test_empty_launcher_submission_redirects_to_the_clean_chat_address(app):
+    client = app.test_client()
+    response = client.get('/review?view=guidance&prefill=')
+    assert response.status_code == 302 and response.headers['Location'].endswith('/review?view=guidance')
+    response = client.get('/review/guidance?prefill=%20%20')
+    assert response.status_code == 302 and response.headers['Location'].endswith('/review/guidance')
+    assert client.get('/review?view=guidance', follow_redirects=False).status_code == 200

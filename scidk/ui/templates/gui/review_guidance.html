@@ -10,6 +10,12 @@
     * no fabricated answer: sending shows the person's own message and a plain "not sent" notice;
     * the provider state is explicit (`data-provider-state`, "AI provider not configured").
   Wiring a provider later replaces the notice branch in the script below; the layout, copy and test ids stay.
+
+  Prefill: Overview and Review link here with ?prefill=<text>. The server renders it as escaped text inside the input
+  only; it is never submitted, stored, or sent, and the person must press Ask themselves.
+
+  Advanced query: the former Overview "Ask SciDK" form lives in the collapsed section at the bottom, unchanged
+  (ids, consent checkbox and /overview_chat.js behaviour). It does nothing until the person ticks the consent box and submits.
 #}
 <section class="guidance-shell" id="guidance-shell" data-testid="guidance-shell" data-provider-state="{{ 'configured' if provider_configured else 'not-configured' }}">
 <a class="gd-back" href="{{ request.script_root }}/review" data-testid="guidance-back">&larr; Back to Review</a>
@@ -26,13 +32,13 @@
     <div class="gd-msg system" data-testid="guidance-welcome-message">Hello. Once an AI provider is connected, you can ask questions here about the datasets, collections and graph you have access to. For now this window shows what the conversation will look like.</div>
   </div>
   <form class="gd-form" id="guidance-form" data-testid="guidance-form" autocomplete="off" onsubmit="return false">
-    <label for="guidance-input">Your question</label>
-    <textarea id="guidance-input" data-testid="guidance-input" rows="2" maxlength="4000" placeholder="Ask a question about your data…" aria-describedby="guidance-provider-status"></textarea>
+    <label for="guidance-input">Your message</label>
+    <textarea id="guidance-input" data-testid="guidance-input" rows="2" maxlength="4000" placeholder="Ask a question about your data…" aria-describedby="guidance-provider-status"{% if prefill %} autofocus data-prefilled="true"{% endif %}>{{ prefill }}</textarea>
     <button type="submit" class="primary" id="guidance-send" data-testid="guidance-send">Ask</button>
   </form>
 </div>
 
-<div class="gd-hints">
+<div class="gd-hints" data-testid="guidance-hints">
   <strong>What you will be able to ask</strong>
   <ul>
     <li>How do these datasets relate to each other?</li>
@@ -40,6 +46,24 @@
     <li>What metadata is missing before I can share this?</li>
   </ul>
 </div>
+
+<details class="gd-advanced" id="advanced-query" data-testid="advanced-query">
+<summary>Advanced: grounded query tools</summary>
+<section class="ask-panel" aria-labelledby="ask-heading">
+<h2 id="ask-heading">Ask SciDK (advanced)</h2><p>Look for matching knowledge you’re allowed to use. Nothing is sent until you tick the consent box and ask.</p>
+<form id="overview-chat">
+<label for="overview-question">Question for the query tools</label>
+<textarea id="overview-question" required maxlength="4000" placeholder="Find a dataset, explore an entity, or ask about a workflow…" rows="3"{% if not overview_chat_enabled %} disabled{% endif %}></textarea>
+<div class="ask-controls"><label for="overview-scope">Look in</label><select id="overview-scope"><option value="accessible">My accessible knowledge</option><option value="system">System documentation</option><option value="graph" selected>Graph (read-only tools)</option><option value="selection" disabled>Current selection</option></select><button id="overview-send" class="primary"{% if not overview_chat_enabled %} disabled{% endif %}>Ask SciDK</button></div>
+<label class="consent"><input type="checkbox" id="overview-consent" required{% if not overview_chat_enabled %} disabled{% endif %}> Send this question and its matching authorized sources to my approved provider. Earlier questions are not sent.</label>
+</form>
+<div class="suggestions" aria-label="Suggested questions"><button type="button" data-question="Find synthetic datasets">Find a dataset</button><button type="button" data-question="Find Synthetic Investigator">Explore an investigator</button><button type="button" data-question="Explain the synthetic System workflow" data-scope="system">Understand a workflow</button></div>
+<p id="overview-status" role="status">{% if overview_chat_enabled %}Search uses names and released properties. Ask about a specific entity or documentation topic.{% else %}Ask SciDK is unavailable. An administrator needs to connect Knowledge services and enable the approved assistant.{% endif %}</p>
+<div id="overview-results"><h3 id="overview-answer-heading" hidden>AI interpretation</h3><pre id="overview-answer"></pre><h3 id="overview-source-heading" hidden>Retrieved facts &amp; sources</h3><div id="overview-source-links"></div><details id="overview-source-details" hidden><summary>Inspect authorized source details</summary><pre id="overview-sources"></pre></details></div>
+</section>
+<p class="gd-advanced-links"><a href="{{ request.script_root }}/chat">Existing chat sessions &amp; GraphRAG tools</a> · <a href="{{ request.script_root }}/settings#ai-chat/llm-provider">Personal provider settings</a></p>
+<p class="small">Explicit-ID context requests remain available through the existing API. This assistant supports bounded name/property lookup, not general graph questions or unrestricted analysis.</p>
+</details>
 </section>
 <script>
 (function () {
@@ -72,6 +96,11 @@
   input.addEventListener('keydown', function (event) {
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); send(); }
   });
+  // A prefilled input: put the cursor at the end, still unsent.
+  if (input.getAttribute('data-prefilled')) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+  var advanced = document.getElementById('advanced-query');
+  if (advanced && (location.hash === '#advanced-query' || /[?&]domain=/.test(location.search))) advanced.open = true;
 })();
 </script>
+<script defer src="{{ url_for('static', filename='js/overview_chat.js') }}"></script>
 {% endblock %}

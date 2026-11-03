@@ -18,11 +18,11 @@ def test_shell_opt_in_and_legacy_routes(gui_app):
     for path in ['/', '/overview', '/knowledge', '/review', '/settings', '/datasets', '/map', '/entities', '/chat', '/pipeline/sources']:
         response = client.get(path)
         assert response.status_code == 200, path
-    page = client.get('/overview?profile=review').data
+    page = client.get('/review/guidance?profile=review').data
     for name in [b'Overview', b'Datasets', b'Resources', b'Knowledge', b'Review', b'Settings']:
         assert name in page
-    assert b'<textarea id="overview-question" disabled' in page
-    assert b'<button disabled>Send</button>' in page
+    assert b'id="overview-question" required maxlength="4000"' in page and b'disabled></textarea>' in page
+    assert b'<button id="overview-send" class="primary" disabled>' in page
     assert b'gui_slice.js' not in page
     assert b'Chat unavailable' in client.get('/').data
     assert b'Chat unavailable' not in client.get('/settings').data
@@ -80,7 +80,7 @@ def test_browser_selection_and_inspector(gui_app, tmp_path):
         page.locator('#inspector-expand').click()
         page.screenshot(path=str(tmp_path/'gui-dataset-docked.png'))
         calls.clear()
-        page.goto('http://scidk.test/overview?profile=review')
+        page.goto('http://scidk.test/review/guidance?profile=review#advanced-query')
         assert page.locator('#overview-question').is_disabled()
         assert page.get_by_role('button', name='Send', exact=True).is_disabled()
         assert not any('/chat/' in call or '/agent/' in call for call in calls)

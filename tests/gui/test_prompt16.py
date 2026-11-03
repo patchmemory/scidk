@@ -12,7 +12,7 @@ def test_ask_discovery_consent_citations_context_and_empty(gui_page, gui_artifac
     d, calls = app.extensions['prompt15_fixture']
     login(page, origin, d)
     page.set_viewport_size({'width': viewport[0], 'height': viewport[1]})
-    page.goto(origin + '/overview')
+    page.goto(origin + '/review/guidance#advanced-query')
     assert page.locator('#overview-context-id').count() == 0
     page.get_by_role('button', name='Understand a workflow', exact=True).click()
     page.get_by_role('button', name='Ask SciDK', exact=True).click()
@@ -25,18 +25,18 @@ def test_ask_discovery_consent_citations_context_and_empty(gui_page, gui_artifac
     assert len(calls) == 1 and 'tools' not in calls[0][1]
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
     page.screenshot(path=str(gui_artifacts / f'prompt16-ask-{viewport[0]}x{viewport[1]}.png'), full_page=True)
-    page.get_by_label('Your question').fill('unfindable-topic')
+    page.locator('#overview-question').fill('unfindable-topic')
     expect(page.locator('#overview-answer')).to_have_text('')
     page.get_by_role('button', name='Ask SciDK', exact=True).click()
     expect(page.locator('#overview-status')).to_contain_text('No authorized matches')
     assert len(calls) == 1
     page.goto(origin + '/overview?domain=system&id=system%3Asynthetic-demo')
-    expect(page.get_by_label('Look in')).to_have_value('selection')
-    page.get_by_label('Your question').fill('Explain this context')
+    expect(page.locator('#overview-scope')).to_have_value('selection')
+    page.locator('#overview-question').fill('Explain this context')
     page.locator('#overview-consent').check()
     page.get_by_role('button', name='Ask SciDK', exact=True).click()
     expect(page.locator('#overview-answer')).to_contain_text('Synthetic System context')
     assert len(calls) == 2
-    page.get_by_label('Look in').select_option('system')
+    page.locator('#overview-scope').select_option('system')
     expect(page.locator('#overview-answer')).to_have_text('')
     expect(page.locator('#overview-consent')).not_to_be_checked()

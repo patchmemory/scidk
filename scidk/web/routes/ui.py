@@ -84,8 +84,16 @@ def _gui_page(page):
         from ...services.review_landing import review_actions
         if (request.view_args or {}).get('guidance') or (
                 request.args.get('view') == 'guidance' and not request.args.get('domain') and not request.args.get('id')):
-            # The Guidance shell: a static page. No provider is configured, and nothing is called or stored.
-            return render_template('gui/review_guidance.html', provider_configured=False)
+            # The Chat shell (Guidance is the compatibility URL): a static page. No provider is configured, and nothing is
+            # called or stored. ``prefill`` only fills the input (escaped by the template); it is never submitted or kept.
+            from ...services.review_landing import PREFILL_MAX
+            prefill = (request.args.get('prefill') or '').strip()[:PREFILL_MAX]
+            if 'prefill' in request.args and not prefill:
+                # An empty launcher submission simply opens Chat at its normal address.
+                from urllib.parse import urlencode
+                rest = [(k, v) for k, v in request.args.items(multi=True) if k != 'prefill']
+                return redirect(request.script_root + request.path + ('?' + urlencode(rest) if rest else ''))
+            return render_template('gui/review_guidance.html', provider_configured=False, prefill=prefill)
         assertions_enabled = current_app.config.get('SCIDK_REVIEW_WORKSPACE_ENABLED') is True
         # Plain /review is the landing. The assertion-review workspace keeps its own URL (/review?view=assertions,
         # /review/assertions) and every legacy context deep link (/review?domain=...&id=...).
@@ -96,6 +104,15 @@ def _gui_page(page):
                 assistant_enabled=current_app.config.get('SCIDK_REVIEW_CHAT_ENABLED') is True)
         actions, advanced = review_actions(assertions_enabled=assertions_enabled)
         return render_template('gui/review_landing.html', actions=actions, advanced=advanced)
+    if page == 'Overview':
+        # Old selection deep links (/overview?domain=..&id=..) belong to the advanced query form, now under Chat.
+        if request.args.get('domain') and request.args.get('id'):
+            from urllib.parse import urlencode
+            query = urlencode({'domain': request.args['domain'], 'id': request.args['id']})
+            return redirect(url_for('ui.review', guidance=True) + '?' + query + '#advanced-query')
+        from ...services.workbench_home import start_cards, workspace_status
+        return render_template('gui/workspace.html', page=page, start_cards=start_cards(),
+                               workspace_status=workspace_status(current_app))
     return render_template('gui/workspace.html', page=page)
 
 

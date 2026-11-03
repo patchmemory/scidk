@@ -28,8 +28,8 @@ def test_navigation_and_placeholders(gui_page):
     # Knowledge opens on Entities, the legacy Labels browser: without a graph-management grant it is
     # denied exactly like /entities and /map (asserted below), and that page shows the Knowledge tabs.
     page.gui_expected_http.add('/knowledge')
-    page.goto(origin+'/overview?profile=review')
-    expect(page.get_by_label('Your question')).to_be_disabled()
+    page.goto(origin+'/review/guidance?profile=review#advanced-query')
+    expect(page.locator('#overview-question')).to_be_disabled()
     expect(page.get_by_role('button', name='Ask SciDK', exact=True)).to_be_disabled()
     for name, path in [('Datasets','/datasets?view=browse'), ('Resources','/resources?view=sources'),
                        ('Knowledge','/knowledge'), ('Review','/review')]:
@@ -41,7 +41,7 @@ def test_navigation_and_placeholders(gui_page):
             # Entities / Maps / Sketch are the Knowledge tabs; the legacy Maps route is reached through Maps.
             expect(page.get_by_role('link', name='Maps', exact=True).last).to_have_attribute('href', '/knowledge?view=maps')
         if name == 'Review':
-            expect(page.get_by_text('What would you like to do with your science data?', exact=False)).to_be_visible()
+            expect(page.get_by_text('What scientific work are you trying to do?', exact=False)).to_be_visible()
     # The -SciDK-> logo is Home; there is no separate Overview item in the sidebar.
     expect(page.locator('header nav').get_by_role('link', name='Overview')).to_have_count(0)
     page.get_by_test_id('nav-home').click()

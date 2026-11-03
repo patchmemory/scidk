@@ -94,7 +94,7 @@ def test_settings_keeps_the_shared_blue_left_bracket_when_open(gui_page):
 def test_guidance_shell_sends_nothing_and_fabricates_no_answer(gui_page):
     page, origin, app = gui_page
     page.goto(origin + '/review')
-    page.get_by_role('link', name='Open Chat').click()
+    page.get_by_role('button', name='Open Chat →').click()
     expect(page).to_have_url(origin + '/review?view=guidance')
     expect(page.get_by_test_id('guidance-provider-status')).to_contain_text('AI provider not configured')
     page.wait_for_load_state('networkidle')
@@ -203,7 +203,7 @@ def test_sources_shares_the_resources_gutter_and_card_scale(gui_page):
 def test_chat_labels_and_legacy_guidance_urls_make_no_provider_calls(gui_page):
     page, origin, app = gui_page
     page.goto(origin + '/review')
-    expect(page.get_by_role('link', name='Open Chat')).to_be_visible()
+    expect(page.get_by_role('button', name='Open Chat →')).to_be_visible()
     expect(page.get_by_text('Get guidance')).to_have_count(0)
     for url in ('/review?view=guidance', '/review/guidance'):
         page.goto(origin + url)
