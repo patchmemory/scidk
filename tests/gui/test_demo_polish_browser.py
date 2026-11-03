@@ -109,7 +109,8 @@ def test_guidance_shell_sends_nothing_and_fabricates_no_answer(gui_page):
     expect(page.get_by_test_id('guidance-not-configured-notice')).to_have_count(2)
     expect(page.get_by_test_id('guidance-messages')).not_to_contain_text('Here is')
     assert network == [] and len(app.extensions['gui_test_requests']) == before
-    page.get_by_test_id('guidance-back').click()
+    expect(page.get_by_test_id('guidance-back')).to_have_count(0)
+    page.get_by_test_id('chat-link-review').click()
     expect(page).to_have_url(origin + '/review')
 
 

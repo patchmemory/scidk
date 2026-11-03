@@ -11,6 +11,10 @@
     * the provider state is explicit (`data-provider-state`, "AI provider not configured").
   Wiring a provider later replaces the notice branch in the script below; the layout, copy and test ids stay.
 
+  Navigation: Chat is a shared workspace, not a child of Review. There is no back link and no origin/referrer parameter;
+  the browser's own Back returns to the actual prior page. Overview and Review workspace are plain destination links.
+  An unsent draft lives only in the textarea's DOM value, so it survives opening/closing Advanced; nothing is stored.
+
   Prefill: Overview and Review link here with ?prefill=<text>. The server renders it as escaped text inside the input
   only; it is never submitted, stored, or sent, and the person must press Ask themselves.
 
@@ -18,8 +22,10 @@
   (ids, consent checkbox and /overview_chat.js behaviour). It does nothing until the person ticks the consent box and submits.
 #}
 <section class="guidance-shell" id="guidance-shell" data-testid="guidance-shell" data-provider-state="{{ 'configured' if provider_configured else 'not-configured' }}">
-<a class="gd-back" href="{{ request.script_root }}/review" data-testid="guidance-back">&larr; Back to Review</a>
+<div class="gd-head">
 <h1 class="ws-title">Chat</h1>
+<nav class="gd-links" aria-label="Go to" data-testid="chat-links"><a href="{{ request.script_root }}/overview" data-testid="chat-link-overview">Overview</a><a href="{{ request.script_root }}/review" data-testid="chat-link-review">Review workspace</a></nav>
+</div>
 <p class="ws-lede" id="guidance-welcome" data-testid="guidance-welcome">Ask about your science data: how things relate, what to organize next, or how to prepare metadata. Chat will draw on the sources you are allowed to use, and it will say where each answer came from.</p>
 
 <div class="gd-window" role="group" aria-labelledby="gd-window-title">

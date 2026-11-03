@@ -147,7 +147,8 @@ def test_task_cards_deep_link_to_real_destinations(app):
     adapter = app.url_map.bind('localhost')
     for action, destinations in EXPECTED.items():
         found = re.findall(r'data-destination="([^"]+)"', card(page, action))
-        assert found == destinations, action
+        assert sorted(found) == sorted(destinations), action          # the primary action sits in the footer, after the related links
+        assert found[-1] == destinations[0], action
         for destination in found:
             assert adapter.match(urlsplit(destination).path)[0].startswith('ui.'), destination
     assert 'href="/datasets?view=collections"' in card(page, 'curate')
@@ -211,7 +212,7 @@ def test_chat_without_prefill_is_empty_honest_and_makes_no_provider_call(app, mo
     assert requests == [path.split('?')[0]]
     assert 'data-testid="guidance-shell"' in page and 'data-provider-state="not-configured"' in page
     assert 'AI provider not configured' in page and 'data-testid="guidance-input"' in page
-    assert '<h1 class="ws-title">Chat</h1>' in page and 'href="/review" data-testid="guidance-back"' in page
+    assert '<h1 class="ws-title">Chat</h1>' in page and 'guidance-back' not in page and 'Back to Review' not in page
     assert re.search(r'<textarea id="guidance-input"[^>]*></textarea>', page) and 'data-prefilled="true"' not in page
     for banned in BANNED_SCRIPT:
         assert banned not in inline_script(page), banned
@@ -307,3 +308,68 @@ def test_empty_launcher_submission_redirects_to_the_clean_chat_address(app):
     response = client.get('/review/guidance?prefill=%20%20')
     assert response.status_code == 302 and response.headers['Location'].endswith('/review/guidance')
     assert client.get('/review?view=guidance', follow_redirects=False).status_code == 200
+
+
+# ------------------------------------------------------------------ Chat as a shared workspace; compact cards; collection pill
+
+@pytest.mark.parametrize('path', ['/review?view=guidance', '/review/guidance', '/review?view=guidance&prefill=Hello'])
+def test_chat_is_a_shared_workspace_with_direct_overview_and_review_links(app, path):
+    page = html(app, path)
+    assert 'Back to Review' not in page and 'guidance-back' not in page and 'gd-back' not in page
+    links = page[page.index('data-testid="chat-links"'):]
+    links = links[:links.index('</nav>')]
+    assert re.findall(r'<a href="([^"]*)" data-testid="([^"]*)">([^<]*)</a>', links) == [
+        ('/overview', 'chat-link-overview', 'Overview'), ('/review', 'chat-link-review', 'Review workspace')]
+    assert page.index('<h1 class="ws-title">Chat</h1>') < page.index('data-testid="chat-links"') < page.index('id="guidance-welcome"')
+    for banned in ('origin=', 'referrer', 'return_to', 'returnTo', 'document.referrer', 'history.back'):
+        assert banned not in page, banned
+
+
+def test_chat_entry_links_carry_no_origin_or_return_parameters(app):
+    for page in (html(app, '/'), html(app, '/review')):
+        for href in re.findall(r'href="([^"]*view=guidance[^"]*)"', page):
+            assert set(parse_qs(urlsplit(htmllib.unescape(href)).query)) <= {'view', 'prefill'}, href
+        for form in re.findall(r'<form class="chat-launcher".*?</form>', page, re.S):
+            assert set(re.findall(r'name="(\w+)"', form)) == {'view', 'prefill'}
+
+
+def test_chat_draft_is_never_stored_and_advanced_toggle_cannot_reset_it(app):
+    page = html(app, '/review?view=guidance&prefill=Keep%20me')
+    script = inline_script(page)
+    for banned in BANNED_SCRIPT + ('beforeunload', 'pagehide', 'form.reset', '.reset('):
+        assert banned not in script, banned
+    advanced = page[page.index('<details class="gd-advanced"'):]
+    assert 'guidance-input' not in advanced[:advanced.index('</details>')]
+    assert not re.search(r'<details class="gd-advanced"[^>]*\bopen\b', page)
+
+
+def test_task_cards_are_compact_with_one_consistent_action_footer(app):
+    page = html(app)
+    for action, destinations in EXPECTED.items():
+        body = card(page, action)
+        foot = re.findall(r'<div class="rl-foot">(.*?)</div>', body, re.S)
+        assert len(foot) == 1, action
+        assert re.findall(r'class="([\w-]+)"', foot[0]) == ['rl-primary', 'rl-discuss'], action
+        assert re.findall(r'data-destination="([^"]+)"', foot[0]) == destinations[:1], action
+        assert '>Discuss in Chat</a>' in foot[0] and 'data-testid="discuss-%s"' % action in foot[0]
+        summary = re.search(r'</h3>\s*<p>([^<]+)</p>', body).group(1)
+        assert len(summary) <= 90, (action, len(summary))
+        outside = body.replace(foot[0], '')
+        assert re.findall(r'data-destination="([^"]+)"', outside) == destinations[1:], action
+        assert 'rl-chat-link' not in body and 'rl-actions' not in body
+    css = open('scidk/ui/static/css/gui_design.css').read()
+    assert '.rl-grid .rl-card {padding:14px 16px' in css and '.rl-foot {' in css
+
+
+def test_collection_pill_is_an_accessible_control_over_supported_infrastructure():
+    src = open('scidk/ui/static/js/collection_basket.js').read()
+    # The pill is a button that opens the existing panel (switch = Open a saved collection; clear = detach it).
+    assert "el('button', '', {id: 'cb-pill'" in src and "'aria-haspopup', 'dialog'" in src
+    assert "'aria-controls', 'cb-panel'" in src and "'aria-expanded'" in src
+    assert "'Clear selection'" in src and "data-testid', 'collection-clear-selection'" in src
+    assert "'Open', {type: 'button'}" in src and "data-action', 'open-collection'" in src
+    clear = re.search(r"cl\.onclick = \(\) => \{([^\n]*)\};", src).group(1)
+    assert '_opened = null' in clear and '_persistOpened()' in clear
+    for forbidden in ('_json', 'fetch', 'DELETE', 'POST'):
+        assert forbidden not in clear, forbidden            # clearing never touches membership or data
+    assert set(re.findall(r"localStorage\.(?:set|remove)Item\((\w+)", src)) == {'KEY', 'OPEN_KEY'}   # no new persisted state

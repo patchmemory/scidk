@@ -145,7 +145,8 @@ def test_guidance_shell_markup_is_static_and_honest(client, url):
     html = page(client, url)
     assert 'data-provider-state="not-configured"' in html and 'AI provider not configured' in html
     assert 'data-testid="guidance-messages"' in html and 'data-testid="guidance-input"' in html
-    assert 'href="/review" data-testid="guidance-back"' in html
+    assert 'guidance-back' not in html and 'Back to Review' not in html
+    assert 'href="/overview" data-testid="chat-link-overview"' in html and 'href="/review" data-testid="chat-link-review"' in html
     body = html[html.index('id="guidance-shell"'):]
     script = body[body.index('<script>'):body.index('</script>')]
     for banned in ('fetch(', 'XMLHttpRequest', 'WebSocket', 'sendBeacon', 'EventSource', 'localStorage',

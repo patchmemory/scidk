@@ -169,7 +169,9 @@ body:has(#collection-plan-panel:not([hidden])) #cb-pill,body:has(#collection-pla
     document.head.appendChild(style);
     const pill = el('button', '', {id: 'cb-pill', type: 'button', title: 'Collection panel'});
     pill.setAttribute('data-testid', 'collection-basket-pill');
-    pill.onclick = toggle;
+    // An accessible control: opens the collection panel, where the active collection can be switched or cleared.
+    pill.setAttribute('aria-haspopup', 'dialog'); pill.setAttribute('aria-controls', 'cb-panel'); pill.setAttribute('aria-expanded', 'false');
+    pill.onclick = () => { const was = isOpen(); toggle(); if (!was) { const c = $('cb-close'); if (c) c.focus(); } };
     const panel = el('div', null, {id: 'cb-panel'});
     panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', 'Collection');
     panel.setAttribute('data-testid', 'collection-basket-panel');
@@ -200,11 +202,13 @@ body:has(#collection-plan-panel:not([hidden])) #cb-pill,body:has(#collection-pla
     _build();
     const p = $('cb-panel'); if (!p) return;
     p.classList.add('open');
+    _setExpanded(true);
     _place();
     _loadSaved();
     if (_opened && !_opened.members) openSaved(_opened.id, true);
   }
-  function close() { const p = $('cb-panel'); if (p) p.classList.remove('open'); }
+  function _setExpanded(on) { const b = $('cb-pill'); if (b) b.setAttribute('aria-expanded', on ? 'true' : 'false'); }
+  function close() { const p = $('cb-panel'); if (p) p.classList.remove('open'); _setExpanded(false); }
   function toggle() { isOpen() ? close() : open(); }
 
   function _status(text) { _statusText = text || ''; const s = $('cb-status'); if (s) s.textContent = _statusText; }
@@ -309,9 +313,12 @@ body:has(#collection-plan-panel:not([hidden])) #cb-pill,body:has(#collection-pla
 
     if (_opened) {
       const bar = el('div', null, {className: 'cb-actions'});
-      const cl = el('button', 'Close collection', {id: 'cb-detach', type: 'button', title: 'Stop viewing this saved collection (nothing is deleted)'});
-      cl.onclick = () => { _opened = null; _persistOpened(); };
-      bar.append(cl); panel.append(bar);
+      const cl = el('button', 'Clear selection', {id: 'cb-detach', type: 'button', title: 'Stop using this saved collection as the active collection (nothing is deleted)'});
+      cl.setAttribute('data-testid', 'collection-clear-selection');
+      cl.onclick = () => { _opened = null; _persistOpened(); const p = $('cb-pill'); if (p) p.focus(); };
+      bar.append(cl);
+      bar.append(el('span', 'Active collection: ' + (_opened.name || 'saved') + '. Clearing only stops using it here; the collection and its members are kept. To switch, open another saved collection below.', {className: 'cb-meta'}));
+      panel.append(bar);
       _renderStored(panel);
     }
     _renderPicks(panel);
@@ -353,7 +360,8 @@ body:has(#collection-plan-panel:not([hidden])) #cb-pill,body:has(#collection-pla
     const pill = $('cb-pill'), panel = $('cb-panel');
     if (!pill || !panel) return;
     pill.textContent = _pillLabel();
-    pill.title = 'Collection panel';
+    pill.title = 'Open the collection panel to switch or clear the active collection';
+    pill.setAttribute('aria-label', pill.textContent + '. Open the collection panel.');
     panel.replaceChildren();
     if (_view === 'plan') _renderPlan(panel); else _renderMain(panel);
     if (isOpen()) _place();
@@ -489,7 +497,10 @@ body:has(#collection-plan-panel:not([hidden])) #cb-pill,body:has(#collection-pla
   }
 
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && _view === 'plan' && isOpen()) _closePlan();
+    if (e.key === 'Escape' && isOpen()) {
+      if (_view === 'plan') _closePlan();
+      else { close(); const p = $('cb-pill'); if (p) p.focus(); }
+    }
   });
 
   global.CollectionBasket = {add, remove, clear, items, has, open, close, toggle, checkbox, addChecked, fmt,

@@ -22,9 +22,9 @@
 <article class="rl-card rl-{{ card.status }}" role="listitem" id="rl-card-{{ card.id }}" data-action="{{ card.id }}" data-status="{{ card.status }}" aria-labelledby="rl-title-{{ card.id }}">
 <h3 id="rl-title-{{ card.id }}">{{ card.title }}</h3>
 <p>{{ card.summary }}</p>
-<p class="rl-actions"><a class="rl-primary" href="{{ request.script_root }}{{ card.primary.href }}" data-destination="{{ card.primary.href }}">{{ card.primary.label }} →</a>
-{% for link in card.links %}<a class="rl-secondary" href="{{ request.script_root }}{{ link.href }}" data-destination="{{ link.href }}">{{ link.label }}</a>{% endfor %}</p>
-<p class="rl-chat-link"><a class="rl-discuss" href="{{ request.script_root }}{{ card.chat.href }}" data-chat-prompt="{{ card.chat.prompt }}" data-testid="discuss-{{ card.id }}">Discuss in Chat</a></p>
+<p class="rl-related">{% for link in card.links %}<a class="rl-secondary" href="{{ request.script_root }}{{ link.href }}" data-destination="{{ link.href }}">{{ link.label }}</a>{% endfor %}</p>
+<div class="rl-foot"><a class="rl-primary" href="{{ request.script_root }}{{ card.primary.href }}" data-destination="{{ card.primary.href }}">{{ card.primary.label }} →</a>
+<a class="rl-discuss" href="{{ request.script_root }}{{ card.chat.href }}" data-chat-prompt="{{ card.chat.prompt }}" data-testid="discuss-{{ card.id }}">Discuss in Chat</a></div>
 </article>
 {% endfor %}
 </div>

@@ -169,7 +169,11 @@
 
 /* Review → Chat shell (formerly Guidance; no provider call; see review_guidance.html) */
 .gui-v3 .guidance-shell {max-width:900px !important}
-.gui-v3 .gd-back {display:inline-block;margin:0 0 12px;font-size:13px}
+.gui-v3 .gd-head {display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 16px}
+.gui-v3 .gd-links {display:flex;gap:6px}
+.gui-v3 .gd-links a {font-size:13px;font-weight:500;padding:3px 10px;border:1px solid var(--border);border-radius:14px;background:var(--surface);text-decoration:none}
+.gui-v3 .gd-links a:hover {border-color:#91afcc}
+.gui-v3 .gd-links a:focus-visible {outline:3px solid #2882c9;outline-offset:2px}
 .gui-v3 .gd-window {display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);overflow:hidden;min-height:440px}
 .gui-v3 .gd-status {display:flex;gap:10px;align-items:flex-start;padding:12px 18px;background:#fff7e6;border-bottom:1px solid #f1d9a6;font-size:13px;color:#6a4b00}
 .gui-v3 .gd-status strong {color:#4a3300}
@@ -213,8 +217,16 @@
 .gui-v3 .rl-chat h3 {font-size:16px;margin:0 0 10px}
 .gui-v3 .rl-chat .chat-launcher {margin:0;max-width:none;box-shadow:none;background:#f8fafc}
 .gui-v3 .rl-chat-note {margin:10px 0 0;font-size:12px}
-.gui-v3 .rl-card p.rl-chat-link {margin:14px 0 0;flex:0;font-size:13px}
-.gui-v3 .rl-discuss {font-weight:600}
+/* Compact Review task cards: tight body, one consistent action footer (Open … + Discuss in Chat) */
+.gui-v3 .rl-grid {gap:14px;margin-top:14px}
+.gui-v3 .rl-grid .rl-card {padding:14px 16px;border-radius:14px}
+.gui-v3 .rl-grid .rl-card h3 {font-size:16px;margin:0 0 4px}
+.gui-v3 .rl-grid .rl-card>p {margin:0 0 8px;flex:0;font-size:13px;line-height:1.4}
+.gui-v3 .rl-grid .rl-card>p.rl-related {display:flex;flex-wrap:wrap;gap:2px 12px;margin:0 0 8px;flex:1;min-height:20px;font-size:12px}
+.gui-v3 .rl-grid .rl-card>p.rl-related:empty {display:block}
+.gui-v3 .rl-foot {display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px;margin-top:auto;padding-top:8px;border-top:1px solid var(--border)}
+.gui-v3 .rl-foot .rl-primary {padding:6px 12px;font-size:13px}
+.gui-v3 .rl-discuss {font-weight:500;font-size:12px}
 .gui-v3 .gd-advanced {max-width:900px}
 .gui-v3 .gd-advanced .ask-panel {margin:12px 0;padding:20px}
 @media(max-width:1100px) {.gui-v3 .home-cards {grid-template-columns:repeat(2,minmax(0,1fr))}}
