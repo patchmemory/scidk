@@ -1,5 +1,113 @@
 // ===== Discovery & Available Tab Functions =====
 
+// ===== Knowledge mode: a graph-first, read-only relationship viewer (shared partial, no second app) =====
+
+function isKnowledgeMode() {
+  return typeof window !== 'undefined' && !!window.LINKS_KNOWLEDGE_MODE;
+}
+
+let krSelectedType = null; // rel_type currently shown in the detail panel (null: overview)
+let krDetailToken = 0;     // guards against stale async detail responses
+
+function krBase() { return (typeof window !== 'undefined' && window.SCIDK_BASE) || ''; }
+function krNum(n) { return Number(n || 0).toLocaleString(); }
+function krQuote(name) { return '`' + String(name).replace(/`/g, '``') + '`'; }
+
+function krShowPanel(html) {
+  const panel = document.getElementById('kr-panel');
+  if (!panel) return null;
+  const wizard = document.getElementById('link-wizard');
+  if (wizard) wizard.style.display = 'none';
+  panel.style.display = '';
+  panel.innerHTML = html;
+  return panel;
+}
+
+function krNavLinks() {
+  const base = krBase();
+  return `<p class="small" data-testid="relationship-detail-links" style="margin-top: 1rem;">
+    <a href="${base}/knowledge?view=entities" data-testid="relationships-to-entities">Browse these labels in Entities</a> ·
+    <a href="${base}/knowledge?view=maps" data-testid="relationships-to-maps">Open Maps to see them on the graph</a></p>`;
+}
+
+// Shown whenever nothing is selected, so the right side is never an unexplained blank area.
+function renderKnowledgeOverview() {
+  const types = graphRelationshipTypes().slice().sort((a, b) => b.edge_count - a.edge_count);
+  const total = types.reduce((n, t) => n + t.edge_count, 0);
+  if (types.length === 0) {
+    krShowPanel('<h3 style="margin-top:0">Relationships in graph</h3><div class="empty-state small" data-testid="active-empty">No relationships found in the current graph.</div>' + krNavLinks());
+    return;
+  }
+  const top = types.slice(0, 8).map(t => `<tr><td><strong>${escapeHtml(t.rel_type)}</strong></td><td>${krNum(t.edge_count)}</td>
+      <td>${[...t.sources.keys()].map(escapeHtml).join(', ')} &rarr; ${[...t.targets.keys()].map(escapeHtml).join(', ')}</td></tr>`).join('');
+  krShowPanel(`<div data-testid="relationship-overview">
+    <h3 style="margin-top:0">Relationships in graph</h3>
+    <p>${krNum(types.length)} relationship type${types.length !== 1 ? 's' : ''} with ${krNum(total)} edges in the current graph. Pick a type on the left and choose <strong>View Details</strong> to see what it connects and a few examples.</p>
+    <h4 class="small">Largest relationship types</h4>
+    <table><thead><tr><th>Type</th><th>Edges</th><th>Source &rarr; target labels</th></tr></thead><tbody>${top}</tbody></table>
+    ${krNavLinks()}</div>`);
+}
+
+function krOpenType(t, patternIndex) {
+  document.querySelectorAll('#link-list [data-testid="active-relationship-type"]').forEach(el => {
+    el.classList.toggle('active', el.dataset.relType === t.rel_type);
+  });
+  openKnowledgeRelationshipDetail(t, patternIndex || 0);
+}
+
+async function openKnowledgeRelationshipDetail(t, patternIndex) {
+  const pattern = t.triples[patternIndex] || t.triples[0];
+  if (!pattern) return;
+  krSelectedType = t.rel_type;
+  const token = ++krDetailToken;
+  const src = pattern.source_label || '?';
+  const tgt = pattern.target_label || '?';
+  const others = t.triples.map((p, j) => ({p, j})).filter(x => x.j !== t.triples.indexOf(pattern));
+  const otherHtml = others.length ? `<h4 class="small">Other ${escapeHtml(t.rel_type)} patterns</h4><ul>${others.map(({p, j}) =>
+    `<li><button class="btn btn-sm btn-link kr-open-pattern" data-pattern-index="${j}">${escapeHtml(p.source_label || '?')} &rarr; ${escapeHtml(p.target_label || '?')}</button> <span style="color:#666">(${krNum(p.triple_count)} edges)</span></li>`).join('')}</ul>` : '';
+  const query = `MATCH (a:${krQuote(src)})-[r:${krQuote(t.rel_type)}]->(b:${krQuote(tgt)})\nRETURN coalesce(a.name, a.title, a.filename, a.path, a.label) AS source_name, keys(r) AS rel_properties, coalesce(b.name, b.title, b.filename, b.path, b.label) AS target_name\nLIMIT 8`;
+
+  const panel = krShowPanel(`<div data-testid="relationship-detail" data-rel-type="${escapeHtml(t.rel_type)}">
+    <h3 style="margin-top:0">${escapeHtml(src)} &rarr; ${escapeHtml(t.rel_type)} &rarr; ${escapeHtml(tgt)}</h3>
+    <div class="kr-triple" data-testid="relationship-summary">
+      <span class="kr-node">${escapeHtml(src)}</span><span>&rarr;</span><span class="kr-rel">${escapeHtml(t.rel_type)}</span><span>&rarr;</span><span class="kr-node">${escapeHtml(tgt)}</span>
+    </div>
+    <p data-testid="relationship-counts"><strong>${krNum(pattern.triple_count)}</strong> edge${Number(pattern.triple_count) !== 1 ? 's' : ''} in this pattern${t.triples.length > 1 ? `; <strong>${krNum(t.edge_count)}</strong> across ${t.triples.length} patterns of ${escapeHtml(t.rel_type)}` : ''}.</p>
+    <h4 class="small">Examples</h4>
+    <div id="kr-examples" data-testid="relationship-examples"><div class="empty-state small" role="status">Loading examples&hellip;</div></div>
+    ${otherHtml}
+    ${krNavLinks()}
+    <details data-testid="relationship-advanced"><summary>Advanced: read-only query</summary>
+      <p class="small">The examples above come from this bounded, read-only query against the ${escapeHtml(pattern.database || 'PRIMARY')} graph.</p>
+      <pre>${escapeHtml(query)}</pre>
+    </details>
+  </div>`);
+  if (!panel) return;
+  panel.querySelectorAll('.kr-open-pattern').forEach(btn => btn.addEventListener('click', () => openKnowledgeRelationshipDetail(t, parseInt(btn.dataset.patternIndex))));
+
+  const box = panel.querySelector('#kr-examples');
+  try {
+    const response = await fetch(krBase() + '/api/neo4j/query', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({database: pattern.database || 'PRIMARY', query})
+    });
+    const result = await response.json();
+    if (token !== krDetailToken) return;
+    if (!response.ok || result.status === 'error') throw new Error(result.error || 'Query failed');
+    const rows = result.records || [];
+    if (!rows.length) { box.innerHTML = '<div class="empty-state small">No example edges found.</div>'; return; }
+    const cell = (v, label) => v == null || v === '' ? `<em style="color:#888">(unnamed ${escapeHtml(label)})</em>` : escapeHtml(String(v));
+    const get = (row, key, i) => Array.isArray(row) ? row[i] : row[key];
+    box.innerHTML = `<table><thead><tr><th>${escapeHtml(src)}</th><th>${escapeHtml(t.rel_type)}</th><th>${escapeHtml(tgt)}</th></tr></thead><tbody>${rows.map(row => {
+      const keys = get(row, 'rel_properties', 1) || [];
+      return `<tr><td>${cell(get(row, 'source_name', 0), src)}</td><td>&rarr;${keys.length ? ` <span style="color:#666">(${keys.length} propert${keys.length !== 1 ? 'ies' : 'y'})</span>` : ''}</td><td>${cell(get(row, 'target_name', 2), tgt)}</td></tr>`;
+    }).join('')}</tbody></table><p class="small" style="color:#666">Showing up to ${rows.length} representative edges.</p>`;
+  } catch (err) {
+    if (token !== krDetailToken) return;
+    box.innerHTML = `<div class="empty-state small" role="alert">Could not load examples: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
 // ===== Active: relationship types present in the graph (graph-derived, read-only) =====
 
 // One entry per relationship type in the current (primary) graph, aggregated from the triples returned by
@@ -31,10 +139,18 @@ function renderActiveRelationshipTypes(container) {
     container.innerHTML = '<div class="empty-state small" data-testid="active-discovering" role="status">Discovering relationships\u2026</div>';
     const countEl = document.getElementById('result-count');
     if (countEl) countEl.style.display = 'none';
+    if (isKnowledgeMode()) {
+      krSelectedType = null; // the loading message replaces any open detail; the overview returns when discovery finishes
+      krShowPanel('<div class="empty-state small" data-testid="kr-loading" role="status">Discovering relationships\u2026</div>');
+    }
     return;
   }
   if (discoveryState === 'error') {
     container.innerHTML = '<div class="empty-state small" data-testid="active-discovery-error" role="alert">Could not discover relationships from the graph. Use Refresh to try again.</div>';
+    if (isKnowledgeMode()) {
+      krSelectedType = null;
+      krShowPanel('<div class="empty-state small" role="alert">Could not discover relationships from the graph. Use Refresh to try again.</div>' + krNavLinks());
+    }
     return;
   }
 
@@ -98,7 +214,7 @@ function renderActiveRelationshipTypes(container) {
   }
 
   // Saved link definitions are a secondary, compatibility-only view.
-  const saved = linkDefinitions.filter(l => l && l.id && l.status === 'active');
+  const saved = isKnowledgeMode() ? [] : linkDefinitions.filter(l => l && l.id && l.status === 'active');
   if (saved.length > 0) {
     html += `<details data-testid="saved-definitions" style="margin-top: 0.75rem; font-size: 0.85em;"><summary>Saved definitions (${saved.length})</summary><div id="saved-definitions-list"></div></details>`;
   }
@@ -108,17 +224,32 @@ function renderActiveRelationshipTypes(container) {
     btn.addEventListener('click', e => {
       e.stopPropagation();
       const t = types[parseInt(btn.dataset.typeIndex)];
-      if (t && t.triples[0]) openImportWizardForRelationship(t.triples[0]);
+      if (!t || !t.triples[0]) return;
+      if (isKnowledgeMode()) krOpenType(t, 0); else openImportWizardForRelationship(t.triples[0]);
     });
   });
   container.querySelectorAll('.btn-view-active-pattern').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
       const t = types[parseInt(btn.dataset.typeIndex)];
-      const rel = t && t.triples[parseInt(btn.dataset.patternIndex)];
-      if (rel) openImportWizardForRelationship(rel);
+      const idx = parseInt(btn.dataset.patternIndex);
+      const rel = t && t.triples[idx];
+      if (!rel) return;
+      if (isKnowledgeMode()) krOpenType(t, idx); else openImportWizardForRelationship(rel);
     });
   });
+  if (isKnowledgeMode()) {
+    container.querySelectorAll('[data-testid="active-relationship-type"]').forEach((row, i) => {
+      row.addEventListener('click', e => { if (!e.target.closest('button, summary, details, a') && types[i]) krOpenType(types[i], 0); });
+    });
+    const stillListed = krSelectedType && all.some(t => t.rel_type === krSelectedType);
+    const builder = document.getElementById('link-wizard');
+    const builderOpen = builder && builder.style.display !== 'none';
+    if (!stillListed) {
+      krSelectedType = null;
+      if (!builderOpen) renderKnowledgeOverview();
+    }
+  }
   const savedContainer = container.querySelector('#saved-definitions-list');
   if (savedContainer) renderFlatLinks(saved, savedContainer);
 }
@@ -550,28 +681,4 @@ function getActiveFilterCount() {
   ].filter(Boolean).length;
 }
 
-// Populate filter dropdowns from link definitions
-function populateFilterDropdowns() {
-  const sourceLabels = [...new Set(linkDefinitions.map(l => l.source_label).filter(Boolean))].sort();
-  const targetLabels = [...new Set(linkDefinitions.map(l => l.target_label).filter(Boolean))].sort();
-  const relTypes = [...new Set(linkDefinitions.map(l => l.relationship_type).filter(Boolean))].sort();
-
-  const sourceSelect = document.getElementById('filter-source-label');
-  const targetSelect = document.getElementById('filter-target-label');
-  const relSelect = document.getElementById('filter-rel-type');
-
-  if (sourceSelect) {
-    sourceSelect.innerHTML = '<option value="">Any source label</option>' +
-      sourceLabels.map(label => `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`).join('');
-  }
-
-  if (targetSelect) {
-    targetSelect.innerHTML = '<option value="">Any target label</option>' +
-      targetLabels.map(label => `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`).join('');
-  }
-
-  if (relSelect) {
-    relSelect.innerHTML = '<option value="">Any relationship type</option>' +
-      relTypes.map(type => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`).join('');
-  }
-}
+// (populateFilterDropdowns lives in links-core.js; a second copy here would override it, as this file loads later.)

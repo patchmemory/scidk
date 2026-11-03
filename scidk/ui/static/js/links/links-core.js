@@ -356,8 +356,8 @@ function initializeEventListeners() {
     try {
       showToast('Refreshing all tabs...', 'info');
 
-      // Step 1: Verify Active links against primary graph
-      try {
+      // Step 1: Verify Active links against primary graph (legacy workflow only; Knowledge just re-reads the graph)
+      if (!isKnowledgeMode()) try {
         const verifyResponse = await fetch(window.SCIDK_BASE + '/api/links/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
@@ -378,7 +378,7 @@ function initializeEventListeners() {
       await loadDiscoveredRelationships();
 
       // Step 3: Reload all link definitions (promotion happens server-side)
-      await loadLinkDefinitions();
+      if (!isKnowledgeMode()) await loadLinkDefinitions();
 
       showToast('Refresh complete - all tabs updated', 'success');
 
@@ -396,53 +396,62 @@ function initializeEventListeners() {
     }
   });
 
-  // Dropdown toggle
+  // Dropdown toggle (Knowledge mode: a single "+ Link builder" button, no menu)
   const dropdownBtn = document.getElementById('link-type-dropdown-btn');
   const dropdownMenu = document.getElementById('link-type-dropdown-menu');
 
-  dropdownBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    dropdownMenu.style.display = dropdownMenu.style.display === 'none' ? 'block' : 'none';
-  });
+  if (dropdownBtn && !dropdownMenu) {
+    dropdownBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      resetWizard();
+      showWizard();
+    });
+  } else if (dropdownBtn && dropdownMenu) {
 
-  // Close dropdown when clicking outside
-  document.addEventListener('click', (e) => {
-    if (!dropdownBtn.contains(e.target) && !dropdownMenu.contains(e.target)) {
-      dropdownMenu.style.display = 'none';
-    }
-  });
-
-  // Wizard link option
-  document.getElementById('menu-wizard-link').addEventListener('click', (e) => {
-    e.preventDefault();
-    dropdownMenu.style.display = 'none';
-    resetWizard();
-    showWizard();
-  });
-
-  // Script link option - redirect to Scripts page
-  document.getElementById('menu-script-link').addEventListener('click', (e) => {
-    e.preventDefault();
-    dropdownMenu.style.display = 'none';
-    window.location.href = window.SCIDK_BASE + '/scripts?new=link';
-  });
-
-  // Import link option - switch to Discovered tab
-  document.getElementById('menu-import-link').addEventListener('click', (e) => {
-    e.preventDefault();
-    dropdownMenu.style.display = 'none';
-
-    // Switch to Available filter tab
-    currentFilter = 'available';
-    renderLinkList();
-
-    // Update tab styling
-    document.querySelectorAll('.link-filter-tab').forEach(tab => {
-      tab.classList.toggle('active', tab.dataset.filter === 'available');
+    dropdownBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dropdownMenu.style.display = dropdownMenu.style.display === 'none' ? 'block' : 'none';
     });
 
-    showToast('Click on an available relationship to adopt it as a link definition', 'info');
-  });
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!dropdownBtn.contains(e.target) && !dropdownMenu.contains(e.target)) {
+        dropdownMenu.style.display = 'none';
+      }
+    });
+
+    // Wizard link option
+    document.getElementById('menu-wizard-link').addEventListener('click', (e) => {
+      e.preventDefault();
+      dropdownMenu.style.display = 'none';
+      resetWizard();
+      showWizard();
+    });
+
+    // Script link option - redirect to Scripts page
+    document.getElementById('menu-script-link').addEventListener('click', (e) => {
+      e.preventDefault();
+      dropdownMenu.style.display = 'none';
+      window.location.href = window.SCIDK_BASE + '/scripts?new=link';
+    });
+
+    // Import link option - switch to Discovered tab
+    document.getElementById('menu-import-link').addEventListener('click', (e) => {
+      e.preventDefault();
+      dropdownMenu.style.display = 'none';
+
+      // Switch to Available filter tab
+      currentFilter = 'available';
+      renderLinkList();
+
+      // Update tab styling
+      document.querySelectorAll('.link-filter-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.filter === 'available');
+      });
+
+      showToast('Click on an available relationship to adopt it as a link definition', 'info');
+    });
+  }
 
   // Wizard navigation buttons (if they exist - legacy support)
   const btnPrev = document.getElementById('btn-prev');
@@ -641,9 +650,14 @@ function updateFilterTabCounts() {
   const activeLabel = loading ? '\u2026' : String(typeof graphRelationshipTypes === 'function' ? graphRelationshipTypes().length : 0);
   const availableLabel = loading ? '\u2026' : String(discoveredRelationships.length);
 
-  document.querySelector('[data-filter="active"]').textContent = `Active (${activeLabel})`;
-  document.querySelector('[data-filter="pending"]').textContent = `Pending (${pendingCount})`;
-  document.querySelector('[data-filter="available"]').textContent = `Available (${availableLabel})`;
+  const activeTab = document.querySelector('[data-filter="active"]');
+  const pendingTab = document.querySelector('[data-filter="pending"]');
+  const availableTab = document.querySelector('[data-filter="available"]');
+  if (activeTab) activeTab.textContent = `Active (${activeLabel})`;
+  if (pendingTab) pendingTab.textContent = `Pending (${pendingCount})`;
+  if (availableTab) availableTab.textContent = `Available (${availableLabel})`;
+  const krHeading = document.getElementById('kr-heading');
+  if (krHeading) krHeading.textContent = `Relationships in graph (${activeLabel})`;
 }
 
 // Update result count indicator
@@ -954,7 +968,7 @@ function updateToggleButton() {
 
   const arrow = isOpen ? '▲' : '▼';
   const filterText = activeCount > 0 ? ` (${activeCount} active)` : '';
-  btn.textContent = `${arrow} Advanced Filters${filterText}`;
+  btn.textContent = `${arrow} ${isKnowledgeMode() ? 'Filters' : 'Advanced Filters'}${filterText}`;
 }
 
 // Get active filter count
@@ -968,10 +982,13 @@ function getActiveFilterCount() {
 
 // Populate filter dropdowns from link definitions
 function populateFilterDropdowns() {
-  // Options come from the graph (discovered) as well as saved definitions
-  const sourceLabels = [...new Set([...linkDefinitions.map(l => l.source_label), ...discoveredRelationships.map(r => r.source_label)].filter(Boolean))].sort();
-  const targetLabels = [...new Set([...linkDefinitions.map(l => l.target_label), ...discoveredRelationships.map(r => r.target_label)].filter(Boolean))].sort();
-  const relTypes = [...new Set([...linkDefinitions.map(l => l.relationship_type), ...discoveredRelationships.map(r => r.rel_type)].filter(Boolean))].sort();
+  // Options come from the graph (discovered) as well as saved definitions; Knowledge lists only the current graph
+  const knowledge = isKnowledgeMode();
+  const defs = knowledge ? [] : linkDefinitions;
+  const graph = knowledge ? discoveredRelationships.filter(r => !r.database || r.database === 'PRIMARY') : discoveredRelationships;
+  const sourceLabels = [...new Set([...defs.map(l => l.source_label), ...graph.map(r => r.source_label)].filter(Boolean))].sort();
+  const targetLabels = [...new Set([...defs.map(l => l.target_label), ...graph.map(r => r.target_label)].filter(Boolean))].sort();
+  const relTypes = [...new Set([...defs.map(l => l.relationship_type), ...graph.map(r => r.rel_type)].filter(Boolean))].sort();
   const keep = {
     'filter-source-label': linksNavState.sourceLabel,
     'filter-target-label': linksNavState.targetLabel,
@@ -1227,8 +1244,10 @@ function showWizard() {
   if (linkWizard) {
     linkWizard.style.display = 'block';
   }
+  const krPanel = document.getElementById('kr-panel');
+  if (krPanel) krPanel.style.display = 'none';
   if (wizardTitle) {
-    wizardTitle.textContent = currentLink ? 'Edit Link Definition' : 'New Link Definition';
+    wizardTitle.textContent = currentLink ? 'Edit Link Definition' : (isKnowledgeMode() ? 'Link builder' : 'New Link Definition');
   }
 }
 
@@ -1553,7 +1572,8 @@ function saveLinkDefinition() {
         tripleBuilder.link_id = result.link.id;
         currentLink = result.link;
         loadLinkDefinitions();
-        document.getElementById('btn-delete-def').style.display = 'inline-block';
+        const delBtn = document.getElementById('btn-delete-def');
+        if (delBtn) delBtn.style.display = 'inline-block';
       } else {
         showToast(`Failed to save: ${result.error}`, 'error');
       }

@@ -39,7 +39,8 @@
 {% include '_labels_app.html' %}
 {% elif view == 'relationships' %}
 {% include '_management_connection.html' %}
-<p class="small" style="margin:0.25rem 0.5rem" data-testid="relationships-context">Browse relationship types and their source/target context, then <a href="{{ request.script_root }}/knowledge?view=maps" data-testid="relationships-to-maps">open Maps</a> to see them on the graph, or return to <a href="{{ request.script_root }}/knowledge?view=entities">Entities</a>.</p>
+<p class="small" style="margin:0.25rem 0.5rem" data-testid="relationships-context">What is actually in the graph: relationship types with their source and target labels and edge counts. Open <a href="{{ request.script_root }}/knowledge?view=maps" data-testid="relationships-to-maps">Maps</a> to see them on the graph, or return to <a href="{{ request.script_root }}/knowledge?view=entities" data-testid="relationships-to-entities-top">Entities</a>.</p>
+{% set links_knowledge_mode = true %}
 {% include '_links_app.html' %}
 {% elif view == 'maps' %}
 {% include '_management_connection.html' %}

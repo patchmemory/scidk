@@ -300,18 +300,35 @@
 </style>
 
 {% if request.path != '/knowledge' %}<h1>Links</h1>{% endif %}
+{% set kmode = links_knowledge_mode|default(false) %}
+{% if kmode %}
+<script>window.LINKS_KNOWLEDGE_MODE = true;</script>
+<style>
+  .links-container[data-links-mode="knowledge"] { margin-top: 0.25rem; }
+  .links-container[data-links-mode="knowledge"] .links-list { width: 36%; }
+  #kr-panel { flex: 1; border: 1px solid #eee; border-radius: 4px; padding: 1rem; overflow-y: auto; min-width: 300px; }
+  #kr-panel .kr-triple { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin: 0.5rem 0 1rem; }
+  #kr-panel .kr-node { padding: 0.5rem 0.9rem; border-radius: 6px; background: #e3f2fd; color: #0d47a1; font-weight: 600; }
+  #kr-panel .kr-rel { padding: 0.5rem 0.9rem; border-radius: 6px; background: #f3e5f5; color: #4a148c; font-weight: 600; }
+  #kr-panel table { border-collapse: collapse; width: 100%; font-size: 0.85em; }
+  #kr-panel th, #kr-panel td { text-align: left; padding: 0.25rem 0.5rem; border-bottom: 1px solid #eee; }
+  #kr-panel details { margin-top: 1rem; font-size: 0.85em; }
+  #kr-panel pre { background: #f5f5f5; padding: 0.5rem; overflow-x: auto; }
+</style>
+{% else %}
 <p class="small">Create relationships between data instances using graph, CSV, or API sources.</p>
+{% endif %}
 
-<div class="links-container">
+<div class="links-container"{% if kmode %} data-links-mode="knowledge"{% endif %}>
   <!-- Left Panel: Link Definitions List -->
   <div class="links-list" id="links-list">
     <!-- Sticky Header Section -->
     <div style="position: sticky; top: 0; background: white; z-index: 100; padding-bottom: 0.5rem; border-bottom: 2px solid #e0e0e0; margin-bottom: 0.5rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-        <h3 class="small" style="margin: 0;">Definitions</h3>
+        {% if kmode %}<h3 class="small" id="kr-heading" data-testid="relationships-heading" style="margin: 0;">Relationships in graph (&hellip;)</h3>{% else %}<h3 class="small" style="margin: 0;">Definitions</h3>{% endif %}
         <div class="dropdown" style="display: inline-block; position: relative;">
-          <button class="btn btn-sm btn-primary" id="link-type-dropdown-btn">+ New Link ▼</button>
-          <div class="dropdown-menu" id="link-type-dropdown-menu" style="display: none; position: absolute; right: 0; background: white; border: 1px solid #ddd; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 1000; min-width: 220px; margin-top: 0.25rem;">
+          {% if kmode %}<button class="btn btn-sm btn-primary" id="link-type-dropdown-btn" data-testid="link-builder-btn" title="Open the link builder to create a link between existing nodes">+ Link builder</button>{% else %}<button class="btn btn-sm btn-primary" id="link-type-dropdown-btn">+ New Link ▼</button>{% endif %}
+          {% if not kmode %}<div class="dropdown-menu" id="link-type-dropdown-menu" style="display: none; position: absolute; right: 0; background: white; border: 1px solid #ddd; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 1000; min-width: 220px; margin-top: 0.25rem;">
           <a href="#" class="dropdown-item" id="menu-wizard-link" style="display: block; padding: 0.5rem 1rem; color: #333; text-decoration: none; border-bottom: 1px solid #eee;">
             <div style="display: flex; align-items: center; gap: 0.5rem;">
               <span style="font-size: 1.2em;">📋</span>
@@ -339,7 +356,7 @@
               </div>
             </div>
           </a>
-          </div>
+          </div>{% endif %}
         </div>
       </div>
     </div>
@@ -354,7 +371,7 @@
       </div>
 
       <!-- Advanced Filters (collapsible) -->
-      <div id="advanced-filters" style="display: none; padding: 0.5rem; border-bottom: 1px solid #eee; background: #f9f9f9;">
+      <div id="advanced-filters" style="display: {% if kmode %}block{% else %}none{% endif %}; padding: 0.5rem; border-bottom: 1px solid #eee; background: #f9f9f9;">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem;">
           <select id="filter-source-label" class="form-control form-control-sm">
             <option value="">Any source label</option>
@@ -375,10 +392,10 @@
           </select>
         </div>
         <div style="display: flex; gap: 0.5rem; align-items: center;">
-          <label style="display: flex; align-items: center; gap: 0.25rem; font-size: 0.85em; margin: 0; flex: 1;">
+          {% if kmode %}<span style="flex: 1;"></span>{% else %}<label style="display: flex; align-items: center; gap: 0.25rem; font-size: 0.85em; margin: 0; flex: 1;">
             <input type="checkbox" id="group-by-toggle">
             Group by Relationship Type
-          </label>
+          </label>{% endif %}
           <button class="btn btn-sm btn-outline-secondary" onclick="clearAdvancedFilters()" style="font-size: 0.8em;">
             Clear Filters
           </button>
@@ -387,7 +404,7 @@
 
       <button id="toggle-advanced-filters" class="btn btn-sm btn-link"
               style="padding: 0.25rem 0.5rem; font-size: 0.8em; width: 100%; text-align: left; border-bottom: 1px solid #eee;">
-        ▼ Advanced Filters
+        {% if kmode %}▲ Filters{% else %}▼ Advanced Filters{% endif %}
       </button>
 
       <!-- Result Count -->
@@ -396,6 +413,7 @@
 
     <!-- Filter Tabs with Refresh Button -->
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+{% if not kmode %}
       <div class="link-filter-tabs" style="display: flex; gap: 0.25rem; flex: 1; border-bottom: 2px solid #eee;">
         <button class="link-filter-tab active" data-filter="active" style="flex: 1; padding: 0.5rem; border: none; background: none; cursor: pointer; font-size: 0.85em; font-weight: 500; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px;">
           Active
@@ -407,6 +425,9 @@
           Available
         </button>
       </div>
+{% else %}
+      <div class="link-filter-tabs" style="flex: 1;"></div>
+{% endif %}
       <button id="btn-refresh-all" class="btn btn-sm" style="margin-left: 0.5rem; padding: 0.25rem 0.5rem; font-size: 0.85em;" title="Refresh all tabs: verify Active, rescan Available, reload Pending">
         <span id="refresh-icon">🔄</span> <span id="refresh-text">Refresh</span>
       </button>
@@ -463,11 +484,11 @@
     <div class="wizard-nav">
       <div></div>
       <div style="display: flex; gap: 0.5rem;">
-        <button id="btn-save-def" class="btn btn-sm btn-outline-success" disabled>Save Definition</button>
+        {% if not kmode %}<button id="btn-save-def" class="btn btn-sm btn-outline-success" disabled>Save Definition</button>
         <button id="btn-export-csv" class="btn btn-sm btn-outline-warning" style="display: none;">Export CSV</button>
-        <button id="btn-import-csv" class="btn btn-sm btn-outline-info" style="display: none;">Import Validated CSV</button>
+        <button id="btn-import-csv" class="btn btn-sm btn-outline-info" style="display: none;">Import Validated CSV</button>{% endif %}
         <button id="btn-execute" class="btn btn-sm btn-success" data-testid="execute-link-btn" disabled>Execute</button>
-        <button id="btn-delete-def" class="btn btn-sm btn-outline-danger" style="display: none;">Delete</button>
+        {% if not kmode %}<button id="btn-delete-def" class="btn btn-sm btn-outline-danger" style="display: none;">Delete</button>{% endif %}
       </div>
     </div>
 
@@ -479,6 +500,12 @@
     <!-- Hidden file input for CSV import -->
     <input type="file" id="csv-file-input" accept=".csv" style="display: none;">
   </div>
+{% if kmode %}
+  <!-- Knowledge: readable overview / relationship detail (never a blank right side) -->
+  <div id="kr-panel" data-testid="relationship-detail-panel" aria-live="polite">
+    <div class="empty-state small" data-testid="kr-loading" role="status">Discovering relationships&hellip;</div>
+  </div>
+{% endif %}
 </div>
 
 <script src="{{ url_for('static', filename='js/links/links-core.js') }}"></script>

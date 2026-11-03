@@ -1,5 +1,9 @@
 """Knowledge re-homes the working Labels browser and Maps application (UI only, no new backend)."""
+import json
+import pathlib
 import re
+import shutil
+import subprocess
 
 import pytest
 
@@ -85,9 +89,13 @@ def test_tabs_are_exactly_entities_relationships_maps_sketch(client):
 def test_relationships_view_renders_the_real_relationship_browser(client):
     html = page(client, '/knowledge?view=relationships')
     for needle in ('links-container', 'id="links-list"', 'id="link-list"', 'link-type-dropdown-btn', 'links-search',
-                   'filter-rel-type', 'group-by-toggle', 'id="link-wizard"', 'btn-refresh-all', 'data-filter="active"',
-                   'data-filter="pending"', 'data-filter="available"', 'btn-execute', 'loadLinksPage'):
+                   'filter-rel-type', 'id="link-wizard"', 'btn-refresh-all', 'btn-execute', 'loadLinksPage',
+                   'id="kr-panel"'):
         assert needle in html, needle
+    legacy = page(client, '/entities?tab=relationships')
+    for needle in ('links-container', 'group-by-toggle', 'data-filter="active"', 'data-filter="pending"',
+                   'data-filter="available"', 'btn-save-def', 'btn-execute'):
+        assert needle in legacy, needle
     for script in ('links-core.js', 'links-wizard.js', 'links-index.js', 'links-discovery.js', 'links-active.js',
                    'links-import.js'):
         assert f'js/links/{script}' in html, script
@@ -99,19 +107,27 @@ def test_relationships_view_renders_the_real_relationship_browser(client):
 def test_relationships_view_shares_one_implementation_with_the_legacy_page(client):
     knowledge, direct = page(client, '/knowledge?view=relationships'), page(client, '/entities?tab=relationships')
     def app_markup(html):
-        start = html.index('<div class="links-container">')
+        start = html.index('<div class="links-container"')
         return html[start:html.index('document.addEventListener(\'DOMContentLoaded\', loadLinksPage);')]
-    assert app_markup(knowledge) == app_markup(direct)
-    assert knowledge.count('id="links-list"') == 1 and knowledge.count('js/links/links-core.js') == 1
+    # One shared partial: Knowledge is a mode of it, not a copy.
+    assert 'data-links-mode="knowledge"' in app_markup(knowledge) and 'data-links-mode' not in app_markup(direct)
+    for html in (knowledge, direct):
+        for script in ('links-core.js', 'links-discovery.js', 'links-import.js'):
+            assert html.count(f'js/links/{script}') == 1
+        assert html.count('id="links-list"') == 1
+    templates = pathlib.Path(__file__).resolve().parents[1] / 'scidk' / 'ui' / 'templates'
+    assert "{% include '_links_app.html' %}" in (templates / 'links.html').read_text()
+    assert "{% include '_links_app.html' %}" in (templates / 'gui' / 'knowledge.html').read_text()
 
 
 def test_relationships_browse_and_detail_interactions_are_wired(client):
     """The same browse/detail hooks the legacy page uses: type filter, grouping, tabs, detail wizard, APIs."""
     html = page(client, '/knowledge?view=relationships')
     for needle in ('id="filter-source-label"', 'id="filter-target-label"', 'sort-links', 'id="source-node-btn"',
-                   'id="relationship-node-btn"', 'id="target-node-btn"', 'id="preview-container"', 'id="btn-save-def"',
-                   'toggle-advanced-filters'):
+                   'id="relationship-node-btn"', 'id="target-node-btn"', 'id="preview-container"',
+                   'toggle-advanced-filters', 'relationship-detail-panel'):
         assert needle in html, needle
+    assert 'id="btn-save-def"' in page(client, '/entities?tab=relationships')
     core = client.get('/static/js/links/links-core.js').get_data(as_text=True)
     assert 'function loadLinksPage' in core and '/api/links' in core
     assert client.get('/static/js/links/links-active.js').status_code == 200
@@ -349,3 +365,183 @@ def test_active_tab_is_wired_to_graph_discovery_not_saved_definitions(client):
 def test_legacy_relationships_page_shares_the_graph_derived_active_list(client):
     legacy = page(client, '/entities?tab=relationships')
     assert 'data-testid="active-discovering"' in legacy and 'js/links/links-discovery.js' in legacy
+
+
+# ---- Knowledge → Relationships is a simplified, graph-first, read-only-first viewer ----
+
+LEGACY_WORKFLOW_MARKUP = ('data-filter="pending"', 'data-filter="available"', 'btn-save-def', 'btn-export-csv',
+                          'btn-import-csv', 'btn-delete-def', 'Save Definition', 'Export CSV', 'Import Validated CSV',
+                          '+ New Link', 'Script Link', 'Import from Graph', 'link-type-dropdown-menu', 'group-by-toggle',
+                          'Group by Relationship Type', 'Definitions</h3>')
+
+
+def test_knowledge_relationships_is_one_graph_browser_without_legacy_workflow_controls(client):
+    html = page(client, '/knowledge?view=relationships')
+    for needle in LEGACY_WORKFLOW_MARKUP:
+        assert needle not in html, needle
+    assert 'link-filter-tab ' not in html and 'Pending (' not in html and 'Available (' not in html
+    assert 'data-testid="relationships-heading"' in html and 'Relationships in graph (' in html
+    assert 'window.LINKS_KNOWLEDGE_MODE = true' in html
+    assert 'data-testid="link-builder-btn"' in html and '+ Link builder' in html
+    for needle in ('id="links-search"', 'id="filter-source-label"', 'id="filter-target-label"', 'id="filter-rel-type"',
+                   'btn-refresh-all', 'id="kr-panel"', 'data-testid="active-discovering"'):
+        assert needle in html, needle
+    # the builder can still execute a link; it just isn't a governance/import surface
+    assert 'btn-execute' in html
+
+
+def test_direct_legacy_pages_keep_their_workflow_controls(client):
+    for url in ('/entities?tab=relationships', '/links'):
+        response = client.get(url, follow_redirects=True)
+        assert response.status_code == 200, url
+        html = response.get_data(as_text=True)
+        for needle in ('data-filter="active"', 'data-filter="pending"', 'data-filter="available"', 'btn-save-def',
+                       'btn-export-csv', 'btn-import-csv', 'btn-delete-def', '+ New Link', 'Script Link',
+                       'Import from Graph', 'group-by-toggle', 'Definitions</h3>'):
+            assert needle in html, (url, needle)
+        assert 'LINKS_KNOWLEDGE_MODE' not in html and 'kr-panel' not in html and 'link-builder-btn' not in html
+    # the legacy-only actions still live in the shared scripts, which the legacy page loads
+    discovery = (LINKS_JS / 'links-discovery.js').read_text()
+    imports = (LINKS_JS / 'links-import.js').read_text()
+    assert 'Adopt as Definition' in discovery and 'Import to Primary Graph' in imports and 'Preview Import' in imports
+
+
+def test_knowledge_scripts_never_offer_legacy_actions_in_the_viewer():
+    discovery = (LINKS_JS / 'links-discovery.js').read_text()
+    start = discovery.index('// ===== Knowledge mode')
+    knowledge_part = discovery[start:discovery.index('function renderActiveRelationshipTypes')]
+    for forbidden in ('Adopt', 'Save as Link Definition', 'Preview Import', 'Import to Primary', 'badge-adopted',
+                      'openImportWizardForRelationship', '/api/links/verify', 'method: \'DELETE\'', 'MERGE', 'CREATE'):
+        assert forbidden not in knowledge_part, forbidden
+    core = (LINKS_JS / 'links-core.js').read_text()
+    assert core.index('if (!isKnowledgeMode()) try {') < core.index("'/api/links/verify'")  # Refresh: read-only in Knowledge
+
+
+KNOWLEDGE_HARNESS = r"""
+const vm = require('vm'), fs = require('fs');
+const triples = JSON.parse(process.argv[2]);
+const fetchMode = process.argv[3];
+const make = () => ({innerHTML: '', style: {}, dataset: {}, classList: {toggle() {}}, querySelectorAll: () => [], querySelector: () => null});
+const panel = make(), box = make(), wizard = make(), calls = [];
+panel.querySelector = sel => sel === '#kr-examples' ? box : null;
+wizard.style.display = process.argv[4] === 'builder-open' ? 'block' : 'none';
+const ctx = {
+  console, discoveredRelationships: triples, discoveryState: 'ready', currentFilter: 'active',
+  linkDefinitions: [{id: 'x', status: 'active', name: 'Saved one'}],
+  linksNavState: {searchQuery: '', sourceLabel: '', targetLabel: '', relType: '', sortBy: 'name', groupByRelType: false},
+  escapeHtml: s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'),
+  highlightMatch: s => s, opened: [], counts: [],
+  updateResultCount: (a, b, n) => ctx.counts.push([a, b, n]),
+  openImportWizardForRelationship: rel => ctx.opened.push(rel),
+  renderFlatLinks: () => {},
+  window: {LINKS_KNOWLEDGE_MODE: true, SCIDK_BASE: '/base'},
+  document: {getElementById: id => id === 'kr-panel' ? panel : id === 'link-wizard' ? wizard : make(),
+             querySelectorAll: () => []},
+  fetch: async (url, opts) => {
+    calls.push({url, body: JSON.parse(opts.body)});
+    if (fetchMode === 'fail') return {ok: false, json: async () => ({status: 'error', error: 'boom'})};
+    return {ok: true, json: async () => ({status: 'success', records: [
+      {source_name: 'Alpha sample', rel_properties: ['since'], target_name: 'Beta sample'},
+      {source_name: null, rel_properties: [], target_name: 'Gamma sample'}]})};
+  },
+};
+vm.createContext(ctx);
+vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), ctx);
+(async () => {
+  const handlers = [];
+  const container = {innerHTML: '', querySelector: () => null,
+    querySelectorAll: sel => sel === '.btn-view-active-type' ? [{dataset: {typeIndex: '0'}, addEventListener: (e, f) => handlers.push(f)}] : []};
+  vm.runInContext('renderActiveRelationshipTypes', ctx)(container);
+  const overview = panel.innerHTML;
+  for (const h of handlers) await h({stopPropagation() {}});
+  await new Promise(r => setTimeout(r, 20));
+  console.log(JSON.stringify({list: container.innerHTML, overview, detail: panel.innerHTML, examples: box.innerHTML,
+    wizardDisplay: wizard.style.display, opened: ctx.opened, calls}));
+})();
+"""
+
+
+def run_knowledge(triples, fetch_mode='ok', wizard='closed'):
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node is required to execute the Relationships scripts')
+    out = subprocess.run([node, '-e', KNOWLEDGE_HARNESS, '--', str(LINKS_JS / 'links-discovery.js'),
+                          json.dumps(triples), fetch_mode, wizard], capture_output=True, text=True, timeout=60,
+                         check=True)
+    return json.loads(out.stdout)
+
+
+def test_knowledge_overview_fills_the_right_side_before_any_selection():
+    result = run_knowledge(GRAPH_TRIPLES)
+    overview = result['overview']
+    assert 'data-testid="relationship-overview"' in overview
+    assert '2 relationship types' in overview and '49 edges' in overview
+    assert 'DERIVED_FROM' in overview and 'HAS_INPUT' in overview and 'EXTERNAL_ONLY' not in overview
+    assert '/base/knowledge?view=entities' in overview and '/base/knowledge?view=maps' in overview
+
+
+def test_knowledge_empty_graph_overview_is_explicit():
+    overview = run_knowledge([])['overview']
+    assert 'No relationships found in the current graph.' in overview and '/base/knowledge?view=maps' in overview
+
+
+def test_knowledge_view_details_leads_with_a_readable_summary_and_examples():
+    result = run_knowledge(GRAPH_TRIPLES, wizard='builder-open')
+    detail, examples = result['detail'], result['examples']
+    assert result['opened'] == []  # no legacy import wizard in Knowledge
+    assert result['wizardDisplay'] == 'none'  # the legacy wizard panel is hidden, the readable panel is shown
+    assert 'data-testid="relationship-detail"' in detail and 'data-rel-type="DERIVED_FROM"' in detail
+    assert 'Sample &rarr; DERIVED_FROM &rarr; Sample' in detail
+    assert '<strong>40</strong> edges in this pattern' in detail and '<strong>42</strong> across 2 patterns' in detail
+    assert 'Sample &rarr; SampleType' in detail  # other patterns are one click away
+    assert '/base/knowledge?view=entities' in detail and '/base/knowledge?view=maps' in detail
+    assert 'Alpha sample' in examples and 'Beta sample' in examples and '(unnamed Sample)' in examples
+    assert '1 property' in examples
+    # raw ids, query text and import material stay inside the collapsed advanced section
+    assert '<details data-testid="relationship-advanced">' in detail
+    assert 'id(' not in detail and 'uid' not in detail.lower() and 'import' not in detail.lower()
+    assert detail.index('data-testid="relationship-summary"') < detail.index('data-testid="relationship-advanced"')
+
+
+def test_knowledge_detail_uses_one_bounded_read_only_query_on_the_existing_api():
+    calls = run_knowledge(GRAPH_TRIPLES)['calls']
+    assert len(calls) == 1 and calls[0]['url'] == '/base/api/neo4j/query'
+    query = calls[0]['body']['query']
+    assert query.lstrip().startswith('MATCH') and 'LIMIT 8' in query and 'RETURN' in query
+    assert calls[0]['body']['database'] == 'PRIMARY'
+    for write in ('MERGE', 'CREATE', 'SET ', 'DELETE', 'REMOVE'):
+        assert write not in query, write
+
+
+def test_knowledge_detail_reports_example_failures_without_going_blank():
+    result = run_knowledge(GRAPH_TRIPLES, 'fail')
+    assert 'Could not load examples: boom' in result['examples']
+    assert 'Sample &rarr; DERIVED_FROM &rarr; Sample' in result['detail']
+
+
+def test_knowledge_list_hides_saved_definitions_and_keeps_graph_rows():
+    html = run_knowledge(GRAPH_TRIPLES)['list']
+    assert html.count('data-testid="active-relationship-type"') == 2 and 'View Details' in html
+    assert 'saved-definitions' not in html and 'Saved definitions' not in html
+
+
+def test_knowledge_overview_never_replaces_an_open_link_builder():
+    assert run_knowledge(GRAPH_TRIPLES, wizard='builder-open')['overview'] == ''
+
+
+def test_shared_helpers_are_defined_once_so_later_scripts_cannot_override_them():
+    sources = {f.name: f.read_text() for f in LINKS_JS.glob('*.js')}
+    for helper in ('populateFilterDropdowns', 'updateResultCount'):
+        owners = [name for name, text in sources.items() if re.search(rf'^(async )?function {helper}\(', text, re.M)]
+        assert owners == ['links-core.js'], (helper, owners)
+    core = sources['links-core.js']
+    assert 'graph.map(r => r.source_label)' in core and "r.database === 'PRIMARY'" in core
+
+
+def test_knowledge_panel_returns_to_the_overview_after_a_refresh_replaces_an_open_detail():
+    discovery = (LINKS_JS / 'links-discovery.js').read_text()
+    loading = discovery[discovery.index("if (discoveryState === 'loading') {\n    container.innerHTML = '<div class=\"empty-state small\" data-testid=\"active-discovering\""):]
+    loading = loading[:loading.index("return;")]
+    assert 'krSelectedType = null' in loading and 'kr-loading' in loading
+    # once discovery is ready again, a cleared selection renders the overview instead of leaving the loading message
+    assert run_knowledge(GRAPH_TRIPLES)['overview'].count('relationship-overview') == 1
