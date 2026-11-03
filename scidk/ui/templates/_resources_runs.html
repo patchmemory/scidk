@@ -1,7 +1,9 @@
 {#
   Runs: launch a source run, see its schedule, and review recorded history - all over existing endpoints
   (POST /api/pipeline/sources/<id>/run[?dry_run=1], GET /api/pipeline/pipelines, GET .../pipelines/<id>/runs).
-  Schedules are edited with the existing schedule dialog on Sources; no scheduler logic lives here.
+  Schedules are edited with the existing schedule dialog on Sources; no scheduler logic lives here. Schedule UI is
+  only shown when the server reports a running scheduler (`scheduling_available`); otherwise Runs is an honest
+  manual-runs-and-history view (the live-development profile never starts a scheduler).
 #}
 <style>
   .res-runs { max-width: 1100px; margin: 0 auto; padding: 0.5rem; }
@@ -14,7 +16,8 @@
 </style>
 <div class="res-runs" data-testid="runs-workspace">
   <h2 style="margin:.25rem 0; font-size:1.25rem">Runs</h2>
-  <p class="small">Launch, schedule and review runs of your configured <a href="{{ request.script_root }}/resources?view=sources">Sources</a>. A <strong>dry run</strong> maps and reports without writing. Check the schema and column mapping behind a result under <a href="{{ request.script_root }}/resources?view=plugins">Plugins</a>.</p>
+  <p class="small">{% if scheduling_available %}Launch, schedule and review runs{% else %}Launch runs by hand and review their history{% endif %} for your configured <a href="{{ request.script_root }}/resources?view=sources">Sources</a>. A <strong>dry run</strong> maps and reports without writing. Check the schema and column mapping behind a result under <a href="{{ request.script_root }}/resources?view=plugins">Plugins</a>.</p>
+  {% if not scheduling_available %}<div class="res-callout" role="note" data-testid="runs-manual-note"><strong>Manual runs only</strong>No scheduler is running in this deployment, so nothing here runs on a schedule. A run starts when you press Run or Dry run, and the history below lists the runs that have been recorded.</div>{% endif %}
 
   <h3>Launch</h3>
   <div id="runs-launch" data-testid="runs-launch" aria-busy="true"><p class="small">Loading sources&hellip;</p></div>
@@ -26,6 +29,7 @@
 <script>
 (function () {
   const BASE = window.SCIDK_BASE || '';
+  const SCHEDULING = {{ 'true' if scheduling_available else 'false' }};
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const get = (path) => fetch(BASE + path).then((r) => { if (!r.ok) throw new Error(path + ' ' + r.status); return r.json(); });
   const kind = (status) => status === 'success' ? 'ok' : status === 'partial' ? 'warn' : status === 'running' ? '' : 'err';
@@ -47,20 +51,20 @@
       const names = {}; sources.forEach((s) => { names[s.id] = s.name; });
       const bySource = {};
       pipelines.forEach((p) => (p.source_ids || []).forEach((id) => { if (!bySource[id] || p.implicit) bySource[id] = p; }));
-      launch.innerHTML = sources.length ? `<table><thead><tr><th>Source</th><th>Last run</th><th>Schedule</th><th></th></tr></thead><tbody>${
-        sources.map((s) => `<tr data-testid="launch-row" data-source-id="${esc(s.id)}"><td><strong>${esc(s.name)}</strong><div class="small" style="color:#666">${esc(s.plugin_type)}</div></td><td>${s.last_run_at ? esc(s.last_run_at) + ' <span class="badge ' + kind(s.last_run_status) + '">' + esc(s.last_run_status || 'unknown') + '</span>' : 'never run'}</td><td data-testid="launch-schedule">${scheduleText(bySource[s.id])}</td><td>`
+      launch.innerHTML = sources.length ? `<table><thead><tr><th>Source</th><th>Last run</th>${SCHEDULING ? '<th>Schedule</th>' : ''}<th></th></tr></thead><tbody>${
+        sources.map((s) => `<tr data-testid="launch-row" data-source-id="${esc(s.id)}"><td><strong>${esc(s.name)}</strong><div class="small" style="color:#666">${esc(s.plugin_type)}</div></td><td>${s.last_run_at ? esc(s.last_run_at) + ' <span class="badge ' + kind(s.last_run_status) + '">' + esc(s.last_run_status || 'unknown') + '</span>' : 'never run'}</td>${SCHEDULING ? `<td data-testid="launch-schedule">${scheduleText(bySource[s.id])}</td>` : ''}<td>`
           + `<button class="btn btn-sm" data-act="dry" data-testid="dry-run-btn"${s.plugin_available === false ? ' disabled' : ''}>Dry run</button> `
           + `<button class="btn btn-sm" data-act="run" data-testid="run-now-btn"${s.plugin_available === false ? ' disabled' : ''}>Run</button> `
-          + `<a class="btn btn-sm" data-testid="schedule-link" href="${BASE}/resources?view=sources&schedule=${encodeURIComponent(s.id)}">Schedule</a> `
+          + (SCHEDULING ? `<a class="btn btn-sm" data-testid="schedule-link" href="${BASE}/resources?view=sources&schedule=${encodeURIComponent(s.id)}">Schedule</a> ` : '')
           + `<a class="btn btn-sm" data-testid="launch-to-plugins" href="${BASE}/resources?view=plugins&source=${encodeURIComponent(s.id)}&step=mapping">Mapping</a></td></tr>`).join('')
-      }</tbody></table>` : `<div class="empty" data-testid="launch-empty">There is nothing to run yet: no source is configured. Create one on <a href="${BASE}/resources?view=sources">Sources</a> (from an installed plugin &mdash; see <a href="${BASE}/resources?view=plugins">Plugins</a>), then launch and schedule it here.</div>`;
+      }</tbody></table>` : `<div class="empty" data-testid="launch-empty">There is nothing to run yet: no source is configured. Create one on <a href="${BASE}/resources?view=sources">Sources</a> (from an installed plugin &mdash; see <a href="${BASE}/resources?view=plugins">Plugins</a>), then launch it here.</div>`;
       launch.removeAttribute('aria-busy');
       const batches = await Promise.all(pipelines.map((p) => get(`/api/pipeline/pipelines/${encodeURIComponent(p.id)}/runs?limit=20`).then((d) => (d.runs || []).map((r) => Object.assign({}, r, {
         label: (p.source_ids || []).map((id) => names[id]).filter(Boolean).join(', ') || p.name || p.id}))).catch(() => [])));
       const runs = [].concat(...batches).sort((a, b) => String(b.started_at || '').localeCompare(String(a.started_at || '')));
       list.innerHTML = runs.length ? `<table><thead><tr><th>Started</th><th>Resource / pipeline</th><th>Status</th><th>Trigger</th><th>Duration</th><th>Result</th></tr></thead><tbody>${
         runs.map((r) => `<tr data-testid="run-row"><td>${esc(r.started_at)}</td><td>${esc(r.label)}</td><td><span class="badge ${kind(r.status)}">${esc(r.status || (r.in_flight ? 'running' : 'unknown'))}</span></td><td>${esc(r.triggered_by)}</td><td>${esc(duration(r))}</td><td>${stepSummary(r)}</td></tr>`).join('')
-      }</tbody></table>` : `<div class="empty" data-testid="runs-empty">No runs have been recorded yet. When a source is run (here or on a schedule), each run appears here with its status and result.</div>`;
+      }</tbody></table>` : `<div class="empty" data-testid="runs-empty">No runs have been recorded yet. When a source is run${SCHEDULING ? ' (here or on a schedule)' : ' by hand'}, each run appears here with its status and result.</div>`;
     } catch (e) {
       launch.innerHTML = list.innerHTML = `<div class="empty" data-testid="runs-error">Could not load runs: ${esc(e.message)}</div>`;
     } finally { launch.removeAttribute('aria-busy'); list.removeAttribute('aria-busy'); }

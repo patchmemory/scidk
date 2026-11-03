@@ -355,6 +355,9 @@
   // Inside the Resources workspace the schema and mapping tools open under Plugins; the direct legacy
   // /pipeline pages keep their own URLs.
   const WORKSPACE = {{ 'true' if pipeline_workspace else 'false' }};
+  // Schedule controls are only offered where a scheduler is demonstrably running; the Resources workspace is told
+  // by the server, and the legacy /pipeline page keeps its controls unchanged.
+  const SCHEDULING = {{ 'false' if (pipeline_workspace and not scheduling_available) else 'true' }};
   const withQuery = (url, query) => url + (url.includes('?') ? '&' : '?') + query;
   const $ = (id) => document.getElementById(id);
 
@@ -553,7 +556,8 @@
                                || t.plugin === source.plugin_type) || {};
     const icon = type.icon || '📄';
     const unavailable = source.plugin_available === false;
-    const schedule = source.schedule
+    const schedule = !SCHEDULING ? 'Runs: manual only'
+      : source.schedule
       ? `Schedule: ${esc(source.schedule)}${source.schedule_paused ? ' (paused)' : ''}`
       : 'Schedule: manual only';
 
@@ -581,8 +585,8 @@
                     ${unavailable ? 'disabled' : ''}>FAIR check</button>
             <button class="btn" data-act="run" data-testid="run-source-btn"
                     ${unavailable ? 'disabled' : ''}>Run</button>
-            <button class="btn" data-act="schedule" data-testid="schedule-source-btn"
-                    ${unavailable ? 'disabled' : ''}>Schedule</button>
+            ${SCHEDULING ? `<button class="btn" data-act="schedule" data-testid="schedule-source-btn"
+                    ${unavailable ? 'disabled' : ''}>Schedule</button>` : ''}
             <button class="btn" data-act="edit" data-testid="edit-source-btn">Edit</button>
             <button class="btn danger" data-act="delete"
                     data-testid="delete-source-btn">Delete</button>
@@ -624,6 +628,8 @@
           pipeline_id: pipeline ? pipeline.id : null,
         });
       });
+      // Know whether plugins exist before choosing between the two empty states.
+      if (WORKSPACE && !sources.length && !types.length) await loadTypes();
       list.innerHTML = sources.length
         ? sources.map(card).join('')
         : (WORKSPACE && !types.length)
@@ -802,7 +808,7 @@
       if (!types.length) {
         box.innerHTML = '<div class="notice info">No data resource plugins are '
                       + 'registered.</div>';
-        return;
+        return 0;
       }
       box.innerHTML = types.map((t, i) => `
         <button type="button" class="type-option" data-testid="type-option"
@@ -813,8 +819,10 @@
             <span class="t-desc">${esc(t.description || '')}</span>
           </span>
         </button>`).join('');
+      return types.length;
     } catch (e) {
       box.innerHTML = `<div class="notice bad">${esc(e.message)}</div>`;
+      return null;  // could not tell: keep the wizard so the error is visible
     }
   }
 
@@ -1198,10 +1206,18 @@
     selectTab('remote');
   }
 
-  $('add-source-btn').addEventListener('click', () => {
+  $('add-source-btn').addEventListener('click', async () => {
     resetSheet();
     showStep('type');
-    if (!types.length) loadTypes();
+    const known = types.length ? types.length : await loadTypes();
+{% if pipeline_workspace %}
+    // No genuine source plugin is installed: there is nothing to create a resource from, so do not open a dead
+    // wizard. Plugins is where installing/enabling one is explained (the registry itself stays honest about "none").
+    if (known === 0) {
+      window.location.href = (window.SCIDK_BASE || '') + '/resources?view=plugins&from=add-resource';
+      return;
+    }
+{% endif %}
     sheet.showModal();
   });
 
@@ -1318,6 +1334,7 @@
     const sourceId = query.get('source');
     const scheduleId = query.get('schedule');
     if (scheduleId) {
+      if (!SCHEDULING) return;  // no scheduler is running here: a stale ?schedule= link opens nothing
       const card = document.querySelector(`[data-source-id="${CSS.escape(scheduleId)}"] [data-testid=source-card-name]`);
       if (card) openSchedule(scheduleId, card.textContent);
       return;

@@ -7,6 +7,7 @@ nothing else; the template renders whatever the catalogue returns.
 """
 
 LEGACY_ASSERTIONS_PATH = '/review?view=assertions'
+GUIDANCE_PATH = '/review?view=guidance'
 
 
 def review_actions(assertions_enabled=False):
@@ -34,10 +35,11 @@ def review_actions(assertions_enabled=False):
              summary='Open a saved Collection to draft a dataset sharing plan and preview a data-management-sharing package. Nothing is uploaded.',
              primary=dict(label='Open Collections', href='/datasets?view=collections'), links=[]),
     ]
-    actions.append(dict(id='guidance', title='Get guidance', status='future',
-             summary='Planned: AI-assisted guidance to help interpret data, propose queries and recommend next steps.',
-             primary=None, links=[],
-             note='Not available yet. No AI provider is configured or called from this page.'))
+    # Guidance is a launcher to the chat-style shell (/review?view=guidance). The shell makes no provider or network
+    # call and fabricates nothing; it states plainly that no AI provider is configured until one is wired in.
+    actions.append(dict(id='guidance', title='Get guidance', status='ready',
+             summary='Ask questions about your data and next steps in a chat-style workspace. The AI provider is not configured yet, so this opens the guidance surface without any answers.',
+             primary=dict(label='Open Guidance', href=GUIDANCE_PATH), links=[]))
     advanced = []
     if assertions_enabled:
         advanced.append(dict(label='Assertion review queue',

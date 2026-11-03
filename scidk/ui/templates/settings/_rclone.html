@@ -1,7 +1,9 @@
-<section id="connections-rclone-section" class="settings-section">
-  <h1>Rclone</h1>
-  <p class="small">Configure rclone settings for interpretation and mounts.</p>
-
+{# `rclone_part` ('interpretation' | 'mounts') lets the Resources Ecosystem show each half under its own group; the Settings page shows both. #}
+{% set _rp = rclone_part|default('all') %}
+<section id="connections-rclone-{{ 'section' if _rp == 'all' else _rp + '-section' }}" class="settings-section">
+  {% if _rp == 'all' %}<h1>Rclone</h1>
+  <p class="small">Configure rclone settings for interpretation and mounts.</p>{% endif %}
+{% if _rp in ('all', 'interpretation') %}
   <h2 style="margin-top: 1.5rem;">Interpretation</h2>
   <p class="small">Tune streaming-based interpretation from rclone remotes. For very large scans, consider mounting the remote.</p>
   <div class="row g-2" style="max-width:640px">
@@ -18,7 +20,8 @@
       <span id="rc-msg" class="small"></span>
     </div>
   </div>
-
+{% endif %}
+{% if _rp in ('all', 'mounts') %}
   <h2 style="margin-top: 1.5rem;">Mounts</h2>
   <p class="small">Manage rclone mounts under ./data/mounts.</p>
   <div class="row g-2" style="max-width:780px">
@@ -55,10 +58,14 @@
   </table>
   <pre id="rc-logs" class="small" style="max-height:200px; overflow:auto; background:#111; color:#ddd; padding:.5rem"></pre>
   <p class="small text-muted">Note: On Windows, cmount/WinFsp may be required; this UI targets Linux/macOS primarily.</p>
+{% endif %}
 </section>
 
 <script>
   function initRcloneSettings() {
+    // The Resources Ecosystem includes this partial once per half; bind the (shared) controls only once.
+    if (window.__scidkRcloneInit) return;
+    window.__scidkRcloneInit = true;
     // Rclone Interpretation settings
     const rcSuggest = document.getElementById('rc-suggest');
     const rcBatch = document.getElementById('rc-batch');

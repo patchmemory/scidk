@@ -31,19 +31,29 @@ def test_navigation_and_placeholders(gui_page):
     page.goto(origin+'/overview?profile=review')
     expect(page.get_by_label('Your question')).to_be_disabled()
     expect(page.get_by_role('button', name='Ask SciDK', exact=True)).to_be_disabled()
-    for name, path in [('Datasets','/datasets?view=browse'), ('Resources','/pipeline/sources'),
-                       ('Knowledge','/knowledge'), ('Review','/review'), ('Overview','/overview')]:
+    for name, path in [('Datasets','/datasets?view=browse'), ('Resources','/resources?view=sources'),
+                       ('Knowledge','/knowledge'), ('Review','/review')]:
         page.locator('header nav').get_by_role('link', name=name, exact=True).click()
         expect(page).to_have_url(origin+path)
+        expect(page.locator('header nav a.active')).to_have_text(name)
         expect(page.get_by_role('heading', level=1).first).to_be_visible()
         if name == 'Knowledge':
             # Entities / Maps / Sketch are the Knowledge tabs; the legacy Maps route is reached through Maps.
             expect(page.get_by_role('link', name='Maps', exact=True).last).to_have_attribute('href', '/knowledge?view=maps')
         if name == 'Review':
-            expect(page.get_by_text('Review workspace unavailable', exact=False)).to_be_visible()
-    # Settings renders the preserved legacy page; its broad administration scripts
-    # are covered separately, and this slice doesn't operate any admin controls.
-    expect(page.locator('header nav').get_by_role('link', name='Settings')).to_have_attribute('href','/settings')
+            expect(page.get_by_text('What would you like to do with your science data?', exact=False)).to_be_visible()
+    # The -SciDK-> logo is Home; there is no separate Overview item in the sidebar.
+    expect(page.locator('header nav').get_by_role('link', name='Overview')).to_have_count(0)
+    page.get_by_test_id('nav-home').click()
+    expect(page).to_have_url(origin+'/')
+    # Settings is a text link in the footer, not a primary item or a gear; its route is unchanged.
+    gear = page.get_by_role('link', name='Settings', exact=True)
+    expect(page.locator('header nav').get_by_role('link', name='Settings')).to_have_count(0)
+    expect(gear).to_have_attribute('href','/settings')
+    expect(page.locator('header .ti-settings')).to_have_count(0)
+    gear.focus()
+    expect(gear).to_be_focused()
+    assert page.evaluate("getComputedStyle(document.activeElement).outlineStyle") != 'none'
     client = app.test_client()
     for path in ['/settings', '/chat', '/map', '/entities', '/labels', '/links', '/results', '/pipeline/sources']:
         expected = 403 if path in {'/map', '/entities', '/labels', '/links'} else 200
@@ -146,7 +156,7 @@ class OfflineDependencyError(RuntimeError):
 def test_settings_offline_navigation(gui_page):
     page, origin, _ = gui_page
     page.goto(origin+'/overview')
-    page.locator('header nav').get_by_role('link',name='Settings',exact=True).click()
+    page.get_by_role('link',name='Settings',exact=True).click()
     expect(page).to_have_url(origin+'/settings')
     expect(page.get_by_role('heading',level=1).first).to_be_visible()
     page.wait_for_load_state('networkidle')

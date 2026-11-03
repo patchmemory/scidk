@@ -514,7 +514,10 @@ function renderIndexedCrumbs(loc,path){
     const sep=document.createElement('span');sep.className='bc-sep';sep.textContent='/';nav.append(a,sep);
   });
 }
-// Recognized datasets in the folder being browsed (the same read-only reader the Scans view uses).
+// Recognized datasets in the folder being browsed (the same read-only reader the Scans view uses), shown as a compact
+// contextual summary: a count/status, a small preview that can still be selected for the collection, and a link into
+// the Datasets tab (filtered to this folder) for the full catalog. It reads only; nothing is written to the index.
+const RECOG_PREVIEW=3;
 async function loadIndexedDatasets(loc,path){
   const box=$id('indexed-datasets');box.replaceChildren();box.hidden=true;
   try{
@@ -523,22 +526,30 @@ async function loadIndexedDatasets(loc,path){
     if(_ix.loc!==loc||_ix.path!==path)return;
     const list=j.datasets||[];if(!list.length)return;
     box.hidden=false;
-    const h=document.createElement('div');h.className='fw-semibold';h.textContent='Recognized datasets in this folder ('+list.length+(j.has_more?'+':'')+')';box.append(h);
-    list.forEach(d=>{
+    const wrap=document.createElement('div');wrap.className='recog-summary';wrap.setAttribute('data-testid','recognition-summary');
+    const count=document.createElement('span');count.className='recog-count';count.setAttribute('data-testid','recognition-count');count.setAttribute('role','status');
+    count.textContent=list.length+(j.has_more?'+':'')+(list.length===1&&!j.has_more?' recognized dataset':' recognized datasets')+' in this folder';
+    wrap.append(count);
+    list.slice(0,RECOG_PREVIEW).forEach(d=>{
       const name=baseOf(d.root_path);
       const item={key:'dataset|'+loc.scan.id+'|'+d.root_path,kind:'dataset',label:name,title:d.root_path,size:d.total_bytes,files:d.file_count,tag:d.pattern_name,
         p:{scan_id:loc.scan.id,root_path:d.root_path,profile:d.pattern_name,file_count:d.file_count,bytes:d.total_bytes}};
-      const line=document.createElement('div');line.className='indexed-dataset';line.dataset.root=d.root_path;
-      if(window.CollectionBasket){const cb=window.CollectionBasket.checkbox(()=>item,'Select dataset '+name+' for the collection');if(cb)line.append(cb);}
+      const chip=document.createElement('span');chip.className='indexed-dataset recog-chip';chip.dataset.root=d.root_path;chip.setAttribute('data-testid','recognition-preview');
+      if(window.CollectionBasket){const cb=window.CollectionBasket.checkbox(()=>item,'Select dataset '+name+' for the collection');if(cb)chip.append(cb);}
       const b=document.createElement('button');b.type='button';b.className='btn btn-sm btn-link p-0';b.textContent=name;b.title='Open details: '+d.root_path;
       b.addEventListener('click',()=>document.dispatchEvent(new CustomEvent('scidk:inspect',{detail:{kind:'scan-dataset',key:item.key,record:{state:'candidate',name,scan_id:loc.scan.id,root_path:d.root_path,observed_profile:d.pattern_name,profile:d.pattern_name,file_count:d.file_count,total_bytes:d.total_bytes,host:loc.scan.host,share:loc.scan.share,scan_date:loc.scan.date}}})));
-      const meta=document.createElement('span');meta.className='ds-meta';meta.textContent=' '+[d.pattern_name,d.file_count!=null?d.file_count.toLocaleString()+' files':null].filter(Boolean).join(' · ');
-      const open=document.createElement('button');open.type='button';open.className='btn btn-sm btn-link p-0 ms-2';open.textContent='open folder';open.addEventListener('click',()=>browseIndexed(loc,d.root_path));
-      line.append(b,meta,open);box.append(line);
+      const meta=document.createElement('span');meta.className='ds-meta';meta.textContent=[d.pattern_name,d.file_count!=null?d.file_count.toLocaleString()+' files':null].filter(Boolean).join(' · ');
+      chip.append(b,meta);wrap.append(chip);
     });
-    const add=document.createElement('button');add.type='button';add.className='btn btn-sm btn-outline-secondary mt-1';add.id='indexed-add-datasets';add.textContent='Add checked datasets to collection';
+    if(list.length>RECOG_PREVIEW){const more=document.createElement('span');more.className='ds-meta';more.textContent='+'+(list.length-RECOG_PREVIEW)+' more';wrap.append(more);}
+    const add=document.createElement('button');add.type='button';add.className='btn btn-sm btn-outline-secondary';add.id='indexed-add-datasets';add.textContent='Add checked to collection';
     add.addEventListener('click',()=>{const n=window.CollectionBasket?window.CollectionBasket.addChecked(box):0;setStatus(n?n+' dataset'+(n===1?'':'s')+' added to the collection.':'Tick a dataset first.');});
-    box.append(add);
+    wrap.append(add);
+    const all=document.createElement('a');all.className='recog-link';all.setAttribute('data-testid','recognition-link');
+    all.href=SCIDK_BASE+'/datasets?'+new URLSearchParams({view:'datasets',q:path||loc.root_path||''});
+    all.textContent='View all in Datasets \u2192';all.title='Open the full Dataset catalog filtered to this folder';
+    wrap.append(all);
+    box.append(wrap);
   }catch(e){/* recognition is optional here; the folder listing stays usable */}
 }
 

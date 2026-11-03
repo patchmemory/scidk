@@ -6,8 +6,8 @@
   edit. Nothing below hard-codes a backend id, name, or URI.
 -->
 <section id="connections-overview-section" class="settings-section">
-  <h1>Connections</h1>
-  <p class="small">Every graph backend SciDK talks to. Configuration is read on page load; connectivity and counts are checked on demand.</p>
+  {% if not eco_embedded %}<h1>Connections</h1>
+  <p class="small">Every graph backend SciDK talks to. Configuration is read on page load; connectivity and counts are checked on demand.</p>{% endif %}
 
   <div style="display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; margin-bottom:1rem;">
     <button id="btn-conn-test-all" class="btn btn-sm btn-outline-primary">Test all connections</button>

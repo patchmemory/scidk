@@ -12,7 +12,7 @@ EXPECTED = {
     'metadata': ['/resources?view=plugins', '/resources?view=sources'],
     'explore': ['/datasets?view=browse', '/knowledge?view=maps'],
     'share': ['/datasets?view=collections'],
-    'guidance': [],
+    'guidance': ['/review?view=guidance'],
 }
 
 
@@ -38,7 +38,7 @@ def card(page, action):
 
 def test_heading_prompt_and_all_cards(app):
     page = html(app)
-    assert '<h1>Review</h1>' in page
+    assert '<h1 class="ws-title">Review</h1>' in page
     assert PROMPT in page
     for title in CARD_TITLES:
         assert title in page
@@ -64,7 +64,7 @@ def test_cards_deep_link_to_real_destinations(app):
 def test_destination_views_are_known_to_their_workspaces():
     from scidk.services.graph_management_policy import KNOWLEDGE_VIEWS
     from scidk.web.routes.ui import RESOURCES_VIEWS, WORKSPACE_VIEWS
-    known = {'knowledge': KNOWLEDGE_VIEWS, 'datasets': WORKSPACE_VIEWS, 'resources': RESOURCES_VIEWS}
+    known = {'knowledge': KNOWLEDGE_VIEWS, 'datasets': WORKSPACE_VIEWS, 'resources': RESOURCES_VIEWS, 'review': ('guidance', 'assertions')}
     for destinations in EXPECTED.values():
         for destination in destinations:
             parts = urlsplit(destination)
@@ -72,13 +72,34 @@ def test_destination_views_are_known_to_their_workspaces():
             assert view in known[parts.path.strip('/')], destination
 
 
-def test_future_guidance_is_honest_and_has_no_link(app):
+def test_guidance_card_opens_the_shell_and_promises_no_answers(app):
     guidance = card(html(app), 'guidance')
-    assert 'data-status="future"' in guidance
-    assert 'Coming later' in guidance
-    assert 'interpret data' in guidance and 'propose queries' in guidance and 'recommend next steps' in guidance
-    assert 'No AI provider is configured or called' in guidance
-    assert '<a ' not in guidance and '<button' not in guidance and '<form' not in guidance
+    assert 'data-status="ready"' in guidance
+    assert 'href="/review?view=guidance"' in guidance
+    assert 'not configured' in guidance
+    assert '<form' not in guidance and '<script' not in guidance
+
+
+@pytest.mark.parametrize('path', ['/review?view=guidance', '/review/guidance'])
+def test_guidance_shell_is_honest_and_makes_no_provider_or_network_call(app, monkeypatch, path):
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Guidance must not call an AI provider')
+    monkeypatch.setattr('scidk.services.overview_chat.chat_completion', forbidden)
+    app.config.update(SCIDK_OVERVIEW_CHAT_ENABLED=True, SCIDK_REVIEW_CHAT_ENABLED=True)
+    requests = []
+    app.before_request(lambda: requests.append(__import__('flask').request.path))
+    page = html(app, path)
+    assert requests == [path.split('?')[0]]
+    assert 'data-testid="guidance-shell"' in page and 'data-provider-state="not-configured"' in page
+    assert 'AI provider not configured' in page and 'data-testid="guidance-input"' in page
+    assert 'href="/review" data-testid="guidance-back"' in page
+    script = page[page.index('<script>', page.index('id="guidance-shell"')):]
+    script = script[:script.index('</script>')]
+    for banned in ('fetch(', 'XMLHttpRequest', 'WebSocket', 'sendBeacon', 'localStorage', 'sessionStorage', 'document.cookie', 'EventSource'):
+        assert banned not in script, banned
+    shell = page[page.index('id="guidance-shell"'):]
+    assert 'action=' not in shell[:shell.index('</script>')]
+    assert 'data-testid="guidance-user-message"' not in page and 'guidance-assistant' not in page
 
 
 @pytest.mark.parametrize('sharing_enabled', [True, False])
@@ -111,8 +132,8 @@ def test_review_is_the_active_sidebar_item_and_sidebar_is_unchanged(app):
     nav = page[page.index('data-testid="nav"'):]
     nav = nav[:nav.index('</nav>')]
     labels = re.findall(r'>([^<]+)</a>', nav)
-    assert labels == ['Overview', 'Datasets', 'Resources', 'Knowledge', 'Review', 'Settings']
-    assert 'href="/review"' in nav
+    assert labels == ['Datasets', 'Resources', 'Knowledge', 'Review']
+    assert 'href="/review" data-testid="nav-review" class="active" aria-current="page"' in nav
 
 
 @pytest.mark.parametrize('path', ['/review?view=assertions', '/review/assertions',

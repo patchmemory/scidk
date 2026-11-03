@@ -1,0 +1,105 @@
+{#
+  Resources → Ecosystem: what SciDK reads from and writes to, in four operational groups. Every group reuses an
+  existing, working piece; nothing here is new backend state.
+
+    Graph services   Research Graph / Chat History (audit) / Concept Graph cards (settings/_connections_overview.html
+                     over /api/connections; tested on demand)
+    Data inventory   a read-only card over the existing GET /api/external-index/scans (the external scan index is only
+                     ever opened read-only; files.db is never opened from here)
+    Storage access   local mounts and rclone remotes (settings/_rclone.html, mounts half) plus the existing local
+                     storage settings summary
+    Interpretation   scan worker budget (read-only GET /api/scanner/settings) and rclone interpretation tuning
+                     (settings/_rclone.html, interpretation half)
+
+  Credentials and connection profiles stay under Settings.
+#}
+{% set eco_embedded = true %}
+{% set rclone_mounts_feature = true %}
+<p class="ws-note" data-testid="connections-context">Where SciDK reads from and writes to. Graph backends are tested on demand. Credentials and connection profiles are edited under <a href="{{ request.script_root }}/settings#connections/overview">Settings &rarr; Connections</a>; configured data resources are on the <a href="{{ request.script_root }}/resources?view=sources">Sources</a> tab.</p>
+
+<section class="eco-group" id="eco-graph-services" data-testid="eco-group-graph" aria-labelledby="eco-graph-h">
+  <h2 id="eco-graph-h">Graph services</h2>
+  <p class="eco-lede">The graph stores behind SciDK: the Research Graph, the Chat History / audit graph and the Concept Graph. Each is tested on demand.</p>
+  {% include 'settings/_connections_overview.html' %}
+</section>
+
+<section class="eco-group" id="eco-data-inventory" data-testid="eco-group-inventory" aria-labelledby="eco-inventory-h">
+  <h2 id="eco-inventory-h">Data inventory</h2>
+  <p class="eco-lede">The files index SciDK keeps about your storage. It is shown here read-only.</p>
+  <div class="eco-card" id="eco-index-card" data-testid="eco-index-card" aria-busy="true">
+    <h3>Files index (files.db / external scan index)</h3>
+    <p>This index powers <a href="{{ request.script_root }}/datasets?view=browse">Browse</a>, <a href="{{ request.script_root }}/datasets?view=scans">scans</a> and Dataset recognition. This page only reads it: nothing here scans, initializes, migrates or writes it.</p>
+    <dl id="eco-index-facts" data-testid="eco-index-facts"><dt>Status</dt><dd id="eco-index-status" role="status">Checking&hellip;</dd></dl>
+    <p class="eco-links"><a href="{{ request.script_root }}/datasets?view=scans" data-testid="eco-index-scans-link">Open Scans</a><a href="{{ request.script_root }}/datasets?view=datasets" data-testid="eco-index-datasets-link">Recognized Datasets</a></p>
+  </div>
+</section>
+
+<section class="eco-group" id="eco-storage-access" data-testid="eco-group-storage" aria-labelledby="eco-storage-h">
+  <h2 id="eco-storage-h">Storage access</h2>
+  <p class="eco-lede">How SciDK reaches files: local folders and mounted volumes, and rclone remotes mounted on this machine.</p>
+  <div class="eco-card" data-testid="eco-local-access">
+    <h3>Local folders and mounted volumes</h3>
+    <p>Local browsing starts at the configured base directory (default: your home directory). Volumes mounted under <code>/mnt</code> and <code>/media</code> are detected automatically. <a href="{{ request.script_root }}/settings#connections/local-storage">Change the base directory in Settings</a>.</p>
+  </div>
+  <h3 style="margin-top:18px">Rclone remotes and mounts</h3>
+  {% set rclone_part = 'mounts' %}
+  {% include 'settings/_rclone.html' %}
+</section>
+
+<section class="eco-group" id="eco-interpretation" data-testid="eco-group-interpretation" aria-labelledby="eco-interp-h">
+  <h2 id="eco-interp-h">Interpretation</h2>
+  <p class="eco-lede">How scans, profiling and interpretation use your machine. Scan limits are shown here; change them in Settings.</p>
+  <div class="eco-card" id="eco-scanner-card" data-testid="eco-scanner-card">
+    <h3>Scan and profiling limits</h3>
+    <dl id="eco-scanner-facts"><dt>Status</dt><dd id="eco-scanner-status" role="status">Loading&hellip;</dd></dl>
+    <p class="eco-links"><a href="{{ request.script_root }}/settings#system/scanner">Scanner settings</a><a href="{{ request.script_root }}/settings#modules/interpreters">Interpreters</a></p>
+  </div>
+  <h3 style="margin-top:18px">Rclone interpretation</h3>
+  {% set rclone_part = 'interpretation' %}
+  {% include 'settings/_rclone.html' %}
+</section>
+
+<script>
+(function () {
+  const BASE = window.SCIDK_BASE || '';
+  const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const num = (n) => (n == null ? '\u2014' : Number(n).toLocaleString());
+  const fact = (label, value) => `<dt>${esc(label)}</dt><dd>${value}</dd>`;
+
+  async function inventory() {
+    const card = document.getElementById('eco-index-card'), facts = document.getElementById('eco-index-facts');
+    try {
+      const r = await fetch(BASE + '/api/external-index/scans', {headers: {Accept: 'application/json'}});
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        facts.innerHTML = fact('Status', r.status === 403 ? 'Sign in with a named account to read the index.' : esc(j.error || 'The index is not available.'));
+        return;
+      }
+      const scans = j.scans || [], shares = j.shares || [];
+      const done = scans.filter((s) => s.complete).length;
+      const latest = scans.map((s) => s.date).filter(Boolean).sort().pop();
+      facts.innerHTML = fact('Status', 'Available, read-only')
+        + fact('Scans recorded', `${num(scans.length)} (${num(done)} complete)`)
+        + fact('Scanned locations', num(shares.length))
+        + fact('Most recent scan', latest ? esc(latest) : '\u2014');
+    } catch (e) {
+      facts.innerHTML = fact('Status', 'Could not be checked: ' + esc(e.message));
+    } finally { card.removeAttribute('aria-busy'); }
+  }
+
+  async function scanner() {
+    const facts = document.getElementById('eco-scanner-facts');
+    try {
+      const r = await fetch(BASE + '/api/scanner/settings', {headers: {Accept: 'application/json'}});
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+      const src = (k) => ({env: 'set by environment', db: 'saved setting', default: 'default'}[(j.sources || {})[k]] || '');
+      facts.innerHTML = fact('Max total workers', `${num(j.max_total_workers)} <span class="small">(${esc(src('max_total_workers'))})</span>`)
+        + fact('Max concurrent scans', `${num(j.max_concurrent_scans)} <span class="small">(${esc(src('max_concurrent_scans'))})</span>`);
+    } catch (e) {
+      facts.innerHTML = fact('Status', 'Not available: ' + esc(e.message));
+    }
+  }
+  inventory(); scanner();
+})();
+</script>

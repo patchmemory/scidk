@@ -41,7 +41,7 @@ def make_disposable_app():
         if request.method not in ('GET', 'HEAD'):
             return jsonify(error='Writes disabled in GUI fixture'), 405
         allowed_ui = {'/', '/overview', '/knowledge', '/review', '/datasets', '/settings',
-                      '/pipeline/sources', '/map', '/chat', '/entities', '/labels', '/links',
+                      '/pipeline/sources', '/resources', '/map', '/chat', '/entities', '/labels', '/links',
                       '/integrate', '/results', '/login', '/annotations'}
         if not (request.path in allowed_ui or request.path.startswith('/static/')
                 or request.path.startswith('/api/')):
@@ -69,6 +69,8 @@ def make_disposable_app():
             'labels': {'status':'success', 'labels': []}, 'settings/table-formats': {'formats': []},
             'settings/plugin-endpoints': {'status': 'success', 'endpoints': []},
             'v2/links': {'status': 'success', 'links': [], 'count': 0},
+            'plugins': {'plugins': []},
+            'external-index/locations': {'hosts': [], 'local_roots': [], 'unavailable': []},
             'settings/alerts': {}, 'llm/settings': {}, 'settings/tokens': {'tokens': []},
             **{'settings/neo4j/profiles/by-role/'+role: {'profile': None}
                for role in ['primary','labels_source','readonly','ingestion_target']},

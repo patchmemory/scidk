@@ -5,14 +5,25 @@
   background:var(--bg); color:var(--fg); font-size:14px; line-height:1.5;
 }
 .gui-v3 header[data-testid=header] {position:fixed;inset:0 auto 0 0;width:190px;z-index:1000;background:#192d43;color:#f4f7fa;border:0;padding:24px 12px;display:flex;flex-direction:column;align-items:stretch;gap:24px}
-.gui-v3 header h1 {font-size:23px;padding:0 10px;letter-spacing:-.04em}
+.gui-v3 header h1 {font-size:23px;padding:0;margin:0;letter-spacing:-.04em}
+.gui-v3 header h1 a.brand-home {padding:6px 10px}
 .gui-v3 header nav {display:flex;flex-direction:column;gap:5px}
 .gui-v3 header nav a {display:block;margin:0;padding:11px 12px;border-radius:9px;color:#dbe5ef;font-weight:500}
 .gui-v3 header nav a:hover {background:#ffffff12;color:white}
-.gui-v3 header nav a.active {background:#2d4b68;color:white;box-shadow:inset 3px 0 #8bbfe9}
-.gui-v3 #auth-status {margin: auto 0 0 !important;flex-wrap:wrap;padding:10px;font-size:12px}
-.gui-v3 #auth-username {color:#dbe5ef !important;overflow-wrap:anywhere}
-.gui-v3 #logout-btn {color:#b3d9f7 !important}
+.gui-v3 header nav a.active,.gui-v3 .user-links a.settings-link.active {background:#2d4b68;color:white;box-shadow:inset 3px 0 #8bbfe9}
+.gui-v3 .user-area {margin:auto 0 0;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px;font-size:12px;line-height:1.4}
+.gui-v3 #auth-status {display:none;flex-direction:column;align-items:flex-start;gap:2px;font-size:12px;max-width:100%}
+.gui-v3 #auth-username {color:#f4f7fa;font-weight:600;overflow-wrap:anywhere}
+.gui-v3 .session-clock {color:#9fb3c8;font-size:11px;font-variant-numeric:tabular-nums}
+.gui-v3 .user-links {display:flex;flex-wrap:wrap;align-items:center;gap:0 2px;margin:4px 0 0 -6px}
+.gui-v3 .user-links a {color:#b3d9f7;text-decoration:none;padding:2px 6px;border-radius:6px}
+.gui-v3 .user-links a:hover {background:#ffffff12;text-decoration:underline;color:#fff}
+.gui-v3 .user-links a.settings-link.active:hover {background:#2d4b68}
+.gui-v3 .user-sep {color:#9fb3c8}
+.gui-v3 header :focus-visible {outline-color:#8bbfe9}
+.gui-v3 header h1 a.brand-home {display:block;border-radius:8px;color:#f4f7fa !important}
+.gui-v3 header h1 a.brand-home:hover {background:#ffffff12}
+.gui-v3 header h1 a.brand-home.active {background:#2d4b68;box-shadow:inset 3px 0 #8bbfe9}
 .gui-v3 main[data-testid=main] {margin-left:190px;padding:30px 32px 48px;width:calc(100% - 190px);max-width:1600px}
 .gui-v3 h1 {font-size:28px;line-height:1.2;letter-spacing:-.035em;font-weight:700;margin:0 0 10px}
 .gui-v3 h2 {font-size:18px;letter-spacing:-.015em;margin:0 0 12px}
@@ -34,7 +45,7 @@
 .gui-v3 table {background:white;border:1px solid var(--border);font-size:13px}
 .gui-v3 th {background:#f5f8fb;color:var(--muted);font-weight:600}
 .gui-v3 td,.gui-v3 th {border-color:#e5ebf1;padding:10px 12px}
-.gui-v3 .workspace {max-width:1150px;margin:auto}
+.gui-v3 .workspace {max-width:none;margin:0}
 .gui-v3 .eyebrow {color:var(--accent);text-transform:uppercase;font-size:11px;letter-spacing:.12em;font-weight:700;margin-bottom:10px}
 .gui-v3 .page-lede {max-width:700px;font-size:15px}
 .gui-v3 .ask-panel {margin:28px 0;padding:28px;background:white;border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow)}
@@ -79,15 +90,15 @@
 .gui-v3 .kw-workarea>* {min-width:0}
 .gui-v3 #kw-inspector {position:sticky;top:24px;margin-top:12px}
 @media(min-width:1250px) {.gui-v3 .kw-workarea {grid-template-columns:minmax(0,1fr) 300px}}
-.gui-v3 main:has(.settings-container) {padding:24px !important}
-.gui-v3 .settings-container {height:calc(100vh - 110px)}
+.gui-v3 main:has(.settings-container) {padding:30px 32px 48px !important}
+.gui-v3 .settings-container {height:calc(100vh - 190px);min-height:420px}
 .gui-v3 .settings-content {min-width:0}
 .gui-v3 #overview-source-links dl {display:grid;grid-template-columns:minmax(100px,1fr) 3fr;gap:8px}
 .gui-v3 #overview-source-links dd {margin:0;overflow-wrap:anywhere}
 @media(max-width:900px) {.gui-v3 .settings-sidebar {min-width:170px;width:170px}.gui-v3 .settings-content {padding:16px}}
 .gui-v3 #gui-files button[aria-selected=true] {background:#245c8b;color:white;border-color:#245c8b}
 @media(min-width:701px) and (max-width:1100px) {
-  .gui-v3 #shared-inspector {max-height:calc(100vh - 400px);min-height:200px}
+  .gui-v3 #shared-inspector {max-height:calc(100vh - 430px);min-height:200px}
   .gui-v3 #shared-inspector.expanded {position:fixed;left:210px;right:20px;top:24px;bottom:24px;width:auto;max-height:none}
 }
 .gui-v3 button[aria-selected=true]:hover:not(:disabled) {background:#1b4b75;color:white;border-color:#1b4b75}
@@ -110,3 +121,65 @@
 .gui-v3 .rl-advanced {margin-top:28px;max-width:700px}
 @media(max-width:1100px) {.gui-v3 .rl-grid {grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px) {.gui-v3 .rl-grid {grid-template-columns:1fr}}
+
+/* ── Shared workspace chrome (one content column, one tab strip, one title scale) ─────────────────── */
+.gui-v3 {--col-max:1440px;--gap:18px;--tab-h:42px}
+.gui-v3 main[data-testid=main] {padding:30px 32px 48px !important;max-width:calc(var(--col-max) + 64px)}
+.gui-v3 main[data-testid=main]>* {max-width:var(--col-max)}
+@media(max-width:1100px) {.gui-v3 main[data-testid=main] {padding:24px 20px 40px !important}}
+.gui-v3 .ws-title {font-size:28px;line-height:1.2;letter-spacing:-.035em;font-weight:700;margin:0 0 6px}
+.gui-v3 .ws-lede {margin:0 0 var(--gap);max-width:760px;font-size:14px}
+.gui-v3 .ws-tabs {display:flex;flex-wrap:wrap;gap:4px;margin:0 0 var(--gap);padding:0;border-bottom:1px solid var(--border)}
+.gui-v3 .ws-tabs a {display:inline-flex;align-items:center;height:var(--tab-h);padding:0 16px;margin-bottom:-1px;border-bottom:3px solid transparent;color:var(--muted);font-size:14px;font-weight:500;text-decoration:none;border-radius:8px 8px 0 0}
+.gui-v3 .ws-tabs a:hover {color:var(--fg);background:#e3ebf3}
+.gui-v3 .ws-tabs a[aria-current=page],.gui-v3 .ws-tabs a.active {color:var(--fg);font-weight:700;border-bottom-color:var(--accent)}
+.gui-v3 .ws-note {margin:0 0 var(--gap);font-size:13px;max-width:900px}
+.gui-v3 #resources-workspace,.gui-v3 #datasets-workspace,.gui-v3 #knowledge-workspace,.gui-v3 #review-landing,.gui-v3 .guidance-shell {margin:0}
+.gui-v3 #gui-files,.gui-v3 #knowledge-workspace {border:0;background:transparent;padding:0;margin:0}
+.gui-v3 #gui-files>h1,.gui-v3 #knowledge-workspace>h1 {font-size:28px !important;line-height:1.2;letter-spacing:-.035em;font-weight:700;margin:0 0 6px !important}
+.gui-v3 #knowledge-workspace>* {margin-left:0}
+.gui-v3 .res-index,.gui-v3 .res-runs {max-width:none !important;padding:0 !important}
+.gui-v3 .res-index h2,.gui-v3 .res-runs h2 {font-size:18px !important;margin:0 0 6px !important}
+.gui-v3 .res-index .empty,.gui-v3 .res-runs .empty {border-radius:10px;border-color:var(--border)}
+
+/* Resources → Ecosystem: operational groups */
+.gui-v3 .eco-group {background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px;margin:0 0 var(--gap);box-shadow:var(--shadow)}
+.gui-v3 .eco-group>h2 {font-size:18px;margin:0 0 4px}
+.gui-v3 .eco-group>.eco-lede {margin:0 0 14px;font-size:13px}
+.gui-v3 .eco-group .settings-section {max-width:none !important;padding:0 !important;margin:0 !important}
+.gui-v3 .eco-group .settings-section>h1,.gui-v3 .eco-group .settings-section>h2:first-child {font-size:15px !important;margin:0 0 8px}
+.gui-v3 .eco-card {border:1px solid var(--border);border-radius:10px;padding:14px 16px;background:#fafcfe}
+.gui-v3 .eco-card h3 {margin:0 0 4px;font-size:15px}
+.gui-v3 .eco-card p {margin:4px 0 0;font-size:13px}
+.gui-v3 .eco-card dl {display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:8px 0 0;font-size:13px}
+.gui-v3 .eco-card dt {color:var(--muted)}
+.gui-v3 .eco-card dd {margin:0;overflow-wrap:anywhere}
+.gui-v3 .eco-links {display:flex;flex-wrap:wrap;gap:6px 18px;margin:12px 0 0;font-size:13px}
+.gui-v3 .res-actions {display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 var(--gap)}
+.gui-v3 .res-callout {background:#f4f8fb;border:1px solid #d6e2ec;border-radius:10px;padding:12px 16px;margin:0 0 var(--gap);font-size:13px}
+.gui-v3 .res-callout strong {display:block;margin-bottom:2px}
+
+/* Review → Guidance shell (no provider call; see review_guidance.html) */
+.gui-v3 .guidance-shell {max-width:900px !important}
+.gui-v3 .gd-back {display:inline-block;margin:0 0 12px;font-size:13px}
+.gui-v3 .gd-window {display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);overflow:hidden;min-height:440px}
+.gui-v3 .gd-status {display:flex;gap:10px;align-items:flex-start;padding:12px 18px;background:#fff7e6;border-bottom:1px solid #f1d9a6;font-size:13px;color:#6a4b00}
+.gui-v3 .gd-status strong {color:#4a3300}
+.gui-v3 .gd-messages {flex:1;min-height:260px;max-height:50vh;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:12px;background:#f8fafc}
+.gui-v3 .gd-msg {max-width:80%;padding:10px 14px;border-radius:14px;font-size:14px;overflow-wrap:anywhere}
+.gui-v3 .gd-msg.system {background:#fff;border:1px solid var(--border);color:var(--fg)}
+.gui-v3 .gd-msg.user {align-self:flex-end;background:#245c8b;color:#fff}
+.gui-v3 .gd-msg.notice {align-self:center;background:#fff7e6;border:1px solid #f1d9a6;color:#6a4b00;font-size:13px;max-width:90%}
+.gui-v3 .gd-form {display:flex;gap:10px;align-items:flex-end;padding:14px 18px;border-top:1px solid var(--border);background:var(--surface)}
+.gui-v3 .gd-form label {position:absolute;left:-9999px}
+.gui-v3 .gd-form textarea {flex:1;min-height:48px;max-height:160px;border-radius:12px;background:#f8fafc}
+.gui-v3 .gd-form button {height:44px}
+.gui-v3 .gd-hints {margin:14px 0 0;font-size:13px}
+.gui-v3 .gd-hints ul {margin:6px 0 0;padding-left:20px;color:var(--muted)}
+
+/* Browse → compact recognition summary */
+.gui-v3 .recog-summary {display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;font-size:12px}
+.gui-v3 .recog-summary .recog-count {font-weight:600}
+.gui-v3 .recog-summary .recog-chip {display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:20px;padding:1px 10px;background:#fff}
+.gui-v3 .recog-summary .recog-link {margin-left:auto;font-weight:600}
+@media(max-width:700px) {.gui-v3 .gd-msg {max-width:95%}.gui-v3 .gd-form {flex-direction:column;align-items:stretch}}

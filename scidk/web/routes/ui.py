@@ -82,6 +82,10 @@ def _gui_page(page):
         return render_template('gui/knowledge.html', view=view)
     if page == 'Review':
         from ...services.review_landing import review_actions
+        if (request.view_args or {}).get('guidance') or (
+                request.args.get('view') == 'guidance' and not request.args.get('domain') and not request.args.get('id')):
+            # The Guidance shell: a static page. No provider is configured, and nothing is called or stored.
+            return render_template('gui/review_guidance.html', provider_configured=False)
         assertions_enabled = current_app.config.get('SCIDK_REVIEW_WORKSPACE_ENABLED') is True
         # Plain /review is the landing. The assertion-review workspace keeps its own URL (/review?view=assertions,
         # /review/assertions) and every legacy context deep link (/review?domain=...&id=...).
@@ -233,7 +237,8 @@ def knowledge():
 
 @bp.get('/review')
 @bp.get('/review/assertions', defaults={'legacy': True})
-def review(legacy=False):
+@bp.get('/review/guidance', defaults={'guidance': True})
+def review(legacy=False, guidance=False):
     return _gui_page('Review')
 
 
@@ -504,9 +509,10 @@ def pipeline_source_mapping(source_id):
     return render_template('pipeline_mapping.html', **_mapping_page_context(source_id))
 
 
-RESOURCES_VIEWS = ('connections', 'sources', 'plugins', 'runs')
+RESOURCES_VIEWS = ('ecosystem', 'sources', 'plugins', 'runs')
 # `mappings` was this tab's first name; old links to it land on Plugins, where the schema and mapping tools now live.
-RESOURCES_VIEW_ALIASES = {'mappings': 'plugins', 'mapping': 'plugins', 'schema': 'plugins'}
+# `connections` is the Ecosystem tab's previous name; existing links keep working.
+RESOURCES_VIEW_ALIASES = {'mappings': 'plugins', 'mapping': 'plugins', 'schema': 'plugins', 'connections': 'ecosystem'}
 
 
 def resources_view(args):
@@ -516,9 +522,22 @@ def resources_view(args):
     return view if view in RESOURCES_VIEWS else 'sources'
 
 
+def scheduling_available():
+    """True only when this deployment demonstrably has a running scheduler (the process-wide AppScheduler).
+
+    The live-development profile sets SCIDK_DISABLE_SCHEDULER, so the scheduler is never started there and Runs
+    presents manual runs and history only. A stored schedule is never evidence that anything will fire.
+    """
+    try:
+        scheduler = (current_app.extensions.get('scidk') or {}).get('app_scheduler')
+        return bool(scheduler is not None and scheduler.is_running())
+    except Exception:
+        return False
+
+
 @bp.get('/resources')
 def resources_workspace():
-    """Resources workspace: Connections | Sources | Plugins | Runs.
+    """Resources workspace: Ecosystem | Sources | Plugins | Runs.
 
     Every tab renders the real legacy tool through its shared partial (no iframe, no second API client); the
     direct /pipeline/... pages and Settings stay as they were.
@@ -535,7 +554,8 @@ def resources_workspace():
         context = (_schema_page_context(source_id, request.args.get('start')) if step == 'schema'
                    else _mapping_page_context(source_id))
         context['plugin_step'] = step
-    return render_template('gui/resources_workspace.html', ws_view=view, pipeline_workspace=True, **context)
+    return render_template('gui/resources_workspace.html', ws_view=view, pipeline_workspace=True,
+                           scheduling_available=scheduling_available(), **context)
 
 
 @bp.get('/interpreters')

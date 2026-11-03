@@ -13,6 +13,7 @@ import signal
 import socket
 import subprocess
 import sys
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 GRAPH_ENV = ('NEO4J_URI', 'BOLT_URI', 'NEO4J_USER', 'NEO4J_USERNAME', 'NEO4J_PASSWORD',
@@ -172,8 +173,16 @@ def sync_schema(state):
     print(json.dumps(dict(status='ready', imported_definition_count=result['count'], graph_writes=0)))
 
 
+class LaunchRefused(ValueError):
+    """A start/stop refusal whose message is fixed, non-secret text and is safe to show."""
+
+
+def read_record(state):
+    return json.loads((state / 'process.json').read_text())
+
+
 def owned_process(state):
-    record = json.loads((state / 'process.json').read_text())
+    record = read_record(state)
     process = Path('/proc') / str(record['pid'])
     args = (process / 'cmdline').read_bytes().decode().split('\0')
     if ('scidk.live_development' not in args or 'serve' not in args or str(state) not in args
@@ -182,17 +191,52 @@ def owned_process(state):
     return record['pid']
 
 
+def live_process(state):
+    """The owned PID, or None when the record is absent or stale (process gone, PID reused, record unreadable).
+
+    A stale record is never a reason to signal anything; it is only a reason not to refuse a restart."""
+    if not (state / 'process.json').exists():
+        return None
+    try:
+        return owned_process(state)
+    except (OSError, ValueError, KeyError, IndexError):
+        return None
+
+
+def forget_record(state):
+    """Remove only this launcher's own PID record (never a database, WAL/SHM, log or login file)."""
+    try:
+        (state / 'process.json').unlink()
+    except FileNotFoundError:
+        pass
+
+
+def port_free(port):
+    # SO_REUSEADDR: a socket left in TIME_WAIT by the previous instance must not look like an occupied port.
+    with socket.socket() as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind(('127.0.0.1', port))
+        except OSError:
+            return False
+    return True
+
+
+def port_listening(port):
+    with socket.socket() as probe:
+        probe.settimeout(0.5)
+        return probe.connect_ex(('127.0.0.1', port)) == 0
+
+
 def start(state):
     config, _, _ = load(state)
+    if live_process(state) is not None:
+        raise LaunchRefused('This development instance is already running; use status or stop.')
     if (state / 'process.json').exists():
-        try:
-            owned_process(state)
-        except FileNotFoundError:
-            pass
-        else:
-            raise ValueError('This development instance is already running')
-    with socket.socket() as probe:
-        probe.bind(('127.0.0.1', config['port']))
+        forget_record(state)   # stale: the recorded process is gone or its PID was reused
+    if not port_free(config['port']):
+        raise LaunchRefused('Port %d is in use by another process that this launcher does not own; it was not touched. '
+                            'Free the port or choose another with init.' % config['port'])
     environment = dict(os.environ, PYTHONPATH=str(ROOT), PYTHON_DOTENV_DISABLED='1')
     for name in GRAPH_ENV:
         environment.pop(name, None)
@@ -204,7 +248,33 @@ def start(state):
     record = dict(pid=process.pid, start_ticks=(Path('/proc') / str(process.pid) / 'stat').read_text().split()[21])
     (state / 'process.json').write_text(json.dumps(record))
     os.chmod(state / 'process.json', 0o600)
-    print(f'Started PID {process.pid}; verify http://127.0.0.1:{config["port"]}/login and /admin/development-readiness')
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            forget_record(state)
+            raise LaunchRefused('The instance exited during startup; see the private server.log in the state directory.')
+        if port_listening(config['port']):
+            print(f'Started PID {process.pid}; verify http://127.0.0.1:{config["port"]}/login and /admin/development-readiness')
+            return
+        time.sleep(0.5)
+    print(f'Started PID {process.pid} but port {config["port"]} is not answering yet; check status and server.log.')
+
+
+def stop(state):
+    pid = live_process(state)
+    if pid is None:
+        forget_record(state)
+        print('No running instance of this launch profile was found (any stale record was cleared); existing services are unchanged.')
+        return
+    os.kill(pid, signal.SIGTERM)
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline and live_process(state) is not None:
+        time.sleep(0.25)
+    if live_process(state) is None:
+        forget_record(state)
+        print('Stopped this launch profile only; existing services are unchanged.')
+    else:
+        raise LaunchRefused('Sent TERM to this launch profile but it is still running; check status before starting again.')
 
 
 def main():
@@ -231,10 +301,12 @@ def main():
             app, config = prepare(state)
             app.run(host='127.0.0.1', port=config['port'], debug=False, use_reloader=False)
         elif args.action == 'stop':
-            os.kill(owned_process(state), signal.SIGTERM)
-            print('Sent TERM only to this launch profile; existing services are unchanged.')
+            stop(state)
         else:
-            print(json.dumps(dict(profile='live-development-readonly', pid=owned_process(state))))
+            pid = live_process(state)
+            print(json.dumps(dict(profile='live-development-readonly', running=pid is not None, pid=pid)))
+    except LaunchRefused as exc:
+        parser.exit(1, f'{exc}\n')
     except (ValueError, OSError, KeyError) as exc:
         # Do not echo exception strings: driver/filesystem errors can contain secrets/paths.
         parser.exit(1, f'{type(exc).__name__}: runtime action unavailable; check the documented prerequisites.\n')

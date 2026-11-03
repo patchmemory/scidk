@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% block title %}SciDK — Review · Guidance{% endblock %}
+{% block content %}
+{#
+  Review → Guidance shell (/review?view=guidance, also /review/guidance).
+
+  A chat-style surface that is ready for a provider integration but does nothing with a provider today:
+    * no fetch / XHR / WebSocket / beacon, no form submission, no storage, no cookie: entered text lives only in
+      this page's DOM until the page is left;
+    * no fabricated answer: sending shows the person's own message and a plain "not sent" notice;
+    * the provider state is explicit (`data-provider-state`, "AI provider not configured").
+  Wiring a provider later replaces the notice branch in the script below; the layout, copy and test ids stay.
+#}
+<section class="guidance-shell" id="guidance-shell" data-testid="guidance-shell" data-provider-state="{{ 'configured' if provider_configured else 'not-configured' }}">
+<a class="gd-back" href="{{ request.script_root }}/review" data-testid="guidance-back">&larr; Back to Review</a>
+<h1 class="ws-title">Guidance</h1>
+<p class="ws-lede" id="guidance-welcome" data-testid="guidance-welcome">Ask about your science data: how things relate, what to organize next, or how to prepare metadata. Guidance will draw on the sources you are allowed to use, and it will say where each answer came from.</p>
+
+<div class="gd-window" role="group" aria-labelledby="gd-window-title">
+  <h2 id="gd-window-title" class="sr-only" style="position:absolute;left:-9999px">Guidance conversation</h2>
+  <div class="gd-status" id="guidance-provider-status" data-testid="guidance-provider-status" role="status">
+    <i class="ti ti-plug-off" aria-hidden="true"></i>
+    <div><strong>AI provider not configured.</strong> Guidance cannot answer yet. Nothing you type here is sent anywhere, and no answers are generated or stored.</div>
+  </div>
+  <div class="gd-messages" id="guidance-messages" data-testid="guidance-messages" role="log" aria-live="polite" aria-label="Guidance messages">
+    <div class="gd-msg system" data-testid="guidance-welcome-message">Hello. Once an AI provider is connected, you can ask questions here about the datasets, collections and graph you have access to. For now this window shows what the conversation will look like.</div>
+  </div>
+  <form class="gd-form" id="guidance-form" data-testid="guidance-form" autocomplete="off" onsubmit="return false">
+    <label for="guidance-input">Your question</label>
+    <textarea id="guidance-input" data-testid="guidance-input" rows="2" maxlength="4000" placeholder="Ask a question about your data…" aria-describedby="guidance-provider-status"></textarea>
+    <button type="submit" class="primary" id="guidance-send" data-testid="guidance-send">Ask</button>
+  </form>
+</div>
+
+<div class="gd-hints">
+  <strong>What you will be able to ask</strong>
+  <ul>
+    <li>How do these datasets relate to each other?</li>
+    <li>Which collection should I group these files into?</li>
+    <li>What metadata is missing before I can share this?</li>
+  </ul>
+</div>
+</section>
+<script>
+(function () {
+  // In-page only: this script reads the question box and appends to the message list. It makes no network
+  // request and writes nothing to storage; the state notice below is the only "reply".
+  var form = document.getElementById('guidance-form');
+  var input = document.getElementById('guidance-input');
+  var list = document.getElementById('guidance-messages');
+  var shell = document.getElementById('guidance-shell');
+  function add(kind, text, testid) {
+    var el = document.createElement('div');
+    el.className = 'gd-msg ' + kind;
+    if (testid) el.setAttribute('data-testid', testid);
+    el.textContent = text;
+    list.appendChild(el);
+    list.scrollTop = list.scrollHeight;
+    return el;
+  }
+  function send() {
+    var text = (input.value || '').trim();
+    if (!text) { input.focus(); return; }
+    add('user', text, 'guidance-user-message');
+    input.value = '';
+    if (shell.getAttribute('data-provider-state') !== 'configured') {
+      add('notice', 'AI provider not configured. Your question was not sent anywhere and no answer was generated.', 'guidance-not-configured-notice');
+    }
+    input.focus();
+  }
+  form.addEventListener('submit', function (event) { event.preventDefault(); send(); });
+  input.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); send(); }
+  });
+})();
+</script>
+{% endblock %}

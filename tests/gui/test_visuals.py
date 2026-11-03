@@ -33,9 +33,10 @@ def test_visual_reference(gui_page, gui_artifacts, request, screen, viewport):
         elif screen == 'overview':
             expect(page.get_by_role('button',name='Ask SciDK',exact=True)).to_be_disabled()
         elif screen == 'review':
-            expect(page.get_by_text('Review workspace unavailable',exact=False)).to_be_visible()
+            expect(page.get_by_role('heading',name='Review',exact=True)).to_be_visible()
     page.evaluate('document.fonts.ready')
-    expect(page.locator('header nav a')).to_have_count(6)
+    expect(page.locator('header nav a')).to_have_count(4)
+    expect(page.get_by_role('link',name='Settings',exact=True)).to_be_in_viewport()
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'Horizontal page overflow'
     for control in page.locator('header nav a').all():
         expect(control).to_be_in_viewport()

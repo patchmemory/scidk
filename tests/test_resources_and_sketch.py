@@ -47,24 +47,25 @@ def page(client, url, status=200):
 
 
 def tabs(html):
-    nav = re.search(r'<nav class="resources-tabs".*?</nav>', html, re.S).group(0)
+    nav = re.search(r'<nav class="[^"]*\bresources-tabs\b[^"]*".*?</nav>', html, re.S).group(0)
     return re.findall(r'<a\b[^>]*>([^<]*)</a>', nav)
 
 
 def current_tab(html):
-    nav = re.search(r'<nav class="resources-tabs".*?</nav>', html, re.S).group(0)
+    nav = re.search(r'<nav class="[^"]*\bresources-tabs\b[^"]*".*?</nav>', html, re.S).group(0)
     return re.search(r'<a\b[^>]*aria-current="page"[^>]*>([^<]*)</a>', nav).group(1)
 
 
 # ---------------------------------------------------------------- Resources: routing
 
 def test_exactly_four_resources_tabs_on_every_view_and_alias(client):
-    for url, expected in [('/resources', 'Sources'), ('/resources?view=connections', 'Connections'),
+    for url, expected in [('/resources', 'Sources'), ('/resources?view=ecosystem', 'Ecosystem'),
+                          ('/resources?view=connections', 'Ecosystem'),
                           ('/resources?view=sources', 'Sources'), ('/resources?view=plugins', 'Plugins'),
                           ('/resources?view=runs', 'Runs'), ('/resources?view=bogus', 'Sources'),
                           ('/resources?view=mappings', 'Plugins')]:
         html = page(client, url)
-        assert tabs(html) == ['Connections', 'Sources', 'Plugins', 'Runs'], url
+        assert tabs(html) == ['Ecosystem', 'Sources', 'Plugins', 'Runs'], url
         assert current_tab(html) == expected, url
         assert 'Mappings' not in tabs(html)
 
@@ -75,8 +76,8 @@ def test_resources_sidebar_leads_to_the_useful_default_tab(client):
 
 
 def test_the_shell_nav_points_resources_at_the_workspace(client):
-    nav = re.search(r'<nav data-testid="nav">.*?</nav>', page(client, '/resources'), re.S).group(0)
-    assert '/resources?view=sources">Resources</a>' in nav
+    nav = re.search(r'<nav data-testid="nav"[^>]*>.*?</nav>', page(client, '/resources'), re.S).group(0)
+    assert '/resources?view=sources" data-testid="nav-resources"' in nav
 
 
 def test_resources_workspace_is_only_available_in_the_gui_shell(gui_app):
@@ -130,7 +131,7 @@ def test_plugin_registry_uses_existing_endpoints_and_no_new_backend(client):
 def test_schema_and_mapping_tools_open_as_plugin_capabilities_for_a_source(client, source_id):
     schema = page(client, f'/resources?view=plugins&source={source_id}&step=schema')
     mapping = page(client, f'/resources?view=plugins&source={source_id}&step=mapping')
-    assert tabs(schema) == tabs(mapping) == ['Connections', 'Sources', 'Plugins', 'Runs'] and current_tab(schema) == 'Plugins'
+    assert tabs(schema) == tabs(mapping) == ['Ecosystem', 'Sources', 'Plugins', 'Runs'] and current_tab(schema) == 'Plugins'
     # the real schema canvas (Arrows import/export, derive, save) and the real column-mapping tool
     for needle in ('data-testid="schema-canvas-page"', 'data-testid="import-arrows"', 'data-testid="export-arrows"',
                    'Save schema', f'/api/pipeline/sources/${{SOURCE_ID}}/schema'):
@@ -185,9 +186,9 @@ def test_working_legacy_tools_are_not_replaced_by_placeholders():
             assert needle in text, (name, needle)
 
 
-def test_connections_tab_reuses_the_settings_connection_partials(client):
-    html = page(client, '/resources?view=connections')
-    assert 'id="connections-overview-section"' in html and 'id="connections-rclone-section"' in html
+def test_ecosystem_tab_reuses_the_settings_connection_partials(client):
+    html = page(client, '/resources?view=ecosystem')
+    assert 'id="connections-overview-section"' in html and 'id="connections-rclone-mounts-section"' in html
     assert "/api/connections" in html and '/api/rclone/mounts' in html
     assert 'Settings &rarr; Connections' in html
 
@@ -288,7 +289,7 @@ def test_other_knowledge_views_and_the_governed_sketch_controls_are_unchanged(cl
 
 
 def tabs_knowledge(html):
-    nav = re.search(r'<nav class="knowledge-tabs".*?</nav>', html, re.S).group(0)
+    nav = re.search(r'<nav class="[^"]*\bknowledge-tabs\b[^"]*".*?</nav>', html, re.S).group(0)
     return re.findall(r'<a\b[^>]*>([^<]*)</a>', nav)
 
 

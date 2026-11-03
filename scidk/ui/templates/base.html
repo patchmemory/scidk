@@ -42,12 +42,17 @@
   {% if gui_v3 %}<link rel="stylesheet" href="{{ url_for('static', filename='css/gui_design.css') }}">{% endif %}
 </head>
 <body{% if gui_v3 %} class="gui-v3"{% endif %}>
+{% if gui_v3 %}
+{# Which primary destination owns this URL (server-side, so the active state never depends on a script or on a ?view= query). #}
+{% set _p = request.path %}
+{% set nav_section = 'home' if _p in ('/', '/overview') else 'datasets' if _p.startswith(('/datasets', '/workbook', '/annotations')) else 'resources' if _p.startswith(('/resources', '/pipeline', '/plugins')) else 'knowledge' if _p.startswith(('/knowledge', '/entities', '/labels', '/links', '/map', '/integrate')) else 'review' if _p.startswith('/review') else 'settings' if _p.startswith('/settings') else '' %}
+{% endif %}
 <header data-testid="header">
-  <h1><a href="{{ request.script_root }}/" style="text-decoration:none;color:inherit;font-family:monospace;letter-spacing:0.02em;font-weight:600" data-testid="nav-home">-SciDK-></a></h1>
-  <nav data-testid="nav">
+  <h1><a href="{{ request.script_root }}/" style="text-decoration:none;color:inherit;font-family:monospace;letter-spacing:0.02em;font-weight:600" data-testid="nav-home"{% if gui_v3 %} class="brand-home{{ ' active' if nav_section == 'home' else '' }}" aria-label="SciDK home" title="Home"{% if nav_section == 'home' %} aria-current="page"{% endif %}{% endif %}>-SciDK-></a></h1>
+  <nav data-testid="nav"{% if gui_v3 %} data-nav-server="1" aria-label="Primary"{% endif %}>
     {% if gui_v3 %}
-    {% for label, path in [('Overview','/overview'),('Datasets','/datasets?view=browse'),('Resources','/resources?view=sources'),('Knowledge','/knowledge'),('Review','/review'),('Settings','/settings')] %}
-    <a href="{{ request.script_root }}{{ path }}">{{ label }}</a>
+    {% for key, label, path in [('datasets','Datasets','/datasets?view=browse'),('resources','Resources','/resources?view=sources'),('knowledge','Knowledge','/knowledge'),('review','Review','/review')] %}
+    <a href="{{ request.script_root }}{{ path }}" data-testid="nav-{{ key }}"{% if nav_section == key %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
     {% endfor %}
     {% else %}
     <a href="{{ request.script_root }}/results" data-testid="nav-results">Results</a>
@@ -58,14 +63,29 @@
     <a href="{{ request.script_root }}/pipeline/sources" data-testid="nav-pipeline">Resources</a>
     {% endif %}
   </nav>
+  {% if gui_v3 %}
+  <div id="user-area" class="user-area" data-testid="user-area">
+    <div id="auth-status" style="display:none;">
+      <span id="auth-username" data-testid="auth-username"></span>
+      {# Decorative session context only: computed in the browser, never stored or sent, not an audit timestamp. #}
+      <time id="session-clock" class="session-clock" data-testid="session-clock" hidden></time>
+    </div>
+    <div class="user-links" data-testid="user-links">
+      <a href="{{ request.script_root }}/settings" id="settings-link" class="settings-link{{ ' active' if nav_section == 'settings' else '' }}" data-testid="nav-settings"{% if nav_section == 'settings' %} aria-current="page"{% endif %}>Settings</a>
+      <span class="user-sep" id="logout-sep" aria-hidden="true" hidden>&middot;</span>
+      <a href="#" id="logout-btn" data-testid="logout-btn" hidden>Logout</a>
+    </div>
+  </div>
+  {% else %}
   <div id="auth-status" style="margin-left:auto; display:none;">
     <span id="auth-username" style="color:var(--muted); font-size:0.9em; margin-right:0.5rem;"></span>
     <a href="#" id="logout-btn" data-testid="logout-btn" style="color:var(--accent); text-decoration:none; padding:0.25rem 0.5rem; border-radius:4px;">Logout</a>
   </div>
+  {% endif %}
 </header>
 <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 <main data-testid="main">
-  {% if gui_v3 %}<nav class="context-trail" aria-label="Workspace trail"><a href="{{ request.script_root }}/overview">Workspace</a><span aria-hidden="true">/</span><span id="workspace-trail">{{ request.path.split('/')[-1]|replace('-', ' ')|title }}</span></nav>{% endif %}
+  {% if gui_v3 %}<nav class="context-trail" aria-label="Workspace trail"><a href="{{ request.script_root }}/">Workspace</a><span aria-hidden="true">/</span><span id="workspace-trail">{{ (request.path.split('/')[-1] or 'overview')|replace('-', ' ')|title }}</span></nav>{% endif %}
   {% if gui_v3 and (entities_tab or request.path == '/map') %}{% include '_knowledge_management_nav.html' %}{% endif %}
   {% if entities_tab %}{% include '_entities_tabs.html' %}{% endif %}
   {% block content %}{% endblock %}
@@ -95,6 +115,41 @@
     const authStatusDiv = document.getElementById('auth-status');
     const authUsernameSpan = document.getElementById('auth-username');
     const logoutBtn = document.getElementById('logout-btn');
+    const logoutSep = document.getElementById('logout-sep');
+    const clockEl = document.getElementById('session-clock');
+    let clockTimer = null;
+
+    // Decorative session context, e.g. "Mon Nov 3 · 9:42 PM EST". Computed from the browser clock and timezone;
+    // never stored, sent anywhere, or used as an audit timestamp. Refreshed once per minute at most.
+    function formatSessionClock(d) {
+      const part = (parts, type) => (parts.find(p => p.type === type) || {}).value || '';
+      const dp = new Intl.DateTimeFormat('en-US', {weekday: 'short', month: 'short', day: 'numeric'}).formatToParts(d);
+      const tp = new Intl.DateTimeFormat('en-US', {hour: 'numeric', minute: '2-digit', hour12: true, timeZoneName: 'short'}).formatToParts(d);
+      const day = part(dp, 'weekday') + ' ' + part(dp, 'month') + ' ' + part(dp, 'day');
+      const time = part(tp, 'hour') + ':' + part(tp, 'minute') + ' ' + part(tp, 'dayPeriod').toUpperCase() + ' ' + part(tp, 'timeZoneName');
+      return day + ' \u00b7 ' + time;
+    }
+    function tickSessionClock() {
+      if (!clockEl) return;
+      const now = new Date();
+      const text = formatSessionClock(now);
+      if (clockEl.textContent !== text) clockEl.textContent = text;
+      clockTimer = setTimeout(tickSessionClock, 60000 - (now.getTime() % 60000) + 50);
+    }
+    function startSessionClock() {
+      if (!clockEl || clockTimer) return;
+      clockEl.hidden = false;
+      tickSessionClock();
+    }
+    function stopSessionClock() {
+      if (clockTimer) { clearTimeout(clockTimer); clockTimer = null; }
+      if (clockEl) clockEl.hidden = true;
+    }
+    function showSignedIn(signedIn) {
+      if (logoutBtn) logoutBtn.hidden = !signedIn;
+      if (logoutSep) logoutSep.hidden = !signedIn;
+      if (signedIn) startSessionClock(); else stopSessionClock();
+    }
 
     // Check auth status on page load
     async function checkAuthStatus() {
@@ -106,10 +161,11 @@
           // Show logout button and username
           authUsernameSpan.textContent = data.username;
           authStatusDiv.style.display = 'flex';
-          authStatusDiv.style.alignItems = 'center';
+          showSignedIn(true);
         } else {
           // Hide auth status (not authenticated or auth disabled)
           authStatusDiv.style.display = 'none';
+          showSignedIn(false);
         }
       } catch (error) {
         // Silently fail - auth status not critical for UI rendering
@@ -151,7 +207,8 @@
   // <nav> elements and mark their own active tab server-side.
   (function(){
     const path = window.location.pathname;
-    const navLinks = document.querySelectorAll('header nav a');
+    // gui_v3 marks the active destination server-side (data-nav-server); this fallback is for the legacy header.
+    const navLinks = document.querySelectorAll('header nav:not([data-nav-server]) a');
     navLinks.forEach(link => {
       const href = link.getAttribute('href');
       if ((href === '/' && path === '/') || (href !== '/' && path.startsWith(href))) {

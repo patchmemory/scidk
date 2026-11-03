@@ -2,7 +2,7 @@
 <section id="gui-files"{% if ws_view %} data-ws-view="{{ ws_view }}"{% endif %}>
 {% if ws_view %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/datasets_workspace.css') }}">
-<h1>Datasets</h1>
+<h1 class="ws-title">Datasets</h1>
 {% include '_datasets_tabs.html' %}
 {% else %}
 <h1>Files &amp; Datasets</h1>
