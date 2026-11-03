@@ -80,9 +80,18 @@ def _gui_page(page):
         if view == 'governed':
             return render_template('gui/knowledge_governed.html')
         return render_template('gui/knowledge.html', view=view)
-    if page == 'Review' and current_app.config.get('SCIDK_REVIEW_WORKSPACE_ENABLED') is True:
-        return render_template('gui/review.html',
-            assistant_enabled=current_app.config.get('SCIDK_REVIEW_CHAT_ENABLED') is True)
+    if page == 'Review':
+        from ...services.review_landing import review_actions
+        assertions_enabled = current_app.config.get('SCIDK_REVIEW_WORKSPACE_ENABLED') is True
+        # Plain /review is the landing. The assertion-review workspace keeps its own URL (/review?view=assertions,
+        # /review/assertions) and every legacy context deep link (/review?domain=...&id=...).
+        legacy = ((request.view_args or {}).get('legacy') or request.args.get('view') == 'assertions'
+                  or request.args.get('domain') or request.args.get('id'))
+        if assertions_enabled and legacy:
+            return render_template('gui/review.html',
+                assistant_enabled=current_app.config.get('SCIDK_REVIEW_CHAT_ENABLED') is True)
+        actions, advanced = review_actions(assertions_enabled=assertions_enabled)
+        return render_template('gui/review_landing.html', actions=actions, advanced=advanced)
     return render_template('gui/workspace.html', page=page)
 
 
@@ -223,7 +232,8 @@ def knowledge():
 
 
 @bp.get('/review')
-def review():
+@bp.get('/review/assertions', defaults={'legacy': True})
+def review(legacy=False):
     return _gui_page('Review')
 
 

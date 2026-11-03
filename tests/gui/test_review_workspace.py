@@ -51,7 +51,7 @@ def open_review(gui_page, principal='reviewer', context=None):
         from tests.knowledge_e2e.test_prompt12 import session
         session(d)
     page.context.add_cookies([{'name': 'scidk_session', 'value': d.auth.create_user_session(getattr(d, principal), principal), 'url': origin}])
-    path = '/review' + ('?domain=research&id=' + records[context]['assertion_id'] if context else '')
+    path = '/review?view=assertions' + ('&domain=research&id=' + records[context]['assertion_id'] if context else '')
     page.goto(origin + path)
     expect(page.locator('#rw-status')).not_to_contain_text('Loading')
     return page, d, records, hidden
