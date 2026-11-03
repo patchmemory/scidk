@@ -22,7 +22,23 @@
 {% block title %}SciDK — Resources{% endblock %}
 {% block content %}
 <h1 class="ws-title">Resources</h1>
-<p class="ws-lede" data-testid="resources-lede">The operating environment of your workspace: the services and storage it uses, the sources you configure, the plugins that provide capabilities, and the runs that result.</p>
+<p class="ws-lede" data-testid="resources-lede">See the services, inputs, reusable capabilities, and recorded runs available to this workspace.</p>
+{# Factual strip: only values this deployment can report. Server-side facts are rendered here; counts are filled in by the script below from existing read-only APIs and stay "Unavailable" when a call fails. #}
+<dl class="res-summary" data-testid="resources-summary" aria-label="Workspace status">
+  <div><dt>Built-in import</dt><dd data-testid="summary-builtin">{% if builtin_table_import %}Available (CSV, TSV, Excel){% else %}Not confirmed{% endif %}</dd></div>
+  <div><dt>Sources configured</dt><dd data-testid="summary-sources" id="summary-sources">Checking&hellip;</dd></div>
+  <div><dt>External plugins</dt><dd data-testid="summary-plugins" id="summary-plugins">Checking&hellip;</dd></div>
+  <div><dt>Scheduler</dt><dd data-testid="summary-scheduler">{% if scheduling_available %}Running{% else %}Not running &middot; manual runs only{% endif %}</dd></div>
+</dl>
+<script>
+(function () {
+  const BASE = window.SCIDK_BASE || '';
+  const put = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  const get = (path) => fetch(BASE + path, {headers: {Accept: 'application/json'}}).then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); });
+  get('/api/pipeline/sources').then((d) => put('summary-sources', String((d.sources || []).length))).catch(() => put('summary-sources', 'Unavailable'));
+  get('/api/plugins').then((d) => put('summary-plugins', (d.plugins || []).length ? String(d.plugins.length) + ' installed' : 'None installed')).catch(() => put('summary-plugins', 'Unavailable'));
+})();
+</script>
 {% include '_resources_tabs.html' %}
 <div id="resources-workspace" data-view="{{ ws_view }}" data-testid="resources-workspace">
 {% if ws_view == 'ecosystem' %}
@@ -51,8 +67,8 @@
 {% elif ws_view == 'runs' %}
 {% include '_resources_runs.html' %}
 {% else %}
-<p class="ws-note" data-testid="sources-context">Sources are explicit, configured inputs: each one can be previewed, mapped, validated and run. Start with the built-in <strong>Import a table or file</strong> (CSV, TSV or Excel), or create one from an installed <a href="{{ request.script_root }}/resources?view=plugins">plugin</a>. Define its schema and column mapping under Plugins; launch and review runs on <a href="{{ request.script_root }}/resources?view=runs">Runs</a>.</p>
-<div class="res-chain" data-testid="resources-chain" role="note"><span class="rc-label">How a source becomes data</span><ol class="rc-steps"><li>Plugin capability</li><li>Configured source</li><li>Schema &amp; mapping</li><li>FAIR / dry check</li><li>Run history</li></ol></div>
+<p class="ws-note" data-testid="sources-context">A <strong>Source</strong> is a configured, repeatable input &mdash; not a file format, and not a Plugin. Each one can be previewed, mapped, checked and run; set up schema and mapping under <a href="{{ request.script_root }}/resources?view=plugins">Plugins</a> and review activity on <a href="{{ request.script_root }}/resources?view=runs">Runs</a>.</p>
+<div class="res-chain" data-testid="resources-chain" role="note" aria-label="Source lifecycle (explanatory)"><span class="rc-label">Lifecycle</span><ol class="rc-steps"><li>Source</li><li>preview and mapping</li><li>FAIR / dry check</li><li>recorded run</li></ol></div>
 {% if builtin_table_import %}<p class="res-import res-import-quiet" data-testid="import-table-entry"><strong>Built in:</strong> import a table or file (CSV, TSV or Excel). No plugin needed.</p>{% endif %}
 {% include '_pipeline_sources_app.html' %}
 {% endif %}

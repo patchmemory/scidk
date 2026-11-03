@@ -1,6 +1,7 @@
 {# The Resources local tabs: exactly Ecosystem, Sources, Plugins, Runs (`ws_view` = the active one). #}
 <nav class="ws-tabs resources-tabs" aria-label="Resources views" data-testid="resources-tabs">
-  {% for key, label in [('ecosystem', 'Ecosystem'), ('sources', 'Sources'), ('plugins', 'Plugins'), ('runs', 'Runs')] %}
-  <a href="{{ request.script_root }}/resources?view={{ key }}" data-testid="resources-tab-{{ key }}"{% if ws_view == key %} aria-current="page"{% endif %}>{{ label }}</a>
+  {# `role` is a caption drawn by CSS (data-role), so the link text stays the bare tab name. #}
+  {% for key, label, role in [('ecosystem', 'Ecosystem', 'environment'), ('sources', 'Sources', 'inputs'), ('plugins', 'Plugins', 'capabilities'), ('runs', 'Runs', 'activity')] %}
+  <a href="{{ request.script_root }}/resources?view={{ key }}" data-testid="resources-tab-{{ key }}" data-role="{{ role }}" title="{{ label }}: {{ role }}"{% if ws_view == key %} aria-current="page"{% endif %}>{{ label }}</a>
   {% endfor %}
 </nav>

@@ -11,43 +11,52 @@
   .res-index .badge { display:inline-block; padding: 0 .4rem; border-radius: 8px; font-size: .8em; background:#eee; }
   .res-index .badge.ok { background:#dff3df; } .res-index .badge.warn { background:#fff0cf; } .res-index .badge.err { background:#f8d7d7; }
   .res-index .res-cap {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border:1px solid #c9d3dd;border-radius:8px;padding:.6rem .8rem;background:#fff}
-  .res-index .res-roadmap {list-style:none;margin:.25rem 0;padding:0;display:flex;flex-wrap:wrap;gap:8px}
-  .res-index .res-roadmap li {border:1px dashed #c9d3dd;border-radius:8px;padding:.3rem .7rem;background:#fafcfe;color:#566}
   .res-index .empty { border:1px dashed #c9d3dd; border-radius: 6px; padding: .6rem .8rem; background:#fafcfe; }
 </style>
 <div class="res-index" data-testid="plugins-registry">
   <h2 style="margin:.25rem 0; font-size:1.25rem">Plugins</h2>
-  <p class="small" data-testid="plugins-intro">Plugins are reusable capabilities used to read, interpret, enrich, transform or publish data. A plugin capability becomes useful when you configure a <a href="{{ request.script_root }}/resources?view=sources">Source</a> from it; the source is then mapped, checked and run, and each run is recorded on <a href="{{ request.script_root }}/resources?view=runs">Runs</a>.</p>
+  <p class="small" data-testid="plugins-intro">Plugins are reusable capabilities used to read, interpret, enrich, transform or publish data. A capability is used when you configure a <a href="{{ request.script_root }}/resources?view=sources">Source</a>.</p>
+  <div class="res-chain" data-testid="plugins-chain" role="note" aria-label="Capability lifecycle (explanatory)"><ol class="rc-steps"><li>Plugin capability</li><li>configured Source</li><li>validation / mapping</li><li>recorded run</li></ol></div>
 
-  <h3>Built-in capability</h3>
+  <section class="res-group" data-testid="plugins-group-builtin" aria-labelledby="plg-builtin-h">
+  <h3 id="plg-builtin-h">Built in</h3>
   {% if builtin_table_import %}
   <div class="res-cap" data-testid="builtin-capability">
     <div><strong>Local table and file import</strong> <span class="badge ok">Built in &middot; available</span>
-    <div class="small">Reads CSV, TSV and Excel files you upload, with a column preview, schema/mapping and dry-run check. No plugin package is needed.</div></div>
+    <div class="small">Reads CSV, TSV and Excel files. A reusable capability used when configuring a Source &mdash; not a configured Source itself.</div></div>
     <a class="btn btn-sm primary" href="{{ request.script_root }}/resources?view=sources&amp;import=1" data-testid="builtin-import-link">Import a table or file</a>
   </div>
   {% else %}
   <div class="empty" data-testid="builtin-capability-unavailable">The built-in table and file reader could not be confirmed in this deployment.</div>
   {% endif %}
+  </section>
 
-  <h3>Installed external templates</h3>
-  <p class="small">Only what this deployment's plugin registry reports is listed here.</p>
+  <section class="res-group" data-testid="plugins-group-installed" aria-labelledby="plg-installed-h">
+  <h3 id="plg-installed-h">Installed</h3>
   <div id="plugins-installed" data-testid="plugins-installed" aria-busy="true"><p class="small">Loading installed plugins&hellip;</p></div>
-  <div id="plugins-capabilities" data-testid="plugins-capabilities" aria-busy="true"><p class="small">Loading&hellip;</p></div>
+  <div id="plugins-capabilities" data-testid="plugins-capabilities" aria-busy="true"></div>
+  </section>
 
-  <h3>Planned future integrations</h3>
-  <p class="small" data-testid="plugins-roadmap-note">Roadmap examples only. None of these is installed, selectable as a source type, or connected.</p>
-  <ul class="res-roadmap" data-testid="plugins-roadmap">
-    <li data-testid="roadmap-item"><strong>SharePoint</strong> <span class="badge">Planned</span></li>
-    <li data-testid="roadmap-item"><strong>iLab</strong> <span class="badge">Planned</span></li>
-    <li data-testid="roadmap-item"><strong>PubMed / MeSH</strong> <span class="badge">Planned</span></li>
-    <li data-testid="roadmap-item"><strong>PubChem</strong> <span class="badge">Planned</span></li>
-    <li data-testid="roadmap-item"><strong>EDA</strong> <span class="badge">Planned</span></li>
-  </ul>
-
-  <h3>Built-in schema &amp; mapping tools</h3>
-  <p class="small">Always available. Define the target schema for a source (draw labels and relationships, or import / export Arrows JSON), then map its columns onto it. Open them for a configured source:</p>
+  <section class="res-group" data-testid="plugins-group-tools" aria-labelledby="plg-tools-h">
+  <h3 id="plg-tools-h">Schema &amp; mapping tools</h3>
+  <p class="small">Built in. Define a Source's target schema, then map its columns onto it.</p>
   <div id="plugins-source-tools" data-testid="plugins-source-tools" aria-busy="true"><p class="small">Loading sources&hellip;</p></div>
+  </section>
+
+  <section class="res-planned" data-testid="plugins-group-planned" aria-labelledby="plg-planned-h">
+  <h3 id="plg-planned-h">Planned integrations</h3>
+  <p class="small" data-testid="plugins-roadmap-note">Roadmap only. None of these is installed, selectable as a Source type, or connected. Future adapters should enter the same Source lifecycle when appropriate.</p>
+  <ul data-testid="plugins-roadmap" aria-label="Planned integrations (not available)">
+    <li data-testid="roadmap-item">SharePoint Intake</li>
+    <li data-testid="roadmap-item">iLab exports</li>
+    <li data-testid="roadmap-item">SQL tables</li>
+    <li data-testid="roadmap-item">REST/API records</li>
+    <li data-testid="roadmap-item">PubMed/MeSH</li>
+    <li data-testid="roadmap-item">PubChem</li>
+    <li data-testid="roadmap-item">EDA artifacts</li>
+    <li data-testid="roadmap-item">RO-Crate intake</li>
+  </ul>
+  </section>
 </div>
 <script>
 (function () {
@@ -63,7 +72,7 @@
     const plugins = data.plugins || [], failed = Object.entries(data.failed || {});
     el.innerHTML = (plugins.length ? `<table><thead><tr><th>Plugin</th><th>Version</th><th>State</th><th>Description</th></tr></thead><tbody>${
       plugins.map((p) => `<tr data-testid="plugin-row"><td><strong>${esc(p.name || p.module_name)}</strong></td><td>${esc(p.version || '')}</td><td><span class="badge ${p.enabled === false ? 'warn' : 'ok'}">${p.enabled === false ? 'disabled' : 'enabled'}</span></td><td>${esc(p.description || '')}</td></tr>`).join('')
-    }</tbody></table>` : `<div class="empty" data-testid="plugins-empty">No external plugin templates are installed. Nothing is wrong: the built-in table and file import and the schema and mapping tools still work. Plugin management is under <a href="${BASE}/settings#modules/plugins">Settings &rarr; Plugins</a>.</div>`)
+    }</tbody></table>` : `<div class="empty" data-testid="plugins-empty">No external plugins are installed. Built-in import and the schema and mapping tools still work. Plugin management: <a href="${BASE}/settings#modules/plugins">Settings &rarr; Plugins</a>.</div>`)
       + (failed.length ? `<p class="small" data-testid="plugins-failed">${failed.length} plugin(s) failed to load: ${failed.map(([n, why]) => esc(n) + (why ? ' (' + esc(String(why).slice(0, 120)) + ')' : '')).join('; ')}</p>` : '');
     done('plugins-installed');
   }
@@ -73,13 +82,13 @@
     const templates = data.templates || [];
     const groups = {};
     templates.forEach((t) => { (groups[t.category || 'data_import'] = groups[t.category || 'data_import'] || []).push(t); });
-    const rows = Object.keys(CATEGORIES).concat(Object.keys(groups).filter((k) => !(k in CATEGORIES))).map((category) => {
-      const items = groups[category] || [];
+    // Only categories the registry actually reports are rendered; an empty registry renders nothing here.
+    const rows = Object.keys(CATEGORIES).concat(Object.keys(groups).filter((k) => !(k in CATEGORIES))).filter((category) => (groups[category] || []).length).map((category) => {
+      const items = groups[category];
       const label = CATEGORIES[category] || category;
-      return `<tr data-testid="capability-row" data-category="${esc(category)}"><td><strong>${esc(label)}</strong></td><td>${items.length ? items.map((t) => `${esc(t.icon || '')} ${esc(t.name || t.id)}${t.description ? ' <span class="small" style="color:#666">&mdash; ' + esc(t.description) + '</span>' : ''}`).join('<br>') : '<span class="small" style="color:#666">none installed</span>'}</td><td>${category === 'data_import' && items.length ? `<a class="btn btn-sm" data-testid="create-source-link" href="${BASE}/resources?view=sources">Create a source</a>` : ''}</td></tr>`;
+      return `<tr data-testid="capability-row" data-category="${esc(category)}"><td><strong>${esc(label)}</strong></td><td>${items.map((t) => `${esc(t.icon || '')} ${esc(t.name || t.id)}${t.description ? ' <span class="small" style="color:#666">&mdash; ' + esc(t.description) + '</span>' : ''}`).join('<br>')}</td><td>${category === 'data_import' ? `<a class="btn btn-sm" data-testid="create-source-link" href="${BASE}/resources?view=sources">Create a source</a>` : ''}</td></tr>`;
     });
-    el.innerHTML = `<table><thead><tr><th>Capability</th><th>Provided by installed plugins</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>`
-      + ((groups.data_import || []).length ? '' : `<p class="small" data-testid="no-source-plugins">No external source connectors are installed. You can still import a table or file (CSV, TSV, Excel) on Sources; existing sources keep working.</p>`);
+    el.innerHTML = rows.length ? `<table><thead><tr><th>Capability</th><th>Provided by installed plugins</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>` : '';
     done('plugins-capabilities');
   }
 
@@ -95,7 +104,7 @@
     };
     el.innerHTML = sources.length ? `<table><thead><tr><th>Source</th><th>Schema</th><th>Column mapping</th><th></th></tr></thead><tbody>${
       sources.map((s) => `<tr data-testid="tool-row" data-source-id="${esc(s.id)}"><td><strong>${esc(s.name)}</strong><div class="small" style="color:#666">${esc(s.plugin_type)}</div></td><td>${schemaBadge(s)}</td><td>${mappingBadge(s)}</td><td><a class="btn btn-sm" data-testid="open-schema" href="${url(s.id, 'schema')}">Schema</a> <a class="btn btn-sm" data-testid="open-mapping" href="${url(s.id, 'mapping')}">Column mapping</a></td></tr>`).join('')
-    }</tbody></table>` : `<div class="empty" data-testid="tools-empty">The schema and mapping tools work on a configured source, and none exists yet. Create one on <a href="${BASE}/resources?view=sources">Sources</a>.</div>`;
+    }</tbody></table>` : `<div class="empty" data-testid="tools-empty">No Source is configured yet; these tools work on a configured Source. <a href="${BASE}/resources?view=sources">Go to Sources</a></div>`;
     done('plugins-source-tools');
   }
 

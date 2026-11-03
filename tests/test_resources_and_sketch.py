@@ -105,7 +105,7 @@ def test_sources_tab_is_the_real_sources_page_shared_with_the_legacy_route(clien
 def test_sources_explains_configured_inputs_and_offers_the_builtin_import_without_redirecting_to_plugins(client):
     workspace = page(client, '/resources?view=sources')
     assert 'data-testid="sources-no-plugins"' not in workspace and 'data-testid="sources-to-plugins"' not in workspace
-    assert '/resources?view=plugins' in workspace and 'explicit, configured inputs' in workspace
+    assert '/resources?view=plugins' in workspace and 'configured, repeatable input' in workspace
     legacy = page(client, '/pipeline/sources')
     assert 'const WORKSPACE = false' in legacy and 'const WORKSPACE = true' in workspace
     assert 'data-testid="sources-empty"' in workspace and 'data-testid="sources-empty"' in legacy   # plugin-less legacy copy kept
@@ -115,8 +115,8 @@ def test_plugins_tab_is_a_registry_over_the_existing_plugin_apis(client):
     html = page(client, '/resources?view=plugins')
     for needle in ('data-testid="plugins-registry"', 'data-testid="plugins-installed"', 'data-testid="plugins-capabilities"',
                    "get('/api/plugins')", "get('/api/plugins/templates')", "get('/api/pipeline/sources')",
-                   'Source connectors', 'Enrichment', 'No external plugin templates are installed',
-                   'No external source connectors are installed', 'data-testid="plugins-source-tools"'):
+                   'Source connectors', 'Enrichment', 'No external plugins are installed',
+                   'data-testid="plugins-source-tools"'):
         assert needle in html, needle
     assert 'Settings &rarr; Plugins' in html
 
@@ -198,7 +198,7 @@ def test_runs_tab_launches_schedules_and_reviews_with_existing_endpoints(client)
     for needle in ('data-testid="runs-launch"', 'data-testid="runs-list"', "get('/api/pipeline/pipelines')",
                    '/api/pipeline/pipelines/${encodeURIComponent(p.id)}/runs', '/api/pipeline/sources/${encodeURIComponent(row.dataset.sourceId)}/run',
                    "'?dry_run=1'", 'data-testid="schedule-link"', 'resources?view=sources&schedule=', 'data-testid="runs-empty"',
-                   'No runs have been recorded yet', 'data-testid="launch-empty"'):
+                   'No runs recorded yet', 'data-testid="launch-empty"'):
         assert needle in html, needle
     assert 'data-testid="runs-workspace"' in html and 'view=plugins' in html
 

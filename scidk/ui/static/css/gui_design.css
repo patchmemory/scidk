@@ -243,7 +243,23 @@ body:has(dialog.cw-dialog[open]) {overflow:hidden}
 .gui-v3 .rc-steps li {padding:2px 10px;border:1px solid var(--border);border-radius:14px;background:var(--surface)}
 .gui-v3 .rc-steps li+li::before {content:"\2192";margin-right:8px;color:var(--muted)}
 .gui-v3 .res-import-quiet {border:0;background:none;padding:0 2px;color:var(--muted);font-size:13px}
+.gui-v3 .ws-tabs a[data-role]::after {content:attr(data-role);margin-left:8px;font-size:11px;font-weight:400;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.gui-v3 .res-summary {display:flex;flex-wrap:wrap;gap:6px 22px;margin:0 0 var(--gap);padding:8px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface);font-size:13px}
+.gui-v3 .res-summary>div {display:flex;gap:6px;align-items:baseline;min-width:0}
+.gui-v3 .res-summary dt {color:var(--muted)}
+.gui-v3 .res-summary dd {margin:0;font-weight:600;overflow-wrap:anywhere}
+.gui-v3 .res-planned {margin:14px 0 0;padding:10px 14px;border:1px dashed var(--border);border-radius:10px;background:none;color:var(--muted)}
+.gui-v3 .res-planned h3 {margin:0 0 4px !important;font-size:14px !important;color:var(--muted)}
+.gui-v3 .res-planned ul {list-style:none;margin:6px 0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.gui-v3 .res-planned li {border:1px dashed var(--border);border-radius:14px;padding:1px 10px;font-size:12px;cursor:default}
+.gui-v3 .res-group h3 {margin:16px 0 6px !important;font-size:15px !important}
+.gui-v3 #resources-workspace {min-width:0}
+.gui-v3 #resources-workspace table {max-width:100%}
+.gui-v3 #resources-workspace td,.gui-v3 #resources-workspace th {overflow-wrap:anywhere}
 .gui-v3 .res-import {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border:1px solid var(--border);border-radius:12px;padding:10px 14px;background:var(--surface);margin:0 0 var(--gap);font-size:14px}
+.gui-v3 .res-import.res-import-quiet {display:block;border:0;background:none;padding:0 2px;margin:0 0 var(--gap);color:var(--muted);font-size:13px}
+.gui-v3 #resources-workspace button.btn.primary {color:#fff}
+.gui-v3 #resources-workspace button.btn.primary:disabled {opacity:.55}
 
 /* Overview "Start elsewhere" and Review task navigators: dense rows, one Open action + one quiet Ask Chat action */
 .gui-v3 .start-nav h2,.gui-v3 .task-nav h2 {font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:22px 0 8px}

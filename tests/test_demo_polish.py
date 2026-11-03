@@ -284,28 +284,65 @@ def test_port_free_ignores_time_wait_leftovers():
     assert port_free(port)
 
 
-# ------------------------------------------------------------------ Resources: truthful roadmap UI
+# ------------------------------------------------------------------ Resources: connected-data-ecosystem dashboard
 
-def test_resources_intro_and_tab_framing_use_the_operating_environment_model(client):
+LEDE = 'See the services, inputs, reusable capabilities, and recorded runs available to this workspace.'
+
+
+def test_resources_subtitle_summary_and_four_tab_structure(client):
+    for view in ('ecosystem', 'sources', 'plugins', 'runs'):
+        html = page(client, f'/resources?view={view}')
+        assert f'<p class="ws-lede" data-testid="resources-lede">{LEDE}</p>' in html, view
+        assert html.count('<h1 class="ws-title">Resources</h1>') == 1
+        assert re.findall(r'data-testid="resources-tab-(\w+)"', html) == ['ecosystem', 'sources', 'plugins', 'runs']
+        assert re.findall(r'data-testid="resources-tab-\w+" data-role="(\w+)"', html) == ['environment', 'inputs', 'capabilities', 'activity']
+        assert f'data-testid="resources-tab-{view}" data-role' in html and 'aria-current="page"' in html
+        summary = html[html.index('data-testid="resources-summary"'):html.index('</dl>')]
+        # only facts the deployment can report; counts are filled from existing read-only APIs, never hard-coded
+        for label in ('Built-in import', 'Sources configured', 'External plugins', 'Scheduler'):
+            assert label in summary, label
+        assert 'Not running' in summary and 'manual runs only' in summary
+    # tab text stays the bare name (roles are CSS captions)
+    tabs = page(client, '/resources')
+    assert re.findall(r'data-testid="resources-tab-\w+"[^>]*>([^<]+)</a>', tabs) == ['Ecosystem', 'Sources', 'Plugins', 'Runs']
+
+
+def test_ecosystem_is_passive_inventory_distinct_from_sources(client):
     eco = page(client, '/resources?view=ecosystem')
-    assert 'data-testid="resources-lede"' in eco
     for needle in ('services', 'storage', 'inventory', 'interpretation', 'recognised datasets',
                    'interpreters and profilers', 'read-only', 'Settings &rarr; Connections'):
         assert needle in eco, needle
+    note = eco[eco.index('data-testid="connections-context"'):]
+    note = note[:note.index('</p>')]
+    assert 'not ingestible' in note and 'resources?view=sources' in note
+    assert re.findall(r'<h2 id="eco-\w+-h">([^<]+)</h2>', eco) == ['Services', 'Data inventory', 'Storage access', 'Interpretation']
+    assert '/settings#system/scanner' in eco and '/settings#modules/interpreters' in eco and '/datasets?view=scans' in eco
+
+
+def test_runs_wording_is_manual_only_and_the_empty_state_is_truthful(client):
     runs = page(client, '/resources?view=runs')
-    assert 'Manual runs only' in runs and 'plugin capability &rarr; configured source' in runs and 'run history' in runs
-    assert 'data-testid="schedule-link"' in runs and 'const SCHEDULING = false' in runs         # no invented scheduler state
+    assert 'Manual runs only' in runs and 'No scheduler is running in this deployment' in runs
+    assert 'No runs recorded yet. Runs appear here after a Source is checked or executed' in runs
+    assert 'const SCHEDULING = false' in runs and 'data-testid="schedule-link"' in runs        # gated off at runtime
+    assert 'data-testid="runs-intro"' in runs and 'Provenance and activity' in runs
+    for invented in ('Retry', 'retry', 'example run', 'Example run'):
+        assert invented not in runs, invented
 
 
-def test_sources_promotes_the_builtin_table_import_only_to_an_existing_route(client, app):
+def test_sources_defines_a_source_apart_from_plugins_and_shows_the_lifecycle(client, app):
     sources = page(client, '/resources?view=sources')
-    assert 'explicit, configured inputs' in sources and 'previewed, mapped, validated and run' in sources
-    for step in ('Plugin capability', 'Configured source', 'Schema &amp; mapping', 'FAIR / dry check', 'Run history'):
-        assert step in sources
+    ctx = sources[sources.index('data-testid="sources-context"'):]
+    ctx = ctx[:ctx.index('</p>')]
+    assert 'configured, repeatable input' in ctx and 'not a file format, and not a Plugin' in ctx
+    assert 'create one from an installed' not in sources           # absence of a connector never routes to Plugins
+    chain = sources[sources.index('data-testid="resources-chain"'):]
+    chain = chain[:chain.index('</ol>')]
+    assert re.findall(r'<li>([^<]+)</li>', chain) == ['Source', 'preview and mapping', 'FAIR / dry check', 'recorded run']
+    assert 'role="note"' in chain
     entry = sources[sources.index('data-testid="import-table-entry"'):]
     entry = entry[:entry.index('</p>')]
     assert 'import a table or file' in entry and 'CSV, TSV or Excel' in entry
-    assert '<a ' not in entry and '<button' not in entry and 'href=' not in entry          # quiet copy, not a second action
+    assert '<a ' not in entry and '<button' not in entry and 'href=' not in entry          # quiet capability statement
     assert 'data-testid="import-table-link"' not in sources
     button = re.search(r'<button[^>]*data-testid="add-source-btn"[^>]*>([^<]*)</button>', sources)
     assert button and button.group(1).strip() == '+ Import a table or file' and '+ Add resource' not in sources
@@ -317,21 +354,33 @@ def test_sources_promotes_the_builtin_table_import_only_to_an_existing_route(cli
     assert is_available('file_upload') is True
 
 
+PLANNED = ['SharePoint Intake', 'iLab exports', 'SQL tables', 'REST/API records', 'PubMed/MeSH', 'PubChem',
+           'EDA artifacts', 'RO-Crate intake']
+
+
 def test_plugins_distinguishes_builtin_installed_and_planned_without_fake_installs(client):
     plugins = page(client, '/resources?view=plugins')
     assert 'reusable capabilities used to read, interpret, enrich, transform or publish data' in plugins
-    order = [plugins.index(h) for h in ('<h3>Built-in capability</h3>', '<h3>Installed external templates</h3>', '<h3>Planned future integrations</h3>')]
+    chain = plugins[plugins.index('data-testid="plugins-chain"'):]
+    chain = chain[:chain.index('</ol>')]
+    assert re.findall(r'<li>([^<]+)</li>', chain) == ['Plugin capability', 'configured Source', 'validation / mapping', 'recorded run']
+    order = [plugins.index(h) for h in ('<h3 id="plg-builtin-h">Built in</h3>', '<h3 id="plg-installed-h">Installed</h3>', '<h3 id="plg-planned-h">Planned integrations</h3>')]
     assert order == sorted(order)
-    builtin = plugins[plugins.index('data-testid="builtin-capability"'):]
-    builtin = builtin[:builtin.index('</div>\n  {% else %}') if '{% else %}' in builtin else builtin.index('<h3>Installed')]
+    builtin = plugins[plugins.index('data-testid="builtin-capability"'):plugins.index('id="plg-installed-h"')]
     assert 'Local table and file import' in builtin and 'CSV, TSV and Excel' in builtin and 'Built in' in builtin
-    roadmap = plugins[plugins.index('data-testid="plugins-roadmap"'):]
-    roadmap = roadmap[:roadmap.index('</ul>')]
-    assert re.findall(r'<strong>([^<]+)</strong>', roadmap) == ['SharePoint', 'iLab', 'PubMed / MeSH', 'PubChem', 'EDA']
-    assert roadmap.count('Planned') == 5 and '<a ' not in roadmap and '<button' not in roadmap and 'href=' not in roadmap
-    assert 'None of these is installed, selectable as a source type, or connected' in plugins
+    assert 'not a configured Source itself' in builtin
+    planned = plugins[plugins.index('data-testid="plugins-group-planned"'):]
+    planned = planned[:planned.index('</section>')]
+    assert re.findall(r'<li data-testid="roadmap-item">([^<]+)</li>', planned) == PLANNED
+    assert '<a ' not in planned and '<button' not in planned and 'href=' not in planned and '<input' not in planned
+    assert 'None of these is installed, selectable as a Source type, or connected' in planned
+    assert 'same Source lifecycle' in planned
+    for name in PLANNED:                       # roadmap names never appear as installed/available anywhere else
+        assert plugins.count(name) == 1, name
     # installed templates come only from the live registry endpoints; no enable/disable controls on Resources
     assert "get('/api/plugins')" in plugins and "get('/api/plugins/templates')" in plugins
+    assert 'No external plugins are installed' in plugins and 'rows.length ?' in plugins   # empty registry -> one short statement
+    assert 'none installed' not in plugins
     for forbidden in ('/enable', '/disable', 'toggle-plugin', 'type="checkbox"'):
         assert forbidden not in plugins, forbidden
 

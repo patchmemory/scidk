@@ -222,3 +222,95 @@ def test_chat_labels_and_legacy_guidance_urls_make_no_provider_calls(gui_page):
     assert network == [] and len(app.extensions['gui_test_requests']) == before
     if SHOTS:
         page.screenshot(path=str(SHOTS / 'review-chat.png'))
+
+
+# ---------------------------------------------------- Resources: connected-data-ecosystem dashboard
+
+RES_SHOTS = pathlib.Path(os.environ['SCIDK_RESOURCES_SHOTS']) if os.environ.get('SCIDK_RESOURCES_SHOTS') else None
+if RES_SHOTS:
+    RES_SHOTS.mkdir(parents=True, exist_ok=True)
+RES_LEDE = 'See the services, inputs, reusable capabilities, and recorded runs available to this workspace.'
+
+
+def test_resources_walkthrough_tabs_roles_and_no_page_errors(gui_page):
+    page, origin, _ = gui_page
+    page.gui_expected_http.add('/api/external-index/scans')    # the harness has no external scan index (501)
+    page.goto(origin + '/resources')
+    expect(page.get_by_test_id('resources-lede')).to_have_text(RES_LEDE)
+    expect(page.get_by_test_id('resources-tabs').get_by_role('link')).to_have_text(['Ecosystem', 'Sources', 'Plugins', 'Runs'])
+    expect(page.get_by_test_id('resources-summary')).to_be_visible()
+    expect(page.get_by_test_id('summary-scheduler')).to_contain_text('manual runs only')
+    for key, caption in (('ecosystem', 'environment'), ('sources', 'inputs'), ('plugins', 'capabilities'), ('runs', 'activity')):
+        page.get_by_test_id(f'resources-tab-{key}').click()
+        expect(page).to_have_url(origin + f'/resources?view={key}')
+        expect(page.get_by_test_id(f'resources-tab-{key}')).to_have_attribute('aria-current', 'page')
+        assert page.evaluate("(k) => getComputedStyle(document.querySelector(`[data-testid=resources-tab-${k}]`), '::after').content", key) == f'"{caption}"'
+        page.wait_for_load_state('networkidle')
+        if RES_SHOTS:
+            page.screenshot(path=str(RES_SHOTS / f'resources-{key}-1280.png'), full_page=True)
+    # counts are filled in from existing APIs, never left as "Checking" nor invented
+    expect(page.get_by_test_id('summary-sources')).not_to_have_text('Checking…')
+    expect(page.get_by_test_id('summary-plugins')).not_to_have_text('Checking…')
+
+
+def test_plugins_planned_integrations_are_visibly_non_actionable(gui_page):
+    page, origin, _ = gui_page
+    page.goto(origin + '/resources?view=plugins')
+    planned = page.get_by_test_id('plugins-group-planned')
+    expect(planned).to_contain_text('None of these is installed, selectable as a Source type, or connected')
+    expect(planned.get_by_test_id('roadmap-item')).to_have_count(8)
+    assert planned.locator('a, button, input, select, [role=button], [tabindex]').count() == 0
+    expect(page.get_by_test_id('plugins-group-builtin')).to_contain_text('CSV, TSV and Excel')
+    expect(page.get_by_test_id('plugins-group-builtin')).to_contain_text('not a configured Source itself')
+    expect(page.get_by_test_id('plugins-empty')).to_contain_text('No external plugins are installed')   # empty registry -> no claims
+    expect(page.get_by_test_id('plugin-row')).to_have_count(0)
+    expect(page.get_by_test_id('capability-row')).to_have_count(0)
+    # a planned label is not a source choice: the wizard offers only the built-in type here
+    page.goto(origin + '/resources?view=sources')
+    page.get_by_test_id('add-source-btn').click()
+    expect(page.get_by_test_id('type-option')).to_have_count(1)
+
+
+def test_sources_import_opens_upload_wizard_and_back_reaches_type_selection(gui_page):
+    page, origin, _ = gui_page
+    page.goto(origin + '/resources?view=sources')
+    expect(page.get_by_test_id('resources-chain')).to_contain_text('Source')
+    expect(page.get_by_test_id('resources-chain')).to_contain_text('preview and mapping')
+    expect(page.get_by_test_id('resources-chain')).to_contain_text('FAIR / dry check')
+    expect(page.get_by_test_id('resources-chain')).to_contain_text('recorded run')
+    expect(page.get_by_test_id('sources-context')).to_contain_text('not a file format, and not a Plugin')
+    expect(page.get_by_test_id('import-table-entry')).to_contain_text('CSV, TSV or Excel')
+    page.get_by_test_id('add-source-btn').click()
+    expect(page.get_by_test_id('source-sheet')).to_be_visible()
+    expect(page.get_by_test_id('pane-upload')).to_be_visible()
+    expect(page.get_by_test_id('upload-file')).to_have_attribute('accept', '.csv,.tsv,.tab,.txt,.xlsx,.xlsm')
+    page.get_by_test_id('sheet-back').click()
+    expect(page.get_by_test_id('step-type')).to_be_visible()
+    expect(page.get_by_test_id('type-option').first).to_contain_text('Import a table or file')
+    if RES_SHOTS:
+        page.screenshot(path=str(RES_SHOTS / 'sources-wizard-type-selection-1280.png'))
+
+
+def test_runs_empty_state_and_manual_only_wording(gui_page):
+    page, origin, _ = gui_page
+    page.goto(origin + '/resources?view=runs')
+    expect(page.get_by_test_id('runs-manual-note')).to_contain_text('Manual runs only')
+    expect(page.get_by_test_id('runs-empty')).to_contain_text('No runs recorded yet. Runs appear here after a Source is checked or executed')
+    expect(page.get_by_test_id('schedule-link')).to_have_count(0)
+
+
+import pytest
+
+
+@pytest.mark.parametrize('width', [1024, 1440])
+@pytest.mark.parametrize('view', ['ecosystem', 'sources', 'plugins', 'runs'])
+def test_resources_has_no_horizontal_overflow(gui_page, view, width):
+    page, origin, _ = gui_page
+    page.gui_expected_http.add('/api/external-index/scans')
+    page.set_viewport_size({'width': width, 'height': 900})
+    page.goto(origin + f'/resources?view={view}')
+    page.wait_for_load_state('networkidle')
+    over = page.evaluate("() => ({doc: document.documentElement.scrollWidth - document.documentElement.clientWidth, body: document.body.scrollWidth - document.documentElement.clientWidth})")
+    assert over['doc'] <= 0 and over['body'] <= 0, over
+    if RES_SHOTS:
+        page.screenshot(path=str(RES_SHOTS / f'resources-{view}-{width}.png'), full_page=True)
