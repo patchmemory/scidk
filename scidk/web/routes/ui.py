@@ -411,16 +411,8 @@ def pipeline_sources():
     return render_template('pipeline_sources.html')
 
 
-@bp.get('/pipeline/sources/<source_id>/schema')
-def pipeline_source_schema(source_id):
-    """The Maps canvas in Schema mode, scoped to one Pipeline source (Task C).
-
-    Unlike the sources list, this page is rendered with data: the committed schema
-    and the source's name go into the template so the canvas and the breadcrumb are
-    correct on first paint rather than after a round trip. The three entry points
-    differ only in what is loaded — ``?start=arrows|neo4j|blank``, chosen in Step 2
-    of the add flow.
-    """
+def _schema_page_context(source_id, start=''):
+    """Template data for the schema canvas of one Pipeline source (404 when the source is unknown)."""
     from flask import abort
 
     from ...pipeline.store import PipelineStore
@@ -431,17 +423,57 @@ def pipeline_source_schema(source_id):
     if source is None:
         abort(404)
 
-    start = (request.args.get('start') or '').strip().lower()
+    start = (start or '').strip().lower()
     if start not in ('arrows', 'neo4j', 'blank'):
         start = ''
-    return render_template(
-        'pipeline_schema.html',
+    return dict(
         source={'id': source['id'], 'name': source.get('name') or source['id']},
         context_id=pipeline_source_context(source_id),
         schema_json=source.get('schema_json'),
         saved_at=source.get('schema_saved_at'),
         start=start,
     )
+
+
+def _mapping_page_context(source_id):
+    """Template data for the column-mapping tool of one Pipeline source (404 when the source is unknown)."""
+    from flask import abort
+
+    from ...pipeline.mapping_ui import describe_transforms
+    from ...pipeline.plugin_registry import resolve_plugin, transform_library_for
+    from ...pipeline.store import PipelineStore
+
+    db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
+    source = PipelineStore(db_path).get_source(source_id)
+    if source is None:
+        abort(404)
+
+    try:
+        plugin = resolve_plugin(source.get('plugin_type') or '')
+    except Exception:  # noqa: BLE001 - an unavailable plugin still has core transforms
+        plugin = None
+
+    return dict(
+        source={'id': source['id'], 'name': source.get('name') or source['id'],
+                'plugin_type': source.get('plugin_type') or ''},
+        schema_json=source.get('schema_json'),
+        mapping_json=source.get('mapping_json'),
+        saved_at=source.get('mapping_saved_at'),
+        transforms=describe_transforms(transform_library_for(plugin)),
+    )
+
+
+@bp.get('/pipeline/sources/<source_id>/schema')
+def pipeline_source_schema(source_id):
+    """The Maps canvas in Schema mode, scoped to one Pipeline source (Task C).
+
+    Unlike the sources list, this page is rendered with data: the committed schema
+    and the source's name go into the template so the canvas and the breadcrumb are
+    correct on first paint rather than after a round trip. The three entry points
+    differ only in what is loaded — ``?start=arrows|neo4j|blank``, chosen in Step 2
+    of the add flow.
+    """
+    return render_template('pipeline_schema.html', **_schema_page_context(source_id, request.args.get('start')))
 
 
 @bp.get('/pipeline/sources/<source_id>/mapping')
@@ -459,31 +491,41 @@ def pipeline_source_mapping(source_id):
     ``transform_library()``, and offering a name the engine will not resolve would
     produce a config that fails its own R check.
     """
-    from flask import abort
+    return render_template('pipeline_mapping.html', **_mapping_page_context(source_id))
 
-    from ...pipeline.mapping_ui import describe_transforms
-    from ...pipeline.plugin_registry import resolve_plugin, transform_library_for
-    from ...pipeline.store import PipelineStore
 
-    db_path = current_app.config.get('SCIDK_SETTINGS_DB', 'scidk_settings.db')
-    source = PipelineStore(db_path).get_source(source_id)
-    if source is None:
+RESOURCES_VIEWS = ('connections', 'sources', 'plugins', 'runs')
+# `mappings` was this tab's first name; old links to it land on Plugins, where the schema and mapping tools now live.
+RESOURCES_VIEW_ALIASES = {'mappings': 'plugins', 'mapping': 'plugins', 'schema': 'plugins'}
+
+
+def resources_view(args):
+    """The Resources workspace tab asked for by ``?view=`` (default: Sources, where the working tools are)."""
+    view = (args.get('view') or '').strip().lower()
+    view = RESOURCES_VIEW_ALIASES.get(view, view)
+    return view if view in RESOURCES_VIEWS else 'sources'
+
+
+@bp.get('/resources')
+def resources_workspace():
+    """Resources workspace: Connections | Sources | Plugins | Runs.
+
+    Every tab renders the real legacy tool through its shared partial (no iframe, no second API client); the
+    direct /pipeline/... pages and Settings stay as they were.
+    """
+    if current_app.config.get('SCIDK_GUI_V3_ENABLED') is not True:
+        from flask import abort
         abort(404)
-
-    try:
-        plugin = resolve_plugin(source.get('plugin_type') or '')
-    except Exception:  # noqa: BLE001 - an unavailable plugin still has core transforms
-        plugin = None
-
-    return render_template(
-        'pipeline_mapping.html',
-        source={'id': source['id'], 'name': source.get('name') or source['id'],
-                'plugin_type': source.get('plugin_type') or ''},
-        schema_json=source.get('schema_json'),
-        mapping_json=source.get('mapping_json'),
-        saved_at=source.get('mapping_saved_at'),
-        transforms=describe_transforms(transform_library_for(plugin)),
-    )
+    view = resources_view(request.args)
+    context = {}
+    source_id = (request.args.get('source') or '').strip()
+    step = (request.args.get('step') or '').strip().lower()
+    if view == 'plugins' and source_id:
+        step = step if step in ('schema', 'mapping') else 'mapping'
+        context = (_schema_page_context(source_id, request.args.get('start')) if step == 'schema'
+                   else _mapping_page_context(source_id))
+        context['plugin_step'] = step
+    return render_template('gui/resources_workspace.html', ws_view=view, pipeline_workspace=True, **context)
 
 
 @bp.get('/interpreters')

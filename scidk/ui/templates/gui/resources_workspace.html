@@ -1,0 +1,53 @@
+{#
+  Resources workspace: Connections | Sources | Plugins | Runs  (/resources?view=...).
+
+    Connections  graph backends overview (settings/_connections_overview.html: /api/connections test + counts) and
+                 rclone remote mounts (settings/_rclone.html) - the same partials the Settings page uses
+    Sources      the working Resources page (_pipeline_sources_app.html): add/edit, connection test, upload, run,
+                 FAIR check, schedule
+    Plugins      the registry (_resources_plugins.html over /api/plugins and /api/plugins/templates) plus the built-in
+                 schema / column-mapping tools per source: ?view=plugins&source=ID&step=schema|mapping renders the real
+                 tools (_pipeline_schema_app.html with Arrows import/export, _pipeline_mapping_app.html).
+                 `view=mappings` is a compatibility alias for Plugins.
+    Runs         launch (existing /api/pipeline/sources/<id>/run), schedule display (existing pipelines API; edited
+                 through the Sources schedule dialog) and recorded run history (_resources_runs.html)
+
+  One implementation per tool: the legacy /pipeline/sources, /pipeline/sources/<id>/schema|mapping and Settings
+  pages include the very same partials. No iframe, no second API client.
+#}
+{% extends 'base.html' %}
+{% block title %}SciDK — Resources{% endblock %}
+{% block content %}
+{% include '_resources_tabs.html' %}
+<div id="resources-workspace" data-view="{{ ws_view }}" data-testid="resources-workspace">
+{% if ws_view == 'connections' %}
+<style>
+  #resources-workspace .settings-section { display: block; max-width: 1100px; margin: 0 auto; padding: 0.5rem; }
+  #resources-workspace .settings-section h1 { font-size: 1.25rem; }
+</style>
+<p class="small" style="margin:0.5rem" data-testid="connections-context">Where SciDK reads from and writes to. Graph backends are tested on demand. Credentials and connection profiles are edited under <a href="{{ request.script_root }}/settings#connections">Settings &rarr; Connections</a>; data resources themselves are on the <a href="{{ request.script_root }}/resources?view=sources">Sources</a> tab.</p>
+{% include 'settings/_connections_overview.html' %}
+{% include 'settings/_rclone.html' %}
+{% elif ws_view == 'plugins' %}
+{% if plugin_step %}
+<nav class="small" style="margin:0.5rem; display:flex; gap:1rem" data-testid="plugin-steps" aria-label="Schema and mapping steps">
+  <a href="{{ request.script_root }}/resources?view=plugins" data-testid="plugins-back">&larr; Plugins</a>
+  <a href="{{ request.script_root }}/resources?view=plugins&amp;source={{ source.id }}&amp;step=schema" data-testid="plugin-step-schema"{% if plugin_step == 'schema' %} aria-current="page" style="font-weight:600"{% endif %}>Schema</a>
+  <a href="{{ request.script_root }}/resources?view=plugins&amp;source={{ source.id }}&amp;step=mapping" data-testid="plugin-step-mapping"{% if plugin_step == 'mapping' %} aria-current="page" style="font-weight:600"{% endif %}>Column mapping</a>
+  <a href="{{ request.script_root }}/resources?view=runs" data-testid="plugin-to-runs">Runs &rarr;</a>
+</nav>
+<style>
+  #resources-workspace .mapping-page, #resources-workspace .schema-page { height: calc(100vh - 170px); min-height: 480px; }
+</style>
+{% if plugin_step == 'schema' %}{% include '_pipeline_schema_app.html' %}{% else %}{% include '_pipeline_mapping_app.html' %}{% endif %}
+{% else %}
+{% include '_resources_plugins.html' %}
+{% endif %}
+{% elif ws_view == 'runs' %}
+{% include '_resources_runs.html' %}
+{% else %}
+<p class="small" style="margin:0.5rem 0.5rem 0" data-testid="sources-context">Sources are the configured instances you create from installed <a href="{{ request.script_root }}/resources?view=plugins">plugins</a>. Define a source's schema and column mapping under Plugins; launch and schedule its runs on <a href="{{ request.script_root }}/resources?view=runs">Runs</a>.</p>
+{% include '_pipeline_sources_app.html' %}
+{% endif %}
+</div>
+{% endblock %}

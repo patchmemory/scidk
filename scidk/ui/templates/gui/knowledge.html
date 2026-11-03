@@ -47,19 +47,41 @@
 {% include '_maps_app.html' %}
 {% else %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/knowledge_workspace.css') }}">
-<p class="small" style="margin:0.5rem" data-testid="sketch-intro">Sketch ideas and proposed schema changes before adding them to the knowledge graph.</p>
+<p class="small" style="margin:0.5rem" data-testid="sketch-intro">Sketch ideas and proposed schema changes before adding them to the knowledge graph. Everything here is a <strong>private draft</strong> &mdash; it stays with you and is never written to the graph.</p>
 <p id="kw-status" role="status" class="small" style="margin:0.5rem"></p>
-<div class="kw-workarea"><div id="kw-panes" data-layout="single">
+<div class="kw-workarea kw-visual"><div id="kw-panes" data-layout="single">
 <section id="kw-sketch-pane">
-<div class="kw-toolbar"><button id="kw-place-node">Place a node</button><button id="kw-connect" aria-pressed="false">Connect drafts</button><button id="kw-save-sketch">Save private draft</button><button id="kw-load-sketch">Reopen private draft</button></div><p id="kw-sketch-help" role="status">Place a node on the canvas, drag to arrange, then connect two nodes. All changes stay in your private draft.</p>
-<details id="kw-draft-tools"><summary>Draft details &amp; advanced tools</summary><div class="kw-toolbar"><label>Draft type <input id="kw-draft-type" value="Concept" maxlength="128"></label><label>Name <input id="kw-draft-name" maxlength="256"></label><button id="kw-add-node">Add draft node</button><button id="kw-remove-draft">Remove selected</button><button id="kw-arrange-draft">Arrange draft</button></div>
-<div class="kw-toolbar"><label>Source draft ID <input id="kw-edge-source" maxlength="256"></label><label>Target draft ID <input id="kw-edge-target" maxlength="256"></label><label>Relationship <input id="kw-edge-type" maxlength="128"></label><button id="kw-add-edge">Add draft relationship</button></div>
-<div class="kw-toolbar"><label>Planning marker <select id="kw-marker"><option>unresolved</option><option>suggested investigation</option><option>proposed assertion</option><option>pending human review</option></select></label><button id="kw-set-marker">Mark selected draft</button></div>
-<label>Notes, incomplete concepts and proposed adaptations <textarea id="kw-notes" maxlength="8000" rows="3"></textarea></label>
-</details><div id="kw-sketch" class="kw-cytoscape" aria-label="Private knowledge sketch"></div>
+<div class="kw-toolbar" role="toolbar" aria-label="Sketch tools" data-testid="sketch-toolbar">
+<button id="kw-tool-select" data-tool="select" aria-pressed="true" data-testid="tool-select" title="Select and move nodes">Select / move</button><button id="kw-tool-pan" data-tool="pan" aria-pressed="false" data-testid="tool-pan" title="Drag the canvas to move around">Pan canvas</button><button id="kw-place-node" data-tool="place" aria-pressed="false" data-testid="tool-add-node" title="Add a draft node">Add node</button><button id="kw-connect" data-tool="connect" aria-pressed="false" data-testid="tool-connect" title="Click a source node, then a target node">Connect nodes</button><span class="kw-sep" aria-hidden="true"></span><button id="kw-sk-arrange" data-testid="tool-arrange" title="Lay the draft out neatly and fit it to the canvas">Arrange</button><button id="kw-sk-fit" data-testid="tool-fit" title="Fit everything in view">Fit</button><button id="kw-sk-zoom-out" data-testid="tool-zoom-out" aria-label="Zoom out">&minus;</button><button id="kw-sk-zoom-in" data-testid="tool-zoom-in" aria-label="Zoom in">+</button><button id="kw-sk-remove" data-testid="tool-remove" title="Remove the selected draft node or relationship">Remove</button><span class="kw-sep" aria-hidden="true"></span><button id="kw-save-sketch" data-testid="tool-save">Save private draft</button><button id="kw-load-sketch" data-testid="tool-reopen">Reopen private draft</button></div>
+<p id="kw-sketch-help" role="status" data-testid="sketch-help">Select and move: click a node or relationship to edit it, drag nodes to arrange them.</p>
+<div id="kw-add-panel" class="kw-panel" hidden data-testid="add-node-panel"><strong>Add node</strong>
+<label>Entity type <select id="kw-add-type" data-testid="add-node-type"><optgroup id="kw-add-schema-types" label="Schema entity types" hidden></optgroup><option value="__free__" selected>Freeform concept&hellip;</option></select></label>
+<label id="kw-add-free-wrap">Concept type <input id="kw-add-free" value="Concept" maxlength="128" data-testid="add-node-freeform" placeholder="e.g. Hypothesis"></label>
+<label>Name <input id="kw-add-name" maxlength="256" data-testid="add-node-name" placeholder="Display name"></label>
+<button id="kw-add-center" data-testid="add-node-center">Add at centre</button><button id="kw-add-done">Done</button>
+<span class="small">Or click an empty point on the canvas to place it there.</span></div>
+<div id="kw-rel-panel" class="kw-panel" hidden data-testid="connect-panel"><strong>New relationship</strong>
+<span><span id="kw-rel-from" data-testid="connect-source"></span> &rarr; <label>relationship <input id="kw-rel-type" value="RELATES_TO" list="kw-rel-options" maxlength="128" data-testid="connect-type"></label> &rarr; <span id="kw-rel-to" data-testid="connect-target"></span></span>
+<datalist id="kw-rel-options"><option value="RELATES_TO"></option></datalist><datalist id="kw-type-options"></datalist>
+<button id="kw-rel-create" data-testid="connect-create">Create relationship</button><button id="kw-rel-cancel">Cancel</button></div>
+<div id="kw-sketch" class="kw-cytosc" aria-label="Private knowledge sketch"></div>
+<details class="kw-notes-box"><summary>Sketch notes</summary><label>Notes, incomplete concepts and proposed adaptations <textarea id="kw-notes" maxlength="8000" rows="3"></textarea></label></details>
 </section>
 </div>
-<aside id="kw-inspector" aria-label="Sketch inspector"><h2>Selected draft</h2><h3 id="kw-selection-title">Nothing selected</h3><div id="kw-draft-inspector" hidden><label>Draft name <input id="kw-edit-name" maxlength="256"></label><button id="kw-edit-apply">Update selected draft</button></div><details><summary>Draft details</summary><pre id="kw-inspection"></pre></details></aside></div>
+<aside id="kw-inspector" aria-label="Sketch inspector"><h2>Selected draft</h2>
+<p class="kw-private" data-testid="private-draft-banner"><strong>Private proposal</strong> &mdash; not live graph data. Nothing here is written to the knowledge graph.</p>
+<h3 id="kw-selection-title">Nothing selected</h3>
+<p id="kw-inspector-empty" class="small" data-testid="inspector-empty">Select a node or relationship on the canvas to rename it, change its type or add notes. Use <em>Add node</em> and <em>Connect nodes</em> in the toolbar to build the sketch.</p>
+<div id="kw-draft-inspector" hidden data-testid="draft-inspector">
+<div id="kw-node-form" hidden data-testid="node-form"><label>Display name <input id="kw-edit-name" maxlength="256" data-testid="edit-name"></label><label>Type <input id="kw-edit-type" list="kw-type-options" maxlength="128" data-testid="edit-type"></label><label>Notes <textarea id="kw-edit-notes" rows="4" maxlength="2000" data-testid="edit-notes"></textarea></label></div>
+<div id="kw-edge-form" hidden data-testid="edge-form"><p class="small">Source <strong id="kw-edge-from" data-testid="edge-source-name"></strong></p><label>Relationship type <input id="kw-edit-rel" list="kw-rel-options" maxlength="128" data-testid="edit-rel"></label><p class="small">Target <strong id="kw-edge-to" data-testid="edge-target-name"></strong></p><label>Notes <textarea id="kw-edit-edge-notes" rows="4" maxlength="2000" data-testid="edit-edge-notes"></textarea></label></div>
+<button id="kw-edit-apply" data-testid="edit-apply">Update draft</button></div>
+<details id="kw-draft-tools" data-testid="advanced-debug"><summary>Advanced / debug (raw IDs, planning markers)</summary>
+<p class="small">Low-level compatibility fields for the private draft. You never need these to build a sketch.</p>
+<div class="kw-toolbar"><label>Draft type <input id="kw-draft-type" value="Concept" maxlength="128"></label><label>Name <input id="kw-draft-name" maxlength="256"></label><button id="kw-add-node">Add draft node</button><button id="kw-remove-draft">Remove selected</button><button id="kw-arrange-draft">Arrange draft</button></div>
+<div class="kw-toolbar"><label>Source draft ID <input id="kw-edge-source" maxlength="256"></label><label>Target draft ID <input id="kw-edge-target" maxlength="256"></label><label>Relationship <input id="kw-edge-type" maxlength="128"></label><button id="kw-add-edge">Add draft relationship</button></div>
+<div class="kw-toolbar"><label>Planning marker <select id="kw-marker"><option>unresolved</option><option>suggested investigation</option><option>proposed assertion</option><option>pending human review</option></select></label><button id="kw-set-marker">Mark selected draft</button></div>
+<pre id="kw-inspection"></pre></details></aside></div>
 <script src="{{ url_for('static', filename='vendor/cytoscape/cytoscape.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/graph_utils.js') }}"></script>
 <script src="{{ url_for('static', filename='js/canvas_editor.js') }}"></script>

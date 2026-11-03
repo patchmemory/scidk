@@ -1,0 +1,12 @@
+{# The Resources local tabs: exactly Connections, Sources, Plugins, Runs (`ws_view` = the active one). #}
+<style>
+  .resources-tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid #e0e0e0; padding: 0 0.5rem; }
+  .resources-tabs a { padding: 0.5rem 1rem; text-decoration: none; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; font-size: 0.95em; }
+  .resources-tabs a:hover { color: var(--fg); }
+  .resources-tabs a[aria-current="page"] { color: var(--fg); font-weight: 600; border-bottom-color: var(--accent); }
+</style>
+<nav class="resources-tabs" aria-label="Resources views" data-testid="resources-tabs">
+  {% for key, label in [('connections', 'Connections'), ('sources', 'Sources'), ('plugins', 'Plugins'), ('runs', 'Runs')] %}
+  <a href="{{ request.script_root }}/resources?view={{ key }}" data-testid="resources-tab-{{ key }}"{% if ws_view == key %} aria-current="page"{% endif %}>{{ label }}</a>
+  {% endfor %}
+</nav>

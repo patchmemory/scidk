@@ -12,3 +12,17 @@
 #kw-notes {display:block;width:100%;box-sizing:border-box} #kw-blockers {color:#8c320c}
 #knowledge-workspace :focus-visible {outline:3px solid #165dba;outline-offset:2px}
 @media(max-width:1000px) {#kw-panes[data-layout] {grid-template-columns:minmax(0,1fr)}}
+
+/* Knowledge -> Sketch visual layout: canvas left, ordinary inspector right */
+.kw-visual {display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:12px;align-items:start;margin:0.5rem}
+.kw-visual #kw-inspector {margin-top:12px;position:sticky;top:8px}
+.kw-visual .kw-toolbar button[aria-pressed=true] {background:#165dba;color:#fff;border-color:#165dba}
+.kw-visual .kw-sep {width:1px;align-self:stretch;background:#d0d9e2;margin:0 4px}
+.kw-visual .kw-panel {display:flex;flex-wrap:wrap;align-items:center;gap:8px;border:1px solid #ccd7e3;border-radius:6px;background:#fff;padding:6px 10px;margin:6px 0}
+.kw-visual .kw-panel[hidden] {display:none}
+.kw-visual .kw-cytosc {height:520px;width:100%;min-width:0;background:white;border:1px solid #d9e3ec;resize:vertical;overflow:hidden}
+.kw-visual #kw-sketch[data-tool=pan] {cursor:grab} .kw-visual #kw-sketch[data-tool=place],.kw-visual #kw-sketch[data-tool=connect] {cursor:crosshair}
+.kw-visual #kw-inspector label {display:block;margin:6px 0} .kw-visual #kw-inspector textarea,.kw-visual #kw-inspector input[type=text],.kw-visual #kw-inspector label input {width:100%;box-sizing:border-box}
+.kw-private {background:#fff4e5;border:1px solid #f0c27b;border-radius:6px;padding:6px 8px;font-size:0.9em}
+.kw-notes-box {margin:6px 0}
+@media(max-width:1000px) {.kw-visual {grid-template-columns:minmax(0,1fr)} .kw-visual #kw-inspector {position:static}}

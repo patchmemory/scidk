@@ -1,0 +1,84 @@
+{#
+  Plugins: the registry of capability providers - installed plugins, the source connectors / importers / enrichment
+  they register (existing /api/plugins and /api/plugins/templates), and the built-in schema & column-mapping tools,
+  which are opened per source (the real tools, re-homed from /pipeline/sources/<id>/schema|mapping).
+#}
+<style>
+  .res-index { max-width: 1100px; margin: 0 auto; padding: 0.5rem; }
+  .res-index h3 { font-size: 1.05rem; margin: 1.25rem 0 .25rem; }
+  .res-index table { width: 100%; border-collapse: collapse; }
+  .res-index th, .res-index td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid #eee; vertical-align: top; }
+  .res-index .badge { display:inline-block; padding: 0 .4rem; border-radius: 8px; font-size: .8em; background:#eee; }
+  .res-index .badge.ok { background:#dff3df; } .res-index .badge.warn { background:#fff0cf; } .res-index .badge.err { background:#f8d7d7; }
+  .res-index .empty { border:1px dashed #c9d3dd; border-radius: 6px; padding: .6rem .8rem; background:#fafcfe; }
+</style>
+<div class="res-index" data-testid="plugins-registry">
+  <h2 style="margin:.25rem 0; font-size:1.25rem">Plugins</h2>
+  <p class="small">What SciDK can connect to and do: source connectors, schema and mapping tools, profilers, importers and (later) enrichment plugins. <a href="{{ request.script_root }}/resources?view=sources">Sources</a> are the configured instances you create from these; each run is launched and reviewed on <a href="{{ request.script_root }}/resources?view=runs">Runs</a>.</p>
+
+  <h3>Installed plugins</h3>
+  <div id="plugins-installed" data-testid="plugins-installed" aria-busy="true"><p class="small">Loading installed plugins&hellip;</p></div>
+
+  <h3>Capabilities registered by plugins</h3>
+  <div id="plugins-capabilities" data-testid="plugins-capabilities" aria-busy="true"><p class="small">Loading&hellip;</p></div>
+
+  <h3>Built-in schema &amp; mapping tools</h3>
+  <p class="small">Always available. Define the target schema for a source (draw labels and relationships, or import / export Arrows JSON), then map its columns onto it. Open them for a configured source:</p>
+  <div id="plugins-source-tools" data-testid="plugins-source-tools" aria-busy="true"><p class="small">Loading sources&hellip;</p></div>
+</div>
+<script>
+(function () {
+  const BASE = window.SCIDK_BASE || '';
+  const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const get = (path) => fetch(BASE + path).then((r) => { if (!r.ok) throw new Error(path + ' ' + r.status); return r.json(); });
+  const done = (id) => { const el = document.getElementById(id); if (el) el.removeAttribute('aria-busy'); };
+  const url = (id, step) => `${BASE}/resources?view=plugins&source=${encodeURIComponent(id)}&step=${step}`;
+  const CATEGORIES = {data_import: 'Source connectors', graph_inject: 'Graph importers', enrichment: 'Enrichment', exporter: 'Exporters'};
+
+  function installed(data) {
+    const el = document.getElementById('plugins-installed');
+    const plugins = data.plugins || [], failed = Object.entries(data.failed || {});
+    el.innerHTML = (plugins.length ? `<table><thead><tr><th>Plugin</th><th>Version</th><th>State</th><th>Description</th></tr></thead><tbody>${
+      plugins.map((p) => `<tr data-testid="plugin-row"><td><strong>${esc(p.name || p.module_name)}</strong></td><td>${esc(p.version || '')}</td><td><span class="badge ${p.enabled === false ? 'warn' : 'ok'}">${p.enabled === false ? 'disabled' : 'enabled'}</span></td><td>${esc(p.description || '')}</td></tr>`).join('')
+    }</tbody></table>` : `<div class="empty" data-testid="plugins-empty">No plugins are installed. Nothing is wrong: the built-in schema and mapping tools below still work. To add a source connector, place a plugin in the <code>plugins/</code> directory and restart (see <code>docs/plugins.md</code>); once installed it is listed here and can be enabled under <a href="${BASE}/settings#modules/plugins">Settings &rarr; Plugins</a>.</div>`)
+      + (failed.length ? `<p class="small" data-testid="plugins-failed">${failed.length} plugin(s) failed to load: ${failed.map(([n, why]) => esc(n) + (why ? ' (' + esc(String(why).slice(0, 120)) + ')' : '')).join('; ')}</p>` : '');
+    done('plugins-installed');
+  }
+
+  function capabilities(data) {
+    const el = document.getElementById('plugins-capabilities');
+    const templates = data.templates || [];
+    const groups = {};
+    templates.forEach((t) => { (groups[t.category || 'data_import'] = groups[t.category || 'data_import'] || []).push(t); });
+    const rows = Object.keys(CATEGORIES).concat(Object.keys(groups).filter((k) => !(k in CATEGORIES))).map((category) => {
+      const items = groups[category] || [];
+      const label = CATEGORIES[category] || category;
+      return `<tr data-testid="capability-row" data-category="${esc(category)}"><td><strong>${esc(label)}</strong></td><td>${items.length ? items.map((t) => `${esc(t.icon || '')} ${esc(t.name || t.id)}${t.description ? ' <span class="small" style="color:#666">&mdash; ' + esc(t.description) + '</span>' : ''}`).join('<br>') : '<span class="small" style="color:#666">none installed</span>'}</td><td>${category === 'data_import' && items.length ? `<a class="btn btn-sm" data-testid="create-source-link" href="${BASE}/resources?view=sources">Create a source</a>` : ''}</td></tr>`;
+    });
+    el.innerHTML = `<table><thead><tr><th>Capability</th><th>Provided by installed plugins</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>`
+      + ((groups.data_import || []).length ? '' : `<p class="small" data-testid="no-source-plugins">No data-resource plugins are installed, so no new Sources can be created yet. Existing sources keep working.</p>`);
+    done('plugins-capabilities');
+  }
+
+  function sourceTools(data) {
+    const el = document.getElementById('plugins-source-tools');
+    const sources = data.sources || [];
+    const schemaBadge = (s) => (s.schema_summary || {}).defined ? `<span class="badge ok" data-testid="schema-defined-badge">Schema defined (${esc(s.schema_summary.node_count)})</span>` : '<span class="badge">no schema</span>';
+    const mappingBadge = (s) => {
+      const x = s.mapping_summary || {};
+      if (!x.defined) return '<span class="badge">no mapping</span>';
+      const unkeyed = (x.unkeyed_roles || []).length;
+      return unkeyed ? `<span class="badge warn">Mapping incomplete (${unkeyed})</span>` : `<span class="badge ok" data-testid="mapping-defined-badge">Mapping defined (${esc(x.node_mapping_count)})</span>`;
+    };
+    el.innerHTML = sources.length ? `<table><thead><tr><th>Source</th><th>Schema</th><th>Column mapping</th><th></th></tr></thead><tbody>${
+      sources.map((s) => `<tr data-testid="tool-row" data-source-id="${esc(s.id)}"><td><strong>${esc(s.name)}</strong><div class="small" style="color:#666">${esc(s.plugin_type)}</div></td><td>${schemaBadge(s)}</td><td>${mappingBadge(s)}</td><td><a class="btn btn-sm" data-testid="open-schema" href="${url(s.id, 'schema')}">Schema</a> <a class="btn btn-sm" data-testid="open-mapping" href="${url(s.id, 'mapping')}">Column mapping</a></td></tr>`).join('')
+    }</tbody></table>` : `<div class="empty" data-testid="tools-empty">The schema and mapping tools work on a configured source, and none exists yet. Create one on <a href="${BASE}/resources?view=sources">Sources</a>.</div>`;
+    done('plugins-source-tools');
+  }
+
+  const failure = (id, label) => (e) => { const el = document.getElementById(id); if (el) el.innerHTML = `<div class="empty">Could not load ${label}: ${esc(e.message)}</div>`; done(id); };
+  get('/api/plugins').then(installed).catch(failure('plugins-installed', 'installed plugins'));
+  get('/api/plugins/templates').then(capabilities).catch(failure('plugins-capabilities', 'plugin capabilities'));
+  get('/api/pipeline/sources').then(sourceTools).catch(failure('plugins-source-tools', 'sources'));
+})();
+</script>

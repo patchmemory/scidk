@@ -4,6 +4,9 @@
   // Sketch-only mode: the Knowledge → Sketch tab renders just the draft canvas. The governed-projection
   // controls this script also drives are absent there, so lookups fall back to detached stand-ins.
   const sketchOnly = document.getElementById('knowledge-workspace')?.dataset.kwMode === 'sketch';
+  // Visual Sketch: the Knowledge -> Sketch tab has the connect/relationship panel and the ordinary inspector. The
+  // governed workspace page keeps its original controls, so every visual handler below checks this flag.
+  const visual = !!document.getElementById('kw-rel-panel');
   const stubs = new Map();
   const $ = id => document.getElementById(id) || (stubs.has(id) ? stubs.get(id) : (stubs.set(id, document.createElement('div')), stubs.get(id)));
   const base = window.SCIDK_BASE || '';
@@ -14,6 +17,7 @@
   const styles = [
     {selector: 'node[?provisional]', style: {label: 'data(displayLabel)', 'border-style': 'dashed', 'border-width': 3, 'border-color': '#e67e22', opacity: 0.65}},
     {selector: 'edge[?provisional]', style: {'line-style': 'dashed', 'line-color': '#e67e22'}},
+    {selector: 'node.kw-connect-source', style: {'border-style': 'solid', 'border-width': 5, 'border-color': '#165dba', opacity: 1}},
     ...SciDKGraph.schemaStyles
   ];
   const graph = SciDKGraph.init($('kw-graph'), [], {additionalStyles: styles, maxZoom: 1.5, layout: {name: 'preset'}});
@@ -23,6 +27,7 @@
   const edgeId = e => 'projection-edge:' + JSON.stringify([e.source, e.type, e.target]);
   function reset() {
     sketchMode = null; connectSource = null; draftSelected = null; $('kw-draft-inspector').hidden = true; $('kw-connect').setAttribute('aria-pressed', 'false');
+    if (visual) { setTool('select'); showInspector(null); }
     ++state.version; state.records.clear(); state.selected = null; state.next = null;
     graph.elements().remove(); sketch.elements().remove(); $('kw-notes').value = '';
     $('kw-inspection').textContent = ''; $('kw-selection-title').textContent = 'Nothing selected'; $('kw-trust').textContent = 'Select an authorized record.';
@@ -144,8 +149,112 @@
     } catch (error) { if (version === state.version) { reset(); notice(error.message); } }
   }
   graph.on('tap', 'node,edge', event => inspect(event.target.data('record')));
+  // ---- Visual Sketch tools (Knowledge -> Sketch tab) -------------------------------------------------------
+  // Nothing here talks to the server except the existing private save/reopen; drafts are `provisional` canvas
+  // elements, never graph writes. Type and relationship suggestions come from the existing schema labels API.
+  const toolHelp = {
+    select: 'Select and move: click a node or relationship to edit it, drag nodes to arrange them.',
+    pan: 'Pan: drag the canvas to move around. Scroll or use + / \u2212 to zoom.',
+    place: 'Add node: choose a type and name, then click an empty point on the canvas to place it.',
+    connect: 'Connect nodes: click the source node, then the target node, then choose the relationship.'
+  };
+  let tool = 'select';
+  const nameOf = element => element.data('displayLabel') || element.data('label') || element.id();
+  function clearConnect() {
+    connectSource = null; sketch.nodes().removeClass('kw-connect-source'); $('kw-rel-panel').hidden = true; pendingEdge = null;
+    sketch.resize();   // showing/hiding a panel moves the canvas; re-measure so clicks map to the right point
+  }
+  let pendingEdge = null;
+  function setTool(next) {
+    tool = next; sketchMode = next === 'place' || next === 'connect' ? next : null; clearConnect();
+    document.querySelectorAll('[data-tool]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.tool === next)));
+    sketch.userPanningEnabled(next !== 'select'); sketch.boxSelectionEnabled(next === 'select');
+    sketch.autoungrabify(next === 'pan' || next === 'connect');
+    $('kw-add-panel').hidden = next !== 'place';
+    $('kw-sketch').dataset.tool = next;
+    $('kw-sketch-help').textContent = toolHelp[next];
+    sketch.resize();
+  }
+  function showInspector(element) {
+    draftSelected = element;
+    const editable = !!element && !!element.data('provisional');
+    $('kw-draft-inspector').hidden = !editable;
+    $('kw-inspector-empty').hidden = !!element;
+    $('kw-selection-title').textContent = element ? nameOf(element) : 'Nothing selected';
+    $('kw-inspection').textContent = element ? JSON.stringify(element.data(), null, 2) : '';
+    if (!element) return;
+    $('kw-node-form').hidden = !element.isNode(); $('kw-edge-form').hidden = element.isNode();
+    const properties = element.data('properties') || {};
+    if (element.isNode()) {
+      $('kw-edit-name').value = element.data('displayLabel') || '';
+      $('kw-edit-type').value = element.data('label') || '';
+      $('kw-edit-notes').value = properties.notes || '';
+    } else {
+      const source = sketch.getElementById(element.data('source')), target = sketch.getElementById(element.data('target'));
+      $('kw-edge-from').textContent = source.length ? nameOf(source) : '(missing node)';
+      $('kw-edge-to').textContent = target.length ? nameOf(target) : '(missing node)';
+      $('kw-edit-rel').value = element.data('label') || '';
+      $('kw-edit-edge-notes').value = properties.notes || '';
+    }
+  }
+  function selectDraft(element) { sketch.elements().unselect(); element.select(); showInspector(element); }
+  function applyDraftEdits() {
+    const element = draftSelected;
+    if (!element || !element.data('provisional')) return;
+    if (element.isNode()) {
+      const name = $('kw-edit-name').value.trim(), type = $('kw-edit-type').value.trim() || 'Concept';
+      if (!name) return;
+      element.data({displayLabel: name, label: type, baseLabel: type,
+        properties: {...element.data('properties'), name, notes: $('kw-edit-notes').value}});
+    } else {
+      const type = $('kw-edit-rel').value.trim();
+      if (!type) return;
+      element.data({label: type, baseLabel: type, properties: {...element.data('properties'), notes: $('kw-edit-edge-notes').value}});
+    }
+    $('kw-selection-title').textContent = nameOf(element);
+    $('kw-inspection').textContent = JSON.stringify(element.data(), null, 2);
+  }
+  function addTypeValue() {
+    const chosen = $('kw-add-type').value;
+    return chosen === '__free__' ? ($('kw-add-free').value.trim() || 'Concept') : (chosen || 'Concept');
+  }
+  function openRelationshipPanel(sourceId, targetId) {
+    pendingEdge = {source: sourceId, target: targetId};
+    $('kw-rel-from').textContent = nameOf(sketch.getElementById(sourceId));
+    $('kw-rel-to').textContent = nameOf(sketch.getElementById(targetId));
+    $('kw-rel-panel').hidden = false; sketch.resize(); $('kw-rel-type').focus(); $('kw-rel-type').select();
+    $('kw-sketch-help').textContent = 'Choose or type the relationship, then create it.';
+  }
+  async function loadSchemaVocabulary() {
+    // Existing schema entity types / relationship types where available; freeform always works.
+    try {
+      const response = await fetch(base + '/api/labels');
+      if (!response.ok) return;
+      const labels = (await response.json()).labels || [];
+      const types = labels.map(label => label.name).filter(Boolean).sort();
+      const relationships = [...new Set(labels.flatMap(label => (label.relationships || []).map(rel => rel.type)).filter(Boolean))].sort();
+      const group = $('kw-add-schema-types'); group.replaceChildren(...types.map(type => new Option(type, type)));
+      group.hidden = !types.length;
+      $('kw-type-options').replaceChildren(...types.map(type => new Option(type)));
+      $('kw-rel-options').replaceChildren(...relationships.map(type => new Option(type)));
+    } catch (error) { /* offline or not permitted: freeform concepts and relationship names still work */ }
+  }
+  graph.on('tap', 'node,edge', event => inspect(event.target.data('record')));
   sketch.on('tap', 'node,edge', event => {
     const data = event.target.data();
+    if (visual) {
+      if (tool === 'connect' && event.target.isNode()) {
+        if (!connectSource) {
+          connectSource = data.id; event.target.addClass('kw-connect-source');
+          $('kw-sketch-help').textContent = 'Source: ' + nameOf(event.target) + '. Now click the target node.';
+        } else if (connectSource === data.id) {
+          $('kw-sketch-help').textContent = 'Choose a different node as the target.';
+        } else openRelationshipPanel(connectSource, data.id);
+        return;
+      }
+      showInspector(event.target);
+      return;
+    }
     draftSelected = event.target; $('kw-selection-title').textContent = data.displayLabel || data.label || 'Selected draft';
     $('kw-draft-inspector').hidden = !data.provisional || !event.target.isNode();
     $('kw-edit-name').value = data.displayLabel || '';
@@ -166,20 +275,82 @@
     }
     $('kw-edge-source').value = data.id;
   });
-  $('kw-place-node').onclick = () => { sketchMode = 'place'; connectSource = null; $('kw-connect').setAttribute('aria-pressed', 'false'); $('kw-sketch-help').textContent = 'Click an empty point on the canvas to place a private draft node.'; };
+  $('kw-place-node').onclick = () => {
+    if (visual) { setTool(tool === 'place' ? 'select' : 'place'); if (tool === 'place') $('kw-add-name').focus(); return; }
+    sketchMode = 'place'; connectSource = null; $('kw-connect').setAttribute('aria-pressed', 'false'); $('kw-sketch-help').textContent = 'Click an empty point on the canvas to place a private draft node.';
+  };
   sketch.on('tap', event => {
-    if (event.target !== sketch || sketchMode !== 'place') return;
+    if (event.target !== sketch) return;
+    if (visual) {
+      if (tool === 'place') {
+        const type = addTypeValue(), name = $('kw-add-name').value.trim() || type;
+        const node = SciDKCanvas.provisionalNode(sketch, type, name);
+        node.position = event.position; SciDKCanvas.add(sketch, node);
+        $('kw-add-name').value = ''; selectDraft(sketch.getElementById(node.data.id));
+        $('kw-sketch-help').textContent = 'Added "' + name + '". Rename it in the inspector, click again to add another, or choose Select / move.';
+        notice('Draft added to your private sketch. Nothing was written to the knowledge graph.');
+      } else if (tool === 'select') showInspector(null);
+      return;
+    }
+    if (sketchMode !== 'place') return;
     const node = SciDKCanvas.provisionalNode(sketch, $('kw-draft-type').value.trim() || 'Concept', $('kw-draft-name').value.trim() || 'New concept');
     node.position = event.position; SciDKCanvas.add(sketch, node); sketchMode = null;
     $('kw-sketch-help').textContent = 'Node placed. Select it to edit its name in the inspector, or drag to arrange.';
   });
-  $('kw-connect').onclick = () => { sketchMode = sketchMode === 'connect' ? null : 'connect'; connectSource = null; $('kw-connect').setAttribute('aria-pressed', String(sketchMode === 'connect')); $('kw-sketch-help').textContent = sketchMode ? 'Select the source node, then the destination node.' : 'Connection cancelled.'; };
+  $('kw-connect').onclick = () => {
+    if (visual) { setTool(tool === 'connect' ? 'select' : 'connect'); return; }
+    sketchMode = sketchMode === 'connect' ? null : 'connect'; connectSource = null; $('kw-connect').setAttribute('aria-pressed', String(sketchMode === 'connect')); $('kw-sketch-help').textContent = sketchMode ? 'Select the source node, then the destination node.' : 'Connection cancelled.';
+  };
   $('kw-edit-apply').onclick = () => {
+    if (visual) { applyDraftEdits(); return; }
     const name = $('kw-edit-name').value.trim();
     if (!name || !draftSelected?.isNode() || !draftSelected.data('provisional')) return;
     draftSelected.data({displayLabel: name, properties: {...draftSelected.data('properties'), name}});
     $('kw-inspection').textContent = JSON.stringify(draftSelected.data(), null, 2);
   };
+  if (visual) {
+    document.querySelectorAll('[data-tool]').forEach(button => {
+      if (button.id !== 'kw-place-node' && button.id !== 'kw-connect') button.onclick = () => setTool(button.dataset.tool);
+    });
+    $('kw-add-type').onchange = () => { $('kw-add-free-wrap').hidden = $('kw-add-type').value !== '__free__'; };
+    $('kw-add-center').onclick = () => {
+      const type = addTypeValue(), name = $('kw-add-name').value.trim() || type;
+      const node = SciDKCanvas.provisionalNode(sketch, type, name); SciDKCanvas.add(sketch, node);
+      $('kw-add-name').value = ''; selectDraft(sketch.getElementById(node.data.id));
+      notice('Draft added to your private sketch. Nothing was written to the knowledge graph.');
+    };
+    $('kw-add-done').onclick = () => setTool('select');
+    $('kw-rel-create').onclick = () => {
+      const label = $('kw-rel-type').value.trim();
+      if (!pendingEdge) return;
+      if (!label) { notice('Choose or type a relationship, for example RELATES_TO.'); return; }
+      const edge = SciDKCanvas.provisionalEdge(pendingEdge.source, pendingEdge.target, label);
+      SciDKCanvas.add(sketch, edge); clearConnect();
+      selectDraft(sketch.getElementById(edge.data.id));
+      $('kw-sketch-help').textContent = 'Relationship drafted. Edit it in the inspector, or connect another pair.';
+      notice('Draft relationship added to your private sketch. Nothing was written to the knowledge graph.');
+    };
+    $('kw-rel-cancel').onclick = () => { clearConnect(); $('kw-sketch-help').textContent = toolHelp.connect; };
+    $('kw-rel-type').onkeydown = event => { if (event.key === 'Enter') { event.preventDefault(); $('kw-rel-create').click(); } };
+    ['kw-edit-name', 'kw-edit-type', 'kw-edit-notes', 'kw-edit-rel', 'kw-edit-edge-notes'].forEach(id => { $(id).oninput = applyDraftEdits; });
+    $('kw-sk-remove').onclick = () => { SciDKCanvas.remove(sketch); showInspector(null); };
+    $('kw-sk-arrange').onclick = () => {
+      const edges = sketch.edges().length;
+      sketch.layout({name: edges ? 'cose' : 'grid', animate: false, fit: true, padding: 50}).run();
+      sketch.fit(undefined, 50); notice('Canvas arranged and fitted. Positions are saved with your private draft.');
+    };
+    $('kw-sk-fit').onclick = () => sketch.fit(undefined, 50);
+    const zoom = factor => sketch.zoom({level: Math.min(1.5, Math.max(0.1, sketch.zoom() * factor)), renderedPosition: {x: sketch.width() / 2, y: sketch.height() / 2}});
+    $('kw-sk-zoom-in').onclick = () => zoom(1.25); $('kw-sk-zoom-out').onclick = () => zoom(0.8);
+    $('kw-sketch').addEventListener('keydown', event => {
+      if (event.key === 'Escape') setTool('select');
+    });
+    // Panels above the canvas change height as the user works, which moves the canvas on the page. Re-measure at the
+    // start of every pointer gesture so a click always lands on the point the user sees.
+    $('kw-sketch').parentElement.addEventListener('mousedown', () => sketch.resize(), true);
+    setTool('select');
+    loadSchemaVocabulary();
+  }
   async function changeDomain() {
     if (sketchOnly) { reset(); state.view = 'sketch'; layout(); return; }
     reset(); state.domain = $('kw-domain').value; state.catalog = 'canonical';
@@ -269,11 +440,34 @@
       return result;
     });
   }
+  // Knowledge -> Sketch keeps its private draft in the user's existing canvas session (the same per-user record the
+  // governed adapter uses for the research sketch), so it works without the governed knowledge service. Only draft
+  // nodes and relationships are stored; nothing is written to the graph.
+  const SKETCH_CONTEXT = 'knowledge:research:sketch';
+  async function saveDraftSession(canvas) {
+    const response = await fetch(base + '/api/canvas/session', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({context_id: SKETCH_CONTEXT, canvas})});
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.status !== 'ok') throw new Error('Your private draft could not be saved. Your sketch is still on this page.');
+  }
+  async function loadDraftSession() {
+    const response = await fetch(base + '/api/canvas/session?context_id=' + encodeURIComponent(SKETCH_CONTEXT));
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.status !== 'ok') throw new Error('Your private draft could not be reopened.');
+    return data.canvas || {};
+  }
   async function save(kind) {
     const domain = state.domain, version = state.version;
     const canvas = kind === 'layout' ? {preset: $('kw-layout').value, view: state.view} :
       {elements: serialize(kind === 'sketch' ? sketch : graph, kind === 'sketch'), notes: kind === 'sketch' ? $('kw-notes').value : ''};
     try {
+      if (visual && kind === 'sketch') {
+        canvas.elements = canvas.elements.filter(element => element.data.provisional);
+        await saveDraftSession(canvas);
+        notice('Saved private sketch (' + canvas.elements.filter(e => e.group === 'nodes').length + ' nodes, ' +
+          canvas.elements.filter(e => e.group === 'edges').length + ' relationships). It stays private; nothing was written to the knowledge graph.');
+        return;
+      }
       await api('save', {kind, canvas}, domain);
       if (domain === state.domain && version === state.version) notice('Saved private ' + kind + ' using existing Canvas session storage.');
     } catch (error) { if (domain === state.domain) notice(error.message); }
@@ -284,6 +478,17 @@
     if (kind === 'sketch') { sketch.elements().remove(); $('kw-notes').value = ''; }
     else { graph.elements().remove(); state.records.clear(); renderEntities(); }
     try {
+      if (visual && kind === 'sketch') {
+        const draft = await loadDraftSession();
+        const nodes = (draft.elements || []).filter(e => e.group === 'nodes' && e.data?.provisional);
+        const ids = new Set(nodes.map(e => e.data.id));
+        const edges = (draft.elements || []).filter(e => e.group === 'edges' && e.data?.provisional && ids.has(e.data.source) && ids.has(e.data.target));
+        if (version !== state.version) return;
+        sketch.add([...nodes, ...edges]); $('kw-notes').value = draft.notes || ''; if (nodes.length) sketch.fit(undefined, 50);
+        showInspector(null);
+        notice(nodes.length ? 'Reopened private sketch (' + nodes.length + ' nodes, ' + edges.length + ' relationships).' : 'No private draft saved yet.');
+        return;
+      }
       const saved = await api('load', {kind}, domain);
       const records = new Map(), references = new Map();
       for (const element of saved.elements || []) {
@@ -308,9 +513,10 @@
         }
       } else {
         const elements = (saved.elements || []).map(element => ({...element, data: {...element.data,
-          label: (element.data.reference && (records.get(element.data.reference)?.properties?.name || records.get(element.data.reference)?.name)) ||
+          label: element.data.provisional ? element.data.label : (element.data.reference && (records.get(element.data.reference)?.properties?.name || records.get(element.data.reference)?.name)) ||
             element.data.reference || element.data.displayLabel || element.data.label}}));
         sketch.add(elements); $('kw-notes').value = saved.notes || ''; sketch.fit();
+        if (visual) showInspector(null);
       }
       notice('Reopened private ' + kind + '; all stored references were reauthorized.');
     } catch (error) { if (version === state.version) { reset(); notice(error.message); } }
