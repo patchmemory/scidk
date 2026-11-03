@@ -275,11 +275,18 @@ GRAPH = [
      'profile': 'synthetic_pattern', 'file_count': 3, 'dataset_bytes': 300, 'members': 0, 'folders': 0, 'files': 0, 'bytes': 0}]
 
 
-LOCATIONS = [
-    {'scan_id': 'loc-mounted', 'host': 'synthetic-host', 'share': 'mounted-share', 'root': '/synthetic/mounted', 'label': 'synthetic-host · mounted-share',
-     'files': 5, 'bytes': 50, 'date': '2026-01-01', 'role': 'primary', 'access': 'mounted'},
-    {'scan_id': 's1', 'host': 'synthetic-host', 'share': 'indexed-share', 'root': SCAN_ROOT, 'label': 'synthetic-host · indexed-share',
-     'files': 12, 'bytes': 3000, 'date': '2026-01-01', 'role': 'primary', 'access': 'indexed'}]
+def loc(scan_id, root, host='synthetic-host', files=12, size=3000, ts=1767225600.0, access='indexed'):
+    """One synthetic /locations entry in the shape scan_locations() returns (timestamps are the scan's own)."""
+    import datetime
+    iso = datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).isoformat(timespec='seconds')
+    return {'scan_id': scan_id, 'host': host, 'share': root.rstrip('/').rsplit('/', 1)[-1], 'root': root,
+            'label': root.rsplit('/', 1)[-1], 'files': files, 'bytes': size, 'bytes_source': 'scan' if size is not None else None,
+            'date': iso[:10], 'role': 'primary', 'access': access, 'source_host': host, 'host_evidence': 'path',
+            'root_key': root.rstrip('/') or root, 'timestamp': iso, 'sort_ts': [ts, ts]}
+
+
+LOCATIONS = [loc('loc-mounted', '/synthetic/mounted', files=5, size=50, access='mounted'),
+             loc('s1', SCAN_ROOT)]
 
 
 class WsApi(Api):
@@ -290,6 +297,9 @@ class WsApi(Api):
         import copy
         self.graph = copy.deepcopy(GRAPH)
         self.candidates = list(RECOGNIZED)
+        self.locations = list(LOCATIONS)
+        self.sizes = {}           # scan id -> bytes answered by /scan-size (absent: unavailable)
+        self.openable = set()     # extra scan ids the scan list (used to open a location) should also contain
 
     def catalog(self, query):
         from scidk.services import dataset_catalog as dc
@@ -332,9 +342,24 @@ class WsApi(Api):
             data = self.write(path, body)
         elif path == '/api/external-index/locations':
             wanted = [x for x in (parse_qs(split.query).get('shortcuts') or [''])[0].split(',') if x]
-            known = {x['scan_id'] for x in LOCATIONS}
-            data = {'status': 'success', 'read_only': True, 'locations': LOCATIONS,
+            known = {x['scan_id'] for x in self.locations}
+            from scidk.web.routes.api_external_index import group_scanned
+            hosts, local = group_scanned([dict(x) for x in self.locations])
+            self.queries.append((path, parse_qs(split.query)))
+            data = {'status': 'success', 'read_only': True, 'locations': self.locations, 'hosts': hosts, 'local_roots': local,
                     'unavailable': [{'scan_id': x, 'access': 'unavailable', 'label': 'Unavailable', 'root': None} for x in wanted if x not in known]}
+        elif path == '/api/external-index/scan-size':
+            self.queries.append((path, parse_qs(split.query)))
+            sid = (parse_qs(split.query).get('scan_id') or [''])[0]
+            data = {'status': 'success', 'read_only': True, 'scan_id': sid, 'bytes': self.sizes.get(sid)}
+        elif path == '/api/external-index/scans':
+            scans = [{'id': 's1', 'root': SCAN_ROOT, 'host': 'synthetic-host', 'share': 'synthetic-share', 'date': '2026-01-01', 'files': 10,
+                      'bytes': 1000, 'status': 'complete', 'complete': True}]
+            scans += [{'id': x['scan_id'], 'root': x['root'], 'host': x['source_host'], 'share': x['share'], 'date': x['date'],
+                       'files': x['files'], 'bytes': x['bytes'], 'status': 'complete', 'complete': True}
+                      for x in self.locations if x['scan_id'] in self.openable]
+            data = {'scans': scans, 'shares': [{'share': 'synthetic-share', 'files': 10, 'date': '2026-01-01', 'primary_id': 's1',
+                                                'primary_is_full_root': True, 'older_ids': []}]}
         elif path == '/api/collections' and req.method == 'GET':
             data = {'collections': COLLECTIONS}
         elif path == '/api/collections/c-a':

@@ -453,7 +453,7 @@ function _driveIcon(id){const s=(id||'').toLowerCase();if(s.includes('rclone'))r
 function _driveLabel(id,name,rootPath){if((id||'').toLowerCase().startsWith('rclone'))return name||id;if((rootPath||'').startsWith('/mnt'))return'Mountpoints'+(rootPath!=='/mnt'?' ('+rootPath+')':'');if((rootPath||'').startsWith('/home'))return'Local ('+rootPath+')';return name||id;}
 
 // Servers tree
-async function loadServers(){const tree=document.getElementById('servers-tree');tree.innerHTML='<div class="tree-loading">Loading…</div>';try{const r=await fetch(SCIDK_BASE+'/api/servers');const servers=await r.json();if(!Array.isArray(servers))throw new Error('Invalid response');const grouped={};for(const s of servers){if(!grouped[s.id])grouped[s.id]={id:s.id,name:s.display_name||s.id,roots:[],connected:s.connected};grouped[s.id].roots.push({id:s.root_id,path:s.root_path,last_scanned:s.last_scanned,file_count:s.file_count});}const provs=Object.values(grouped);tree.innerHTML=provs.map(s=>{const ago=s.roots.map(r=>r.last_scanned).filter(Boolean).reduce((a,b)=>Math.max(a,b),0);const meta=ago?fmtAgo(ago):'not scanned';const rootPath=s.roots[0]?.path||'';const label=_driveLabel(s.id,s.name,rootPath);const icon=_driveIcon(s.id);return`<div class="tree-node" style="cursor:default;">${icon}<span class="tn-label fw-semibold">${esc(label)}</span><span class="tn-meta">${meta}</span></div>`+s.roots.map(ro=>`<div class="tree-node ps-4" data-server="${esc(s.id)}" data-root="${esc(ro.id)}" data-path="${esc(ro.id)}"><i class="ti ti-folder" aria-hidden="true" style="font-size:12px;color:#6c757d;"></i><span class="tn-label">${esc(ro.path||ro.id)}</span><span class="tn-meta">${ro.file_count?ro.file_count.toLocaleString()+' files':''}</span></div>`).join('');}).join('')||`<div class="tree-loading text-muted">No drives — <a href="#" onclick="AddDrive.open();return false;" style="color:#0d6efd;">Add Drive</a></div>`;tree.querySelectorAll('.tree-node[data-root]').forEach(el=>{el.addEventListener('click',()=>{tree.querySelectorAll('.tree-node').forEach(n=>n.classList.remove('selected'));el.classList.add('selected');currentServer=el.dataset.server;currentRoot=el.dataset.root;currentPath=el.dataset.path;publishCursor();browseLive(currentServer,currentRoot,currentPath);document.getElementById('scan-folder-btn').disabled=false;});});const first=tree.querySelector('.tree-node[data-root]');if(first)first.click();}catch(e){tree.innerHTML=`<div class="tree-loading text-danger">Failed: ${esc(e.message)}</div>`;}}
+async function loadServers(){const tree=document.getElementById('servers-tree');tree.innerHTML='<div class="tree-loading">Loading…</div>';try{const r=await fetch(SCIDK_BASE+'/api/servers');const servers=await r.json();if(!Array.isArray(servers))throw new Error('Invalid response');const grouped={};for(const s of servers){if(!grouped[s.id])grouped[s.id]={id:s.id,name:s.display_name||s.id,roots:[],connected:s.connected};grouped[s.id].roots.push({id:s.root_id,path:s.root_path,last_scanned:s.last_scanned,file_count:s.file_count});}const provs=Object.values(grouped);tree.innerHTML=provs.map(s=>{const ago=s.roots.map(r=>r.last_scanned).filter(Boolean).reduce((a,b)=>Math.max(a,b),0);const meta=ago?fmtAgo(ago):'not scanned';const rootPath=s.roots[0]?.path||'';const label=_driveLabel(s.id,s.name,rootPath);const icon=_driveIcon(s.id);return`<div class="tree-node" style="cursor:default;">${icon}<span class="tn-label fw-semibold">${esc(label)}</span><span class="tn-meta">${meta}</span></div>`+s.roots.map(ro=>`<div class="tree-node ps-4" data-server="${esc(s.id)}" data-root="${esc(ro.id)}" data-path="${esc(ro.id)}"><i class="ti ti-folder" aria-hidden="true" style="font-size:12px;color:#6c757d;"></i><span class="tn-label">${esc(ro.path||ro.id)}</span><span class="tn-meta">${ro.file_count?ro.file_count.toLocaleString()+' files':''}</span></div>`).join('');}).join('')||`<div class="tree-loading text-muted">No drives — <a href="#" onclick="AddDrive.open();return false;" style="color:#0d6efd;">Add Drive</a></div>`;tree.querySelectorAll('.tree-node[data-root]').forEach(el=>{el.addEventListener('click',()=>{tree.querySelectorAll('.tree-node').forEach(n=>n.classList.remove('selected'));el.classList.add('selected');currentServer=el.dataset.server;currentRoot=el.dataset.root;currentPath=el.dataset.path;publishCursor();browseLive(currentServer,currentRoot,currentPath);document.getElementById('scan-folder-btn').disabled=false;});});const first=tree.querySelector('.tree-node[data-root]');if(first&&!window.directOpen&&mode!=='indexed')first.click();}catch(e){tree.innerHTML=`<div class="tree-loading text-danger">Failed: ${esc(e.message)}</div>`;}}
 
 async function loadSnapshotsAsTree(){const tree=document.getElementById('servers-tree');tree.innerHTML='<div class="tree-loading">Loading…</div>';try{const r=await fetch(SCIDK_BASE+'/api/scans');const scans=await r.json();if(!Array.isArray(scans)||!scans.length){tree.innerHTML='<div class="tree-loading text-muted">No scans yet</div>';return;}const grouped={};for(const s of scans){const pid=s.provider_id||'local';if(!grouped[pid])grouped[pid]=[];grouped[pid].push(s);}tree.innerHTML=Object.entries(grouped).map(([pid,ss])=>`<div class="tree-node" style="cursor:default;"><i class="ti ti-camera" aria-hidden="true" style="font-size:13px;color:#6c757d;"></i><span class="tn-label fw-semibold">${esc(pid)}</span></div>`+ss.slice(0,5).map(s=>`<div class="tree-node ps-4" data-scan="${esc(s.id)}"><i class="ti ti-archive" aria-hidden="true" style="font-size:12px;color:#6c757d;"></i><span class="tn-label">${fmtAgo(s.ended||s.started)||'Unknown'}</span><span class="tn-meta">${(s.file_count||0).toLocaleString()} files</span></div>`).join('')).join('');tree.querySelectorAll('.tree-node[data-scan]').forEach(el=>{el.addEventListener('click',()=>{tree.querySelectorAll('.tree-node').forEach(n=>n.classList.remove('selected'));el.classList.add('selected');selectSnapshot(el.dataset.scan);});});}catch(e){tree.innerHTML=`<div class="tree-loading text-danger">Failed: ${esc(e.message)}</div>`;}}
 
@@ -484,7 +484,8 @@ async function openIndexed(loc,path){
   if(!scan){setStatus('Unavailable: this location no longer resolves to any scan in the index.','danger');return;}
   mode='indexed';document.getElementById('mode-live').checked=false;document.getElementById('mode-snapshot').checked=false;
   currentServer=null;currentRoot=null;activeScanId=scan.id;
-  window.indexedContext={scan_id:scan.id,host:scan.host||scan.share||scan.id};
+  window.indexedContext={scan_id:scan.id,host:scan.host||scan.share||scan.id,root_path:loc.root_path};
+  if(typeof markScanSelected==='function')markScanSelected(scan.id,loc.root_path);   // a direct link to an older scan keeps it selected and its History open
   document.getElementById('scan-folder-btn').disabled=true;document.getElementById('scan-folder-btn').style.display='none';document.getElementById('commit-scan-btn').style.display='none';
   browseIndexed(Object.assign({},loc,{scan}),path||loc.root_path);
 }
@@ -495,7 +496,7 @@ async function browseIndexed(loc,path,more){
     const r=await fetch(SCIDK_BASE+'/api/external-index/browse?'+qs);const j=await r.json();if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
     if(_ix!==gen)return;
     gen.entries=gen.entries.concat((j.entries||[]).map(e=>Object.assign({id:e.path},e)));gen.next=j.next_offset||0;
-    if(!more){currentPath=path;publishCursor();renderIndexedCrumbs(loc,path);showIndexedBanner(loc);loadIndexedDatasets(loc,path);}
+    if(!more){currentPath=path;publishCursor();renderIndexedCrumbs(loc,path);showIndexedBanner(loc);markScanSelected(loc.scan.id,loc.root_path);loadIndexedDatasets(loc,path);}
     renderFileList(gen.entries,{mode:'indexed',scanId:loc.scan.id,loc});
     if(j.has_more)appendIndexedMore(gen);
   }catch(e){if(_ix!==gen)return;document.getElementById('file-list').innerHTML=`<tr class="empty-row"><td colspan="7" class="text-danger">Browse failed: ${esc(e.message)}</td></tr>`;}
@@ -565,12 +566,84 @@ async function loadLocations(){
     mine.replaceChildren();
     saved.forEach((s,i)=>{const node=locNode({label:s.label,scan_id:s.scan_id,root_path:s.root_path,access:gone.has(s.scan_id)?'unavailable':'indexed'});node.dataset.shortcut=String(i);mine.append(node);});
     $id('saved-locations').hidden=!saved.length;
-    box.replaceChildren();const all=j.locations||[];
-    if(!all.length){box.innerHTML='<div class="tree-loading text-muted">No scanned locations</div>';return;}
-    all.filter(l=>l.role==='primary').forEach(l=>box.append(locNode(l)));
-    const rest=all.filter(l=>l.role!=='primary');
-    if(rest.length){const d=document.createElement('details');d.id='scanned-locations-other';const sm=document.createElement('summary');sm.textContent='Other scans ('+rest.length+')';sm.style.cssText='font-size:11px;color:#6c757d;cursor:pointer;';d.append(sm);rest.forEach(l=>d.append(locNode(l)));box.append(d);}
+    await renderScanned(box,j);
   }catch(e){box.innerHTML='<div class="tree-loading text-muted">Scanned locations unavailable: '+esc(e.message)+'</div>';}
+}
+
+// Scanned: host -> exact scan root (latest scan) -> History (older scans). The server picks the grouping and the latest scan;
+// every number shown for a root is that one scan's own, and host totals add only the latest scan of each root.
+const humanBytes=n=>{if(n==null)return null;const u=['B','KB','MB','GB','TB','PB'];let v=+n,i=0;while(v>=1024&&i<u.length-1){v/=1024;i++;}return (i?Math.round(v*10)/10:v)+' '+u[i];};
+const stampOf=t=>t?String(t).replace('T',' ').slice(0,16)+' UTC':'time unknown';
+const runSize=r=>r.bytes!=null?humanBytes(r.bytes):(r.sz==='na'?'size unavailable':'size…');
+const runLine=r=>[(r.files||0).toLocaleString()+' files',runSize(r)].join(' · ');
+const _sizeQ=[];let _sizeBusy=false;
+function queueSize(run,done){if(run.bytes!=null||run.sz)return;run.sz='pending';_sizeQ.push([run,done]);pumpSizes();}
+async function pumpSizes(){if(_sizeBusy)return;_sizeBusy=true;
+  while(_sizeQ.length){const [run,done]=_sizeQ.shift();
+    try{const r=await fetch(SCIDK_BASE+'/api/external-index/scan-size?'+new URLSearchParams({scan_id:run.scan_id}));const j=await r.json();if(r.ok&&j.bytes!=null){run.bytes=j.bytes;run.sz='ok';}else run.sz='na';}catch(e){run.sz='na';}
+    done();}
+  _sizeBusy=false;}
+async function serversReady(){for(let i=0;i<20;i++){const t=$id('servers-tree');if(t&&!t.querySelector('.tree-loading'))return;await new Promise(r=>setTimeout(r,100));}}
+function markScanSelected(scanId,rootPath){
+  const box=$id('scanned-locations-list');if(!box)return;
+  box.querySelectorAll('.selected').forEach(x=>x.classList.remove('selected'));
+  if(!scanId)return;
+  const n=[...box.querySelectorAll('[data-scan]')].find(x=>x.dataset.scan===scanId&&(rootPath==null||x.dataset.root===rootPath));
+  if(!n)return;n.classList.add('selected');
+  for(let p=n.parentElement;p&&p!==box;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;
+}
+async function renderScanned(box,j){
+  await serversReady();
+  const hosts=new Map();
+  (j.hosts||[]).forEach(h=>hosts.set(h.host,{host:h.host,label:h.label,roots:h.roots.slice()}));
+  // A root already readable here is represented by a live Local location: show its scanned status there.
+  const tree=$id('servers-tree'),nodes=[...tree.querySelectorAll('.tree-node[data-root]')];
+  (j.local_roots||[]).forEach(e=>{
+    const m=nodes.find(n=>(n.querySelector('.tn-label')||{}).textContent===e.root);
+    if(m){if(!m.querySelector('.scan-local-tag')){const t=document.createElement('span');t.className='scan-local-tag';t.dataset.testid='scanned-status';t.textContent='Scanned · '+(e.latest.files||0).toLocaleString()+' files';t.title='Latest scan: '+stampOf(e.latest.timestamp);m.append(t);}return;}
+    if(!hosts.has(e.host))hosts.set(e.host,{host:e.host,label:e.host||'Host not recorded',roots:[]});
+    hosts.get(e.host).roots.push(e);hosts.get(e.host).roots.sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base'}));
+  });
+  box.replaceChildren();
+  if(!hosts.size){box.innerHTML='<div class="tree-loading text-muted">No scanned locations</div>';return;}
+  const open=(run,e,node)=>{
+    document.querySelectorAll('#servers-tree .tree-node,#scanned-locations .tree-node,#saved-locations .tree-node').forEach(x=>x.classList.remove('selected'));node.classList.add('selected');
+    if(run.access==='mounted'){mode='live';document.getElementById('mode-live').checked=true;currentServer='local_fs';currentRoot='/';currentPath=run.root;publishCursor();browseLive('local_fs','/',run.root);document.getElementById('scan-folder-btn').disabled=false;}
+    else openIndexed({label:e.name,scan_id:run.scan_id,root_path:run.root});
+  };
+  const wire=(n,run,e)=>{n.tabIndex=0;n.setAttribute('role','button');n.addEventListener('click',()=>open(run,e,n));n.addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();open(run,e,n);}});};
+  [...hosts.values()].sort((a,b)=>(a.host===''?1:0)-(b.host===''?1:0)||a.label.localeCompare(b.label,undefined,{sensitivity:'base'})).forEach(h=>{
+    const hd=document.createElement('details');hd.className='scan-host';hd.dataset.host=h.host;hd.dataset.testid='scan-host';
+    const sm=document.createElement('summary');const nm=document.createElement('span');nm.textContent=h.label;const sum=document.createElement('span');sum.className='scan-host-sum';sum.dataset.testid='scan-host-summary';sm.append(nm,sum);hd.append(sm);
+    const body=document.createElement('div');body.className='scan-host-body';hd.append(body);
+    const refreshHost=()=>{const files=h.roots.reduce((a,e)=>a+(e.latest.files||0),0);const known=h.roots.filter(e=>e.latest.bytes!=null);const unk=h.roots.length-known.length;
+      const size=known.length?humanBytes(known.reduce((a,e)=>a+e.latest.bytes,0))+(unk?' + '+unk+' unsized':''):(h.roots.some(e=>e.latest.sz==='pending')?'size…':'size unavailable');
+      sum.textContent=h.roots.length+(h.roots.length===1?' root':' roots')+' · '+files.toLocaleString()+' files · '+size;};
+    h.roots.forEach(e=>{
+      const wrap=document.createElement('div');wrap.className='scan-root';wrap.dataset.testid='scan-root';wrap.dataset.key=e.key||(e.host+'|'+e.root);
+      const L=e.latest;const n=document.createElement('div');n.className='tree-node loc-node scan-loc';n.dataset.scan=L.scan_id;n.dataset.access=e.access;n.dataset.root=L.root||e.root;n.title=e.root+' — '+ACCESS_TITLE[e.access];
+      const t1=document.createElement('div');t1.className='scan-name';const lab=document.createElement('span');lab.textContent=e.name;const bd=document.createElement('span');bd.className='loc-badge loc-'+e.access;bd.textContent=ACCESS_LABEL[e.access];bd.setAttribute('data-testid','location-badge');t1.append(lab,bd);
+      const t2=document.createElement('div');t2.className='scan-path';t2.dataset.testid='scan-path';t2.textContent=e.root;
+      const t3=document.createElement('div');t3.className='scan-stats';t3.dataset.testid='scan-stats';
+      const t4=document.createElement('div');t4.className='scan-latest';t4.dataset.testid='scan-latest';t4.textContent='Latest scan: '+stampOf(L.timestamp);
+      n.append(t1,t2,t3,t4);wire(n,L,e);wrap.append(n);
+      const upd=()=>{t3.textContent=runLine(L);refreshHost();};upd();queueSize(L,upd);
+      if(e.history&&e.history.length){
+        const hist=document.createElement('details');hist.className='scan-history';hist.dataset.testid='scan-history';
+        const hs=document.createElement('summary');hs.textContent='History ('+e.history.length+')';hist.append(hs);
+        e.history.forEach(r=>{const rn=document.createElement('div');rn.className='tree-node scan-run';rn.dataset.scan=r.scan_id;rn.dataset.access=r.access;rn.dataset.root=r.root||e.root;rn.title='Older scan of '+e.root;
+          const a=document.createElement('span');a.textContent=stampOf(r.timestamp);const s=document.createElement('span');s.className='scan-stats';s.dataset.testid='scan-run-stats';
+          rn.append(a,s);const ru=()=>{s.textContent=runLine(r);};ru();wire(rn,r,e);hist.append(rn);
+          r._upd=ru;});
+        hist.addEventListener('toggle',()=>{if(hist.open)e.history.forEach(r=>queueSize(r,()=>r._upd&&r._upd()));});
+        wrap.append(hist);
+      }
+      body.append(wrap);
+    });
+    refreshHost();box.append(hd);
+  });
+  const cur=_ix&&_ix.loc&&!$id('indexed-banner').hidden?_ix.loc:null;   // the scan currently open in the shared table (a direct link may have opened it first)
+  if(cur)markScanSelected(cur.scan&&cur.scan.id||cur.scan_id,cur.root_path);
 }
 
 // + Add drive or location
@@ -626,7 +699,7 @@ loadLocations();
 // The Add Drive drawer's "From Scan" tab saves a shortcut itself, then asks Browse to show it and open it in place.
 window.BrowseLocations={opened(loc){loadLocations();openIndexed({label:loc.label,scan_id:loc.scan_id,root_path:loc.root_path});}};
 // A saved Drive created from another page arrives as ?open_scan=…&open_path=… and opens here, indexed.
-{const q=new URLSearchParams(location.search),sid=q.get('open_scan');if(sid){const p=q.get('open_path')||'';const l=savedLocations().find(x=>x.scan_id===sid&&x.root_path===p);if(p)openIndexed({label:l?l.label:'',scan_id:sid,root_path:p});}}
+{const q=new URLSearchParams(location.search),sid=q.get('open_scan');if(sid&&q.get('open_path')){window.directOpen=true;}if(sid){const p=q.get('open_path')||'';const l=savedLocations().find(x=>x.scan_id===sid&&x.root_path===p);if(p)openIndexed({label:l?l.label:'',scan_id:sid,root_path:p});}}
 {% endif %}
 // History drawer
 document.getElementById('history-btn')?.addEventListener('click',()=>{if(typeof ScanPanel!=='undefined')ScanPanel.openHistory(currentPath);});

@@ -42,3 +42,18 @@
 #indexed-banner { flex-shrink: 0; }
 #indexed-datasets { flex-shrink: 0; max-height: 150px; overflow: auto; }
 .browser .file-table-wrap { min-height: 160px; }
+/* Scanned locations: host -> exact scan root -> latest scan, older scans under History. */
+#scanned-locations-list details { margin: 0; }
+#scanned-locations-list summary { font-size: 12px; cursor: pointer; padding: 3px 4px; list-style-position: inside; }
+.scan-host > summary { font-weight: 600; color: #212529; }
+.scan-host-sum { font-weight: 400; font-size: 11px; color: #6c757d; display: block; margin-left: 14px; }
+.scan-host-body { padding-left: 8px; }
+.tree-node.scan-loc { display: block; white-space: normal; padding: 4px 6px; }
+.scan-name { font-weight: 600; }
+.scan-path, .scan-stats, .scan-latest { font-size: 11px; color: #6c757d; word-break: break-all; }
+.scan-history > summary { font-size: 11px; color: #6c757d; padding-left: 14px; }
+.tree-node.scan-run { display: block; white-space: normal; margin-left: 14px; padding: 2px 6px; font-size: 11px; }
+.scan-run .scan-stats { display: inline; margin-left: 4px; }
+.scan-local-tag { font-size: 10px; margin-left: 6px; color: #0a3a7a; background: #dcebf9; border-radius: 8px; padding: 0 6px; }
+/* The index banner is a quiet source note, not a separate mode. */
+#indexed-banner { background: #f8f9fa !important; border-bottom-color: #dee2e6 !important; color: #6c757d; font-size: 11px !important; }

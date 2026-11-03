@@ -428,6 +428,8 @@ def test_browser_locations_sidebar_local_and_scanned_with_honest_badges(serve, w
     expect(page.locator('#file-list tr[data-id]')).to_have_count(3)                      # and still browses
     group = page.locator('[data-testid="scanned-locations"]')
     expect(group).to_contain_text('SCANNED LOCATIONS')
+    expect(group.locator('[data-testid="scan-host"]')).to_have_count(1)                 # grouped by host first, collapsed
+    group.locator('[data-testid="scan-host"] > summary').click()
     nodes = group.locator('.loc-node')
     expect(nodes).to_have_count(2)
     expect(nodes.locator('[data-testid="location-badge"]')).to_have_text(['Mounted', 'Indexed'])
@@ -536,7 +538,8 @@ def test_browser_discovered_indexed_location_opens_in_browse_and_a_stale_shortcu
     stale.click()
     expect(page.locator('#browser-status')).to_contain_text('Unavailable')
     expect(page.locator('#indexed-banner')).to_be_hidden()
-    page.locator('[data-testid="scanned-locations"] .loc-node', has_text='indexed-share').click()
+    page.locator('[data-testid="scanned-locations"] [data-testid="scan-host"] > summary').click()
+    page.locator('[data-testid="scanned-locations"] .loc-node', has_text='share').last.click()
     assert 'view=browse' in page.url                                                         # no redirect to the Scans tab
     expect(page.locator('[data-testid="indexed-banner"]')).to_be_visible()
     assert any(p == '/api/external-index/browse' and q.get('path') == [SCAN_ROOT] for p, q in api.queries)

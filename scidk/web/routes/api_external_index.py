@@ -267,27 +267,128 @@ def _scan_snapshot(conn):
     return value
 
 
+def source_host(root, extra=None):
+    """(host, evidence) for a scan: the machine the data lives on, never a mount or drive segment.
+
+    In order: a ``remote:`` root names its rclone remote; an explicit host in the path (``/net/<host>/…``,
+    ``/mnt/server/<host>/…``); a host the scan recorded itself (``host_id`` = ``local:<host>`` / ``ssh:<host>``).
+    ``mounted:<mount>`` and path segments such as ``/data0`` identify a mount, not a host, so they are not used:
+    such a scan gets host ``''`` (shown as "Host not recorded")."""
+    root = root or ''
+    if ':' in root.split('/')[0]:
+        return root.split(':', 1)[0], 'rclone'
+    parts = [p for p in root.split('/') if p]
+    if len(parts) >= 3 and parts[0] == 'net':
+        return parts[1], 'path'
+    if len(parts) >= 4 and parts[:2] == ['mnt', 'server']:
+        return parts[2], 'path'
+    kind, _, name = str((extra or {}).get('host_id') or '').partition(':')
+    if name and kind not in ('mounted', 'rclone') and not name.startswith('/'):
+        return name, 'recorded'
+    return '', 'unknown'
+
+
+def scan_root_key(root):
+    """The exact configured scan root, only without a trailing slash (``/`` and ``remote:`` stay as they are)."""
+    root = root or ''
+    return root.rstrip('/') or root
+
+
+def scan_leaf(root):
+    """Friendly name: the scan root's last path segment (``/data0/atwai`` -> ``atwai``; ``dropbox:`` -> ``dropbox``)."""
+    root = scan_root_key(root)
+    tail = root.split(':', 1)[1] if ':' in root.split('/')[0] else root
+    name = tail.rstrip('/').rsplit('/', 1)[-1]
+    return name or root.split(':', 1)[0] or root
+
+
+_SIZES = {}   # (index path, file signature, scan id) -> total bytes over that one scan's own file rows
+SIZE_BUDGET_S = 25.0
+
+
+def _size_key(scan_id):
+    path = (os.environ.get('SCIDK_EXTERNAL_INDEX_DB') or '').strip()
+    return (os.path.abspath(path), _signature(path), scan_id) if path else None
+
+
 def scan_locations(conn, shortcuts=()):
     """Scanned locations for the Browse sidebar: one per scan with files, newest share primary first.
 
     Each is ``{scan_id, host, share, root, label, files, bytes, date, access, role}`` with access ``mounted`` (the
     root is a readable local folder), else ``indexed`` (scan-index browsing only). ``shortcuts`` are scan ids a user
-    kept as shortcuts: any that no longer resolve to scan evidence come back as ``unavailable``."""
+    kept as shortcuts: any that no longer resolve to scan evidence come back as ``unavailable``.
+
+    Every entry also carries ``source_host``, ``root_key``, ``timestamp`` and ``sort_ts`` (the scan's own
+    completed-or-started time) for :func:`group_scanned`."""
     out, shares, extras = _scan_snapshot(conn)
     by_id = {s['id']: s for s in out}
+    stamps = {r['id']: (r['completed'] or r['started'] or 0, r['started'] or 0)
+              for r in conn.execute('SELECT id, started, completed FROM scans')}
     primary = {sh['primary_id'] for sh in shares if sh.get('primary_id')}
     listed = []
     for s in out:
         if not s['files'] or not s['complete']:
             continue
+        size = s['bytes']
+        known = 'scan' if size is not None else None
+        if size is None:
+            key = _size_key(s['id'])
+            with _CAT_LOCK:
+                size = _SIZES.get(key) if key else None
+            known = 'files' if size is not None else None
+        when = stamps.get(s['id'], (0, 0))
+        host, evidence = source_host(s['root'], extras.get(s['id']))
         listed.append({'scan_id': s['id'], 'host': s['host'], 'share': s['share'], 'root': s['root'],
                        'label': ('%s · %s' % (s['host'], s['share'])) if s['host'] and s['host'] != s['share'] else s['share'],
-                       'files': s['files'], 'bytes': s['bytes'], 'date': s['date'], 'role': 'primary' if s['id'] in primary else 'other',
-                       'access': 'mounted' if local_access(s['root'], extras.get(s['id'])) else 'indexed'})
+                       'files': s['files'], 'bytes': size, 'bytes_source': known, 'date': s['date'], 'role': 'primary' if s['id'] in primary else 'other',
+                       'access': 'mounted' if local_access(s['root'], extras.get(s['id'])) else 'indexed',
+                       'source_host': host, 'host_evidence': evidence, 'root_key': scan_root_key(s['root']),
+                       'timestamp': _iso(when[0]), 'sort_ts': [when[0], when[1]]})
     listed.sort(key=lambda x: (x['role'] != 'primary', (x['label'] or '').casefold(), x['root'] or ''))
     missing = [{'scan_id': i, 'access': 'unavailable', 'label': 'Unavailable', 'root': None}
                for i in shortcuts if i and i not in by_id]
     return listed, missing
+
+
+def group_scanned(listed):
+    """Scanned hierarchy: host -> exact scan root -> latest scan (+ older scans as history).
+
+    Grouping key is ``(source_host, exact scan root)``; the latest scan of a group is the one with the greatest
+    ``(completed or started, started, scan id)``. Metrics are only the latest scan's own, so older runs of the same
+    root are never added to a root or host total. A root readable on this machine (``access == 'mounted'``) is already
+    represented under Local, so it is flagged ``represented: 'local'`` instead of being listed as a Scanned location."""
+    groups = {}
+    for x in listed:
+        groups.setdefault((x['source_host'], x['root_key']), []).append(x)
+
+    def order(x):
+        return (x['sort_ts'][0], x['sort_ts'][1], str(x['scan_id']))
+
+    def brief(x):
+        return {k: x.get(k) for k in ('scan_id', 'root', 'files', 'bytes', 'bytes_source', 'date', 'timestamp', 'access')}
+    hosts, local = {}, []
+    for (host, root), runs in groups.items():
+        runs.sort(key=order, reverse=True)
+        latest = runs[0]
+        entry = {'key': '%s|%s' % (host, root), 'root': root, 'name': scan_leaf(root), 'host': host,
+                 'access': latest['access'], 'latest': brief(latest), 'history': [brief(x) for x in runs[1:]],
+                 'history_count': len(runs) - 1}
+        if latest['access'] == 'mounted':
+            entry['represented'] = 'local'
+            local.append(entry)
+            continue
+        hosts.setdefault(host, []).append(entry)
+    out = []
+    for host, roots in hosts.items():
+        roots.sort(key=lambda r: (r['name'].casefold(), r['root']))
+        known = [r['latest']['bytes'] for r in roots if r['latest']['bytes'] is not None]
+        out.append({'host': host, 'label': host or 'Host not recorded', 'root_count': len(roots),
+                    'files': sum(r['latest']['files'] or 0 for r in roots),
+                    'bytes': sum(known) if known else None, 'bytes_unknown_roots': len(roots) - len(known),
+                    'roots': roots})
+    out.sort(key=lambda h: (h['host'] == '', h['label'].casefold()))
+    local.sort(key=lambda r: (r['name'].casefold(), r['root']))
+    return out, local
 
 
 @bp.get('/locations')
@@ -295,7 +396,41 @@ def scan_locations(conn, shortcuts=()):
 def locations(conn):
     wanted = [x.strip() for x in (request.args.get('shortcuts') or '').split(',') if x.strip()]
     listed, missing = scan_locations(conn, wanted)
-    return {'status': 'success', 'read_only': True, 'locations': listed, 'unavailable': missing}
+    hosts, local = group_scanned(listed)
+    return {'status': 'success', 'read_only': True, 'locations': listed, 'unavailable': missing,
+            'hosts': hosts, 'local_roots': local}
+
+
+@bp.get('/scan-size')
+@_guard
+def scan_size(conn):
+    """Total known bytes of ONE scan: the sum of the size column over that scan's own file rows (read-only).
+
+    Only for scans that recorded no byte total. Cached per index signature; a scan too large to total within
+    SIZE_BUDGET_S answers ``bytes: null`` (unavailable) rather than a guess."""
+    scan_id = (request.args.get('scan_id') or '').strip()
+    if _scan_root(conn, scan_id) is None:
+        return {'status': 'error', 'error': 'Unknown scan.'}, 404
+    key = _size_key(scan_id)
+    with _CAT_LOCK:
+        hit = _SIZES.get(key) if key else None
+    if hit is not None:
+        return {'status': 'success', 'read_only': True, 'scan_id': scan_id, 'bytes': hit, 'cached': True}
+    deadline = time.monotonic() + SIZE_BUDGET_S
+    conn.set_progress_handler(lambda: 1 if time.monotonic() > deadline else 0, 20000)
+    try:
+        row = conn.execute("SELECT SUM(size), COUNT(*) FROM files WHERE scan_id=? AND type!='folder'", (scan_id,)).fetchone()
+    except sqlite3.OperationalError:
+        return {'status': 'success', 'read_only': True, 'scan_id': scan_id, 'bytes': None, 'reason': 'too_large', 'cached': False}
+    finally:
+        conn.set_progress_handler(None, 0)
+    total = int(row[0] or 0)
+    if key:
+        with _CAT_LOCK:
+            for old in [k for k in _SIZES if k[:2] != key[:2]]:
+                _SIZES.pop(old)
+            _SIZES[key] = total
+    return {'status': 'success', 'read_only': True, 'scan_id': scan_id, 'bytes': total, 'cached': False}
 
 
 def _scan_root(conn, scan_id):
