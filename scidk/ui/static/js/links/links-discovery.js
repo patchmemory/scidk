@@ -1,7 +1,133 @@
 // ===== Discovery & Available Tab Functions =====
 
-// Render discovered relationships (separate rendering path)
+// ===== Active: relationship types present in the graph (graph-derived, read-only) =====
+
+// One entry per relationship type in the current (primary) graph, aggregated from the triples returned by
+// GET /api/links/discovered. Saved link definitions play no part in what is listed here.
+function graphRelationshipTypes() {
+  const byType = new Map();
+  discoveredRelationships.forEach(rel => {
+    if (!rel || !rel.rel_type) return;
+    if (rel.database && rel.database !== 'PRIMARY') return;
+    let entry = byType.get(rel.rel_type);
+    if (!entry) {
+      entry = { rel_type: rel.rel_type, edge_count: 0, sources: new Map(), targets: new Map(), triples: [] };
+      byType.set(rel.rel_type, entry);
+    }
+    const n = Number(rel.triple_count || rel.count || 0);
+    entry.edge_count += n;
+    if (rel.source_label) entry.sources.set(rel.source_label, (entry.sources.get(rel.source_label) || 0) + n);
+    if (rel.target_label) entry.targets.set(rel.target_label, (entry.targets.get(rel.target_label) || 0) + n);
+    entry.triples.push(rel);
+  });
+  return [...byType.values()].map(entry => {
+    entry.triples.sort((a, b) => Number(b.triple_count || 0) - Number(a.triple_count || 0));
+    return entry;
+  });
+}
+
+function renderActiveRelationshipTypes(container) {
+  if (discoveryState === 'loading') {
+    container.innerHTML = '<div class="empty-state small" data-testid="active-discovering" role="status">Discovering relationships\u2026</div>';
+    const countEl = document.getElementById('result-count');
+    if (countEl) countEl.style.display = 'none';
+    return;
+  }
+  if (discoveryState === 'error') {
+    container.innerHTML = '<div class="empty-state small" data-testid="active-discovery-error" role="alert">Could not discover relationships from the graph. Use Refresh to try again.</div>';
+    return;
+  }
+
+  const query = (linksNavState.searchQuery || '').toLowerCase();
+  const all = graphRelationshipTypes();
+  let types = all.filter(t => {
+    if (query) {
+      const haystack = [t.rel_type, ...t.sources.keys(), ...t.targets.keys()].join(' ').toLowerCase();
+      if (!haystack.includes(query)) return false;
+    }
+    if (linksNavState.sourceLabel && !t.sources.has(linksNavState.sourceLabel)) return false;
+    if (linksNavState.targetLabel && !t.targets.has(linksNavState.targetLabel)) return false;
+    if (linksNavState.relType && t.rel_type !== linksNavState.relType) return false;
+    return true;
+  });
+
+  const first = m => [...m.keys()].sort()[0] || '';
+  types.sort((a, b) => {
+    switch (linksNavState.sortBy) {
+      case 'source': return first(a.sources).localeCompare(first(b.sources));
+      case 'target': return first(a.targets).localeCompare(first(b.targets));
+      default: return a.rel_type.localeCompare(b.rel_type);
+    }
+  });
+
+  updateResultCount(types.length, all.length, 'relationship type');
+
+  const labelList = m => [...m.entries()].sort((a, b) => b[1] - a[1])
+    .map(([label]) => `<span class="badge" style="background: #e3f2fd; color: #0d47a1; font-size: 0.8em; padding: 0.15em 0.4em; border-radius: 3px; margin-right: 0.25rem;">${escapeHtml(label)}</span>`).join('');
+  const hl = text => query ? highlightMatch(text, query) : escapeHtml(text);
+
+  let html;
+  if (all.length === 0) {
+    html = '<div class="empty-state small" data-testid="active-empty">No relationships found in the current graph.</div>';
+  } else if (types.length === 0) {
+    html = '<div class="empty-state small">No relationship types match your filters.</div>';
+  } else {
+    html = types.map((t, i) => {
+      const patterns = t.triples.length > 1
+        ? `<details style="margin-top: 0.35rem; font-size: 0.8em;"><summary>${t.triples.length} source \u2192 target patterns</summary>${t.triples.map((p, j) => `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.15rem 0;">
+              <span>${escapeHtml(p.source_label || '?')} \u2192 ${escapeHtml(p.target_label || '?')} <span style="color:#666">(${Number(p.triple_count || 0).toLocaleString()})</span></span>
+              <button class="btn btn-sm btn-outline-secondary btn-view-active-pattern" data-type-index="${i}" data-pattern-index="${j}" style="font-size: 0.85em;">Details</button>
+            </div>`).join('')}</details>`
+        : '';
+      return `
+      <div class="link-item" data-testid="active-relationship-type" data-rel-type="${escapeHtml(t.rel_type)}"
+           style="padding: 0.5rem; margin-bottom: 0.25rem; border-radius: 4px; border: 1px solid transparent;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+          <strong style="font-size: 0.95em;">${hl(t.rel_type)}</strong>
+          <span class="badge" data-testid="active-edge-count" style="background: #4caf50; color: white; font-size: 0.7em; padding: 0.2em 0.4em; border-radius: 3px;">${t.edge_count.toLocaleString()} edge${t.edge_count !== 1 ? 's' : ''}</span>
+        </div>
+        <div style="font-size: 0.85em; color: #666;" data-testid="active-sources"><strong>From:</strong> ${labelList(t.sources)}</div>
+        <div style="font-size: 0.85em; color: #666; margin-top: 0.15rem;" data-testid="active-targets"><strong>To:</strong> ${labelList(t.targets)}</div>
+        ${patterns}
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+          <button class="btn btn-sm btn-outline-secondary btn-view-active-type" data-type-index="${i}" style="font-size: 0.75em;">View Details</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // Saved link definitions are a secondary, compatibility-only view.
+  const saved = linkDefinitions.filter(l => l && l.id && l.status === 'active');
+  if (saved.length > 0) {
+    html += `<details data-testid="saved-definitions" style="margin-top: 0.75rem; font-size: 0.85em;"><summary>Saved definitions (${saved.length})</summary><div id="saved-definitions-list"></div></details>`;
+  }
+  container.innerHTML = html;
+
+  container.querySelectorAll('.btn-view-active-type').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const t = types[parseInt(btn.dataset.typeIndex)];
+      if (t && t.triples[0]) openImportWizardForRelationship(t.triples[0]);
+    });
+  });
+  container.querySelectorAll('.btn-view-active-pattern').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const t = types[parseInt(btn.dataset.typeIndex)];
+      const rel = t && t.triples[parseInt(btn.dataset.patternIndex)];
+      if (rel) openImportWizardForRelationship(rel);
+    });
+  });
+  const savedContainer = container.querySelector('#saved-definitions-list');
+  if (savedContainer) renderFlatLinks(saved, savedContainer);
+}
+
 function renderDiscoveredRelationships(container) {
+  if (discoveryState === 'loading') {
+    container.innerHTML = '<div class="empty-state small" data-testid="available-discovering" role="status">Discovering relationships\u2026</div>';
+    return;
+  }
   if (discoveredRelationships.length === 0) {
     container.innerHTML = `<div class="empty-state small">No discovered relationships. Connect to Neo4j databases to see existing relationships.</div>`;
     return;
@@ -366,18 +492,7 @@ function autoDetectUidProperty(properties) {
   return typeof properties[0] === 'string' ? properties[0] : properties[0].name;
 }
 
-// Update result count indicator
-function updateResultCount(shown, total) {
-  const countEl = document.getElementById('result-count');
-  if (!countEl) return;
-
-  if (shown === total) {
-    countEl.textContent = `Showing all ${total} link${total !== 1 ? 's' : ''}`;
-  } else {
-    countEl.textContent = `Showing ${shown} of ${total} links`;
-  }
-  countEl.style.display = total > 0 ? 'block' : 'none';
-}
+// (updateResultCount lives in links-core.js; a second copy here would override it, as this file loads later.)
 
 // Toggle group collapse state
 function toggleGroup(relType) {

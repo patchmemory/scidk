@@ -108,19 +108,21 @@ def operation_permission():
     return 'graph_schema_write'
 
 
-KNOWLEDGE_VIEWS = ('entities', 'maps', 'sketch')
+KNOWLEDGE_VIEWS = ('entities', 'relationships', 'maps', 'sketch')
 
 
 def knowledge_view(args):
-    """Resolve /knowledge's ``view``: entities | maps | sketch | governed.
+    """Resolve /knowledge's ``view``: entities | relationships | maps | sketch | governed.
 
-    ``graph`` is a compatibility alias for ``maps``. ``governed`` (``view=governed`` or ``governed=1``,
+    ``graph`` is a compatibility alias for ``maps`` and ``links`` for ``relationships``. ``governed`` (``view=governed`` or ``governed=1``,
     or a bare ``domain``/``id`` deep link from Overview/Review) keeps the governed-projection workspace
     reachable.
     """
     view = (args.get('view') or '').strip().lower()
     if view == 'graph':
         view = 'maps'
+    elif view in {'links', 'relationship'}:
+        view = 'relationships'
     if (view == 'governed' or args.get('governed') == '1'
             or (not view and (args.get('domain') or args.get('id')))):
         return 'governed'
@@ -131,7 +133,7 @@ def management_page():
     """Pages that host the legacy Labels/Maps applications (gated like their direct routes)."""
     if request.path in {'/entities', '/labels', '/links', '/map'}:
         return True
-    return request.path == '/knowledge' and knowledge_view(request.args) in {'entities', 'maps'}
+    return request.path == '/knowledge' and knowledge_view(request.args) in {'entities', 'relationships', 'maps'}
 
 
 def protected_path():

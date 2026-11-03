@@ -6,6 +6,7 @@ let currentLink = null;
 let currentStep = 1;
 let linkDefinitions = [];
 let discoveredRelationships = []; // Discovered relationships from Neo4j
+let discoveryState = 'loading'; // 'loading' | 'ready' | 'error' - graph discovery drives the Active and Available tabs
 let availableLabels = [];
 let lastFocusedIndex = -1; // For keyboard navigation
 let currentFilter = 'active'; // Filter state: 'active', 'pending', 'available'
@@ -514,23 +515,27 @@ function loadLinkDefinitions() {
 }
 
 function loadDiscoveredRelationships() {
-  fetch(window.SCIDK_BASE + '/api/links/discovered')
+  discoveryState = 'loading';
+  renderLinkList();
+  return fetch(window.SCIDK_BASE + '/api/links/discovered')
     .then(r => r.json())
     .then(data => {
       if (data.status === 'success') {
         discoveredRelationships = data.relationships || [];
-        updateFilterTabCounts();
-        // Re-render if currently viewing discovered tab
-        if (currentFilter === 'discovered') {
-          renderLinkList();
-        }
+        discoveryState = 'ready';
+      } else {
+        discoveredRelationships = [];
+        discoveryState = 'error';
       }
     })
     .catch(err => {
-      // Silently fail - discovered relationships are optional
       console.warn('Failed to load discovered relationships:', err);
       discoveredRelationships = [];
-      updateFilterTabCounts();
+      discoveryState = 'error';
+    })
+    .then(() => {
+      populateFilterDropdowns();
+      renderLinkList();
     });
 }
 
@@ -543,6 +548,12 @@ function renderLinkList() {
 
   // Update filter tab counts
   updateFilterTabCounts();
+
+  // Active: relationship types actually present in the graph (graph-derived; saved definitions are secondary)
+  if (currentFilter === 'active') {
+    renderActiveRelationshipTypes(container);
+    return;
+  }
 
   // Handle available (discovered) relationships with full filtering
   if (currentFilter === 'available') {
@@ -625,24 +636,25 @@ function renderLinkList() {
 
 function updateFilterTabCounts() {
   const validLinks = linkDefinitions.filter(link => link && link.id);
-  const activeCount = validLinks.filter(l => l.status === 'active').length;
   const pendingCount = validLinks.filter(l => l.status === 'pending').length;
-  const availableCount = discoveredRelationships.length;
+  const loading = discoveryState === 'loading';
+  const activeLabel = loading ? '\u2026' : String(typeof graphRelationshipTypes === 'function' ? graphRelationshipTypes().length : 0);
+  const availableLabel = loading ? '\u2026' : String(discoveredRelationships.length);
 
-  document.querySelector('[data-filter="active"]').textContent = `Active (${activeCount})`;
+  document.querySelector('[data-filter="active"]').textContent = `Active (${activeLabel})`;
   document.querySelector('[data-filter="pending"]').textContent = `Pending (${pendingCount})`;
-  document.querySelector('[data-filter="available"]').textContent = `Available (${availableCount})`;
+  document.querySelector('[data-filter="available"]').textContent = `Available (${availableLabel})`;
 }
 
 // Update result count indicator
-function updateResultCount(shown, total) {
+function updateResultCount(shown, total, noun = 'link') {
   const countEl = document.getElementById('result-count');
   if (!countEl) return;
 
   if (shown === total) {
-    countEl.textContent = `Showing all ${total} link${total !== 1 ? 's' : ''}`;
+    countEl.textContent = `Showing all ${total} ${noun}${total !== 1 ? 's' : ''}`;
   } else {
-    countEl.textContent = `Showing ${shown} of ${total} links`;
+    countEl.textContent = `Showing ${shown} of ${total} ${noun}s`;
   }
   countEl.style.display = total > 0 ? 'block' : 'none';
 }
@@ -956,9 +968,15 @@ function getActiveFilterCount() {
 
 // Populate filter dropdowns from link definitions
 function populateFilterDropdowns() {
-  const sourceLabels = [...new Set(linkDefinitions.map(l => l.source_label).filter(Boolean))].sort();
-  const targetLabels = [...new Set(linkDefinitions.map(l => l.target_label).filter(Boolean))].sort();
-  const relTypes = [...new Set(linkDefinitions.map(l => l.relationship_type).filter(Boolean))].sort();
+  // Options come from the graph (discovered) as well as saved definitions
+  const sourceLabels = [...new Set([...linkDefinitions.map(l => l.source_label), ...discoveredRelationships.map(r => r.source_label)].filter(Boolean))].sort();
+  const targetLabels = [...new Set([...linkDefinitions.map(l => l.target_label), ...discoveredRelationships.map(r => r.target_label)].filter(Boolean))].sort();
+  const relTypes = [...new Set([...linkDefinitions.map(l => l.relationship_type), ...discoveredRelationships.map(r => r.rel_type)].filter(Boolean))].sort();
+  const keep = {
+    'filter-source-label': linksNavState.sourceLabel,
+    'filter-target-label': linksNavState.targetLabel,
+    'filter-rel-type': linksNavState.relType
+  };
 
   const sourceSelect = document.getElementById('filter-source-label');
   const targetSelect = document.getElementById('filter-target-label');
@@ -978,6 +996,11 @@ function populateFilterDropdowns() {
     relSelect.innerHTML = '<option value="">Any relationship type</option>' +
       relTypes.map(type => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`).join('');
   }
+
+  // Re-selecting keeps an applied filter when options are refreshed after discovery
+  [sourceSelect, targetSelect, relSelect].forEach(select => {
+    if (select && keep[select.id]) select.value = keep[select.id];
+  });
 }
 
 // ===== Link Operations =====

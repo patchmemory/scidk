@@ -97,7 +97,7 @@ def test_legacy_files_and_scans_routes_are_unchanged(monkeypatch, tmp_path):
 def test_knowledge_keeps_its_three_tabs(monkeypatch, tmp_path):
     html = _html(_gui_client(monkeypatch, tmp_path), '/knowledge?view=sketch')
     nav = re.search(r'<nav class="knowledge-tabs".*?</nav>', html, re.S).group(0)
-    assert re.findall(r'<a\b[^>]*>([^<]*)</a>', nav) == ['Entities', 'Maps', 'Sketch']
+    assert re.findall(r'<a\b[^>]*>([^<]*)</a>', nav) == ['Entities', 'Relationships', 'Maps', 'Sketch']
     assert 'datasets-tabs' not in html
 
 

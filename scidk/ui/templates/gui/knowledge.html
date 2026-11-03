@@ -1,7 +1,8 @@
 {#
   Knowledge: the home for the working knowledge tools.
 
-    Entities  the Labels → instances → inspector browser (_labels_app.html, shared with /entities)
+    Entities       the Labels → instances → inspector browser (_labels_app.html, shared with /entities)
+    Relationships  the relationship-type / link browser (_links_app.html, shared with /entities?tab=relationships)
     Maps      the Maps / saved views / Cypher library (_maps_app.html, shared with /map)
     Sketch    a private draft canvas; it never writes accepted graph facts
 
@@ -16,7 +17,8 @@
   main { max-width: 100% !important; padding: 1rem 0.5rem !important; }
   .knowledge-notice { margin: 0.5rem; padding: 0.5rem 0.75rem; background: #f4f8fb; border: 1px solid #d6e2ec; border-radius: 6px; }
   #kw-status:empty { display: none; }
-  #knowledge-workspace[data-view="entities"] .labels-container { height: calc(100vh - 240px); }
+  #knowledge-workspace[data-view="entities"] .labels-container,
+  #knowledge-workspace[data-view="relationships"] .links-container { height: calc(100vh - 240px); }
   #knowledge-workspace[data-view="maps"] .maps-container { height: calc(100vh - 220px); }
 </style>
 {% if view == 'maps' %}{% include '_maps_styles.html' %}{% endif %}
@@ -31,10 +33,14 @@
 {% endif %}
 {% if view == 'entities' %}
 <details class="knowledge-notice small" data-testid="advanced-schema-tools"><summary>Advanced schema tools</summary>
-  <a href="{{ request.script_root }}/entities?tab=relationships">Relationship definitions (legacy page)</a> · property definitions are on each label in the browser below.
+  Property definitions are on each label in the browser below. Relationships have their own tab above; the direct legacy pages remain available: <a href="{{ request.script_root }}/entities?tab=entities">Entities (legacy page)</a> · <a href="{{ request.script_root }}/entities?tab=relationships">Relationships (legacy page)</a>.
 </details>
 {% include '_management_connection.html' %}
 {% include '_labels_app.html' %}
+{% elif view == 'relationships' %}
+{% include '_management_connection.html' %}
+<p class="small" style="margin:0.25rem 0.5rem" data-testid="relationships-context">Browse relationship types and their source/target context, then <a href="{{ request.script_root }}/knowledge?view=maps" data-testid="relationships-to-maps">open Maps</a> to see them on the graph, or return to <a href="{{ request.script_root }}/knowledge?view=entities">Entities</a>.</p>
+{% include '_links_app.html' %}
 {% elif view == 'maps' %}
 {% include '_management_connection.html' %}
 {% include '_maps_app.html' %}
