@@ -59,6 +59,28 @@
     return b.user + (b.database ? ' · db ' + b.database : '');
   }
 
+  // Raw backend/driver messages are diagnostics, not user copy. They are shown only inside a collapsed
+  // <details> as selectable plain text, with anything that looks like a credential masked first.
+  function redact(text) {
+    return String(text === null || text === undefined ? '' : text)
+      .replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s\/@:]*:[^\s\/@]*@/gi, '$1***:***@')
+      .replace(/\b(password|passwd|pwd|secret|token|api[_-]?key|authorization)(\s*[=:]\s*|\s+)(\S+)/gi, '$1$2***')
+      .replace(/\b(Basic|Bearer)\s+[A-Za-z0-9._~+\/=-]+/g, '$1 ***');
+  }
+
+  function settingsLinkHtml() {
+    return `<a href="${esc(window.SCIDK_BASE || '')}/settings#connections/overview" data-role="settings-link">Settings \u2192 Connections</a>`;
+  }
+
+  function detailsHtml(raw) {
+    const text = redact(raw);
+    if (!text) return '';
+    return `<details data-role="technical-details" style="margin:.4rem 0 0; padding:.35rem .6rem; background:#f8fafc;">
+      <summary class="small">Technical details</summary>
+      <pre style="margin:.4rem 0 0; user-select:text;"><code data-role="technical-text">${esc(text)}</code></pre>
+    </details>`;
+  }
+
   function statField(label, value, id) {
     return `
       <div style="min-width:0;">
@@ -75,7 +97,8 @@
         Not configured. Set ${b.env_vars.map(v => '<code>' + esc(v) + '</code>').join(', ')}.
       </div>`;
     const configErr = b.config_error ? `
-      <div class="small text-danger" style="margin-top:.5rem;">Config error: ${esc(b.config_error)}</div>` : '';
+      <div class="small text-danger" data-role="config-error" style="margin-top:.5rem;">Configuration unavailable. Check ${settingsLinkHtml()}.
+        ${detailsHtml(b.config_error)}</div>` : '';
 
     return `
       <div class="conn-card" data-backend-id="${esc(b.id)}"
@@ -130,6 +153,18 @@
     if (hint) hint.style.display = text ? 'none' : 'block';
   }
 
+  // A failed test/count: concise user-facing text plus the actual diagnostic in a collapsed disclosure.
+  function setFailure(id, summary, raw) {
+    const card = cardEl(id);
+    if (!card) return;
+    const el = card.querySelector('[data-role="result"]');
+    el.style.display = 'block';
+    el.style.color = '#dc3545';
+    el.innerHTML = `<span data-role="failure-summary">${esc(summary)} Check ${settingsLinkHtml()}.</span>${detailsHtml(raw)}`;
+    const hint = card.querySelector('[data-role="env-hint"]');
+    if (hint) hint.style.display = 'none';
+  }
+
   function setDot(id, glyph) {
     const card = cardEl(id);
     if (card) card.querySelector('[data-role="dot"]').textContent = glyph;
@@ -152,12 +187,12 @@
         if (stamp) stamp.textContent = formatStamp(j.last_verified);
       } else {
         setDot(id, '🔴');
-        setResult(id, j.error || 'Connection failed.', 'error');
+        setFailure(id, 'Connection unavailable.', j.error || 'Connection failed.');
       }
       return !!j.ok;
     } catch (err) {
       setDot(id, '🔴');
-      setResult(id, 'Request failed: ' + (err && err.message ? err.message : err), 'error');
+      setFailure(id, 'Connection unavailable.', 'Request failed: ' + (err && err.message ? err.message : err));
       return false;
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = 'Test Connection'; }
@@ -178,7 +213,7 @@
       if (j.error) {
         if (nodesEl) nodesEl.textContent = '—';
         if (edgesEl) edgesEl.textContent = '—';
-        setResult(id, j.error, 'error');
+        setFailure(id, 'Counts unavailable.', j.error);
       } else {
         if (nodesEl) nodesEl.textContent = (j.nodes ?? 0).toLocaleString();
         if (edgesEl) edgesEl.textContent = (j.edges ?? 0).toLocaleString();
@@ -187,7 +222,7 @@
     } catch (err) {
       if (nodesEl) nodesEl.textContent = '—';
       if (edgesEl) edgesEl.textContent = '—';
-      setResult(id, 'Request failed: ' + (err && err.message ? err.message : err), 'error');
+      setFailure(id, 'Counts unavailable.', 'Request failed: ' + (err && err.message ? err.message : err));
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = 'Counts'; }
     }

@@ -1,8 +1,8 @@
 {% extends 'base.html' %}
-{% block title %}SciDK — Review · Guidance{% endblock %}
+{% block title %}SciDK — Review · Chat{% endblock %}
 {% block content %}
 {#
-  Review → Guidance shell (/review?view=guidance, also /review/guidance).
+  Review → Chat shell (/review?view=guidance, also /review/guidance; the Guidance URLs and `guidance-*` test ids are kept as compatibility names).
 
   A chat-style surface that is ready for a provider integration but does nothing with a provider today:
     * no fetch / XHR / WebSocket / beacon, no form submission, no storage, no cookie: entered text lives only in
@@ -13,16 +13,16 @@
 #}
 <section class="guidance-shell" id="guidance-shell" data-testid="guidance-shell" data-provider-state="{{ 'configured' if provider_configured else 'not-configured' }}">
 <a class="gd-back" href="{{ request.script_root }}/review" data-testid="guidance-back">&larr; Back to Review</a>
-<h1 class="ws-title">Guidance</h1>
-<p class="ws-lede" id="guidance-welcome" data-testid="guidance-welcome">Ask about your science data: how things relate, what to organize next, or how to prepare metadata. Guidance will draw on the sources you are allowed to use, and it will say where each answer came from.</p>
+<h1 class="ws-title">Chat</h1>
+<p class="ws-lede" id="guidance-welcome" data-testid="guidance-welcome">Ask about your science data: how things relate, what to organize next, or how to prepare metadata. Chat will draw on the sources you are allowed to use, and it will say where each answer came from.</p>
 
 <div class="gd-window" role="group" aria-labelledby="gd-window-title">
-  <h2 id="gd-window-title" class="sr-only" style="position:absolute;left:-9999px">Guidance conversation</h2>
+  <h2 id="gd-window-title" class="sr-only" style="position:absolute;left:-9999px">Chat conversation</h2>
   <div class="gd-status" id="guidance-provider-status" data-testid="guidance-provider-status" role="status">
     <i class="ti ti-plug-off" aria-hidden="true"></i>
-    <div><strong>AI provider not configured.</strong> Guidance cannot answer yet. Nothing you type here is sent anywhere, and no answers are generated or stored.</div>
+    <div><strong>AI provider not configured.</strong> Chat cannot answer yet. Nothing you type here is sent anywhere, and no answers are generated or stored.</div>
   </div>
-  <div class="gd-messages" id="guidance-messages" data-testid="guidance-messages" role="log" aria-live="polite" aria-label="Guidance messages">
+  <div class="gd-messages" id="guidance-messages" data-testid="guidance-messages" role="log" aria-live="polite" aria-label="Chat messages">
     <div class="gd-msg system" data-testid="guidance-welcome-message">Hello. Once an AI provider is connected, you can ask questions here about the datasets, collections and graph you have access to. For now this window shows what the conversation will look like.</div>
   </div>
   <form class="gd-form" id="guidance-form" data-testid="guidance-form" autocomplete="off" onsubmit="return false">

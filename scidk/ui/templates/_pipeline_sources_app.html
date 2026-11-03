@@ -124,10 +124,11 @@
                                    border-top:1px solid #f0f0f0; }
   .fair-letters { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
 </style>
-<div class="pipeline-page" data-testid="pipeline-sources-page">
+<div class="pipeline-page{% if pipeline_workspace %} res-index{% endif %}" data-testid="pipeline-sources-page">
 
   <div class="page-head">
-    <h2>Resources</h2>
+    {# Inside the Resources workspace the outer page title already says "Resources"; the section heading matches Ecosystem and Runs. #}
+    <h2>{% if pipeline_workspace %}Sources{% else %}Resources{% endif %}</h2>
     <span class="small">Data resources the Pipeline maps into the knowledge graph.</span>
     <button class="btn primary" id="add-source-btn" data-testid="add-source-btn"
             style="margin-left:auto">+ Add resource</button>

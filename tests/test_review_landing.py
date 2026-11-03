@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 import pytest
 
 PROMPT = 'What would you like to do with your science data?'
-CARD_TITLES = ['Understand data', 'Organize context', 'Improve metadata', 'Explore', 'Prepare to share', 'Get guidance']
+CARD_TITLES = ['Understand data', 'Organize context', 'Improve metadata', 'Explore', 'Prepare to share', 'Chat']
 EXPECTED = {
     'understand': ['/knowledge?view=relationships', '/knowledge?view=entities', '/knowledge?view=maps'],
     'organize': ['/datasets?view=collections', '/datasets?view=datasets'],

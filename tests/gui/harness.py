@@ -42,7 +42,7 @@ def make_disposable_app():
             return jsonify(error='Writes disabled in GUI fixture'), 405
         allowed_ui = {'/', '/overview', '/knowledge', '/review', '/datasets', '/settings',
                       '/pipeline/sources', '/resources', '/map', '/chat', '/entities', '/labels', '/links',
-                      '/integrate', '/results', '/login', '/annotations'}
+                      '/integrate', '/results', '/login', '/annotations', '/review/guidance'}
         if not (request.path in allowed_ui or request.path.startswith('/static/')
                 or request.path.startswith('/api/')):
             return jsonify(error='Route unavailable in disconnected GUI fixture'), 404

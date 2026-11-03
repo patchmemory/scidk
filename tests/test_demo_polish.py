@@ -135,7 +135,7 @@ def test_runs_does_not_imply_scheduling_when_no_scheduler_runs(client):
 
 def test_review_card_links_to_guidance_and_legacy_assertions_route_is_kept(client):
     landing = page(client, '/review')
-    assert 'href="/review?view=guidance"' in landing and 'Get guidance' in landing
+    assert 'href="/review?view=guidance"' in landing and 'Open Chat' in landing
     assert 'id="review-landing"' in landing
 
 
@@ -150,6 +150,69 @@ def test_guidance_shell_markup_is_static_and_honest(client, url):
     for banned in ('fetch(', 'XMLHttpRequest', 'WebSocket', 'sendBeacon', 'EventSource', 'localStorage',
                    'sessionStorage', 'document.cookie', 'indexedDB'):
         assert banned not in script, banned
+
+
+def visible_text(html):
+    body = re.sub(r'(?s)<(script|style)\b.*?</\1>', '', html)
+    return re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', body))
+
+
+def test_review_shows_chat_and_keeps_both_legacy_guidance_urls(client):
+    landing = page(client, '/review')
+    assert 'Open Chat' in visible_text(landing) and 'Get guidance' not in landing and 'Open Guidance' not in landing
+    assert re.search(r'<h3>\s*Chat\s*(<|\n)', landing) or '>Chat<' in landing
+    for url in ('/review?view=guidance', '/review/guidance'):
+        html = page(client, url)
+        assert '<h1 class="ws-title">Chat</h1>' in html and '<title>SciDK \u2014 Review \u00b7 Chat</title>' in html
+        assert 'Guidance' not in visible_text(html), url           # visible copy says Chat
+        assert 'data-testid="guidance-shell"' in html               # compatibility ids are unchanged
+        assert 'data-provider-state="not-configured"' in html and 'AI provider not configured' in html
+
+
+# ------------------------------------------------ sidebar alignment, Sources layout, technical disclosure
+
+CSS = (ROOT / 'scidk' / 'ui' / 'static' / 'css' / 'gui_design.css').read_text()
+
+
+def test_primary_sidebar_labels_are_right_aligned_with_symmetric_padding_and_bracket():
+    assert '.gui-v3 header nav a {text-align:right}' in CSS
+    assert 'padding:11px 12px;' in CSS and 'header nav a.active,' in CSS and 'box-shadow:inset 3px 0 #8bbfe9' in CSS
+    # logo/Home and footer treatments are not right-aligned
+    assert 'text-align:right' not in CSS[CSS.index('.gui-v3 header h1 a.brand-home {padding'):CSS.index('.gui-v3 header nav {')]
+    assert 'text-align:right' not in CSS[CSS.index('.gui-v3 .user-area'):CSS.index('.gui-v3 header :focus-visible')]
+
+
+def test_sources_uses_the_shared_resources_layout_without_a_duplicate_heading(client):
+    sources = page(client, '/resources?view=sources')
+    area = sources[sources.index('id="resources-workspace"'):]
+    assert 'class="pipeline-page res-index"' in area
+    assert '<h2>Sources</h2>' in area and '<h2>Resources</h2>' not in area
+    assert sources.count('<h1 class="ws-title">Resources</h1>') == 1
+    # empty state / redirect behavior is unchanged
+    text = (TEMPLATES / '_pipeline_sources_app.html').read_text()
+    for kept in ('data-testid="sources-no-plugins"', 'data-testid="sources-empty"',
+                 "/resources?view=plugins&from=add-resource", 'data-testid="add-source-btn"'):
+        assert kept in text, kept
+    assert '.gui-v3 #resources-workspace .pipeline-page .source-card' in CSS
+
+
+def test_legacy_pipeline_sources_page_keeps_its_own_heading(client):
+    response = client.get('/pipeline/sources')
+    if response.status_code == 200:
+        assert '<h2>Resources</h2>' in response.get_data(as_text=True)
+
+
+def test_graph_service_failures_use_concise_text_and_a_copyable_collapsed_disclosure():
+    text = (TEMPLATES / 'settings' / '_connections_overview.html').read_text()
+    assert 'Technical details' in text and '<details data-role="technical-details"' in text
+    assert '<pre style="margin:.4rem 0 0; user-select:text;"><code data-role="technical-text">' in text
+    assert 'Connection unavailable.' in text and 'Settings \\u2192 Connections' in text
+    # Raw error text never goes straight into the visible result line.
+    assert "setResult(id, j.error" not in text and "setResult(id, 'Request failed" not in text
+    assert 'Config error: ${esc(b.config_error)}' not in text
+    # Test/counts requests and Settings access are untouched.
+    assert "`/api/connections/${encodeURIComponent(id)}/test`" in text and "{ method: 'POST' }" in text
+    assert 'redact(' in text and '***' in text
 
 
 # ---------------------------------------------------- Browse recognition
